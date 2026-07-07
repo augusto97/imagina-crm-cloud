@@ -1,0 +1,464 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    /*
+     * Las variables CSS del tema viven en `:root` (no en `#imcrm-root`)
+     * porque Radix Dialog/Sheet/Popover renderizan su contenido vía
+     * Portal como hijo directo de <body>, FUERA de #imcrm-root. Si las
+     * variables sólo existieran ahí dentro, los flotantes resolverían
+     * `hsl(var(--imcrm-card))` a `hsl(undefined)` → fondo transparente
+     * (bug visual reportado: "todos los flotantes salen transparentes").
+     *
+     * Las variables tienen prefijo `--imcrm-` así que no chocan con
+     * variables de WordPress admin ni de otros plugins.
+     */
+    :root {
+        /* Background, foreground — texturas neutras frías estilo
+         * Linear/Vercel. Foreground es navy profundo (no negro puro)
+         * para que sienta más cuidado, menos "browser default". */
+        --imcrm-background: 0 0% 100%;
+        --imcrm-foreground: 224 71% 4%;
+
+        /* Card sin bg distinto al body en superficies grandes (estilo
+         * Vercel/Cloudflare); hairline border es lo único que separa.
+         * Sólo sombramos cuando hay elevación real (popovers, dialogs). */
+        --imcrm-card: 0 0% 100%;
+        --imcrm-card-foreground: 224 71% 4%;
+
+        --imcrm-popover: 0 0% 100%;
+        --imcrm-popover-foreground: 224 71% 4%;
+
+        /* Primary cyan — alineado con la identidad de Imagina La Web /
+         * la app de audit. Cyan-500ish (186 95% 42%) — saturado, claro,
+         * visualmente distintivo. NO usar indigo / violet aquí: rompe
+         * la identidad visual del producto. */
+        --imcrm-primary: 186 95% 42%;
+        --imcrm-primary-foreground: 0 0% 100%;
+
+        /* Tones para los StatTiles — cada uno tiene su icon-square
+         * coloreado con tone-50/tone-600 (bg muy suave + icon sólido). */
+        --imcrm-tone-cyan: 186 95% 42%;
+        --imcrm-tone-mint: 158 64% 42%;
+        --imcrm-tone-rose: 0 84% 60%;
+        --imcrm-tone-blue: 217 91% 50%;
+        --imcrm-tone-violet: 262 83% 58%;
+        --imcrm-tone-amber: 38 92% 50%;
+        --imcrm-tone-slate: 215 16% 47%;
+
+        /* Paleta curada para chips de opciones (select / multi_select).
+         * 12 colores estilo ClickUp / Linear — saturados pero no fuertes,
+         * cubren el rango sin chocar con el primary cyan de la marca.
+         * El usuario elige uno por opción desde el ColorPicker; el chip
+         * usa la versión soft (bg/10 + text-color + border/20). */
+        --imcrm-opt-gray:    220 9% 46%;
+        --imcrm-opt-slate:   215 16% 47%;
+        --imcrm-opt-rose:    346 77% 60%;
+        --imcrm-opt-red:     0 84% 55%;
+        --imcrm-opt-orange:  25 95% 53%;
+        --imcrm-opt-amber:   38 92% 50%;
+        --imcrm-opt-yellow:  48 96% 53%;
+        --imcrm-opt-lime:    84 81% 44%;
+        --imcrm-opt-green:   142 71% 45%;
+        --imcrm-opt-emerald: 160 84% 39%;
+        --imcrm-opt-teal:    173 80% 40%;
+        --imcrm-opt-cyan:    188 95% 43%;
+        --imcrm-opt-sky:     200 90% 50%;
+        --imcrm-opt-blue:    217 91% 60%;
+        --imcrm-opt-indigo:  239 84% 67%;
+        --imcrm-opt-violet:  262 83% 58%;
+        --imcrm-opt-fuchsia: 292 84% 60%;
+        --imcrm-opt-pink:    330 81% 60%;
+
+        /* Variantes "-text" forzadas a lightness 24-32% (light mode)
+         * para que el contraste contra un fondo near-white sea WCAG AA
+         * sí o sí. Sin esto, colores como `yellow 53%` o `amber 50%`
+         * son ilegibles cuando se usan como text-color del chip. */
+        --imcrm-opt-gray-text:    220 9% 30%;
+        --imcrm-opt-slate-text:   215 25% 30%;
+        --imcrm-opt-rose-text:    346 65% 38%;
+        --imcrm-opt-red-text:     0 75% 35%;
+        --imcrm-opt-orange-text:  25 85% 32%;
+        --imcrm-opt-amber-text:   38 85% 28%;
+        --imcrm-opt-yellow-text:  42 85% 26%;
+        --imcrm-opt-lime-text:    84 70% 24%;
+        --imcrm-opt-green-text:   142 65% 26%;
+        --imcrm-opt-emerald-text: 160 75% 24%;
+        --imcrm-opt-teal-text:    173 75% 24%;
+        --imcrm-opt-cyan-text:    188 85% 26%;
+        --imcrm-opt-sky-text:     200 80% 30%;
+        --imcrm-opt-blue-text:    217 80% 38%;
+        --imcrm-opt-indigo-text:  239 70% 42%;
+        --imcrm-opt-violet-text:  262 70% 42%;
+        --imcrm-opt-fuchsia-text: 292 70% 38%;
+        --imcrm-opt-pink-text:    330 70% 38%;
+
+        /* Secondary y muted prácticamente iguales — slate frío muy
+         * leve, no el gris cálido genérico de los SaaS templates. */
+        --imcrm-secondary: 220 14% 97%;
+        --imcrm-secondary-foreground: 224 71% 4%;
+
+        --imcrm-muted: 220 14% 97%;
+        --imcrm-muted-foreground: 220 9% 42%;
+
+        --imcrm-accent: 220 14% 95%;
+        --imcrm-accent-foreground: 224 71% 4%;
+
+        --imcrm-destructive: 0 72% 51%;
+        --imcrm-destructive-foreground: 0 0% 100%;
+
+        --imcrm-success: 152 60% 36%;
+        --imcrm-success-foreground: 0 0% 100%;
+
+        --imcrm-warning: 32 95% 44%;
+        --imcrm-warning-foreground: 0 0% 100%;
+
+        --imcrm-info: 217 91% 50%;
+        --imcrm-info-foreground: 0 0% 100%;
+
+        /* Border hairline más sutil que el default — 220 13% 91% se
+         * veía gris pesado. 220 14% 94% es casi invisible pero
+         * suficiente para definir el edge. */
+        --imcrm-border: 220 14% 93%;
+        --imcrm-input: 220 14% 90%;
+        --imcrm-ring: 186 95% 42%;
+
+        /* Sidebar: bg ligeramente off-white para que se distinga del
+         * canvas principal sin ser una franja oscura. Item activo
+         * usa primary muy suave. */
+        --imcrm-sidebar: 220 17% 98%;
+        --imcrm-sidebar-foreground: 224 12% 28%;
+        --imcrm-sidebar-border: 220 14% 93%;
+        --imcrm-sidebar-accent: 220 14% 95%;
+        --imcrm-sidebar-accent-foreground: 186 95% 42%;
+
+        /* Background del canvas principal (área a la derecha del sidebar).
+         * Un gris muy suave (slate-50ish) para que las cards en blanco
+         * tengan contraste sin ser "white-on-white". */
+        --imcrm-canvas: 220 17% 97%;
+    }
+
+    #imcrm-root[data-imcrm-theme='dark'],
+    [data-imcrm-theme='dark'] {
+        --imcrm-background: 224 16% 8%;
+        --imcrm-foreground: 220 14% 96%;
+
+        --imcrm-card: 224 16% 10%;
+        --imcrm-card-foreground: 220 14% 96%;
+
+        --imcrm-popover: 224 16% 10%;
+        --imcrm-popover-foreground: 220 14% 96%;
+
+        --imcrm-primary: 234 89% 65%;
+        --imcrm-primary-foreground: 224 16% 8%;
+
+        --imcrm-secondary: 224 14% 16%;
+        --imcrm-secondary-foreground: 220 14% 96%;
+
+        --imcrm-muted: 224 14% 16%;
+        --imcrm-muted-foreground: 220 9% 60%;
+
+        --imcrm-accent: 224 14% 18%;
+        --imcrm-accent-foreground: 220 14% 96%;
+
+        --imcrm-destructive: 0 72% 55%;
+        --imcrm-destructive-foreground: 0 0% 100%;
+
+        --imcrm-border: 224 14% 18%;
+        --imcrm-input: 224 14% 18%;
+        --imcrm-ring: 234 89% 65%;
+
+        --imcrm-sidebar: 224 16% 9%;
+        --imcrm-sidebar-foreground: 220 14% 90%;
+        --imcrm-sidebar-border: 224 14% 16%;
+        --imcrm-sidebar-accent: 224 14% 14%;
+        --imcrm-sidebar-accent-foreground: 234 89% 70%;
+
+        /* Override de las variantes "-text" para dark mode: en lugar
+         * de oscurecer (chip sobre fondo claro), aclaramos para que
+         * el texto destaque sobre el bg dark tintado. */
+        --imcrm-opt-gray-text:    220 14% 72%;
+        --imcrm-opt-slate-text:   215 25% 72%;
+        --imcrm-opt-rose-text:    346 85% 78%;
+        --imcrm-opt-red-text:     0 85% 75%;
+        --imcrm-opt-orange-text:  25 95% 72%;
+        --imcrm-opt-amber-text:   38 92% 70%;
+        --imcrm-opt-yellow-text:  48 95% 70%;
+        --imcrm-opt-lime-text:    84 80% 68%;
+        --imcrm-opt-green-text:   142 70% 68%;
+        --imcrm-opt-emerald-text: 160 80% 65%;
+        --imcrm-opt-teal-text:    173 75% 65%;
+        --imcrm-opt-cyan-text:    188 85% 70%;
+        --imcrm-opt-sky-text:     200 85% 70%;
+        --imcrm-opt-blue-text:    217 90% 75%;
+        --imcrm-opt-indigo-text:  239 85% 78%;
+        --imcrm-opt-violet-text:  262 80% 78%;
+        --imcrm-opt-fuchsia-text: 292 80% 75%;
+        --imcrm-opt-pink-text:    330 80% 78%;
+    }
+
+    #imcrm-root {
+        @apply imcrm-bg-background imcrm-text-foreground imcrm-font-sans imcrm-tracking-tight imcrm-antialiased;
+        color-scheme: light;
+        font-feature-settings:
+            'cv02',
+            'cv03',
+            'cv04',
+            'cv11';
+        min-height: calc(100vh - 32px);
+    }
+
+    /*
+     * El SPA vive standalone en /imagina-crm/ con su propio reset
+     * inline (`StandalonePage::inlineReset()`) que ya cubre el chrome
+     * de wp-admin que pudiera filtrarse. El "fullscreen mode" toggle
+     * se eliminó en 0.30.3 — era residual de cuando el SPA se montaba
+     * en /wp-admin/admin.php (los Radix portals + reglas !important
+     * existían solo para tapar el chrome de WP en ese contexto).
+     */
+
+    /*
+     * Reset minimal scopeado.
+     *
+     * El SPA vive standalone en /imagina-crm/ con su propio reset CSS
+     * inline (`StandalonePage::inlineReset()`) que aplica selectores
+     * type-only (especificidad 1) sobre `button`, `a`, `select`, etc.
+     * Eso ya cubre TODOS los UA defaults sin pisar las utilities de
+     * Tailwind.
+     *
+     * Lo único que dejamos aquí es el border-color default: las
+     * utilities `imcrm-border` setean border-width pero no color, y
+     * sin un default global el browser usa `currentColor` (rojo en
+     * algunos casos). Lo ponemos con `:where()` para especificidad 0.
+     *
+     * Tampoco seteamos un focus-visible global — cada primitiva
+     * (Button, Input, Select, etc.) define su propio ring con
+     * especificidad de utility (10), y el UA outline default es
+     * suficiente para cualquier elemento sin estilo custom.
+     */
+    :where(#imcrm-root, [class*='imcrm-']) *,
+    :where(#imcrm-root, [class*='imcrm-']) *::before,
+    :where(#imcrm-root, [class*='imcrm-']) *::after {
+        border-color: hsl(var(--imcrm-border));
+    }
+
+    /* Native <select>: el reset standalone no toca su `appearance`,
+     * así que la flecha UA quedaría visible junto al chevron del
+     * componente. Lo quitamos acá con `:where()` para no romper la
+     * cascada de utilities (especificidad 0). */
+    :where(#imcrm-root, [class*='imcrm-']) select {
+        appearance: none;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.5rem center;
+        padding-right: 1.75rem;
+    }
+
+    :where(#imcrm-root, [class*='imcrm-']) input[type='checkbox'] {
+        accent-color: hsl(var(--imcrm-primary));
+    }
+
+    /*
+     * Cuando el usuario marca "reducir movimiento" en su SO, anulamos
+     * animaciones y transiciones (excepto opacidad para mantener feedback
+     * visual de hover/focus). Cumple WCAG 2.3.3 (Animation from Interactions).
+     */
+    @media (prefers-reduced-motion: reduce) {
+        :where(#imcrm-root) *,
+        :where(#imcrm-root) *::before,
+        :where(#imcrm-root) *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+
+    /*
+     * Soporte para modo de alto contraste (Windows / Edge). Forza bordes
+     * visibles en elementos interactivos y mantiene textos legibles.
+     */
+    @media (forced-colors: active) {
+        :where(#imcrm-root) button,
+        :where(#imcrm-root) [role='button'],
+        :where(#imcrm-root) input,
+        :where(#imcrm-root) select,
+        :where(#imcrm-root) textarea {
+            border: 1px solid CanvasText;
+        }
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * react-day-picker — overrides para matchear nuestro tema.
+ * Lo importamos via su CSS por defecto en `DateCellEditor.tsx`
+ * (`react-day-picker/style.css`). Acá ajustamos colores, tipografía
+ * y el highlight de "próximas ocurrencias" del modificador
+ * `recurrence` que pasa el componente.
+ * ─────────────────────────────────────────────────────────────── */
+.imcrm-rdp-imagina {
+    --rdp-accent-color: hsl(var(--imcrm-primary));
+    --rdp-accent-background-color: hsl(var(--imcrm-primary) / 0.1);
+    --rdp-day_button-height: 32px;
+    --rdp-day_button-width: 32px;
+    --rdp-day-height: 36px;
+    --rdp-day-width: 36px;
+    font-family: inherit;
+    font-size: 13px;
+    margin: 0;
+}
+
+.imcrm-rdp-imagina .rdp-caption_label {
+    font-weight: 600;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-rdp-imagina .rdp-weekday {
+    color: hsl(var(--imcrm-muted-foreground));
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: lowercase;
+}
+
+.imcrm-rdp-imagina .rdp-day_button {
+    border-radius: 6px;
+}
+
+.imcrm-rdp-imagina .rdp-day_button:hover {
+    background: hsl(var(--imcrm-accent));
+}
+
+/* Día seleccionado: fondo primary sólido. */
+.imcrm-rdp-imagina .rdp-selected .rdp-day_button {
+    background: hsl(var(--imcrm-primary));
+    color: hsl(var(--imcrm-primary-foreground));
+}
+
+/* Próximas ocurrencias de una recurrencia: punto pequeño debajo. */
+.imcrm-rdp-imagina .imcrm-rdp-recurrence:not(.rdp-selected) .rdp-day_button {
+    position: relative;
+}
+.imcrm-rdp-imagina .imcrm-rdp-recurrence:not(.rdp-selected) .rdp-day_button::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: hsl(var(--imcrm-success));
+}
+
+/* Hoy: borde sutil. */
+.imcrm-rdp-imagina .rdp-today:not(.rdp-selected) .rdp-day_button {
+    box-shadow: inset 0 0 0 1px hsl(var(--imcrm-primary) / 0.4);
+}
+
+/* ==========================================================================
+   Template editor — modo full-screen (Fase 14.D)
+   ==========================================================================
+
+   Cuando el body tiene la clase `imcrm-template-editor-fullscreen`,
+   ocultamos los chromes externos (WP admin bar, WP sidebar, footer)
+   y el sidebar del plugin para que el editor ocupe toda la ventana.
+
+   El editor mismo se posiciona `fixed inset-0` con su z-index propio.
+*/
+
+body.imcrm-template-editor-fullscreen #wpadminbar,
+body.imcrm-template-editor-fullscreen #adminmenumain,
+body.imcrm-template-editor-fullscreen #wpfooter {
+    display: none !important;
+}
+
+body.imcrm-template-editor-fullscreen #wpcontent,
+body.imcrm-template-editor-fullscreen #wpbody-content {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+/* El AdminShell del plugin tiene su propio sidebar; en full-screen
+   lo ocultamos también. El selector apunta al wrapper del shell. */
+body.imcrm-template-editor-fullscreen .imcrm-admin-sidebar,
+body.imcrm-template-editor-fullscreen .imcrm-admin-topbar {
+    display: none !important;
+}
+
+/* La página del editor se expande a viewport completo. */
+body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: hsl(var(--imcrm-background));
+    padding: 1rem;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 0.57.23 — Layout unificado por filas (editor + front)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * Reemplaza el modelo de CSS Grid 12-col + (x, y, w, h) libre por un
+ * modelo explícito de filas. Cada fila es un flex container; cada
+ * bloque adentro tiene `flex-basis` proporcional a su `w` (de 12).
+ * La altura de la fila la define el bloque más alto adentro. Entre
+ * filas hay `gap` vertical.
+ *
+ * Esta clase y `.imcrm-row` se usan IDÉNTICAMENTE en el editor
+ * (RowsCanvas) y en los renderers del front (PortalRenderer,
+ * RecordCrmLayout). El WYSIWYG ahora es real — la misma estructura
+ * HTML/CSS produce el mismo resultado en ambos lados.
+ */
+.imcrm-rows-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.imcrm-row {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+    min-width: 0;
+}
+.imcrm-row__cell {
+    /* 0.57.38 — modelo `flex: <w> <w> 0` (grow y shrink proporcionales
+     * al width 1-12, basis 0). Se asigna inline desde el componente:
+     * `style={{ flex: '6 6 0' }}`.
+     *
+     * Antes usábamos `flex-basis: %` + `flex-shrink: 0`, lo que
+     * causaba overflow con multi-columna: dos columnas de 50% + un
+     * gap de 12px = 100% + 12px y, al no permitir shrink, se desbordaba.
+     * Con `flex: w w 0` el navegador reparte el espacio DESPUÉS de
+     * restar los gaps, proporcionalmente al width — exacto con
+     * cualquier N de columnas y cualquier gap, sin `calc()`.
+     *
+     * Cada cell es además un flex column container que apila los
+     * bloques de esa columna verticalmente con gap entre ellos. */
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.imcrm-row__cell > * {
+    /* 0.57.37 — `min-height: auto` (default de la spec Flexbox).
+     * El valor `0` que estaba acá permitía que los hijos del cell
+     * shrinkaran por debajo de su contenido natural, lo que causaba
+     * que cards (header, notes, etc.) colapsaran a alturas menores
+     * que sus children intrínsecos cuando el row aplicaba
+     * `align-items: stretch`. Resultado: contenido del card se
+     * desbordaba visualmente sobre el bloque siguiente.
+     *
+     * Con `auto`, cada hijo respeta su min-content y el card siempre
+     * abarca al menos su contenido natural — no hay desbordes ni
+     * recortes raros. */
+    min-height: auto;
+}
