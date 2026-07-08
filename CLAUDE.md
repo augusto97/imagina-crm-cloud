@@ -139,8 +139,10 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Export JSON de intercambio (STANDALONE §16): GET /lists/:list/export
         (list+fields+views+records, keyset). Disponible en solo-lectura
         (completa la promesa de ADR-S09: impago = solo-lectura + export).
-  - [ ] Stripe real (checkout + webhooks firmados), import CSV/JSON,
-        onboarding, panel admin, emails transaccionales.
+  - [x] Import de filas a una lista (mapeo columna→campo, validación por
+        tipo con el validador compartido, errores por fila, límite de plan).
+  - [ ] Stripe real (checkout + webhooks firmados), onboarding, panel admin,
+        emails transaccionales.
 - [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
 
 ## 6. Cómo trabajar con Claude Code en este repo
