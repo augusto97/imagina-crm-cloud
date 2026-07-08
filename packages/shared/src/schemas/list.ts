@@ -20,3 +20,23 @@ export const createListSchema = z.object({
     color: z.string().max(32).optional(),
 });
 export type CreateListInput = z.infer<typeof createListSchema>;
+
+/**
+ * Patch de lista. Todos los campos opcionales (PATCH). `slug` editable
+ * (el ID es la verdad; el slug es etiqueta humana). `null` en icon/color
+ * los limpia; ausente = sin cambio.
+ */
+export const updateListSchema = z
+    .object({
+        name: z.string().trim().min(1).max(190),
+        slug: listSlugSchema,
+        icon: z.string().max(64).nullable(),
+        color: z.string().max(32).nullable(),
+        position: z.number().int().nonnegative(),
+        settings: z.record(z.unknown()),
+    })
+    .partial()
+    .refine((patch) => Object.keys(patch).length > 0, {
+        message: 'El patch no puede estar vacío',
+    });
+export type UpdateListInput = z.infer<typeof updateListSchema>;

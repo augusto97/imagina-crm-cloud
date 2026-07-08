@@ -10,7 +10,14 @@
         },
         "lint": {},
         "test": {
-            "dependsOn": ["^build"]
+            "dependsOn": ["^build"],
+            "passThroughEnv": [
+                "DATABASE_URL",
+                "REDIS_URL",
+                "DOCKER_HOST",
+                "TESTCONTAINERS_RYUK_DISABLED",
+                "TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX"
+            ]
         },
         "dev": {
             "dependsOn": ["^build"],
