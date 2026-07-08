@@ -1,142 +1,133 @@
 # Runbook — Instalar en un VPS Ubuntu 24 con ServerAvatar
 
-> **Respuesta corta a "¿PHP o OpenLiteSpeed?": ninguna de las dos.** Imagina Base
-> es **Node.js + un SPA estático**, no PHP. En ServerAvatar:
-> - **Web server del servidor: Nginx** (no OpenLiteSpeed — el vhost que damos es
->   Nginx; OLS complica el proxy + los rewrites del SPA).
-> - **Aplicación: Sitio estático** (document root → `current/web`), NO "PHP App".
-> - La **API Node corre aparte por systemd**; Postgres/Redis por Docker.
->   ServerAvatar se encarga del servidor, el vhost Nginx, el SSL y el firewall.
+> **Qué stack elegir en ServerAvatar:** **Nginx** + activá el toggle **"Install
+> Node.js"**. NO uses el tipo PHP ni OpenLiteSpeed: Imagina Base es **Node.js +
+> un SPA estático**, no PHP.
+>
+> **Ojo con la base de datos:** ningún stack de ServerAvatar trae PostgreSQL
+> (todos traen MySQL/MariaDB, o MongoDB en el "Node Stack"). Imagina Base
+> **requiere PostgreSQL 16** → lo instalamos por **Docker**. El MariaDB del stack
+> queda sin usar (inofensivo). El **Redis** del stack **sí lo usamos**.
 
-## 1. Crear el servidor en ServerAvatar
+## 1. Crear el servidor
 
-1. Provisioná un VPS **Ubuntu 24.04** (2 vCPU / 4 GB) en tu proveedor.
-2. En ServerAvatar → **Create Server** → conectá ese VPS (por IP + credenciales
-   o el script de conexión). Elegí **Nginx** como web server.
-3. Esperá a que termine el aprovisionamiento.
+1. VPS **Ubuntu 24.04** (2 vCPU / 4 GB) en tu proveedor.
+2. ServerAvatar → **Create Server** → conectá el VPS.
+3. **Tech Stack: Nginx.** Database: dejá **MariaDB** (no lo vamos a usar).
+   Activá **"Install Node.js"** (nos da Node + Nginx + Redis; PHP/MariaDB quedan
+   de adorno).
 
 ## 2. DNS
 
 Apuntá `app.tu-dominio.com` (registro **A**) a la IP del VPS y esperá a que
-propague (necesario antes de emitir el SSL).
+propague (necesario antes del SSL).
 
-## 3. Crear la aplicación (para dominio + SSL)
+## 3. Crear la aplicación (dominio + SSL)
 
-1. ServerAvatar → tu servidor → **Applications → Create Application**.
-2. Tipo: **Static HTML** (o "Custom"/"Reverse Proxy" si tu plan lo ofrece).
-3. Dominio primario: `app.tu-dominio.com`.
-4. **Document Root**: dejalo por defecto por ahora; lo cambiamos a
-   `/opt/imagina-base/current/web` en el paso 6 (o directamente ahí si te deja).
-5. Cuando la app exista, entrá a **SSL** → emití **Let's Encrypt** para el dominio.
+1. ServerAvatar → tu server → **Applications → Create Application**.
+2. Tipo: **Static HTML**. Dominio: `app.tu-dominio.com`.
+3. Emití el **SSL** (Let's Encrypt) para el dominio.
+4. El **Document Root** lo apuntamos a `/opt/imagina-base/current/web` en el paso 6.
 
-## 4. SSH: dependencias, datos y build
+## 4. SSH: Postgres, Redis y el release
 
-Conectate por SSH (o usá la Web Terminal de ServerAvatar). Los comandos asumen
-un usuario con sudo; ajustá `deploy` por tu usuario del sistema.
+Entrá por SSH o la Web Terminal. Node ya lo instaló el toggle; verificá:
+`node -v` (debe ser ≥ 22). Instalá Docker para Postgres:
 
 ```bash
-# Node 22 + pnpm + Docker
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
-sudo apt-get install -y nodejs
-sudo corepack enable && corepack prepare pnpm@10.33.0 --activate
 curl -fsSL https://get.docker.com | sh
-
-# Código
-sudo mkdir -p /opt/imagina-base && sudo chown -R "$USER" /opt/imagina-base
-git clone https://github.com/augusto97/imagina-crm-cloud /tmp/imagina-src
-cd /tmp/imagina-src && git checkout v0.1.0    # el tag de la primera versión
+sudo mkdir -p /opt/imagina-base/shared/backups && sudo chown -R "$USER" /opt/imagina-base
 ```
 
-**Postgres + Redis (Docker):**
+**Traer el release v0.1.0** (el mismo bundle que usa la auto-actualización — ya
+trae `node_modules` de prod con `argon2` compilado, así NO hace falta compilar en
+el server):
+
 ```bash
-cp deploy/.env.production.example /opt/imagina-base/shared/.env.production 2>/dev/null || \
-  { mkdir -p /opt/imagina-base/shared/backups; cp deploy/.env.production.example /opt/imagina-base/shared/.env.production; }
-nano /opt/imagina-base/shared/.env.production   # ver "Config" abajo
-docker compose -f deploy/docker-compose.prod.yml --env-file /opt/imagina-base/shared/.env.production up -d
+BASE=/opt/imagina-base; VER=0.1.0
+cd "$BASE/releases" 2>/dev/null || { mkdir -p "$BASE/releases"; cd "$BASE/releases"; }
+BURL="https://github.com/augusto97/imagina-crm-cloud/releases/download/v${VER}"
+curl -fL -o bundle.zip        "${BURL}/imagina-base-${VER}.zip"
+curl -fL -o bundle.zip.sha256 "${BURL}/imagina-base-${VER}.zip.sha256"
+echo "$(cat bundle.zip.sha256)  bundle.zip" | sha256sum -c -   # verificar integridad
+TS=$(date -u +%Y%m%d%H%M%S); REL="$BASE/releases/${TS}_${VER}"
+mkdir -p "$REL" && unzip -q bundle.zip -d "$REL" && rm bundle.zip bundle.zip.sha256
 ```
 
-**Config mínima en `/opt/imagina-base/shared/.env.production`:**
+**Config** (el bundle trae el ejemplo y el compose en `deploy/`):
+
+```bash
+cp "$REL/deploy/.env.production.example" "$BASE/shared/.env.production"
+nano "$BASE/shared/.env.production"     # ver "Config mínima" abajo
 ```
-POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB / REDIS_PASSWORD   # passwords fuertes
-DATABASE_URL=postgres://<user>:<pass>@127.0.0.1:5432/<db>          # repetí las de arriba
-REDIS_URL=redis://:<pass>@127.0.0.1:6379
+
+Config mínima en `/opt/imagina-base/shared/.env.production`:
+```
+POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB      # passwords fuertes
+DATABASE_URL=postgres://<user>:<pass>@127.0.0.1:5432/<db>
+# Redis del stack de ServerAvatar (ya corre en 127.0.0.1:6379). Si el panel le
+# puso password, usá redis://:<pass>@127.0.0.1:6379 ; si no, sin credenciales:
+REDIS_URL=redis://127.0.0.1:6379
 COOKIE_SECURE=true
 APP_BASE_URL=https://app.tu-dominio.com
-PLATFORM_SUPERADMINS=vos@tu-dominio.com          # quién puede auto-actualizar
+PLATFORM_SUPERADMINS=vos@tu-dominio.com
 UPDATER_BASE_PATH=/opt/imagina-base
-# (SMTP, PayPal/Mercado Pago: opcionales, cuando los tengas)
 ```
 
-**Build + primer release (layout de releases atómicos):**
+**Postgres por Docker** (sólo Postgres; el Redis lo pone el stack, así que NO
+levantamos el de Docker para no chocar en el 6379):
+
 ```bash
-BASE=/opt/imagina-base; TS=$(date -u +%Y%m%d%H%M%S); REL="$BASE/releases/${TS}_0.1.0"
-pnpm install --frozen-lockfile
-pnpm --filter @imagina-base/shared build
-pnpm --filter @imagina-base/api build
-pnpm --filter @imagina-base/web build:cloud
-mkdir -p "$REL/apps" "$REL/deploy"
-pnpm --filter @imagina-base/api --legacy deploy --prod "$REL/apps/api"
-cp -r apps/api/dist "$REL/apps/api/dist"
-cp -r apps/web/dist-cloud "$REL/web"
-cp deploy/deploy.sh deploy/finalize.sh scripts/backup.sh scripts/restore.sh "$REL/deploy/"
-chmod +x "$REL"/deploy/*.sh
-echo "0.1.0" > "$REL/VERSION"
+docker compose -f "$REL/deploy/docker-compose.prod.yml" \
+  --env-file "$BASE/shared/.env.production" up -d postgres
+```
+
+**Migraciones + FLIP inicial:**
+```bash
 set -a; . "$BASE/shared/.env.production"; set +a
-( cd "$REL/apps/api" && node dist/db/migrate.js )   # schema + RLS + rol imagina_app
+( cd "$REL/apps/api" && node dist/db/migrate.js )    # schema + RLS + rol imagina_app
 ln -sfn "$REL" "$BASE/current"
 ```
 
 ## 5. API como servicio (systemd)
 
 ```bash
-sudo cp /tmp/imagina-src/deploy/imagina-api.service /etc/systemd/system/imagina-api.service
-sudo nano /etc/systemd/system/imagina-api.service    # ajustá User= a tu usuario
+sudo cp "$BASE/current/deploy/imagina-api.service" /etc/systemd/system/imagina-api.service
+sudo nano /etc/systemd/system/imagina-api.service     # ajustá User= a tu usuario
 sudo systemctl daemon-reload && sudo systemctl enable --now imagina-api
-curl -s http://127.0.0.1:3001/api/v1/health/ready     # {"status":"ready",...}
+curl -s http://127.0.0.1:3001/api/v1/health/ready      # {"status":"ready",...}
 
-# Para la auto-actualización: permitir reiniciar el API sin password.
+# Auto-actualización: permitir reiniciar el API sin password.
 echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo tee /etc/sudoers.d/imagina
 ```
 
-## 6. Nginx en ServerAvatar (servir SPA + proxy al API)
+## 6. Nginx (servir SPA + proxy al API) en ServerAvatar
 
-1. Cambiá el **Document Root** de la app a `/opt/imagina-base/current/web`
-   (Applications → tu app → Settings/General).
-2. Abrí la config Nginx de la app (**Nginx Config** / "Vhost" / "Custom Config").
-   Pegá los bloques `location` de `deploy/nginx.conf` (API, socket.io, /assets,
-   /portal, /). ServerAvatar ya pone el `server {}`, `listen 443 ssl` y el
-   `server_name` — vos sólo agregás los `location`.
-3. Guardá → ServerAvatar recarga Nginx.
+1. Applications → tu app → poné **Document Root** = `/opt/imagina-base/current/web`.
+2. Abrí la **config Nginx** de la app y pegá los bloques `location` de
+   `deploy/nginx.conf` (API, socket.io, /assets, /portal, /). ServerAvatar ya
+   pone el `server{}`, `listen 443 ssl` y `server_name`; vos sólo agregás los
+   `location`. Guardá → recarga Nginx.
 
-> Si el panel no te deja pegar `location` sueltos, reemplazá el vhost completo por
-> `deploy/nginx.conf` (ajustando dominio y rutas de certificados que ya emitió
-> ServerAvatar en `/etc/letsencrypt/live/<dominio>/`).
+Abrí `https://app.tu-dominio.com` → login. Registrá el primer usuario (crea el
+workspace y su admin). Si su email está en `PLATFORM_SUPERADMINS`, ve **Ajustes →
+Sistema · Actualizaciones**.
 
-## 7. Primer uso
+## 7. Auto-actualización
 
-Abrí `https://app.tu-dominio.com` → registrá el primer usuario (crea el workspace
-y su admin). Ese email, si está en `PLATFORM_SUPERADMINS`, ve **Ajustes → Sistema ·
-Actualizaciones**.
+Taggeás `vX.Y.Z` en GitHub → el workflow publica el bundle → en el panel
+(superadmin) *Buscar* + *Actualizar*: descarga+verifica+flip atómico+health+
+rollback. Detalle en `docs/runbook-updates.md`.
 
-## 8. Auto-actualización
+## Alternativas / notas
 
-Taggeá `vX.Y.Z` en GitHub → el workflow publica el bundle → en el panel
-(superadmin) apretás *Buscar* y *Actualizar*: descarga+verifica+flip atómico+
-health-check+rollback. Detalle en `docs/runbook-updates.md`.
-
-## Post-instalación
-
-- **Backups**: cron diario con `scripts/backup.sh` + restore drill mensual
-  (`docs/runbook-backups.md`).
-- **Pagos/Email**: completá credenciales cuando las tengas
-  (`docs/runbook-payments.md`).
-- **Monitoreo**: uptime check a `/api/v1/health/ready`; métricas en `/api/v1/metrics`.
-
-## Notas
-
-- **¿Y si preferís la app Node de ServerAvatar (PM2) en vez de systemd?** Podés,
-  pero entonces el reinicio de la auto-actualización debe usar PM2: seteá en el
-  env `RESTART_CMD="pm2 restart imagina-api"` (finalize.sh lo respeta). Con
-  systemd no toques nada.
-- **¿Postgres administrado en vez de Docker?** Cambiá sólo `DATABASE_URL` y, si el
-  usuario no es superuser, corré `GRANT imagina_app TO <user>;` tras migrar.
+- **Instalar compilando en el server (en vez del bundle):** necesitás
+  `sudo apt-get install -y build-essential python3` (para compilar `argon2`) y
+  seguir el bootstrap "desde el repo" de `docs/runbook-deploy.md` §4. El bundle
+  del Release evita todo esto.
+- **App Node de ServerAvatar (PM2) en vez de systemd:** poné en el env
+  `RESTART_CMD="pm2 restart imagina-api"` (lo respeta `finalize.sh`).
+- **Postgres administrado** en vez de Docker: cambiá `DATABASE_URL` y, si el
+  usuario no es superuser, `GRANT imagina_app TO <user>;` tras migrar.
+- **Redis con password en el panel:** copiá la credencial que muestre ServerAvatar
+  en su sección de Redis y armá el `REDIS_URL` con ella.

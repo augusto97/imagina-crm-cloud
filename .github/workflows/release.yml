@@ -61,9 +61,11 @@ jobs:
           # SPA (cloud + portal + assets)
           cp -r apps/web/dist-cloud "$OUT/web"
 
-          # scripts que el release necesita en tiempo de instalación/rollback
+          # scripts + config que el release necesita para instalar/rollback/servir
           cp deploy/deploy.sh deploy/finalize.sh "$OUT/deploy/"
           cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"
+          cp deploy/docker-compose.prod.yml deploy/.env.production.example \
+             deploy/nginx.conf deploy/imagina-api.service "$OUT/deploy/"
           chmod +x "$OUT"/deploy/*.sh
 
           # versión exacta que reportará el server
