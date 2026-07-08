@@ -58,6 +58,8 @@ export class BootstrapService {
                     color: l.color,
                     settings: l.settings,
                     position: l.position,
+                    created_at: l.createdAt.toISOString(),
+                    updated_at: l.updatedAt.toISOString(),
                 })),
                 fields: fieldRows.map((f) => ({
                     id: f.id,

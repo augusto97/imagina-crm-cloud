@@ -106,6 +106,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         records con alta de campos/registros, FilterBar AND) contra el nuevo
         API, verificado end-to-end en navegador (Playwright). BrowserRouter,
         auth por cookie de sesión.
+  - [x] **UI real del fork conectada (Etapa 1)**: el bundle desplegado ahora
+        monta `app/admin` (la UI pulida heredada del plugin: AdminShell,
+        índice de listas, tabla de records con columnas/badges) en vez del
+        shell mínimo. Gate de sesión (`AdminCloudApp`) + adaptador en
+        `lib/api.ts` que reapunta la capa de datos del fork al backend NestJS
+        (envelope, `data`↔`fields` por slug↔f{id}, timestamps naive-UTC,
+        `X-Tenant-Id`, cursor→página). List DTO ahora expone created_at/
+        updated_at. Verificado E2E (login→listas→records CRUD) en navegador.
+        Pendiente (etapas siguientes): dashboards, footer de agregados,
+        editor de plantillas/portal, automatizaciones, menciones.
 - [ ] **F2 — Vistas + realtime** (en curso):
   - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
         rooms por tenant) + Redis adapter multi-nodo; los services emiten al

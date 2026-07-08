@@ -144,6 +144,8 @@ function toList(row: ListRow): List {
         color: row.color,
         settings: row.settings,
         position: row.position,
+        created_at: row.createdAt.toISOString(),
+        updated_at: row.updatedAt.toISOString(),
     };
 }
 
