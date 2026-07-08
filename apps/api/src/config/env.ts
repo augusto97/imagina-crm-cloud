@@ -22,6 +22,24 @@ const envSchema = z.object({
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),
+
+    // --- Email (ADR-S11). `log` (default) escribe el mail al logger; `smtp`
+    // usa nodemailer contra un servidor SMTP real. Elegir `smtp` sin SMTP_HOST
+    // cae a `log` con un warning (no rompe el arranque).
+    MAIL_TRANSPORT: z.enum(['log', 'smtp']).default('log'),
+    MAIL_FROM: z.string().default('Imagina Base <no-reply@imagina.base>'),
+    // Origen público del SPA — para construir URLs absolutas en emails (magic
+    // link del portal, etc.). Sin barra final.
+    APP_BASE_URL: z
+        .string()
+        .url()
+        .default('http://localhost:5174')
+        .transform((v) => v.replace(/\/$/, '')),
+    SMTP_HOST: z.string().default(''),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_SECURE: boolFromString,
+    SMTP_USER: z.string().default(''),
+    SMTP_PASS: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

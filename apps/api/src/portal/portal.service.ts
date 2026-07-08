@@ -5,9 +5,11 @@ import * as argon2 from 'argon2';
 import { and, eq, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { SessionService } from '../auth/session.service';
+import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { fields, lists, memberships, portalLinks, records, users } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
+import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
@@ -29,9 +31,11 @@ export class PortalService {
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(REDIS) private readonly redis: Redis,
+        @Inject(ENV) private readonly env: Env,
         private readonly tenantDb: TenantDb,
         private readonly lists: ListsService,
         private readonly sessions: SessionService,
+        private readonly mail: MailService,
     ) {}
 
     async issue(
@@ -94,7 +98,22 @@ export class PortalService {
         const token = randomBytes(24).toString('base64url');
         const payload: MagicPayload = { userId, tenantId };
         await this.redis.set(magicKey(token), JSON.stringify(payload), 'EX', MAGIC_TTL_SECONDS);
-        return { token, path: `/portal/acceso?token=${token}` };
+        const path = `/portal/acceso?token=${token}`;
+
+        // Email transaccional: le mandamos el acceso al cliente. Best-effort —
+        // si el correo falla, igual devolvemos el link para que el admin lo
+        // comparta manualmente (la cola BullMQ ya reintenta por su cuenta).
+        const url = `${this.env.APP_BASE_URL}${path}`;
+        await this.mail
+            .enqueue({
+                to: input.email,
+                subject: `Tu acceso al portal de ${list.name}`,
+                text: `Hola,\n\nAccedé a tu portal con este enlace (válido por 24 h):\n${url}\n\nSi no esperabas este correo, ignoralo.`,
+                html: `<p>Hola,</p><p>Accedé a tu portal con este enlace (válido por 24 h):</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
+            })
+            .catch(() => undefined);
+
+        return { token, path };
     }
 
     /** Consume el token (un solo uso) y abre una sesión. Devuelve el token de sesión. */

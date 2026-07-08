@@ -10,6 +10,7 @@ import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { automationRuns, records } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
+import { MailService } from '../mail/mail.service';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -40,6 +41,7 @@ export class AutomationEngine {
         private readonly automations: AutomationsRepository,
         private readonly fields: FieldsRepository,
         private readonly recordsRepo: RecordsRepository,
+        private readonly mail: MailService,
     ) {}
 
     /** Trigger de record (record_created / record_updated). */
@@ -236,7 +238,9 @@ export class AutomationEngine {
                 if (ctx.recordId === null) return 'send_email omitido (sin record)';
                 const to = resolveMergeTags(action.to, ctx.data, slugToKey);
                 const subject = resolveMergeTags(action.subject, ctx.data, slugToKey);
-                return `send_email (simulado) a ${to}: "${subject}"`;
+                const text = resolveMergeTags(action.body, ctx.data, slugToKey);
+                await this.mail.enqueue({ to, subject, text });
+                return `send_email encolado a ${to}: "${subject}"`;
             }
         }
     }

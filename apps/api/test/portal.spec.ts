@@ -16,11 +16,22 @@ import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
+import { MailService } from '../src/mail/mail.service';
+import type { MailMessage, MailTransport } from '../src/mail/mail.types';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 
 const rt = new RealtimeService();
 const admin: Actor = { userId: 1, role: 'admin' };
+
+class CapturingMailTransport implements MailTransport {
+    readonly name = 'capture';
+    readonly sent: MailMessage[] = [];
+    send(message: MailMessage): Promise<void> {
+        this.sent.push(message);
+        return Promise.resolve();
+    }
+}
 
 describe('PortalService (Postgres + Redis reales)', () => {
     let pg: TestPg;
@@ -32,6 +43,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
     let recordsService: RecordsService;
     let sessions: SessionService;
     let portal: PortalService;
+    let mailbox: CapturingMailTransport;
     let tenantId: number;
     let recordId: number;
     let fieldId: number;
@@ -54,7 +66,10 @@ describe('PortalService (Postgres + Redis reales)', () => {
             new AutomationDispatcher(),
         );
         sessions = new SessionService(redis, env);
-        portal = new PortalService(pg.db, redis, tenantDb, listsService, sessions);
+        mailbox = new CapturingMailTransport();
+        // MailService sin onModuleInit → enqueue cae a sendNow → transporte captura.
+        const mail = new MailService(env, mailbox);
+        portal = new PortalService(pg.db, redis, env, tenantDb, listsService, sessions, mail);
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
@@ -91,6 +106,10 @@ describe('PortalService (Postgres + Redis reales)', () => {
         });
         expect(link.token).toBeTruthy();
         expect(link.path).toContain(link.token);
+
+        // Email transaccional: el cliente recibe el enlace absoluto.
+        expect(mailbox.sent.at(-1)).toMatchObject({ to: 'cliente@acme.test' });
+        expect(mailbox.sent.at(-1)?.text).toContain(link.token);
 
         const { sessionToken } = await portal.consume(link.token);
         const session = await sessions.get(sessionToken);

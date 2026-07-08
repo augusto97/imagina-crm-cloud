@@ -446,7 +446,18 @@ una de las plantillas que un cliente puede armar. Consecuencias concretas:
   "registros" y "vistas" — nunca de "leads/oportunidades" salvo dentro de una
   plantilla CRM concreta.
 
+**ADR-S11 — Correo por transporte intercambiable, encolado en BullMQ.**
+El envío de emails (transaccionales y de automatizaciones) pasa por un
+`MailService` que encola en BullMQ (STANDALONE §5) y un worker envía con un
+`MailTransport` inyectado. Dos transportes seleccionables por env
+(`MAIL_TRANSPORT`): `log` (default — escribe el correo al logger; dev/tests/
+degradación) y `smtp` (nodemailer contra un SMTP real). El dominio nunca
+conoce el proveedor: enchufar SES/Postmark/Resend es un transporte nuevo, sin
+tocar services. Si `smtp` está pedido pero falta `SMTP_HOST`, o si no hay
+Redis, degrada sin romper (log / envío directo). URLs absolutas en emails vía
+`APP_BASE_URL`. Primer uso: magic link del portal + acción `send_email`.
+
 ---
 
 **Última actualización:** 2026-07-08
-**Versión del documento:** 1.1.0 (renombre a Imagina Base — ADR-S10)
+**Versión del documento:** 1.2.0 (subsistema de correo — ADR-S11)

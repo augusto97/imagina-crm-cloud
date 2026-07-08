@@ -14,6 +14,7 @@ import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
 import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
+import { MailModule } from './mail/mail.module';
 import { MembersModule } from './members/members.module';
 import { PortalModule } from './portal/portal.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -31,6 +32,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RedisModule,
         TenancyModule,
         AuthzModule,
+        MailModule,
         RealtimeModule,
         AuthModule,
         WorkspacesModule,

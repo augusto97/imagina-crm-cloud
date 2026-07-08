@@ -17,7 +17,20 @@ import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { MailService } from '../src/mail/mail.service';
+import type { MailMessage, MailTransport } from '../src/mail/mail.types';
+import { loadEnv } from '../src/config/env';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
+
+/** Transporte de correo que captura los mensajes en memoria (para asserts). */
+class CapturingMailTransport implements MailTransport {
+    readonly name = 'capture';
+    readonly sent: MailMessage[] = [];
+    send(message: MailMessage): Promise<void> {
+        this.sent.push(message);
+        return Promise.resolve();
+    }
+}
 import { startPostgres, type TestPg } from './helpers/containers';
 
 const rt = new RealtimeService();
@@ -31,6 +44,7 @@ describe('AutomationEngine (Postgres real)', () => {
     let recordsService: RecordsService;
     let automationsService: AutomationsService;
     let engine: AutomationEngine;
+    let mailbox: CapturingMailTransport;
     let tenantId: number;
     let listId: number;
     let f: Record<string, Field>;
@@ -51,11 +65,16 @@ describe('AutomationEngine (Postgres real)', () => {
             new AutomationDispatcher(),
         );
         automationsService = new AutomationsService(tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
+        mailbox = new CapturingMailTransport();
+        // MailService sin onModuleInit → sin cola Redis → enqueue cae a sendNow,
+        // que llama al transporte capturador (asertamos el correo directamente).
+        const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
             tenantDb,
             new AutomationsRepository(),
             new FieldsRepository(),
             new RecordsRepository(),
+            mail,
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
@@ -122,6 +141,40 @@ describe('AutomationEngine (Postgres real)', () => {
         const runs = await automationsService.runs(tenantId, 'deals', await firstAutomationId(), {});
         expect(runs.data[0]).toMatchObject({ status: 'success', record_id: rec.id });
         expect(runs.data[0]!.logs.join(' ')).toContain('update_field');
+    });
+
+    it('send_email: encola (envía) el correo con merge tags resueltos', async () => {
+        mailbox.sent.length = 0;
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Avisar VIP',
+            trigger: { type: 'record_created' },
+            actions: [
+                {
+                    type: 'send_email',
+                    to: 'ventas@acme.test',
+                    subject: 'Deal {{estado}}',
+                    body: 'Monto: {{monto}}',
+                },
+            ],
+        });
+
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 5000, [key('estado')]: 'vip' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_created',
+            after: { [key('monto')]: 5000, [key('estado')]: 'vip' },
+        });
+
+        expect(mailbox.sent).toHaveLength(1);
+        expect(mailbox.sent[0]).toMatchObject({
+            to: 'ventas@acme.test',
+            subject: 'Deal vip',
+            text: 'Monto: 5000',
+        });
     });
 
     it('condición no cumplida → run skipped, sin cambios', async () => {
