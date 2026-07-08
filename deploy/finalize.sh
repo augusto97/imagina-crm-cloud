@@ -21,8 +21,11 @@ SERVICE="${SERVICE:-imagina-api}"
 RETRIES="${HEALTH_RETRIES:-30}"
 CURRENT="${BASE_PATH}/current"
 SHARED="${BASE_PATH}/shared"
+# Cómo reiniciar el API. Default systemd; overrideable por si corre bajo PM2 u
+# otro supervisor (p.ej. RESTART_CMD="pm2 restart imagina-api").
+RESTART_CMD="${RESTART_CMD:-sudo systemctl restart ${SERVICE}}"
 
-restart() { sudo systemctl restart "${SERVICE}"; }
+restart() { eval "${RESTART_CMD}"; }
 
 wait_healthy() {
     for _ in $(seq 1 "${RETRIES}"); do
