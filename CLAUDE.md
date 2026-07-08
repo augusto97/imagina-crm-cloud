@@ -101,8 +101,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] `views` — saved views table/kanban/calendar/cards, default único.
   - [x] `bootstrap` — workspace+user+lists+fields+views+caps en 1 request.
   - [x] `slugs/check` — formato/reservado/unicidad.
-  - [ ] Front conectado (adaptar apps/web: api.ts, BrowserRouter, shell,
-        tabla+filtros+drawer contra el nuevo API).
+  - [x] Front conectado (MVP): CloudClient tipado + shell propio cloud
+        (login/register, workspace switcher, sidebar de listas, tabla de
+        records con alta de campos/registros) contra el nuevo API,
+        verificado end-to-end en navegador (Playwright). BrowserRouter,
+        auth por cookie de sesión. Falta portar Kanban/Cards/Calendar y el
+        editor de plantillas del fork (F2+).
 - [ ] **F2 — Vistas + realtime**: Kanban/Cards/Calendar, dashboards,
       comments/activity, invalidación push.
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
