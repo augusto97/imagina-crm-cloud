@@ -151,8 +151,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Front comercial: página de Ajustes (plan, estado, barras de uso vs.
         límites) + export/import (JSON download, import CSV con auto-mapeo)
         en el toolbar de la lista.
-  - [ ] Stripe real (checkout + webhooks firmados), onboarding guiado, panel
-        admin, emails transaccionales.
+  - [x] Onboarding guiado: wizard de primer uso con plantillas de arranque
+        (crea lista+campos en cadena) en el estado vacío del workspace.
+  - [x] Panel admin de miembros (full-stack): alta por email / cambio de rol /
+        baja bajo /workspaces/current/members (rol admin), guard rails
+        (último admin, auto-baja, duplicado, usuario inexistente), tests RLS.
+  - [ ] Stripe real (checkout + webhooks firmados), emails transaccionales.
 - [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
 
 ## 6. Cómo trabajar con Claude Code en este repo
