@@ -82,8 +82,11 @@ jobs:
           OUT=bundle
           rm -rf "$OUT" dist-release && mkdir -p "$OUT/apps" "$OUT/deploy" dist-release
 
-          # node_modules de producción autocontenido (resuelve @imagina-base/shared)
-          pnpm --filter @imagina-base/api --legacy deploy --prod "$OUT/apps/api"
+          # node_modules de producción COMPLETO y autocontenido. Usamos el deploy
+          # no-legacy con inject-workspace-packages (resuelve @imagina-base/shared
+          # y TODAS las deps transitivas, ej. fastify-plugin). El --legacy dejaba
+          # el árbol incompleto.
+          pnpm --filter @imagina-base/api deploy --prod --config.inject-workspace-packages=true "$OUT/apps/api"
           # el build (dist) está gitignored → pnpm deploy no lo copia; lo agregamos
           cp -r apps/api/dist "$OUT/apps/api/dist"
 
@@ -100,8 +103,10 @@ jobs:
           # versión exacta que reportará el server
           echo "$VERSION" > "$OUT/VERSION"
 
+          # zip -y: preserva los symlinks del store .pnpm (son relativos), si no
+          # el node_modules se rompe al extraer.
           ZIP="dist-release/imagina-base-${VERSION}.zip"
-          ( cd "$OUT" && zip -qr "../$ZIP" . )
+          ( cd "$OUT" && zip -qry "../$ZIP" . )
           sha256sum "$ZIP" | awk '{print $1}' > "${ZIP}.sha256"
           ls -lh dist-release
 
