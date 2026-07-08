@@ -17,5 +17,10 @@ export default defineConfig({
         testTimeout: 120_000,
         hookTimeout: 240_000,
         pool: 'forks',
+        // Cada archivo de test levanta su propio Postgres/Redis. Corremos los
+        // archivos en SERIE para no saturar el daemon (varios contenedores a
+        // la vez timeoutean bajo carga, p.ej. cuando turbo corre build+test
+        // en paralelo). Determinístico > rápido para tests de integración.
+        fileParallelism: false,
     },
 });
