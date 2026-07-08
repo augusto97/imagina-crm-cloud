@@ -5,6 +5,7 @@ import { api, useSession } from '@/cloud/session';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Shell } from '@/cloud/pages/Shell';
 import { ListView } from '@/cloud/pages/ListView';
+import { SettingsPage } from '@/cloud/pages/SettingsPage';
 
 /**
  * Gate de autenticación del shell cloud. Al montar consulta `GET /auth/me`
@@ -51,6 +52,7 @@ export function CloudApp(): JSX.Element {
                 <Route index element={<Navigate to="/lists" replace />} />
                 <Route path="lists" element={<EmptyState />} />
                 <Route path="lists/:listSlug" element={<ListView />} />
+                <Route path="settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/lists" replace />} />
             </Route>
         </Routes>

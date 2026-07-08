@@ -75,9 +75,17 @@ export function Shell(): JSX.Element {
                         </select>
                     )}
                 </div>
-                <Button variant="ghost" size="sm" onClick={logout}>
-                    Salir
-                </Button>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                    <NavLink
+                        to="/settings"
+                        className="imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                    >
+                        Ajustes
+                    </NavLink>
+                    <Button variant="ghost" size="sm" onClick={logout}>
+                        Salir
+                    </Button>
+                </div>
             </header>
 
             <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1">

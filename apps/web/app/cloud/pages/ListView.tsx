@@ -6,10 +6,14 @@ import {
     isDataField,
     type CreateFieldInput,
     type FieldType,
+    type FilterCondition,
+    type FilterGroup,
     type RecordDto,
 } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { AutomationsPanel } from '@/cloud/components/AutomationsPanel';
+import { FilterBar } from '@/cloud/components/FilterBar';
+import { ImportExport } from '@/cloud/components/ImportExport';
 import { DashboardView } from '@/cloud/components/DashboardView';
 import { KanbanView } from '@/cloud/components/KanbanView';
 import { RecordDrawer } from '@/cloud/components/RecordDrawer';
@@ -31,6 +35,9 @@ export function ListView(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
     const [mode, setMode] = useState<Mode>('table');
     const [open, setOpen] = useState<RecordDto | null>(null);
+    const [filters, setFilters] = useState<FilterCondition[]>([]);
+    const filterTree: FilterGroup | undefined =
+        filters.length > 0 ? { type: 'group', logic: 'and', children: filters } : undefined;
 
     const listQ = useQuery({
         queryKey: ['list', tenantId, listSlug],
@@ -45,8 +52,10 @@ export function ListView(): JSX.Element {
         enabled: listId !== undefined,
     });
     const recordsQ = useQuery({
-        queryKey: ['records', tenantId, listId],
-        queryFn: () => api.listRecords(listId!, { limit: 200 }),
+        // El filtro entra en la key → refetch al cambiar (realtime invalida
+        // sólo ['records', tenant, listId], que hace prefix-match de todas).
+        queryKey: ['records', tenantId, listId, filterTree],
+        queryFn: () => api.listRecords(listId!, { limit: 200, filter_tree: filterTree }),
         enabled: listId !== undefined,
     });
 
@@ -81,14 +90,24 @@ export function ListView(): JSX.Element {
                         ))}
                     </div>
                 </div>
-                <span className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="record-count">
-                    {records.length} registro{records.length === 1 ? '' : 's'}
-                </span>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    {mode === 'table' && dataFields.length > 0 && (
+                        <ImportExport listSlug={list.slug} listName={list.name} fields={dataFields} />
+                    )}
+                    <span className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="record-count">
+                        {records.length} registro{records.length === 1 ? '' : 's'}
+                    </span>
+                </div>
             </div>
 
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
                 {(mode === 'table' || mode === 'kanban') && (
-                    <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
+                    <div className="imcrm-space-y-3">
+                        <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
+                        {dataFields.length > 0 && (
+                            <FilterBar fields={dataFields} conditions={filters} onChange={setFilters} />
+                        )}
+                    </div>
                 )}
 
                 {mode === 'automations' ? (
