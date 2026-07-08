@@ -34,6 +34,7 @@ Evolución del plugin WordPress `imagina-crm`.
 pnpm install
 pnpm infra:up          # Postgres 16 + Redis 7 vía Docker Compose
 pnpm db:migrate        # aplica migraciones (incluye RLS + rol imagina_app)
+pnpm --filter @imagina-base/api db:seed   # workspace demo (login: demo@imagina.base / demo1234)
 pnpm --filter @imagina-base/api dev    # backend en :3001
 
 # Shell cloud (SPA propio, sin WordPress) — proxya /api al backend:

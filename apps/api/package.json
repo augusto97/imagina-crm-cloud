@@ -12,7 +12,8 @@
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
         "db:generate": "drizzle-kit generate",
-        "db:migrate": "tsx src/db/migrate.ts"
+        "db:migrate": "tsx src/db/migrate.ts",
+        "db:seed": "pnpm build && node dist/db/seed.js"
     },
     "dependencies": {
         "@fastify/cookie": "^11.0.2",
