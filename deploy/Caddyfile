@@ -1,0 +1,46 @@
+# Caddyfile de producción — Imagina Base
+#
+# Un solo origen (mismo dominio) sirve los dos SPA y proxya el API + realtime al
+# backend NestJS. Al ser mismo origen no hay CORS y la cookie de sesión httpOnly
+# viaja sin problemas. Caddy resuelve HTTPS automáticamente (Let's Encrypt).
+#
+# Reemplazá `app.tu-dominio.com` por tu dominio real y apuntá su DNS (A/AAAA) a
+# la IP del VPS ANTES de arrancar Caddy (necesita validar el certificado).
+
+app.tu-dominio.com {
+    encode zstd gzip
+
+    # --- Backend: API REST + webhooks + WebSocket del realtime ---
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+    handle /socket.io/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+
+    # Raíz = el SPA del release activo (layout de releases atómicos, ADR-S13):
+    # `current` es un symlink al release vivo; un update lo cambia y Caddy sirve
+    # el SPA nuevo al instante (sigue el symlink en cada request). Ambos builds
+    # referencian sus bundles bajo /assets/*, que se sirven tal cual.
+    root * /opt/imagina-base/current/web
+
+    # Portal del cliente (build separado): fallback SPA a su index.
+    handle /portal* {
+        try_files {path} /cloud-portal/index.html
+        file_server
+    }
+
+    # Resto (/, /lists, /settings, …): fallback SPA al shell cloud.
+    handle {
+        try_files {path} /cloud/index.html
+        file_server
+    }
+
+    # Cabeceras de seguridad básicas.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

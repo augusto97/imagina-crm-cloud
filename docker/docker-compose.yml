@@ -1,0 +1,42 @@
+# Infraestructura de desarrollo local (STANDALONE.md §12).
+# Uso: pnpm infra:up / pnpm infra:down (desde la raíz del monorepo).
+name: imagina-base
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    # pg_stat_statements activo desde el día 1 (STANDALONE.md §3.5)
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    environment:
+      POSTGRES_USER: imagina
+      POSTGRES_PASSWORD: imagina
+      POSTGRES_DB: imagina_base
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imagina -d imagina_base"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,9 +1,11 @@
-# Imagina CRM Cloud — Aplicación SaaS Standalone
+# Imagina Base — Aplicación SaaS Standalone
 
-> Versión independiente de Imagina CRM como **aplicación SaaS multi-tenant**,
-> desacoplada de WordPress. Una sola instalación operada por Imagina WP en
-> infraestructura propia; cada cliente es un *workspace* (tenant) con
-> suscripción.
+> **Imagina Base**: constructor de bases de datos flexibles como **aplicación
+> SaaS multi-tenant**, desacoplado de WordPress. Nace del plugin Imagina CRM
+> pero se reposiciona como herramienta de propósito general (Airtable /
+> ClickUp / Notion-databases), no como CRM (ADR-S10). Una sola instalación
+> operada por Imagina WP en infraestructura propia; cada cliente es un
+> *workspace* (tenant) con suscripción.
 >
 > Este documento es para la app lo que `CLAUDE.md` es para el plugin: la
 > fuente de verdad de arquitectura y decisiones. El plugin WP sigue vivo como
@@ -17,7 +19,7 @@
 
 | | |
 |---|---|
-| **Producto** | Imagina CRM Cloud (nombre comercial por definir) |
+| **Producto** | Imagina Base (constructor de bases de datos flexibles) |
 | **Modelo** | SaaS multi-tenant, suscripción por workspace |
 | **Backend** | Node 22 + TypeScript + NestJS (adapter Fastify) |
 | **Base de datos** | PostgreSQL 16 — schema compartido + `tenant_id` + RLS |
@@ -66,12 +68,12 @@
 
 ### Monorepo
 ```
-imagina-crm-cloud/
+imagina-base/                    # dir del repo: imagina-crm-cloud (histórico)
 ├── apps/
-│   ├── api/          # NestJS
-│   └── web/          # SPA React (fork del plugin)
+│   ├── api/          # @imagina-base/api    — NestJS
+│   └── web/          # @imagina-base/web    — SPA React (fork del plugin)
 ├── packages/
-│   └── shared/       # Zod schemas + tipos compartidos front↔back
+│   └── shared/       # @imagina-base/shared — Zod schemas + tipos front↔back
 ├── docker/           # compose files, Caddyfile
 └── turbo.json        # pnpm workspaces + Turborepo
 ```
@@ -426,7 +428,67 @@ conviven a largo plazo.
 *Herencia del ADR-007.* Impago → workspace solo-lectura + export disponible.
 Jamás borrado ni bloqueo de lectura.
 
+**ADR-S10 — El producto se llama "Imagina Base" y NO es un CRM.**
+El plugin origen (`imagina-crm`) resuelve un caso de uso (gestión de
+clientes), pero la app cloud es un **constructor de bases de datos flexibles**
+de propósito general: listas dinámicas, campos configurables, vistas
+(tabla/Kanban/calendario/cards), dashboards y automatizaciones. Un CRM es solo
+una de las plantillas que un cliente puede armar. Consecuencias concretas:
+- Marca del producto: **Imagina Base**. Scope npm `@imagina-base/*`, DB
+  `imagina_base`, cookie de sesión `imbase_session`.
+- El repositorio en GitHub conserva el nombre histórico `imagina-crm-cloud`
+  (renombrarlo rompería remotes/CI; no aporta valor). El *dir* y la marca son
+  "Imagina Base".
+- El plugin hermano sigue siendo `imagina-crm` y su namespace REST heredado
+  `imagina-crm/v1` se cita como origen del contrato (no se renombra: es otro
+  producto).
+- El copy de la UI y el material comercial hablan de "bases", "tablas",
+  "registros" y "vistas" — nunca de "leads/oportunidades" salvo dentro de una
+  plantilla CRM concreta.
+
+**ADR-S11 — Correo por transporte intercambiable, encolado en BullMQ.**
+El envío de emails (transaccionales y de automatizaciones) pasa por un
+`MailService` que encola en BullMQ (STANDALONE §5) y un worker envía con un
+`MailTransport` inyectado. Dos transportes seleccionables por env
+(`MAIL_TRANSPORT`): `log` (default — escribe el correo al logger; dev/tests/
+degradación) y `smtp` (nodemailer contra un SMTP real). El dominio nunca
+conoce el proveedor: enchufar SES/Postmark/Resend es un transporte nuevo, sin
+tocar services. Si `smtp` está pedido pero falta `SMTP_HOST`, o si no hay
+Redis, degrada sin romper (log / envío directo). URLs absolutas en emails vía
+`APP_BASE_URL`. Primer uso: magic link del portal + acción `send_email`.
+
+**ADR-S12 — Pagos por proveedor intercambiable (PayPal + Mercado Pago), no Stripe.**
+Stripe no opera en Colombia, así que el cobro va por proveedores locales/
+regionales detrás de una interfaz común `PaymentGateway` (mismo patrón que los
+transportes de correo, ADR-S11): PayPal (Orders API v2, USD) y Mercado Pago
+(Checkout Pro, COP). El dominio (billing) no conoce el proveedor: elige el
+gateway, arma el checkout con una referencia opaca `tenantId:plan`, y aplica el
+evento del webhook a `tenants.plan/status`. Cada gateway se auto-deshabilita si
+faltan credenciales. La autenticidad del webhook la verifica cada gateway sobre
+el **cuerpo crudo** (`rawBody`): Mercado Pago con HMAC de `x-signature`; PayPal
+con su API oficial `verify-webhook-signature`. Los webhooks son públicos, uno
+por proveedor: `POST /api/v1/billing/webhook/{paypal|mercadopago}`. Enchufar
+otro medio (PSE, Nequi vía un agregador) es un adapter nuevo, sin tocar billing.
+El `setBilling` sigue siendo la única puerta a `tenants.plan/status`, así que
+la degradación a solo-lectura por impago (ADR-S09) se mantiene intacta.
+
+**ADR-S13 — Auto-actualización desde GitHub Releases con deploy atómico.**
+El servidor se actualiza sin SSH: CI empaqueta cada tag `vX.Y.Z` como un ZIP
+autocontenido (API + `node_modules` de prod + SPA + migraciones + `VERSION`) con
+su `.sha256` y lo publica como asset del Release. La app lo detecta (job horario
+BullMQ → `app_releases`) y un **superadmin de plataforma** (allowlist por env
+`PLATFORM_SUPERADMINS`, distinto del admin de workspace) lo instala desde el
+panel. Layout de releases atómicos (`releases/ + shared/ + current->`): el nuevo
+release se arma AL LADO del vivo y sólo se cambia el symlink `current` (flip
+atómico; rollback = repuntar el symlink + restore del dump). Como las colas
+BullMQ corren in-process, el job que actualiza vive en el proceso a reiniciar:
+se marca el resultado en Redis (compartido, sobrevive al flip) **antes** de
+delegar el reinicio+health-check+rollback a `finalize.sh` desacoplado; la app
+reconcilia el estado final al bootear. Fail-closed en el checksum; lock + marker
+`done` para re-entrancia; auto-sanación de runs colgados. Detalle en
+`docs/runbook-updates.md`.
+
 ---
 
-**Última actualización:** 2026-05-30
-**Versión del documento:** 1.0.0 (planificación inicial)
+**Última actualización:** 2026-07-08
+**Versión del documento:** 1.4.0 (auto-actualización — ADR-S13)

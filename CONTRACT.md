@@ -1,9 +1,9 @@
 # CONTRACT — Especificación funcional heredada del plugin
 
 > Este documento captura el **comportamiento exacto** del backend del plugin
-> que la app debe replicar (adaptado a Postgres/JSONB donde aplique). Es la
-> capa que ni STANDALONE.md (arquitectura) ni el frontend forkeado (consumidor
-> del API) cubren por sí solos.
+> que **Imagina Base** (la app) debe replicar (adaptado a Postgres/JSONB donde
+> aplique). Es la capa que ni STANDALONE.md (arquitectura) ni el frontend
+> forkeado (consumidor del API) cubren por sí solos.
 >
 > **Fuente de máxima fidelidad**: el repo nuevo incluye
 > `reference/plugin-backend/` (el `src/` PHP del plugin, solo lectura).

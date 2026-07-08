@@ -1,11 +1,13 @@
 {
-    "name": "imagina-crm",
+    "name": "@imagina-base/web",
     "private": true,
     "version": "0.57.42",
     "description": "Imagina CRM — admin SPA bundle.",
     "type": "module",
     "scripts": {
         "dev": "vite",
+        "dev:cloud": "vite --config vite.cloud.config.ts",
+        "build:cloud": "tsc -b && vite build --config vite.cloud.config.ts",
         "build": "tsc -b && vite build",
         "preview": "vite preview",
         "lint": "eslint \"app/**/*.{ts,tsx}\"",
@@ -16,6 +18,7 @@
     },
     "dependencies": {
         "@hookform/resolvers": "^3.9.0",
+        "@imagina-base/shared": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.2",
         "@radix-ui/react-dropdown-menu": "^2.1.2",
         "@radix-ui/react-label": "^2.1.0",
@@ -33,14 +36,15 @@
         "framer-motion": "^11.11.0",
         "lucide-react": "^0.451.0",
         "react": "^18.3.1",
+        "react-day-picker": "^9.14.0",
         "react-dom": "^18.3.1",
         "react-grid-layout": "^2.2.3",
         "react-hook-form": "^7.53.0",
         "react-router-dom": "^6.27.0",
-        "react-day-picker": "^9.14.0",
+        "socket.io-client": "^4.8.3",
         "tailwind-merge": "^2.5.4",
         "tailwindcss-animate": "^1.0.7",
-        "zod": "^3.23.8",
+        "zod": "^3.25.76",
         "zustand": "^5.0.0"
     },
     "devDependencies": {

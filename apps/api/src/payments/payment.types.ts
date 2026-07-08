@@ -1,0 +1,52 @@
+import type { BillingStatus, CheckoutPlan, PaymentProvider } from '@imagina-base/shared';
+
+/** Datos para abrir un checkout en el proveedor. */
+export interface CheckoutRequest {
+    tenantId: number;
+    plan: CheckoutPlan;
+    amount: number;
+    currency: 'USD' | 'COP';
+    /** Referencia opaca que el proveedor devuelve en el webhook (`tenantId:plan`). */
+    reference: string;
+    returnUrl: string;
+    cancelUrl: string;
+}
+
+/** Sesión de checkout creada: la URL a la que se redirige al cliente. */
+export interface CheckoutSession {
+    url: string;
+    externalId: string;
+}
+
+/** Evento normalizado de un webhook de pago → mapea a plan/estado del tenant. */
+export interface PaymentEvent {
+    tenantId: number;
+    plan?: CheckoutPlan;
+    status: BillingStatus;
+}
+
+/**
+ * Pasarela de pago intercambiable (ADR-S12). Cada proveedor (PayPal, Mercado
+ * Pago) implementa esta interfaz; el PaymentsService no conoce la
+ * implementación. `enabled` es false si faltan credenciales (degradación).
+ */
+export interface PaymentGateway {
+    readonly provider: PaymentProvider;
+    readonly enabled: boolean;
+    createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
+    /** Verifica la firma y devuelve el evento normalizado, o null si no aplica. */
+    handleWebhook(headers: Record<string, string | undefined>, rawBody: string): Promise<PaymentEvent | null>;
+}
+
+export const PAYMENT_GATEWAYS = Symbol('PAYMENT_GATEWAYS');
+
+/** Codifica/decodifica la referencia `tenantId:plan` que viaja al proveedor. */
+export function encodeReference(tenantId: number, plan: CheckoutPlan): string {
+    return `${tenantId}:${plan}`;
+}
+export function decodeReference(ref: string): { tenantId: number; plan?: CheckoutPlan } | null {
+    const [rawId, plan] = ref.split(':');
+    const tenantId = Number(rawId);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) return null;
+    return { tenantId, plan: plan === 'starter' || plan === 'pro' ? plan : undefined };
+}

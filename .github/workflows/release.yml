@@ -1,0 +1,84 @@
+name: Release
+
+# Empaqueta un bundle autocontenido (API compilado + node_modules de prod +
+# SPA build + migraciones + scripts) y lo publica como asset de un GitHub
+# Release, con su .sha256. La app lo detecta y lo instala sola (ADR-S13).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión del release, ej. v1.2.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Habilitar pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build (shared → api → web)
+        run: |
+          pnpm --filter @imagina-base/shared build
+          pnpm --filter @imagina-base/api build
+          pnpm --filter @imagina-base/web build:cloud
+
+      - name: Resolver versión
+        id: ver
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Armar bundle autocontenido
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          OUT=bundle
+          rm -rf "$OUT" dist-release && mkdir -p "$OUT/apps" "$OUT/deploy" dist-release
+
+          # node_modules de producción autocontenido (resuelve @imagina-base/shared)
+          pnpm --filter @imagina-base/api --legacy deploy --prod "$OUT/apps/api"
+          # el build (dist) está gitignored → pnpm deploy no lo copia; lo agregamos
+          cp -r apps/api/dist "$OUT/apps/api/dist"
+
+          # SPA (cloud + portal + assets)
+          cp -r apps/web/dist-cloud "$OUT/web"
+
+          # scripts + config que el release necesita para instalar/rollback/servir
+          cp deploy/deploy.sh deploy/finalize.sh "$OUT/deploy/"
+          cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"
+          cp deploy/docker-compose.prod.yml deploy/.env.production.example \
+             deploy/nginx.conf deploy/imagina-api.service "$OUT/deploy/"
+          chmod +x "$OUT"/deploy/*.sh
+
+          # versión exacta que reportará el server
+          echo "$VERSION" > "$OUT/VERSION"
+
+          ZIP="dist-release/imagina-base-${VERSION}.zip"
+          ( cd "$OUT" && zip -qr "../$ZIP" . )
+          sha256sum "$ZIP" | awk '{print $1}' > "${ZIP}.sha256"
+          ls -lh dist-release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.ref }}
+          files: |
+            dist-release/*.zip
+            dist-release/*.zip.sha256

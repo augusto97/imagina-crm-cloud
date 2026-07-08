@@ -1,10 +1,13 @@
 node_modules/
 dist/
+dist-cloud/
 build/
 .env
 .env.*
 !.env.example
+!*.env.production.example
 coverage/
 *.log
 .DS_Store
 .turbo/
+*.tsbuildinfo

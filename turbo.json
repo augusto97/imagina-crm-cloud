@@ -1,0 +1,28 @@
+{
+    "$schema": "https://turbo.build/schema.json",
+    "tasks": {
+        "build": {
+            "dependsOn": ["^build"],
+            "outputs": ["dist/**"]
+        },
+        "typecheck": {
+            "dependsOn": ["^build"]
+        },
+        "lint": {},
+        "test": {
+            "dependsOn": ["^build"],
+            "passThroughEnv": [
+                "DATABASE_URL",
+                "REDIS_URL",
+                "DOCKER_HOST",
+                "TESTCONTAINERS_RYUK_DISABLED",
+                "TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX"
+            ]
+        },
+        "dev": {
+            "dependsOn": ["^build"],
+            "cache": false,
+            "persistent": true
+        }
+    }
+}

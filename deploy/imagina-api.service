@@ -1,0 +1,32 @@
+# systemd unit para el API de Imagina Base.
+# Copiar a /etc/systemd/system/imagina-api.service y ajustar rutas/usuario.
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now imagina-api
+#   sudo journalctl -u imagina-api -f     # logs
+#
+# Para la auto-actualización (ADR-S13) el usuario `deploy` necesita poder
+# reiniciar ESTE servicio sin password. Agregá en /etc/sudoers.d/imagina:
+#   deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api
+[Unit]
+Description=Imagina Base API (NestJS)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=deploy
+# Layout de releases atómicos (ADR-S13): el API corre desde `current` (symlink
+# al release activo). Un update cambia ese symlink y reinicia este servicio.
+WorkingDirectory=/opt/imagina-base/current/apps/api
+# El env vive en shared/ (persiste entre releases).
+EnvironmentFile=/opt/imagina-base/shared/.env.production
+# Node 22 debe estar en el PATH del servicio (ajustá si usás nvm/volta).
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=3
+# Reinicio limpio: el API cierra colas BullMQ y conexiones en SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
