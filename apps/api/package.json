@@ -11,6 +11,7 @@
         "lint": "eslint src test",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "vitest run",
+        "bench": "vitest run --config vitest.bench.config.ts",
         "db:generate": "drizzle-kit generate",
         "db:migrate": "tsx src/db/migrate.ts",
         "db:seed": "pnpm build && node dist/db/seed.js"
