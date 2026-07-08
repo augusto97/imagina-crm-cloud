@@ -16,6 +16,7 @@ import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
 import { MailModule } from './mail/mail.module';
 import { MembersModule } from './members/members.module';
+import { ObservabilityModule } from './observability/observability.module';
 import { PortalModule } from './portal/portal.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
@@ -33,6 +34,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         TenancyModule,
         AuthzModule,
         MailModule,
+        ObservabilityModule,
         RealtimeModule,
         AuthModule,
         WorkspacesModule,
