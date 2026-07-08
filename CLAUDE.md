@@ -177,7 +177,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Auto-actualización desde GitHub Releases (ADR-S13): CI empaqueta bundle
         + .sha256 → detect horario → panel superadmin instala con flip de symlink
         atómico + health-check + rollback. Tests de orquestación (fake deployer).
-  - [ ] Beta con clientes reales; PITR/WAL archiving en el gestor administrado.
+  - [x] Resiliencia de Redis: todo cliente ioredis y worker/cola BullMQ lleva
+        listener `error` (`guardRedis`) → un fallo de conexión (NOAUTH,
+        ECONNREFUSED) se loguea y el proceso SOBREVIVE en vez de caerse por
+        "Unhandled 'error' event"; `/health/ready` sigue reportando 503.
+        `unhandledRejection` global de red de seguridad. Test de regresión.
+  - [ ] PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

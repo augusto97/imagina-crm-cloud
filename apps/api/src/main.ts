@@ -8,6 +8,13 @@ import { ApiExceptionFilter } from './common/http-exception.filter';
 import { loadEnv } from './config/env';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
+// Red de seguridad: una promesa rechazada sin `catch` (p.ej. un comando Redis
+// que falla en un camino no cubierto) NO debe tumbar el servidor. Se loguea y
+// el proceso sigue; el estado real de las dependencias lo reporta /health/ready.
+process.on('unhandledRejection', (reason) => {
+    Logger.error(`Unhandled promise rejection: ${String(reason)}`, 'Process');
+});
+
 async function bootstrap(): Promise<void> {
     const env = loadEnv();
     const app = await NestFactory.create<NestFastifyApplication>(

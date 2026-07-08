@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { guardRedis } from '../redis/redis.util';
 import { CheckUpdatesService } from './check-updates.service';
 import { UpdateManager } from './update-manager.service';
 import { UPDATE_QUEUE } from './update.types';
@@ -28,11 +29,16 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
     async onModuleInit(): Promise<void> {
         try {
             const conn = () => {
-                const c = new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
+                const c = guardRedis(
+                    new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null }),
+                    this.logger,
+                    'update',
+                );
                 this.connections.push(c);
                 return c;
             };
             this.queue = new Queue(UPDATE_QUEUE, { connection: conn() });
+            this.queue.on('error', (err) => this.logger.warn(`Cola de actualización con error: ${err.message}`));
             this.worker = new Worker(
                 UPDATE_QUEUE,
                 async (job) => {
@@ -46,6 +52,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
                 this.logger.error(`Update job ${job?.name} falló: ${err.message}`);
                 if (job?.name !== 'check') void this.manager.markFailed(err.message);
             });
+            this.worker.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
 
             // Chequeo horario de releases (persiste en Redis → sobrevive reinicios).
             await this.queue.upsertJobScheduler('update-check-hourly', { pattern: '0 * * * *' }, { name: 'check' });
