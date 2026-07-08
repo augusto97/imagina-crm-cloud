@@ -88,7 +88,7 @@ describe('PaymentsService', () => {
         const { billing } = fakeBilling();
         const svc = new PaymentsService(env, [new FakeGateway('paypal', true), new FakeGateway('mercadopago', false)], billing);
         expect(svc.config().providers).toEqual(['paypal']);
-        expect(svc.config().prices.pro.usd).toBe(49);
+        expect(svc.config().prices.pro?.usd).toBe(49);
     });
 
     it('createCheckout usa el gateway y arma la referencia', async () => {

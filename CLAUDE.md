@@ -172,6 +172,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         /metrics (contadores + p50/p95/p99) e interceptor que loguea lentas.
   - [x] Backups+restore drill: scripts pg_dump/restore + drill end-to-end
         (verifica restaurabilidad) + runbook (RPO/RTO, cadencia, cifrado).
+  - [x] Despliegue en VPS: Caddy (HTTPS) + systemd + Postgres/Redis en Docker,
+        artefactos en `deploy/` + runbook. Verificado E2E en navegador (Playwright).
+  - [x] Auto-actualización desde GitHub Releases (ADR-S13): CI empaqueta bundle
+        + .sha256 → detect horario → panel superadmin instala con flip de symlink
+        atómico + health-check + rollback. Tests de orquestación (fake deployer).
   - [ ] Beta con clientes reales; PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo

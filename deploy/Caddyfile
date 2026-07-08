@@ -18,9 +18,11 @@ app.tu-dominio.com {
         reverse_proxy 127.0.0.1:3001
     }
 
-    # Raíz = salida del build del SPA (apps/web/dist-cloud). Ambos builds
+    # Raíz = el SPA del release activo (layout de releases atómicos, ADR-S13):
+    # `current` es un symlink al release vivo; un update lo cambia y Caddy sirve
+    # el SPA nuevo al instante (sigue el symlink en cada request). Ambos builds
     # referencian sus bundles bajo /assets/*, que se sirven tal cual.
-    root * /var/www/imagina-base
+    root * /opt/imagina-base/current/web
 
     # Portal del cliente (build separado): fallback SPA a su index.
     handle /portal* {

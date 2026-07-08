@@ -31,6 +31,7 @@ import {
     portalBootSchema,
     recordSchema,
     updateMemberRoleSchema,
+    updateStatusSchema,
     workspaceMemberSchema,
     registerInputSchema,
     slugCheckResultSchema,
@@ -72,6 +73,7 @@ import {
     type PortalBoot,
     type RecordDto,
     type UpdateMemberRoleInput,
+    type UpdateStatus,
     type WorkspaceMember,
     type RegisterInput,
     type SlugCheckQuery,
@@ -351,6 +353,24 @@ export class CloudClient {
     // --- billing ---
     billing(): Promise<BillingSummary> {
         return this.request('GET', '/billing', { schema: billingSummarySchema });
+    }
+
+    // --- auto-actualización (ADR-S13, sólo superadmin) ---
+    updateStatus(): Promise<UpdateStatus> {
+        return this.request('GET', '/system/update/status', { schema: updateStatusSchema });
+    }
+    updateCheck(): Promise<UpdateStatus> {
+        return this.request('POST', '/system/update/check', { schema: updateStatusSchema });
+    }
+    updateRun(): Promise<{ queued: boolean; message: string }> {
+        return this.request('POST', '/system/update/run', {
+            schema: z.object({ queued: z.boolean(), message: z.string() }),
+        });
+    }
+    updateRollback(): Promise<{ ok: boolean; message: string }> {
+        return this.request('POST', '/system/update/rollback', {
+            schema: z.object({ ok: z.boolean(), message: z.string() }),
+        });
     }
 
     // --- payments (ADR-S12) ---

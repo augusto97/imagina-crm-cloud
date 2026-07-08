@@ -49,6 +49,27 @@ const envSchema = z.object({
     PAYPAL_WEBHOOK_ID: z.string().default(''),
     MERCADOPAGO_ACCESS_TOKEN: z.string().default(''),
     MERCADOPAGO_WEBHOOK_SECRET: z.string().default(''),
+
+    // --- Superadmins de plataforma (no de workspace): emails separados por coma.
+    // Único rol que puede operar la auto-actualización del servidor.
+    PLATFORM_SUPERADMINS: z
+        .string()
+        .default('')
+        .transform((v) =>
+            v
+                .split(',')
+                .map((e) => e.trim().toLowerCase())
+                .filter(Boolean),
+        ),
+
+    // --- Auto-actualización desde GitHub Releases (ADR-S13).
+    UPDATER_GITHUB_REPO: z.string().default('augusto97/imagina-crm-cloud'),
+    UPDATER_CHANNEL: z.string().default('stable'),
+    UPDATER_GITHUB_TOKEN: z.string().default(''), // requerido sólo si el repo es privado
+    // `base` del layout de releases atómicos: DOS niveles arriba del app root
+    // (releases/<ts>_<ver>/apps/api → base). En dev queda vacío = updater off.
+    UPDATER_BASE_PATH: z.string().default(''),
+    UPDATER_KEEP_RELEASES: z.coerce.number().int().positive().default(5),
 });
 
 export type Env = z.infer<typeof envSchema>;

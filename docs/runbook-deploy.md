@@ -59,53 +59,81 @@ docker compose -f deploy/docker-compose.prod.yml ps   # healthy
 ```
 Ambos quedan escuchando **sólo en 127.0.0.1** (no expuestos a internet).
 
-## 4. Build
+## 4. Layout de releases atómicos (ADR-S13)
+
+El deploy usa releases atómicos con un symlink `current` — así el mismo layout
+sirve para el deploy manual y para la **auto-actualización** in-app:
+
+```
+/opt/imagina-base/
+├── releases/<ts>_<ver>/     # apps/api/{dist,node_modules}, web/, deploy/, VERSION
+├── shared/                  # persiste entre releases
+│   ├── .env.production
+│   └── backups/
+└── current -> releases/<ts>_<ver>   # systemd y Caddy apuntan acá
+```
+
+Primer release (bootstrap desde el repo — mismo armado que el bundle del CI):
 
 ```bash
+BASE=/opt/imagina-base
+sudo mkdir -p "$BASE/releases" "$BASE/shared/backups" && sudo chown -R "$USER" "$BASE"
+TS=$(date -u +%Y%m%d%H%M%S); REL="$BASE/releases/${TS}_0.0.0"
+
+# Config en shared/ (lo que antes editaste en .env.production va acá)
+cp deploy/.env.production.example "$BASE/shared/.env.production"
+nano "$BASE/shared/.env.production"    # dominio, DB/Redis, superadmin, updater…
+
+# Build
 pnpm install --frozen-lockfile
 pnpm --filter @imagina-base/shared build
 pnpm --filter @imagina-base/api build
 pnpm --filter @imagina-base/web build:cloud
-```
 
-## 5. Migraciones
+# Armar el release igual que el bundle del CI
+mkdir -p "$REL/apps" "$REL/deploy"
+pnpm --filter @imagina-base/api --legacy deploy --prod "$REL/apps/api"
+cp -r apps/api/dist "$REL/apps/api/dist"
+cp -r apps/web/dist-cloud "$REL/web"
+cp deploy/deploy.sh deploy/finalize.sh scripts/backup.sh scripts/restore.sh "$REL/deploy/"
+chmod +x "$REL"/deploy/*.sh
+echo "0.0.0" > "$REL/VERSION"
 
-```bash
-cd apps/api
-node dist/db/migrate.js        # aplica el schema + RLS + rol imagina_app
-cd /opt/imagina-base
+# Migraciones + FLIP inicial
+set -a; . "$BASE/shared/.env.production"; set +a
+( cd "$REL/apps/api" && node dist/db/migrate.js )
+ln -sfn "$REL" "$BASE/current"
 ```
 
 > **Postgres administrado (no el de Docker):** si el usuario de conexión NO es
-> superuser, otorgale el rol de aplicación para que pueda `SET ROLE`:
-> `GRANT imagina_app TO <db_user>;` (con el Postgres de Docker el usuario es
-> superuser y esto no hace falta).
+> superuser, otorgale el rol de aplicación: `GRANT imagina_app TO <db_user>;`
+> (con el Postgres de Docker el usuario es superuser y no hace falta).
 
-## 6. API por systemd
+## 5. API por systemd
 
 ```bash
 sudo cp deploy/imagina-api.service /etc/systemd/system/imagina-api.service
-# Revisá User=, WorkingDirectory=, EnvironmentFile= y la ruta de node en el unit.
+# El unit ya apunta a current/apps/api + shared/.env.production. Revisá User=.
 sudo systemctl daemon-reload
 sudo systemctl enable --now imagina-api
 curl -s http://127.0.0.1:3001/api/v1/health/ready   # {"status":"ready",...}
 ```
 
-## 7. Front + Caddy
+> Para la auto-actualización, el usuario `deploy` necesita reiniciar el servicio
+> sin password. `/etc/sudoers.d/imagina`:
+> `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api`
+
+## 6. Caddy
 
 ```bash
-# Publicá el build del SPA donde lo sirve Caddy.
-sudo mkdir -p /var/www/imagina-base
-sudo cp -r apps/web/dist-cloud/* /var/www/imagina-base/
-
-# Config de Caddy (ajustá el dominio dentro del archivo).
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
-sudo nano /etc/caddy/Caddyfile        # reemplazá app.tu-dominio.com
+sudo nano /etc/caddy/Caddyfile        # reemplazá app.tu-dominio.com (root ya = current/web)
 sudo systemctl reload caddy
 ```
 
 Abrí `https://app.tu-dominio.com` → cae en el login. Registrá el primer usuario:
-ese registro crea el **workspace y su admin**.
+ese registro crea el **workspace y su admin**. Para operar la auto-actualización,
+poné ese email (u otro) en `PLATFORM_SUPERADMINS`.
 
 ## 8. Post-despliegue
 
@@ -120,20 +148,16 @@ ese registro crea el **workspace y su admin**.
 
 ## 9. Actualizar a una versión nueva
 
-```bash
-cd /opt/imagina-base
-git pull
-pnpm install --frozen-lockfile
-pnpm --filter @imagina-base/shared build
-pnpm --filter @imagina-base/api build
-pnpm --filter @imagina-base/web build:cloud
-cd apps/api && node dist/db/migrate.js && cd /opt/imagina-base
-sudo cp -r apps/web/dist-cloud/* /var/www/imagina-base/
-sudo systemctl restart imagina-api
-```
+**Automático (recomendado):** taggeá `vX.Y.Z` → el workflow `release.yml` publica
+el bundle en GitHub Releases → en **Ajustes → Sistema · Actualizaciones**
+(superadmin) apretás *Buscar* y luego *Actualizar*. El servidor descarga+verifica
+el ZIP, lo despliega al lado, migra, hace el flip del symlink, reinicia y verifica
+el health; si falla, **rollback automático**. Botón *Rollback* para revertir a
+mano. Detalle en `docs/runbook-updates.md`.
 
-Rollback: `git checkout <tag-anterior>` y repetir el bloque (las migraciones son
-aditivas; revisá antes si alguna es destructiva).
+**Manual (mismo layout):** armá un release nuevo como en el paso 4 (en una carpeta
+`releases/<ts>_<ver>` nueva), y corré `BASE_PATH=$BASE RELEASE_DIR=<rel>
+deploy/deploy.sh` seguido de `finalize.sh` (o `systemctl restart imagina-api`).
 
 ## Notas de arquitectura
 

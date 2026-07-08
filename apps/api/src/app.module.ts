@@ -18,6 +18,7 @@ import { MailModule } from './mail/mail.module';
 import { MembersModule } from './members/members.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { PaymentsModule } from './payments/payments.module';
+import { UpdateModule } from './update/update.module';
 import { PortalModule } from './portal/portal.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
@@ -56,6 +57,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         BootstrapModule,
         SlugsModule,
         HealthModule,
+        UpdateModule,
     ],
 })
 export class AppModule {}

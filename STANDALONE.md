@@ -472,7 +472,23 @@ otro medio (PSE, Nequi vía un agregador) es un adapter nuevo, sin tocar billing
 El `setBilling` sigue siendo la única puerta a `tenants.plan/status`, así que
 la degradación a solo-lectura por impago (ADR-S09) se mantiene intacta.
 
+**ADR-S13 — Auto-actualización desde GitHub Releases con deploy atómico.**
+El servidor se actualiza sin SSH: CI empaqueta cada tag `vX.Y.Z` como un ZIP
+autocontenido (API + `node_modules` de prod + SPA + migraciones + `VERSION`) con
+su `.sha256` y lo publica como asset del Release. La app lo detecta (job horario
+BullMQ → `app_releases`) y un **superadmin de plataforma** (allowlist por env
+`PLATFORM_SUPERADMINS`, distinto del admin de workspace) lo instala desde el
+panel. Layout de releases atómicos (`releases/ + shared/ + current->`): el nuevo
+release se arma AL LADO del vivo y sólo se cambia el symlink `current` (flip
+atómico; rollback = repuntar el symlink + restore del dump). Como las colas
+BullMQ corren in-process, el job que actualiza vive en el proceso a reiniciar:
+se marca el resultado en Redis (compartido, sobrevive al flip) **antes** de
+delegar el reinicio+health-check+rollback a `finalize.sh` desacoplado; la app
+reconcilia el estado final al bootear. Fail-closed en el checksum; lock + marker
+`done` para re-entrancia; auto-sanación de runs colgados. Detalle en
+`docs/runbook-updates.md`.
+
 ---
 
 **Última actualización:** 2026-07-08
-**Versión del documento:** 1.3.0 (pagos PayPal + Mercado Pago — ADR-S12)
+**Versión del documento:** 1.4.0 (auto-actualización — ADR-S13)
