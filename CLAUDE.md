@@ -92,9 +92,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
       esqueleto NestJS+Drizzle, auth por sesión opaca en Redis, tenancy+RLS
       (rol `imagina_app`), primeros schemas Zod en shared/. Tests de RLS y
       auth con Testcontainers en verde.
-- [ ] **F1 — Core dominio** (en curso): lists/fields/records/views/slugs,
-      QueryBuilder JSONB, endpoint bootstrap, front conectado.
-  - [x] Módulo `lists` (schema→migración→repo+service+tests→endpoints).
+- [ ] **F1 — Core dominio** (backend listo; falta front conectado):
+  - [x] `lists` — CRUD, slugs, id-o-slug, capabilities.
+  - [x] `fields` — 14 tipos, validador de valores compartido, config por
+        tipo, reorder, toggle is_indexed.
+  - [x] `records` + QueryBuilder JSONB — CRUD, validación de data, filter
+        tree (whitelist tipada), cursor pagination keyset, own-scoping.
+  - [x] `views` — saved views table/kanban/calendar/cards, default único.
+  - [x] `bootstrap` — workspace+user+lists+fields+views+caps en 1 request.
+  - [x] `slugs/check` — formato/reservado/unicidad.
+  - [ ] Front conectado (adaptar apps/web: api.ts, BrowserRouter, shell,
+        tabla+filtros+drawer contra el nuevo API).
 - [ ] **F2 — Vistas + realtime**: Kanban/Cards/Calendar, dashboards,
       comments/activity, invalidación push.
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
