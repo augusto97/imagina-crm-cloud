@@ -39,8 +39,19 @@ export default defineConfig({
         target: 'es2020',
         outDir: path.resolve(__dirname, 'dist-cloud'),
         emptyOutDir: true,
+        // `@imagina-base/shared` compila a CommonJS (lo consume NestJS). En dev
+        // lo resuelve optimizeDeps (esbuild); en build de producción Rollup no
+        // puede analizar estáticamente sus re-exports `__exportStar`, así que le
+        // pedimos al plugin commonjs que transforme también el paquete workspace.
+        commonjsOptions: {
+            include: [/packages[/\\]shared/, /node_modules/],
+            transformMixedEsModules: true,
+        },
         rollupOptions: {
-            input: path.resolve(__dirname, 'cloud/index.html'),
+            input: {
+                cloud: path.resolve(__dirname, 'cloud/index.html'),
+                portal: path.resolve(__dirname, 'cloud-portal/index.html'),
+            },
         },
     },
     server: {

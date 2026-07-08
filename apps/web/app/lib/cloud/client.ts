@@ -8,6 +8,7 @@ import {
     billingSummarySchema,
     bootstrapSchema,
     commentSchema,
+    consumeMagicLinkSchema,
     createAutomationSchema,
     createCommentSchema,
     createFieldSchema,
@@ -23,6 +24,7 @@ import {
     loginInputSchema,
     magicLinkResultSchema,
     paginated,
+    portalBootSchema,
     recordSchema,
     registerInputSchema,
     slugCheckResultSchema,
@@ -57,6 +59,7 @@ import {
     type ListRecordsQuery,
     type LoginInput,
     type MagicLinkResult,
+    type PortalBoot,
     type RecordDto,
     type RegisterInput,
     type SlugCheckQuery,
@@ -331,6 +334,16 @@ export class CloudClient {
             body: issueMagicLinkSchema.parse(input),
             schema: magicLinkResultSchema,
         });
+    }
+    /** Portal público: canjea el token de un solo uso y abre la sesión client. */
+    consumePortal(token: string): Promise<void> {
+        return this.request('POST', '/portal/consume', {
+            body: consumeMagicLinkSchema.parse({ token }),
+        });
+    }
+    /** Boot del portal para el client autenticado (record + campos + template). */
+    portalMe(): Promise<PortalBoot> {
+        return this.request('GET', '/portal/me', { schema: portalBootSchema });
     }
 
     private async unwrap<T>(p: Promise<{ data: T }>): Promise<T> {

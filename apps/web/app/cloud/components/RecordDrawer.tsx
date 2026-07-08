@@ -75,6 +75,7 @@ export function RecordDrawer({
                     recordId={record.id}
                     fields={fields}
                 />
+                <PortalAccessSection listSlug={listSlug} recordId={record.id} />
             </div>
         </div>
     );
@@ -228,6 +229,76 @@ function ActivitySection({
                 ))}
                 {activity.data?.length === 0 && <li className="imcrm-text-muted-foreground">Sin actividad.</li>}
             </ul>
+        </section>
+    );
+}
+
+function PortalAccessSection({
+    listSlug,
+    recordId,
+}: {
+    listSlug: string;
+    recordId: number;
+}): JSX.Element {
+    const [email, setEmail] = useState('');
+    const [link, setLink] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const issue = useMutation({
+        mutationFn: () => api.issueMagicLink(listSlug, { record_id: recordId, email: email.trim() }),
+        onSuccess: (res) => {
+            // `res.path` es una ruta relativa del SPA; la absolutizamos contra
+            // el origin actual para que el admin pueda copiar/enviar el link.
+            setLink(new URL(res.path, window.location.origin).toString());
+            setCopied(false);
+            setError(null);
+        },
+        onError: (e) => setError(e instanceof Error ? e.message : 'No se pudo generar el acceso'),
+    });
+
+    async function copy(): Promise<void> {
+        if (!link) return;
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+        } catch {
+            setCopied(false);
+        }
+    }
+
+    return (
+        <section className="imcrm-space-y-2">
+            <h3 className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                Acceso al portal
+            </h3>
+            <form
+                className="imcrm-flex imcrm-items-end imcrm-gap-2"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (email.trim()) issue.mutate();
+                }}
+            >
+                <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@cliente.com"
+                    aria-label="Email del cliente"
+                />
+                <Button type="submit" size="sm" disabled={!email.trim() || issue.isPending}>
+                    Generar link
+                </Button>
+            </form>
+            {error && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
+            {link && (
+                <div className="imcrm-space-y-1 imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-2">
+                    <p className="imcrm-break-all imcrm-font-mono imcrm-text-xs">{link}</p>
+                    <Button variant="ghost" size="sm" onClick={copy}>
+                        {copied ? 'Copiado ✓' : 'Copiar link'}
+                    </Button>
+                </div>
+            )}
         </section>
     );
 }
