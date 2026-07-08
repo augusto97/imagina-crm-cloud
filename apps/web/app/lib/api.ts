@@ -102,26 +102,208 @@ function parseSlugRename(header: string | null): SlugRenamedHint | undefined {
     return out.old !== undefined && out.new !== undefined ? (out as SlugRenamedHint) : undefined;
 }
 
+// --- Adaptación de shape en modo nube (Imagina Base) -----------------------
+// El backend NestJS y el fork WP no comparten exactamente el mismo shape.
+// Estas funciones traducen SOLO en modo cloud (`boot.cloud`), dejando el
+// build WordPress intacto. Deltas cubiertos: envelope inconsistente, record
+// `data`↔`fields`, paginación cursor→página, y body `{fields}`→`{data}`.
+
+/** ¿El path apunta al recurso records (listado o item), no bulk/groups? */
+function recordsPathKind(path: string): 'list' | 'item' | null {
+    if (/\/lists\/[^/]+\/records\/\d+$/.test(path)) return 'item';
+    if (/\/lists\/[^/]+\/records$/.test(path)) return 'list';
+    return null;
+}
+
+/** Segmento `:listIdOrSlug` de un path `/lists/<key>/...`. */
+function listKeyFromPath(path: string): string | null {
+    const m = path.match(/\/lists\/([^/]+)/);
+    return m?.[1] ?? null;
+}
+
+/**
+ * Mapa de traducción de claves de un record para una lista. El backend keyea
+ * los valores por `f{field_id}` (ADR-S02, verdad interna); la UI del fork los
+ * consume por SLUG (`row.fields[field.slug]`). Guardamos ambos sentidos.
+ */
+interface FieldKeyMap {
+    toSlug: Record<string, string>; // f{id} → slug
+    toFid: Record<string, string>; // slug → f{id}
+}
+
+// Cache por lista (clave = segmento del path, id o slug). Se puebla desde las
+// respuestas del endpoint `/fields` (que la UI siempre carga) y, como respaldo,
+// con un fetch on-demand. Se refresca en cada GET de fields → nunca queda stale.
+const fieldMaps = new Map<string, FieldKeyMap>();
+
+function buildFieldMap(fields: unknown): FieldKeyMap {
+    const toSlug: Record<string, string> = {};
+    const toFid: Record<string, string> = {};
+    if (Array.isArray(fields)) {
+        for (const f of fields as Array<{ id?: number; slug?: string }>) {
+            if (typeof f.id === 'number' && typeof f.slug === 'string') {
+                toSlug[`f${f.id}`] = f.slug;
+                toFid[f.slug] = `f${f.id}`;
+            }
+        }
+    }
+    return { toSlug, toFid };
+}
+
+/** Devuelve el mapa de campos de una lista (cache → fetch on-demand). */
+async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
+    const cached = fieldMaps.get(listKey);
+    if (cached) return cached;
+    try {
+        const boot = getBootData();
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
+        const res = await fetch(`${boot.restRoot.replace(/\/$/, '')}/lists/${listKey}/fields`, {
+            headers,
+            credentials: 'include',
+        });
+        const payload = res.ok ? await res.json().catch(() => null) : null;
+        const map = buildFieldMap((payload as { data?: unknown } | null)?.data);
+        fieldMaps.set(listKey, map);
+        return map;
+    } catch {
+        return { toSlug: {}, toFid: {} };
+    }
+}
+
+/** RecordDto backend (`data` con claves f{id}) → RecordEntity UI (`fields` por slug). */
+function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
+    if (!raw || typeof raw !== 'object') return raw;
+    const r = raw as Record<string, unknown>;
+    const source = (r.data as Record<string, unknown> | undefined) ?? {};
+    const fields: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(source)) {
+        fields[map.toSlug[k] ?? k] = v; // f{id} → slug (fallback: deja la clave)
+    }
+    return {
+        id: r.id,
+        fields,
+        relations: (r.relations as Record<string, unknown>) ?? {},
+        created_by: r.created_by,
+        // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
+        // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la
+        // quitamos para no producir '...ZZ' (Invalid Date).
+        created_at: stripZ(r.created_at),
+        updated_at: stripZ(r.updated_at),
+    };
+}
+
+function stripZ(value: unknown): unknown {
+    return typeof value === 'string' ? value.replace(/Z$/, '') : value;
+}
+
+/** Body de create/update: `{fields:{slug:v}}` UI → `{data:{f{id}:v}}` backend. */
+function mapRecordBody(body: unknown, map: FieldKeyMap): unknown {
+    if (!body || typeof body !== 'object') return body;
+    const b = body as Record<string, unknown>;
+    const src = (b.fields as Record<string, unknown> | undefined) ?? (b.data as Record<string, unknown> | undefined);
+    if (!src) return body;
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(src)) {
+        data[map.toFid[k] ?? k] = v; // slug → f{id} (fallback: deja la clave)
+    }
+    return { data };
+}
+
+/**
+ * Normaliza la respuesta del backend NestJS al `{ data, meta }` que espera la
+ * UI: envelope inconsistente, records con claves f{id}→slug y paginación
+ * cursor→página.
+ */
+async function normalizeCloudResponse<T>(path: string, payload: unknown): Promise<ApiResponse<T>> {
+    const kind = recordsPathKind(path);
+
+    if (kind !== null) {
+        const listKey = listKeyFromPath(path) ?? '';
+        const map = await ensureFieldMap(listKey);
+        if (kind === 'item') {
+            return { data: mapRecord(payload, map) as T };
+        }
+        const env = (payload ?? {}) as { data?: unknown; meta?: Record<string, unknown> };
+        const rows = Array.isArray(env.data) ? env.data.map((r) => mapRecord(r, map)) : [];
+        // La UI pagina por páginas; el backend por cursor keyset. En esta etapa
+        // servimos la tanda tal cual con total_pages=1 (sin waterfalls); la
+        // paginación cursor completa llega en una etapa posterior.
+        return {
+            data: rows as T,
+            meta: {
+                page: 1,
+                per_page: rows.length,
+                total: rows.length,
+                total_pages: 1,
+                next_cursor: env.meta?.next_cursor ?? null,
+            },
+        };
+    }
+
+    // Endpoint de fields: cacheamos el mapa de la lista (lo usan los records).
+    if (/\/lists\/[^/]+\/fields$/.test(path)) {
+        const listKey = listKeyFromPath(path);
+        const arr = (payload as { data?: unknown } | null)?.data;
+        if (listKey) fieldMaps.set(listKey, buildFieldMap(arr));
+    }
+
+    // Genérico: enveloped (`{data}`) → desenvolver; objeto crudo → envolver.
+    if (payload && typeof payload === 'object' && 'data' in (payload as object)) {
+        const env = payload as { data?: unknown; meta?: Record<string, unknown> };
+        return { data: normalizeDates(env.data) as T, meta: env.meta };
+    }
+    return { data: normalizeDates(payload) as T };
+}
+
+/**
+ * Quita la `Z` de los timestamps `*_at` (naive-UTC, como el plugin) en objetos
+ * de nivel superior o arrays de objetos (listas, fields, views…). El fork les
+ * concatena 'Z' al formatear; sin esto verían '...ZZ' → Invalid Date.
+ */
+function normalizeDates(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(normalizeDates);
+    if (value && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        const out: Record<string, unknown> = { ...obj };
+        for (const [k, v] of Object.entries(obj)) {
+            if (/_at$/.test(k) && typeof v === 'string') out[k] = v.replace(/Z$/, '');
+        }
+        return out;
+    }
+    return value;
+}
+
 async function request<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
     const boot = getBootData();
     const url = buildUrl(path, opts.query);
 
     const headers: Record<string, string> = {
-        'X-WP-Nonce': boot.restNonce,
         Accept: 'application/json',
     };
+    // Auth: en la nube, cookie de sesión + tenant activo; en WP, nonce.
+    if (boot.cloud) {
+        if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
+    } else if (boot.restNonce) {
+        headers['X-WP-Nonce'] = boot.restNonce;
+    }
 
     let body: BodyInit | undefined;
     if (opts.body !== undefined && method !== 'GET') {
         headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(opts.body);
+        let payload: unknown = opts.body;
+        if (boot.cloud && recordsPathKind(path) !== null) {
+            const map = await ensureFieldMap(listKeyFromPath(path) ?? '');
+            payload = mapRecordBody(opts.body, map);
+        }
+        body = JSON.stringify(payload);
     }
 
     const response = await fetch(url, {
         method,
         headers,
         body,
-        credentials: 'same-origin',
+        credentials: boot.cloud ? 'include' : 'same-origin',
         signal: opts.signal,
     });
 
@@ -144,12 +326,18 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
         throw new ApiError(message, response.status, code, errors);
     }
 
+    const slugRenamed = parseSlugRename(response.headers.get('X-Imagina-CRM-Slug-Renamed'));
+
+    // Modo nube: normalizamos el shape del backend NestJS.
+    if (boot.cloud) {
+        const normalized = await normalizeCloudResponse<T>(path, payload);
+        return { ...normalized, slugRenamed };
+    }
+
+    // Modo WordPress (build del plugin): envelope `{data, meta}` garantizado.
     if (payload === null || typeof payload !== 'object') {
         return { data: undefined as unknown as T };
     }
-
-    const slugRenamed = parseSlugRename(response.headers.get('X-Imagina-CRM-Slug-Renamed'));
-
     const envelope = payload as { data?: unknown; meta?: Record<string, unknown> };
     return {
         data: envelope.data as T,

@@ -25,18 +25,21 @@ export function RecordCreateDialog({
     onOpenChange,
 }: RecordCreateDialogProps): JSX.Element {
     const create = useCreateRecord(listId);
+    const { reset: resetCreate } = create;
     const [values, setValues] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     useEffect(() => {
         if (!open) {
+            // Dep en `resetCreate` (estable), NO en `create` (nueva identidad
+            // cada render → loop infinito de renders).
             setValues({});
             setError(null);
             setFieldErrors({});
-            create.reset();
+            resetCreate();
         }
-    }, [open, create]);
+    }, [open, resetCreate]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();

@@ -22,6 +22,7 @@ interface ListCreateDialogProps {
 export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps): JSX.Element {
     const navigate = useNavigate();
     const create = useCreateList();
+    const { reset: resetCreate } = create;
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [slug, setSlug] = useState('');
@@ -30,15 +31,17 @@ export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps):
 
     useEffect(() => {
         if (!open) {
-            // Reset state al cerrar.
+            // Reset state al cerrar. Dep en `resetCreate` (estable en React
+            // Query), NO en el objeto `create` (nueva identidad cada render →
+            // provocaba un loop infinito de renders).
             setName('');
             setDescription('');
             setSlug('');
             setSlugDirty(false);
             setSubmitError(null);
-            create.reset();
+            resetCreate();
         }
-    }, [open, create]);
+    }, [open, resetCreate]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();

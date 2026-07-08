@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema } from './common';
+import { idSchema, isoDateTimeSchema } from './common';
 import { listSlugSchema } from './slug';
 
 export const listSchema = z.object({
@@ -10,6 +10,8 @@ export const listSchema = z.object({
     color: z.string().max(32).nullable().default(null),
     settings: z.record(z.unknown()).default({}),
     position: z.number().int().nonnegative().default(0),
+    created_at: isoDateTimeSchema,
+    updated_at: isoDateTimeSchema,
 });
 export type List = z.infer<typeof listSchema>;
 
