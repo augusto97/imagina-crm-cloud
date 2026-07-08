@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { planSchema } from './billing';
 
 /**
  * Pagos (ADR-S12). Stripe no opera en Colombia, así que el cobro va por
