@@ -6,7 +6,7 @@ import {
     HttpStatus,
     Logger,
 } from '@nestjs/common';
-import type { ApiError } from '@imagina-crm/shared';
+import type { ApiError } from '@imagina-base/shared';
 import type { FastifyReply } from 'fastify';
 
 /**

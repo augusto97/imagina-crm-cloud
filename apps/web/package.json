@@ -1,5 +1,5 @@
 {
-    "name": "imagina-crm",
+    "name": "@imagina-base/web",
     "private": true,
     "version": "0.57.42",
     "description": "Imagina CRM — admin SPA bundle.",

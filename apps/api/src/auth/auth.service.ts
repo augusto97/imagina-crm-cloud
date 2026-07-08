@@ -11,7 +11,7 @@ import {
     type MembershipSummary,
     type RegisterInput,
     type SessionUser,
-} from '@imagina-crm/shared';
+} from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db, type Tx } from '../db/client';

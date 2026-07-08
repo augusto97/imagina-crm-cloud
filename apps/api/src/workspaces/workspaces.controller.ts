@@ -1,5 +1,5 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import type { MembershipSummary } from '@imagina-crm/shared';
+import type { MembershipSummary } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';

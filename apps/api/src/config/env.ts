@@ -11,7 +11,7 @@ const envSchema = z.object({
     DATABASE_URL: z
         .string()
         .url()
-        .default('postgres://imagina:imagina@localhost:5432/imagina_crm'),
+        .default('postgres://imagina:imagina@localhost:5432/imagina_base'),
     REDIS_URL: z.string().url().default('redis://localhost:6379'),
     SESSION_TTL_SECONDS: z.coerce
         .number()

@@ -1,5 +1,5 @@
 {
-    "name": "@imagina-crm/api",
+    "name": "@imagina-base/api",
     "version": "0.1.0",
     "private": true,
     "description": "Backend NestJS (Fastify) + Drizzle de Imagina CRM Cloud.",
@@ -16,7 +16,7 @@
     },
     "dependencies": {
         "@fastify/cookie": "^11.0.2",
-        "@imagina-crm/shared": "workspace:*",
+        "@imagina-base/shared": "workspace:*",
         "@nestjs/common": "^11.1.3",
         "@nestjs/core": "^11.1.3",
         "@nestjs/platform-fastify": "^11.1.3",

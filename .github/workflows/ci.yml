@@ -26,5 +26,5 @@ jobs:
       - name: Lint + typecheck + build + tests
         run: >
           pnpm turbo run lint typecheck build test
-          --filter=@imagina-crm/shared
-          --filter=@imagina-crm/api
+          --filter=@imagina-base/shared
+          --filter=@imagina-base/api

@@ -1,7 +1,9 @@
-# Imagina CRM Cloud — Instrucciones de trabajo
+# Imagina Base — Instrucciones de trabajo
 
-> Este es el documento de trabajo del repositorio `imagina-crm-cloud`
-> (la app SaaS). Leélo SIEMPRE antes de cualquier tarea, junto con:
+> Este es el documento de trabajo de **Imagina Base**, la app SaaS (repo
+> `imagina-crm-cloud` en GitHub — nombre histórico; el producto se llama
+> Imagina Base, ver ADR-S10). Leélo SIEMPRE antes de cualquier tarea, junto
+> con:
 >
 > - **`STANDALONE.md`** — la arquitectura completa y los ADRs. Es la fuente
 >   de verdad de TODAS las decisiones técnicas. No contradecirlo sin
@@ -18,10 +20,12 @@
 
 ## 1. Qué es este proyecto
 
-Imagina CRM Cloud: SaaS multi-tenant de gestión de listas dinámicas,
-registros, vistas y automatizaciones (tipo ClickUp/Airtable). Evolución del
-plugin WordPress `imagina-crm` — comparte el diseño de dominio y el frontend
-React, pero con backend propio.
+**Imagina Base**: SaaS multi-tenant para construir bases de datos flexibles
+—listas dinámicas, registros, vistas y automatizaciones (tipo Airtable /
+ClickUp / Notion-databases). NO es un CRM: un CRM es apenas uno de los casos
+de uso que un cliente puede *armar* con la herramienta. Evolución del plugin
+WordPress `imagina-crm` — comparte el diseño de dominio y el frontend React,
+pero con backend propio y posicionamiento de producto propio (ADR-S10).
 
 **Origen del frontend**: el directorio `apps/web/` es un fork del `app/` del
 plugin. Todo el trabajo de UX ya invertido ahí (editor de plantillas,
@@ -36,8 +40,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 - **Validación**: Zod en `packages/shared/` — LOS MISMOS schemas para front
   y back. Nunca definir un shape dos veces.
 - **Frontend**: React 18 + TanStack Query/Table + Zustand + shadcn/Tailwind.
-- **Monorepo**: pnpm workspaces + Turborepo (`apps/api`, `apps/web`,
-  `packages/shared`).
+- **Monorepo**: pnpm workspaces + Turborepo. Packages con scope
+  `@imagina-base/*` (`@imagina-base/api`, `@imagina-base/web`,
+  `@imagina-base/shared`).
 
 ## 3. Reglas de oro (no negociables)
 
@@ -83,10 +88,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
 ## 5. Estado de fases (actualizar al avanzar)
 
-- [ ] **F0 — Fundaciones**: monorepo, CI, Docker, esqueleto NestJS+Drizzle,
-      auth básica, tenancy+RLS, primeros schemas en shared/.
-- [ ] **F1 — Core dominio**: lists/fields/records/views/slugs, QueryBuilder
-      JSONB, endpoint bootstrap, front conectado.
+- [x] **F0 — Fundaciones**: monorepo pnpm+Turborepo, CI, Docker (PG16+Redis7),
+      esqueleto NestJS+Drizzle, auth por sesión opaca en Redis, tenancy+RLS
+      (rol `imagina_app`), primeros schemas Zod en shared/. Tests de RLS y
+      auth con Testcontainers en verde.
+- [ ] **F1 — Core dominio** (en curso): lists/fields/records/views/slugs,
+      QueryBuilder JSONB, endpoint bootstrap, front conectado.
+  - [x] Módulo `lists` (schema→migración→repo+service+tests→endpoints).
 - [ ] **F2 — Vistas + realtime**: Kanban/Cards/Calendar, dashboards,
       comments/activity, invalidación push.
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,

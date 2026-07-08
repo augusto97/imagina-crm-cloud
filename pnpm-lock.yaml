@@ -29,7 +29,7 @@ importers:
       '@fastify/cookie':
         specifier: ^11.0.2
         version: 11.0.2
-      '@imagina-crm/shared':
+      '@imagina-base/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@nestjs/common':

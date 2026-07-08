@@ -1,6 +1,6 @@
 # Infraestructura de desarrollo local (STANDALONE.md §12).
 # Uso: pnpm infra:up / pnpm infra:down (desde la raíz del monorepo).
-name: imagina-crm-cloud
+name: imagina-base
 
 services:
   postgres:
@@ -13,13 +13,13 @@ services:
     environment:
       POSTGRES_USER: imagina
       POSTGRES_PASSWORD: imagina
-      POSTGRES_DB: imagina_crm
+      POSTGRES_DB: imagina_base
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U imagina -d imagina_crm"]
+      test: ["CMD-SHELL", "pg_isready -U imagina -d imagina_base"]
       interval: 5s
       timeout: 3s
       retries: 10

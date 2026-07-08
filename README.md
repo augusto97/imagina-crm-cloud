@@ -1,7 +1,14 @@
-# Imagina CRM Cloud
+# Imagina Base
 
-SaaS multi-tenant de listas dinámicas, registros y automatizaciones.
+SaaS multi-tenant para construir **bases de datos flexibles**: listas
+dinámicas, registros, vistas (tabla/Kanban/calendario/cards), dashboards y
+automatizaciones — tipo Airtable / ClickUp / Notion-databases. NO es un CRM;
+un CRM es apenas una de las plantillas que un cliente puede armar (ADR-S10).
 Evolución del plugin WordPress `imagina-crm`.
+
+> El repositorio en GitHub conserva el nombre histórico `imagina-crm-cloud`.
+> El producto se llama **Imagina Base** y los packages usan el scope
+> `@imagina-base/*`.
 
 ## Documentos clave (leer en este orden)
 
@@ -12,15 +19,32 @@ Evolución del plugin WordPress `imagina-crm`.
 
 ## Estructura
 
-- `apps/web/` — frontend React heredado del plugin (se adapta en F1).
-- `reference/plugin-backend/` — PHP del plugin, SOLO LECTURA (consulta
-  de comportamiento exacto).
-- `apps/api/`, `packages/shared/` — se crean en la fase F0.
+- `apps/api/` — `@imagina-base/api`: backend NestJS (Fastify) + Drizzle.
+- `apps/web/` — `@imagina-base/web`: frontend React heredado del plugin
+  (se adapta en F1).
+- `packages/shared/` — `@imagina-base/shared`: schemas Zod + tipos compartidos
+  front↔back.
+- `reference/plugin-backend/` — PHP del plugin, SOLO LECTURA (consulta de
+  comportamiento exacto).
+- `docker/` — Docker Compose (Postgres 16 + Redis 7).
 
-## Primera sesión de Claude Code
+## Desarrollo local
 
-> Lee CLAUDE.md, STANDALONE.md, HANDOFF.md y CONTRACT.md completos.
-> Después arranca la fase F0 del roadmap: monorepo pnpm+Turborepo,
-> esqueleto NestJS+Drizzle, Docker Compose (Postgres 16 + Redis 7),
-> tenancy con RLS funcionando y el package shared/ con los primeros
-> schemas Zod. Marca F0 en el CLAUDE.md cuando termines.
+```bash
+pnpm install
+pnpm infra:up          # Postgres 16 + Redis 7 vía Docker Compose
+pnpm db:migrate        # aplica migraciones (incluye RLS + rol imagina_app)
+pnpm --filter @imagina-base/api dev
+```
+
+Variables de entorno: copiar `.env.example` a `.env` (defaults de dev listos
+para el compose incluido).
+
+## Estado
+
+- **F0 — Fundaciones**: ✅ monorepo, CI, Docker, esqueleto NestJS+Drizzle,
+  auth por sesión, tenancy+RLS, primeros schemas Zod.
+- **F1 — Core dominio**: 🚧 en curso (lists/fields/records/views/slugs,
+  QueryBuilder JSONB, bootstrap, front conectado).
+
+Detalle y fases siguientes en `CLAUDE.md §5`.

@@ -1,5 +1,5 @@
 {
-    "name": "imagina-crm-cloud",
+    "name": "imagina-base",
     "private": true,
     "packageManager": "pnpm@10.33.0",
     "engines": {
@@ -13,8 +13,8 @@
         "test": "turbo run test",
         "infra:up": "docker compose -f docker/docker-compose.yml up -d --wait",
         "infra:down": "docker compose -f docker/docker-compose.yml down",
-        "db:generate": "pnpm --filter @imagina-crm/api db:generate",
-        "db:migrate": "pnpm --filter @imagina-crm/api db:migrate"
+        "db:generate": "pnpm --filter @imagina-base/api db:generate",
+        "db:migrate": "pnpm --filter @imagina-base/api db:migrate"
     },
     "devDependencies": {
         "@eslint/js": "^9.30.0",

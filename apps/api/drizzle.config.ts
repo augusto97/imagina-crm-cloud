@@ -5,6 +5,6 @@ export default defineConfig({
     schema: './src/db/schema/index.ts',
     out: './src/db/migrations',
     dbCredentials: {
-        url: process.env.DATABASE_URL ?? 'postgres://imagina:imagina@localhost:5432/imagina_crm',
+        url: process.env.DATABASE_URL ?? 'postgres://imagina:imagina@localhost:5432/imagina_base',
     },
 });

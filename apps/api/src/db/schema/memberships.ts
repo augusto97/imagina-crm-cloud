@@ -1,5 +1,5 @@
 import { bigint, index, pgEnum, pgTable, primaryKey, timestamp } from 'drizzle-orm/pg-core';
-import { ROLES } from '@imagina-crm/shared';
+import { ROLES } from '@imagina-base/shared';
 import { tenants } from './tenants';
 import { users } from './users';
 

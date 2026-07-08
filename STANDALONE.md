@@ -1,9 +1,11 @@
-# Imagina CRM Cloud — Aplicación SaaS Standalone
+# Imagina Base — Aplicación SaaS Standalone
 
-> Versión independiente de Imagina CRM como **aplicación SaaS multi-tenant**,
-> desacoplada de WordPress. Una sola instalación operada por Imagina WP en
-> infraestructura propia; cada cliente es un *workspace* (tenant) con
-> suscripción.
+> **Imagina Base**: constructor de bases de datos flexibles como **aplicación
+> SaaS multi-tenant**, desacoplado de WordPress. Nace del plugin Imagina CRM
+> pero se reposiciona como herramienta de propósito general (Airtable /
+> ClickUp / Notion-databases), no como CRM (ADR-S10). Una sola instalación
+> operada por Imagina WP en infraestructura propia; cada cliente es un
+> *workspace* (tenant) con suscripción.
 >
 > Este documento es para la app lo que `CLAUDE.md` es para el plugin: la
 > fuente de verdad de arquitectura y decisiones. El plugin WP sigue vivo como
@@ -17,7 +19,7 @@
 
 | | |
 |---|---|
-| **Producto** | Imagina CRM Cloud (nombre comercial por definir) |
+| **Producto** | Imagina Base (constructor de bases de datos flexibles) |
 | **Modelo** | SaaS multi-tenant, suscripción por workspace |
 | **Backend** | Node 22 + TypeScript + NestJS (adapter Fastify) |
 | **Base de datos** | PostgreSQL 16 — schema compartido + `tenant_id` + RLS |
@@ -66,12 +68,12 @@
 
 ### Monorepo
 ```
-imagina-crm-cloud/
+imagina-base/                    # dir del repo: imagina-crm-cloud (histórico)
 ├── apps/
-│   ├── api/          # NestJS
-│   └── web/          # SPA React (fork del plugin)
+│   ├── api/          # @imagina-base/api    — NestJS
+│   └── web/          # @imagina-base/web    — SPA React (fork del plugin)
 ├── packages/
-│   └── shared/       # Zod schemas + tipos compartidos front↔back
+│   └── shared/       # @imagina-base/shared — Zod schemas + tipos front↔back
 ├── docker/           # compose files, Caddyfile
 └── turbo.json        # pnpm workspaces + Turborepo
 ```
@@ -426,7 +428,25 @@ conviven a largo plazo.
 *Herencia del ADR-007.* Impago → workspace solo-lectura + export disponible.
 Jamás borrado ni bloqueo de lectura.
 
+**ADR-S10 — El producto se llama "Imagina Base" y NO es un CRM.**
+El plugin origen (`imagina-crm`) resuelve un caso de uso (gestión de
+clientes), pero la app cloud es un **constructor de bases de datos flexibles**
+de propósito general: listas dinámicas, campos configurables, vistas
+(tabla/Kanban/calendario/cards), dashboards y automatizaciones. Un CRM es solo
+una de las plantillas que un cliente puede armar. Consecuencias concretas:
+- Marca del producto: **Imagina Base**. Scope npm `@imagina-base/*`, DB
+  `imagina_base`, cookie de sesión `imbase_session`.
+- El repositorio en GitHub conserva el nombre histórico `imagina-crm-cloud`
+  (renombrarlo rompería remotes/CI; no aporta valor). El *dir* y la marca son
+  "Imagina Base".
+- El plugin hermano sigue siendo `imagina-crm` y su namespace REST heredado
+  `imagina-crm/v1` se cita como origen del contrato (no se renombra: es otro
+  producto).
+- El copy de la UI y el material comercial hablan de "bases", "tablas",
+  "registros" y "vistas" — nunca de "leads/oportunidades" salvo dentro de una
+  plantilla CRM concreta.
+
 ---
 
-**Última actualización:** 2026-05-30
-**Versión del documento:** 1.0.0 (planificación inicial)
+**Última actualización:** 2026-07-08
+**Versión del documento:** 1.1.0 (renombre a Imagina Base — ADR-S10)

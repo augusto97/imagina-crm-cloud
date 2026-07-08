@@ -7,7 +7,7 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { SessionService } from './session.service';
 
-export const SESSION_COOKIE = 'imcrm_session';
+export const SESSION_COOKIE = 'imbase_session';
 
 /**
  * Autenticación por sesión opaca: cookie httpOnly (SPA) o `Authorization:

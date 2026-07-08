@@ -15,7 +15,7 @@ import {
     type AuthSession,
     type LoginInput,
     type RegisterInput,
-} from '@imagina-crm/shared';
+} from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';

@@ -1,8 +1,8 @@
 # HANDOFF — Lecciones aprendidas del plugin WordPress
 
 > Conocimiento destilado del desarrollo del plugin `imagina-crm` (hermano de
-> esta app). Cada punto de este documento es un bug REAL que costó horas o
-> días de iteración. Leerlo evita repagarlos.
+> **Imagina Base**, esta app). Cada punto de este documento es un bug REAL que
+> costó horas o días de iteración. Leerlo evita repagarlos.
 >
 > Contexto: el frontend de `apps/web/` es un fork del `app/` del plugin, así
 > que muchas de estas lecciones están *ya aplicadas* en el código heredado —
