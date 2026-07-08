@@ -3,8 +3,13 @@ name: Release
 # Empaqueta un bundle autocontenido (API compilado + node_modules de prod +
 # SPA build + migraciones + scripts) y lo publica como asset de un GitHub
 # Release, con su .sha256. La app lo detecta y lo instala sola (ADR-S13).
+#
+# Se dispara: (a) al mergear a main → publica la versión de ./VERSION si NO
+# existe todavía (así un commit común no re-releasa); (b) al taggear vX.Y.Z;
+# (c) a mano por workflow_dispatch con un input de versión.
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -17,7 +22,38 @@ permissions:
   contents: write
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.d.outputs.go }}
+      ref: ${{ steps.d.outputs.ref }}
+      version: ${{ steps.d.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: d
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            REF="${{ github.event.inputs.version }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            REF="${{ github.ref_name }}"
+          else
+            REF="v$(cat VERSION)"
+          fi
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
+          GO=true
+          # En push a main sólo publicamos si esa versión aún no existe.
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" != "tag" ]; then
+            if gh release view "${REF}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then GO=false; fi
+          fi
+          echo "go=${GO}" >> "$GITHUB_OUTPUT"
+          echo "→ release ${REF} · publicar=${GO}"
+
   build:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,17 +75,10 @@ jobs:
           pnpm --filter @imagina-base/api build
           pnpm --filter @imagina-base/web build:cloud
 
-      - name: Resolver versión
-        id: ver
-        run: |
-          REF="${{ github.event.inputs.version || github.ref_name }}"
-          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
-          echo "version=${REF#v}" >> "$GITHUB_OUTPUT"
-
       - name: Armar bundle autocontenido
         run: |
           set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
+          VERSION="${{ needs.gate.outputs.version }}"
           OUT=bundle
           rm -rf "$OUT" dist-release && mkdir -p "$OUT/apps" "$OUT/deploy" dist-release
 
@@ -78,7 +107,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.ref }}
+          tag_name: ${{ needs.gate.outputs.ref }}
           files: |
             dist-release/*.zip
             dist-release/*.zip.sha256
