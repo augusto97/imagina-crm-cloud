@@ -6,9 +6,13 @@ import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { RealtimeService } from '../src/realtime/realtime.service';
 import { ViewsRepository } from '../src/views/views.repository';
 import { ViewsService } from '../src/views/views.service';
 import { startPostgres, type TestPg } from './helpers/containers';
+
+/** Realtime no-op para tests unitarios (sin servidor socket → no emite). */
+const rt = new RealtimeService();
 
 describe('ViewsService (Postgres real + RLS)', () => {
     let pg: TestPg;
@@ -20,8 +24,8 @@ describe('ViewsService (Postgres real + RLS)', () => {
     beforeAll(async () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
-        listsService = new ListsService(tenantDb, new ListsRepository());
-        service = new ViewsService(tenantDb, new ViewsRepository(), listsService);
+        listsService = new ListsService(tenantDb, new ListsRepository(), rt);
+        service = new ViewsService(tenantDb, new ViewsRepository(), listsService, rt);
 
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();

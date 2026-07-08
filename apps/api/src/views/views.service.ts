@@ -7,6 +7,7 @@ import {
     type ViewType,
 } from '@imagina-base/shared';
 import { ListsService } from '../lists/lists.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsRepository, type ViewRow } from './views.repository';
 
@@ -16,6 +17,7 @@ export class ViewsService {
         private readonly tenantDb: TenantDb,
         private readonly repo: ViewsRepository,
         private readonly lists: ListsService,
+        private readonly realtime: RealtimeService,
     ) {}
 
     async list(tenantId: number, listIdOrSlug: string): Promise<View[]> {
@@ -53,6 +55,7 @@ export class ViewsService {
                 position,
             });
         });
+        this.realtime.views(tenantId, listId);
         return toView(row);
     }
 
@@ -85,6 +88,7 @@ export class ViewsService {
             if (!updated) throw viewNotFound(id);
             return updated;
         });
+        this.realtime.views(tenantId, listId);
         return toView(row);
     }
 
@@ -94,6 +98,7 @@ export class ViewsService {
             this.repo.remove(tx, tenantId, listId, id),
         );
         if (!deleted) throw viewNotFound(id);
+        this.realtime.views(tenantId, listId);
     }
 
     private async resolveListId(tenantId: number, listIdOrSlug: string): Promise<number> {

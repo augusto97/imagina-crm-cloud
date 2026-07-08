@@ -14,6 +14,7 @@ import {
     type UpdateFieldInput,
 } from '@imagina-base/shared';
 import type { Tx } from '../db/client';
+import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
 import { FieldsRepository, type FieldRow } from './fields.repository';
@@ -24,6 +25,7 @@ export class FieldsService {
         private readonly tenantDb: TenantDb,
         private readonly repo: FieldsRepository,
         private readonly lists: ListsService,
+        private readonly realtime: RealtimeService,
     ) {}
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
@@ -62,6 +64,7 @@ export class FieldsService {
                 position,
             });
         });
+        this.realtime.fields(tenantId, listId);
         return toField(row);
     }
 
@@ -100,6 +103,10 @@ export class FieldsService {
             if (!updated) throw fieldNotFound(fieldIdOrSlug);
             return updated;
         });
+        // Un cambio de schema (config/slug/required) afecta cómo se leen los
+        // records → invalidamos fields Y records de la lista.
+        this.realtime.fields(tenantId, listId);
+        this.realtime.records(tenantId, listId);
         return toField(row);
     }
 
@@ -109,6 +116,8 @@ export class FieldsService {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
             await this.repo.remove(tx, tenantId, listId, current.id);
         });
+        this.realtime.fields(tenantId, listId);
+        this.realtime.records(tenantId, listId);
     }
 
     async reorder(tenantId: number, listIdOrSlug: string, fieldIds: number[]): Promise<Field[]> {
@@ -125,6 +134,7 @@ export class FieldsService {
             await this.repo.applyOrder(tx, tenantId, listId, fieldIds);
             return this.repo.listByList(tx, tenantId, listId);
         });
+        this.realtime.fields(tenantId, listId);
         return rows.map(toField);
     }
 

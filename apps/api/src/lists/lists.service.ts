@@ -7,6 +7,7 @@ import {
     type UpdateListInput,
 } from '@imagina-base/shared';
 import type { Tx } from '../db/client';
+import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsRepository, type ListRow } from './lists.repository';
 
@@ -15,6 +16,7 @@ export class ListsService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly repo: ListsRepository,
+        private readonly realtime: RealtimeService,
     ) {}
 
     async list(tenantId: number): Promise<List[]> {
@@ -44,6 +46,7 @@ export class ListsService {
                 position,
             });
         });
+        this.realtime.lists(tenantId);
         return toList(row);
     }
 
@@ -76,6 +79,7 @@ export class ListsService {
             }
             return updated;
         });
+        this.realtime.lists(tenantId);
         return toList(row);
     }
 
@@ -84,6 +88,7 @@ export class ListsService {
             const current = await this.resolve(tx, tenantId, idOrSlug);
             await this.repo.remove(tx, tenantId, current.id);
         });
+        this.realtime.lists(tenantId);
     }
 
     /** Resuelve una lista por id numérico o slug (CONTRACT.md §1). 404 si no existe. */

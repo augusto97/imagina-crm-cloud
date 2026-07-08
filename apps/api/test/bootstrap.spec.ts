@@ -9,9 +9,13 @@ import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { SlugsService } from '../src/slugs/slugs.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { RealtimeService } from '../src/realtime/realtime.service';
 import { ViewsRepository } from '../src/views/views.repository';
 import { ViewsService } from '../src/views/views.service';
 import { startPostgres, type TestPg } from './helpers/containers';
+
+/** Realtime no-op para tests unitarios (sin servidor socket → no emite). */
+const rt = new RealtimeService();
 
 describe('Bootstrap + Slugs (Postgres real)', () => {
     let pg: TestPg;
@@ -27,9 +31,9 @@ describe('Bootstrap + Slugs (Postgres real)', () => {
     beforeAll(async () => {
         pg = await startPostgres();
         tenantDb = new TenantDb(pg.db);
-        listsService = new ListsService(tenantDb, new ListsRepository());
-        fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService);
-        viewsService = new ViewsService(tenantDb, new ViewsRepository(), listsService);
+        listsService = new ListsService(tenantDb, new ListsRepository(), rt);
+        fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
+        viewsService = new ViewsService(tenantDb, new ViewsRepository(), listsService, rt);
         bootstrap = new BootstrapService(
             tenantDb,
             new ListsRepository(),

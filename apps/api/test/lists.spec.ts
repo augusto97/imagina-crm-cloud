@@ -8,7 +8,11 @@ import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { RealtimeService } from '../src/realtime/realtime.service';
 import { startPostgres, type TestPg } from './helpers/containers';
+
+/** Realtime no-op para tests unitarios (sin servidor socket → no emite). */
+const rt = new RealtimeService();
 
 describe('ListsService (Postgres real + RLS)', () => {
     let pg: TestPg;
@@ -18,7 +22,7 @@ describe('ListsService (Postgres real + RLS)', () => {
 
     beforeAll(async () => {
         pg = await startPostgres();
-        service = new ListsService(new TenantDb(pg.db), new ListsRepository());
+        service = new ListsService(new TenantDb(pg.db), new ListsRepository(), rt);
 
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();

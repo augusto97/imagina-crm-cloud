@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
+import { useRealtime } from '@/cloud/useRealtime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -20,6 +21,9 @@ export function Shell(): JSX.Element {
     const qc = useQueryClient();
     const [newList, setNewList] = useState('');
     const [error, setError] = useState<string | null>(null);
+
+    // Realtime: la UI se actualiza sola ante mutaciones de otros usuarios.
+    useRealtime();
 
     const lists = useQuery({
         queryKey: ['lists', activeTenantId],

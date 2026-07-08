@@ -7,6 +7,7 @@ import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
 import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
 import { RedisModule } from './redis/redis.module';
 import { SlugsModule } from './slugs/slugs.module';
@@ -21,6 +22,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RedisModule,
         TenancyModule,
         AuthzModule,
+        RealtimeModule,
         AuthModule,
         WorkspacesModule,
         ListsModule,

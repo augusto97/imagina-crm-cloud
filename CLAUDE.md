@@ -107,8 +107,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verificado end-to-end en navegador (Playwright). BrowserRouter,
         auth por cookie de sesión. Falta portar Kanban/Cards/Calendar y el
         editor de plantillas del fork (F2+).
-- [ ] **F2 — Vistas + realtime**: Kanban/Cards/Calendar, dashboards,
-      comments/activity, invalidación push.
+- [ ] **F2 — Vistas + realtime** (en curso):
+  - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
+        rooms por tenant) + Redis adapter multi-nodo; los services emiten al
+        mutar y el front invalida TanStack. Verificado entre pestañas.
+  - [ ] Kanban/Cards/Calendar, dashboards, comments/activity.
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
       portal cliente, editor de plantillas.
 - [ ] **F4 — Comercial**: Stripe, onboarding, límites por plan, panel admin.

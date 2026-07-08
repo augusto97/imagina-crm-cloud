@@ -10,4 +10,5 @@ export * from './schemas/record';
 export * from './schemas/view';
 export * from './schemas/bootstrap';
 export * from './schemas/slug-check';
+export * from './schemas/realtime';
 export * from './field-types/validate';

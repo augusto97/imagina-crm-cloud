@@ -51,6 +51,12 @@ export default defineConfig({
                 target: process.env.API_URL ?? 'http://localhost:3001',
                 changeOrigin: true,
             },
+            // WebSocket del realtime (socket.io) → backend.
+            '/socket.io': {
+                target: process.env.API_URL ?? 'http://localhost:3001',
+                changeOrigin: true,
+                ws: true,
+            },
         },
     },
 });

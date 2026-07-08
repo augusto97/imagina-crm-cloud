@@ -15,6 +15,7 @@ import { and, eq } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, type FilterableField } from './query-builder';
 import { RecordsRepository, type RecordRow } from './records.repository';
@@ -37,6 +38,7 @@ export class RecordsService {
         private readonly repo: RecordsRepository,
         private readonly lists: ListsService,
         private readonly fields: FieldsService,
+        private readonly realtime: RealtimeService,
     ) {}
 
     async create(
@@ -52,6 +54,7 @@ export class RecordsService {
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.insert(tx, { tenantId, listId, data, createdBy: actor.userId }),
         );
+        this.realtime.records(tenantId, listId);
         return toRecord(row);
     }
 
@@ -119,6 +122,7 @@ export class RecordsService {
             return this.repo.updateData(tx, tenantId, listId, id, merged);
         });
         if (!row) throw recordNotFound(id);
+        this.realtime.records(tenantId, listId);
         return toRecord(row);
     }
 
@@ -130,6 +134,7 @@ export class RecordsService {
             return this.repo.softDelete(tx, tenantId, listId, id);
         });
         if (!deleted) throw recordNotFound(id);
+        this.realtime.records(tenantId, listId);
     }
 
     /**
