@@ -123,8 +123,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         updated dispatch), condiciones (filter tree), actions (update_field,
         create_record, call_webhook con HMAC, send_email simulado), runs con
         logs. CRUD + runs endpoint. Worker in-process con Redis.
-  - [ ] due_date_reached/scheduled (repeatable jobs), portal del cliente
-        (magic links + /portal/me), editor visual (front).
+  - [x] Portal del cliente — magic links de un solo uso (Redis), usuario rol
+        client vinculado a un record, POST /portal/consume abre sesión,
+        GET /portal/me devuelve record + fields + template de bloques.
+  - [ ] due_date_reached/scheduled (repeatable jobs), editor visual del
+        portal y de automatizaciones (front).
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
       portal cliente, editor de plantillas.
 - [ ] **F4 — Comercial**: Stripe, onboarding, límites por plan, panel admin.
