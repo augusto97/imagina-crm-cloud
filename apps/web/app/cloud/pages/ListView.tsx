@@ -14,6 +14,8 @@ import { api, useSession } from '@/cloud/session';
 import { AutomationsPanel } from '@/cloud/components/AutomationsPanel';
 import { FilterBar } from '@/cloud/components/FilterBar';
 import { ImportExport } from '@/cloud/components/ImportExport';
+import { CalendarView } from '@/cloud/components/CalendarView';
+import { CardsView } from '@/cloud/components/CardsView';
 import { DashboardView } from '@/cloud/components/DashboardView';
 import { KanbanView } from '@/cloud/components/KanbanView';
 import { RecordDrawer } from '@/cloud/components/RecordDrawer';
@@ -21,10 +23,12 @@ import { RecordsTable } from '@/cloud/components/RecordsTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type Mode = 'table' | 'kanban' | 'dashboard' | 'automations';
+type Mode = 'table' | 'kanban' | 'cards' | 'calendar' | 'dashboard' | 'automations';
 const MODES: Array<{ id: Mode; label: string }> = [
     { id: 'table', label: 'Tabla' },
     { id: 'kanban', label: 'Kanban' },
+    { id: 'cards', label: 'Tarjetas' },
+    { id: 'calendar', label: 'Calendario' },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'automations', label: 'Automatizaciones' },
 ];
@@ -101,7 +105,7 @@ export function ListView(): JSX.Element {
             </div>
 
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
-                {(mode === 'table' || mode === 'kanban') && (
+                {mode !== 'dashboard' && mode !== 'automations' && (
                     <div className="imcrm-space-y-3">
                         <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
                         {dataFields.length > 0 && (
@@ -121,6 +125,14 @@ export function ListView(): JSX.Element {
                 ) : mode === 'kanban' ? (
                     <div className="imcrm-mt-4 imcrm-h-[calc(100%-3rem)]">
                         <KanbanView listId={list.id} fields={dataFields} records={records} onOpen={setOpen} />
+                    </div>
+                ) : mode === 'cards' ? (
+                    <div className="imcrm-mt-4">
+                        <CardsView fields={dataFields} records={records} onOpen={setOpen} />
+                    </div>
+                ) : mode === 'calendar' ? (
+                    <div className="imcrm-mt-4 imcrm-h-[calc(100%-3rem)]">
+                        <CalendarView fields={dataFields} records={records} onOpen={setOpen} />
                     </div>
                 ) : (
                     <DashboardView listId={list.id} fields={dataFields} />
