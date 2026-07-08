@@ -12,6 +12,7 @@ import {
 
 import { useDashboards } from '@/hooks/useDashboards';
 import { useLists } from '@/hooks/useLists';
+import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -33,7 +34,8 @@ export function Sidebar(): JSX.Element {
     // El backend ya filtra GET /lists a las visibles para el user, así
     // que la sección "Tus listas" se auto-recorta. Aquí controlamos los
     // items de nivel superior que dependen de caps específicas.
-    const canSeeDashboards = useCan(CAP.MANAGE_DASHBOARDS) || useCan(CAP.ACCESS_ADMIN);
+    const canSeeDashboards =
+        (useCan(CAP.MANAGE_DASHBOARDS) || useCan(CAP.ACCESS_ADMIN)) && moduleEnabled('dashboards');
     const canSeeSettings = useCan(CAP.MANAGE_LISTS) || useCan('manage_options');
 
     return (
@@ -63,7 +65,7 @@ export function Sidebar(): JSX.Element {
                     {!collapsed && (
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-leading-tight">
                             <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-foreground">
-                                Imagina CRM
+                                Imagina Base
                             </span>
                         </div>
                     )}

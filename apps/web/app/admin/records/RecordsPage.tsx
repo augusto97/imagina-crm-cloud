@@ -11,6 +11,7 @@ import { useRecord, useRecords } from '@/hooks/useRecords';
 import { useSavedViews } from '@/hooks/useSavedViews';
 import { clientSideSearch } from '@/lib/clientSearch';
 import { __, sprintf } from '@/lib/i18n';
+import { moduleEnabled } from '@/lib/cloudFeatures';
 import { CAP, useCan } from '@/lib/permissions';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
@@ -208,7 +209,7 @@ export function RecordsPage(): JSX.Element {
     // — por ahora dejamos esos paths abiertos y confiamos en el 403
     // del backend si un viewer intenta editar.
     const canManageList = useCan(CAP.MANAGE_LISTS);
-    const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
+    const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS) && moduleEnabled('automations');
     const canImportRecords = useCan(CAP.IMPORT_RECORDS);
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canCreateRecords = useCan(CAP.CREATE_RECORDS);
