@@ -4,21 +4,31 @@ import { useParams } from 'react-router-dom';
 import {
     FIELD_TYPES,
     isDataField,
-    jsonbKeyForField,
     type CreateFieldInput,
-    type Field,
     type FieldType,
     type RecordDto,
 } from '@imagina-base/shared';
-import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
+import { DashboardView } from '@/cloud/components/DashboardView';
+import { KanbanView } from '@/cloud/components/KanbanView';
+import { RecordDrawer } from '@/cloud/components/RecordDrawer';
+import { RecordsTable } from '@/cloud/components/RecordsTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-/** Vista de una lista: tabla de records + alta de campos y registros. */
+type Mode = 'table' | 'kanban' | 'dashboard';
+const MODES: Array<{ id: Mode; label: string }> = [
+    { id: 'table', label: 'Tabla' },
+    { id: 'kanban', label: 'Kanban' },
+    { id: 'dashboard', label: 'Dashboard' },
+];
+
+/** Vista de una lista con switcher Tabla/Kanban/Dashboard + record drawer. */
 export function ListView(): JSX.Element {
     const { listSlug = '' } = useParams();
     const tenantId = useSession((s) => s.activeTenantId);
+    const [mode, setMode] = useState<Mode>('table');
+    const [open, setOpen] = useState<RecordDto | null>(null);
 
     const listQ = useQuery({
         queryKey: ['list', tenantId, listSlug],
@@ -34,150 +44,74 @@ export function ListView(): JSX.Element {
     });
     const recordsQ = useQuery({
         queryKey: ['records', tenantId, listId],
-        queryFn: () => api.listRecords(listId!, { limit: 50 }),
+        queryFn: () => api.listRecords(listId!, { limit: 200 }),
         enabled: listId !== undefined,
     });
 
-    if (listQ.isError) {
-        return <Centered>Lista no encontrada.</Centered>;
-    }
-    if (!listQ.data || !fieldsQ.data) {
-        return <Centered>Cargando…</Centered>;
-    }
+    if (listQ.isError) return <Centered>Lista no encontrada.</Centered>;
+    if (!listQ.data || !fieldsQ.data) return <Centered>Cargando…</Centered>;
 
+    const list = listQ.data;
     const dataFields = fieldsQ.data.filter((f) => isDataField(f.type));
     const records = recordsQ.data?.data ?? [];
+    // Mantiene el drawer sincronizado con el último fetch (realtime).
+    const openRecord = open ? (records.find((r) => r.id === open.id) ?? open) : null;
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col">
             <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-py-3">
-                <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
-                    {listQ.data.name}
-                </h1>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-4">
+                    <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">{list.name}</h1>
+                    <div className="imcrm-flex imcrm-gap-1 imcrm-rounded-md imcrm-bg-muted imcrm-p-0.5">
+                        {MODES.map((m) => (
+                            <button
+                                key={m.id}
+                                onClick={() => setMode(m.id)}
+                                className={[
+                                    'imcrm-rounded imcrm-px-2.5 imcrm-py-1 imcrm-text-sm',
+                                    mode === m.id
+                                        ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm'
+                                        : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                                ].join(' ')}
+                            >
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <span className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="record-count">
                     {records.length} registro{records.length === 1 ? '' : 's'}
                 </span>
             </div>
 
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
-                <AddFieldForm listId={listQ.data.id} tenantId={tenantId} existing={fieldsQ.data.length} />
+                {mode !== 'dashboard' && (
+                    <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
+                )}
 
                 {dataFields.length === 0 ? (
-                    <Centered>Agregá un campo para empezar a cargar registros.</Centered>
+                    <Centered>Agregá un campo para empezar.</Centered>
+                ) : mode === 'table' ? (
+                    <div className="imcrm-mt-4">
+                        <RecordsTable listId={list.id} fields={dataFields} records={records} onOpen={setOpen} />
+                    </div>
+                ) : mode === 'kanban' ? (
+                    <div className="imcrm-mt-4 imcrm-h-[calc(100%-3rem)]">
+                        <KanbanView listId={list.id} fields={dataFields} records={records} onOpen={setOpen} />
+                    </div>
                 ) : (
-                    <RecordsTable
-                        listId={listQ.data.id}
-                        tenantId={tenantId}
-                        fields={dataFields}
-                        records={records}
-                    />
+                    <DashboardView listId={list.id} fields={dataFields} />
                 )}
             </div>
-        </div>
-    );
-}
 
-function RecordsTable({
-    listId,
-    tenantId,
-    fields,
-    records,
-}: {
-    listId: number;
-    tenantId: number | null;
-    fields: Field[];
-    records: RecordDto[];
-}): JSX.Element {
-    const qc = useQueryClient();
-    const [draft, setDraft] = useState<Record<string, string>>({});
-    const [error, setError] = useState<string | null>(null);
-
-    const invalidate = () =>
-        qc.invalidateQueries({ queryKey: ['records', tenantId, listId] });
-
-    const createRecord = useMutation({
-        mutationFn: () => api.createRecord(listId, { data: buildData(fields, draft) }),
-        onSuccess: () => {
-            setDraft({});
-            setError(null);
-            void invalidate();
-        },
-        onError: (err) =>
-            setError(err instanceof CloudApiError ? Object.values(err.errors)[0] ?? err.message : 'Error'),
-    });
-
-    const deleteRecord = useMutation({
-        mutationFn: (id: number) => api.deleteRecord(listId, id),
-        onSuccess: () => void invalidate(),
-    });
-
-    return (
-        <div className="imcrm-mt-4 imcrm-overflow-x-auto imcrm-rounded-lg imcrm-border imcrm-border-border">
-            <table className="imcrm-w-full imcrm-border-collapse imcrm-text-sm">
-                <thead>
-                    <tr className="imcrm-border-b imcrm-border-border imcrm-bg-muted/40">
-                        {fields.map((f) => (
-                            <th
-                                key={f.id}
-                                className="imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-font-medium"
-                            >
-                                {f.label}
-                                <span className="imcrm-ml-1 imcrm-text-xs imcrm-text-muted-foreground">
-                                    {f.type}
-                                </span>
-                            </th>
-                        ))}
-                        <th className="imcrm-w-10" />
-                    </tr>
-                </thead>
-                <tbody data-testid="records-body">
-                    {records.map((r) => (
-                        <tr key={r.id} className="imcrm-border-b imcrm-border-border last:imcrm-border-0">
-                            {fields.map((f) => (
-                                <td key={f.id} className="imcrm-px-3 imcrm-py-2">
-                                    {formatValue(r.data[jsonbKeyForField(f.id)])}
-                                </td>
-                            ))}
-                            <td className="imcrm-px-2 imcrm-text-right">
-                                <button
-                                    onClick={() => deleteRecord.mutate(r.id)}
-                                    className="imcrm-text-muted-foreground hover:imcrm-text-destructive"
-                                    aria-label="Eliminar"
-                                >
-                                    ✕
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                    <tr className="imcrm-bg-muted/20">
-                        {fields.map((f) => (
-                            <td key={f.id} className="imcrm-px-2 imcrm-py-1.5">
-                                <Input
-                                    value={draft[jsonbKeyForField(f.id)] ?? ''}
-                                    onChange={(e) =>
-                                        setDraft({ ...draft, [jsonbKeyForField(f.id)]: e.target.value })
-                                    }
-                                    placeholder={f.label}
-                                    aria-label={`Nuevo ${f.label}`}
-                                    className="imcrm-h-8"
-                                />
-                            </td>
-                        ))}
-                        <td className="imcrm-px-2">
-                            <Button
-                                size="sm"
-                                onClick={() => createRecord.mutate()}
-                                disabled={createRecord.isPending}
-                                aria-label="Agregar registro"
-                            >
-                                +
-                            </Button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-            {error && (
-                <p className="imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-destructive">{error}</p>
+            {openRecord && (
+                <RecordDrawer
+                    listId={list.id}
+                    listSlug={list.slug}
+                    fields={fieldsQ.data}
+                    record={openRecord}
+                    onClose={() => setOpen(null)}
+                />
             )}
         </div>
     );
@@ -236,26 +170,6 @@ function AddFieldForm({
             </Button>
         </form>
     );
-}
-
-function buildData(fields: Field[], draft: Record<string, string>): Record<string, unknown> {
-    const data: Record<string, unknown> = {};
-    for (const f of fields) {
-        const key = jsonbKeyForField(f.id);
-        const raw = draft[key];
-        if (raw === undefined || raw === '') continue;
-        if (f.type === 'number' || f.type === 'currency') data[key] = Number(raw);
-        else if (f.type === 'checkbox') data[key] = raw === 'true' || raw === '1';
-        else if (f.type === 'multi_select') data[key] = raw.split(',').map((s) => s.trim());
-        else data[key] = raw;
-    }
-    return data;
-}
-
-function formatValue(value: unknown): string {
-    if (value === null || value === undefined) return '';
-    if (Array.isArray(value)) return value.join(', ');
-    return String(value);
 }
 
 function Centered({ children }: { children: React.ReactNode }): JSX.Element {

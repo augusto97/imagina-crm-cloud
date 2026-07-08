@@ -1,7 +1,11 @@
 import {
+    activitySchema,
+    aggregateResultSchema,
     apiErrorSchema,
     authSessionSchema,
     bootstrapSchema,
+    commentSchema,
+    createCommentSchema,
     createFieldSchema,
     createListSchema,
     createRecordSchema,
@@ -13,13 +17,19 @@ import {
     recordSchema,
     registerInputSchema,
     slugCheckResultSchema,
+    updateCommentSchema,
     updateFieldSchema,
     updateListSchema,
     updateRecordSchema,
     updateViewSchema,
     viewSchema,
+    type ActivityDto,
+    type AggregateRequest,
+    type AggregateResult,
     type AuthSession,
     type Bootstrap,
+    type CommentDto,
+    type CreateCommentInput,
     type CreateFieldInput,
     type CreateListInput,
     type CreateRecordInput,
@@ -32,6 +42,7 @@ import {
     type RegisterInput,
     type SlugCheckQuery,
     type SlugCheckResult,
+    type UpdateCommentInput,
     type UpdateFieldInput,
     type UpdateListInput,
     type UpdateRecordInput,
@@ -204,6 +215,50 @@ export class CloudClient {
         return this.request('GET', '/slugs/check', {
             query: { ...query },
             schema: slugCheckResultSchema,
+        });
+    }
+
+    // --- comments ---
+    listComments(list: string | number, recordId: number): Promise<CommentDto[]> {
+        return this.unwrap(
+            this.request('GET', `/lists/${list}/records/${recordId}/comments`, {
+                schema: dataArray(commentSchema),
+            }),
+        );
+    }
+    createComment(list: string | number, recordId: number, input: CreateCommentInput): Promise<CommentDto> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/comments`, {
+            body: createCommentSchema.parse(input),
+            schema: commentSchema,
+        });
+    }
+    updateComment(
+        list: string | number,
+        recordId: number,
+        id: number,
+        patch: UpdateCommentInput,
+    ): Promise<CommentDto> {
+        return this.request('PATCH', `/lists/${list}/records/${recordId}/comments/${id}`, {
+            body: updateCommentSchema.parse(patch),
+            schema: commentSchema,
+        });
+    }
+    deleteComment(list: string | number, recordId: number, id: number): Promise<void> {
+        return this.request('DELETE', `/lists/${list}/records/${recordId}/comments/${id}`, {});
+    }
+
+    // --- activity ---
+    recordActivity(list: string | number, recordId: number): Promise<ActivityDto[]> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/activity`, {
+            schema: paginated(activitySchema),
+        }).then((r) => r.data);
+    }
+
+    // --- aggregate ---
+    aggregate(list: string | number, req: AggregateRequest): Promise<AggregateResult> {
+        return this.request('POST', `/lists/${list}/aggregate`, {
+            body: req,
+            schema: aggregateResultSchema,
         });
     }
 
