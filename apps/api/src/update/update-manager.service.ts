@@ -26,16 +26,25 @@ export class UpdateManager implements OnModuleInit {
         private readonly releases: ReleasesRepository,
     ) {}
 
-    /** Al bootear: si veníamos de un reinicio de update, resolvé el resultado. */
+    /**
+     * Al bootear: si veníamos de un reinicio de update, resolvé el resultado.
+     * Best-effort: si Redis no está disponible NO debe abortar el arranque del
+     * API (si no, un corte de Redis dejaría el server sin escuchar). La
+     * reconciliación también ocurre de forma perezosa en `run()`.
+     */
     async onModuleInit(): Promise<void> {
-        const run = await this.readRun();
-        if (run.status === 'restarting') {
-            const resolved: UpdateRun =
-                this.deployer.currentVersion() === run.version
-                    ? { ...run, status: 'success', message: 'Actualización aplicada', finished_at: nowISO() }
-                    : { ...run, status: 'rolled_back', message: 'Health-check falló; se revirtió', finished_at: nowISO() };
-            await this.writeRun(resolved);
-            this.logger.log(`Reconciliado post-reinicio: ${resolved.status}`);
+        try {
+            const run = await this.readRun();
+            if (run.status === 'restarting') {
+                const resolved: UpdateRun =
+                    this.deployer.currentVersion() === run.version
+                        ? { ...run, status: 'success', message: 'Actualización aplicada', finished_at: nowISO() }
+                        : { ...run, status: 'rolled_back', message: 'Health-check falló; se revirtió', finished_at: nowISO() };
+                await this.writeRun(resolved);
+                this.logger.log(`Reconciliado post-reinicio: ${resolved.status}`);
+            }
+        } catch (err) {
+            this.logger.warn(`Self-heal post-reinicio pospuesto (Redis no disponible): ${String(err)}`);
         }
     }
 

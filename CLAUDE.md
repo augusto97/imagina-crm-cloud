@@ -181,7 +181,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         listener `error` (`guardRedis`) → un fallo de conexión (NOAUTH,
         ECONNREFUSED) se loguea y el proceso SOBREVIVE en vez de caerse por
         "Unhandled 'error' event"; `/health/ready` sigue reportando 503.
-        `unhandledRejection` global de red de seguridad. Test de regresión.
+        `unhandledRejection` global de red de seguridad. Además el arranque es
+        resiliente: los `onModuleInit` del módulo update ya NO awaitan Redis de
+        forma bloqueante (self-heal best-effort + registro de scheduler sin
+        bloquear), así el API BOOTEA y escucha aunque Redis esté caído y se
+        auto-recupera al volver. Tests de regresión (guard + boot).
   - [ ] PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
