@@ -8,6 +8,7 @@ import type {
 } from '@imagina-base/shared';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { AutomationScheduler } from './automation-scheduler.service';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -20,6 +21,7 @@ export class AutomationsService {
         private readonly tenantDb: TenantDb,
         private readonly repo: AutomationsRepository,
         private readonly lists: ListsService,
+        private readonly scheduler: AutomationScheduler,
     ) {}
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Automation[]> {
@@ -56,6 +58,7 @@ export class AutomationsService {
                 isActive: input.is_active ?? true,
             }),
         );
+        await this.scheduler.sync(tenantId, row);
         return toAutomation(row);
     }
 
@@ -79,6 +82,7 @@ export class AutomationsService {
             if (!updated) throw notFound(id);
             return updated;
         });
+        await this.scheduler.sync(tenantId, row);
         return toAutomation(row);
     }
 
@@ -88,6 +92,7 @@ export class AutomationsService {
             this.repo.remove(tx, tenantId, id),
         );
         if (!deleted) throw notFound(id);
+        await this.scheduler.remove(id);
     }
 
     async runs(

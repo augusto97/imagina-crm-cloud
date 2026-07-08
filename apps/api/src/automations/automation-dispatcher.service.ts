@@ -30,7 +30,7 @@ export class AutomationDispatcher {
 
     dispatch(event: TriggerEvent): void {
         if (!this.queue) return;
-        this.queue.add('run', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+        this.queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
             this.logger.error(`No se pudo encolar la automatización: ${String(err)}`);
         });
     }

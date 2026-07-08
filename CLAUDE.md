@@ -126,8 +126,10 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Portal del cliente — magic links de un solo uso (Redis), usuario rol
         client vinculado a un record, POST /portal/consume abre sesión,
         GET /portal/me devuelve record + fields + template de bloques.
-  - [ ] due_date_reached/scheduled (repeatable jobs), editor visual del
-        portal y de automatizaciones (front).
+  - [x] Scheduling: triggers `scheduled` (cron) y `due_date_reached` (escaneo
+        periódico con dedup por automation_runs) vía job schedulers de BullMQ
+        (persisten en Redis → sobreviven reinicios sin re-enumerar).
+  - [ ] Editor visual del portal y de automatizaciones (front).
 - [ ] **F4 — Comercial** (en curso):
   - [x] Límites por plan (PlanService: max records/users/automations) +
         enforcement en create de records. Degradación a solo-lectura por

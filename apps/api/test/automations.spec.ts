@@ -7,6 +7,7 @@ import { AutomationDispatcher } from '../src/automations/automation-dispatcher.s
 import { AutomationEngine } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
 import { AutomationsService } from '../src/automations/automations.service';
+import { AutomationScheduler } from '../src/automations/automation-scheduler.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
@@ -49,7 +50,7 @@ describe('AutomationEngine (Postgres real)', () => {
             activity,
             new AutomationDispatcher(),
         );
-        automationsService = new AutomationsService(tenantDb, new AutomationsRepository(), listsService);
+        automationsService = new AutomationsService(tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
         engine = new AutomationEngine(
             tenantDb,
             new AutomationsRepository(),
@@ -173,6 +174,49 @@ describe('AutomationEngine (Postgres real)', () => {
         const tareasRecords = await recordsService.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
         expect(tareasRecords.data).toHaveLength(1);
         expect(tareasRecords.data[0]!.data[`f${titulo.id}`]).toBe('Follow-up');
+    });
+
+    it('scheduled: runScheduled ejecuta acciones sin record (create_record)', async () => {
+        const tareas = await listsService.create(tenantId, { name: 'Diario' });
+        const titulo = await fieldsService.create(tenantId, 'diario', { label: 'T', type: 'text', slug: 't' });
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Resumen diario',
+            trigger: { type: 'scheduled', cron: '0 9 * * *' },
+            actions: [{ type: 'create_record', list_id: tareas.id, data: { [`f${titulo.id}`]: 'Resumen' } }],
+        });
+
+        await engine.runScheduled(tenantId, auto.id);
+
+        const diario = await recordsService.list(tenantId, admin, 'diario', { limit: 10, sort_dir: 'asc' });
+        expect(diario.data).toHaveLength(1);
+        const runs = await automationsService.runs(tenantId, 'deals', auto.id, {});
+        expect(runs.data[0]).toMatchObject({ status: 'success', record_id: null });
+    });
+
+    it('due_date_reached: dispara para records vencidos y no re-dispara (dedup por runs)', async () => {
+        const vence = await fieldsService.create(tenantId, 'deals', { label: 'Vence', type: 'datetime', slug: 'vence' });
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Marcar vencidos',
+            trigger: { type: 'due_date_reached', field_id: vence.id, offset_minutes: 0 },
+            actions: [{ type: 'update_field', field_id: f.estado!.id, value: 'vip' }],
+        });
+
+        // Uno vencido (ayer) y uno futuro (mañana).
+        const past = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${vence.id}`]: '2020-01-01T00:00:00.000Z', [key('estado')]: 'nueva' },
+        });
+        const future = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${vence.id}`]: '2999-01-01T00:00:00.000Z', [key('estado')]: 'nueva' },
+        });
+
+        await engine.runDueDate(tenantId, auto.id);
+        expect((await recordsService.get(tenantId, admin, 'deals', past.id)).data[key('estado')]).toBe('vip');
+        expect((await recordsService.get(tenantId, admin, 'deals', future.id)).data[key('estado')]).toBe('nueva');
+
+        // Segunda corrida: no vuelve a disparar sobre el ya procesado.
+        await engine.runDueDate(tenantId, auto.id);
+        const runs = await automationsService.runs(tenantId, 'deals', auto.id, {});
+        expect(runs.data.filter((r) => r.record_id === past.id)).toHaveLength(1);
     });
 
     async function firstAutomationId(): Promise<number> {
