@@ -6,6 +6,7 @@ import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Shell } from '@/cloud/pages/Shell';
 import { ListView } from '@/cloud/pages/ListView';
 import { SettingsPage } from '@/cloud/pages/SettingsPage';
+import { OnboardingWizard } from '@/cloud/components/OnboardingWizard';
 
 /**
  * Gate de autenticación del shell cloud. Al montar consulta `GET /auth/me`
@@ -59,7 +60,21 @@ export function CloudApp(): JSX.Element {
     );
 }
 
+/**
+ * Estado del índice `/lists`: si el workspace todavía no tiene listas,
+ * mostramos el wizard de onboarding; si ya tiene, invitamos a elegir una.
+ * La misma queryKey `['lists', tenantId]` que usa el Shell → sin refetch.
+ */
 function EmptyState(): JSX.Element {
+    const tenantId = useSession((s) => s.activeTenantId);
+    const lists = useQuery({
+        queryKey: ['lists', tenantId],
+        queryFn: () => api.listLists(),
+        enabled: tenantId !== null,
+    });
+
+    if (lists.data && lists.data.length === 0) return <OnboardingWizard />;
+
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground">
             Elegí o creá una lista para empezar.
