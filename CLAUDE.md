@@ -156,8 +156,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Panel admin de miembros (full-stack): alta por email / cambio de rol /
         baja bajo /workspaces/current/members (rol admin), guard rails
         (último admin, auto-baja, duplicado, usuario inexistente), tests RLS.
-  - [ ] Stripe real (checkout + webhooks firmados), emails transaccionales.
-- [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
+  - [x] Emails transaccionales (ADR-S11): MailModule con transporte
+        intercambiable (log/smtp nodemailer), encolado en BullMQ; acción
+        `send_email` real + magic link del portal por email. Tests.
+  - [ ] Stripe real (checkout + webhooks firmados).
+- [ ] **F5 — Hardening** (en curso):
+  - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
+        (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,
+        enforcement opt-in BENCH_STRICT. Ambos holgadamente en presupuesto.
+  - [x] Monitoreo: probes /health/live y /health/ready (503 si deps caen) +
+        /metrics (contadores + p50/p95/p99) e interceptor que loguea lentas.
+  - [x] Backups+restore drill: scripts pg_dump/restore + drill end-to-end
+        (verifica restaurabilidad) + runbook (RPO/RTO, cadencia, cifrado).
+  - [ ] Beta con clientes reales; PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
