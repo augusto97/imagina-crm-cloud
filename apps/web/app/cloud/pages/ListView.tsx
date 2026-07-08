@@ -19,6 +19,7 @@ import { CardsView } from '@/cloud/components/CardsView';
 import { DashboardView } from '@/cloud/components/DashboardView';
 import { KanbanView } from '@/cloud/components/KanbanView';
 import { PortalTemplateEditor } from '@/cloud/components/PortalTemplateEditor';
+import { ViewTabs } from '@/cloud/components/ViewTabs';
 import { RecordDrawer } from '@/cloud/components/RecordDrawer';
 import { RecordsTable } from '@/cloud/components/RecordsTable';
 import { Button } from '@/components/ui/button';
@@ -116,6 +117,16 @@ export function ListView(): JSX.Element {
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
                 {mode !== 'dashboard' && mode !== 'automations' && mode !== 'portal' && (
                     <div className="imcrm-space-y-3">
+                        <ViewTabs
+                            listSlug={list.slug}
+                            mode={mode}
+                            filters={filters}
+                            dataFields={dataFields}
+                            onApply={(type, applied) => {
+                                setMode(type);
+                                setFilters(applied);
+                            }}
+                        />
                         <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
                         {dataFields.length > 0 && (
                             <FilterBar fields={dataFields} conditions={filters} onChange={setFilters} />
