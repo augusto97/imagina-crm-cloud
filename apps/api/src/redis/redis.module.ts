@@ -1,8 +1,11 @@
-import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
+import { Global, Inject, Injectable, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
 import Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { guardRedis } from './redis.util';
 
 export const REDIS = Symbol('REDIS');
+
+const logger = new Logger('RedisModule');
 
 @Injectable()
 class RedisLifecycle implements OnApplicationShutdown {
@@ -18,7 +21,8 @@ class RedisLifecycle implements OnApplicationShutdown {
     providers: [
         {
             provide: REDIS,
-            useFactory: (env: Env) => new Redis(env.REDIS_URL, { maxRetriesPerRequest: 3 }),
+            useFactory: (env: Env) =>
+                guardRedis(new Redis(env.REDIS_URL, { maxRetriesPerRequest: 3 }), logger, 'core'),
             inject: [ENV],
         },
         RedisLifecycle,

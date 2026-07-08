@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { guardRedis } from '../redis/redis.util';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
@@ -35,11 +36,16 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
     async onModuleInit(): Promise<void> {
         try {
             const conn = () => {
-                const c = new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
+                const c = guardRedis(
+                    new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null }),
+                    this.logger,
+                    'automations',
+                );
                 this.connections.push(c);
                 return c;
             };
             this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn() });
+            this.queue.on('error', (err) => this.logger.warn(`Cola de automatizaciones con error: ${err.message}`));
             this.worker = new Worker(
                 AUTOMATIONS_QUEUE,
                 async (job) => {
@@ -59,6 +65,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
             this.worker.on('failed', (job, err) =>
                 this.logger.error(`Job ${job?.id} falló: ${err.message}`),
             );
+            this.worker.on('error', (err) => this.logger.warn(`Worker de automatizaciones con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
             this.scheduler.setQueue(this.queue);
             this.logger.log('Cola de automatizaciones lista');

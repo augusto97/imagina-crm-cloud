@@ -8,6 +8,7 @@ import {
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { guardRedis } from '../redis/redis.util';
 import { MAIL_TRANSPORT, type MailMessage, type MailTransport } from './mail.types';
 
 export const MAIL_QUEUE = 'mail';
@@ -33,11 +34,16 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
     onModuleInit(): void {
         try {
             const conn = () => {
-                const c = new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
+                const c = guardRedis(
+                    new IORedis(this.env.REDIS_URL, { maxRetriesPerRequest: null }),
+                    this.logger,
+                    'mail',
+                );
                 this.connections.push(c);
                 return c;
             };
             this.queue = new Queue<MailMessage>(MAIL_QUEUE, { connection: conn() });
+            this.queue.on('error', (err) => this.logger.warn(`Cola de correo con error: ${err.message}`));
             this.worker = new Worker<MailMessage>(
                 MAIL_QUEUE,
                 (job) => this.transport.send(job.data),
@@ -46,6 +52,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             this.worker.on('failed', (job, err) =>
                 this.logger.error(`Mail job ${job?.id} falló: ${err.message}`),
             );
+            this.worker.on('error', (err) => this.logger.warn(`Worker de correo con error: ${err.message}`));
             this.logger.log(`Cola de correo lista (transporte: ${this.transport.name})`);
         } catch (err) {
             this.logger.warn(`Cola de correo deshabilitada (sin Redis): ${String(err)}`);
