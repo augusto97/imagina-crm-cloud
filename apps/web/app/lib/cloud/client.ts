@@ -3,20 +3,30 @@ import {
     aggregateResultSchema,
     apiErrorSchema,
     authSessionSchema,
+    automationSchema,
+    automationRunSchema,
+    billingSummarySchema,
     bootstrapSchema,
     commentSchema,
+    createAutomationSchema,
     createCommentSchema,
     createFieldSchema,
     createListSchema,
     createRecordSchema,
     createViewSchema,
+    exportBundleSchema,
     fieldSchema,
+    importResultSchema,
+    importRowsSchema,
+    issueMagicLinkSchema,
     listSchema,
     loginInputSchema,
+    magicLinkResultSchema,
     paginated,
     recordSchema,
     registerInputSchema,
     slugCheckResultSchema,
+    updateAutomationSchema,
     updateCommentSchema,
     updateFieldSchema,
     updateListSchema,
@@ -27,21 +37,31 @@ import {
     type AggregateRequest,
     type AggregateResult,
     type AuthSession,
+    type Automation,
+    type AutomationRun,
+    type BillingSummary,
     type Bootstrap,
     type CommentDto,
+    type CreateAutomationInput,
     type CreateCommentInput,
     type CreateFieldInput,
     type CreateListInput,
     type CreateRecordInput,
     type CreateViewInput,
+    type ExportBundle,
     type Field,
+    type ImportResult,
+    type ImportRowsInput,
+    type IssueMagicLinkInput,
     type List,
     type ListRecordsQuery,
     type LoginInput,
+    type MagicLinkResult,
     type RecordDto,
     type RegisterInput,
     type SlugCheckQuery,
     type SlugCheckResult,
+    type UpdateAutomationInput,
     type UpdateCommentInput,
     type UpdateFieldInput,
     type UpdateListInput,
@@ -259,6 +279,57 @@ export class CloudClient {
         return this.request('POST', `/lists/${list}/aggregate`, {
             body: req,
             schema: aggregateResultSchema,
+        });
+    }
+
+    // --- automations ---
+    listAutomations(list: string | number): Promise<Automation[]> {
+        return this.unwrap(
+            this.request('GET', `/lists/${list}/automations`, { schema: dataArray(automationSchema) }),
+        );
+    }
+    createAutomation(list: string | number, input: CreateAutomationInput): Promise<Automation> {
+        return this.request('POST', `/lists/${list}/automations`, {
+            body: createAutomationSchema.parse(input),
+            schema: automationSchema,
+        });
+    }
+    updateAutomation(list: string | number, id: number, patch: UpdateAutomationInput): Promise<Automation> {
+        return this.request('PATCH', `/lists/${list}/automations/${id}`, {
+            body: updateAutomationSchema.parse(patch),
+            schema: automationSchema,
+        });
+    }
+    deleteAutomation(list: string | number, id: number): Promise<void> {
+        return this.request('DELETE', `/lists/${list}/automations/${id}`, {});
+    }
+    automationRuns(list: string | number, id: number): Promise<AutomationRun[]> {
+        return this.request('GET', `/lists/${list}/automations/${id}/runs`, {
+            schema: paginated(automationRunSchema),
+        }).then((r) => r.data);
+    }
+
+    // --- billing ---
+    billing(): Promise<BillingSummary> {
+        return this.request('GET', '/billing', { schema: billingSummarySchema });
+    }
+
+    // --- export / import ---
+    exportList(list: string | number): Promise<ExportBundle> {
+        return this.request('GET', `/lists/${list}/export`, { schema: exportBundleSchema });
+    }
+    importRows(list: string | number, input: ImportRowsInput): Promise<ImportResult> {
+        return this.request('POST', `/lists/${list}/import`, {
+            body: importRowsSchema.parse(input),
+            schema: importResultSchema,
+        });
+    }
+
+    // --- portal ---
+    issueMagicLink(list: string | number, input: IssueMagicLinkInput): Promise<MagicLinkResult> {
+        return this.request('POST', `/lists/${list}/portal/magic-link`, {
+            body: issueMagicLinkSchema.parse(input),
+            schema: magicLinkResultSchema,
         });
     }
 

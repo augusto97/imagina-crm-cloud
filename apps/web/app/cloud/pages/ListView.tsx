@@ -9,6 +9,7 @@ import {
     type RecordDto,
 } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
+import { AutomationsPanel } from '@/cloud/components/AutomationsPanel';
 import { DashboardView } from '@/cloud/components/DashboardView';
 import { KanbanView } from '@/cloud/components/KanbanView';
 import { RecordDrawer } from '@/cloud/components/RecordDrawer';
@@ -16,11 +17,12 @@ import { RecordsTable } from '@/cloud/components/RecordsTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type Mode = 'table' | 'kanban' | 'dashboard';
+type Mode = 'table' | 'kanban' | 'dashboard' | 'automations';
 const MODES: Array<{ id: Mode; label: string }> = [
     { id: 'table', label: 'Tabla' },
     { id: 'kanban', label: 'Kanban' },
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'automations', label: 'Automatizaciones' },
 ];
 
 /** Vista de una lista con switcher Tabla/Kanban/Dashboard + record drawer. */
@@ -85,11 +87,13 @@ export function ListView(): JSX.Element {
             </div>
 
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
-                {mode !== 'dashboard' && (
+                {(mode === 'table' || mode === 'kanban') && (
                     <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
                 )}
 
-                {dataFields.length === 0 ? (
+                {mode === 'automations' ? (
+                    <AutomationsPanel listSlug={list.slug} fields={dataFields} />
+                ) : dataFields.length === 0 ? (
                     <Centered>Agregá un campo para empezar.</Centered>
                 ) : mode === 'table' ? (
                     <div className="imcrm-mt-4">
