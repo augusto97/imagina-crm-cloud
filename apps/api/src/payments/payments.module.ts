@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ENV, type Env } from '../config/env';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -12,6 +13,7 @@ import { PayPalGateway } from './providers/paypal.provider';
  * @Global, así que BillingService se inyecta sin re-importar.
  */
 @Module({
+    imports: [AuthModule],
     controllers: [PaymentsController],
     providers: [
         {

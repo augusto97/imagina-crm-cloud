@@ -1,9 +1,39 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import path from 'node:path';
+
+/**
+ * Fallback SPA en el dev server (espeja lo que hace Caddy en prod): las
+ * navegaciones a rutas de cliente sirven el index del SPA correcto en vez de
+ * 404. `/portal/*` → build del portal; el resto (/lists, /settings, …) → cloud.
+ * Sólo reescribe requests de navegación HTML; deja pasar assets y vite internals.
+ */
+function spaFallback(): Plugin {
+    return {
+        name: 'imagina-spa-fallback',
+        configureServer(server) {
+            server.middlewares.use((req, _res, next) => {
+                const url = req.url ?? '/';
+                const accept = req.headers.accept ?? '';
+                const isNav = req.method === 'GET' && accept.includes('text/html');
+                const isInternal =
+                    url.startsWith('/@') ||
+                    url.startsWith('/app/') ||
+                    url.startsWith('/node_modules/') ||
+                    url.includes('.'); // assets con extensión
+                if (isNav && !isInternal) {
+                    req.url = url.startsWith('/portal')
+                        ? '/cloud-portal/index.html'
+                        : '/cloud/index.html';
+                }
+                next();
+            });
+        },
+    };
+}
 
 /**
  * Build/dev STANDALONE del SPA cloud de Imagina Base (sin WordPress). El
@@ -15,7 +45,7 @@ import path from 'node:path';
  */
 export default defineConfig({
     root: __dirname,
-    plugins: [react()],
+    plugins: [react(), spaFallback()],
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './app'),
