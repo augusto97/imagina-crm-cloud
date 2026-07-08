@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from './activity/activity.module';
+import { AggregateModule } from './aggregate/aggregate.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthzModule } from './authz/authz.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
@@ -33,6 +34,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ViewsModule,
         ActivityModule,
         CommentsModule,
+        AggregateModule,
         BootstrapModule,
         SlugsModule,
         HealthModule,

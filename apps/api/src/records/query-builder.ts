@@ -20,6 +20,16 @@ export interface FilterableField {
 const NON_FILTERABLE: readonly FieldType[] = ['relation', 'computed'];
 
 /**
+ * La clave JSONB (`f{id}`, id numérico validado) se inyecta como LITERAL, no
+ * como bind param: así la misma expresión matchea entre SELECT y GROUP BY
+ * (Postgres compara por árbol de parseo, y `$1` vs `$2` no matchean).
+ */
+function keyLit(key: string): SQL {
+    if (!/^f\d+$/.test(key)) throw new BadRequestException('Clave de campo inválida');
+    return sql.raw(`'${key}'`);
+}
+
+/**
  * Compila un filter tree a una condición SQL sobre `records.data` (JSONB).
  *
  * Whitelist estricta (regla de oro nº 4): cada condición referencia un
@@ -70,7 +80,7 @@ function compileCondition(
     }
 
     // Expresión de texto base y expresión tipada según el tipo del campo.
-    const asText = sql`(${records.data} ->> ${key})`;
+    const asText = sql`(${records.data} ->> ${keyLit(key)})`;
 
     switch (op) {
         case 'is_null':
@@ -136,9 +146,19 @@ function compileComparison(
     }
 }
 
+/** Expresión de texto JSONB de un campo: `(data->>'fN')`. */
+export function fieldTextExpr(fieldId: number): SQL {
+    return sql`(${records.data} ->> ${keyLit(jsonbKeyForField(fieldId))})`;
+}
+
+/** Expresión JSONB tipada de un campo (numeric/date/timestamptz/text). */
+export function fieldTypedExpr(field: FilterableField): SQL {
+    return typedExpr(jsonbKeyForField(field.id), field.type);
+}
+
 /** Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3). */
 function typedExpr(key: string, type: FieldType): SQL {
-    const asText = sql`(${records.data} ->> ${key})`;
+    const asText = sql`(${records.data} ->> ${keyLit(key)})`;
     switch (type) {
         case 'number':
         case 'currency':
@@ -164,7 +184,7 @@ function castValue(type: FieldType, value: unknown): number | string {
 }
 
 function compileMultiSelect(key: string, op: FilterOperator, value: unknown): SQL | undefined {
-    const arr = sql`(${records.data} -> ${key})`;
+    const arr = sql`(${records.data} -> ${keyLit(key)})`;
     switch (op) {
         case 'is_null':
             return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;

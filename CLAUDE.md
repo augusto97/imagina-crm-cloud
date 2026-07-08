@@ -111,7 +111,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
         rooms por tenant) + Redis adapter multi-nodo; los services emiten al
         mutar y el front invalida TanStack. Verificado entre pestañas.
-  - [ ] Kanban/Cards/Calendar, dashboards, comments/activity.
+  - [x] `comments` — CRUD por record, kind, threading, autoría, realtime.
+  - [x] `activity` — log append-only con diffs, escrito en el tx de la
+        mutación; endpoints por lista/record.
+  - [x] `aggregate` — motor de agregaciones (§5): count/sum/avg/min/max/
+        unique/empty/true/false + group_by + filter tree (footer + dashboards).
+  - [ ] Front: Kanban/Cards/Calendar, dashboards (widgets).
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
       portal cliente, editor de plantillas.
 - [ ] **F4 — Comercial**: Stripe, onboarding, límites por plan, panel admin.

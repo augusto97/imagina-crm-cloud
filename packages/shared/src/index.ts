@@ -13,4 +13,5 @@ export * from './schemas/slug-check';
 export * from './schemas/realtime';
 export * from './schemas/comment';
 export * from './schemas/activity';
+export * from './schemas/aggregate';
 export * from './field-types/validate';
