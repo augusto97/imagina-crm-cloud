@@ -26,6 +26,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { BillingService } from '../billing/billing.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { RecordsService, type Actor, type RecordsPage } from './records.service';
@@ -38,7 +39,10 @@ import { RecordsService, type Actor, type RecordsPage } from './records.service'
 @Controller('lists/:list/records')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class RecordsController {
-    constructor(private readonly records: RecordsService) {}
+    constructor(
+        private readonly records: RecordsService,
+        private readonly billing: BillingService,
+    ) {}
 
     @Get()
     @RequireCapability('view_records', 'view_own_records')
@@ -63,11 +67,13 @@ export class RecordsController {
     @Post()
     @HttpCode(201)
     @RequireCapability('create_records')
-    create(
+    async create(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createRecordSchema)) input: CreateRecordInput,
     ): Promise<RecordDto> {
+        // Límite de records por plan (STANDALONE §11).
+        await this.billing.assertCanCreateRecord(tenantId(req));
         return this.records.create(tenantId(req), actor(req), list, input);
     }
 

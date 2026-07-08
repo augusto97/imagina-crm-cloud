@@ -1,0 +1,1 @@
+ALTER TABLE "tenants" ADD COLUMN "status" varchar(16) DEFAULT 'trialing' NOT NULL;

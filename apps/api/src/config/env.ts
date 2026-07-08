@@ -19,6 +19,9 @@ const envSchema = z.object({
         .positive()
         .default(60 * 60 * 24 * 30),
     COOKIE_SECURE: boolFromString,
+    // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
+    // = webhook deshabilitado.
+    BILLING_WEBHOOK_SECRET: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

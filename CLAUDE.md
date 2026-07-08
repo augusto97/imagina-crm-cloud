@@ -128,9 +128,14 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         GET /portal/me devuelve record + fields + template de bloques.
   - [ ] due_date_reached/scheduled (repeatable jobs), editor visual del
         portal y de automatizaciones (front).
-- [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
-      portal cliente, editor de plantillas.
-- [ ] **F4 — Comercial**: Stripe, onboarding, límites por plan, panel admin.
+- [ ] **F4 — Comercial** (en curso):
+  - [x] Límites por plan (PlanService: max records/users/automations) +
+        enforcement en create de records. Degradación a solo-lectura por
+        impago en el TenantGuard (ADR-S09: los datos nunca se secuestran).
+  - [x] Billing summary (plan+estado+uso+límites) + webhook stand-in de
+        Stripe (gateado por secret) para cambiar plan/estado.
+  - [ ] Stripe real (checkout + webhooks firmados), onboarding, panel admin,
+        emails transaccionales.
 - [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
 
 ## 6. Cómo trabajar con Claude Code en este repo

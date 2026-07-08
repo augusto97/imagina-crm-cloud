@@ -3,6 +3,7 @@ import { ActivityModule } from './activity/activity.module';
 import { AggregateModule } from './aggregate/aggregate.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
+import { BillingModule } from './billing/billing.module';
 import { AuthzModule } from './authz/authz.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { CommentsModule } from './comments/comments.module';
@@ -39,6 +40,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AggregateModule,
         AutomationsModule,
         PortalModule,
+        BillingModule,
         BootstrapModule,
         SlugsModule,
         HealthModule,

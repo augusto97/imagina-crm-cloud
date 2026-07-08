@@ -5,6 +5,7 @@ import {
     ForbiddenException,
     Injectable,
 } from '@nestjs/common';
+import { isReadOnly, type BillingStatus } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { memberships, tenants } from '../db/schema';
@@ -14,7 +15,11 @@ export interface TenantContext {
     tenantId: number;
     tenantSlug: string;
     role: (typeof memberships.$inferSelect)['role'];
+    status: BillingStatus;
 }
+
+/** Los magic-link / consumo del portal no pasan por acá; sí las mutaciones. */
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /**
  * Resuelve el tenant activo desde el header `X-Tenant-Id` (id numérico o
@@ -46,6 +51,7 @@ export class TenantGuard implements CanActivate {
                     tenantId: memberships.tenantId,
                     role: memberships.role,
                     tenantSlug: tenants.slug,
+                    status: tenants.status,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -63,10 +69,23 @@ export class TenantGuard implements CanActivate {
             throw new ForbiddenException('No sos miembro de ese workspace');
         }
 
+        const status = membership.status as BillingStatus;
+
+        // ADR-S09: impago → solo-lectura. Se bloquean las mutaciones; las
+        // lecturas y el export siguen disponibles (los datos son del cliente).
+        if (isReadOnly(status) && MUTATING_METHODS.has(req.method)) {
+            throw new ForbiddenException({
+                code: 'workspace_read_only',
+                message: 'El workspace está en solo-lectura por el estado de facturación',
+                data: { status: 403 },
+            });
+        }
+
         req.tenant = {
             tenantId: membership.tenantId,
             tenantSlug: membership.tenantSlug,
             role: membership.role,
+            status,
         };
         return true;
     }
