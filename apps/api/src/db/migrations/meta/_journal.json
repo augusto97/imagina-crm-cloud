@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783444326863,
+      "tag": "0000_nosy_meltdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783444334389,
+      "tag": "0001_rls_and_jsonb_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783444596468,
+      "tag": "0002_app_role",
+      "breakpoints": true
+    }
+  ]
+}
