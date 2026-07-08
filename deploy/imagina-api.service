@@ -1,0 +1,26 @@
+# systemd unit para el API de Imagina Base.
+# Copiar a /etc/systemd/system/imagina-api.service y ajustar rutas/usuario.
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now imagina-api
+#   sudo journalctl -u imagina-api -f     # logs
+[Unit]
+Description=Imagina Base API (NestJS)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/opt/imagina-base/apps/api
+# El env de producción (DATABASE_URL, REDIS_URL, secrets, etc.).
+EnvironmentFile=/opt/imagina-base/.env.production
+# Node 22 debe estar en el PATH del servicio (ajustá si usás nvm/volta).
+ExecStart=/usr/bin/node dist/main.js
+Restart=on-failure
+RestartSec=3
+# Reinicio limpio: el API cierra colas BullMQ y conexiones en SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
