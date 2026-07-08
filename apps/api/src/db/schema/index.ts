@@ -7,3 +7,4 @@ export * from './records';
 export * from './saved-views';
 export * from './comments';
 export * from './activity';
+export * from './automations';

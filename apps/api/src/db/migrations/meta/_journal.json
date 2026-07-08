@@ -50,6 +50,20 @@
       "when": 1783498685772,
       "tag": "0006_comments_activity_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783500021259,
+      "tag": "0007_needy_micromax",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783500022437,
+      "tag": "0008_automations_rls",
+      "breakpoints": true
     }
   ]
 }

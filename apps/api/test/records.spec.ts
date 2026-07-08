@@ -14,6 +14,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 
 /** Realtime no-op para tests unitarios (sin servidor socket → no emite). */
@@ -35,7 +36,7 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         const tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
-        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, new ActivityService(tenantDb, new ActivityRepository(), listsService));
+        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, new ActivityService(tenantDb, new ActivityRepository(), listsService), new AutomationDispatcher());
 
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();

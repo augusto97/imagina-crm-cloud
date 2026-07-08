@@ -13,6 +13,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
+import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -41,6 +42,7 @@ export class RecordsService {
         private readonly fields: FieldsService,
         private readonly realtime: RealtimeService,
         private readonly activity: ActivityService,
+        private readonly automations: AutomationDispatcher,
     ) {}
 
     async create(
@@ -71,6 +73,13 @@ export class RecordsService {
             return inserted;
         });
         this.realtime.records(tenantId, listId);
+        this.automations.dispatch({
+            tenantId,
+            listId,
+            recordId: row.id,
+            trigger: 'record_created',
+            after: row.data,
+        });
         return toRecord(row);
     }
 
@@ -150,6 +159,13 @@ export class RecordsService {
         });
         if (!row) throw recordNotFound(id);
         this.realtime.records(tenantId, listId);
+        this.automations.dispatch({
+            tenantId,
+            listId,
+            recordId: row.id,
+            trigger: 'record_updated',
+            after: row.data,
+        });
         return toRecord(row);
     }
 

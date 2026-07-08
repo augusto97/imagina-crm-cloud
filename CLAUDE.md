@@ -116,7 +116,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         mutación; endpoints por lista/record.
   - [x] `aggregate` — motor de agregaciones (§5): count/sum/avg/min/max/
         unique/empty/true/false + group_by + filter tree (footer + dashboards).
-  - [ ] Front: Kanban/Cards/Calendar, dashboards (widgets).
+  - [x] Front: switcher Tabla/Kanban/Dashboard + record drawer (edición +
+        comments + activity), consumiendo el API con realtime.
+- [ ] **F3 — Automatizaciones + portal** (en curso):
+  - [x] Motor de automatizaciones sobre BullMQ: triggers (record_created/
+        updated dispatch), condiciones (filter tree), actions (update_field,
+        create_record, call_webhook con HMAC, send_email simulado), runs con
+        logs. CRUD + runs endpoint. Worker in-process con Redis.
+  - [ ] due_date_reached/scheduled (repeatable jobs), portal del cliente
+        (magic links + /portal/me), editor visual (front).
 - [ ] **F3 — Automatizaciones + portal**: motor BullMQ, editor visual,
       portal cliente, editor de plantillas.
 - [ ] **F4 — Comercial**: Stripe, onboarding, límites por plan, panel admin.

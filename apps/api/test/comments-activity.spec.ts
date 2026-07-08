@@ -14,6 +14,7 @@ import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 
@@ -45,6 +46,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             fieldsService,
             rt,
             activityService,
+            new AutomationDispatcher(),
         );
         commentsService = new CommentsService(
             tenantDb,

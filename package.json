@@ -32,6 +32,9 @@
             "ssh2",
             "protobufjs",
             "unrs-resolver"
-        ]
+        ],
+        "overrides": {
+            "ioredis": "5.11.1"
+        }
     }
 }
