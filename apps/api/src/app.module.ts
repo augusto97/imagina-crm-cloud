@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { ActivityModule } from './activity/activity.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthzModule } from './authz/authz.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
+import { CommentsModule } from './comments/comments.module';
 import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
@@ -29,6 +31,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         FieldsModule,
         RecordsModule,
         ViewsModule,
+        ActivityModule,
+        CommentsModule,
         BootstrapModule,
         SlugsModule,
         HealthModule,

@@ -11,4 +11,6 @@ export * from './schemas/view';
 export * from './schemas/bootstrap';
 export * from './schemas/slug-check';
 export * from './schemas/realtime';
+export * from './schemas/comment';
+export * from './schemas/activity';
 export * from './field-types/validate';

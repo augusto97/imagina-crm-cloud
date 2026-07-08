@@ -9,6 +9,8 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { ActivityService } from '../src/activity/activity.service';
+import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
@@ -33,7 +35,7 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         const tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
-        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt);
+        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, new ActivityService(tenantDb, new ActivityRepository(), listsService));
 
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();

@@ -12,6 +12,7 @@ import {
     type UpdateRecordInput,
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
+import { ActivityService, computeDiff } from '../activity/activity.service';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -39,6 +40,7 @@ export class RecordsService {
         private readonly lists: ListsService,
         private readonly fields: FieldsService,
         private readonly realtime: RealtimeService,
+        private readonly activity: ActivityService,
     ) {}
 
     async create(
@@ -51,9 +53,23 @@ export class RecordsService {
         const fields = await this.fields.list(tenantId, String(listId));
         const data = this.validateData(fields, input.data, { partial: false });
 
-        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.insert(tx, { tenantId, listId, data, createdBy: actor.userId }),
-        );
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const inserted = await this.repo.insert(tx, {
+                tenantId,
+                listId,
+                data,
+                createdBy: actor.userId,
+            });
+            await this.activity.logInTx(tx, {
+                tenantId,
+                listId,
+                recordId: inserted.id,
+                userId: actor.userId,
+                action: 'record_created',
+                diff: computeDiff({}, inserted.data),
+            });
+            return inserted;
+        });
         this.realtime.records(tenantId, listId);
         return toRecord(row);
     }
@@ -119,7 +135,18 @@ export class RecordsService {
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, input.data, { partial: true });
             const merged = mergeData(current.data, patch);
-            return this.repo.updateData(tx, tenantId, listId, id, merged);
+            const updated = await this.repo.updateData(tx, tenantId, listId, id, merged);
+            if (updated) {
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId,
+                    recordId: id,
+                    userId: actor.userId,
+                    action: 'record_updated',
+                    diff: computeDiff(current.data, merged),
+                });
+            }
+            return updated;
         });
         if (!row) throw recordNotFound(id);
         this.realtime.records(tenantId, listId);
@@ -131,7 +158,17 @@ export class RecordsService {
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.canReach(actor, 'delete', current)) return false;
-            return this.repo.softDelete(tx, tenantId, listId, id);
+            const ok = await this.repo.softDelete(tx, tenantId, listId, id);
+            if (ok) {
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId,
+                    recordId: id,
+                    userId: actor.userId,
+                    action: 'record_deleted',
+                });
+            }
+            return ok;
         });
         if (!deleted) throw recordNotFound(id);
         this.realtime.records(tenantId, listId);
