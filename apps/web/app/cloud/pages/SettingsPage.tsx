@@ -2,10 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
+import { MembersPanel } from '@/cloud/components/MembersPanel';
 
 /** Ajustes del workspace: plan, estado de facturación, uso vs. límites. */
 export function SettingsPage(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
+    const isAdmin = useSession(
+        (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
+    );
     const billing = useQuery({
         queryKey: ['billing', tenantId],
         queryFn: () => api.billing(),
@@ -21,6 +25,7 @@ export function SettingsPage(): JSX.Element {
             </div>
 
             {billing.data && <BillingCard summary={billing.data} />}
+            {isAdmin && <MembersPanel />}
         </div>
     );
 }

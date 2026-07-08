@@ -22,10 +22,13 @@ import {
     issueMagicLinkSchema,
     listSchema,
     loginInputSchema,
+    addMemberSchema,
     magicLinkResultSchema,
     paginated,
     portalBootSchema,
     recordSchema,
+    updateMemberRoleSchema,
+    workspaceMemberSchema,
     registerInputSchema,
     slugCheckResultSchema,
     updateAutomationSchema,
@@ -58,9 +61,12 @@ import {
     type List,
     type ListRecordsQuery,
     type LoginInput,
+    type AddMemberInput,
     type MagicLinkResult,
     type PortalBoot,
     type RecordDto,
+    type UpdateMemberRoleInput,
+    type WorkspaceMember,
     type RegisterInput,
     type SlugCheckQuery,
     type SlugCheckResult,
@@ -310,6 +316,30 @@ export class CloudClient {
         return this.request('GET', `/lists/${list}/automations/${id}/runs`, {
             schema: paginated(automationRunSchema),
         }).then((r) => r.data);
+    }
+
+    // --- members (panel admin) ---
+    listMembers(): Promise<WorkspaceMember[]> {
+        return this.unwrap(
+            this.request('GET', '/workspaces/current/members', {
+                schema: dataArray(workspaceMemberSchema),
+            }),
+        );
+    }
+    addMember(input: AddMemberInput): Promise<WorkspaceMember> {
+        return this.request('POST', '/workspaces/current/members', {
+            body: addMemberSchema.parse(input),
+            schema: workspaceMemberSchema,
+        });
+    }
+    updateMemberRole(userId: number, input: UpdateMemberRoleInput): Promise<WorkspaceMember> {
+        return this.request('PATCH', `/workspaces/current/members/${userId}`, {
+            body: updateMemberRoleSchema.parse(input),
+            schema: workspaceMemberSchema,
+        });
+    }
+    removeMember(userId: number): Promise<void> {
+        return this.request('DELETE', `/workspaces/current/members/${userId}`, {});
     }
 
     // --- billing ---

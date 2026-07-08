@@ -14,6 +14,7 @@ import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
 import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
+import { MembersModule } from './members/members.module';
 import { PortalModule } from './portal/portal.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
@@ -33,6 +34,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         RealtimeModule,
         AuthModule,
         WorkspacesModule,
+        MembersModule,
         ListsModule,
         FieldsModule,
         RecordsModule,
