@@ -55,7 +55,13 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
             this.worker.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
 
             // Chequeo horario de releases (persiste en Redis → sobrevive reinicios).
-            await this.queue.upsertJobScheduler('update-check-hourly', { pattern: '0 * * * *' }, { name: 'check' });
+            // SIN await: la conexión de BullMQ usa maxRetriesPerRequest:null, así
+            // que si Redis no está disponible ahora este comando se encola y NO
+            // debe bloquear el arranque del API. Se registra cuando Redis vuelve.
+            void this.queue
+                .upsertJobScheduler('update-check-hourly', { pattern: '0 * * * *' }, { name: 'check' })
+                .then(() => this.logger.log('Scheduler de chequeo horario registrado'))
+                .catch((err) => this.logger.warn(`No se pudo registrar el scheduler horario: ${String(err)}`));
             this.logger.log('Cola de actualización lista');
         } catch (err) {
             this.logger.warn(`Auto-actualización deshabilitada (sin Redis): ${String(err)}`);
