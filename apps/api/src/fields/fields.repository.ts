@@ -19,6 +19,15 @@ export class FieldsRepository {
             .orderBy(asc(fields.position), asc(fields.id));
     }
 
+    /** Todos los campos del tenant (para el endpoint bootstrap — sin N+1). */
+    listByTenant(tx: Tx, tenantId: number): Promise<FieldRow[]> {
+        return tx
+            .select()
+            .from(fields)
+            .where(eq(fields.tenantId, tenantId))
+            .orderBy(asc(fields.listId), asc(fields.position), asc(fields.id));
+    }
+
     async findById(tx: Tx, tenantId: number, listId: number, id: number): Promise<FieldRow | null> {
         const [row] = await tx
             .select()

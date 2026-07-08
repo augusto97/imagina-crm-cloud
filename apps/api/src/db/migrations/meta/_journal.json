@@ -22,6 +22,20 @@
       "when": 1783444596468,
       "tag": "0002_app_role",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783484968550,
+      "tag": "0003_grey_smiling_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783484974381,
+      "tag": "0004_saved_views_rls",
+      "breakpoints": true
     }
   ]
 }
