@@ -159,7 +159,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Emails transaccionales (ADR-S11): MailModule con transporte
         intercambiable (log/smtp nodemailer), encolado en BullMQ; acción
         `send_email` real + magic link del portal por email. Tests.
-  - [ ] Stripe real (checkout + webhooks firmados).
+  - [x] Pagos (ADR-S12): PayPal (USD) + Mercado Pago (COP) detrás de una
+        interfaz `PaymentGateway` (Stripe no opera en Colombia). Checkout por
+        proveedor, webhooks firmados por proveedor (HMAC MP / verify-webhook
+        PayPal) → setBilling; front en Ajustes (admin) con planes/precios.
+        Tests de firmas, mapeos y service. Falta prueba en sandbox con creds.
 - [ ] **F5 — Hardening** (en curso):
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,

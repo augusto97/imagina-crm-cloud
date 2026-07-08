@@ -23,8 +23,11 @@ import {
     listSchema,
     loginInputSchema,
     addMemberSchema,
+    checkoutResultSchema,
+    createCheckoutSchema,
     magicLinkResultSchema,
     paginated,
+    paymentConfigSchema,
     portalBootSchema,
     recordSchema,
     updateMemberRoleSchema,
@@ -62,7 +65,10 @@ import {
     type ListRecordsQuery,
     type LoginInput,
     type AddMemberInput,
+    type CheckoutResult,
+    type CreateCheckoutInput,
     type MagicLinkResult,
+    type PaymentConfig,
     type PortalBoot,
     type RecordDto,
     type UpdateMemberRoleInput,
@@ -345,6 +351,17 @@ export class CloudClient {
     // --- billing ---
     billing(): Promise<BillingSummary> {
         return this.request('GET', '/billing', { schema: billingSummarySchema });
+    }
+
+    // --- payments (ADR-S12) ---
+    paymentsConfig(): Promise<PaymentConfig> {
+        return this.request('GET', '/billing/payments/config', { schema: paymentConfigSchema });
+    }
+    createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult> {
+        return this.request('POST', '/billing/checkout', {
+            body: createCheckoutSchema.parse(input),
+            schema: checkoutResultSchema,
+        });
     }
 
     // --- export / import ---

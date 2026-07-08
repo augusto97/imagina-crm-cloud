@@ -13,6 +13,9 @@ async function bootstrap(): Promise<void> {
     const app = await NestFactory.create<NestFastifyApplication>(
         AppModule,
         new FastifyAdapter(),
+        // rawBody: para verificar la firma de los webhooks de pago (ADR-S12)
+        // sobre el cuerpo exacto recibido, no el re-serializado.
+        { rawBody: true },
     );
 
     await app.register(fastifyCookie);

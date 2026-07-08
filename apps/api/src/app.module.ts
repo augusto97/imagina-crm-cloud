@@ -17,6 +17,7 @@ import { ListsModule } from './lists/lists.module';
 import { MailModule } from './mail/mail.module';
 import { MembersModule } from './members/members.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PortalModule } from './portal/portal.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
@@ -49,6 +50,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AutomationsModule,
         PortalModule,
         BillingModule,
+        PaymentsModule,
         ExportModule,
         ImportModule,
         BootstrapModule,

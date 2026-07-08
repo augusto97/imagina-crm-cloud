@@ -40,6 +40,15 @@ const envSchema = z.object({
     SMTP_SECURE: boolFromString,
     SMTP_USER: z.string().default(''),
     SMTP_PASS: z.string().default(''),
+
+    // --- Pagos (ADR-S12). Cada proveedor se habilita al setear sus
+    // credenciales; sin ellas el proveedor queda deshabilitado (no rompe).
+    PAYPAL_ENV: z.enum(['sandbox', 'live']).default('sandbox'),
+    PAYPAL_CLIENT_ID: z.string().default(''),
+    PAYPAL_CLIENT_SECRET: z.string().default(''),
+    PAYPAL_WEBHOOK_ID: z.string().default(''),
+    MERCADOPAGO_ACCESS_TOKEN: z.string().default(''),
+    MERCADOPAGO_WEBHOOK_SECRET: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

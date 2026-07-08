@@ -457,7 +457,22 @@ tocar services. Si `smtp` está pedido pero falta `SMTP_HOST`, o si no hay
 Redis, degrada sin romper (log / envío directo). URLs absolutas en emails vía
 `APP_BASE_URL`. Primer uso: magic link del portal + acción `send_email`.
 
+**ADR-S12 — Pagos por proveedor intercambiable (PayPal + Mercado Pago), no Stripe.**
+Stripe no opera en Colombia, así que el cobro va por proveedores locales/
+regionales detrás de una interfaz común `PaymentGateway` (mismo patrón que los
+transportes de correo, ADR-S11): PayPal (Orders API v2, USD) y Mercado Pago
+(Checkout Pro, COP). El dominio (billing) no conoce el proveedor: elige el
+gateway, arma el checkout con una referencia opaca `tenantId:plan`, y aplica el
+evento del webhook a `tenants.plan/status`. Cada gateway se auto-deshabilita si
+faltan credenciales. La autenticidad del webhook la verifica cada gateway sobre
+el **cuerpo crudo** (`rawBody`): Mercado Pago con HMAC de `x-signature`; PayPal
+con su API oficial `verify-webhook-signature`. Los webhooks son públicos, uno
+por proveedor: `POST /api/v1/billing/webhook/{paypal|mercadopago}`. Enchufar
+otro medio (PSE, Nequi vía un agregador) es un adapter nuevo, sin tocar billing.
+El `setBilling` sigue siendo la única puerta a `tenants.plan/status`, así que
+la degradación a solo-lectura por impago (ADR-S09) se mantiene intacta.
+
 ---
 
 **Última actualización:** 2026-07-08
-**Versión del documento:** 1.2.0 (subsistema de correo — ADR-S11)
+**Versión del documento:** 1.3.0 (pagos PayPal + Mercado Pago — ADR-S12)

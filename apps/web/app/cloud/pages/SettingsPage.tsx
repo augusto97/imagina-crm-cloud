@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
+import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 
 /** Ajustes del workspace: plan, estado de facturación, uso vs. límites. */
 export function SettingsPage(): JSX.Element {
@@ -10,6 +11,8 @@ export function SettingsPage(): JSX.Element {
     const isAdmin = useSession(
         (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
     );
+    const [params] = useSearchParams();
+    const checkout = params.get('checkout');
     const billing = useQuery({
         queryKey: ['billing', tenantId],
         queryFn: () => api.billing(),
@@ -24,7 +27,19 @@ export function SettingsPage(): JSX.Element {
                 </Link>
             </div>
 
+            {checkout === 'success' && (
+                <p className="imcrm-rounded-md imcrm-bg-emerald-100 imcrm-p-3 imcrm-text-sm imcrm-text-emerald-800">
+                    ¡Gracias! Estamos confirmando tu pago; el plan se actualiza en cuanto el proveedor lo notifique.
+                </p>
+            )}
+            {checkout === 'cancel' && (
+                <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
+                    Cancelaste el pago. Podés intentarlo de nuevo cuando quieras.
+                </p>
+            )}
+
             {billing.data && <BillingCard summary={billing.data} />}
+            {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
             {isAdmin && <MembersPanel />}
         </div>
     );

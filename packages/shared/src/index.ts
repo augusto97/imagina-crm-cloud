@@ -18,6 +18,7 @@ export * from './schemas/aggregate';
 export * from './schemas/automation';
 export * from './schemas/portal';
 export * from './schemas/billing';
+export * from './schemas/payment';
 export * from './schemas/export';
 export * from './schemas/import';
 export * from './field-types/validate';
