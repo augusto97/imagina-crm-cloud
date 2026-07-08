@@ -1,4 +1,5 @@
 import { getBootData } from '@/lib/boot';
+import { CLOUD_WIRED } from '@/lib/cloudFeatures';
 
 /**
  * Error tipado que devuelve la REST API. Mapea el shape estándar:
@@ -274,8 +275,30 @@ function normalizeDates(value: unknown): unknown {
     return value;
 }
 
+/**
+ * Módulos aún no cableados al backend NestJS: en vez de dejar que la UI dispare
+ * requests que devuelven 404/400 (ruido en consola y secciones que parecen
+ * rotas), devolvemos un vacío seguro. Cada stub se apaga solo al poner el
+ * módulo en `true` en CLOUD_WIRED (cuando se conecta de verdad).
+ */
+function cloudStub(method: Method, path: string): { data: unknown } | null {
+    if (method !== 'GET') return null;
+    // Ojo: algunos hooks embeben el query string en el path (…/aggregates?fields=…),
+    // así que matcheamos permitiendo un `?` o fin de string.
+    if (!CLOUD_WIRED.aggregates && /\/records\/aggregates(\?|$)/.test(path)) return { data: { totals: {} } };
+    if (!CLOUD_WIRED.recurrences && /\/recurrences(\?|$)/.test(path)) return { data: [] };
+    if (!CLOUD_WIRED.dashboards && /^\/dashboards(\/|\?|$)/.test(path)) return { data: [] };
+    if (!CLOUD_WIRED.mentions && /\/me\/mentions(\?|$)/.test(path)) return { data: [] };
+    if (!CLOUD_WIRED.automations && /^\/(triggers|actions)(\?|$)/.test(path)) return { data: [] };
+    return null;
+}
+
 async function request<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
     const boot = getBootData();
+    if (boot.cloud) {
+        const stub = cloudStub(method, path);
+        if (stub) return { data: stub.data as T };
+    }
     const url = buildUrl(path, opts.query);
 
     const headers: Record<string, string> = {
