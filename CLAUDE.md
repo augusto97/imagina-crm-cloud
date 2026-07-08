@@ -134,8 +134,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         impago en el TenantGuard (ADR-S09: los datos nunca se secuestran).
   - [x] Billing summary (plan+estado+uso+límites) + webhook stand-in de
         Stripe (gateado por secret) para cambiar plan/estado.
-  - [ ] Stripe real (checkout + webhooks firmados), onboarding, panel admin,
-        emails transaccionales.
+  - [x] Export JSON de intercambio (STANDALONE §16): GET /lists/:list/export
+        (list+fields+views+records, keyset). Disponible en solo-lectura
+        (completa la promesa de ADR-S09: impago = solo-lectura + export).
+  - [ ] Stripe real (checkout + webhooks firmados), import CSV/JSON,
+        onboarding, panel admin, emails transaccionales.
 - [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
 
 ## 6. Cómo trabajar con Claude Code en este repo
