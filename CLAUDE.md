@@ -101,12 +101,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] `views` — saved views table/kanban/calendar/cards, default único.
   - [x] `bootstrap` — workspace+user+lists+fields+views+caps en 1 request.
   - [x] `slugs/check` — formato/reservado/unicidad.
-  - [x] Front conectado (MVP): CloudClient tipado + shell propio cloud
+  - [x] Front conectado: CloudClient tipado + shell propio cloud
         (login/register, workspace switcher, sidebar de listas, tabla de
-        records con alta de campos/registros) contra el nuevo API,
-        verificado end-to-end en navegador (Playwright). BrowserRouter,
-        auth por cookie de sesión. Falta portar Kanban/Cards/Calendar y el
-        editor de plantillas del fork (F2+).
+        records con alta de campos/registros, FilterBar AND) contra el nuevo
+        API, verificado end-to-end en navegador (Playwright). BrowserRouter,
+        auth por cookie de sesión.
 - [ ] **F2 — Vistas + realtime** (en curso):
   - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
         rooms por tenant) + Redis adapter multi-nodo; los services emiten al
@@ -116,8 +115,10 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         mutación; endpoints por lista/record.
   - [x] `aggregate` — motor de agregaciones (§5): count/sum/avg/min/max/
         unique/empty/true/false + group_by + filter tree (footer + dashboards).
-  - [x] Front: switcher Tabla/Kanban/Dashboard + record drawer (edición +
-        comments + activity), consumiendo el API con realtime.
+  - [x] Front: switcher Tabla/Kanban/Tarjetas/Calendario/Dashboard + record
+        drawer (edición + comments + activity + emisión de magic link),
+        consumiendo el API con realtime. Los 4 tipos de vista del CONTRACT §7
+        renderizados; FilterBar compartido (filter_tree server-side).
 - [ ] **F3 — Automatizaciones + portal** (en curso):
   - [x] Motor de automatizaciones sobre BullMQ: triggers (record_created/
         updated dispatch), condiciones (filter tree), actions (update_field,
@@ -129,7 +130,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Scheduling: triggers `scheduled` (cron) y `due_date_reached` (escaneo
         periódico con dedup por automation_runs) vía job schedulers de BullMQ
         (persisten en Redis → sobreviven reinicios sin re-enumerar).
-  - [ ] Editor visual del portal y de automatizaciones (front).
+  - [x] Front automatizaciones: AutomationsPanel (alta con trigger/condición/
+        acción, toggle activa/pausa, visor de runs, borrado).
+  - [x] Front portal: SPA del cliente (build `portal` aparte) — `/portal/acceso`
+        canjea el magic link y `/portal` renderiza record + campos + template
+        (bloques heading/notice/static_text); admin emite el link desde el
+        record drawer.
+  - [ ] Editor visual (drag&drop) del template del portal (front, F3+).
 - [ ] **F4 — Comercial** (en curso):
   - [x] Límites por plan (PlanService: max records/users/automations) +
         enforcement en create de records. Degradación a solo-lectura por
@@ -141,8 +148,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (completa la promesa de ADR-S09: impago = solo-lectura + export).
   - [x] Import de filas a una lista (mapeo columna→campo, validación por
         tipo con el validador compartido, errores por fila, límite de plan).
-  - [ ] Stripe real (checkout + webhooks firmados), onboarding, panel admin,
-        emails transaccionales.
+  - [x] Front comercial: página de Ajustes (plan, estado, barras de uso vs.
+        límites) + export/import (JSON download, import CSV con auto-mapeo)
+        en el toolbar de la lista.
+  - [ ] Stripe real (checkout + webhooks firmados), onboarding guiado, panel
+        admin, emails transaccionales.
 - [ ] **F5 — Hardening**: backups+restore drill, monitoreo, benchmarks, beta.
 
 ## 6. Cómo trabajar con Claude Code en este repo
