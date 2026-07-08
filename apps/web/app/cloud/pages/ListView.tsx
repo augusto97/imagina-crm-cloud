@@ -18,12 +18,20 @@ import { CalendarView } from '@/cloud/components/CalendarView';
 import { CardsView } from '@/cloud/components/CardsView';
 import { DashboardView } from '@/cloud/components/DashboardView';
 import { KanbanView } from '@/cloud/components/KanbanView';
+import { PortalTemplateEditor } from '@/cloud/components/PortalTemplateEditor';
 import { RecordDrawer } from '@/cloud/components/RecordDrawer';
 import { RecordsTable } from '@/cloud/components/RecordsTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type Mode = 'table' | 'kanban' | 'cards' | 'calendar' | 'dashboard' | 'automations';
+type Mode =
+    | 'table'
+    | 'kanban'
+    | 'cards'
+    | 'calendar'
+    | 'dashboard'
+    | 'automations'
+    | 'portal';
 const MODES: Array<{ id: Mode; label: string }> = [
     { id: 'table', label: 'Tabla' },
     { id: 'kanban', label: 'Kanban' },
@@ -31,6 +39,7 @@ const MODES: Array<{ id: Mode; label: string }> = [
     { id: 'calendar', label: 'Calendario' },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'automations', label: 'Automatizaciones' },
+    { id: 'portal', label: 'Portal' },
 ];
 
 /** Vista de una lista con switcher Tabla/Kanban/Dashboard + record drawer. */
@@ -105,7 +114,7 @@ export function ListView(): JSX.Element {
             </div>
 
             <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-p-4">
-                {mode !== 'dashboard' && mode !== 'automations' && (
+                {mode !== 'dashboard' && mode !== 'automations' && mode !== 'portal' && (
                     <div className="imcrm-space-y-3">
                         <AddFieldForm listId={list.id} tenantId={tenantId} existing={fieldsQ.data.length} />
                         {dataFields.length > 0 && (
@@ -116,6 +125,8 @@ export function ListView(): JSX.Element {
 
                 {mode === 'automations' ? (
                     <AutomationsPanel listSlug={list.slug} fields={dataFields} />
+                ) : mode === 'portal' ? (
+                    <PortalTemplateEditor list={list} />
                 ) : dataFields.length === 0 ? (
                     <Centered>Agregá un campo para empezar.</Centered>
                 ) : mode === 'table' ? (
