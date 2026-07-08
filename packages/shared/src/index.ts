@@ -5,4 +5,6 @@ export * from './schemas/tenant';
 export * from './schemas/auth';
 export * from './schemas/field';
 export * from './schemas/list';
+export * from './schemas/filter';
+export * from './schemas/record';
 export * from './field-types/validate';

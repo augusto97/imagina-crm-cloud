@@ -6,6 +6,7 @@ import { DbModule } from './db/db.module';
 import { FieldsModule } from './fields/fields.module';
 import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
+import { RecordsModule } from './records/records.module';
 import { RedisModule } from './redis/redis.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
@@ -21,6 +22,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         WorkspacesModule,
         ListsModule,
         FieldsModule,
+        RecordsModule,
         HealthModule,
     ],
 })

@@ -19,11 +19,11 @@ export class CapabilitiesGuard implements CanActivate {
     constructor(private readonly reflector: Reflector) {}
 
     canActivate(context: ExecutionContext): boolean {
-        const required = this.reflector.getAllAndOverride<Capability | undefined>(
+        const required = this.reflector.getAllAndOverride<Capability[] | undefined>(
             REQUIRE_CAPABILITY,
             [context.getHandler(), context.getClass()],
         );
-        if (!required) {
+        if (!required || required.length === 0) {
             return true;
         }
 
@@ -32,8 +32,9 @@ export class CapabilitiesGuard implements CanActivate {
         if (!role) {
             throw new ForbiddenException('Tenant no resuelto: falta TenantGuard');
         }
-        if (!roleHasCapability(role, required)) {
-            throw new ForbiddenException(`Tu rol no tiene la capability '${required}'`);
+        // OR: basta con tener una de las capabilities aceptadas.
+        if (!required.some((cap) => roleHasCapability(role, cap))) {
+            throw new ForbiddenException(`Tu rol no tiene ninguna de: ${required.join(', ')}`);
         }
         return true;
     }

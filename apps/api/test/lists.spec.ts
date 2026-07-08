@@ -155,10 +155,15 @@ describe('CapabilitiesGuard', () => {
         // Sin metadata de capability → siempre pasa.
         expect(guard.canActivate(ctxFor('viewer'))).toBe(true);
 
-        // Con metadata 'manage_lists'.
-        reflector.getAllAndOverride = (() => 'manage_lists') as never;
+        // Con metadata ['manage_lists'] (el guard acepta un array — OR).
+        reflector.getAllAndOverride = (() => ['manage_lists']) as never;
         expect(guard.canActivate(ctxFor('admin'))).toBe(true);
         expect(() => guard.canActivate(ctxFor('viewer'))).toThrow(ForbiddenException);
         expect(() => guard.canActivate(ctxFor(undefined))).toThrow(ForbiddenException);
+
+        // OR: basta con tener UNA de las capabilities aceptadas.
+        reflector.getAllAndOverride = (() => ['view_records', 'view_own_records']) as never;
+        expect(guard.canActivate(ctxFor('agent'))).toBe(true); // solo tiene view_own_records
+        expect(guard.canActivate(ctxFor('viewer'))).toBe(true); // tiene view_records
     });
 });
