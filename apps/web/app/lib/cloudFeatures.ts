@@ -10,7 +10,7 @@ import { getBootData } from './boot';
 export const CLOUD_WIRED = {
     dashboards: false,
     automations: false,
-    aggregates: false,
+    aggregates: true,
     mentions: false,
     recurrences: false,
 } as const;
