@@ -110,7 +110,7 @@ export function ListBuilderPage(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-4">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Button
                         variant="ghost"
@@ -125,7 +125,7 @@ export function ListBuilderPage(): JSX.Element {
                         {list.data.name}
                     </h1>
                 </div>
-                <div className="imcrm-flex imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                     <Button
                         variant="outline"
                         onClick={() => navigate(`/lists/${list.data.slug}/records`)}

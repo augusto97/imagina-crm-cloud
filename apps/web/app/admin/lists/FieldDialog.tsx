@@ -180,7 +180,7 @@ export function FieldDialog({
                 />
                 <Dialog.Content
                     className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-full imcrm-max-w-md',
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-[calc(100%-1.5rem)] imcrm-max-w-md',
                         'imcrm--translate-x-1/2 imcrm--translate-y-1/2',
                         'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-p-6 imcrm-shadow-imcrm-lg',
                         'imcrm-max-h-[85vh] imcrm-overflow-y-auto',

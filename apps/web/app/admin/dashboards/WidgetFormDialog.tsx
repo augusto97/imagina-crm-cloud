@@ -249,7 +249,7 @@ export function WidgetFormDialog({
                 />
                 <Dialog.Content
                     className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-full imcrm-max-w-2xl',
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-[calc(100%-1.5rem)] imcrm-max-w-2xl',
                         'imcrm--translate-x-1/2 imcrm--translate-y-1/2',
                         'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-shadow-imcrm-lg',
                         'imcrm-max-h-[90vh] imcrm-overflow-y-auto',

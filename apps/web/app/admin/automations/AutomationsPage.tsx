@@ -98,8 +98,8 @@ export function AutomationsPage(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-4">
-                <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-3">
                     <Button
                         asChild
                         variant="ghost"
@@ -110,7 +110,7 @@ export function AutomationsPage(): JSX.Element {
                             <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                         </Link>
                     </Button>
-                    <div>
+                    <div className="imcrm-min-w-0">
                         <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
                             {__('Automatizaciones')}
                         </h1>
@@ -123,7 +123,7 @@ export function AutomationsPage(): JSX.Element {
                         </p>
                     </div>
                 </div>
-                <Button className="imcrm-gap-2" onClick={handleNew}>
+                <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={handleNew}>
                     <Plus className="imcrm-h-4 imcrm-w-4" />
                     {__('Nueva automatización')}
                 </Button>
@@ -218,46 +218,48 @@ function AutomationRow({
     };
 
     return (
-        <li className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-4 imcrm-py-3">
-            <span
-                className={
-                    'imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-items-center imcrm-justify-center imcrm-rounded-full ' +
-                    (automation.is_active
-                        ? 'imcrm-bg-primary/10 imcrm-text-primary'
-                        : 'imcrm-bg-muted imcrm-text-muted-foreground')
-                }
-                aria-hidden
-            >
-                <Zap className="imcrm-h-4 imcrm-w-4" />
-            </span>
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                    <button
-                        type="button"
-                        onClick={() => onEdit(automation)}
-                        className="imcrm-text-sm imcrm-font-medium imcrm-text-left hover:imcrm-underline"
-                    >
-                        {automation.name}
-                    </button>
-                    {automation.is_active ? (
-                        <Badge variant="success">{__('Activa')}</Badge>
-                    ) : (
-                        <Badge variant="outline">{__('Pausada')}</Badge>
-                    )}
-                </div>
-                <div className="imcrm-mt-0.5 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    <span>{triggerLabel}</span>
-                    <span aria-hidden>·</span>
-                    <span>
-                        {sprintf(
-                            /* translators: %d: action count */
-                            __('%d acciones'),
-                            automation.actions.length,
+        <li className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-4 imcrm-py-3 sm:imcrm-flex-row sm:imcrm-items-center sm:imcrm-gap-3">
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-3">
+                <span
+                    className={
+                        'imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full ' +
+                        (automation.is_active
+                            ? 'imcrm-bg-primary/10 imcrm-text-primary'
+                            : 'imcrm-bg-muted imcrm-text-muted-foreground')
+                    }
+                    aria-hidden
+                >
+                    <Zap className="imcrm-h-4 imcrm-w-4" />
+                </span>
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onEdit(automation)}
+                            className="imcrm-text-sm imcrm-font-medium imcrm-text-left hover:imcrm-underline"
+                        >
+                            {automation.name}
+                        </button>
+                        {automation.is_active ? (
+                            <Badge variant="success">{__('Activa')}</Badge>
+                        ) : (
+                            <Badge variant="outline">{__('Pausada')}</Badge>
                         )}
-                    </span>
+                    </div>
+                    <div className="imcrm-mt-0.5 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
+                        <span>{triggerLabel}</span>
+                        <span aria-hidden>·</span>
+                        <span>
+                            {sprintf(
+                                /* translators: %d: action count */
+                                __('%d acciones'),
+                                automation.actions.length,
+                            )}
+                        </span>
+                    </div>
                 </div>
             </div>
-            <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+            <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-self-end sm:imcrm-self-auto">
                 <Button
                     variant="ghost"
                     size="sm"

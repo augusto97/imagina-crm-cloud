@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom';
-import { ExternalLink, LogOut, Settings } from 'lucide-react';
+import { ExternalLink, LogOut, Menu, Settings } from 'lucide-react';
 
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { __ } from '@/lib/i18n';
  * (`POST /auth/logout`) y limpia la sesión; en el plugin va a wp-login.
  * El link "Ver WP" y la campana solo aplican donde tienen backend.
  */
-export function Topbar(): JSX.Element {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.Element {
     useLocation();
     const boot = getBootData();
     const cloud = isCloud();
@@ -34,8 +34,17 @@ export function Topbar(): JSX.Element {
     };
 
     return (
-        <header className="imcrm-flex imcrm-h-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-4 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-6">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2.5">
+        <header className="imcrm-flex imcrm-h-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-4 sm:imcrm-gap-4 sm:imcrm-px-6">
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
+                {/* Hamburguesa: abre el sidebar como drawer (sólo mobile). */}
+                <button
+                    type="button"
+                    onClick={onMenuClick}
+                    aria-label={__('Abrir menú')}
+                    className="imcrm-inline-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
+                >
+                    <Menu className="imcrm-h-5 imcrm-w-5" />
+                </button>
                 <h2 className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">
                     {boot.user.displayName || 'Imagina Base'}
                 </h2>

@@ -186,7 +186,7 @@ export function AutomationDialog({
                 />
                 <Dialog.Content
                     className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-full',
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-[calc(100%-1.5rem)]',
                         'imcrm--translate-x-1/2 imcrm--translate-y-1/2',
                         'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-lg',
                         'imcrm-overflow-y-auto imcrm-transition-[max-width,max-height] imcrm-duration-200',
@@ -194,8 +194,8 @@ export function AutomationDialog({
                         // ~95% del viewport. En Formulario mantenemos el
                         // diálogo compacto.
                         view === 'visual'
-                            ? 'imcrm-max-w-[1400px] imcrm-max-h-[95vh] imcrm-p-5'
-                            : 'imcrm-max-w-2xl imcrm-max-h-[90vh] imcrm-p-6',
+                            ? 'imcrm-max-w-[1400px] imcrm-max-h-[95vh] imcrm-p-4 sm:imcrm-p-5'
+                            : 'imcrm-max-w-2xl imcrm-max-h-[90vh] imcrm-p-4 sm:imcrm-p-6',
                     )}
                 >
                     <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">

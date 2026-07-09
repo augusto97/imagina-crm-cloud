@@ -25,7 +25,13 @@ import { cn } from '@/lib/utils';
  *  - Footer con botón "Colapsar"
  *  - Cuando `collapsed`, sólo se muestran iconos
  */
-export function Sidebar(): JSX.Element {
+export function Sidebar({
+    mobileOpen = false,
+    onClose,
+}: {
+    mobileOpen?: boolean;
+    onClose?: () => void;
+} = {}): JSX.Element {
     const lists = useLists();
     const dashboards = useDashboards();
     const [collapsed, setCollapsed] = useState(false);
@@ -41,7 +47,11 @@ export function Sidebar(): JSX.Element {
     return (
         <aside
             className={cn(
-                'imcrm-flex imcrm-shrink-0 imcrm-flex-col imcrm-border-r imcrm-border-sidebar-border imcrm-bg-sidebar imcrm-text-sidebar-foreground imcrm-transition-[width] imcrm-duration-200',
+                'imcrm-flex imcrm-shrink-0 imcrm-flex-col imcrm-border-r imcrm-border-sidebar-border imcrm-bg-sidebar imcrm-text-sidebar-foreground imcrm-transition-transform imcrm-duration-200',
+                // Mobile: drawer off-canvas (fixed, se desliza con translate-x).
+                // lg+: estático inline (comportamiento de escritorio de siempre).
+                'imcrm-fixed imcrm-inset-y-0 imcrm-left-0 imcrm-z-50 lg:imcrm-static lg:imcrm-z-auto lg:imcrm-translate-x-0',
+                mobileOpen ? 'imcrm-translate-x-0 imcrm-shadow-imcrm-xl' : '-imcrm-translate-x-full lg:imcrm-translate-x-0',
                 collapsed ? 'imcrm-w-[64px]' : 'imcrm-w-[240px]',
             )}
         >
@@ -75,6 +85,7 @@ export function Sidebar(): JSX.Element {
             {/* Nav */}
             <nav
                 aria-label={__('Navegación principal')}
+                onClick={onClose}
                 className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
             >
                 <Section label={__('General')} hideLabel={collapsed}>
@@ -160,8 +171,8 @@ export function Sidebar(): JSX.Element {
                 )}
             </nav>
 
-            {/* Footer: collapse toggle */}
-            <div className="imcrm-border-t imcrm-border-sidebar-border imcrm-px-3 imcrm-py-2">
+            {/* Footer: collapse toggle (sólo escritorio; en mobile es un drawer). */}
+            <div className="imcrm-hidden imcrm-border-t imcrm-border-sidebar-border imcrm-px-3 imcrm-py-2 lg:imcrm-block">
                 <button
                     type="button"
                     onClick={() => setCollapsed((c) => !c)}
