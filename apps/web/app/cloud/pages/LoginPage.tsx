@@ -8,12 +8,13 @@ import { Label } from '@/components/ui/label';
 
 /** Login + registro contra el backend. Auth por cookie de sesión. */
 export function LoginPage(): JSX.Element {
-    const [mode, setMode] = useState<'login' | 'register'>('login');
+    const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
     const [workspace, setWorkspace] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [sent, setSent] = useState(false);
     const [busy, setBusy] = useState(false);
     const setSession = useSession((s) => s.setSession);
     const qc = useQueryClient();
@@ -23,6 +24,11 @@ export function LoginPage(): JSX.Element {
         setError(null);
         setBusy(true);
         try {
+            if (mode === 'forgot') {
+                await api.forgotPassword(email);
+                setSent(true);
+                return;
+            }
             const session =
                 mode === 'login'
                     ? await api.login({ email, password })
@@ -47,59 +53,95 @@ export function LoginPage(): JSX.Element {
                         Imagina Base
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {mode === 'login' ? 'Entrá a tu workspace' : 'Creá tu cuenta y workspace'}
+                        {mode === 'login'
+                            ? 'Entrá a tu workspace'
+                            : mode === 'register'
+                              ? 'Creá tu cuenta y workspace'
+                              : 'Te enviamos un enlace para restablecerla'}
                     </p>
                 </div>
 
-                {mode === 'register' && (
-                    <Field label="Nombre" id="name">
-                        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-                    </Field>
-                )}
-                <Field label="Email" id="email">
-                    <Input
-                        id="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                    />
-                </Field>
-                <Field label="Contraseña" id="password">
-                    <Input
-                        id="password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                    />
-                </Field>
-                {mode === 'register' && (
-                    <Field label="Nombre del workspace" id="workspace">
-                        <Input
-                            id="workspace"
-                            value={workspace}
-                            onChange={(e) => setWorkspace(e.target.value)}
-                            required
-                        />
-                    </Field>
-                )}
-
-                {error && (
-                    <p className="imcrm-text-sm imcrm-text-destructive" role="alert">
-                        {error}
+                {mode === 'forgot' && sent ? (
+                    <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
+                        Si existe una cuenta con ese email, te enviamos un enlace para restablecer la
+                        contraseña. Revisá tu correo (vence en 30 minutos).
                     </p>
-                )}
+                ) : (
+                    <>
+                        {mode === 'register' && (
+                            <Field label="Nombre" id="name">
+                                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+                            </Field>
+                        )}
+                        <Field label="Email" id="email">
+                            <Input
+                                id="email"
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </Field>
+                        {mode !== 'forgot' && (
+                            <Field label="Contraseña" id="password">
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                />
+                            </Field>
+                        )}
+                        {mode === 'register' && (
+                            <Field label="Nombre del workspace" id="workspace">
+                                <Input
+                                    id="workspace"
+                                    value={workspace}
+                                    onChange={(e) => setWorkspace(e.target.value)}
+                                    required
+                                />
+                            </Field>
+                        )}
 
-                <Button type="submit" className="imcrm-w-full" disabled={busy}>
-                    {busy ? '…' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
-                </Button>
+                        {error && (
+                            <p className="imcrm-text-sm imcrm-text-destructive" role="alert">
+                                {error}
+                            </p>
+                        )}
+
+                        <Button type="submit" className="imcrm-w-full" disabled={busy}>
+                            {busy
+                                ? '…'
+                                : mode === 'login'
+                                  ? 'Entrar'
+                                  : mode === 'register'
+                                    ? 'Crear cuenta'
+                                    : 'Enviar enlace'}
+                        </Button>
+
+                        {mode === 'login' && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMode('forgot');
+                                    setError(null);
+                                    setSent(false);
+                                }}
+                                className="imcrm-w-full imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                            >
+                                ¿Olvidaste tu contraseña?
+                            </button>
+                        )}
+                    </>
+                )}
 
                 <button
                     type="button"
                     onClick={() => {
                         setMode(mode === 'login' ? 'register' : 'login');
                         setError(null);
+                        setSent(false);
                     }}
                     className="imcrm-w-full imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground"
                 >

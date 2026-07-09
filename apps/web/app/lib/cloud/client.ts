@@ -150,6 +150,12 @@ export class CloudClient {
     me(): Promise<AuthSession> {
         return this.request('GET', '/auth/me', { schema: authSessionSchema });
     }
+    forgotPassword(email: string): Promise<void> {
+        return this.request('POST', '/auth/forgot-password', { body: { email } });
+    }
+    resetPassword(token: string, password: string): Promise<void> {
+        return this.request('POST', '/auth/reset-password', { body: { token, password } });
+    }
 
     // --- bootstrap (primer paint, 1 round-trip) ---
     bootstrap(): Promise<Bootstrap> {

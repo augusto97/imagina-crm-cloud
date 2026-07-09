@@ -10,11 +10,15 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    forgotPasswordSchema,
     loginInputSchema,
     registerInputSchema,
+    resetPasswordSchema,
     type AuthSession,
+    type ForgotPasswordInput,
     type LoginInput,
     type RegisterInput,
+    type ResetPasswordInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -65,6 +69,24 @@ export class AuthController {
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<AuthSession> {
         return this.auth.me(req.authUserId as number);
+    }
+
+    /** Pide el email de reset. Siempre 204 (no revela si el email existe). */
+    @Post('forgot-password')
+    @HttpCode(204)
+    async forgotPassword(
+        @Body(new ZodValidationPipe(forgotPasswordSchema)) input: ForgotPasswordInput,
+    ): Promise<void> {
+        await this.auth.requestPasswordReset(input.email);
+    }
+
+    /** Setea la nueva contraseña con el token del email. */
+    @Post('reset-password')
+    @HttpCode(204)
+    async resetPassword(
+        @Body(new ZodValidationPipe(resetPasswordSchema)) input: ResetPasswordInput,
+    ): Promise<void> {
+        await this.auth.resetPassword(input.token, input.password);
     }
 
     private setSessionCookie(reply: FastifyReply, token: string): void {

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { loadEnv } from '../src/config/env';
+import { MailService } from '../src/mail/mail.service';
 import {
     startPostgres,
     startRedis,
@@ -23,7 +24,8 @@ describe('AuthService (Postgres + Redis reales)', () => {
         redis = new Redis(redisBox.url);
         const env = loadEnv({ REDIS_URL: redisBox.url, DATABASE_URL: pg.container.getConnectionUri() });
         sessions = new SessionService(redis, env);
-        auth = new AuthService(pg.db, sessions);
+        const mail = new MailService(env, { name: 'test', send: async () => undefined });
+        auth = new AuthService(pg.db, redis, env, mail, sessions);
     });
 
     afterAll(async () => {
