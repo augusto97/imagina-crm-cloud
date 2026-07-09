@@ -23,8 +23,8 @@ export function DashboardsIndexPage(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-4">
-                <div>
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
+                <div className="imcrm-min-w-0">
                     <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
                         {__('Dashboards')}
                     </h1>
@@ -32,7 +32,7 @@ export function DashboardsIndexPage(): JSX.Element {
                         {__('Indicadores y gráficos sobre tus listas. Comparte un dashboard con tu equipo o créalo solo para ti.')}
                     </p>
                 </div>
-                <Button className="imcrm-gap-2" onClick={() => setCreateOpen(true)}>
+                <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)}>
                     <Plus className="imcrm-h-4 imcrm-w-4" />
                     {__('Nuevo dashboard')}
                 </Button>

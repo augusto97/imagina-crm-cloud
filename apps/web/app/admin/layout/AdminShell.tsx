@@ -9,7 +9,13 @@ import { __ } from '@/lib/i18n';
 
 export function AdminShell(): JSX.Element {
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const location = useLocation();
+
+    // Cerrar el drawer del sidebar al navegar (mobile).
+    useEffect(() => {
+        setMobileNavOpen(false);
+    }, [location.pathname]);
 
     // Cmd/Ctrl+K abre el global command palette. Se desactiva
     // cuando estamos dentro del editor de plantilla (esa ruta tiene
@@ -40,15 +46,23 @@ export function AdminShell(): JSX.Element {
     }, [isInTemplateEditor]);
 
     return (
-        <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-bg-canvas imcrm-text-foreground">
+        <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-canvas imcrm-text-foreground">
             <SkipLink />
-            <Sidebar />
+            {/* Backdrop del drawer en mobile. */}
+            {mobileNavOpen && (
+                <div
+                    className="imcrm-fixed imcrm-inset-0 imcrm-z-40 imcrm-bg-black/40 lg:imcrm-hidden"
+                    aria-hidden
+                    onClick={() => setMobileNavOpen(false)}
+                />
+            )}
+            <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                <Topbar />
+                <Topbar onMenuClick={() => setMobileNavOpen(true)} />
                 <main
                     id="imcrm-main"
                     aria-label={__('Contenido principal')}
-                    className="imcrm-flex-1 imcrm-overflow-auto imcrm-p-6 focus:imcrm-outline-none focus-visible:imcrm-outline-none"
+                    className="imcrm-flex-1 imcrm-overflow-auto imcrm-p-4 focus:imcrm-outline-none focus-visible:imcrm-outline-none sm:imcrm-p-6"
                     tabIndex={-1}
                 >
                     <div className="imcrm-mx-auto imcrm-w-full imcrm-max-w-screen-2xl">

@@ -184,7 +184,7 @@ export function DashboardPage(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-            <header className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-4">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Button
                         asChild
@@ -216,7 +216,7 @@ export function DashboardPage(): JSX.Element {
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">{d.description}</p>
                     )}
                 </div>
-                <div className="imcrm-flex imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                     <Button
                         variant="outline"
                         className="imcrm-gap-2"

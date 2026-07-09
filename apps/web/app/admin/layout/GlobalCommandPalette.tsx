@@ -223,7 +223,7 @@ export function GlobalCommandPalette({
                 <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />
                 <Dialog.Content
                     className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-[15vh] imcrm-z-50 imcrm-w-full imcrm-max-w-xl',
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-[15vh] imcrm-z-50 imcrm-w-[calc(100%-1.5rem)] imcrm-max-w-xl',
                         'imcrm--translate-x-1/2',
                         'imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-lg',
                     )}
