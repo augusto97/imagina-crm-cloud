@@ -21,6 +21,17 @@ export const loginInputSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginInputSchema>;
 
+/** Solicitud de recuperación de contraseña (ADR-S11 email). */
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/** Reset con el token recibido por email + la nueva contraseña. */
+export const resetPasswordSchema = z.object({
+    token: z.string().min(16).max(200),
+    password: passwordSchema,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
 export const sessionUserSchema = z.object({
     id: idSchema,
     email: emailSchema,

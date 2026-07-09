@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { AdminCloudApp } from '@/cloud/AdminCloudApp';
+import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
@@ -16,12 +17,17 @@ import '@/styles/globals.css';
  */
 const container = document.getElementById('root');
 if (container) {
+    const resetToken = getResetToken();
     createRoot(container).render(
         <StrictMode>
             <QueryClientProvider client={queryClient}>
                 <ToastProvider>
                     <ConfirmProvider>
-                        <AdminCloudApp />
+                        {resetToken ? (
+                            <ResetPasswordPage token={resetToken} />
+                        ) : (
+                            <AdminCloudApp />
+                        )}
                     </ConfirmProvider>
                 </ToastProvider>
             </QueryClientProvider>
