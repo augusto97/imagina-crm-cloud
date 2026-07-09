@@ -89,6 +89,81 @@ export class AggregateService {
         return { metric: req.metric, value: normalize(row?.val) };
     }
 
+    /**
+     * Footer de tabla: para VARIOS campos, calcula el bag de métricas aplicable
+     * a cada tipo en UNA sola query (sin N+1). Devuelve `{ totals: {slug: bag},
+     * groups }` — el shape que consume la UI del fork (`GET .../records/aggregates`).
+     */
+    async footer(
+        tenantId: number,
+        listIdOrSlug: string,
+        opts: { fieldIds: number[]; filter_tree?: AggregateRequest['filter_tree']; group_by_field_id?: number },
+    ): Promise<FooterAggregates> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.list(tenantId, String(list.id));
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
+
+        const fieldsById = new Map<number, FilterableField>(
+            fields.map((f) => [f.id, { id: f.id, type: f.type }]),
+        );
+        const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, new Date());
+        const baseWhere = and(
+            eq(records.tenantId, tenantId),
+            eq(records.listId, list.id),
+            isNull(records.deletedAt),
+            filterWhere,
+        );
+
+        const cols: Record<string, SQL> = {};
+        const plan: Array<{ slug: string; metric: AggregateMetric; key: string }> = [];
+        for (const f of targets) {
+            for (const metric of metricsFor(f.type)) {
+                const key = `a${f.id}_${metric}`;
+                cols[key] = this.metricExpr(metric, f);
+                plan.push({ slug: f.slug, metric, key });
+            }
+        }
+        if (plan.length === 0) return { totals: {}, groups: [] };
+
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select(cols).from(records).where(baseWhere),
+        );
+        const bagFrom = (r: Record<string, unknown> | undefined): Record<string, AggregateBag> => {
+            const out: Record<string, AggregateBag> = {};
+            for (const p of plan) {
+                (out[p.slug] ??= {})[p.metric] = normalize(r?.[p.key]);
+            }
+            return out;
+        };
+        const totals = bagFrom(row as Record<string, unknown> | undefined);
+
+        let groups: FooterAggregates['groups'] = [];
+        if (opts.group_by_field_id !== undefined) {
+            const gf = byId.get(opts.group_by_field_id);
+            if (gf) {
+                const groupExpr = fieldTextExpr(gf.id);
+                const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ grp: groupExpr, ...cols })
+                        .from(records)
+                        .where(baseWhere)
+                        .groupBy(groupExpr)
+                        .orderBy(groupExpr),
+                );
+                groups = rows.map((r) => {
+                    const rec = r as Record<string, unknown>;
+                    const grp = rec.grp;
+                    return {
+                        value: grp === null || grp === undefined ? null : String(grp),
+                        aggregates: bagFrom(rec),
+                    };
+                });
+            }
+        }
+        return { totals, groups };
+    }
+
     /** Expresión SQL de la métrica (opcionalmente sobre un campo tipado). */
     private metricExpr(metric: AggregateMetric, field?: Field): SQL {
         const text = field ? fieldTextExpr(field.id) : undefined;
@@ -127,6 +202,24 @@ export class AggregateService {
             throw badRequest(`${metric} sólo aplica a checkbox`);
         }
     }
+}
+
+/** Bag de métricas de un campo (las claves presentes dependen del tipo). */
+export type AggregateBag = Partial<Record<AggregateMetric, number | string | null>>;
+
+export interface FooterAggregates {
+    totals: Record<string, AggregateBag>;
+    groups: Array<{ value: string | null; aggregates: Record<string, AggregateBag> }>;
+}
+
+/** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */
+function metricsFor(type: FieldType): AggregateMetric[] {
+    if (type === 'number' || type === 'currency') {
+        return ['count', 'count_empty', 'count_unique', 'sum', 'avg', 'min', 'max'];
+    }
+    if (type === 'date' || type === 'datetime') return ['count', 'count_empty', 'min', 'max'];
+    if (type === 'checkbox') return ['count', 'count_true', 'count_false'];
+    return ['count', 'count_empty', 'count_unique'];
 }
 
 /** Postgres devuelve numéricos como string; los convertimos a number. */
