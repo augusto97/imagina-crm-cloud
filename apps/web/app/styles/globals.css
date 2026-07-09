@@ -1,3 +1,9 @@
+/* Estilos de componentes del portal del cliente + vista de lista pública
+ * (`imcrm-portal-*`, `imcrm-public-list__*`). Vivían en la hoja del front del
+ * plugin WordPress que nunca se copió a este repo → sin esto el portal y las
+ * listas públicas salían sin estilo. Reconstruida sobre los tokens del tema. */
+@import './portal-components.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -198,56 +204,179 @@
         --imcrm-opt-pink-text:    330 80% 78%;
     }
 
+    /* =====================================================================
+     * Reset + base del documento (SPA standalone — Imagina Base cloud).
+     *
+     * En el plugin WordPress, el chrome de wp-admin + un reset inline por PHP
+     * (`StandalonePage::inlineReset()`) proveían el box model, la tipografía y
+     * el estilo base de form/enlaces. En la nube NO existe WordPress ni ese
+     * PHP: sin este bloque los elementos caen al UA default del navegador
+     * (body blanco, fuente serif, inputs/botones sin estilo). Tailwind
+     * `preflight` está apagado (para no pisar wp-admin en el build hermano),
+     * así que reconstruimos acá un reset moderno propio.
+     *
+     * Va en @layer base → las utilities `imcrm-*` SIEMPRE ganan por cascada de
+     * capas; esto sólo define el piso para el HTML sin clases (contenido rico,
+     * portal, prosa) y normaliza el box model / la tipografía de los controles.
+     * ===================================================================== */
+
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+        /* border-width 0 + color default: las utilities `imcrm-border-*` sólo
+         * setean el width; sin esto el browser usa `currentColor` (a veces
+         * rojo) o no dibuja el borde. */
+        border-width: 0;
+        border-style: solid;
+        border-color: hsl(var(--imcrm-border));
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        line-height: 1.5;
+        tab-size: 4;
+    }
+
+    body {
+        margin: 0;
+        min-height: 100vh;
+        @apply imcrm-bg-canvas imcrm-text-foreground imcrm-font-sans imcrm-antialiased;
+        line-height: inherit;
+        text-rendering: optimizeLegibility;
+    }
+
+    /* Raíces de montaje: `#root` (cloud) y `#imcrm-root` (página standalone
+     * del plugin hermano). Toman el tema para que canvas + tipografía apliquen
+     * sin depender de que exista una clase `imcrm-` en el árbol (antes el base
+     * vivía sólo en `#imcrm-root`, que NO existe en el build cloud → todo caía
+     * al default del navegador). */
+    #root,
     #imcrm-root {
-        @apply imcrm-bg-background imcrm-text-foreground imcrm-font-sans imcrm-tracking-tight imcrm-antialiased;
+        min-height: 100vh;
+        @apply imcrm-bg-canvas imcrm-text-foreground imcrm-font-sans imcrm-tracking-tight imcrm-antialiased;
         color-scheme: light;
         font-feature-settings:
             'cv02',
             'cv03',
             'cv04',
             'cv11';
-        min-height: calc(100vh - 32px);
     }
 
-    /*
-     * El SPA vive standalone en /imagina-crm/ con su propio reset
-     * inline (`StandalonePage::inlineReset()`) que ya cubre el chrome
-     * de wp-admin que pudiera filtrarse. El "fullscreen mode" toggle
-     * se eliminó en 0.30.3 — era residual de cuando el SPA se montaba
-     * en /wp-admin/admin.php (los Radix portals + reglas !important
-     * existían solo para tapar el chrome de WP en ese contexto).
-     */
-
-    /*
-     * Reset minimal scopeado.
-     *
-     * El SPA vive standalone en /imagina-crm/ con su propio reset CSS
-     * inline (`StandalonePage::inlineReset()`) que aplica selectores
-     * type-only (especificidad 1) sobre `button`, `a`, `select`, etc.
-     * Eso ya cubre TODOS los UA defaults sin pisar las utilities de
-     * Tailwind.
-     *
-     * Lo único que dejamos aquí es el border-color default: las
-     * utilities `imcrm-border` setean border-width pero no color, y
-     * sin un default global el browser usa `currentColor` (rojo en
-     * algunos casos). Lo ponemos con `:where()` para especificidad 0.
-     *
-     * Tampoco seteamos un focus-visible global — cada primitiva
-     * (Button, Input, Select, etc.) define su propio ring con
-     * especificidad de utility (10), y el UA outline default es
-     * suficiente para cualquier elemento sin estilo custom.
-     */
-    :where(#imcrm-root, [class*='imcrm-']) *,
-    :where(#imcrm-root, [class*='imcrm-']) *::before,
-    :where(#imcrm-root, [class*='imcrm-']) *::after {
-        border-color: hsl(var(--imcrm-border));
+    [data-imcrm-theme='dark'] {
+        color-scheme: dark;
     }
 
-    /* Native <select>: el reset standalone no toca su `appearance`,
-     * así que la flecha UA quedaría visible junto al chevron del
-     * componente. Lo quitamos acá con `:where()` para no romper la
-     * cascada de utilities (especificidad 0). */
-    :where(#imcrm-root, [class*='imcrm-']) select {
+    /* Tipografía: headings/párrafos heredan tamaño/peso (las utilities los
+     * imponen donde hace falta). Reset de los márgenes que agrega el UA. */
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        margin: 0;
+        font-size: inherit;
+        font-weight: inherit;
+    }
+    p,
+    blockquote,
+    figure,
+    dl,
+    dd {
+        margin: 0;
+    }
+    /* Las listas de la app son contenedores de layout (flex/grid), NO listas
+     * con viñetas → reset. El texto rico las re-estiliza vía `.imcrm-prose`. */
+    ul,
+    ol {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    hr {
+        height: 0;
+        color: inherit;
+        border-top-width: 1px;
+    }
+
+    /* Enlaces de UI: heredan color (los links con estilo usan utilities o
+     * componentes). El texto rico les da color primary vía `.imcrm-prose`. */
+    a {
+        color: inherit;
+        text-decoration: inherit;
+    }
+
+    /* Media: block + nunca desbordan su contenedor. */
+    img,
+    svg,
+    video,
+    canvas,
+    audio,
+    iframe,
+    embed,
+    object {
+        display: block;
+        vertical-align: middle;
+    }
+    img,
+    video {
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Controles de formulario: heredan la tipografía (si no, el UA usa su
+     * propia fuente → inputs/botones en serif) y resetean apariencia base.
+     * Los componentes (Input/Select/Button) imponen su estilo con utilities. */
+    button,
+    input,
+    optgroup,
+    select,
+    textarea {
+        font: inherit;
+        letter-spacing: inherit;
+        color: inherit;
+        margin: 0;
+    }
+    button,
+    select {
+        text-transform: none;
+    }
+    button,
+    [type='button'],
+    [type='reset'],
+    [type='submit'] {
+        -webkit-appearance: button;
+        appearance: button;
+        background-color: transparent;
+        background-image: none;
+        cursor: pointer;
+    }
+    button:disabled,
+    [type='button']:disabled,
+    [type='reset']:disabled,
+    [type='submit']:disabled {
+        cursor: default;
+    }
+    textarea {
+        resize: vertical;
+    }
+    input::placeholder,
+    textarea::placeholder {
+        opacity: 1;
+        color: hsl(var(--imcrm-muted-foreground));
+    }
+    :-moz-focusring {
+        outline: auto;
+    }
+    [hidden] {
+        display: none;
+    }
+
+    /* Native <select>: ocultamos la flecha UA (el componente pinta su propio
+     * chevron) y dejamos espacio a la derecha. */
+    select {
         appearance: none;
         -webkit-appearance: none;
         -moz-appearance: none;
@@ -256,8 +385,15 @@
         background-position: right 0.5rem center;
         padding-right: 1.75rem;
     }
+    /* Restaura la flecha nativa en multi-select / con size (dropdowns reales). */
+    select[multiple],
+    select[size]:not([size='1']) {
+        background-image: none;
+        padding-right: 0;
+    }
 
-    :where(#imcrm-root, [class*='imcrm-']) input[type='checkbox'] {
+    input[type='checkbox'],
+    input[type='radio'] {
         accent-color: hsl(var(--imcrm-primary));
     }
 
@@ -267,9 +403,9 @@
      * visual de hover/focus). Cumple WCAG 2.3.3 (Animation from Interactions).
      */
     @media (prefers-reduced-motion: reduce) {
-        :where(#imcrm-root) *,
-        :where(#imcrm-root) *::before,
-        :where(#imcrm-root) *::after {
+        :where(#root, #imcrm-root) *,
+        :where(#root, #imcrm-root) *::before,
+        :where(#root, #imcrm-root) *::after {
             animation-duration: 0.01ms !important;
             animation-iteration-count: 1 !important;
             transition-duration: 0.01ms !important;
@@ -282,11 +418,11 @@
      * visibles en elementos interactivos y mantiene textos legibles.
      */
     @media (forced-colors: active) {
-        :where(#imcrm-root) button,
-        :where(#imcrm-root) [role='button'],
-        :where(#imcrm-root) input,
-        :where(#imcrm-root) select,
-        :where(#imcrm-root) textarea {
+        :where(#root, #imcrm-root) button,
+        :where(#root, #imcrm-root) [role='button'],
+        :where(#root, #imcrm-root) input,
+        :where(#root, #imcrm-root) select,
+        :where(#root, #imcrm-root) textarea {
             border: 1px solid CanvasText;
         }
     }
@@ -362,27 +498,14 @@
    Template editor — modo full-screen (Fase 14.D)
    ==========================================================================
 
-   Cuando el body tiene la clase `imcrm-template-editor-fullscreen`,
-   ocultamos los chromes externos (WP admin bar, WP sidebar, footer)
-   y el sidebar del plugin para que el editor ocupe toda la ventana.
+   Cuando el body tiene la clase `imcrm-template-editor-fullscreen`, ocultamos
+   el chrome de la app (sidebar + topbar del AdminShell) para que el editor
+   ocupe toda la ventana. (Los selectores de chrome de wp-admin —#wpadminbar,
+   #adminmenumain, #wpcontent…— se removieron: no existen en la nube.)
 
    El editor mismo se posiciona `fixed inset-0` con su z-index propio.
 */
 
-body.imcrm-template-editor-fullscreen #wpadminbar,
-body.imcrm-template-editor-fullscreen #adminmenumain,
-body.imcrm-template-editor-fullscreen #wpfooter {
-    display: none !important;
-}
-
-body.imcrm-template-editor-fullscreen #wpcontent,
-body.imcrm-template-editor-fullscreen #wpbody-content {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}
-
-/* El AdminShell del plugin tiene su propio sidebar; en full-screen
-   lo ocultamos también. El selector apunta al wrapper del shell. */
 body.imcrm-template-editor-fullscreen .imcrm-admin-sidebar,
 body.imcrm-template-editor-fullscreen .imcrm-admin-topbar {
     display: none !important;
@@ -461,4 +584,168 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
      * abarca al menos su contenido natural — no hay desbordes ni
      * recortes raros. */
     min-height: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Prosa (contenido rico) — `.imcrm-prose` / `.imcrm-prose-sm`
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * Estilos para HTML generado por el usuario que se inyecta con
+ * `dangerouslySetInnerHTML`: notas en markdown del record, texto estático
+ * del portal, firma de email. El reset base deja headings/listas/enlaces sin
+ * estilo (las utilities los manejan en la UI), así que acá RE-estilamos esos
+ * tags dentro de un contenedor `.imcrm-prose*`. El plugin de WordPress usaba
+ * `@tailwindcss/typography` (no instalado acá); esta hoja lo reemplaza con lo
+ * necesario. Al ir fuera de `@layer base`, gana sobre el reset.
+ */
+.imcrm-prose,
+.imcrm-prose-sm {
+    color: hsl(var(--imcrm-foreground));
+    line-height: 1.65;
+    word-break: break-word;
+}
+.imcrm-prose > :first-child,
+.imcrm-prose-sm > :first-child {
+    margin-top: 0;
+}
+.imcrm-prose > :last-child,
+.imcrm-prose-sm > :last-child {
+    margin-bottom: 0;
+}
+.imcrm-prose p,
+.imcrm-prose-sm p {
+    margin: 0.75em 0;
+}
+.imcrm-prose h1,
+.imcrm-prose h2,
+.imcrm-prose h3,
+.imcrm-prose h4,
+.imcrm-prose h5,
+.imcrm-prose h6,
+.imcrm-prose-sm h1,
+.imcrm-prose-sm h2,
+.imcrm-prose-sm h3,
+.imcrm-prose-sm h4,
+.imcrm-prose-sm h5,
+.imcrm-prose-sm h6 {
+    margin: 1.4em 0 0.5em;
+    font-weight: 600;
+    line-height: 1.3;
+    color: hsl(var(--imcrm-foreground));
+}
+.imcrm-prose h1 { font-size: 1.6em; }
+.imcrm-prose h2 { font-size: 1.35em; }
+.imcrm-prose h3 { font-size: 1.15em; }
+.imcrm-prose h4 { font-size: 1em; }
+.imcrm-prose-sm h1 { font-size: 1.35em; }
+.imcrm-prose-sm h2 { font-size: 1.2em; }
+.imcrm-prose-sm h3 { font-size: 1.05em; }
+.imcrm-prose-sm h4 { font-size: 1em; }
+.imcrm-prose a,
+.imcrm-prose-sm a {
+    color: hsl(var(--imcrm-primary));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+}
+.imcrm-prose a:hover,
+.imcrm-prose-sm a:hover {
+    text-decoration-thickness: 2px;
+}
+.imcrm-prose strong,
+.imcrm-prose-sm strong {
+    font-weight: 600;
+    color: hsl(var(--imcrm-foreground));
+}
+.imcrm-prose em,
+.imcrm-prose-sm em {
+    font-style: italic;
+}
+.imcrm-prose ul,
+.imcrm-prose ol,
+.imcrm-prose-sm ul,
+.imcrm-prose-sm ol {
+    margin: 0.75em 0;
+    padding-left: 1.5em;
+}
+.imcrm-prose ul,
+.imcrm-prose-sm ul {
+    list-style: disc;
+}
+.imcrm-prose ol,
+.imcrm-prose-sm ol {
+    list-style: decimal;
+}
+.imcrm-prose li,
+.imcrm-prose-sm li {
+    margin: 0.3em 0;
+}
+.imcrm-prose li::marker,
+.imcrm-prose-sm li::marker {
+    color: hsl(var(--imcrm-muted-foreground));
+}
+.imcrm-prose blockquote,
+.imcrm-prose-sm blockquote {
+    margin: 0.9em 0;
+    padding: 0.25em 0 0.25em 1em;
+    border-left: 3px solid hsl(var(--imcrm-border));
+    color: hsl(var(--imcrm-muted-foreground));
+    font-style: italic;
+}
+.imcrm-prose code,
+.imcrm-prose-sm code {
+    font-family: theme('fontFamily.mono');
+    font-size: 0.875em;
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-foreground));
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+}
+.imcrm-prose pre,
+.imcrm-prose-sm pre {
+    margin: 0.9em 0;
+    padding: 0.9em 1em;
+    background: hsl(var(--imcrm-muted));
+    border-radius: 8px;
+    overflow-x: auto;
+}
+.imcrm-prose pre code,
+.imcrm-prose-sm pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+}
+.imcrm-prose hr,
+.imcrm-prose-sm hr {
+    margin: 1.25em 0;
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-prose img,
+.imcrm-prose-sm img {
+    margin: 0.9em 0;
+    border-radius: 8px;
+    max-width: 100%;
+}
+.imcrm-prose table,
+.imcrm-prose-sm table {
+    width: 100%;
+    margin: 0.9em 0;
+    border-collapse: collapse;
+    font-size: 0.95em;
+}
+.imcrm-prose th,
+.imcrm-prose td,
+.imcrm-prose-sm th,
+.imcrm-prose-sm td {
+    border: 1px solid hsl(var(--imcrm-border));
+    padding: 0.4em 0.6em;
+    text-align: left;
+}
+.imcrm-prose th,
+.imcrm-prose-sm th {
+    background: hsl(var(--imcrm-muted));
+    font-weight: 600;
+}
+.imcrm-prose-sm {
+    font-size: 0.875rem;
 }
