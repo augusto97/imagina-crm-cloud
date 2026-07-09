@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
+import { SettingsPage as CloudSettingsPage } from '@/cloud/pages/SettingsPage';
+import { isCloud } from '@/lib/cloudFeatures';
 // Records views se cargan eagerly — son la pantalla home del SPA
 // y casi cualquier flujo aterriza ahí. Lazy-load las pantallas
 // secundarias (dashboards, automations, builder, settings) para que
@@ -70,7 +72,9 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><DashboardPage /></Suspense>
                 } />
                 <Route path="settings" element={
-                    <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>
+                    isCloud()
+                        ? <CloudSettingsPage />
+                        : <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>
                 } />
                 <Route path="*" element={<Navigate to="/lists" replace />} />
             </Route>
