@@ -2,6 +2,7 @@ import { Global, Logger, Module } from '@nestjs/common';
 import { ENV, type Env } from '../config/env';
 import { MailService } from './mail.service';
 import { MAIL_TRANSPORT, type MailTransport } from './mail.types';
+import { PlatformSettingsService } from './platform-settings.service';
 import { LogMailTransport } from './transports/log.transport';
 import { SmtpMailTransport } from './transports/smtp.transport';
 
@@ -19,7 +20,14 @@ import { SmtpMailTransport } from './transports/smtp.transport';
             inject: [ENV],
             useFactory: (env: Env): MailTransport => {
                 if (env.MAIL_TRANSPORT === 'smtp' && env.SMTP_HOST) {
-                    return new SmtpMailTransport(env);
+                    return new SmtpMailTransport({
+                        host: env.SMTP_HOST,
+                        port: env.SMTP_PORT,
+                        secure: env.SMTP_SECURE,
+                        user: env.SMTP_USER ?? '',
+                        pass: env.SMTP_PASS ?? '',
+                        from: env.MAIL_FROM,
+                    });
                 }
                 if (env.MAIL_TRANSPORT === 'smtp') {
                     new Logger('MailModule').warn(
@@ -30,7 +38,8 @@ import { SmtpMailTransport } from './transports/smtp.transport';
             },
         },
         MailService,
+        PlatformSettingsService,
     ],
-    exports: [MailService],
+    exports: [MailService, PlatformSettingsService],
 })
 export class MailModule {}

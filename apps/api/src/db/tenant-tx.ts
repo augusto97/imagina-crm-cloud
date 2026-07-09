@@ -2,13 +2,37 @@ import { sql } from 'drizzle-orm';
 import type { Db, Tx } from './client';
 
 /**
- * Rol NO-superuser al que baja toda transacción con scope: los superusers
- * bypassean RLS por diseño de Postgres, así que sin este SET LOCAL ROLE las
- * policies serían decorativas en dev/tests (pool conectado como superuser).
- * SET LOCAL: rol y settings mueren con la transacción.
+ * Baja al rol NO-superuser `imagina_app` Y fija los settings de scope en UNA
+ * sola ida a Postgres. Los superusers bypassean RLS por diseño, así que sin
+ * el cambio de rol las policies serían decorativas (el pool conecta como
+ * owner). `set_config('role', …, true)` es equivalente a `SET LOCAL ROLE` y,
+ * combinado con los `set_config('app.*', …, true)` en el mismo `SELECT`, evita
+ * los 2-3 round-trips secuenciales que antes hacía cada transacción (perf:
+ * cada request de dominio abre varias transacciones con scope).
+ *
+ * SET LOCAL / is_local=true: rol y settings mueren con la transacción.
  */
-async function enterAppRole(tx: Tx): Promise<void> {
-    await tx.execute(sql`set local role imagina_app`);
+async function enterScope(
+    tx: Tx,
+    settings: { userId?: number; tenantId?: number },
+): Promise<void> {
+    // Orden en el targetlist: primero el rol, luego los GUCs `app.*` (un no
+    // superuser puede setear GUCs del namespace `app.`). Todo en un statement.
+    if (settings.userId !== undefined && settings.tenantId !== undefined) {
+        await tx.execute(
+            sql`select set_config('role', 'imagina_app', true), set_config('app.user_id', ${String(settings.userId)}, true), set_config('app.tenant_id', ${String(settings.tenantId)}, true)`,
+        );
+    } else if (settings.tenantId !== undefined) {
+        await tx.execute(
+            sql`select set_config('role', 'imagina_app', true), set_config('app.tenant_id', ${String(settings.tenantId)}, true)`,
+        );
+    } else if (settings.userId !== undefined) {
+        await tx.execute(
+            sql`select set_config('role', 'imagina_app', true), set_config('app.user_id', ${String(settings.userId)}, true)`,
+        );
+    } else {
+        await tx.execute(sql`select set_config('role', 'imagina_app', true)`);
+    }
 }
 
 /**
@@ -23,8 +47,7 @@ export async function withTenant<T>(
     fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
     return db.transaction(async (tx) => {
-        await enterAppRole(tx);
-        await tx.execute(sql`select set_config('app.tenant_id', ${String(tenantId)}, true)`);
+        await enterScope(tx, { tenantId });
         return fn(tx);
     });
 }
@@ -40,8 +63,7 @@ export async function withUser<T>(
     fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
     return db.transaction(async (tx) => {
-        await enterAppRole(tx);
-        await tx.execute(sql`select set_config('app.user_id', ${String(userId)}, true)`);
+        await enterScope(tx, { userId });
         return fn(tx);
     });
 }
@@ -54,9 +76,7 @@ export async function withUserAndTenant<T>(
     fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
     return db.transaction(async (tx) => {
-        await enterAppRole(tx);
-        await tx.execute(sql`select set_config('app.user_id', ${String(userId)}, true)`);
-        await tx.execute(sql`select set_config('app.tenant_id', ${String(tenantId)}, true)`);
+        await enterScope(tx, { userId, tenantId });
         return fn(tx);
     });
 }
@@ -67,7 +87,7 @@ export async function withUserAndTenant<T>(
  */
 export async function withoutContext<T>(db: Db, fn: (tx: Tx) => Promise<T>): Promise<T> {
     return db.transaction(async (tx) => {
-        await enterAppRole(tx);
+        await enterScope(tx, {});
         return fn(tx);
     });
 }

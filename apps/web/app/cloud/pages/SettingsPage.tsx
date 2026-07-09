@@ -5,6 +5,7 @@ import { api, useSession } from '@/cloud/session';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
+import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 
 /** Ajustes del workspace: plan, estado de facturación, uso vs. límites. */
 export function SettingsPage(): JSX.Element {
@@ -42,7 +43,8 @@ export function SettingsPage(): JSX.Element {
             {billing.data && <BillingCard summary={billing.data} />}
             {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
             {isAdmin && <MembersPanel />}
-            {/* Se auto-oculta si el usuario no es superadmin de plataforma (403). */}
+            {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
+            <SmtpSettingsPanel />
             <SystemUpdatesPanel />
         </div>
     );

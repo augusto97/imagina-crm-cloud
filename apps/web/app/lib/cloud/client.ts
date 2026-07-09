@@ -35,6 +35,8 @@ import {
     workspaceMemberSchema,
     registerInputSchema,
     slugCheckResultSchema,
+    smtpConfigSchema,
+    smtpConfigPublicSchema,
     updateAutomationSchema,
     updateCommentSchema,
     updateFieldSchema,
@@ -78,6 +80,8 @@ import {
     type RegisterInput,
     type SlugCheckQuery,
     type SlugCheckResult,
+    type SmtpConfig,
+    type SmtpConfigPublic,
     type UpdateAutomationInput,
     type UpdateCommentInput,
     type UpdateFieldInput,
@@ -108,7 +112,7 @@ export class CloudApiError extends Error {
     }
 }
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface CloudClientOptions {
     /** Base del API. Default `/api/v1`; en dev apuntá al backend con VITE_API_URL. */
@@ -377,6 +381,17 @@ export class CloudClient {
         return this.request('POST', '/system/update/rollback', {
             schema: z.object({ ok: z.boolean(), message: z.string() }),
         });
+    }
+
+    // --- SMTP de plataforma (ADR-S11, sólo superadmin) ---
+    smtpGet(): Promise<SmtpConfigPublic> {
+        return this.request('GET', '/system/smtp', { schema: smtpConfigPublicSchema });
+    }
+    smtpSet(input: SmtpConfig): Promise<void> {
+        return this.request('PUT', '/system/smtp', { body: smtpConfigSchema.parse(input) });
+    }
+    smtpTest(to: string): Promise<void> {
+        return this.request('POST', '/system/smtp/test', { body: { to } });
     }
 
     // --- payments (ADR-S12) ---

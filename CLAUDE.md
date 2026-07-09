@@ -168,7 +168,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (último admin, auto-baja, duplicado, usuario inexistente), tests RLS.
   - [x] Emails transaccionales (ADR-S11): MailModule con transporte
         intercambiable (log/smtp nodemailer), encolado en BullMQ; acción
-        `send_email` real + magic link del portal por email. Tests.
+        `send_email` real + magic link del portal por email. Config SMTP de
+        plataforma editable desde Ajustes (panel superadmin): PlatformSettings
+        en Redis (`platform:smtp`), el MailService la toma en el próximo envío
+        sin reiniciar (fallback al transporte por env), GET sin password,
+        botón de correo de prueba. Tests.
   - [x] Pagos (ADR-S12): PayPal (USD) + Mercado Pago (COP) detrás de una
         interfaz `PaymentGateway` (Stripe no opera en Colombia). Checkout por
         proveedor, webhooks firmados por proveedor (HMAC MP / verify-webhook
@@ -196,6 +200,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         forma bloqueante (self-heal best-effort + registro de scheduler sin
         bloquear), así el API BOOTEA y escucha aunque Redis esté caído y se
         auto-recupera al volver. Tests de regresión (guard + boot).
+  - [x] Perf del camino caliente (WAN + por-request): (a) compresión de
+        respuestas del API (`@fastify/compress` br/gzip) — una lista de 50
+        records baja de ~16 KB a <1 KB en el cable (~94%); (b) el scope de RLS
+        de cada transacción (`SET LOCAL ROLE` + `set_config('app.*')`) se hace
+        en UN solo `SELECT` en vez de 2-3 round-trips secuenciales; (c) el path
+        de records ya no re-resuelve la lista dos veces (`fields.listByListId`
+        con el id ya resuelto) → una transacción con scope menos por request;
+        (d) nginx de despliegue: `gzip_proxied` + keepalive al upstream Node
+        (reusa TCP por request). RLS y 138 tests en verde.
   - [ ] PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
