@@ -69,7 +69,12 @@ export function SaveViewDialog({
             setError(null);
             create.reset();
         }
-    }, [open, create]);
+        // Sólo al cambiar `open`. `create` (objeto de mutación de react-query) es
+        // una referencia NUEVA en cada render; incluirlo acá disparaba el effect
+        // en cada render → `create.reset()` → re-render → loop infinito ("Maximum
+        // update depth"). El `reset()` sólo debe correr al cerrar el diálogo.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
     // Auto-selección al cambiar de tipo: menos clics para el operador.
     useEffect(() => {
