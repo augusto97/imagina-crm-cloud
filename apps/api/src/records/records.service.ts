@@ -203,7 +203,7 @@ export class RecordsService {
         ids: number[],
         values: Record<string, unknown>,
     ): Promise<{ succeeded: number[]; failed: Array<{ id: number; message: string }> }> {
-        let data: Record<string, unknown> = {};
+        const data: Record<string, unknown> = {};
         if (action === 'update') {
             // `values` puede venir por slug o por f{id}; normalizamos a f{id}.
             const list = await this.lists.get(tenantId, listIdOrSlug);

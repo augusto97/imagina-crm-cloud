@@ -4,6 +4,7 @@ import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ENV, type Env } from '../config/env';
 import { CheckUpdatesService } from './check-updates.service';
 import { ReleasesRepository } from './releases.repository';
+import { SmtpController } from './smtp.controller';
 import { SymlinkDeployer } from './symlink-deployer.service';
 import { UpdateController } from './update.controller';
 import { UpdateManager } from './update-manager.service';
@@ -17,7 +18,7 @@ import { DEPLOYER } from './update.types';
  */
 @Module({
     imports: [AuthModule],
-    controllers: [UpdateController],
+    controllers: [UpdateController, SmtpController],
     providers: [
         SuperadminGuard,
         ReleasesRepository,

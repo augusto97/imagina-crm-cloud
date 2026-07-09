@@ -168,7 +168,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (último admin, auto-baja, duplicado, usuario inexistente), tests RLS.
   - [x] Emails transaccionales (ADR-S11): MailModule con transporte
         intercambiable (log/smtp nodemailer), encolado en BullMQ; acción
-        `send_email` real + magic link del portal por email. Tests.
+        `send_email` real + magic link del portal por email. Config SMTP de
+        plataforma editable desde Ajustes (panel superadmin): PlatformSettings
+        en Redis (`platform:smtp`), el MailService la toma en el próximo envío
+        sin reiniciar (fallback al transporte por env), GET sin password,
+        botón de correo de prueba. Tests.
   - [x] Pagos (ADR-S12): PayPal (USD) + Mercado Pago (COP) detrás de una
         interfaz `PaymentGateway` (Stripe no opera en Colombia). Checkout por
         proveedor, webhooks firmados por proveedor (HMAC MP / verify-webhook
