@@ -191,6 +191,47 @@ export class RecordsService {
     }
 
     /**
+     * Acción masiva (borrar / actualizar campos) sobre varios records. Se aplica
+     * por fila reutilizando update/remove (respeta capabilities, own-scoping,
+     * validación, activity y realtime); junta éxitos y fallos individuales.
+     */
+    async bulk(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        action: 'delete' | 'update',
+        ids: number[],
+        values: Record<string, unknown>,
+    ): Promise<{ succeeded: number[]; failed: Array<{ id: number; message: string }> }> {
+        let data: Record<string, unknown> = {};
+        if (action === 'update') {
+            // `values` puede venir por slug o por f{id}; normalizamos a f{id}.
+            const list = await this.lists.get(tenantId, listIdOrSlug);
+            const fields = await this.fields.list(tenantId, String(list.id));
+            const bySlug = new Map(fields.map((f) => [f.slug, `f${f.id}`]));
+            for (const [k, v] of Object.entries(values)) {
+                data[/^f\d+$/.test(k) ? k : (bySlug.get(k) ?? k)] = v;
+            }
+        }
+
+        const succeeded: number[] = [];
+        const failed: Array<{ id: number; message: string }> = [];
+        for (const id of ids) {
+            try {
+                if (action === 'delete') {
+                    await this.remove(tenantId, actor, listIdOrSlug, id);
+                } else {
+                    await this.update(tenantId, actor, listIdOrSlug, id, { data });
+                }
+                succeeded.push(id);
+            } catch (err) {
+                failed.push({ id, message: err instanceof Error ? err.message : 'Error' });
+            }
+        }
+        return { succeeded, failed };
+    }
+
+    /**
      * Scoping de "own records": si el rol tiene la capability plena (view/
      * edit/delete_records) alcanza cualquier registro; si solo tiene la
      * variante `_own_`, únicamente los que creó (CONTRACT §6).

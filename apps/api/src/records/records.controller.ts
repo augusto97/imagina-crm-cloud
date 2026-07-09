@@ -14,9 +14,11 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    bulkRecordsSchema,
     createRecordSchema,
     listRecordsQuerySchema,
     updateRecordSchema,
+    type BulkRecordsInput,
     type CreateRecordInput,
     type ListRecordsQuery,
     type RecordDto,
@@ -52,6 +54,17 @@ export class RecordsController {
         @Query() rawQuery: Record<string, unknown>,
     ): Promise<RecordsPage> {
         return this.records.list(tenantId(req), actor(req), list, parseListQuery(rawQuery));
+    }
+
+    @Post('bulk')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records', 'delete_records', 'delete_own_records')
+    bulk(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(bulkRecordsSchema)) input: BulkRecordsInput,
+    ): Promise<{ succeeded: number[]; failed: Array<{ id: number; message: string }> }> {
+        return this.records.bulk(tenantId(req), actor(req), list, input.action, input.ids, input.values);
     }
 
     @Get(':id')

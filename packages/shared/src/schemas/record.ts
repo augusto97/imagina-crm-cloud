@@ -51,3 +51,15 @@ export const listRecordsQuerySchema = z.object({
     filter_tree: filterTreeSchema.optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
+
+/**
+ * Acción masiva sobre varios records (borrar o actualizar campos). `values`
+ * acepta claves por slug o por f{id}; el service las normaliza. Se aplica por
+ * fila con capabilities/own-scoping; devuelve éxitos y fallos individuales.
+ */
+export const bulkRecordsSchema = z.object({
+    action: z.enum(['delete', 'update']),
+    ids: z.array(idSchema).min(1).max(500),
+    values: z.record(z.unknown()).default({}),
+});
+export type BulkRecordsInput = z.infer<typeof bulkRecordsSchema>;
