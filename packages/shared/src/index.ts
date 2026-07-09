@@ -16,6 +16,7 @@ export * from './schemas/comment';
 export * from './schemas/activity';
 export * from './schemas/aggregate';
 export * from './schemas/automation';
+export * from './schemas/dashboard';
 export * from './schemas/portal';
 export * from './schemas/billing';
 export * from './schemas/payment';

@@ -242,6 +242,13 @@ async function normalizeCloudResponse<T>(path: string, payload: unknown): Promis
         };
     }
 
+    // Widget data de dashboards: el payload ES la WidgetData y puede tener un
+    // `data` propio (charts: `{data:[…]}`). NO lo desenvolvemos (si no, el chart
+    // pierde su `.data`); lo devolvemos tal cual bajo `res.data`.
+    if (/\/widgets\/[^/]+\/data$/.test(path)) {
+        return { data: payload as T };
+    }
+
     // Endpoint de fields: cacheamos el mapa de la lista (lo usan los records).
     if (/\/lists\/[^/]+\/fields$/.test(path)) {
         const listKey = listKeyFromPath(path);
