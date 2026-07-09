@@ -145,22 +145,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         updated dispatch), condiciones (filter tree), actions (update_field,
         create_record, call_webhook con HMAC, send_email simulado), runs con
         logs. CRUD + runs endpoint. Worker in-process con Redis.
+  - [x] **Paridad total con el editor del plugin (form + diagrama)**: se
+        reescribió el modelo del backend al shape FLEXIBLE del plugin —
+        `trigger_type` (slug) + `trigger_config` (field_filters + changed_fields
+        + claves del trigger) + `actions[]` (ActionSpec con condición POR ACCIÓN
+        + `if_else` recursivo con ramas then/else). Motor nuevo: condition
+        evaluator (array rico `[{field,op,value}]` por slug, todos los operadores)
+        + merge tags (`{{slug}}`, `{{record.id}}`) + acciones ricas (send_email
+        con is_html/cc/bcc/from, call_webhook con method/body_template/headers/
+        HMAC, update_field multi-campo, create_record). Endpoints de catálogo
+        `/triggers` + `/actions` y `/automations/:id/runs`. Migración 0014
+        (trigger/condition → trigger_type/trigger_config; runs → actions_log/
+        error/started_at/finished_at). MailMessage extendido (cc/bcc/from).
+        Verificado E2E en navegador (Formulario + Diagrama React-Flow) y en vivo:
+        crear record → run success con log `send_email → if_else → update_field`,
+        la rama then seteó el campo. 140 tests de la API en verde.
   - [x] Portal del cliente — magic links de un solo uso (Redis), usuario rol
         client vinculado a un record, POST /portal/consume abre sesión,
         GET /portal/me devuelve record + fields + template de bloques.
   - [x] Scheduling: triggers `scheduled` (cron) y `due_date_reached` (escaneo
         periódico con dedup por automation_runs) vía job schedulers de BullMQ
         (persisten en Redis → sobreviven reinicios sin re-enumerar).
-  - [x] Front automatizaciones: página con el look del builder del plugin
-        (header + filas con badges/estado + empty state) y un editor lateral
-        (Sheet) en pasos Cuándo→Si→Entonces cableado NATIVO al modelo del
-        backend NestJS: todos los triggers, condiciones filter_tree AND/OR con
-        varias filas, VARIAS acciones por regla (update_field/create_record/
-        call_webhook con HMAC/send_email con merge tags), edición, toggle
-        activa/pausa, historial de runs en Sheet, borrado con confirm. Reemplaza
-        al panel mínimo anterior; no depende del builder React-Flow del plugin
-        ni de endpoints de catálogo (trigger/action labels locales). Verificado
-        E2E en navegador (alta → card con badges → persistido).
+  - [x] Front automatizaciones: se monta el EDITOR REAL del plugin
+        (`AutomationsPage` + `AutomationDialog`) en la nube, con sus dos modos
+        **Formulario** y **Diagrama** (builder visual React-Flow con ramas
+        Sí/No), merge-tag chips, email rico (From/Cc/Bcc/HTML/firma), condición
+        por acción y "disparar solo si cambian estos campos". Funciona porque el
+        backend ahora habla el shape del plugin (ver arriba) + los endpoints de
+        catálogo. Se eliminó el panel/side-sheet nativo mínimo anterior.
+        Verificado E2E en navegador (form + diagrama renderizan; alta→persistido→
+        ejecuta).
   - [x] Front portal: SPA del cliente (build `portal` aparte) — `/portal/acceso`
         canjea el magic link y `/portal` renderiza record + campos + template
         (bloques heading/notice/static_text); admin emite el link desde el

@@ -88,14 +88,18 @@ async function seed(): Promise<void> {
         // --- Automatización: cliente activo grande → crear tarea de follow-up ---
         await automations.create(tenantId, clientes.slug, {
             name: 'Follow-up de cuentas grandes',
-            trigger: { type: 'record_created' },
-            condition: {
-                type: 'group',
-                logic: 'and',
-                children: [{ type: 'condition', field_id: cMonto.id, op: 'gte', value: 10000 }],
+            trigger_type: 'record_created',
+            trigger_config: {
+                field_filters: [{ field: cMonto.slug, op: 'gte', value: 10000 }],
             },
             actions: [
-                { type: 'create_record', list_id: tareas.id, data: { [`f${tTitulo.id}`]: 'Llamar a la cuenta nueva' } },
+                {
+                    type: 'create_record',
+                    config: {
+                        target_list: tareas.id,
+                        values: { [tTitulo.slug]: 'Llamar a la cuenta nueva' },
+                    },
+                },
             ],
         });
 

@@ -36,7 +36,7 @@ import { startPostgres, type TestPg } from './helpers/containers';
 const rt = new RealtimeService();
 const admin: Actor = { userId: 1, role: 'admin' };
 
-describe('AutomationEngine (Postgres real)', () => {
+describe('AutomationEngine (Postgres real) — modelo flexible', () => {
     let pg: TestPg;
     let tenantDb: TenantDb;
     let listsService: ListsService;
@@ -66,8 +66,6 @@ describe('AutomationEngine (Postgres real)', () => {
         );
         automationsService = new AutomationsService(tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
         mailbox = new CapturingMailTransport();
-        // MailService sin onModuleInit → sin cola Redis → enqueue cae a sendNow,
-        // que llama al transporte capturador (asertamos el correo directamente).
         const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
             tenantDb,
@@ -110,23 +108,17 @@ describe('AutomationEngine (Postgres real)', () => {
 
     const key = (s: string) => `f${f[s]!.id}`;
 
-    it('update_field: al crear un deal grande, la automatización lo marca VIP', async () => {
+    it('update_field: deal grande (field_filters) → marca VIP; run success con log', async () => {
         await automationsService.create(tenantId, 'deals', {
             name: 'Marcar VIP',
-            trigger: { type: 'record_created' },
-            condition: {
-                type: 'group',
-                logic: 'and',
-                children: [{ type: 'condition', field_id: f.monto!.id, op: 'gte', value: 1000 }],
-            },
-            actions: [{ type: 'update_field', field_id: f.estado!.id, value: 'vip' }],
+            trigger_type: 'record_created',
+            trigger_config: { field_filters: [{ field: 'monto', op: 'gte', value: 1000 }] },
+            actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
         });
 
         const rec = await recordsService.create(tenantId, admin, 'deals', {
             data: { [key('monto')]: 5000, [key('estado')]: 'nueva' },
         });
-
-        // El engine corre lo que normalmente encolaría el dispatcher.
         await engine.process({
             tenantId,
             listId,
@@ -138,22 +130,20 @@ describe('AutomationEngine (Postgres real)', () => {
         const updated = await recordsService.get(tenantId, admin, 'deals', rec.id);
         expect(updated.data[key('estado')]).toBe('vip');
 
-        const runs = await automationsService.runs(tenantId, 'deals', await firstAutomationId(), {});
+        const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
         expect(runs.data[0]).toMatchObject({ status: 'success', record_id: rec.id });
-        expect(runs.data[0]!.logs.join(' ')).toContain('update_field');
+        expect(runs.data[0]!.actions_log.map((l) => l.action)).toContain('update_field');
     });
 
-    it('send_email: encola (envía) el correo con merge tags resueltos', async () => {
+    it('send_email: encola el correo con merge tags resueltos', async () => {
         mailbox.sent.length = 0;
         await automationsService.create(tenantId, 'deals', {
             name: 'Avisar VIP',
-            trigger: { type: 'record_created' },
+            trigger_type: 'record_created',
             actions: [
                 {
                     type: 'send_email',
-                    to: 'ventas@acme.test',
-                    subject: 'Deal {{estado}}',
-                    body: 'Monto: {{monto}}',
+                    config: { to: 'ventas@acme.test', subject: 'Deal {{estado}}', body: 'Monto: {{monto}}' },
                 },
             ],
         });
@@ -170,23 +160,15 @@ describe('AutomationEngine (Postgres real)', () => {
         });
 
         expect(mailbox.sent).toHaveLength(1);
-        expect(mailbox.sent[0]).toMatchObject({
-            to: 'ventas@acme.test',
-            subject: 'Deal vip',
-            text: 'Monto: 5000',
-        });
+        expect(mailbox.sent[0]).toMatchObject({ to: 'ventas@acme.test', subject: 'Deal vip', text: 'Monto: 5000' });
     });
 
-    it('condición no cumplida → run skipped, sin cambios', async () => {
+    it('field_filters no cumplido → trigger no matchea, no corre ni loguea', async () => {
         await automationsService.create(tenantId, 'deals', {
             name: 'Sólo grandes',
-            trigger: { type: 'record_created' },
-            condition: {
-                type: 'group',
-                logic: 'and',
-                children: [{ type: 'condition', field_id: f.monto!.id, op: 'gte', value: 1000 }],
-            },
-            actions: [{ type: 'update_field', field_id: f.estado!.id, value: 'vip' }],
+            trigger_type: 'record_created',
+            trigger_config: { field_filters: [{ field: 'monto', op: 'gte', value: 1000 }] },
+            actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
         });
 
         const rec = await recordsService.create(tenantId, admin, 'deals', {
@@ -201,8 +183,69 @@ describe('AutomationEngine (Postgres real)', () => {
         });
 
         expect((await recordsService.get(tenantId, admin, 'deals', rec.id)).data[key('estado')]).toBe('nueva');
-        const runs = await automationsService.runs(tenantId, 'deals', await firstAutomationId(), {});
-        expect(runs.data[0]!.status).toBe('skipped');
+        const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
+        expect(runs.data).toHaveLength(0);
+    });
+
+    it('condición por acción no cumplida → acción skipped (el run corre igual)', async () => {
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Condición por acción',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'update_field',
+                    config: { values: { estado: 'vip' } },
+                    condition: [{ field: 'monto', op: 'gte', value: 1000 }],
+                },
+            ],
+        });
+
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 100, [key('estado')]: 'nueva' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_created',
+            after: { [key('monto')]: 100, [key('estado')]: 'nueva' },
+        });
+
+        expect((await recordsService.get(tenantId, admin, 'deals', rec.id)).data[key('estado')]).toBe('nueva');
+        const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
+        expect(runs.data[0]!.actions_log[0]).toMatchObject({ action: 'update_field', status: 'skipped' });
+    });
+
+    it('if_else: rama then/else según condición', async () => {
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Ramas',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'if_else',
+                    config: {
+                        condition: [{ field: 'monto', op: 'gte', value: 1000 }],
+                        then_actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
+                        else_actions: [{ type: 'update_field', config: { values: { estado: 'nueva' } } }],
+                    },
+                },
+            ],
+        });
+
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 5000, [key('estado')]: 'nueva' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_created',
+            after: { [key('monto')]: 5000, [key('estado')]: 'nueva' },
+        });
+
+        expect((await recordsService.get(tenantId, admin, 'deals', rec.id)).data[key('estado')]).toBe('vip');
+        const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
+        expect(runs.data[0]!.actions_log.map((l) => l.action)).toEqual(['if_else', 'update_field']);
     });
 
     it('create_record: la automatización crea un registro en otra lista', async () => {
@@ -211,8 +254,10 @@ describe('AutomationEngine (Postgres real)', () => {
 
         await automationsService.create(tenantId, 'deals', {
             name: 'Crear tarea de follow-up',
-            trigger: { type: 'record_created' },
-            actions: [{ type: 'create_record', list_id: tareas.id, data: { [`f${titulo.id}`]: 'Follow-up' } }],
+            trigger_type: 'record_created',
+            actions: [
+                { type: 'create_record', config: { target_list: tareas.id, values: { [`f${titulo.id}`]: 'Follow-up' } } },
+            ],
         });
 
         const rec = await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 10 } });
@@ -234,15 +279,16 @@ describe('AutomationEngine (Postgres real)', () => {
         const titulo = await fieldsService.create(tenantId, 'diario', { label: 'T', type: 'text', slug: 't' });
         const auto = await automationsService.create(tenantId, 'deals', {
             name: 'Resumen diario',
-            trigger: { type: 'scheduled', cron: '0 9 * * *' },
-            actions: [{ type: 'create_record', list_id: tareas.id, data: { [`f${titulo.id}`]: 'Resumen' } }],
+            trigger_type: 'scheduled',
+            trigger_config: { cron: '0 9 * * *' },
+            actions: [{ type: 'create_record', config: { target_list: tareas.id, values: { [`f${titulo.id}`]: 'Resumen' } } }],
         });
 
         await engine.runScheduled(tenantId, auto.id);
 
         const diario = await recordsService.list(tenantId, admin, 'diario', { limit: 10, sort_dir: 'asc' });
         expect(diario.data).toHaveLength(1);
-        const runs = await automationsService.runs(tenantId, 'deals', auto.id, {});
+        const runs = await automationsService.runsById(tenantId, auto.id, {});
         expect(runs.data[0]).toMatchObject({ status: 'success', record_id: null });
     });
 
@@ -250,11 +296,11 @@ describe('AutomationEngine (Postgres real)', () => {
         const vence = await fieldsService.create(tenantId, 'deals', { label: 'Vence', type: 'datetime', slug: 'vence' });
         const auto = await automationsService.create(tenantId, 'deals', {
             name: 'Marcar vencidos',
-            trigger: { type: 'due_date_reached', field_id: vence.id, offset_minutes: 0 },
-            actions: [{ type: 'update_field', field_id: f.estado!.id, value: 'vip' }],
+            trigger_type: 'due_date_reached',
+            trigger_config: { field_id: vence.id, offset_minutes: 0 },
+            actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
         });
 
-        // Uno vencido (ayer) y uno futuro (mañana).
         const past = await recordsService.create(tenantId, admin, 'deals', {
             data: { [`f${vence.id}`]: '2020-01-01T00:00:00.000Z', [key('estado')]: 'nueva' },
         });
@@ -266,9 +312,8 @@ describe('AutomationEngine (Postgres real)', () => {
         expect((await recordsService.get(tenantId, admin, 'deals', past.id)).data[key('estado')]).toBe('vip');
         expect((await recordsService.get(tenantId, admin, 'deals', future.id)).data[key('estado')]).toBe('nueva');
 
-        // Segunda corrida: no vuelve a disparar sobre el ya procesado.
         await engine.runDueDate(tenantId, auto.id);
-        const runs = await automationsService.runs(tenantId, 'deals', auto.id, {});
+        const runs = await automationsService.runsById(tenantId, auto.id, {});
         expect(runs.data.filter((r) => r.record_id === past.id)).toHaveLength(1);
     });
 
