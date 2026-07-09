@@ -8,7 +8,7 @@ import { getBootData } from './boot';
  * plugin WordPress, donde sí existían).
  */
 export const CLOUD_WIRED = {
-    dashboards: false,
+    dashboards: true,
     automations: true,
     aggregates: true,
     mentions: false,

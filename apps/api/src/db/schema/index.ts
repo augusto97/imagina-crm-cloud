@@ -10,3 +10,4 @@ export * from './activity';
 export * from './automations';
 export * from './portal-links';
 export * from './app-releases';
+export * from './dashboards';
