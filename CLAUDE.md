@@ -140,8 +140,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
   - [x] Scheduling: triggers `scheduled` (cron) y `due_date_reached` (escaneo
         periódico con dedup por automation_runs) vía job schedulers de BullMQ
         (persisten en Redis → sobreviven reinicios sin re-enumerar).
-  - [x] Front automatizaciones: AutomationsPanel (alta con trigger/condición/
-        acción, toggle activa/pausa, visor de runs, borrado).
+  - [x] Front automatizaciones: página con el look del builder del plugin
+        (header + filas con badges/estado + empty state) y un editor lateral
+        (Sheet) en pasos Cuándo→Si→Entonces cableado NATIVO al modelo del
+        backend NestJS: todos los triggers, condiciones filter_tree AND/OR con
+        varias filas, VARIAS acciones por regla (update_field/create_record/
+        call_webhook con HMAC/send_email con merge tags), edición, toggle
+        activa/pausa, historial de runs en Sheet, borrado con confirm. Reemplaza
+        al panel mínimo anterior; no depende del builder React-Flow del plugin
+        ni de endpoints de catálogo (trigger/action labels locales). Verificado
+        E2E en navegador (alta → card con badges → persistido).
   - [x] Front portal: SPA del cliente (build `portal` aparte) — `/portal/acceso`
         canjea el magic link y `/portal` renderiza record + campos + template
         (bloques heading/notice/static_text); admin emite el link desde el
