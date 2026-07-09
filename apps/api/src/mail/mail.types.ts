@@ -4,6 +4,11 @@ export interface MailMessage {
     subject: string;
     html?: string;
     text?: string;
+    cc?: string;
+    bcc?: string;
+    /** Override del remitente (email); si falta, el transporte usa su default. */
+    from?: string;
+    fromName?: string;
 }
 
 /**

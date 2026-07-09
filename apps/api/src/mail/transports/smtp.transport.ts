@@ -25,9 +25,16 @@ export class SmtpMailTransport implements MailTransport {
     }
 
     async send(message: MailMessage): Promise<void> {
+        const from = message.from
+            ? message.fromName
+                ? `${message.fromName} <${message.from}>`
+                : message.from
+            : this.from;
         await this.transporter.sendMail({
-            from: this.from,
+            from,
             to: message.to,
+            cc: message.cc || undefined,
+            bcc: message.bcc || undefined,
             subject: message.subject,
             html: message.html,
             text: message.text ?? stripHtml(message.html),

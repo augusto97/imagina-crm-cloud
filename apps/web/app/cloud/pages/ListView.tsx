@@ -11,7 +11,6 @@ import {
     type RecordDto,
 } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
-import { AutomationsPanel } from '@/cloud/components/AutomationsPanel';
 import { FilterBar } from '@/cloud/components/FilterBar';
 import { ImportExport } from '@/cloud/components/ImportExport';
 import { CalendarView } from '@/cloud/components/CalendarView';
@@ -134,9 +133,7 @@ export function ListView(): JSX.Element {
                     </div>
                 )}
 
-                {mode === 'automations' ? (
-                    <AutomationsPanel listSlug={list.slug} fields={dataFields} />
-                ) : mode === 'portal' ? (
+                {mode === 'portal' ? (
                     <PortalTemplateEditor list={list} />
                 ) : dataFields.length === 0 ? (
                     <Centered>Agregá un campo para empezar.</Centered>

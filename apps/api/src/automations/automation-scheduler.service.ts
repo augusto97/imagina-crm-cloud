@@ -30,13 +30,15 @@ export class AutomationScheduler {
             await this.remove(auto.id); // idempotente: limpio y re-creo
             if (!auto.isActive) return;
 
-            if (auto.trigger.type === 'scheduled') {
+            if (auto.triggerType === 'scheduled') {
+                const cron = String(auto.triggerConfig.cron ?? '').trim();
+                if (cron === '') return;
                 await this.queue.upsertJobScheduler(
                     schedId(auto.id),
-                    { pattern: auto.trigger.cron },
+                    { pattern: cron },
                     { name: 'scheduled', data: { tenantId, automationId: auto.id } },
                 );
-            } else if (auto.trigger.type === 'due_date_reached') {
+            } else if (auto.triggerType === 'due_date_reached') {
                 await this.queue.upsertJobScheduler(
                     dueId(auto.id),
                     { pattern: DUE_SCAN_PATTERN },

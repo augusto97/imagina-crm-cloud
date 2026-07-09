@@ -6,6 +6,7 @@ import { RecordsRepository } from '../records/records.repository';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { AutomationsCatalogController } from './automations-catalog.controller';
 import { AutomationsController } from './automations.controller';
 import { AutomationsQueueBootstrap } from './automations-queue';
 import { AutomationsRepository } from './automations.repository';
@@ -18,7 +19,7 @@ import { AutomationsService } from './automations.service';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule],
-    controllers: [AutomationsController],
+    controllers: [AutomationsController, AutomationsCatalogController],
     providers: [
         AutomationsService,
         AutomationsRepository,

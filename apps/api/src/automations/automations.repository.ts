@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
-import type { AutomationTrigger } from '@imagina-base/shared';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { automationRuns, automations } from '../db/schema';
 
@@ -26,12 +25,12 @@ export class AutomationsRepository {
         return row ?? null;
     }
 
-    /** Automatizaciones activas de una lista cuyo trigger es de cierto tipo. */
-    async activeByTrigger(
+    /** Automatizaciones activas de una lista cuyo trigger_type está en la lista dada. */
+    async activeByTriggers(
         tx: Tx,
         tenantId: number,
         listId: number,
-        triggerType: AutomationTrigger['type'],
+        triggerTypes: string[],
     ): Promise<AutomationRow[]> {
         return tx
             .select()
@@ -41,7 +40,7 @@ export class AutomationsRepository {
                     eq(automations.tenantId, tenantId),
                     eq(automations.listId, listId),
                     eq(automations.isActive, true),
-                    sql`${automations.trigger} ->> 'type' = ${triggerType}`,
+                    inArray(automations.triggerType, triggerTypes),
                 ),
             );
     }

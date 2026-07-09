@@ -8,7 +8,6 @@ import {
     ParseIntPipe,
     Patch,
     Post,
-    Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
@@ -16,7 +15,6 @@ import {
     createAutomationSchema,
     updateAutomationSchema,
     type Automation,
-    type AutomationRun,
     type CreateAutomationInput,
     type UpdateAutomationInput,
 } from '@imagina-base/shared';
@@ -48,19 +46,6 @@ export class AutomationsController {
         @Param('id', ParseIntPipe) id: number,
     ): Promise<Automation> {
         return this.automations.get(req.tenant!.tenantId, list, id);
-    }
-
-    @Get(':id/runs')
-    @RequireCapability('manage_automations')
-    runs(
-        @Req() req: FastifyRequest,
-        @Param('list') list: string,
-        @Param('id', ParseIntPipe) id: number,
-        @Query('cursor') cursor?: string,
-    ): Promise<{ data: AutomationRun[]; meta: { next_cursor: string | null } }> {
-        return this.automations.runs(req.tenant!.tenantId, list, id, {
-            cursor: cursor ? Number(cursor) : undefined,
-        });
     }
 
     @Post()

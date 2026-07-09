@@ -137,7 +137,7 @@ export class RecordsService {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const fields = await this.fields.listByListId(tenantId, listId);
 
-        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.canReach(actor, 'edit', current)) throw recordNotFound(id);
 
@@ -155,9 +155,10 @@ export class RecordsService {
                     diff: computeDiff(current.data, merged),
                 });
             }
-            return updated;
+            return { updated, before: current.data };
         });
-        if (!row) throw recordNotFound(id);
+        if (!result.updated) throw recordNotFound(id);
+        const row = result.updated;
         this.realtime.records(tenantId, listId);
         this.automations.dispatch({
             tenantId,
@@ -165,6 +166,7 @@ export class RecordsService {
             recordId: row.id,
             trigger: 'record_updated',
             after: row.data,
+            before: result.before, // para changed_fields
         });
         return toRecord(row);
     }

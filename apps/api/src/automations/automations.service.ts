@@ -52,9 +52,10 @@ export class AutomationsService {
                 tenantId,
                 listId: list.id,
                 name: input.name,
-                trigger: input.trigger,
+                description: input.description ?? null,
+                triggerType: input.trigger_type,
+                triggerConfig: input.trigger_config ?? {},
                 actions: input.actions,
-                condition: input.condition ?? null,
                 isActive: input.is_active ?? true,
             }),
         );
@@ -74,9 +75,10 @@ export class AutomationsService {
             if (!current) throw notFound(id);
             const changes: Partial<typeof import('../db/schema').automations.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
-            if (patch.trigger !== undefined) changes.trigger = patch.trigger;
+            if (patch.description !== undefined) changes.description = patch.description ?? null;
+            if (patch.trigger_type !== undefined) changes.triggerType = patch.trigger_type;
+            if (patch.trigger_config !== undefined) changes.triggerConfig = patch.trigger_config;
             if (patch.actions !== undefined) changes.actions = patch.actions;
-            if (patch.condition !== undefined) changes.condition = patch.condition;
             if (patch.is_active !== undefined) changes.isActive = patch.is_active;
             const updated = await this.repo.update(tx, tenantId, id, changes);
             if (!updated) throw notFound(id);
@@ -95,13 +97,16 @@ export class AutomationsService {
         await this.scheduler.remove(id);
     }
 
-    async runs(
+    /** Runs de una automatización por id (sin contexto de lista — la ruta del fork). */
+    async runsById(
         tenantId: number,
-        listIdOrSlug: string,
         automationId: number,
         opts: { cursor?: number; limit?: number },
     ): Promise<{ data: AutomationRun[]; meta: { next_cursor: string | null } }> {
-        await this.get(tenantId, listIdOrSlug, automationId);
+        const auto = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.repo.findById(tx, tenantId, automationId),
+        );
+        if (!auto) throw notFound(automationId);
         const limit = Math.min(opts.limit ?? 50, 200);
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.listRuns(tx, tenantId, automationId, { cursor: opts.cursor, limit: limit + 1 }),
@@ -109,7 +114,7 @@ export class AutomationsService {
         const hasMore = rows.length > limit;
         const page = hasMore ? rows.slice(0, limit) : rows;
         const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
-        return { data: page.map(toRun), meta: { next_cursor: nextCursor } };
+        return { data: page.map((r) => toRun(r, auto.listId)), meta: { next_cursor: nextCursor } };
     }
 }
 
@@ -118,23 +123,27 @@ function toAutomation(row: AutomationRow): Automation {
         id: row.id,
         list_id: row.listId,
         name: row.name,
-        trigger: row.trigger,
+        description: row.description ?? null,
+        trigger_type: row.triggerType,
+        trigger_config: row.triggerConfig ?? {},
         actions: row.actions,
-        condition: row.condition ?? null,
         is_active: row.isActive,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
     };
 }
 
-function toRun(row: AutomationRunRow): AutomationRun {
+function toRun(row: AutomationRunRow, listId: number): AutomationRun {
     return {
         id: row.id,
         automation_id: row.automationId,
+        list_id: listId,
         record_id: row.recordId,
         status: row.status as AutomationRunStatus,
-        logs: row.logs,
-        duration_ms: row.durationMs,
+        actions_log: row.actionsLog,
+        error: row.error ?? null,
+        started_at: row.startedAt ? row.startedAt.toISOString() : null,
+        finished_at: row.finishedAt ? row.finishedAt.toISOString() : null,
         created_at: row.createdAt.toISOString(),
     };
 }
