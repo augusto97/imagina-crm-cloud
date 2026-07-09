@@ -1,0 +1,1884 @@
+/*
+ * portal-components.css
+ * ---------------------------------------------------------------------------
+ * Hoja de estilos del PORTAL DEL CLIENTE y de las LISTAS PÚBLICAS.
+ *
+ * El frontend de `apps/web/` es un fork del plugin WordPress `imagina-crm`;
+ * la hoja de estilos original del portal/listas públicas NUNCA se copió al
+ * repo, así que todas las clases `imcrm-portal-*` y `imcrm-public-list-*`
+ * quedaban sin definir (UI sin estilar). Este archivo las define TODAS,
+ * usando los design tokens del tema (`--imcrm-*` en globals.css) para que
+ * el modo oscuro funcione automáticamente (nunca hardcodeamos color de
+ * marca; sólo blanco/negro puro para sombras).
+ *
+ * Estética: cliente-facing, calma y moderna (Linear / Vercel / Stripe docs):
+ * bordes hairline, sombras sutiles sólo en elevación real, esquinas 8-12px,
+ * tipografía legible, `--imcrm-primary` para links/CTAs.
+ *
+ * Convención BEM: bloque `imcrm-portal-block`, elementos `__x`, modif `--y`.
+ * ---------------------------------------------------------------------------
+ */
+
+/* ===========================================================================
+ * 0. Tokens locales (sombras, radios) + mapeo de colores de chip públicos.
+ *    Las sombras usan negro/blanco puro (no temeables) — OK hardcodear.
+ * ========================================================================= */
+:root {
+    --imcrm-pc-shadow-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+    --imcrm-pc-shadow-sm:
+        0 1px 2px rgb(15 23 42 / 0.04),
+        0 1px 3px rgb(15 23 42 / 0.06);
+    --imcrm-pc-shadow-md:
+        0 2px 4px rgb(15 23 42 / 0.04),
+        0 6px 16px rgb(15 23 42 / 0.08);
+    --imcrm-pc-shadow-lg:
+        0 8px 24px rgb(15 23 42 / 0.10),
+        0 2px 6px rgb(15 23 42 / 0.06);
+
+    --imcrm-pc-radius-sm: 4px;
+    --imcrm-pc-radius-md: 6px;
+    --imcrm-pc-radius-lg: 8px;
+    --imcrm-pc-radius-xl: 12px;
+
+    /*
+     * Los chips de select/multi_select de la lista pública referencian
+     * `--imcrm-public-opt-{name}` / `-text` (ver cellFormat.tsx). En el
+     * plugin vivían en `assets/public-list.css`. Los mapeamos a los tokens
+     * `--imcrm-opt-*` del tema para que los chips de colores rendericen (y
+     * hereden el override de dark mode de esos tokens gratis).
+     */
+    --imcrm-public-opt-gray: var(--imcrm-opt-gray);
+    --imcrm-public-opt-slate: var(--imcrm-opt-slate);
+    --imcrm-public-opt-rose: var(--imcrm-opt-rose);
+    --imcrm-public-opt-red: var(--imcrm-opt-red);
+    --imcrm-public-opt-orange: var(--imcrm-opt-orange);
+    --imcrm-public-opt-amber: var(--imcrm-opt-amber);
+    --imcrm-public-opt-yellow: var(--imcrm-opt-yellow);
+    --imcrm-public-opt-lime: var(--imcrm-opt-lime);
+    --imcrm-public-opt-green: var(--imcrm-opt-green);
+    --imcrm-public-opt-emerald: var(--imcrm-opt-emerald);
+    --imcrm-public-opt-teal: var(--imcrm-opt-teal);
+    --imcrm-public-opt-cyan: var(--imcrm-opt-cyan);
+    --imcrm-public-opt-sky: var(--imcrm-opt-sky);
+    --imcrm-public-opt-blue: var(--imcrm-opt-blue);
+    --imcrm-public-opt-indigo: var(--imcrm-opt-indigo);
+    --imcrm-public-opt-violet: var(--imcrm-opt-violet);
+    --imcrm-public-opt-fuchsia: var(--imcrm-opt-fuchsia);
+    --imcrm-public-opt-pink: var(--imcrm-opt-pink);
+
+    --imcrm-public-opt-gray-text: var(--imcrm-opt-gray-text);
+    --imcrm-public-opt-slate-text: var(--imcrm-opt-slate-text);
+    --imcrm-public-opt-rose-text: var(--imcrm-opt-rose-text);
+    --imcrm-public-opt-red-text: var(--imcrm-opt-red-text);
+    --imcrm-public-opt-orange-text: var(--imcrm-opt-orange-text);
+    --imcrm-public-opt-amber-text: var(--imcrm-opt-amber-text);
+    --imcrm-public-opt-yellow-text: var(--imcrm-opt-yellow-text);
+    --imcrm-public-opt-lime-text: var(--imcrm-opt-lime-text);
+    --imcrm-public-opt-green-text: var(--imcrm-opt-green-text);
+    --imcrm-public-opt-emerald-text: var(--imcrm-opt-emerald-text);
+    --imcrm-public-opt-teal-text: var(--imcrm-opt-teal-text);
+    --imcrm-public-opt-cyan-text: var(--imcrm-opt-cyan-text);
+    --imcrm-public-opt-sky-text: var(--imcrm-opt-sky-text);
+    --imcrm-public-opt-blue-text: var(--imcrm-opt-blue-text);
+    --imcrm-public-opt-indigo-text: var(--imcrm-opt-indigo-text);
+    --imcrm-public-opt-violet-text: var(--imcrm-opt-violet-text);
+    --imcrm-public-opt-fuchsia-text: var(--imcrm-opt-fuchsia-text);
+    --imcrm-public-opt-pink-text: var(--imcrm-opt-pink-text);
+}
+
+/* ===========================================================================
+ * 1. Scaffold de layout filas → columnas (PortalRenderer).
+ *    `imcrm-row` es un flex-row de columnas; cada `imcrm-row__cell` apila
+ *    sus bloques verticalmente con gap. En mobile las columnas colapsan.
+ * ========================================================================= */
+.imcrm-rows-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+}
+
+.imcrm-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    width: 100%;
+}
+
+.imcrm-row__cell {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0; /* permite que el contenido (tablas) haga shrink/scroll */
+}
+
+@media (max-width: 640px) {
+    .imcrm-row {
+        flex-direction: column;
+    }
+
+    .imcrm-row__cell {
+        flex: 1 1 100% !important; /* pisa el flex:width inline en mobile */
+    }
+}
+
+/* ===========================================================================
+ * 2. Bloque base + variantes de superficie.
+ * ========================================================================= */
+.imcrm-portal-block {
+    position: relative;
+    color: hsl(var(--imcrm-card-foreground));
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+/* Card: superficie elevada con hairline border. Es el default de la
+ * mayoría de bloques con contenido (client-data, faq, downloads, etc.). */
+.imcrm-portal-block--card,
+.imcrm-portal-block--static-text.imcrm-portal-block--card,
+.imcrm-portal-block--client-data,
+.imcrm-portal-block--related,
+.imcrm-portal-block--downloads,
+.imcrm-portal-block--editable-form,
+.imcrm-portal-block--comments,
+.imcrm-portal-block--activity,
+.imcrm-portal-block--faq,
+.imcrm-portal-block--contact-card,
+.imcrm-portal-block--quick-actions,
+.imcrm-portal-block--stats-grid,
+.imcrm-portal-block--external-link {
+    background: hsl(var(--imcrm-card));
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-xl);
+    padding: 22px 24px;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+}
+
+/* Plain: sin marco, fluye con el contexto. */
+.imcrm-portal-block--plain {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    box-shadow: none;
+}
+
+/* Bordered-left: card con acento a la izquierda (citas / notas). */
+.imcrm-portal-block--bordered-left {
+    background: hsl(var(--imcrm-card));
+    border: 1px solid hsl(var(--imcrm-border));
+    border-left: 4px solid hsl(var(--imcrm-primary));
+    border-radius: var(--imcrm-pc-radius-lg);
+    padding: 18px 22px;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+}
+
+/* ===========================================================================
+ * 3. Títulos / contenido / estados (loading, empty, error) compartidos.
+ * ========================================================================= */
+.imcrm-portal-block__title {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-block__content {
+    color: hsl(var(--imcrm-card-foreground));
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.imcrm-portal-block__content > :first-child { margin-top: 0; }
+.imcrm-portal-block__content > :last-child { margin-bottom: 0; }
+
+.imcrm-portal-block__content p { margin: 0 0 0.75em; }
+
+.imcrm-portal-block__content a {
+    color: hsl(var(--imcrm-primary));
+    text-decoration: none;
+}
+.imcrm-portal-block__content a:hover { text-decoration: underline; }
+
+.imcrm-portal-block__loading,
+.imcrm-portal-block__empty {
+    margin: 0;
+    padding: 6px 0;
+    color: hsl(var(--imcrm-muted-foreground));
+    font-size: 13.5px;
+}
+
+.imcrm-portal-block__loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.imcrm-portal-block__error {
+    margin: 0;
+    padding: 10px 12px;
+    background: hsl(var(--imcrm-destructive) / 0.08);
+    border: 1px solid hsl(var(--imcrm-destructive) / 0.24);
+    border-radius: var(--imcrm-pc-radius-md);
+    color: hsl(var(--imcrm-destructive));
+    font-size: 13.5px;
+}
+
+/* ===========================================================================
+ * 4. Card genérica (error de carga del portal) + botón compartido.
+ * ========================================================================= */
+.imcrm-portal-card {
+    background: hsl(var(--imcrm-card));
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-xl);
+    padding: 22px 24px;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+}
+
+.imcrm-portal-card--error {
+    border-color: hsl(var(--imcrm-destructive) / 0.3);
+    background: hsl(var(--imcrm-destructive) / 0.06);
+}
+
+.imcrm-portal-card__body {
+    margin: 0;
+    color: hsl(var(--imcrm-card-foreground));
+    font-size: 14px;
+    line-height: 1.55;
+}
+.imcrm-portal-card--error .imcrm-portal-card__body {
+    color: hsl(var(--imcrm-destructive));
+}
+
+/* Botón sólido primary reutilizado por external-link y form submit. */
+.imcrm-portal-card__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: hsl(var(--imcrm-primary));
+    color: hsl(var(--imcrm-primary-foreground));
+    border: 1px solid transparent;
+    border-radius: var(--imcrm-pc-radius-lg);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+        filter 0.15s ease,
+        box-shadow 0.15s ease,
+        opacity 0.15s ease;
+}
+.imcrm-portal-card__btn:hover {
+    filter: brightness(1.05);
+    box-shadow: var(--imcrm-pc-shadow-sm);
+}
+.imcrm-portal-card__btn:focus-visible {
+    outline: 2px solid hsl(var(--imcrm-ring));
+    outline-offset: 2px;
+}
+.imcrm-portal-card__btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: none;
+    box-shadow: none;
+}
+
+/* ===========================================================================
+ * 5. Heading block (eyebrow + h1..h3, align).
+ * ========================================================================= */
+.imcrm-portal-block--heading { padding: 0; }
+
+.imcrm-portal-heading--center { text-align: center; }
+.imcrm-portal-heading--left { text-align: left; }
+
+.imcrm-portal-heading__eyebrow {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-primary));
+}
+
+.imcrm-portal-heading__text {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: hsl(var(--imcrm-foreground));
+    line-height: 1.2;
+}
+
+.imcrm-portal-heading--h1 .imcrm-portal-heading__text { font-size: 30px; }
+.imcrm-portal-heading--h2 .imcrm-portal-heading__text { font-size: 23px; }
+.imcrm-portal-heading--h3 .imcrm-portal-heading__text { font-size: 18px; }
+
+/* ===========================================================================
+ * 6. Hero block (gradient / solid / plain, align) — usa
+ *    `--imcrm-portal-hero-accent` seteado inline por el bloque.
+ * ========================================================================= */
+.imcrm-portal-block--hero {
+    --_hero-accent: var(--imcrm-portal-hero-accent, hsl(var(--imcrm-primary)));
+    border-radius: var(--imcrm-pc-radius-xl);
+    padding: 40px 36px;
+    overflow: hidden;
+}
+
+.imcrm-portal-hero--left { text-align: left; }
+.imcrm-portal-hero--center { text-align: center; }
+
+.imcrm-portal-hero--gradient {
+    background:
+        linear-gradient(
+            135deg,
+            var(--_hero-accent) 0%,
+            color-mix(in srgb, var(--_hero-accent) 68%, black) 100%
+        );
+    color: #fff;
+    box-shadow: var(--imcrm-pc-shadow-md);
+}
+
+.imcrm-portal-hero--solid {
+    background: var(--_hero-accent);
+    color: #fff;
+    box-shadow: var(--imcrm-pc-shadow-sm);
+}
+
+.imcrm-portal-hero--plain {
+    background: hsl(var(--imcrm-card));
+    color: hsl(var(--imcrm-card-foreground));
+    border: 1px solid hsl(var(--imcrm-border));
+}
+
+.imcrm-portal-hero__body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 640px;
+}
+.imcrm-portal-hero--center .imcrm-portal-hero__body {
+    margin-inline: auto;
+    align-items: center;
+}
+
+.imcrm-portal-hero__title {
+    margin: 0;
+    font-size: 32px;
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+}
+
+.imcrm-portal-hero__subtitle {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.55;
+    opacity: 0.92;
+}
+
+.imcrm-portal-hero__cta {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 11px 22px;
+    background: #fff;
+    color: hsl(var(--imcrm-foreground));
+    border-radius: var(--imcrm-pc-radius-lg);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: var(--imcrm-pc-shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-portal-hero--center .imcrm-portal-hero__cta { align-self: center; }
+.imcrm-portal-hero--plain .imcrm-portal-hero__cta {
+    background: var(--_hero-accent);
+    color: #fff;
+}
+.imcrm-portal-hero__cta:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--imcrm-pc-shadow-md);
+}
+
+/* Hero-CTA (external_link variant hero_cta): banda horizontal texto + botón. */
+.imcrm-portal-block--hero-cta {
+    --_cta-accent: var(--imcrm-portal-cta-accent, hsl(var(--imcrm-primary)));
+    background:
+        linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--_cta-accent) 12%, hsl(var(--imcrm-card))) 0%,
+            hsl(var(--imcrm-card)) 100%
+        );
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-xl);
+    padding: 24px 26px;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+}
+
+.imcrm-portal-hero-cta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.imcrm-portal-hero-cta__body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.imcrm-portal-hero-cta__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-hero-cta__description {
+    margin: 0;
+    font-size: 14px;
+    color: hsl(var(--imcrm-muted-foreground));
+    line-height: 1.5;
+}
+
+.imcrm-portal-hero-cta__btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    background: var(--_cta-accent);
+    color: #fff;
+    border-radius: var(--imcrm-pc-radius-lg);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+    transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-portal-hero-cta__btn:hover {
+    filter: brightness(1.06);
+    box-shadow: var(--imcrm-pc-shadow-sm);
+}
+
+/* ===========================================================================
+ * 7. KPI widget (card / inline, con icono, trend up/down/neutral).
+ * ========================================================================= */
+.imcrm-portal-block--kpi {
+    --_kpi-accent: var(--imcrm-portal-kpi-accent, hsl(var(--imcrm-primary)));
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.imcrm-portal-block--kpi-card {
+    background: hsl(var(--imcrm-card));
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-xl);
+    padding: 20px 22px;
+    box-shadow: var(--imcrm-pc-shadow-xs);
+}
+
+.imcrm-portal-block--kpi-inline {
+    padding: 4px 0;
+}
+
+.imcrm-portal-kpi__icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    font-size: 22px;
+    line-height: 1;
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: color-mix(in srgb, var(--_kpi-accent) 14%, transparent);
+    color: var(--_kpi-accent);
+}
+
+.imcrm-portal-kpi__body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.imcrm-portal-kpi__label {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-kpi__value {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: hsl(var(--imcrm-foreground));
+    font-variant-numeric: tabular-nums;
+}
+
+.imcrm-portal-kpi__trend {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+.imcrm-portal-kpi__trend--up { color: hsl(var(--imcrm-success)); }
+.imcrm-portal-kpi__trend--down { color: hsl(var(--imcrm-destructive)); }
+.imcrm-portal-kpi__trend--neutral { color: hsl(var(--imcrm-muted-foreground)); }
+
+/* ===========================================================================
+ * 8. Notice (info / success / warning / error / announce).
+ * ========================================================================= */
+.imcrm-portal-block--notice {
+    --_notice: var(--imcrm-info);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid hsl(var(--_notice) / 0.28);
+    border-left: 3px solid hsl(var(--_notice));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--_notice) / 0.08);
+}
+.imcrm-portal-notice--info { --_notice: var(--imcrm-info); }
+.imcrm-portal-notice--success { --_notice: var(--imcrm-success); }
+.imcrm-portal-notice--warning { --_notice: var(--imcrm-warning); }
+.imcrm-portal-notice--error { --_notice: var(--imcrm-destructive); }
+.imcrm-portal-notice--announce { --_notice: var(--imcrm-primary); }
+
+.imcrm-portal-notice__icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    background: hsl(var(--_notice));
+}
+
+.imcrm-portal-notice__body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.imcrm-portal-notice__title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 650;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-notice__text {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: hsl(var(--imcrm-card-foreground));
+}
+
+.imcrm-portal-notice__cta {
+    align-self: flex-start;
+    margin-top: 4px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: hsl(var(--_notice));
+    text-decoration: none;
+}
+.imcrm-portal-notice__cta:hover { text-decoration: underline; }
+
+.imcrm-portal-notice__close {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    margin: -2px -4px 0 0;
+    background: transparent;
+    border: 0;
+    border-radius: var(--imcrm-pc-radius-sm);
+    color: hsl(var(--imcrm-muted-foreground));
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.imcrm-portal-notice__close:hover {
+    background: hsl(var(--_notice) / 0.14);
+    color: hsl(var(--_notice));
+}
+
+/* ===========================================================================
+ * 9. FAQ (acordeón).
+ * ========================================================================= */
+.imcrm-portal-faq__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.imcrm-portal-faq__item {
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-portal-faq__item:first-child { border-top: 0; }
+
+.imcrm-portal-faq__question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 0;
+    background: transparent;
+    border: 0;
+    text-align: left;
+    font-size: 14.5px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    cursor: pointer;
+}
+.imcrm-portal-faq__question:hover { color: hsl(var(--imcrm-primary)); }
+
+.imcrm-portal-faq__chevron {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--imcrm-pc-radius-sm);
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-muted-foreground));
+    font-size: 15px;
+    line-height: 1;
+}
+.imcrm-portal-faq__item--open .imcrm-portal-faq__chevron {
+    background: hsl(var(--imcrm-primary) / 0.12);
+    color: hsl(var(--imcrm-primary));
+}
+
+.imcrm-portal-faq__answer {
+    padding: 0 0 16px;
+    color: hsl(var(--imcrm-muted-foreground));
+    font-size: 14px;
+    line-height: 1.6;
+}
+.imcrm-portal-faq__answer p { margin: 0 0 0.6em; }
+.imcrm-portal-faq__answer p:last-child { margin-bottom: 0; }
+
+/* ===========================================================================
+ * 10. Downloads (lista y grid).
+ * ========================================================================= */
+.imcrm-portal-downloads {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.imcrm-portal-downloads__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 10px;
+    border-radius: var(--imcrm-pc-radius-lg);
+    transition: background 0.15s ease;
+}
+.imcrm-portal-downloads__item:hover { background: hsl(var(--imcrm-muted)); }
+
+.imcrm-portal-downloads__icon {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-downloads__link {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: hsl(var(--imcrm-foreground));
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.imcrm-portal-downloads__link:hover { color: hsl(var(--imcrm-primary)); }
+
+.imcrm-portal-downloads__ext {
+    flex: none;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    border-radius: var(--imcrm-pc-radius-sm);
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-downloads__action {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    color: hsl(var(--imcrm-muted-foreground));
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+.imcrm-portal-downloads__item:hover .imcrm-portal-downloads__action {
+    opacity: 1;
+    color: hsl(var(--imcrm-primary));
+}
+
+/* Grid variant */
+.imcrm-portal-downloads-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+
+.imcrm-portal-downloads-grid__item { display: flex; }
+
+.imcrm-portal-downloads-grid__link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 18px 14px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-card));
+    text-decoration: none;
+    text-align: center;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.imcrm-portal-downloads-grid__link:hover {
+    border-color: hsl(var(--imcrm-primary) / 0.5);
+    box-shadow: var(--imcrm-pc-shadow-sm);
+    transform: translateY(-1px);
+}
+
+.imcrm-portal-downloads-grid__icon {
+    width: 30px;
+    height: 30px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-downloads-grid__title {
+    font-size: 13px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.imcrm-portal-downloads-grid__ext {
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    border-radius: var(--imcrm-pc-radius-sm);
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-downloads-grid__action {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 16px;
+    height: 16px;
+    color: hsl(var(--imcrm-muted-foreground));
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.imcrm-portal-downloads-grid__link:hover .imcrm-portal-downloads-grid__action {
+    opacity: 1;
+    color: hsl(var(--imcrm-primary));
+}
+
+/* ===========================================================================
+ * 11. Contact card (asesor).
+ * ========================================================================= */
+.imcrm-portal-contact__eyebrow {
+    margin: 0 0 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-contact__header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.imcrm-portal-contact__avatar {
+    flex: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    object-fit: cover;
+    background: hsl(var(--imcrm-muted));
+}
+
+.imcrm-portal-contact__avatar--initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 650;
+    color: hsl(var(--imcrm-primary));
+    background: hsl(var(--imcrm-primary) / 0.12);
+}
+
+.imcrm-portal-contact__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.imcrm-portal-contact__name {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-contact__role {
+    margin: 0;
+    font-size: 13px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-contact__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.imcrm-portal-contact__action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-card));
+    font-size: 13.5px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.imcrm-portal-contact__action:hover {
+    background: hsl(var(--imcrm-muted));
+}
+.imcrm-portal-contact__action--email:hover {
+    border-color: hsl(var(--imcrm-info) / 0.5);
+    color: hsl(var(--imcrm-info));
+}
+.imcrm-portal-contact__action--phone:hover {
+    border-color: hsl(var(--imcrm-primary) / 0.5);
+    color: hsl(var(--imcrm-primary));
+}
+.imcrm-portal-contact__action--whatsapp:hover {
+    border-color: hsl(var(--imcrm-success) / 0.5);
+    color: hsl(var(--imcrm-success));
+}
+
+/* ===========================================================================
+ * 12. CTA card (external_link variant card_cta).
+ * ========================================================================= */
+.imcrm-portal-block--cta-card {
+    --_cta-accent: var(--imcrm-portal-cta-accent, hsl(var(--imcrm-primary)));
+    border-left: 3px solid var(--_cta-accent);
+}
+
+.imcrm-portal-cta-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.imcrm-portal-cta-card__icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: color-mix(in srgb, var(--_cta-accent) 14%, transparent);
+    color: var(--_cta-accent);
+    font-size: 20px;
+    line-height: 1;
+}
+
+.imcrm-portal-cta-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.imcrm-portal-cta-card__title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 650;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-cta-card__description {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-cta-card__link {
+    align-self: flex-start;
+    margin-top: 4px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--_cta-accent);
+    text-decoration: none;
+}
+.imcrm-portal-cta-card__link:hover { text-decoration: underline; }
+
+/* ===========================================================================
+ * 13. Editable form.
+ * ========================================================================= */
+.imcrm-portal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.imcrm-portal-form__field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.imcrm-portal-form__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-form__input,
+.imcrm-portal-form__textarea {
+    width: 100%;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: hsl(var(--imcrm-foreground));
+    background: hsl(var(--imcrm-background));
+    border: 1px solid hsl(var(--imcrm-input));
+    border-radius: var(--imcrm-pc-radius-lg);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-portal-form__input::placeholder,
+.imcrm-portal-form__textarea::placeholder {
+    color: hsl(var(--imcrm-muted-foreground));
+}
+.imcrm-portal-form__input:focus,
+.imcrm-portal-form__textarea:focus {
+    outline: none;
+    border-color: hsl(var(--imcrm-ring));
+    box-shadow: 0 0 0 3px hsl(var(--imcrm-ring) / 0.18);
+}
+.imcrm-portal-form__input:disabled,
+.imcrm-portal-form__textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.imcrm-portal-form__textarea {
+    min-height: 96px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.imcrm-portal-form__checkbox {
+    width: 17px;
+    height: 17px;
+    accent-color: hsl(var(--imcrm-primary));
+    cursor: pointer;
+}
+
+.imcrm-portal-form__checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.imcrm-portal-form__checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: hsl(var(--imcrm-foreground));
+    cursor: pointer;
+}
+.imcrm-portal-form__checkbox-label input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: hsl(var(--imcrm-primary));
+    cursor: pointer;
+}
+
+.imcrm-portal-form__feedback {
+    margin: 0;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    border-radius: var(--imcrm-pc-radius-md);
+}
+.imcrm-portal-form__feedback--success {
+    background: hsl(var(--imcrm-success) / 0.1);
+    border: 1px solid hsl(var(--imcrm-success) / 0.28);
+    color: hsl(var(--imcrm-success));
+}
+.imcrm-portal-form__feedback--error {
+    background: hsl(var(--imcrm-destructive) / 0.1);
+    border: 1px solid hsl(var(--imcrm-destructive) / 0.28);
+    color: hsl(var(--imcrm-destructive));
+}
+
+.imcrm-portal-form__submit {
+    align-self: flex-start;
+}
+
+/* ===========================================================================
+ * 14. Stats grid.
+ * ========================================================================= */
+.imcrm-portal-stats__grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.imcrm-portal-stats--cols-2 .imcrm-portal-stats__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.imcrm-portal-stats--cols-3 .imcrm-portal-stats__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.imcrm-portal-stats--cols-4 .imcrm-portal-stats__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.imcrm-portal-stats__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-muted) / 0.5);
+}
+
+.imcrm-portal-stats__label {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-stats__value {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: hsl(var(--imcrm-foreground));
+    font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+ * 15. Client data (definition list / cards) + pills.
+ * ========================================================================= */
+.imcrm-portal-data-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.imcrm-portal-data-list__item {
+    display: flex;
+    gap: 16px;
+    padding: 10px 0;
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-portal-data-list__item:first-child { border-top: 0; }
+
+.imcrm-portal-data-list__label {
+    flex: 0 0 40%;
+    max-width: 40%;
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-data-list__value {
+    flex: 1 1 auto;
+    margin: 0;
+    min-width: 0;
+    font-size: 14px;
+    color: hsl(var(--imcrm-foreground));
+    word-break: break-word;
+}
+.imcrm-portal-data-list__value a {
+    color: hsl(var(--imcrm-primary));
+    text-decoration: none;
+}
+.imcrm-portal-data-list__value a:hover { text-decoration: underline; }
+
+.imcrm-portal-data-list__empty {
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+/* Cards variant */
+.imcrm-portal-data-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.imcrm-portal-data-cards__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-muted) / 0.5);
+}
+
+.imcrm-portal-data-cards__label {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-data-cards__value {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    word-break: break-word;
+}
+.imcrm-portal-data-cards__value a {
+    color: hsl(var(--imcrm-primary));
+    text-decoration: none;
+}
+.imcrm-portal-data-cards__value a:hover { text-decoration: underline; }
+
+/* Pill usada por select / multi_select en client-data. */
+.imcrm-portal-pill {
+    display: inline-flex;
+    align-items: center;
+    margin: 2px 4px 2px 0;
+    padding: 2px 10px;
+    font-size: 12.5px;
+    font-weight: 550;
+    line-height: 1.5;
+    border-radius: 999px;
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-foreground));
+    border: 1px solid hsl(var(--imcrm-border));
+}
+
+/* ===========================================================================
+ * 16. Activity timeline.
+ * ========================================================================= */
+.imcrm-portal-activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.imcrm-portal-activity__item {
+    position: relative;
+    display: flex;
+    gap: 14px;
+    padding: 0 0 16px 4px;
+}
+.imcrm-portal-activity__item:last-child { padding-bottom: 0; }
+
+/* Línea vertical del timeline (excepto en el último item). */
+.imcrm-portal-activity__item::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 16px;
+    bottom: 0;
+    width: 2px;
+    background: hsl(var(--imcrm-border));
+}
+.imcrm-portal-activity__item:last-child::before { display: none; }
+
+.imcrm-portal-activity__dot {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: 11px;
+    height: 11px;
+    margin-top: 5px;
+    border-radius: 999px;
+    background: hsl(var(--imcrm-primary));
+    box-shadow: 0 0 0 3px hsl(var(--imcrm-primary) / 0.14);
+}
+
+.imcrm-portal-activity__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.imcrm-portal-activity__action {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-activity__meta {
+    margin: 0;
+    font-size: 12.5px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+/* ===========================================================================
+ * 17. Comments thread.
+ * ========================================================================= */
+.imcrm-portal-comments {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.imcrm-portal-comments__item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 14px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-muted) / 0.5);
+}
+
+.imcrm-portal-comments__content {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: hsl(var(--imcrm-foreground));
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.imcrm-portal-comments__meta {
+    font-size: 12px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-comments__composer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.imcrm-portal-comments__textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    color: hsl(var(--imcrm-foreground));
+    background: hsl(var(--imcrm-background));
+    border: 1px solid hsl(var(--imcrm-input));
+    border-radius: var(--imcrm-pc-radius-lg);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-portal-comments__textarea::placeholder {
+    color: hsl(var(--imcrm-muted-foreground));
+}
+.imcrm-portal-comments__textarea:focus {
+    outline: none;
+    border-color: hsl(var(--imcrm-ring));
+    box-shadow: 0 0 0 3px hsl(var(--imcrm-ring) / 0.18);
+}
+
+.imcrm-portal-comments__submit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 18px;
+    background: hsl(var(--imcrm-primary));
+    color: hsl(var(--imcrm-primary-foreground));
+    border: 1px solid transparent;
+    border-radius: var(--imcrm-pc-radius-lg);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: filter 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.imcrm-portal-comments__submit:hover {
+    filter: brightness(1.05);
+    box-shadow: var(--imcrm-pc-shadow-sm);
+}
+.imcrm-portal-comments__submit:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: none;
+    box-shadow: none;
+}
+
+/* ===========================================================================
+ * 18. Quick actions grid.
+ * ========================================================================= */
+.imcrm-portal-actions__grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.imcrm-portal-actions--cols-2 .imcrm-portal-actions__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.imcrm-portal-actions--cols-3 .imcrm-portal-actions__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.imcrm-portal-actions--cols-4 .imcrm-portal-actions__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.imcrm-portal-actions__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 18px 12px;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-card));
+    text-decoration: none;
+    text-align: center;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.imcrm-portal-actions__item:hover {
+    border-color: hsl(var(--imcrm-primary) / 0.5);
+    box-shadow: var(--imcrm-pc-shadow-sm);
+    transform: translateY(-1px);
+}
+
+.imcrm-portal-actions__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    font-size: 20px;
+    line-height: 1;
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-primary) / 0.1);
+    color: hsl(var(--imcrm-primary));
+}
+
+.imcrm-portal-actions__label {
+    font-size: 13px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    line-height: 1.35;
+}
+
+/* ===========================================================================
+ * 19. Divider (solid / dashed / dotted, labeled).
+ * ========================================================================= */
+.imcrm-portal-block--divider {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 4px 0;
+}
+
+.imcrm-portal-divider__line {
+    flex: 1 1 auto;
+    height: 0;
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-portal-divider--dashed .imcrm-portal-divider__line { border-top-style: dashed; }
+.imcrm-portal-divider--dotted .imcrm-portal-divider__line { border-top-style: dotted; }
+
+.imcrm-portal-divider__label {
+    flex: none;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+/* ===========================================================================
+ * 20. Related records (compact list + table).
+ * ========================================================================= */
+.imcrm-portal-related-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.imcrm-portal-related-list__item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 12px 0;
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-portal-related-list__item:first-child { border-top: 0; }
+
+.imcrm-portal-related-list__title {
+    margin: 0;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-portal-related-list__meta {
+    margin: 0;
+    font-size: 13px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-portal-related-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+}
+
+.imcrm-portal-related-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+.imcrm-portal-related-table thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+    background: hsl(var(--imcrm-muted) / 0.6);
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+    white-space: nowrap;
+}
+.imcrm-portal-related-table tbody td {
+    padding: 10px 14px;
+    color: hsl(var(--imcrm-foreground));
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-portal-related-table tbody tr:last-child td { border-bottom: 0; }
+.imcrm-portal-related-table tbody tr:hover td { background: hsl(var(--imcrm-muted) / 0.4); }
+
+.imcrm-portal-related-table__footer {
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+/* ===========================================================================
+ * 21. External link (button variant).
+ * ========================================================================= */
+.imcrm-portal-external-link__btn {
+    --_cta-accent: var(--imcrm-portal-cta-accent, hsl(var(--imcrm-primary)));
+    margin-top: 4px;
+    background: var(--_cta-accent);
+}
+
+/* ===========================================================================
+ * 22. Lista pública (tabla embebible).
+ * ========================================================================= */
+.imcrm-public-list__description {
+    margin: 0 0 16px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-public-list__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.imcrm-public-list__search {
+    flex: 1 1 220px;
+    max-width: 340px;
+    min-width: 0;
+    padding: 9px 12px;
+    font: inherit;
+    font-size: 14px;
+    color: hsl(var(--imcrm-foreground));
+    background: hsl(var(--imcrm-background));
+    border: 1px solid hsl(var(--imcrm-input));
+    border-radius: var(--imcrm-pc-radius-lg);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-public-list__search::placeholder { color: hsl(var(--imcrm-muted-foreground)); }
+.imcrm-public-list__search:focus {
+    outline: none;
+    border-color: hsl(var(--imcrm-ring));
+    box-shadow: 0 0 0 3px hsl(var(--imcrm-ring) / 0.18);
+}
+
+.imcrm-public-list__filter {
+    padding: 8px 11px;
+    font: inherit;
+    font-size: 13.5px;
+    color: hsl(var(--imcrm-foreground));
+    background: hsl(var(--imcrm-background));
+    border: 1px solid hsl(var(--imcrm-input));
+    border-radius: var(--imcrm-pc-radius-lg);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.imcrm-public-list__filter:focus {
+    outline: none;
+    border-color: hsl(var(--imcrm-ring));
+    box-shadow: 0 0 0 3px hsl(var(--imcrm-ring) / 0.18);
+}
+
+.imcrm-public-list__clear-filters {
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-muted-foreground));
+    background: transparent;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.imcrm-public-list__clear-filters:hover {
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-foreground));
+}
+
+.imcrm-public-list__loading {
+    font-size: 13px;
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+.imcrm-public-list__error {
+    margin: 0 0 14px;
+    padding: 11px 14px;
+    background: hsl(var(--imcrm-destructive) / 0.08);
+    border: 1px solid hsl(var(--imcrm-destructive) / 0.24);
+    border-radius: var(--imcrm-pc-radius-lg);
+    color: hsl(var(--imcrm-destructive));
+    font-size: 13.5px;
+}
+
+.imcrm-public-list__empty {
+    margin: 0;
+    padding: 40px 20px;
+    text-align: center;
+    color: hsl(var(--imcrm-muted-foreground));
+    font-size: 14px;
+    background: hsl(var(--imcrm-muted) / 0.4);
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+}
+
+/* Wrapper con scroll horizontal — la tabla nunca rompe el layout. */
+.imcrm-public-list__table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    background: hsl(var(--imcrm-card));
+    -webkit-overflow-scrolling: touch;
+}
+
+.imcrm-public-list__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.imcrm-public-list__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 11px 16px;
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+    background: hsl(var(--imcrm-muted));
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+    white-space: nowrap;
+}
+
+.imcrm-public-list__table tbody td {
+    padding: 11px 16px;
+    color: hsl(var(--imcrm-foreground));
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+    vertical-align: top;
+}
+.imcrm-public-list__table tbody tr:last-child td { border-bottom: 0; }
+.imcrm-public-list__table tbody tr:hover td {
+    background: hsl(var(--imcrm-muted) / 0.45);
+}
+
+.imcrm-public-list__table td a {
+    color: hsl(var(--imcrm-primary));
+    text-decoration: none;
+}
+.imcrm-public-list__table td a:hover { text-decoration: underline; }
+
+/* Botón de sort en el header. */
+.imcrm-public-list__sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: hsl(var(--imcrm-muted-foreground));
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+.imcrm-public-list__sort-btn:hover { color: hsl(var(--imcrm-foreground)); }
+
+.imcrm-public-list__sort-indicator {
+    font-size: 11px;
+    color: hsl(var(--imcrm-primary));
+    opacity: 0.9;
+}
+
+/* Chips de select / multi_select en celdas. */
+.imcrm-public-list__chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.imcrm-public-list__chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.5;
+    border-radius: 999px;
+    background: hsl(var(--imcrm-muted));
+    color: hsl(var(--imcrm-foreground));
+    border: 1px solid hsl(var(--imcrm-border));
+    white-space: nowrap;
+}
+
+/* Marca de check (checkbox true). */
+.imcrm-public-list__check {
+    color: hsl(var(--imcrm-success));
+    font-weight: 700;
+}
+
+/* Placeholder de celda vacía. */
+.imcrm-public-list__empty-cell {
+    color: hsl(var(--imcrm-muted-foreground));
+}
+
+/* Números / moneda alineados con cifras tabulares. */
+.imcrm-public-list__num {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Texto largo: limita ancho y respeta saltos de línea. */
+.imcrm-public-list__long {
+    display: inline-block;
+    max-width: 340px;
+    line-height: 1.45;
+}
+
+/* Paginación / footer de conteo. */
+.imcrm-public-list__pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+
+.imcrm-public-list__page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: hsl(var(--imcrm-foreground));
+    background: hsl(var(--imcrm-card));
+    border: 1px solid hsl(var(--imcrm-border));
+    border-radius: var(--imcrm-pc-radius-lg);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.imcrm-public-list__page-btn:hover:not(:disabled) {
+    background: hsl(var(--imcrm-muted));
+    border-color: hsl(var(--imcrm-primary) / 0.4);
+}
+.imcrm-public-list__page-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.imcrm-public-list__page-info,
+.imcrm-public-list__total {
+    font-size: 13px;
+    color: hsl(var(--imcrm-muted-foreground));
+    font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+ * 23. Responsive: la tabla pública colapsa a tarjetas en mobile (≤639px).
+ *     Cada `td` muestra su `data-label` a la izquierda y el valor a la
+ *     derecha (patrón card estilo Linear/Notion).
+ * ========================================================================= */
+@media (max-width: 639px) {
+    .imcrm-portal-stats__grid,
+    .imcrm-portal-actions__grid,
+    .imcrm-portal-stats--cols-2 .imcrm-portal-stats__grid,
+    .imcrm-portal-stats--cols-3 .imcrm-portal-stats__grid,
+    .imcrm-portal-stats--cols-4 .imcrm-portal-stats__grid,
+    .imcrm-portal-actions--cols-2 .imcrm-portal-actions__grid,
+    .imcrm-portal-actions--cols-3 .imcrm-portal-actions__grid,
+    .imcrm-portal-actions--cols-4 .imcrm-portal-actions__grid,
+    .imcrm-portal-data-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .imcrm-portal-hero { padding: 28px 22px; }
+    .imcrm-portal-hero__title { font-size: 26px; }
+
+    .imcrm-portal-hero-cta { flex-direction: column; align-items: flex-start; }
+    .imcrm-portal-hero-cta__btn { align-self: stretch; justify-content: center; }
+
+    .imcrm-portal-data-list__item { flex-direction: column; gap: 2px; }
+    .imcrm-portal-data-list__label,
+    .imcrm-portal-data-list__value { flex: 1 1 auto; max-width: none; }
+
+    /* Tabla pública → tarjetas apiladas. */
+    .imcrm-public-list__table-wrap {
+        overflow-x: visible;
+        border: 0;
+        background: transparent;
+        border-radius: 0;
+    }
+    .imcrm-public-list__table { display: block; }
+    .imcrm-public-list__table thead { display: none; }
+    .imcrm-public-list__table tbody { display: block; }
+    .imcrm-public-list__table tbody tr {
+        display: block;
+        margin-bottom: 12px;
+        border: 1px solid hsl(var(--imcrm-border));
+        border-radius: var(--imcrm-pc-radius-lg);
+        background: hsl(var(--imcrm-card));
+        overflow: hidden;
+    }
+    .imcrm-public-list__table tbody td {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 9px 14px;
+        text-align: right;
+    }
+    .imcrm-public-list__table tbody tr td:last-child { border-bottom: 0; }
+    .imcrm-public-list__table tbody td::before {
+        content: attr(data-label);
+        flex: none;
+        font-size: 11.5px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: hsl(var(--imcrm-muted-foreground));
+        text-align: left;
+    }
+    .imcrm-public-list__long { max-width: none; text-align: right; }
+}

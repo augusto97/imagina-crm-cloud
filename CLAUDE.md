@@ -209,6 +209,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con el id ya resuelto) → una transacción con scope menos por request;
         (d) nginx de despliegue: `gzip_proxied` + keepalive al upstream Node
         (reusa TCP por request). RLS y 138 tests en verde.
+  - [x] CSS base reconstruido para la nube: el fork asumía el reset + chrome
+        de wp-admin (y un reset inline por PHP que no existe acá), con
+        Tailwind `preflight` apagado → los elementos caían al default del
+        navegador (body serif/blanco, inputs/botones/enlaces sin estilo). Se
+        reconstruyó un reset moderno propio + tema en la raíz (`#root`, no sólo
+        el inexistente `#imcrm-root`) + normalización de form/enlaces/listas +
+        prosa (`.imcrm-prose*` para markdown/portal, reemplaza al typography
+        plugin ausente). Se removió el CSS muerto de wp-admin (#wpadminbar…).
+  - [x] CSS del portal + listas públicas reconstruido: ~150 clases BEM
+        `imcrm-portal-*` / `imcrm-public-list__*` (hero/kpi/notice/faq/
+        downloads/contact/cta/stats/data-list/comments/activity/divider/form +
+        tabla pública con filtros/paginación/orden y layout mobile) vivían en
+        la hoja del front del plugin que nunca se copió → el portal salía sin
+        estilo. Reconstruidas sobre los tokens del tema (`portal-components.css`),
+        light/dark. Verificado E2E en navegador (admin + portal).
   - [ ] PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo

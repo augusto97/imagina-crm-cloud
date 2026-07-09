@@ -11,7 +11,7 @@ const config: Config = {
     // de la página. El prefix `imcrm-` ya da el aislamiento contra
     // estilos de wp-admin.
     darkMode: ['class', '[data-imcrm-theme="dark"]'],
-    content: ['./app/**/*.{ts,tsx}', './src/**/*.php'],
+    content: ['./app/**/*.{ts,tsx}', './cloud/index.html', './cloud-portal/index.html'],
     corePlugins: {
         preflight: false,
     },
