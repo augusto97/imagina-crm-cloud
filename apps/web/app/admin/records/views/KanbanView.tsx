@@ -145,8 +145,21 @@ export function KanbanView({
         }
     };
 
+    // Columnas dinámicas: además de las opciones predefinidas del campo (select/
+    // multi_select), mostramos una columna por cada VALOR presente en los
+    // registros que no esté en esas opciones. Así el Kanban también funciona
+    // agrupando por un campo de texto/estado con valores ad-hoc (antes esos
+    // registros se agrupaban pero su columna nunca se renderizaba → tablero
+    // vacío), y no se "pierden" registros con un valor legacy fuera del catálogo.
+    const knownValues = new Set(options.map((o) => o.value));
+    const extraColumns = Array.from(grouped.keys())
+        .filter((k) => k !== UNCATEGORIZED_KEY && !knownValues.has(k))
+        .sort((a, b) => a.localeCompare(b))
+        .map((k) => ({ key: k, label: k }));
+
     const allColumns: Array<{ key: string; label: string; color?: string }> = [
         ...options.map((o) => ({ key: o.value, label: o.label, color: o.color })),
+        ...extraColumns,
         { key: UNCATEGORIZED_KEY, label: __('Sin asignar') },
     ];
 

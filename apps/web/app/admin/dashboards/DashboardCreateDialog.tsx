@@ -42,7 +42,11 @@ export function DashboardCreateDialog({
             setError(null);
             create.reset();
         }
-    }, [open, create]);
+        // Sólo al cambiar `open`. `create` (mutación de react-query) cambia de
+        // referencia en cada render; incluirlo disparaba el effect en cada render
+        // → `create.reset()` → re-render → loop infinito. El reset sólo al cerrar.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();

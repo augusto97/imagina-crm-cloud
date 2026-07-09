@@ -122,6 +122,26 @@ function listKeyFromPath(path: string): string | null {
     return m?.[1] ?? null;
 }
 
+const CLOUD_RECORDS_MAX_LIMIT = 200; // espejo de MAX_RECORDS_LIMIT del backend.
+
+/**
+ * Traduce la query de listado de records de la UI (por página: `per_page`/`page`)
+ * a la del backend (por cursor: `limit`, máx 200). Deja pasar el resto de la
+ * query (filter_tree, sort, search…). `page` se descarta: la paginación es por
+ * cursor keyset, no por offset.
+ */
+function cloudRecordsQuery(query?: Record<string, unknown>): Record<string, unknown> | undefined {
+    if (!query) return query;
+    const { per_page, page, limit, ...rest } = query;
+    const desired = Number(per_page ?? limit ?? 0);
+    const out: Record<string, unknown> = { ...rest };
+    if (Number.isFinite(desired) && desired > 0) {
+        out.limit = Math.min(desired, CLOUD_RECORDS_MAX_LIMIT);
+    }
+    void page;
+    return out;
+}
+
 /**
  * Mapa de traducción de claves de un record para una lista. El backend keyea
  * los valores por `f{field_id}` (ADR-S02, verdad interna); la UI del fork los
@@ -306,7 +326,15 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
         const stub = cloudStub(method, path);
         if (stub) return { data: stub.data as T };
     }
-    const url = buildUrl(path, opts.query);
+    // En la nube, el listado de records pagina por CURSOR con `limit` (máx 200),
+    // pero la UI del fork manda `per_page`/`page`. Traducimos `per_page → limit`
+    // (capado a 200) para que Kanban/Tarjetas/Calendario —que piden per_page=500—
+    // traigan más de los 50 por defecto en vez de quedarse cortos.
+    const query =
+        boot.cloud && method === 'GET' && recordsPathKind(path) === 'list'
+            ? cloudRecordsQuery(opts.query)
+            : opts.query;
+    const url = buildUrl(path, query);
 
     const headers: Record<string, string> = {
         Accept: 'application/json',

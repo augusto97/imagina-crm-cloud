@@ -129,6 +129,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         drawer (edición + comments + activity + emisión de magic link),
         consumiendo el API con realtime. Los 4 tipos de vista del CONTRACT §7
         renderizados; FilterBar compartido (filter_tree server-side).
+        Fixes de vistas en la nube (verificado E2E en navegador): (a) Kanban
+        renderiza columnas DINÁMICAS por valor presente en los registros
+        —no sólo por las opciones predefinidas del campo— así también agrupa
+        por campos de texto/estado (antes: tablero vacío); (b) el adaptador
+        traduce `per_page → limit` (máx 200) para el listado de records, así
+        Kanban/Tarjetas/Calendario traen hasta 200 (antes se cortaban en 50);
+        (c) fix de loop de render infinito ("Maximum update depth") en
+        SaveViewDialog y DashboardCreateDialog: el objeto de mutación de
+        react-query estaba en las deps del useEffect → `create.reset()` en
+        cada render → loop; ahora depende sólo de `open`. Afectaba a toda
+        página con esos diálogos montados (records, dashboards).
 - [ ] **F3 — Automatizaciones + portal** (en curso):
   - [x] Motor de automatizaciones sobre BullMQ: triggers (record_created/
         updated dispatch), condiciones (filter tree), actions (update_field,
