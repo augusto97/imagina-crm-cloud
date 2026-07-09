@@ -52,7 +52,7 @@ export class RecordsService {
         input: CreateRecordInput,
     ): Promise<RecordDto> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const fields = await this.fields.list(tenantId, String(listId));
+        const fields = await this.fields.listByListId(tenantId, listId);
         const data = this.validateData(fields, input.data, { partial: false });
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -100,7 +100,7 @@ export class RecordsService {
         query: ListRecordsQuery,
     ): Promise<RecordsPage> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const fields = await this.fields.list(tenantId, String(listId));
+        const fields = await this.fields.listByListId(tenantId, listId);
         const fieldsById = new Map<number, FilterableField>(
             fields.map((f) => [f.id, { id: f.id, type: f.type }]),
         );
@@ -135,7 +135,7 @@ export class RecordsService {
         input: UpdateRecordInput,
     ): Promise<RecordDto> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const fields = await this.fields.list(tenantId, String(listId));
+        const fields = await this.fields.listByListId(tenantId, listId);
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);

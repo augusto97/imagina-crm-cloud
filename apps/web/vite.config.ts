@@ -39,10 +39,28 @@ export default defineConfig({
     optimizeDeps: {
         // Pre-bundlea estas deps en un solo paquete consistente — evita
         // que cada chunk lazy resuelva su propia copia.
-        include: ['react', 'react-dom', 'react/jsx-runtime', '@tanstack/react-query'],
+        //
+        // `@imagina-base/shared` compila a CommonJS (lo consume el backend
+        // NestJS); forzamos su pre-bundle con esbuild para exponer sus named
+        // exports al bundle del admin (mismo tratamiento que vite.cloud.config).
+        include: [
+            'react',
+            'react-dom',
+            'react/jsx-runtime',
+            '@tanstack/react-query',
+            '@imagina-base/shared',
+        ],
     },
     build: {
         target: 'es2020',
+        // `@imagina-base/shared` compila a CommonJS. En build de producción
+        // Rollup no puede analizar estáticamente sus re-exports `__exportStar`,
+        // así que le pedimos al plugin commonjs que transforme también el
+        // paquete workspace (espeja vite.cloud.config.ts).
+        commonjsOptions: {
+            include: [/packages[/\\]shared/, /node_modules/],
+            transformMixedEsModules: true,
+        },
         // Sourcemaps SOLO en dev (`vite dev`). En `vite build` van
         // deshabilitados porque (1) duplican el tamaño del bundle
         // (de ~1.6 MB a ~7.5 MB en dist/), y (2) exponen el código

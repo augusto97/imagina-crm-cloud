@@ -30,6 +30,15 @@ export class FieldsService {
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        return this.listByListId(tenantId, listId);
+    }
+
+    /**
+     * Igual que `list()` pero con el `list_id` numérico YA resuelto: evita el
+     * `lists.get` redundante cuando el caller (p.ej. RecordsService) ya resolvió
+     * la lista. Ahorra una transacción con scope por request (perf).
+     */
+    async listByListId(tenantId: number, listId: number): Promise<Field[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.listByList(tx, tenantId, listId),
         );

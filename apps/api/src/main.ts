@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import fastifyCompress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -25,6 +26,12 @@ async function bootstrap(): Promise<void> {
         { rawBody: true },
     );
 
+    // Compresión de respuestas (gzip/deflate/brotli). Las respuestas JSON del
+    // API (listas de records, aggregates, activity) viajan por WAN al navegador;
+    // sin esto van sin comprimir aunque el proxy no re-comprima los proxied
+    // responses. `threshold` evita gastar CPU en payloads chicos. Transport-
+    // agnóstico: sirve detrás de nginx, Caddy o directo.
+    await app.register(fastifyCompress, { threshold: 1024, encodings: ['br', 'gzip', 'deflate'] });
     await app.register(fastifyCookie);
     app.setGlobalPrefix('api/v1');
     app.useGlobalFilters(new ApiExceptionFilter());

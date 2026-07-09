@@ -1,0 +1,15 @@
+/*
+ * portal.css — placeholder.
+ *
+ * Herencia del plugin WordPress: `app/main.tsx` importaba
+ * `../assets/portal.css` para inyectar el CSS del portal del cliente dentro
+ * del bundle del admin (el editor de template del portal renderiza los
+ * bloques reales como preview).
+ *
+ * En Imagina Base el portal NO tiene una hoja de estilos aparte: tanto el
+ * SPA del portal (`app/cloud-portal/main.tsx`) como el preview del admin se
+ * estilan íntegramente con Tailwind vía `app/styles/globals.css` (clases con
+ * prefijo `imcrm-`). Este archivo se conserva vacío únicamente para que el
+ * import de `app/main.tsx` resuelva y el bundle del admin (`pnpm build`)
+ * compile. No aporta estilos en runtime; borrarlo rompería el build del admin.
+ */

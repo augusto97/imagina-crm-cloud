@@ -200,6 +200,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         forma bloqueante (self-heal best-effort + registro de scheduler sin
         bloquear), así el API BOOTEA y escucha aunque Redis esté caído y se
         auto-recupera al volver. Tests de regresión (guard + boot).
+  - [x] Perf del camino caliente (WAN + por-request): (a) compresión de
+        respuestas del API (`@fastify/compress` br/gzip) — una lista de 50
+        records baja de ~16 KB a <1 KB en el cable (~94%); (b) el scope de RLS
+        de cada transacción (`SET LOCAL ROLE` + `set_config('app.*')`) se hace
+        en UN solo `SELECT` en vez de 2-3 round-trips secuenciales; (c) el path
+        de records ya no re-resuelve la lista dos veces (`fields.listByListId`
+        con el id ya resuelto) → una transacción con scope menos por request;
+        (d) nginx de despliegue: `gzip_proxied` + keepalive al upstream Node
+        (reusa TCP por request). RLS y 138 tests en verde.
   - [ ] PITR/WAL archiving en el gestor administrado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
