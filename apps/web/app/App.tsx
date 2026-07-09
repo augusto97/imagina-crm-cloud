@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
+import { CloudAutomationsPage } from '@/cloud/pages/CloudAutomationsPage';
 import { SettingsPage as CloudSettingsPage } from '@/cloud/pages/SettingsPage';
 import { isCloud } from '@/lib/cloudFeatures';
 // Records views se cargan eagerly — son la pantalla home del SPA
@@ -63,7 +64,9 @@ export function App(): JSX.Element {
                 <Route path="lists/:listSlug/records" element={<RecordsPage />} />
                 <Route path="lists/:listSlug/records/:recordId" element={<RecordPage />} />
                 <Route path="lists/:listSlug/automations" element={
-                    <Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense>
+                    isCloud()
+                        ? <CloudAutomationsPage />
+                        : <Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense>
                 } />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>
