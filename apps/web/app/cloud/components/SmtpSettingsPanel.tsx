@@ -4,6 +4,7 @@ import type { SmtpConfigPublic } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Form = {
     host: string;
@@ -87,26 +88,35 @@ export function SmtpSettingsPanel(): JSX.Element | null {
     const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && !save.isPending;
 
     return (
-        <section className="imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between">
-                <div>
-                    <h2 className="imcrm-text-sm imcrm-font-semibold">Sistema · Correo (SMTP)</h2>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        Servidor de envío para recuperación de accesos, magic links y notificaciones (superadmin).
-                    </p>
+        <Card>
+            <CardHeader>
+                <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
+                    <div>
+                        <CardTitle>Sistema · Correo (SMTP)</CardTitle>
+                        <CardDescription>
+                            Servidor de envío para recuperación de accesos, magic links y notificaciones (superadmin).
+                        </CardDescription>
+                    </div>
+                    <span
+                        className={[
+                            'imcrm-shrink-0 imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
+                            c.configured
+                                ? 'imcrm-bg-emerald-100 imcrm-text-emerald-700 dark:imcrm-bg-emerald-950/50 dark:imcrm-text-emerald-300'
+                                : 'imcrm-bg-muted imcrm-text-muted-foreground',
+                        ].join(' ')}
+                    >
+                        {c.configured ? 'Configurado' : 'Sin configurar'}
+                    </span>
                 </div>
-                <span
-                    className={[
-                        'imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
-                        c.configured
-                            ? 'imcrm-bg-emerald-100 imcrm-text-emerald-700'
-                            : 'imcrm-bg-muted imcrm-text-muted-foreground',
-                    ].join(' ')}
-                >
-                    {c.configured ? 'Configurado' : 'Sin configurar'}
-                </span>
-            </div>
-
+            </CardHeader>
+            <CardContent className="imcrm-space-y-4 imcrm-pt-0">
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (canSave) save.mutate();
+                }}
+                className="imcrm-space-y-4"
+            >
             <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
                 <Field label="Host">
                     <input
@@ -182,7 +192,7 @@ export function SmtpSettingsPanel(): JSX.Element | null {
             )}
 
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-gap-2">
-                <Button size="sm" onClick={() => save.mutate()} disabled={!canSave}>
+                <Button type="submit" size="sm" disabled={!canSave}>
                     {save.isPending ? 'Guardando…' : 'Guardar'}
                 </Button>
                 <div className="imcrm-ml-auto imcrm-flex imcrm-items-end imcrm-gap-2">
@@ -195,6 +205,7 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                         />
                     </Field>
                     <Button
+                        type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => sendTest.mutate()}
@@ -204,7 +215,9 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                     </Button>
                 </div>
             </div>
-        </section>
+            </form>
+            </CardContent>
+        </Card>
     );
 }
 
