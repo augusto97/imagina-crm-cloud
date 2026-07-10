@@ -19,10 +19,7 @@ import { __, sprintf } from '@/lib/i18n';
 
 import { AppearancePanel } from './AppearancePanel';
 import { FieldBuilder } from './FieldBuilder';
-import { MaintenancePanel } from './MaintenancePanel';
-import { PermissionsPanel } from './PermissionsPanel';
 import { PortalConfigPanel } from './PortalConfigPanel';
-import { PublicVisibilityPanel } from './PublicVisibilityPanel';
 import { SlugEditor } from './SlugEditor';
 
 export function ListBuilderPage(): JSX.Element {
@@ -214,10 +211,32 @@ export function ListBuilderPage(): JSX.Element {
             </Card>
 
             <AppearancePanel list={list.data} />
-            <PermissionsPanel listId={list.data.id} />
-            <PublicVisibilityPanel list={list.data} />
             <PortalConfigPanel list={list.data} />
-            <MaintenancePanel listId={list.data.id} />
+
+            {/* Permisos: en Imagina Base el acceso se controla por ROL de
+                miembro del workspace (global), no por lista. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>{__('Acceso y permisos')}</CardTitle>
+                    <CardDescription>
+                        {__('Quién puede ver y editar esta lista se define por el rol de cada miembro del workspace.')}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-text-sm imcrm-text-muted-foreground">
+                        <li><b className="imcrm-text-foreground">{__('Admin')}</b> — {__('acceso total al workspace.')}</li>
+                        <li><b className="imcrm-text-foreground">{__('Manager')}</b> — {__('gestiona registros, vistas y dashboards.')}</li>
+                        <li><b className="imcrm-text-foreground">{__('Agente')}</b> — {__('solo ve y edita sus propios registros.')}</li>
+                        <li><b className="imcrm-text-foreground">{__('Visor')}</b> — {__('lectura de todos los registros.')}</li>
+                        <li><b className="imcrm-text-foreground">{__('Cliente')}</b> — {__('solo su portal (sin acceso al admin).')}</li>
+                    </ul>
+                    <div>
+                        <Button variant="outline" size="sm" onClick={() => navigate('/settings')}>
+                            {__('Gestionar miembros y roles')}
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

@@ -6,7 +6,11 @@ import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/fi
 
 export const fieldsKeys = {
     all: ['fields'] as const,
-    forList: (listId: string | number) => [...fieldsKeys.all, 'list', String(listId)] as const,
+    // El identificador va en el índice 1 (igual que recordsKeys). Antes había
+    // un segmento 'list' extra que corría el id al índice 2, y `invalidateForList`
+    // —que matchea el índice 1— NUNCA invalidaba los fields → la lista de campos
+    // no se refrescaba tras crear/editar/borrar/reordenar.
+    forList: (listId: string | number) => [...fieldsKeys.all, String(listId)] as const,
 };
 
 export function useFields(listId: string | number | undefined) {
@@ -112,8 +116,17 @@ export function useDeleteField(listId: string | number) {
 export function useReorderFields(listId: string | number) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (order: Array<{ id: number; position: number }>) => {
-            await api.post(`/lists/${listId}/fields/reorder`, { order });
+        // El backend NestJS espera PATCH con `{ field_ids: [...] }` (lista
+        // ordenada de ids). Se acepta el array ordenado o el shape legado
+        // `[{id, position}]` (se ordena por position y se extraen los ids).
+        mutationFn: async (order: number[] | Array<{ id: number; position: number }>) => {
+            const fieldIds =
+                typeof order[0] === 'number'
+                    ? (order as number[])
+                    : [...(order as Array<{ id: number; position: number }>)]
+                          .sort((a, b) => a.position - b.position)
+                          .map((o) => o.id);
+            await api.patch(`/lists/${listId}/fields/reorder`, { field_ids: fieldIds });
         },
         onSuccess: () => {
             // 0.57.41 — scope a id+slug de la lista actual.
