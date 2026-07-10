@@ -3,6 +3,7 @@ import type { UpdateRunStatus, UpdateStatus } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const IN_PROGRESS: UpdateRunStatus[] = ['queued', 'running', 'restarting'];
 const STATUS_LABEL: Record<UpdateRunStatus, string> = {
@@ -56,21 +57,23 @@ export function SystemUpdatesPanel(): JSX.Element | null {
     const busy = IN_PROGRESS.includes(s.run.status);
 
     return (
-        <section className="imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between">
-                <div>
-                    <h2 className="imcrm-text-sm imcrm-font-semibold">Sistema · Actualizaciones</h2>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        Actualización del servidor desde GitHub Releases (superadmin).
-                    </p>
+        <Card>
+            <CardHeader>
+                <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
+                    <div>
+                        <CardTitle>Sistema · Actualizaciones</CardTitle>
+                        <CardDescription>
+                            Actualización del servidor desde GitHub Releases (superadmin).
+                        </CardDescription>
+                    </div>
+                    {s.update_available && (
+                        <span className="imcrm-shrink-0 imcrm-rounded-full imcrm-bg-amber-100 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-amber-800 dark:imcrm-bg-amber-950/50 dark:imcrm-text-amber-300">
+                            Hay actualización
+                        </span>
+                    )}
                 </div>
-                {s.update_available && (
-                    <span className="imcrm-rounded-full imcrm-bg-amber-100 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-amber-800">
-                        Hay actualización
-                    </span>
-                )}
-            </div>
-
+            </CardHeader>
+            <CardContent className="imcrm-space-y-4 imcrm-pt-0">
             <dl className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 imcrm-text-sm">
                 <div>
                     <dt className="imcrm-text-xs imcrm-text-muted-foreground">Versión actual</dt>
@@ -109,6 +112,7 @@ export function SystemUpdatesPanel(): JSX.Element | null {
                     Rollback
                 </Button>
             </div>
-        </section>
+            </CardContent>
+        </Card>
     );
 }

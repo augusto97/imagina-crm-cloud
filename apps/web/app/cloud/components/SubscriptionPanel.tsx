@@ -4,6 +4,7 @@ import type { Plan, PaymentProvider, PlanPrice } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const PROVIDER_LABELS: Record<PaymentProvider, string> = {
     paypal: 'PayPal',
@@ -57,14 +58,12 @@ export function SubscriptionPanel({ currentPlan }: { currentPlan: Plan }): JSX.E
     };
 
     return (
-        <section className="imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <div>
-                <h2 className="imcrm-text-sm imcrm-font-semibold">Suscripción</h2>
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    Elegí un plan y pagá con el medio que prefieras.
-                </p>
-            </div>
-
+        <Card>
+            <CardHeader>
+                <CardTitle>Suscripción</CardTitle>
+                <CardDescription>Elegí un plan y pagá con el medio que prefieras.</CardDescription>
+            </CardHeader>
+            <CardContent className="imcrm-space-y-4 imcrm-pt-0">
             {providers.length === 0 ? (
                 <p className="imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                     Los pagos todavía no están configurados en este entorno.
@@ -116,6 +115,7 @@ export function SubscriptionPanel({ currentPlan }: { currentPlan: Plan }): JSX.E
                 </div>
             )}
             {error && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
-        </section>
+            </CardContent>
+        </Card>
     );
 }

@@ -4,6 +4,7 @@ import type { StaffRole, WorkspaceMember } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
 const STAFF_ROLES: StaffRole[] = ['admin', 'manager', 'agent', 'viewer'];
@@ -46,14 +47,12 @@ export function MembersPanel(): JSX.Element {
     });
 
     return (
-        <section className="imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <div>
-                <h2 className="imcrm-text-sm imcrm-font-semibold">Miembros del workspace</h2>
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    Agregá compañeros ya registrados y asigná su rol.
-                </p>
-            </div>
-
+        <Card>
+            <CardHeader>
+                <CardTitle>Miembros del workspace</CardTitle>
+                <CardDescription>Agregá compañeros ya registrados y asigná su rol.</CardDescription>
+            </CardHeader>
+            <CardContent className="imcrm-space-y-4 imcrm-pt-0">
             <ul className="imcrm-space-y-1">
                 {membersQ.data?.map((m) => (
                     <MemberRow
@@ -104,7 +103,8 @@ export function MembersPanel(): JSX.Element {
                 </Button>
             </form>
             {error && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
-        </section>
+            </CardContent>
+        </Card>
     );
 }
 

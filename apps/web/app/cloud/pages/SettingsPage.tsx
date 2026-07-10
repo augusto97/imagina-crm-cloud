@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-/** Ajustes del workspace: plan, estado de facturación, uso vs. límites. */
+/** Ajustes del workspace: plan, estado de facturación, uso vs. límites, miembros. */
 export function SettingsPage(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
     const isAdmin = useSession(
@@ -21,23 +23,26 @@ export function SettingsPage(): JSX.Element {
     });
 
     return (
-        <div className="imcrm-mx-auto imcrm-max-w-2xl imcrm-space-y-6 imcrm-p-6">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
-                <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
-                <Link to="/lists" className="imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground">
-                    ← Volver
-                </Link>
-            </div>
+        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-6">
+            <header className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <SlidersHorizontal className="imcrm-h-5 imcrm-w-5 imcrm-text-primary" />
+                    <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
+                </div>
+                <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                    Plan y facturación, miembros del workspace y configuración del sistema.
+                </p>
+            </header>
 
             {checkout === 'success' && (
-                <p className="imcrm-rounded-md imcrm-bg-emerald-100 imcrm-p-3 imcrm-text-sm imcrm-text-emerald-800">
+                <div className="imcrm-rounded-lg imcrm-border imcrm-border-emerald-200 imcrm-bg-emerald-50 imcrm-p-3 imcrm-text-sm imcrm-text-emerald-800 dark:imcrm-border-emerald-900 dark:imcrm-bg-emerald-950/40 dark:imcrm-text-emerald-300">
                     ¡Gracias! Estamos confirmando tu pago; el plan se actualiza en cuanto el proveedor lo notifique.
-                </p>
+                </div>
             )}
             {checkout === 'cancel' && (
-                <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
+                <div className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                     Cancelaste el pago. Podés intentarlo de nuevo cuando quieras.
-                </p>
+                </div>
             )}
 
             {billing.data && <BillingCard summary={billing.data} />}
@@ -52,28 +57,29 @@ export function SettingsPage(): JSX.Element {
 
 function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
     return (
-        <section className="imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
-                <div>
-                    <div className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                        Plan
+        <Card>
+            <CardHeader>
+                <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
+                    <div>
+                        <div className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            Plan
+                        </div>
+                        <CardTitle className="imcrm-text-lg imcrm-capitalize">{summary.plan}</CardTitle>
                     </div>
-                    <div className="imcrm-text-lg imcrm-font-semibold imcrm-capitalize">{summary.plan}</div>
+                    <span
+                        className={[
+                            'imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
+                            summary.read_only
+                                ? 'imcrm-bg-rose-100 imcrm-text-rose-700 dark:imcrm-bg-rose-950/50 dark:imcrm-text-rose-300'
+                                : 'imcrm-bg-emerald-100 imcrm-text-emerald-700 dark:imcrm-bg-emerald-950/50 dark:imcrm-text-emerald-300',
+                        ].join(' ')}
+                    >
+                        {summary.status}
+                        {summary.read_only ? ' · solo lectura' : ''}
+                    </span>
                 </div>
-                <span
-                    className={[
-                        'imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
-                        summary.read_only
-                            ? 'imcrm-bg-rose-100 imcrm-text-rose-700'
-                            : 'imcrm-bg-emerald-100 imcrm-text-emerald-700',
-                    ].join(' ')}
-                >
-                    {summary.status}
-                    {summary.read_only ? ' · solo lectura' : ''}
-                </span>
-            </div>
-
-            <div className="imcrm-space-y-3">
+            </CardHeader>
+            <CardContent className="imcrm-space-y-3 imcrm-pt-0">
                 <UsageBar label="Registros" used={summary.usage.records} limit={summary.limits.max_records} />
                 <UsageBar label="Usuarios" used={summary.usage.users} limit={summary.limits.max_users} />
                 <UsageBar
@@ -81,8 +87,8 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     used={summary.usage.automations}
                     limit={summary.limits.max_automations}
                 />
-            </div>
-        </section>
+            </CardContent>
+        </Card>
     );
 }
 
@@ -108,7 +114,7 @@ function UsageBar({
                 {limit !== null && (
                     <div
                         className={[
-                            'imcrm-h-2 imcrm-rounded',
+                            'imcrm-h-2 imcrm-rounded imcrm-transition-all',
                             pct >= 90 ? 'imcrm-bg-rose-500' : 'imcrm-bg-primary',
                         ].join(' ')}
                         style={{ width: `${pct}%` }}
