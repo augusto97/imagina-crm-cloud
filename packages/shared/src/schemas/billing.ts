@@ -5,8 +5,14 @@ import { z } from 'zod';
  * PlanService central. Impago (status != activo) → workspace solo-lectura +
  * export (ADR-S09): los datos NUNCA se secuestran.
  */
+/** Los 4 planes built-in (semilla de la tabla `plans` + fallback de límites). */
 export const PLANS = ['trial', 'starter', 'pro', 'enterprise'] as const;
-export const planSchema = z.enum(PLANS);
+export type BuiltinPlan = (typeof PLANS)[number];
+/**
+ * Un plan es un **slug** (ADR-S15 F3): los 4 built-in o uno creado por el
+ * operador. La validación de existencia se hace contra la tabla `plans`.
+ */
+export const planSchema = z.string().trim().min(1).max(32);
 export type Plan = z.infer<typeof planSchema>;
 
 export const BILLING_STATUSES = ['trialing', 'active', 'past_due', 'canceled'] as const;
@@ -20,7 +26,8 @@ export interface PlanLimits {
     max_automations: number | null;
 }
 
-export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
+/** Semilla + fallback de límites de los planes built-in (la fuente viva es la DB). */
+export const PLAN_LIMITS: Record<BuiltinPlan, PlanLimits> = {
     trial: { max_records: 500, max_users: 3, max_automations: 3 },
     starter: { max_records: 10_000, max_users: 10, max_automations: 20 },
     pro: { max_records: 200_000, max_users: 50, max_automations: 200 },

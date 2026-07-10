@@ -1,7 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
     isReadOnly,
-    PLAN_LIMITS,
     type BillingStatus,
     type BillingSummary,
     type Plan,
@@ -12,10 +11,14 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { automations, memberships, records, tenants } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { PlansService } from './plans.service';
 
 @Injectable()
 export class BillingService {
-    constructor(private readonly tenantDb: TenantDb) {}
+    constructor(
+        private readonly tenantDb: TenantDb,
+        private readonly plans: PlansService,
+    ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
         const { plan, status } = await this.planStatus(tenantId);
@@ -24,7 +27,7 @@ export class BillingService {
             plan,
             status,
             read_only: isReadOnly(status),
-            limits: PLAN_LIMITS[plan],
+            limits: await this.plans.limits(plan),
             usage,
         };
     }
@@ -35,7 +38,7 @@ export class BillingService {
      */
     async assertCanCreateRecord(tenantId: number): Promise<void> {
         const { plan } = await this.planStatus(tenantId);
-        const limit = PLAN_LIMITS[plan].max_records;
+        const limit = (await this.plans.limits(plan)).max_records;
         if (limit === null) return;
         const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countRecords(tx, tenantId));
         if (count >= limit) {
@@ -56,7 +59,7 @@ export class BillingService {
     async assertCanCreateRecords(tenantId: number, additional: number): Promise<void> {
         if (additional <= 0) return;
         const { plan } = await this.planStatus(tenantId);
-        const limit = PLAN_LIMITS[plan].max_records;
+        const limit = (await this.plans.limits(plan)).max_records;
         if (limit === null) return;
         const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countRecords(tx, tenantId));
         if (count + additional > limit) {

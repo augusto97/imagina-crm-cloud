@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     Param,
@@ -10,15 +11,21 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    createPlanSchema,
     createPlatformUserSchema,
+    updatePlanSchema,
     updatePlatformUserSchema,
     updateTenantSchema,
+    type CreatePlanInput,
     type CreatePlatformUserInput,
+    type PlatformPlan,
+    type PlatformPlansResponse,
     type PlatformStats,
     type PlatformTenant,
     type PlatformTenantsResponse,
     type PlatformUser,
     type PlatformUsersResponse,
+    type UpdatePlanInput,
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
@@ -91,5 +98,38 @@ export class PlatformController {
     async resetUserPassword(@Param('id', ParseIntPipe) id: number): Promise<{ ok: true }> {
         await this.platform.resetUserPassword(id);
         return { ok: true };
+    }
+
+    // ─────────────────────────── Planes (F3) ───────────────────────────
+
+    /** Todos los planes (para editar límites/nombre y para poblar los selects). */
+    @Get('plans')
+    plans(): Promise<PlatformPlansResponse> {
+        return this.platform.listPlans().then((data) => ({ data }));
+    }
+
+    /** Crea un plan nuevo. */
+    @Post('plans')
+    @HttpCode(201)
+    createPlan(
+        @Body(new ZodValidationPipe(createPlanSchema)) input: CreatePlanInput,
+    ): Promise<PlatformPlan> {
+        return this.platform.createPlan(input);
+    }
+
+    /** Edita nombre/límites/activo de un plan (el slug no cambia). */
+    @Patch('plans/:slug')
+    updatePlan(
+        @Param('slug') slug: string,
+        @Body(new ZodValidationPipe(updatePlanSchema)) input: UpdatePlanInput,
+    ): Promise<PlatformPlan> {
+        return this.platform.updatePlan(slug, input);
+    }
+
+    /** Borra un plan (rechaza si alguna empresa lo usa). */
+    @Delete('plans/:slug')
+    @HttpCode(204)
+    async removePlan(@Param('slug') slug: string): Promise<void> {
+        await this.platform.removePlan(slug);
     }
 }

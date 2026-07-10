@@ -12,3 +12,4 @@ export * from './portal-links';
 export * from './app-releases';
 export * from './dashboards';
 export * from './public-lists';
+export * from './plans';

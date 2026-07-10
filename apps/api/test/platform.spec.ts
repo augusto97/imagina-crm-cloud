@@ -10,6 +10,7 @@ import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { MailService } from '../src/mail/mail.service';
+import { PlansService } from '../src/billing/plans.service';
 import { PlatformService } from '../src/platform/platform.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
@@ -26,6 +27,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     let platform: PlatformService;
     let auth: AuthService;
     let sessions: SessionService;
+    let billing: BillingService;
     const sentMail: Array<{ to: string; subject: string }> = [];
 
     beforeAll(async () => {
@@ -46,7 +48,9 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         });
         auth = new AuthService(pg.db, redis, env, mail, sessions);
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
-        platform = new PlatformService(pg.db, env, new BillingService(tenantDb), auth);
+        const plansSvc = new PlansService(pg.db);
+        billing = new BillingService(tenantDb, plansSvc);
+        platform = new PlatformService(pg.db, env, billing, auth, plansSvc);
     });
 
     afterAll(async () => {
@@ -214,5 +218,41 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         sentMail.length = 0;
         await platform.resetUserPassword(u!.id);
         expect(sentMail.some((m) => m.to === 'reset@cliente.test' && /restablecer/i.test(m.subject))).toBe(true);
+    });
+
+    // ─────────────────────────── Planes (F3) ───────────────────────────
+
+    it('listPlans: incluye los 4 built-in sembrados con sus límites', async () => {
+        const list = await platform.listPlans();
+        expect(list.map((p) => p.slug)).toEqual(expect.arrayContaining(['trial', 'starter', 'pro', 'enterprise']));
+        expect(list.find((p) => p.slug === 'trial')?.max_records).toBe(500);
+        expect(list.find((p) => p.slug === 'enterprise')?.max_records).toBeNull();
+    });
+
+    it('crear plan + asignarlo: billing usa los límites del plan de DB (y update los cambia)', async () => {
+        const id = await seedTenant({ name: 'Custo', ownerEmail: 'custo@c.test' });
+        await platform.createPlan({ slug: 'probe', name: 'Probe', max_records: 5, max_users: 2, max_automations: 1, is_active: true });
+
+        const t = await platform.updateTenant(id, { plan: 'probe' });
+        expect(t.plan).toBe('probe');
+        expect((await billing.summary(id)).limits.max_records).toBe(5);
+
+        await platform.updatePlan('probe', { max_records: 9 });
+        expect((await billing.summary(id)).limits.max_records).toBe(9);
+    });
+
+    it('updateTenant con plan inexistente → 400', async () => {
+        const id = await seedTenant({ name: 'X' });
+        await expect(platform.updateTenant(id, { plan: 'no_existe' })).rejects.toThrow();
+    });
+
+    it('removePlan: rechaza si está en uso, borra si no', async () => {
+        const id = await seedTenant({ name: 'Temp' });
+        await platform.createPlan({ slug: 'temp', name: 'Temp', max_records: 1, max_users: 1, max_automations: 1, is_active: true });
+        await platform.updateTenant(id, { plan: 'temp' });
+        await expect(platform.removePlan('temp')).rejects.toThrow(); // en uso
+        await platform.updateTenant(id, { plan: 'trial' });
+        await expect(platform.removePlan('temp')).resolves.toBeUndefined();
+        expect((await platform.listPlans()).some((p) => p.slug === 'temp')).toBe(false);
     });
 });
