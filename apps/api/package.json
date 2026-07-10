@@ -5,7 +5,7 @@
     "description": "Backend NestJS (Fastify) + Drizzle de Imagina CRM Cloud.",
     "main": "dist/main.js",
     "scripts": {
-        "dev": "tsx watch src/main.ts",
+        "dev": "node --watch -r @swc-node/register src/main.ts",
         "build": "tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
         "start": "node dist/main.js",
         "lint": "eslint src test",
@@ -41,6 +41,8 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.30.0",
+        "@swc-node/register": "^1.11.1",
+        "@swc/core": "^1.15.43",
         "@testcontainers/postgresql": "^11.0.3",
         "@testcontainers/redis": "^11.0.3",
         "@types/node": "^22.15.0",
