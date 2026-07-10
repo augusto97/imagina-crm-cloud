@@ -1,13 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
-    PLAN_PRICES,
-    priceFor,
+    PROVIDER_CURRENCY,
     type CheckoutResult,
     type CreateCheckoutInput,
     type PaymentConfig,
     type PaymentProvider,
 } from '@imagina-base/shared';
 import { BillingService } from '../billing/billing.service';
+import { PlansService } from '../billing/plans.service';
 import { ENV, type Env } from '../config/env';
 import { encodeReference, PAYMENT_GATEWAYS, type PaymentGateway } from './payment.types';
 
@@ -25,14 +25,15 @@ export class PaymentsService {
         @Inject(ENV) private readonly env: Env,
         @Inject(PAYMENT_GATEWAYS) gateways: PaymentGateway[],
         private readonly billing: BillingService,
+        private readonly plans: PlansService,
     ) {
         this.byProvider = new Map(gateways.map((g) => [g.provider, g]));
     }
 
-    /** Proveedores habilitados (con credenciales) + precios — para la UI. */
-    config(): PaymentConfig {
+    /** Proveedores habilitados (con credenciales) + planes vendibles — para la UI. */
+    async config(): Promise<PaymentConfig> {
         const providers = [...this.byProvider.values()].filter((g) => g.enabled).map((g) => g.provider);
-        return { providers, prices: PLAN_PRICES };
+        return { providers, plans: await this.plans.sellablePlans() };
     }
 
     async createCheckout(tenantId: number, input: CreateCheckoutInput): Promise<CheckoutResult> {
@@ -44,7 +45,17 @@ export class PaymentsService {
                 data: { status: 400, errors: { provider: 'no configurado' } },
             });
         }
-        const { amount, currency } = priceFor(input.plan, input.provider);
+        // El precio sale de la tabla `plans` (editable) → un plan custom se vende
+        // apenas tiene precio en la moneda del proveedor. Sin precio → no vendible.
+        const currency = PROVIDER_CURRENCY[input.provider];
+        const amount = await this.plans.priceFor(input.plan, currency);
+        if (amount === null) {
+            throw new BadRequestException({
+                code: 'plan_not_sellable',
+                message: `El plan ${input.plan} no tiene precio para ${currency}`,
+                data: { status: 400, errors: { plan: 'sin precio' } },
+            });
+        }
         const session = await gateway.createCheckout({
             tenantId,
             plan: input.plan,

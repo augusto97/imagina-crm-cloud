@@ -34,7 +34,7 @@ export class PaymentsController {
 
     @Get('payments/config')
     @UseGuards(SessionGuard, TenantGuard)
-    config(): PaymentConfig {
+    config(): Promise<PaymentConfig> {
         return this.payments.config();
     }
 

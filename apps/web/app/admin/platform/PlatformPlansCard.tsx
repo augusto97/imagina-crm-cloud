@@ -21,7 +21,7 @@ import {
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 
-/** `''` (vacío) = ilimitado (null); un número = ese tope. */
+/** `''` (vacío) = ilimitado / sin precio (null); un número = ese valor. */
 function toLimit(v: string): number | null {
     const t = v.trim();
     if (t === '') return null;
@@ -32,8 +32,10 @@ const limitStr = (v: number | null): string => (v === null ? '' : String(v));
 
 /**
  * Planes editables (operador, ADR-S15 F3). Cada fila edita nombre + límites
- * (records/usuarios/automatizaciones; vacío = ilimitado) + activo. Se puede
- * crear un plan nuevo o borrar uno (si no lo usa ninguna empresa).
+ * (records/usuarios/automatizaciones; vacío = ilimitado) + precios de checkout
+ * (USD/COP; vacío = no vendible en esa moneda) + activo. Se puede crear un plan
+ * nuevo o borrar uno (si no lo usa ninguna empresa). Un plan custom con precio
+ * aparece automáticamente en el checkout self-serve de las empresas (ADR-S12).
  */
 export function PlatformPlansCard(): JSX.Element {
     const plans = usePlatformPlans();
@@ -45,6 +47,8 @@ export function PlatformPlansCard(): JSX.Element {
     const [maxRecords, setMaxRecords] = useState('');
     const [maxUsers, setMaxUsers] = useState('');
     const [maxAuto, setMaxAuto] = useState('');
+    const [priceUsd, setPriceUsd] = useState('');
+    const [priceCop, setPriceCop] = useState('');
     const [error, setError] = useState<string | null>(null);
 
     const submitNew = async (e: React.FormEvent): Promise<void> => {
@@ -57,6 +61,8 @@ export function PlatformPlansCard(): JSX.Element {
                 max_records: toLimit(maxRecords),
                 max_users: toLimit(maxUsers),
                 max_automations: toLimit(maxAuto),
+                price_usd: toLimit(priceUsd),
+                price_cop: toLimit(priceCop),
                 is_active: true,
             });
             setSlug('');
@@ -64,6 +70,8 @@ export function PlatformPlansCard(): JSX.Element {
             setMaxRecords('');
             setMaxUsers('');
             setMaxAuto('');
+            setPriceUsd('');
+            setPriceCop('');
         } catch (err) {
             setError(err instanceof ApiError || err instanceof Error ? err.message : __('Error'));
         }
@@ -87,7 +95,7 @@ export function PlatformPlansCard(): JSX.Element {
                     <div>
                         <CardTitle>{__('Planes')}</CardTitle>
                         <CardDescription>
-                            {__('Editá los límites de cada plan (registros / usuarios / automatizaciones; vacío = ilimitado) o creá uno nuevo. Los cambios se aplican al asignar el plan a una empresa.')}
+                            {__('Editá los límites (registros / usuarios / automatizaciones; vacío = ilimitado) y los precios de checkout (USD / COP; vacío = no vendible en esa moneda) de cada plan, o creá uno nuevo. Un plan con precio aparece solo en el checkout de las empresas.')}
                         </CardDescription>
                     </div>
                 </div>
@@ -114,6 +122,8 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Registros')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Usuarios')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Automat.')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('USD/mes')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('COP/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Acciones')}</th>
                                 </tr>
                             </thead>
@@ -129,7 +139,7 @@ export function PlatformPlansCard(): JSX.Element {
                 {/* Alta de plan */}
                 <form onSubmit={submitNew} className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
                     <span className="imcrm-text-sm imcrm-font-medium">{__('Nuevo plan')}</span>
-                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid-cols-5">
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid-cols-4 lg:imcrm-grid-cols-7">
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <Label htmlFor="np-slug" className="imcrm-text-xs">{__('Slug')}</Label>
                             <Input id="np-slug" required value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="growth" />
@@ -150,6 +160,14 @@ export function PlatformPlansCard(): JSX.Element {
                             <Label htmlFor="np-aut" className="imcrm-text-xs">{__('Automat.')}</Label>
                             <Input id="np-aut" type="number" min={0} value={maxAuto} onChange={(e) => setMaxAuto(e.target.value)} placeholder="∞" />
                         </div>
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                            <Label htmlFor="np-usd" className="imcrm-text-xs">{__('USD/mes')}</Label>
+                            <Input id="np-usd" type="number" min={0} value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="—" />
+                        </div>
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                            <Label htmlFor="np-cop" className="imcrm-text-xs">{__('COP/mes')}</Label>
+                            <Input id="np-cop" type="number" min={0} value={priceCop} onChange={(e) => setPriceCop(e.target.value)} placeholder="—" />
+                        </div>
                     </div>
                     <div className="imcrm-flex imcrm-justify-end">
                         <Button type="submit" disabled={create.isPending} className="imcrm-gap-2">
@@ -169,6 +187,8 @@ function PlanRow({ plan, onDelete }: { plan: PlatformPlan; onDelete: () => void 
     const [rec, setRec] = useState(limitStr(plan.max_records));
     const [usr, setUsr] = useState(limitStr(plan.max_users));
     const [aut, setAut] = useState(limitStr(plan.max_automations));
+    const [usd, setUsd] = useState(limitStr(plan.price_usd));
+    const [cop, setCop] = useState(limitStr(plan.price_cop));
     const [dirty, setDirty] = useState(false);
 
     useEffect(() => {
@@ -176,6 +196,8 @@ function PlanRow({ plan, onDelete }: { plan: PlatformPlan; onDelete: () => void 
         setRec(limitStr(plan.max_records));
         setUsr(limitStr(plan.max_users));
         setAut(limitStr(plan.max_automations));
+        setUsd(limitStr(plan.price_usd));
+        setCop(limitStr(plan.price_cop));
         setDirty(false);
     }, [plan]);
 
@@ -187,6 +209,8 @@ function PlanRow({ plan, onDelete }: { plan: PlatformPlan; onDelete: () => void 
                 max_records: toLimit(rec),
                 max_users: toLimit(usr),
                 max_automations: toLimit(aut),
+                price_usd: toLimit(usd),
+                price_cop: toLimit(cop),
             },
         });
         setDirty(false);
@@ -211,6 +235,12 @@ function PlanRow({ plan, onDelete }: { plan: PlatformPlan; onDelete: () => void 
             </td>
             <td className="imcrm-px-2 imcrm-py-2">
                 <Input type="number" min={0} value={aut} onChange={touch(setAut)} placeholder="∞" className="imcrm-h-8 imcrm-w-20" />
+            </td>
+            <td className="imcrm-px-2 imcrm-py-2">
+                <Input type="number" min={0} value={usd} onChange={touch(setUsd)} placeholder="—" className="imcrm-h-8 imcrm-w-20" />
+            </td>
+            <td className="imcrm-px-2 imcrm-py-2">
+                <Input type="number" min={0} value={cop} onChange={touch(setCop)} placeholder="—" className="imcrm-h-8 imcrm-w-24" />
             </td>
             <td className="imcrm-px-2 imcrm-py-2">
                 <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-2">
