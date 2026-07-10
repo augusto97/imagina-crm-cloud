@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Save, Search, Trash2, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, MoreHorizontal, Plus, Save, Search, Trash2, Users } from 'lucide-react';
 import {
     BILLING_STATUSES,
     type BillingStatus,
@@ -15,6 +15,13 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -50,9 +57,11 @@ export function PlatformTenantsCard(): JSX.Element {
     const tenants = usePlatformTenants(showArchived);
     const plans = usePlatformPlans();
     const update = useUpdateTenant();
+    const del = useDeleteTenant();
     const [expanded, setExpanded] = useState<number | null>(null);
     const [showNew, setShowNew] = useState(false);
     const [search, setSearch] = useState('');
+    const [rowError, setRowError] = useState<string | null>(null);
 
     const filtered = (tenants.data ?? []).filter((t) => {
         const q = search.trim().toLowerCase();
@@ -69,6 +78,24 @@ export function PlatformTenantsCard(): JSX.Element {
     };
     const setStatus = (t: PlatformTenant, status: BillingStatus): void => {
         if (status !== t.status) update.mutate({ id: t.id, input: { status } });
+    };
+
+    const removeTenant = async (t: PlatformTenant): Promise<void> => {
+        const typed = window.prompt(
+            `${__('Esto borra la empresa y TODOS sus datos (irreversible). Escribí el nombre para confirmar:')}\n\n${t.name}`,
+        );
+        if (typed === null) return;
+        if (typed.trim() !== t.name) {
+            setRowError(__('El nombre no coincide; no se borró nada.'));
+            return;
+        }
+        setRowError(null);
+        try {
+            await del.mutateAsync(t.id);
+            if (expanded === t.id) setExpanded(null);
+        } catch (err) {
+            setRowError(err instanceof ApiError || err instanceof Error ? err.message : __('Error'));
+        }
     };
 
     return (
@@ -196,16 +223,59 @@ export function PlatformTenantsCard(): JSX.Element {
                                                 {new Date(t.created_at).toLocaleDateString()}
                                             </td>
                                             <td className="imcrm-px-2 imcrm-py-3 imcrm-text-right">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="imcrm-gap-1"
-                                                    onClick={() => setExpanded((cur) => (cur === t.id ? null : t.id))}
-                                                    aria-label={`${__('Detalle de')} ${t.name}`}
-                                                >
-                                                    {expanded === t.id ? <ChevronDown className="imcrm-h-4 imcrm-w-4" /> : <ChevronRight className="imcrm-h-4 imcrm-w-4" />}
-                                                    {__('Detalle')}
-                                                </Button>
+                                                <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1">
+                                                    {t.archived && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="imcrm-gap-1.5"
+                                                            disabled={update.isPending}
+                                                            onClick={() => update.mutate({ id: t.id, input: { archived: false } })}
+                                                            aria-label={`${__('Desarchivar')} ${t.name}`}
+                                                        >
+                                                            <ArchiveRestore className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                            {__('Desarchivar')}
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="imcrm-gap-1"
+                                                        onClick={() => setExpanded((cur) => (cur === t.id ? null : t.id))}
+                                                        aria-label={`${__('Detalle de')} ${t.name}`}
+                                                    >
+                                                        {expanded === t.id ? <ChevronDown className="imcrm-h-4 imcrm-w-4" /> : <ChevronRight className="imcrm-h-4 imcrm-w-4" />}
+                                                        {__('Detalle')}
+                                                    </Button>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="sm" aria-label={`${__('Acciones de')} ${t.name}`}>
+                                                                <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            {t.archived ? (
+                                                                <DropdownMenuItem onSelect={() => update.mutate({ id: t.id, input: { archived: false } })}>
+                                                                    <ArchiveRestore className="imcrm-mr-2 imcrm-h-4 imcrm-w-4" /> {__('Desarchivar')}
+                                                                </DropdownMenuItem>
+                                                            ) : (
+                                                                <DropdownMenuItem onSelect={() => update.mutate({ id: t.id, input: { archived: true } })}>
+                                                                    <Archive className="imcrm-mr-2 imcrm-h-4 imcrm-w-4" /> {__('Archivar')}
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem
+                                                                className="imcrm-text-destructive focus:imcrm-text-destructive"
+                                                                onSelect={() => {
+                                                                    // El prompt es síncrono; diferir para no romper el cierre del menú.
+                                                                    setTimeout(() => void removeTenant(t), 0);
+                                                                }}
+                                                            >
+                                                                <Trash2 className="imcrm-mr-2 imcrm-h-4 imcrm-w-4" /> {__('Borrar…')}
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
                                             </td>
                                         </tr>
                                         {expanded === t.id && (
@@ -224,6 +294,7 @@ export function PlatformTenantsCard(): JSX.Element {
                 {update.isError && (
                     <p className="imcrm-text-sm imcrm-text-destructive">{__('No se pudo aplicar el cambio.')}</p>
                 )}
+                {rowError !== null && <p className="imcrm-text-sm imcrm-text-destructive">{rowError}</p>}
             </CardContent>
         </Card>
     );
