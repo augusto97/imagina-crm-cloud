@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fields, lists, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -146,6 +146,36 @@ describe('FieldsService (Postgres real + RLS)', () => {
         await service.create(tenantA, 'clientes', { label: 'Temp', type: 'text' });
         await service.remove(tenantA, 'clientes', 'temp');
         await expect(service.get(tenantA, 'clientes', 'temp')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // PERF-01: el toggle is_indexed crea/suelta el índice de expresión real.
+    it('is_indexed crea y suelta el índice de expresión en Postgres', async () => {
+        const indexed = new FieldsService(
+            new TenantDb(pg.db),
+            new FieldsRepository(),
+            listsService,
+            rt,
+            pg.db, // conexión base → habilita el DDL de índices
+        );
+        const monto = await indexed.create(tenantA, 'clientes', {
+            label: 'Monto Indexado',
+            type: 'currency',
+            slug: 'monto_ix',
+        });
+        const idxName = `imcrm_ix_f${monto.id}`;
+
+        const exists = async (): Promise<boolean> => {
+            const r = await pg.db.execute(
+                sql`select 1 from pg_indexes where indexname = ${idxName}`,
+            );
+            return r.rows.length === 1;
+        };
+
+        await indexed.update(tenantA, 'clientes', 'monto_ix', { is_indexed: true });
+        expect(await exists()).toBe(true);
+
+        await indexed.update(tenantA, 'clientes', 'monto_ix', { is_indexed: false });
+        expect(await exists()).toBe(false);
     });
 
     it('aislamiento RLS: no se pueden ver/tocar campos de otra lista/tenant', async () => {

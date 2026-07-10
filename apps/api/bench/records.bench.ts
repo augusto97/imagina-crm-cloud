@@ -50,7 +50,10 @@ describe(`Perf §13 (seed ${SEED})`, () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
         const lists = new ListsService(tenantDb, new ListsRepository(), rt);
-        const fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
+        // Con la conexión base para que is_indexed:true cree los índices REALES
+        // (PERF-01) — el benchmark ejercita el código de producción, no solo los
+        // índices espejo manuales de `seed`.
+        const fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt, pg.db);
         const activity = new ActivityService(tenantDb, new ActivityRepository(), lists);
         records = new RecordsService(
             tenantDb,
