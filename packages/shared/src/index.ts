@@ -9,6 +9,7 @@ export * from './schemas/list';
 export * from './schemas/list-permissions';
 export * from './schemas/public-list';
 export * from './schemas/filter';
+export * from './schemas/saved-filter';
 export * from './schemas/record';
 export * from './schemas/view';
 export * from './schemas/bootstrap';

@@ -29,6 +29,7 @@ import { RedisModule } from './redis/redis.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
+import { SavedFiltersModule } from './saved-filters/saved-filters.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         FieldsModule,
         RecordsModule,
         ViewsModule,
+        SavedFiltersModule,
         ActivityModule,
         CommentsModule,
         AggregateModule,
