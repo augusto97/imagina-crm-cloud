@@ -19,6 +19,8 @@ import { usePlatformStats, usePlatformTenants, useUpdateTenant } from '@/hooks/u
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { PlatformUsersCard } from './PlatformUsersCard';
+
 const PLAN_LABEL: Record<Plan, string> = {
     trial: __('Trial'),
     starter: __('Starter'),
@@ -212,6 +214,9 @@ export function PlatformPage(): JSX.Element {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Usuarios de la plataforma */}
+            <PlatformUsersCard />
         </div>
     );
 }

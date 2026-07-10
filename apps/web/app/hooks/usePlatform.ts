@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PlatformStats, PlatformTenant, UpdateTenantInput } from '@imagina-base/shared';
+import type {
+    CreatePlatformUserInput,
+    PlatformStats,
+    PlatformTenant,
+    PlatformUser,
+    UpdateTenantInput,
+} from '@imagina-base/shared';
 
 import { api, ApiError } from '@/lib/api';
 
@@ -17,6 +23,7 @@ export const platformKeys = {
     is: () => [...platformKeys.all, 'is-superadmin'] as const,
     stats: () => [...platformKeys.all, 'stats'] as const,
     tenants: () => [...platformKeys.all, 'tenants'] as const,
+    users: () => [...platformKeys.all, 'users'] as const,
 };
 
 export function useIsSuperadmin() {
@@ -58,6 +65,46 @@ export function useUpdateTenant() {
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: platformKeys.stats() });
             void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+        },
+    });
+}
+
+// ─────────────────────────── Usuarios (F2) ───────────────────────────
+
+export function usePlatformUsers() {
+    return useQuery({
+        queryKey: platformKeys.users(),
+        queryFn: async () => (await api.get<PlatformUser[]>('/platform/users')).data,
+    });
+}
+
+export function useCreatePlatformUser() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: CreatePlatformUserInput): Promise<PlatformUser> =>
+            (await api.post<PlatformUser>('/platform/users', input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
+        },
+    });
+}
+
+export function useSetUserDisabled() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, disabled }: { id: number; disabled: boolean }): Promise<PlatformUser> =>
+            (await api.patch<PlatformUser>(`/platform/users/${id}`, { disabled })).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
+        },
+    });
+}
+
+export function useResetUserPassword() {
+    return useMutation({
+        mutationFn: async (id: number): Promise<void> => {
+            await api.post(`/platform/users/${id}/reset-password`, {});
         },
     });
 }
