@@ -73,6 +73,29 @@ describe('ExportService (Postgres real)', () => {
         expect(bundle.records.map((r) => r.data[`f${f.id}`])).toEqual(['A', 'B', 'C']);
     });
 
+    // SEC-10: el streaming produce EXACTAMENTE el mismo bundle JSON.
+    it('streamExport produce el mismo bundle JSON válido', async () => {
+        const list = await listsService.create(tenantId, { name: 'Stream' });
+        const f = await fieldsService.create(tenantId, 'stream', {
+            label: 'Nombre',
+            type: 'text',
+            slug: 'nombre',
+        });
+        for (const n of ['X', 'Y']) {
+            await recordsService.create(tenantId, admin, 'stream', { data: { [`f${f.id}`]: n } });
+        }
+
+        let out = '';
+        await exportService.streamExport(tenantId, 'stream', '2026-07-08T00:00:00.000Z', (c) => {
+            out += c;
+        });
+        const parsed = exportBundleSchema.parse(JSON.parse(out));
+        expect(parsed.version).toBe(1);
+        expect(parsed.list.id).toBe(list.id);
+        expect(parsed.fields.map((x) => x.slug)).toEqual(['nombre']);
+        expect(parsed.records.map((r) => r.data[`f${f.id}`])).toEqual(['X', 'Y']);
+    });
+
     it('paginación keyset: exporta más de 1000 records', async () => {
         const list = await listsService.create(tenantId, { name: 'Grande' });
         const f = await fieldsService.create(tenantId, 'grande', { label: 'N', type: 'number', slug: 'n' });

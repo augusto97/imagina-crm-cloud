@@ -27,7 +27,8 @@ export class ExportService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
         const views = await this.views.list(tenantId, String(list.id));
-        const allRecords = await this.allRecords(tenantId, list.id);
+        const allRecords: RecordDto[] = [];
+        for await (const r of this.iterateRecords(tenantId, list.id)) allRecords.push(r);
 
         return {
             version: 1,
@@ -39,9 +40,38 @@ export class ExportService {
         };
     }
 
+    /**
+     * Export por STREAMING (SEC-10). Escribe el MISMO bundle JSON pero sin
+     * materializar todos los records en memoria: cabecera + `"records":[` y luego
+     * cada record por keyset a medida que llega, evitando OOM en listas grandes
+     * (el seed de 100k acumulaba todo en un array antes de serializar).
+     */
+    async streamExport(
+        tenantId: number,
+        listIdOrSlug: string,
+        now: string,
+        write: (chunk: string) => void,
+    ): Promise<void> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.list(tenantId, String(list.id));
+        const views = await this.views.list(tenantId, String(list.id));
+
+        write('{"version":1');
+        write(`,"exported_at":${JSON.stringify(now)}`);
+        write(`,"list":${JSON.stringify(list)}`);
+        write(`,"fields":${JSON.stringify(fields.map((f) => ({ ...f, type: f.type as FieldType })))}`);
+        write(`,"views":${JSON.stringify(views.map((v) => ({ ...v, type: v.type as ViewType })))}`);
+        write(',"records":[');
+        let first = true;
+        for await (const r of this.iterateRecords(tenantId, list.id)) {
+            write((first ? '' : ',') + JSON.stringify(r));
+            first = false;
+        }
+        write(']}');
+    }
+
     /** Recorre los records por keyset (id asc) en páginas de 1000. */
-    private async allRecords(tenantId: number, listId: number): Promise<RecordDto[]> {
-        const out: RecordDto[] = [];
+    private async *iterateRecords(tenantId: number, listId: number): AsyncGenerator<RecordDto> {
         let cursor: number | undefined;
         for (;;) {
             const cursorClause: SQL | undefined = cursor !== undefined ? gt(records.id, cursor) : undefined;
@@ -61,18 +91,17 @@ export class ExportService {
                     .limit(PAGE),
             );
             for (const r of rows) {
-                out.push({
+                yield {
                     id: r.id,
                     list_id: r.listId,
                     data: r.data,
                     created_by: r.createdBy,
                     created_at: r.createdAt.toISOString(),
                     updated_at: r.updatedAt.toISOString(),
-                });
+                };
             }
             if (rows.length < PAGE) break;
             cursor = rows[rows.length - 1]!.id;
         }
-        return out;
     }
 }
