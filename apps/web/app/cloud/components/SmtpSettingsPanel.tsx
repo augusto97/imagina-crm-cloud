@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SmtpConfigPublic } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
+import { Mail } from 'lucide-react';
 import { api } from '@/cloud/session';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -91,22 +93,20 @@ export function SmtpSettingsPanel(): JSX.Element | null {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                    <div>
-                        <CardTitle>Sistema · Correo (SMTP)</CardTitle>
-                        <CardDescription>
-                            Servidor de envío para recuperación de accesos, magic links y notificaciones (superadmin).
-                        </CardDescription>
+                    <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-amber/10 imcrm-text-tone-amber">
+                            <Mail className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        </span>
+                        <div>
+                            <CardTitle>Sistema · Correo (SMTP)</CardTitle>
+                            <CardDescription>
+                                Servidor de envío para recuperación de accesos, magic links y notificaciones (superadmin).
+                            </CardDescription>
+                        </div>
                     </div>
-                    <span
-                        className={[
-                            'imcrm-shrink-0 imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
-                            c.configured
-                                ? 'imcrm-bg-emerald-100 imcrm-text-emerald-700 dark:imcrm-bg-emerald-950/50 dark:imcrm-text-emerald-300'
-                                : 'imcrm-bg-muted imcrm-text-muted-foreground',
-                        ].join(' ')}
-                    >
+                    <Badge dot variant={c.configured ? 'success' : 'secondary'} className="imcrm-shrink-0">
                         {c.configured ? 'Configurado' : 'Sin configurar'}
-                    </span>
+                    </Badge>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">

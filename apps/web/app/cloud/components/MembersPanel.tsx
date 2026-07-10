@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { StaffRole, WorkspaceMember } from '@imagina-base/shared';
+import { Users } from 'lucide-react';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -49,8 +51,15 @@ export function MembersPanel(): JSX.Element {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Miembros del workspace</CardTitle>
-                <CardDescription>Agregá compañeros ya registrados y asigná su rol.</CardDescription>
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-blue/10 imcrm-text-tone-blue">
+                        <Users className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
+                    <div>
+                        <CardTitle>Miembros del workspace</CardTitle>
+                        <CardDescription>Agregá compañeros ya registrados y asigná su rol.</CardDescription>
+                    </div>
+                </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
             <ul className="imcrm-space-y-1">
@@ -141,14 +150,17 @@ function MemberRow({
     const editable = member.role !== 'client';
 
     return (
-        <li className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 hover:imcrm-bg-muted/40">
-            <div className="imcrm-min-w-0">
-                <div className="imcrm-truncate imcrm-text-sm imcrm-font-medium">
-                    {member.name}
-                    {isSelf && <span className="imcrm-ml-1 imcrm-text-xs imcrm-text-muted-foreground">(vos)</span>}
+        <li className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded-lg imcrm-px-2 imcrm-py-2 imcrm-transition-colors hover:imcrm-bg-muted/40">
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2.5">
+                <Avatar name={member.name} />
+                <div className="imcrm-min-w-0">
+                    <div className="imcrm-truncate imcrm-text-sm imcrm-font-medium">
+                        {member.name}
+                        {isSelf && <span className="imcrm-ml-1 imcrm-text-xs imcrm-text-muted-foreground">(vos)</span>}
+                    </div>
+                    <div className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{member.email}</div>
+                    {error && <div className="imcrm-text-xs imcrm-text-destructive">{error}</div>}
                 </div>
-                <div className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{member.email}</div>
-                {error && <div className="imcrm-text-xs imcrm-text-destructive">{error}</div>}
             </div>
             <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
                 {editable ? (

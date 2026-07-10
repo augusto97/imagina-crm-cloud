@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, MoreHorizontal, Plus, Save, Search, Trash2, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Database, Loader2, LogIn, MoreHorizontal, Plus, Save, Search, Trash2, Users, Zap } from 'lucide-react';
 import {
     BILLING_STATUSES,
     type BillingStatus,
@@ -7,6 +7,8 @@ import {
     type PlatformTenant,
 } from '@imagina-base/shared';
 
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -43,13 +45,58 @@ const STATUS_LABEL: Record<BillingStatus, string> = {
     past_due: __('Impaga'),
     canceled: __('Cancelada'),
 };
-const STATUS_TONE: Record<BillingStatus, string> = {
-    trialing: 'imcrm-bg-blue-500/10 imcrm-text-blue-600 dark:imcrm-text-blue-400',
-    active: 'imcrm-bg-emerald-500/10 imcrm-text-emerald-600 dark:imcrm-text-emerald-400',
-    past_due: 'imcrm-bg-amber-500/10 imcrm-text-amber-600 dark:imcrm-text-amber-400',
-    canceled: 'imcrm-bg-red-500/10 imcrm-text-red-600 dark:imcrm-text-red-400',
+/** Dot de estado (tokens semánticos, no colores sueltos). */
+const STATUS_DOT: Record<BillingStatus, string> = {
+    trialing: 'imcrm-bg-info',
+    active: 'imcrm-bg-success',
+    past_due: 'imcrm-bg-warning',
+    canceled: 'imcrm-bg-destructive',
 };
 const fmtLimit = (v: number | null): string => (v === null ? '∞' : v.toLocaleString());
+
+/**
+ * Select "quiet" estilo Linear: en reposo parece un valor de la tabla (sin
+ * borde); al hover aparece el borde y el chevron. El dot opcional adelante da
+ * el color de estado. Mucho menos ruidoso que un <select> nativo por celda.
+ */
+function QuietSelect({
+    value,
+    options,
+    dotClass,
+    disabled,
+    ariaLabel,
+    onChange,
+}: {
+    value: string;
+    options: Array<{ value: string; label: string }>;
+    dotClass?: string;
+    disabled?: boolean;
+    ariaLabel: string;
+    onChange: (value: string) => void;
+}): JSX.Element {
+    return (
+        <span className="imcrm-group/qs imcrm-relative imcrm-inline-flex imcrm-h-8 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-transparent imcrm-pl-2 imcrm-pr-1 imcrm-transition-colors hover:imcrm-border-input hover:imcrm-bg-background">
+            {dotClass !== undefined && (
+                <span aria-hidden className={cn('imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full', dotClass)} />
+            )}
+            <select
+                className="imcrm-cursor-pointer imcrm-appearance-none imcrm-bg-transparent imcrm-pr-4 imcrm-text-sm imcrm-text-foreground focus:imcrm-outline-none disabled:imcrm-cursor-default"
+                value={value}
+                disabled={disabled}
+                aria-label={ariaLabel}
+                onChange={(e) => onChange(e.target.value)}
+            >
+                {options.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+            </select>
+            <ChevronDown
+                aria-hidden
+                className="imcrm-pointer-events-none imcrm-absolute imcrm-right-1 imcrm-h-3 imcrm-w-3 imcrm-text-muted-foreground imcrm-opacity-50 imcrm-transition-opacity group-hover/qs:imcrm-opacity-100"
+            />
+        </span>
+    );
+}
 
 /** Grilla de empresas + alta en un paso + detalle expandible (ADR-S15 F1/F4). */
 export function PlatformTenantsCard(): JSX.Element {
@@ -103,7 +150,9 @@ export function PlatformTenantsCard(): JSX.Element {
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                        <Building2 className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-blue/10 imcrm-text-tone-blue">
+                            <Building2 className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        </span>
                         <div>
                             <CardTitle>{__('Empresas (clientes)')}</CardTitle>
                             <CardDescription>
@@ -127,16 +176,18 @@ export function PlatformTenantsCard(): JSX.Element {
                 {showNew && <NewTenantForm onDone={() => setShowNew(false)} />}
 
                 {!tenants.isLoading && !tenants.isError && (
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                        <Search className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                        <Input
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder={__('Buscar por nombre, slug o email del admin…')}
-                            className="imcrm-h-9 imcrm-max-w-sm"
-                        />
-                        <span className="imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
-                            {filtered.length}/{(tenants.data ?? []).length}
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
+                        <div className="imcrm-relative imcrm-w-full imcrm-max-w-sm">
+                            <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2.5 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                            <Input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder={__('Buscar por nombre, slug o email del admin…')}
+                                className="imcrm-h-9 imcrm-pl-8"
+                            />
+                        </div>
+                        <span className="imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
+                            {filtered.length} / {(tenants.data ?? []).length}
                         </span>
                     </div>
                 )}
@@ -165,61 +216,61 @@ export function PlatformTenantsCard(): JSX.Element {
                             <tbody>
                                 {filtered.map((t) => (
                                     <Fragment key={t.id}>
-                                        <tr className="imcrm-border-b imcrm-border-border/60">
-                                            <td className="imcrm-py-3 imcrm-pr-3">
-                                                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                                                    <span className="imcrm-font-medium imcrm-text-foreground">{t.name}</span>
-                                                    {t.archived && (
-                                                        <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-text-muted-foreground">
-                                                            {__('Archivada')}
-                                                        </span>
-                                                    )}
+                                        <tr className={cn('imcrm-border-b imcrm-border-border/60 imcrm-transition-colors hover:imcrm-bg-muted/30', t.archived && 'imcrm-opacity-70')}>
+                                            <td className="imcrm-py-2.5 imcrm-pr-3">
+                                                <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
+                                                    <Avatar name={t.name} />
+                                                    <div className="imcrm-min-w-0">
+                                                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                                            <span className="imcrm-truncate imcrm-font-medium imcrm-text-foreground">{t.name}</span>
+                                                            {t.archived && (
+                                                                <Badge variant="secondary" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">
+                                                                    <Archive className="imcrm-h-2.5 imcrm-w-2.5" /> {__('Archivada')}
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        <div className="imcrm-truncate imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">{t.slug}</div>
+                                                    </div>
                                                 </div>
-                                                <div className="imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">{t.slug}</div>
                                             </td>
-                                            <td className="imcrm-px-2 imcrm-py-3 imcrm-text-muted-foreground">
-                                                {t.owner ? t.owner.email : <span className="imcrm-italic">{__('— sin admin —')}</span>}
+                                            <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-muted-foreground">
+                                                {t.owner ? t.owner.email : <span className="imcrm-italic imcrm-opacity-70">{__('sin admin')}</span>}
                                             </td>
-                                            <td className="imcrm-px-2 imcrm-py-3">
-                                                <select
-                                                    className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                                            <td className="imcrm-px-2 imcrm-py-2.5">
+                                                <QuietSelect
                                                     value={t.plan}
                                                     disabled={update.isPending}
-                                                    onChange={(e) => setPlan(t, e.target.value as Plan)}
-                                                    aria-label={`${__('Plan de')} ${t.name}`}
-                                                >
-                                                    {(plans.data ?? []).map((p) => (
-                                                        <option key={p.slug} value={p.slug}>{p.name}</option>
-                                                    ))}
-                                                    {!(plans.data ?? []).some((p) => p.slug === t.plan) && (
-                                                        <option value={t.plan}>{t.plan}</option>
-                                                    )}
-                                                </select>
+                                                    ariaLabel={`${__('Plan de')} ${t.name}`}
+                                                    onChange={(v) => setPlan(t, v as Plan)}
+                                                    options={[
+                                                        ...(plans.data ?? []).map((p) => ({ value: p.slug, label: p.name })),
+                                                        ...((plans.data ?? []).some((p) => p.slug === t.plan)
+                                                            ? []
+                                                            : [{ value: t.plan, label: t.plan }]),
+                                                    ]}
+                                                />
                                             </td>
-                                            <td className="imcrm-px-2 imcrm-py-3">
-                                                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                                    <span className={cn('imcrm-inline-flex imcrm-shrink-0 imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium', STATUS_TONE[t.status])}>
-                                                        {STATUS_LABEL[t.status]}
-                                                    </span>
-                                                    <select
-                                                        className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
-                                                        value={t.status}
-                                                        disabled={update.isPending}
-                                                        onChange={(e) => setStatus(t, e.target.value as BillingStatus)}
-                                                        aria-label={`${__('Estado de')} ${t.name}`}
-                                                    >
-                                                        {BILLING_STATUSES.map((s) => (
-                                                            <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                                                        ))}
-                                                    </select>
+                                            <td className="imcrm-px-2 imcrm-py-2.5">
+                                                <QuietSelect
+                                                    value={t.status}
+                                                    disabled={update.isPending}
+                                                    dotClass={STATUS_DOT[t.status]}
+                                                    ariaLabel={`${__('Estado de')} ${t.name}`}
+                                                    onChange={(v) => setStatus(t, v as BillingStatus)}
+                                                    options={BILLING_STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+                                                />
+                                            </td>
+                                            <td className="imcrm-px-2 imcrm-py-2.5">
+                                                <div
+                                                    className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-3 imcrm-tabular-nums imcrm-text-muted-foreground"
+                                                    title={__('Registros · Usuarios · Automatizaciones')}
+                                                >
+                                                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Database className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.records.toLocaleString()}</span>
+                                                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Users className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.users}</span>
+                                                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Zap className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.automations}</span>
                                                 </div>
                                             </td>
-                                            <td className="imcrm-px-2 imcrm-py-3 imcrm-text-right imcrm-tabular-nums imcrm-text-muted-foreground">
-                                                <span title={__('Registros / Usuarios / Automatizaciones')}>
-                                                    {t.usage.records.toLocaleString()} · {t.usage.users} · {t.usage.automations}
-                                                </span>
-                                            </td>
-                                            <td className="imcrm-px-2 imcrm-py-3 imcrm-text-muted-foreground imcrm-whitespace-nowrap">
+                                            <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-xs imcrm-text-muted-foreground imcrm-whitespace-nowrap">
                                                 {new Date(t.created_at).toLocaleDateString()}
                                             </td>
                                             <td className="imcrm-px-2 imcrm-py-3 imcrm-text-right">
@@ -389,14 +440,15 @@ function TenantDetail({ id, onCollapse }: { id: number; onCollapse: () => void }
                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                     <Users className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Miembros')} ({d.members.length})
                 </span>
-                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     {d.members.map((m) => (
                         <li key={m.user_id} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                            <Avatar name={m.name} size="sm" />
                             <span className="imcrm-font-medium">{m.name}</span>
                             <span className="imcrm-text-muted-foreground">{m.email}</span>
-                            <span className="imcrm-rounded imcrm-bg-primary/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-primary">{m.role}</span>
+                            <Badge variant="outline" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">{m.role}</Badge>
                             {m.disabled ? (
-                                <span className="imcrm-rounded imcrm-bg-red-500/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-red-600 dark:imcrm-text-red-400">{__('desactivado')}</span>
+                                <Badge variant="destructive" dot className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">{__('desactivada')}</Badge>
                             ) : (
                                 <button
                                     type="button"
