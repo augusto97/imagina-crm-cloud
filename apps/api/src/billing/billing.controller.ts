@@ -10,6 +10,7 @@ import {
     Req,
     UseGuards,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { setBillingSchema, type BillingSummary } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
@@ -24,6 +25,15 @@ const webhookBodySchema = setBillingSchema.extend({
 });
 type WebhookBody = z.infer<typeof webhookBodySchema>;
 
+/** Comparación de secretos en tiempo constante (evita timing leak). */
+function safeEqual(a: string | undefined, b: string): boolean {
+    if (!a) return false;
+    const ab = Buffer.from(a);
+    const bb = Buffer.from(b);
+    if (ab.length !== bb.length) return false;
+    return timingSafeEqual(ab, bb);
+}
+
 @Controller('billing')
 export class BillingController {
     constructor(
@@ -31,10 +41,17 @@ export class BillingController {
         @Inject(ENV) private readonly env: Env,
     ) {}
 
-    /** Plan + estado + uso + límites del workspace activo. */
+    /** Plan + estado + uso + límites del workspace activo (solo admin, SEC-18). */
     @Get()
     @UseGuards(SessionGuard, TenantGuard)
     summary(@Req() req: FastifyRequest): Promise<BillingSummary> {
+        if (req.tenant!.role !== 'admin') {
+            throw new ForbiddenException({
+                code: 'admin_only',
+                message: 'Sólo un admin puede ver la facturación',
+                data: { status: 403 },
+            });
+        }
         return this.billing.summary(req.tenant!.tenantId);
     }
 
@@ -50,7 +67,8 @@ export class BillingController {
         @Headers('x-billing-secret') secret: string | undefined,
         @Body(new ZodValidationPipe(webhookBodySchema)) body: WebhookBody,
     ): Promise<BillingSummary> {
-        if (!this.env.BILLING_WEBHOOK_SECRET || secret !== this.env.BILLING_WEBHOOK_SECRET) {
+        // SEC-16: comparación timing-safe del secret compartido.
+        if (!this.env.BILLING_WEBHOOK_SECRET || !safeEqual(secret, this.env.BILLING_WEBHOOK_SECRET)) {
             throw new ForbiddenException('Webhook de billing no autorizado');
         }
         return this.billing.setBilling(body.tenant_id, {

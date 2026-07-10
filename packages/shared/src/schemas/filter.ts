@@ -67,6 +67,12 @@ export type FilterGroup = {
 export type FilterNode = FilterCondition | FilterGroup;
 
 const MAX_FILTER_DEPTH = 5;
+/**
+ * Tope de nodos TOTALES del árbol (SEC-11). La profundidad estaba capada pero
+ * no la anchura: un grupo AND a profundidad 1 podía llevar miles de
+ * condiciones, cada una compilada a una expresión JSONB → DoS de CPU/query.
+ */
+const MAX_FILTER_NODES = 200;
 
 /**
  * Grupo AND/OR anidado. Profundidad máxima 5 (CONTRACT.md §4). Se valida con
@@ -92,8 +98,17 @@ export function filterDepthOk(node: FilterNode, depth = 1): boolean {
     return node.children.every((c) => filterDepthOk(c, depth + 1));
 }
 
-/** Filter tree de nivel raíz: un grupo con validación de profundidad. */
-export const filterTreeSchema = filterGroupSchema.refine(
-    (tree) => filterDepthOk(tree),
-    { message: `El filtro excede la profundidad máxima (${MAX_FILTER_DEPTH})` },
-);
+/** Cuenta los nodos totales del árbol (condiciones + grupos). */
+export function filterNodeCount(node: FilterNode): number {
+    if (node.type === 'condition') return 1;
+    return 1 + node.children.reduce((sum, c) => sum + filterNodeCount(c), 0);
+}
+
+/** Filter tree de nivel raíz: un grupo con validación de profundidad y anchura. */
+export const filterTreeSchema = filterGroupSchema
+    .refine((tree) => filterDepthOk(tree), {
+        message: `El filtro excede la profundidad máxima (${MAX_FILTER_DEPTH})`,
+    })
+    .refine((tree) => filterNodeCount(tree) <= MAX_FILTER_NODES, {
+        message: `El filtro excede el máximo de ${MAX_FILTER_NODES} condiciones`,
+    });

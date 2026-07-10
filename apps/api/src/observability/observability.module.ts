@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { MetricsController } from './metrics.controller';
+import { MetricsGuard } from './metrics.guard';
 import { MetricsInterceptor } from './metrics.interceptor';
 import { MetricsService } from './metrics.service';
 
@@ -11,7 +12,11 @@ import { MetricsService } from './metrics.service';
  */
 @Module({
     controllers: [MetricsController],
-    providers: [MetricsService, { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor }],
+    providers: [
+        MetricsService,
+        MetricsGuard,
+        { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
+    ],
     exports: [MetricsService],
 })
 export class ObservabilityModule {}

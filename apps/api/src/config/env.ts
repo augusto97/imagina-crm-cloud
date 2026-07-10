@@ -37,6 +37,9 @@ const envSchema = z.object({
     // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),
+    // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
+    // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
+    METRICS_TOKEN: z.string().default(''),
 
     // --- Email (ADR-S11). `log` (default) escribe el mail al logger; `smtp`
     // usa nodemailer contra un servidor SMTP real. Elegir `smtp` sin SMTP_HOST
