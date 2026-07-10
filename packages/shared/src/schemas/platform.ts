@@ -113,13 +113,18 @@ export type UpdatePlatformUserInput = z.infer<typeof updatePlatformUserSchema>;
 
 // ─────────────────────────── Planes (F3) ───────────────────────────
 
-/** Un plan editable por el operador. `null` en un límite = ilimitado. */
+/**
+ * Un plan editable por el operador. `null` en un límite = ilimitado; `null` en
+ * un precio = no se vende self-serve en esa moneda (checkout, ADR-S12).
+ */
 export const platformPlanSchema = z.object({
     slug: z.string(),
     name: z.string(),
     max_records: z.number().int().nullable(),
     max_users: z.number().int().nullable(),
     max_automations: z.number().int().nullable(),
+    price_usd: z.number().int().nullable(),
+    price_cop: z.number().int().nullable(),
     is_active: z.boolean(),
     position: z.number().int(),
 });
@@ -138,6 +143,8 @@ export const planSlugSchema = z
     .regex(/^[a-z0-9_]+$/, 'Sólo minúsculas, números y guion bajo');
 
 const nullableLimit = z.number().int().nonnegative().nullable();
+/** Precio de checkout (entero: USD sin centavos, COP sin decimales). `null` = no vendible. */
+const nullablePrice = z.number().int().nonnegative().nullable();
 
 /** Alta de un plan nuevo. */
 export const createPlanSchema = z.object({
@@ -146,17 +153,21 @@ export const createPlanSchema = z.object({
     max_records: nullableLimit.default(null),
     max_users: nullableLimit.default(null),
     max_automations: nullableLimit.default(null),
+    price_usd: nullablePrice.default(null),
+    price_cop: nullablePrice.default(null),
     is_active: z.boolean().default(true),
 });
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 
-/** Edición de un plan (nombre / límites / activo). El slug no cambia. */
+/** Edición de un plan (nombre / límites / precios / activo). El slug no cambia. */
 export const updatePlanSchema = z
     .object({
         name: z.string().trim().min(1).max(60),
         max_records: nullableLimit,
         max_users: nullableLimit,
         max_automations: nullableLimit,
+        price_usd: nullablePrice,
+        price_cop: nullablePrice,
         is_active: z.boolean(),
     })
     .partial();

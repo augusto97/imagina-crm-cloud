@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { planSchema } from './billing';
 
 /**
  * Pagos (ADR-S12). Stripe no opera en Colombia, así que el cobro va por
@@ -10,31 +11,34 @@ export const PAYMENT_PROVIDERS = ['paypal', 'mercadopago'] as const;
 export const paymentProviderSchema = z.enum(PAYMENT_PROVIDERS);
 export type PaymentProvider = z.infer<typeof paymentProviderSchema>;
 
-/** Planes con checkout self-serve (enterprise es "contactar ventas"). */
-export const CHECKOUT_PLANS = ['starter', 'pro'] as const;
-export const checkoutPlanSchema = z.enum(CHECKOUT_PLANS);
-export type CheckoutPlan = z.infer<typeof checkoutPlanSchema>;
-
-/** Precio mensual por plan y moneda. PayPal cobra en USD; Mercado Pago en COP. */
-export const PLAN_PRICES: Record<CheckoutPlan, { usd: number; cop: number }> = {
-    starter: { usd: 15, cop: 59_000 },
-    pro: { usd: 49, cop: 199_000 },
-};
-
-/** Moneda que cobra cada proveedor. */
+/** Moneda que cobra cada proveedor. PayPal → USD; Mercado Pago → COP. */
 export const PROVIDER_CURRENCY: Record<PaymentProvider, 'USD' | 'COP'> = {
     paypal: 'USD',
     mercadopago: 'COP',
 };
+export type Currency = 'USD' | 'COP';
 
-export function priceFor(plan: CheckoutPlan, provider: PaymentProvider): { amount: number; currency: 'USD' | 'COP' } {
-    const currency = PROVIDER_CURRENCY[provider];
-    const amount = currency === 'USD' ? PLAN_PRICES[plan].usd : PLAN_PRICES[plan].cop;
-    return { amount, currency };
+/**
+ * Precio de checkout de un plan (ADR-S15 F3). Vive en la tabla `plans`, editable
+ * por el operador — así un plan **custom** también se puede vender self-serve.
+ * `null` en una moneda = el plan no se cobra con el proveedor de esa moneda
+ * (p.ej. enterprise = "contactar ventas", o un plan sólo-USD sin precio COP).
+ */
+export const planPriceSchema = z.object({
+    slug: planSchema,
+    name: z.string(),
+    usd: z.number().nullable(),
+    cop: z.number().nullable(),
+});
+export type PlanPrice = z.infer<typeof planPriceSchema>;
+
+/** Un plan es vendible con un proveedor si tiene precio en la moneda de éste. */
+export function priceInCurrency(price: PlanPrice, currency: Currency): number | null {
+    return currency === 'USD' ? price.usd : price.cop;
 }
 
 export const createCheckoutSchema = z.object({
-    plan: checkoutPlanSchema,
+    plan: planSchema,
     provider: paymentProviderSchema,
 });
 export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
@@ -42,15 +46,19 @@ export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
 /** Resultado del checkout: URL a la que redirige el front para pagar. */
 export const checkoutResultSchema = z.object({
     provider: paymentProviderSchema,
-    plan: checkoutPlanSchema,
+    plan: planSchema,
     url: z.string().url(),
     external_id: z.string(),
 });
 export type CheckoutResult = z.infer<typeof checkoutResultSchema>;
 
-/** Qué proveedores están habilitados (tienen credenciales) — para la UI. */
+/**
+ * Config de pagos para la UI: proveedores habilitados (con credenciales) +
+ * los planes vendibles self-serve con su precio. La lista es DINÁMICA (sale de
+ * la tabla `plans`): incluye los planes custom que el operador marque con precio.
+ */
 export const paymentConfigSchema = z.object({
     providers: z.array(paymentProviderSchema),
-    prices: z.record(checkoutPlanSchema, z.object({ usd: z.number(), cop: z.number() })),
+    plans: z.array(planPriceSchema),
 });
 export type PaymentConfig = z.infer<typeof paymentConfigSchema>;

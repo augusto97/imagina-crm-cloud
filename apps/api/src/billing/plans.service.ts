@@ -1,8 +1,10 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
     PLAN_LIMITS,
+    type Currency,
     type CreatePlanInput,
     type PlanLimits,
+    type PlanPrice,
     type PlatformPlan,
     type UpdatePlanInput,
 } from '@imagina-base/shared';
@@ -34,6 +36,8 @@ export class PlansService {
             max_records: r.maxRecords,
             max_users: r.maxUsers,
             max_automations: r.maxAutomations,
+            price_usd: r.priceUsd,
+            price_cop: r.priceCop,
             is_active: r.isActive,
             position: r.position,
         }));
@@ -63,6 +67,24 @@ export class PlansService {
         return (PLAN_LIMITS as Record<string, PlanLimits>)[slug] ?? UNLIMITED;
     }
 
+    /**
+     * Planes vendibles self-serve (activos y con precio en al menos una moneda),
+     * para el checkout (ADR-S12). La lista es dinámica: un plan custom aparece
+     * apenas el operador le pone precio.
+     */
+    async sellablePlans(): Promise<PlanPrice[]> {
+        return (await this.load()).list
+            .filter((p) => p.is_active && (p.price_usd !== null || p.price_cop !== null))
+            .map((p) => ({ slug: p.slug, name: p.name, usd: p.price_usd, cop: p.price_cop }));
+    }
+
+    /** Precio de un plan en una moneda, o `null` si no es vendible con ella. */
+    async priceFor(slug: string, currency: Currency): Promise<number | null> {
+        const plan = (await this.load()).list.find((p) => p.slug === slug);
+        if (!plan || !plan.is_active) return null;
+        return currency === 'USD' ? plan.price_usd : plan.price_cop;
+    }
+
     async create(input: CreatePlanInput): Promise<PlatformPlan> {
         const [dup] = await this.db.select({ slug: plans.slug }).from(plans).where(eq(plans.slug, input.slug)).limit(1);
         if (dup) {
@@ -75,6 +97,8 @@ export class PlansService {
             maxRecords: input.max_records,
             maxUsers: input.max_users,
             maxAutomations: input.max_automations,
+            priceUsd: input.price_usd,
+            priceCop: input.price_cop,
             isActive: input.is_active,
             position: (posRows[0]?.n ?? -1) + 1,
         });
@@ -88,6 +112,8 @@ export class PlansService {
         if (input.max_records !== undefined) changes.maxRecords = input.max_records;
         if (input.max_users !== undefined) changes.maxUsers = input.max_users;
         if (input.max_automations !== undefined) changes.maxAutomations = input.max_automations;
+        if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
+        if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;
         const res = await this.db.update(plans).set(changes).where(eq(plans.slug, slug)).returning();
         if (res.length === 0) {

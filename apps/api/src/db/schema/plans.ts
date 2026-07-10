@@ -10,6 +10,10 @@ export const plans = pgTable('plans', {
     maxRecords: integer('max_records'),
     maxUsers: integer('max_users'),
     maxAutomations: integer('max_automations'),
+    // Precio de checkout self-serve (ADR-S12). `null` = no vendible en esa moneda
+    // (enterprise = "contactar ventas"). Entero: USD sin centavos, COP sin decimales.
+    priceUsd: integer('price_usd'),
+    priceCop: integer('price_cop'),
     isActive: boolean('is_active').notNull().default(true),
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

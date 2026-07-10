@@ -271,8 +271,18 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         borrar un plan en uso se rechaza. Front: card "Planes" (edición inline de
         límites + alta/baja) y el select de plan de cada empresa se puebla
         dinámicamente. 4 tests + E2E en navegador (editar límite→persiste, crear
-        plan→aparece en el dropdown de la empresa). Pendiente: precios de
-        checkout por plan custom.
+        plan→aparece en el dropdown de la empresa).
+  - [x] **Precios de checkout por plan (ADR-S12 + ADR-S15 F3)**: los precios
+        dejan de estar cableados (sólo starter/pro) — viven en la tabla `plans`
+        (`price_usd`/`price_cop`, migración 0019, seed de los built-in). Un plan
+        **custom** se vende self-serve apenas el operador le pone precio. El
+        checkout resuelve el monto desde la DB (`PlansService.priceFor`) y
+        rechaza (`plan_not_sellable`) si el plan no tiene precio en la moneda del
+        proveedor; `config` expone la lista DINÁMICA de planes vendibles (por eso
+        `createCheckoutSchema.plan` pasó de enum a slug). Front: la card "Planes"
+        de la consola edita USD/COP por fila; el panel de Suscripción de la
+        empresa lista los planes con precio (y sólo el proveedor cuya moneda
+        aplica). 6 tests nuevos (unit del service + persistencia en la consola).
   - [x] **Consola de plataforma — Fase 4 (alta + detalle de empresa)**: el
         operador da de alta una empresa nueva + su admin en UN paso (`POST
         /platform/tenants`; si el email ya existe lo suma como admin, si no crea
