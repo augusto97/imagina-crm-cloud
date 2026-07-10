@@ -331,7 +331,7 @@ function InlineControl({
                     className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                 />
                 <span className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {Boolean(value) ? __('Sí') : __('No')}
+                    {value ? __('Sí') : __('No')}
                 </span>
             </label>
         );

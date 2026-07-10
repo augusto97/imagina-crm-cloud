@@ -118,6 +118,74 @@ describe('ImportService (Postgres real)', () => {
         expect(res.errors.map((e) => e.field).sort()).toEqual(['estado', 'monto']);
     });
 
+    // --- Import CSV en dos pasos (preview + run) ----------------------------
+
+    it('preview: cabeceras, muestra, sugerencia de mapping y tipos', async () => {
+        const csv = 'Nombre,Importe,Estado\nACME,1000,Activo\nGlobex,500,Activo\n';
+        const res = await importService.preview(tenantId, 'clientes', csv);
+        expect(res.headers).toEqual(['Nombre', 'Importe', 'Estado']);
+        expect(res.total_rows).toBe(2);
+        expect(res.sample).toHaveLength(2);
+        // "Nombre" matchea el campo nombre; "Estado" el select estado.
+        expect(res.suggested_mapping['0']).toBe('nombre');
+        expect(res.suggested_mapping['2']).toBe('estado');
+        expect(res.suggested_types['1']).toBe('number');
+        expect(res.fields.map((x) => x.slug)).toEqual(['nombre', 'monto', 'estado']);
+    });
+
+    it('run: importa resolviendo etiquetas de select y expandiendo opciones nuevas', async () => {
+        // "Activo" existe (label de la opción `activo`); "Vencido" no → se
+        // auto-añade como opción y las filas entran igual.
+        const csv = 'Nombre;Importe;Estado\nACME;1.000,50;Activo\nGlobex;500;Vencido\n';
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv,
+            mapping: { '0': 'nombre', '1': 'monto', '2': 'estado' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(2);
+        expect(res.errors).toHaveLength(0);
+        expect(res.expanded_options.estado).toEqual([{ value: 'vencido', label: 'Vencido' }]);
+
+        const page = await recordsService.list(tenantId, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        const acme = page.data.find((r) => r.data[`f${f.nombre!.id}`] === 'ACME')!;
+        expect(acme.data[`f${f.monto!.id}`]).toBe(1000.5); // "1.000,50" (ES) → number
+        const globex = page.data.find((r) => r.data[`f${f.nombre!.id}`] === 'Globex')!;
+        expect(globex.data[`f${f.estado!.id}`]).toBe('vencido'); // etiqueta → value
+    });
+
+    it('run: crea campos nuevos on-the-fly y reporta columnas sin mapping con datos', async () => {
+        const csv = 'Nombre,Email,Notas\nACME,a@x.com,algo importante\n';
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv,
+            mapping: { '0': 'nombre' },
+            new_fields: [{ csv_column_index: 1, label: 'Email', type: 'email' }],
+        });
+        expect(res.imported).toBe(1);
+        expect(res.created_fields).toEqual([{ slug: 'email', label: 'Email', type: 'email' }]);
+        // La columna "Notas" quedó sin mapping y tenía datos → visible.
+        expect(res.unmapped_columns_with_data).toMatchObject([
+            { column_index: 2, header: 'Notas', rows_with_data: 1 },
+        ]);
+        const page = await recordsService.list(tenantId, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        const created = await fieldsService.get(tenantId, 'clientes', 'email');
+        expect(page.data[0]!.data[`f${created.id}`]).toBe('a@x.com');
+    });
+
+    it('run: celdas con comillas/saltos de línea y filas inválidas reportadas', async () => {
+        const csv = 'Nombre,Importe\n"Linea1\nLinea2, S.A.",10\nMal,no-numero\n';
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv,
+            mapping: { '0': 'nombre', '1': 'monto' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(1);
+        expect(res.skipped).toBe(1);
+        expect(res.errors).toHaveLength(1);
+        expect(res.errors[0]!.row).toBe(3); // 1-indexed + header
+        const page = await recordsService.list(tenantId, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(page.data[0]!.data[`f${f.nombre!.id}`]).toBe('Linea1\nLinea2, S.A.');
+    });
+
     it('mapeo a un campo inexistente → 400', async () => {
         await expect(
             importService.importRows(tenantId, admin.userId, 'clientes', {

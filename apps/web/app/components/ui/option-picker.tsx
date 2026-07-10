@@ -320,7 +320,7 @@ export function OptionPicker({
                                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                             )}
                             <span className="imcrm-truncate">
-                                {__('Crear')} "<span className="imcrm-font-medium">{search.trim()}</span>"
+                                {__('Crear')} &ldquo;<span className="imcrm-font-medium">{search.trim()}</span>&rdquo;
                             </span>
                         </button>
                     </div>

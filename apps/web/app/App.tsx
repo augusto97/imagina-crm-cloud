@@ -4,7 +4,6 @@ import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
 import { SettingsPage as CloudSettingsPage } from '@/cloud/pages/SettingsPage';
-import { isCloud } from '@/lib/cloudFeatures';
 // Records views se cargan eagerly — son la pantalla home del SPA
 // y casi cualquier flujo aterriza ahí. Lazy-load las pantallas
 // secundarias (dashboards, automations, builder, settings) para que
@@ -29,7 +28,6 @@ const PortalTemplateEditorPage = lazyWithReload(() => import('@/admin/lists/port
 const AutomationsPage = lazyWithReload(() => import('@/admin/automations/AutomationsPage').then(m => ({ default: m.AutomationsPage })));
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
 const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const SettingsPage = lazyWithReload(() => import('@/admin/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
 
 /**
@@ -72,11 +70,7 @@ export function App(): JSX.Element {
                 <Route path="dashboards/:dashboardId" element={
                     <Suspense fallback={<RouteFallback />}><DashboardPage /></Suspense>
                 } />
-                <Route path="settings" element={
-                    isCloud()
-                        ? <CloudSettingsPage />
-                        : <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>
-                } />
+                <Route path="settings" element={<CloudSettingsPage />} />
                 <Route path="platform" element={
                     <Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense>
                 } />

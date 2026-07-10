@@ -16,12 +16,28 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { RealtimeService, tenantRoom } from './realtime.service';
 
 /**
+ * Orígenes permitidos para CORS del WebSocket. Por defecto NO se habilita
+ * CORS (el front se sirve same-origin, y en dev Vite proxya `/socket.io`),
+ * así ningún sitio ajeno puede abrir un socket con la cookie del usuario.
+ * Despliegues cross-origin legítimos: `WS_ALLOWED_ORIGINS=a.com,b.com`.
+ * (Antes: `origin: true` — reflejaba cualquier Origin con credenciales.)
+ */
+const wsAllowedOrigins = (process.env.WS_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+
+/**
  * Gateway de realtime. Autentica cada socket por la cookie de sesión (la
  * misma sesión opaca del HTTP), y sólo permite unirse a la room de un tenant
  * si el usuario tiene membership — así un socket jamás recibe eventos de un
  * workspace ajeno (defensa análoga a la RLS del lado HTTP).
  */
-@WebSocketGateway({ cors: { origin: true, credentials: true } })
+@WebSocketGateway(
+    wsAllowedOrigins.length > 0
+        ? { cors: { origin: wsAllowedOrigins, credentials: true } }
+        : {},
+)
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly logger = new Logger(RealtimeGateway.name);
 

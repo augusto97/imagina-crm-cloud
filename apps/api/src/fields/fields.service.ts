@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
     fieldSlugSchema,
+    jsonbKeyForField,
     parseFieldConfig,
     slugify,
     type CreateFieldInput,
@@ -16,7 +17,8 @@ import {
     type FieldType,
     type UpdateFieldInput,
 } from '@imagina-base/shared';
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { records } from '../db/schema';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -92,6 +94,55 @@ export class FieldsService {
             this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
         );
         return toField(row);
+    }
+
+    /**
+     * Valores distintos de un campo, ordenados por frecuencia desc — para el
+     * autocomplete de filtros y conditions de automatizaciones. Tipos con
+     * valor opaco/enumerado (select, checkbox, fechas, user, file, relation)
+     * devuelven `[]`: sus pickers ya conocen las opciones por otra vía.
+     * La clave JSONB se deriva del `field.id` numérico (whitelist implícita);
+     * el `search` viaja SIEMPRE como parámetro bindeado (regla de oro nº 4).
+     */
+    async distinctValues(
+        tenantId: number,
+        listIdOrSlug: string,
+        fieldIdOrSlug: string,
+        search: string,
+        limit: number,
+    ): Promise<Array<{ value: string; count: number }>> {
+        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
+        );
+        const field = toField(row);
+        if (NO_AUTOCOMPLETE_TYPES.has(field.type)) return [];
+
+        const key = jsonbKeyForField(field.id);
+        const value = sql<string>`${records.data} ->> ${key}`;
+        const cap = Math.min(Math.max(Math.trunc(limit) || 50, 1), 100);
+        const needle = search.trim() === '' ? null : `%${escapeLike(search.trim())}%`;
+
+        return this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ value, count: sql<number>`count(*)::int` })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, listId),
+                        isNull(records.deletedAt),
+                        sql`${records.data} ->> ${key} is not null`,
+                        sql`${records.data} ->> ${key} <> ''`,
+                        needle === null ? undefined : sql`${records.data} ->> ${key} ilike ${needle}`,
+                    ),
+                )
+                // Ordinales (`GROUP BY 1`): la clave llega como parámetro
+                // bindeado y Postgres no unifica dos placeholders idénticos.
+                .groupBy(sql`1`)
+                .orderBy(sql`2 desc, 1`)
+                .limit(cap),
+        );
     }
 
     async create(tenantId: number, listIdOrSlug: string, input: CreateFieldInput): Promise<Field> {
@@ -235,6 +286,27 @@ export class FieldsService {
         }
         throw new ConflictException('No se pudo generar un slug de campo disponible');
     }
+}
+
+/**
+ * Tipos SIN autocomplete de valores (paridad con el plugin): el valor es
+ * opaco (file, relation, user), booleano o enumerado por config (select).
+ */
+const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
+    'select',
+    'multi_select',
+    'checkbox',
+    'date',
+    'datetime',
+    'file',
+    'relation',
+    'user',
+    'computed',
+]);
+
+/** Escapa los metacaracteres de LIKE/ILIKE (`%`, `_`, `\`). */
+function escapeLike(s: string): string {
+    return s.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
 function toField(row: FieldRow): Field {

@@ -61,9 +61,15 @@ export function GlobalCommandPalette({
     const navigate = useNavigate();
     const lists = useLists();
     const dashboards = useDashboards();
-    const canSeeDashboards = useCan(CAP.MANAGE_DASHBOARDS) || useCan(CAP.ACCESS_ADMIN);
-    const canSeeAutomations = useCan(CAP.MANAGE_AUTOMATIONS) || useCan(CAP.ACCESS_ADMIN);
-    const canSeeSettings = useCan(CAP.MANAGE_LISTS) || useCan('manage_options');
+    // Cada hook se llama SIEMPRE (rules-of-hooks): nada de `useCan(a) || useCan(b)`,
+    // el cortocircuito saltearía el segundo hook y rompería el orden de render.
+    const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
+    const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
+    const canManageLists = useCan(CAP.MANAGE_LISTS);
+    const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
+    const canSeeDashboards = canManageDashboards || canAccessAdmin;
+    const canSeeAutomations = canManageAutomations || canAccessAdmin;
+    const canSeeSettings = canManageLists || canAccessAdmin;
 
     const [query, setQuery] = useState('');
     const [activeIndex, setActiveIndex] = useState(0);
@@ -133,7 +139,7 @@ export function GlobalCommandPalette({
         if (canSeeSettings) {
             cmds.push({
                 id: 'settings',
-                label: __('Ajustes del plugin'),
+                label: __('Ajustes'),
                 icon: Settings,
                 section: __('Navegar'),
                 keywords: 'settings preferences config',

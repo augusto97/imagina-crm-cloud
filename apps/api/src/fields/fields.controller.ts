@@ -7,6 +7,7 @@ import {
     Param,
     Patch,
     Post,
+    Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
@@ -39,6 +40,25 @@ export class FieldsController {
     @Get()
     all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Field[] }> {
         return this.fields.list(tenantId(req), list).then((data) => ({ data }));
+    }
+
+    /**
+     * Valores distintos de un campo (autocomplete de filtros/conditions).
+     * Expone datos de records → exige `view_records` (los usuarios con scope
+     * "solo los míos" no ven valores del resto).
+     */
+    @Get(':field/values')
+    @RequireCapability('view_records')
+    values(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('field') field: string,
+        @Query('search') search?: string,
+        @Query('limit') limit?: string,
+    ): Promise<{ data: Array<{ value: string; count: number }> }> {
+        return this.fields
+            .distinctValues(tenantId(req), list, field, search ?? '', Number(limit ?? 50))
+            .then((data) => ({ data }));
     }
 
     @Get(':field')

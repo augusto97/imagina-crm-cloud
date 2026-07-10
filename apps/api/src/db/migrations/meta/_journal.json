@@ -155,6 +155,13 @@
       "when": 1783745000000,
       "tag": "0021_tenant_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783750000000,
+      "tag": "0022_email_signature",
+      "breakpoints": true
     }
   ]
 }

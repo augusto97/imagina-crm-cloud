@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
+import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
@@ -61,6 +62,8 @@ export function SettingsPage(): JSX.Element {
             {billing.data && <BillingCard summary={billing.data} />}
             {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
             {isAdmin && <MembersPanel />}
+            {/* Per-usuario: firma insertable en emails de automatizaciones. */}
+            <EmailSignatureCard />
             {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
             <SmtpSettingsPanel />
             <SystemUpdatesPanel />

@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { isCloud } from '@/lib/cloudFeatures';
+
 /**
  * Resuelve un set de attachment IDs a sus URLs (full + thumbnail).
  * Hace un único request batch al endpoint nativo de WP
@@ -29,7 +31,8 @@ export function useAttachments(ids: number[]) {
     return useQuery({
         queryKey: ['imcrm', 'attachments', dedupedIds],
         queryFn: async (): Promise<Map<number, ResolvedAttachment>> => {
-            if (dedupedIds.length === 0) return new Map();
+            // En la nube no existe la media library de WP — nunca fetchear.
+            if (isCloud() || dedupedIds.length === 0) return new Map();
             const root = (window as { wpApiSettings?: { root: string; nonce: string } }).wpApiSettings;
             const headers: Record<string, string> = { Accept: 'application/json' };
             if (root?.nonce) headers['X-WP-Nonce'] = root.nonce;
@@ -58,7 +61,7 @@ export function useAttachments(ids: number[]) {
             }
             return map;
         },
-        enabled: dedupedIds.length > 0,
+        enabled: dedupedIds.length > 0 && !isCloud(),
         staleTime: 5 * 60 * 1000, // 5 min — los media de WP rara vez cambian de URL.
     });
 }

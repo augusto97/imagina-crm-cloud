@@ -15,6 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { isCloud } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import type { ResolvedV2Block } from '@/lib/crmTemplates';
 import type { FieldEntity } from '@/types/field';
@@ -33,11 +34,18 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
     const { fileFields, title } = block.config;
 
     const items = useMemo(() => {
-        const out: Array<{ field: FieldEntity; attachmentId: number }> = [];
+        const out: Array<{ field: FieldEntity; value: string | number }> = [];
         for (const f of fileFields) {
             const v = record.fields[f.slug];
+            if (isCloud()) {
+                // En la nube no hay media library de WP: mostramos el valor
+                // crudo (URL o texto/id) sin fetch.
+                if (typeof v === 'string' && v.trim() !== '') out.push({ field: f, value: v });
+                else if (typeof v === 'number' && v > 0) out.push({ field: f, value: v });
+                continue;
+            }
             const id = typeof v === 'number' ? v : Number(v ?? 0);
-            if (id > 0) out.push({ field: f, attachmentId: id });
+            if (id > 0) out.push({ field: f, value: id });
         }
         return out;
     }, [fileFields, record]);
@@ -50,12 +58,59 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
                 <Empty>{__('Sin archivos vinculados a este registro.')}</Empty>
             ) : (
                 <ul className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                    {items.map(({ field, attachmentId }) => (
-                        <FileItem key={field.id} field={field} attachmentId={attachmentId} />
-                    ))}
+                    {items.map(({ field, value }) =>
+                        isCloud() || typeof value === 'string' ? (
+                            <CloudFileItem key={field.id} field={field} value={value} />
+                        ) : (
+                            <FileItem key={field.id} field={field} attachmentId={value} />
+                        ),
+                    )}
                 </ul>
             )}
         </Card>
+    );
+}
+
+/**
+ * Variante cloud: no hay media library de WP, así que se renderea el
+ * valor crudo del field — link si es una URL http(s), texto plano si no.
+ */
+function CloudFileItem({
+    field,
+    value,
+}: {
+    field: FieldEntity;
+    value: string | number;
+}): JSX.Element {
+    const href = typeof value === 'string' && /^https?:\/\//i.test(value.trim())
+        ? value.trim()
+        : null;
+    const text = String(value);
+    return (
+        <li className="imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-p-2">
+                <div className="imcrm-flex imcrm-h-16 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-bg-card">
+                    <FileText className="imcrm-h-6 imcrm-w-6 imcrm-text-muted-foreground" aria-hidden />
+                </div>
+                <span className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                    {field.label}
+                </span>
+                {href !== null ? (
+                    <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="imcrm-truncate imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                    >
+                        {text}
+                    </a>
+                ) : (
+                    <span className="imcrm-truncate imcrm-text-xs imcrm-font-medium">
+                        {text}
+                    </span>
+                )}
+            </div>
+        </li>
     );
 }
 

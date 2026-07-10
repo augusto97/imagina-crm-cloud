@@ -1,39 +1,42 @@
-import {
-    __ as wpI18n__,
-    _n as wpI18n_n,
-    _x as wpI18n_x,
-    sprintf as wpI18nSprintf,
-} from '@wordpress/i18n';
-
 /**
- * Wrapper de `@wordpress/i18n` con el text-domain del plugin pre-aplicado.
+ * i18n propio de Imagina Base (sin dependencias de WordPress).
  *
- * Las llamadas al wrapper son bloqueantes y sincrónicas. Si WordPress aún
- * no ha cargado las traducciones para el handle del bundle (vía
- * `wp_set_script_translations`), `__()` devuelve el string fuente
- * (español) sin error.
+ * Herencia: el fork del plugin usaba `@wordpress/i18n` + text-domain, pero en
+ * la nube nunca se cargan catálogos de traducción (no hay
+ * `wp_set_script_translations`), así que `__()` siempre devolvía el string
+ * fuente. Este módulo reproduce esa semántica con cero dependencias:
+ *  - `__(text)` / `_x(text, context)` → identidad (el fuente ya está en español).
+ *  - `_n(single, plural, count)`      → singular si count === 1, si no plural.
+ *  - `sprintf(fmt, ...args)`          → estilo printf: %s %d %f, posicionales
+ *    (%1$s) y %% literal — lo que usa el código heredado.
  *
- * Usar siempre como:
- *
- *     import { __ } from '@/lib/i18n';
- *     __('Nuevo registro');
- *
- * No usar `@wordpress/i18n` directamente — perderías la consistencia del
- * domain y dificulta el extract de strings con `wp i18n make-pot`.
+ * Usar siempre como `import { __ } from '@/lib/i18n'`. Si algún día se agregan
+ * idiomas, este módulo es el único punto a tocar.
  */
 
-export const TEXT_DOMAIN = 'imagina-crm';
-
 export function __(text: string): string {
-    return wpI18n__(text, TEXT_DOMAIN);
+    return text;
 }
 
-export function _x(text: string, context: string): string {
-    return wpI18n_x(text, context, TEXT_DOMAIN);
+export function _x(text: string, _context: string): string {
+    return text;
 }
 
 export function _n(single: string, plural: string, count: number): string {
-    return wpI18n_n(single, plural, count, TEXT_DOMAIN);
+    return count === 1 ? single : plural;
 }
 
-export const sprintf = wpI18nSprintf;
+const SPEC = /%(\d+\$)?([sdf%])/g;
+
+export function sprintf(format: string, ...args: Array<string | number>): string {
+    let auto = 0;
+    return format.replace(SPEC, (_m, pos: string | undefined, kind: string) => {
+        if (kind === '%') return '%';
+        const index = pos !== undefined ? Number(pos.slice(0, -1)) - 1 : auto++;
+        const value = args[index];
+        if (value === undefined) return '';
+        if (kind === 'd') return String(Math.trunc(Number(value)));
+        if (kind === 'f') return String(Number(value));
+        return String(value);
+    });
+}

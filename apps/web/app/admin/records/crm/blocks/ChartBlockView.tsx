@@ -28,16 +28,12 @@ interface ChartBlockViewProps {
 export function ChartBlockView({ block, record }: ChartBlockViewProps): JSX.Element {
     const { relationField, groupByFieldSlug, title } = block.config;
 
-    if (! relationField) {
-        return (
-            <Card title={title ?? __('Gráfico')}>
-                <Empty>{__('Configurá el bloque: elegí un relation field.')}</Empty>
-            </Card>
-        );
-    }
-
-    const targetListId = (relationField.config as { target_list_id?: number }).target_list_id ?? 0;
-    const ids = record.relations?.[relationField.slug] ?? [];
+    // Todos los hooks se llaman SIEMPRE, antes de cualquier early-return
+    // (rules-of-hooks); sin relationField pasan ids/lista vacíos y no fetchean.
+    const targetListId = relationField
+        ? ((relationField.config as { target_list_id?: number }).target_list_id ?? 0)
+        : 0;
+    const ids = relationField ? (record.relations?.[relationField.slug] ?? []) : [];
     const targetFields = useFields(targetListId > 0 ? targetListId : undefined);
     const records = useRecords(
         ids.length > 0 && targetListId > 0 ? targetListId : undefined,
@@ -53,6 +49,14 @@ export function ChartBlockView({ block, record }: ChartBlockViewProps): JSX.Elem
         if (! records.data || ! groupByField) return null;
         return aggregateByField(records.data.data, groupByField);
     }, [records.data, groupByField]);
+
+    if (! relationField) {
+        return (
+            <Card title={title ?? __('Gráfico')}>
+                <Empty>{__('Configurá el bloque: elegí un relation field.')}</Empty>
+            </Card>
+        );
+    }
 
     if (targetListId === 0) {
         return (

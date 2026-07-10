@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { App } from '@/App';
 import { activeMembership, api as cloudApi, useSession } from '@/cloud/session';
 import { hydrateAdminBoot } from '@/cloud/adminBoot';
+import { useRealtime } from '@/cloud/useRealtime';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 
 /**
@@ -32,6 +33,9 @@ export function AdminCloudApp(): JSX.Element {
     const setSession = useSession((s) => s.setSession);
     const markReady = useSession((s) => s.markReady);
     const [booted, setBooted] = useState(false);
+
+    // Invalidación push del workspace activo (no-op hasta tener sesión+tenant).
+    useRealtime();
 
     const me = useQuery({ queryKey: ['me'], queryFn: () => cloudApi.me(), retry: false });
 
