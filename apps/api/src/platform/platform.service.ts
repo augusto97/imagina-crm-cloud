@@ -1,14 +1,17 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import {
     BILLING_STATUSES,
     isReadOnly,
-    PLANS,
     type BillingStatus,
+    type CreatePlanInput,
     type Plan,
     type PlatformOwner,
+    type PlatformPlan,
     type PlatformStats,
     type PlatformTenant,
     type PlatformUser,
+    type UpdatePlanInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
 import { desc, eq, isNull, sql } from 'drizzle-orm';
@@ -17,6 +20,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { automations, memberships, records, tenants, users } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
+import { PlansService } from '../billing/plans.service';
 
 /**
  * Consola de plataforma (operador SaaS). Corre sobre la conexión BASE (rol
@@ -32,6 +36,7 @@ export class PlatformService {
         @Inject(ENV) private readonly env: Env,
         private readonly billing: BillingService,
         private readonly auth: AuthService,
+        private readonly plans: PlansService,
     ) {}
 
     /** Todas las empresas con plan/estado/uso/owner (para la grilla del operador). */
@@ -87,19 +92,40 @@ export class PlatformService {
 
     /** Cambia plan y/o estado (suspender = past_due/canceled → solo-lectura). */
     async updateTenant(id: number, input: UpdateTenantInput): Promise<PlatformTenant> {
+        // El plan debe existir en la tabla de planes (evita asignar un slug inválido).
+        if (input.plan !== undefined && !(await this.plans.exists(input.plan))) {
+            throw new BadRequestException({ code: 'unknown_plan', message: `El plan '${input.plan}' no existe`, data: { status: 400, errors: { plan: 'No existe' } } });
+        }
         // Reusa el mismo camino que el webhook de pago (BillingService.setBilling).
         await this.billing.setBilling(id, { plan: input.plan, status: input.status });
         return this.getTenant(id);
     }
 
+    // ─────────────────────────── Planes (F3) ───────────────────────────
+
+    listPlans(): Promise<PlatformPlan[]> {
+        return this.plans.list();
+    }
+    createPlan(input: CreatePlanInput): Promise<PlatformPlan> {
+        return this.plans.create(input);
+    }
+    updatePlan(slug: string, input: UpdatePlanInput): Promise<PlatformPlan> {
+        return this.plans.update(slug, input);
+    }
+    removePlan(slug: string): Promise<void> {
+        return this.plans.remove(slug);
+    }
+
     /** Foto del negocio para el dashboard del operador. */
     async getStats(): Promise<PlatformStats> {
-        const rows = await this.db
-            .select({ plan: tenants.plan, status: tenants.status, createdAt: tenants.createdAt })
-            .from(tenants);
+        const [rows, planList] = await Promise.all([
+            this.db.select({ plan: tenants.plan, status: tenants.status, createdAt: tenants.createdAt }).from(tenants),
+            this.plans.list(),
+        ]);
 
         const by_status = Object.fromEntries(BILLING_STATUSES.map((s) => [s, 0])) as Record<BillingStatus, number>;
-        const by_plan = Object.fromEntries(PLANS.map((p) => [p, 0])) as Record<Plan, number>;
+        // Inicializa por cada plan existente (así aparecen en 0 aunque nadie los use).
+        const by_plan: Record<string, number> = Object.fromEntries(planList.map((p) => [p.slug, 0]));
         let read_only_tenants = 0;
         let signups_last_30d = 0;
         const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -108,7 +134,7 @@ export class PlatformService {
             const status = (r.status ?? 'trialing') as BillingStatus;
             const plan = (r.plan ?? 'trial') as Plan;
             if (status in by_status) by_status[status] += 1;
-            if (plan in by_plan) by_plan[plan] += 1;
+            by_plan[plan] = (by_plan[plan] ?? 0) + 1;
             if (isReadOnly(status)) read_only_tenants += 1;
             if (r.createdAt >= cutoff) signups_last_30d += 1;
         }

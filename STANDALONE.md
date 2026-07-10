@@ -526,10 +526,21 @@ reset), `PATCH /platform/users/:id` (desactivar/reactivar) y
 `POST /platform/users/:id/reset-password`. La **desactivación** (`users.disabled_at`)
 bloquea el login (403 `account_disabled`) y **revoca todas las sesiones** del
 usuario al instante (índice inverso `usess:{userId}` en Redis). Guard rail: no se
-puede desactivar a un superadmin de plataforma. Pendiente: planes editables en DB
-y detalle/impersonación de empresa.
+puede desactivar a un superadmin de plataforma.
+
+**Fase 3 — planes editables en DB.** Los planes dejan de ser una constante y
+viven en la tabla `plans` (slug, nombre, límites nullable, activo), editable por
+el operador. El `plan` de un tenant pasa a ser un **slug dinámico** (`planSchema`
+= string; los 4 built-in quedan como semilla + fallback en `PLAN_LIMITS`).
+`PlansService` (en billing, @Global) sirve los límites con **cache de 30s** para
+no pegarle a la DB en el hot path (`assertCanCreateRecord`) y `BillingService`
+los consume de ahí. Endpoints `GET/POST /platform/plans` y
+`PATCH/DELETE /platform/plans/:slug`; `updateTenant` valida que el plan exista;
+borrar un plan en uso se rechaza. Front: card "Planes" con edición inline de
+límites + alta/baja, y el select de plan de cada empresa se puebla dinámicamente.
+Pendiente: precios de checkout por plan custom y detalle/impersonación de empresa.
 
 ---
 
 **Última actualización:** 2026-07-10
-**Versión del documento:** 1.6.0 (consola de plataforma/operador — ADR-S15)
+**Versión del documento:** 1.7.0 (consola de plataforma F1-F3: clientes/usuarios/planes — ADR-S15)

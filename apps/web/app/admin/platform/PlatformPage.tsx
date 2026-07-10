@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { Building2, Loader2, ShieldAlert } from 'lucide-react';
 import {
     BILLING_STATUSES,
-    PLANS,
     type BillingStatus,
     type Plan,
     type PlatformTenant,
@@ -15,18 +14,17 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { usePlatformStats, usePlatformTenants, useUpdateTenant } from '@/hooks/usePlatform';
+import {
+    usePlatformPlans,
+    usePlatformStats,
+    usePlatformTenants,
+    useUpdateTenant,
+} from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
-
-const PLAN_LABEL: Record<Plan, string> = {
-    trial: __('Trial'),
-    starter: __('Starter'),
-    pro: __('Pro'),
-    enterprise: __('Enterprise'),
-};
 
 const STATUS_LABEL: Record<BillingStatus, string> = {
     trialing: __('En prueba'),
@@ -50,6 +48,7 @@ const STATUS_TONE: Record<BillingStatus, string> = {
 export function PlatformPage(): JSX.Element {
     const stats = usePlatformStats();
     const tenants = usePlatformTenants();
+    const plans = usePlatformPlans();
     const update = useUpdateTenant();
 
     const cards = useMemo(() => {
@@ -165,9 +164,13 @@ export function PlatformPage(): JSX.Element {
                                                     onChange={(e) => setPlan(t, e.target.value as Plan)}
                                                     aria-label={`${__('Plan de')} ${t.name}`}
                                                 >
-                                                    {PLANS.map((p) => (
-                                                        <option key={p} value={p}>{PLAN_LABEL[p]}</option>
+                                                    {(plans.data ?? []).map((p) => (
+                                                        <option key={p.slug} value={p.slug}>{p.name}</option>
                                                     ))}
+                                                    {/* Si el plan actual ya no existe en la lista, lo mostramos igual. */}
+                                                    {!(plans.data ?? []).some((p) => p.slug === t.plan) && (
+                                                        <option value={t.plan}>{t.plan}</option>
+                                                    )}
                                                 </select>
                                             </td>
                                             <td className="imcrm-px-2 imcrm-py-3">
@@ -214,6 +217,9 @@ export function PlatformPage(): JSX.Element {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Planes */}
+            <PlatformPlansCard />
 
             {/* Usuarios de la plataforma */}
             <PlatformUsersCard />

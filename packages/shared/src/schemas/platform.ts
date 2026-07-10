@@ -81,6 +81,57 @@ export const updatePlatformUserSchema = z.object({
 });
 export type UpdatePlatformUserInput = z.infer<typeof updatePlatformUserSchema>;
 
+// ─────────────────────────── Planes (F3) ───────────────────────────
+
+/** Un plan editable por el operador. `null` en un límite = ilimitado. */
+export const platformPlanSchema = z.object({
+    slug: z.string(),
+    name: z.string(),
+    max_records: z.number().int().nullable(),
+    max_users: z.number().int().nullable(),
+    max_automations: z.number().int().nullable(),
+    is_active: z.boolean(),
+    position: z.number().int(),
+});
+export type PlatformPlan = z.infer<typeof platformPlanSchema>;
+
+export interface PlatformPlansResponse {
+    data: PlatformPlan[];
+}
+
+/** Slug de plan: minúsculas/números/guion-bajo (URL-safe, estable). */
+export const planSlugSchema = z
+    .string()
+    .trim()
+    .min(1)
+    .max(32)
+    .regex(/^[a-z0-9_]+$/, 'Sólo minúsculas, números y guion bajo');
+
+const nullableLimit = z.number().int().nonnegative().nullable();
+
+/** Alta de un plan nuevo. */
+export const createPlanSchema = z.object({
+    slug: planSlugSchema,
+    name: z.string().trim().min(1).max(60),
+    max_records: nullableLimit.default(null),
+    max_users: nullableLimit.default(null),
+    max_automations: nullableLimit.default(null),
+    is_active: z.boolean().default(true),
+});
+export type CreatePlanInput = z.infer<typeof createPlanSchema>;
+
+/** Edición de un plan (nombre / límites / activo). El slug no cambia. */
+export const updatePlanSchema = z
+    .object({
+        name: z.string().trim().min(1).max(60),
+        max_records: nullableLimit,
+        max_users: nullableLimit,
+        max_automations: nullableLimit,
+        is_active: z.boolean(),
+    })
+    .partial();
+export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
+
 /** Dashboard del operador: la foto de todo el negocio. */
 export interface PlatformStats {
     tenants_total: number;

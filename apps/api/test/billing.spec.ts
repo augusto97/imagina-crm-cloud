@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { isReadOnly } from '@imagina-base/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BillingService } from '../src/billing/billing.service';
+import { PlansService } from '../src/billing/plans.service';
 import { memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -23,7 +24,7 @@ describe('BillingService (Postgres real)', () => {
         pg = await startPostgres();
         tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
-        billing = new BillingService(tenantDb);
+        billing = new BillingService(tenantDb, new PlansService(pg.db));
     });
 
     afterAll(async () => {

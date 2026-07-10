@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fields, lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { BillingService } from '../src/billing/billing.service';
+import { PlansService } from '../src/billing/plans.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { ImportService } from '../src/import/import.service';
@@ -51,7 +52,7 @@ describe('ImportService (Postgres real)', () => {
             listsService,
             fieldsService,
             new RecordsRepository(),
-            new BillingService(tenantDb),
+            new BillingService(tenantDb, new PlansService(pg.db)),
             rt,
         );
 
