@@ -8,9 +8,12 @@ import {
     type PlatformOwner,
     type PlatformStats,
     type PlatformTenant,
+    type PlatformUser,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
 import { desc, eq, isNull, sql } from 'drizzle-orm';
+import { AuthService } from '../auth/auth.service';
+import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { automations, memberships, records, tenants, users } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
@@ -26,7 +29,9 @@ import { BillingService } from '../billing/billing.service';
 export class PlatformService {
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
+        @Inject(ENV) private readonly env: Env,
         private readonly billing: BillingService,
+        private readonly auth: AuthService,
     ) {}
 
     /** Todas las empresas con plan/estado/uso/owner (para la grilla del operador). */
@@ -119,6 +124,68 @@ export class PlatformService {
             users_total: u?.n ?? 0,
             records_total: rec?.n ?? 0,
             signups_last_30d,
+        };
+    }
+
+    // ─────────────────────────── Usuarios (F2) ───────────────────────────
+
+    /** Todos los usuarios de la plataforma con nº de workspaces + flags. */
+    async listUsers(): Promise<PlatformUser[]> {
+        const rows = await this.db
+            .select({
+                id: users.id,
+                email: users.email,
+                name: users.name,
+                createdAt: users.createdAt,
+                disabledAt: users.disabledAt,
+            })
+            .from(users)
+            .orderBy(desc(users.createdAt));
+        const counts = await this.countByTenant(
+            this.db.select({ tid: memberships.userId, n: intCount() }).from(memberships).groupBy(memberships.userId),
+        );
+        const superset = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        return rows.map((u) => this.toUser(u, counts.get(u.id) ?? 0, superset));
+    }
+
+    /** Crea la cuenta + envía email de invitación (link para definir contraseña). */
+    async createUser(email: string, name: string): Promise<PlatformUser> {
+        const user = await this.auth.adminCreateUser(email, name);
+        const superset = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        return this.toUser(user, 0, superset);
+    }
+
+    /** Desactiva/reactiva (al desactivar, revoca sesiones). Devuelve el usuario. */
+    async setUserDisabled(userId: number, disabled: boolean): Promise<PlatformUser> {
+        await this.auth.setUserDisabled(userId, disabled);
+        const [u] = await this.db
+            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        const [c] = await this.db.select({ n: intCount() }).from(memberships).where(eq(memberships.userId, userId));
+        const superset = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        return this.toUser(u!, c?.n ?? 0, superset);
+    }
+
+    /** Dispara el email de reset de contraseña de un usuario. */
+    async resetUserPassword(userId: number): Promise<void> {
+        await this.auth.adminResetPassword(userId);
+    }
+
+    private toUser(
+        u: { id: number; email: string; name: string; createdAt: Date; disabledAt: Date | null },
+        workspaces: number,
+        superset: Set<string>,
+    ): PlatformUser {
+        return {
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            created_at: u.createdAt.toISOString(),
+            disabled: u.disabledAt != null,
+            is_superadmin: superset.has(u.email.toLowerCase()),
+            workspaces,
         };
     }
 

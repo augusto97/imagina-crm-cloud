@@ -1,31 +1,57 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { AuthService } from '../src/auth/auth.service';
+import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
+import { loadEnv } from '../src/config/env';
 import { automations, fields, lists as listsTable, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
+import { MailService } from '../src/mail/mail.service';
 import { PlatformService } from '../src/platform/platform.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
-import { startPostgres, type TestPg } from './helpers/containers';
+import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 
 const rt = new RealtimeService();
+const SUPERADMIN = 'boss@platform.test';
 
 describe('PlatformService (consola de operador, cross-tenant)', () => {
     let pg: TestPg;
+    let redisBox: TestRedis;
+    let redis: Redis;
     let lists: ListsService;
     let platform: PlatformService;
+    let auth: AuthService;
+    let sessions: SessionService;
+    const sentMail: Array<{ to: string; subject: string }> = [];
 
     beforeAll(async () => {
-        pg = await startPostgres();
+        [pg, redisBox] = await Promise.all([startPostgres(), startRedis()]);
+        redis = new Redis(redisBox.url);
+        const env = loadEnv({
+            REDIS_URL: redisBox.url,
+            DATABASE_URL: pg.container.getConnectionUri(),
+            PLATFORM_SUPERADMINS: SUPERADMIN,
+        });
         const tenantDb = new TenantDb(pg.db);
+        sessions = new SessionService(redis, env);
+        const mail = new MailService(env, {
+            name: 'test',
+            send: async (m) => {
+                sentMail.push({ to: m.to, subject: m.subject });
+            },
+        });
+        auth = new AuthService(pg.db, redis, env, mail, sessions);
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
-        platform = new PlatformService(pg.db, new BillingService(tenantDb));
+        platform = new PlatformService(pg.db, env, new BillingService(tenantDb), auth);
     });
 
     afterAll(async () => {
-        await pg?.stop();
+        await redis?.quit();
+        await Promise.all([pg?.stop(), redisBox?.stop()]);
     });
 
     let seq = 0;
@@ -131,5 +157,62 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('getTenant: 404 si no existe', async () => {
         await expect(platform.getTenant(999999)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // ─────────────────────────── Usuarios (F2) ───────────────────────────
+
+    it('createUser: crea la cuenta, envía invitación y aparece en listUsers', async () => {
+        sentMail.length = 0;
+        const u = await platform.createUser('nuevo@cliente.test', 'Nuevo Cliente');
+        expect(u).toMatchObject({ email: 'nuevo@cliente.test', name: 'Nuevo Cliente', disabled: false, is_superadmin: false, workspaces: 0 });
+        expect(sentMail.some((m) => m.to === 'nuevo@cliente.test' && /crearon una cuenta/i.test(m.subject))).toBe(true);
+
+        const all = await platform.listUsers();
+        expect(all.find((x) => x.id === u.id)).toBeTruthy();
+    });
+
+    it('createUser: email duplicado → 409', async () => {
+        await platform.createUser('dup@cliente.test', 'Dup');
+        await expect(platform.createUser('dup@cliente.test', 'Dup2')).rejects.toThrow();
+    });
+
+    it('createUser: no permite crear con email de superadmin (reservado)', async () => {
+        await expect(platform.createUser(SUPERADMIN, 'Boss')).rejects.toThrow();
+    });
+
+    it('listUsers: marca is_superadmin al email de la allowlist', async () => {
+        await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' });
+        const all = await platform.listUsers();
+        const boss = all.find((x) => x.email === SUPERADMIN);
+        expect(boss?.is_superadmin).toBe(true);
+    });
+
+    it('desactivar: bloquea el login y revoca las sesiones activas', async () => {
+        const session = await auth.register({ email: 'act@cliente.test', password: 'password123', name: 'Act', workspace_name: 'ActWS' });
+        expect(await sessions.get(session.token as string)).toBeTruthy();
+
+        const u = await platform.setUserDisabled(session.user.id, true);
+        expect(u.disabled).toBe(true);
+        // Sesión revocada de inmediato.
+        expect(await sessions.get(session.token as string)).toBeNull();
+        // Login bloqueado aunque la contraseña sea correcta.
+        await expect(auth.login({ email: 'act@cliente.test', password: 'password123' })).rejects.toBeInstanceOf(ForbiddenException);
+
+        // Reactivar → login OK de nuevo.
+        await platform.setUserDisabled(session.user.id, false);
+        const relog = await auth.login({ email: 'act@cliente.test', password: 'password123' });
+        expect(relog.token).toBeTruthy();
+    });
+
+    it('no se puede desactivar a un superadmin de plataforma', async () => {
+        const [boss] = await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' }).returning();
+        await expect(platform.setUserDisabled(boss!.id, true)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('resetUserPassword: dispara el email de reset', async () => {
+        const [u] = await pg.db.insert(users).values({ email: 'reset@cliente.test', passwordHash: 'x', name: 'R' }).returning();
+        sentMail.length = 0;
+        await platform.resetUserPassword(u!.id);
+        expect(sentMail.some((m) => m.to === 'reset@cliente.test' && /restablecer/i.test(m.subject))).toBe(true);
     });
 });
