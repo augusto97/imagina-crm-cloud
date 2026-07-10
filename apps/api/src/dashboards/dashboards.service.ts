@@ -104,7 +104,24 @@ export class DashboardsService {
         const dash = await this.get(tenantId, dashboardId);
         const widget = dash.widgets.find((w) => w.id === widgetId);
         if (!widget) throw new NotFoundException({ code: 'widget_not_found', message: 'Widget no encontrado', data: { status: 404 } });
+        return this.computeWidget(tenantId, widget);
+    }
 
+    /**
+     * Evalúa TODOS los widgets del dashboard en UN request (PERF-03). Resuelve
+     * el dashboard una sola vez (antes cada widget lo re-resolvía: N GETs × varias
+     * queries). Devuelve `{ [widgetId]: data }`. El front lo comparte entre los
+     * widgets vía un único queryKey → una sola llamada HTTP para todo el tablero.
+     */
+    async widgetsData(tenantId: number, dashboardId: number): Promise<Record<string, unknown>> {
+        const dash = await this.get(tenantId, dashboardId);
+        const entries = await Promise.all(
+            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, w)] as const),
+        );
+        return Object.fromEntries(entries);
+    }
+
+    private async computeWidget(tenantId: number, widget: WidgetSpec): Promise<unknown> {
         const cfg = widget.config as Record<string, unknown>;
         const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);

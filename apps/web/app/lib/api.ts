@@ -269,6 +269,12 @@ async function normalizeCloudResponse<T>(path: string, payload: unknown): Promis
         return { data: payload as T };
     }
 
+    // Bundle de widgets (PERF-03): `{ [widgetId]: WidgetData }`. Igual que el
+    // single-widget, se devuelve tal cual (cada WidgetData chart tiene su `.data`).
+    if (/\/widgets\/data$/.test(path)) {
+        return { data: payload as T };
+    }
+
     // Endpoint de fields: cacheamos el mapa de la lista (lo usan los records).
     if (/\/lists\/[^/]+\/fields$/.test(path)) {
         const listKey = listKeyFromPath(path);
