@@ -62,6 +62,17 @@ export class DashboardsController {
         return this.dashboards.widgetData(tenantId(req), id, widgetId);
     }
 
+    /** Bundle: evalúa TODOS los widgets del dashboard en un request (PERF-03). */
+    @Post(':id/widgets/data')
+    @HttpCode(200)
+    @RequireCapability('access_admin')
+    widgetsData(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<Record<string, unknown>> {
+        return this.dashboards.widgetsData(tenantId(req), id);
+    }
+
     @Post()
     @HttpCode(201)
     @RequireCapability('manage_dashboards')

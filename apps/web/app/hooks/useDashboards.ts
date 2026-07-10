@@ -13,6 +13,9 @@ export const dashboardsKeys = {
     one: (id: string | number) => [...dashboardsKeys.all, 'one', String(id)] as const,
     widgetData: (dashboardId: string | number, widgetId: string) =>
         [...dashboardsKeys.all, 'widget-data', String(dashboardId), widgetId] as const,
+    /** PERF-03: key ÚNICA por dashboard para el bundle de todos los widgets. */
+    widgetsData: (dashboardId: string | number) =>
+        [...dashboardsKeys.all, 'widgets-data', String(dashboardId)] as const,
 };
 
 export function useDashboards() {
@@ -77,12 +80,19 @@ export function useDeleteDashboard() {
     });
 }
 
+/**
+ * Datos de UN widget. Comparte el queryKey del bundle (`widgetsData`) con los
+ * demás widgets → TanStack Query dedupe la request (UNA sola llamada HTTP por
+ * tablero) y `select` entrega a cada widget su propio dato. El shape de retorno
+ * es el mismo UseQueryResult<WidgetData> de antes (PERF-03).
+ */
 export function useWidgetData(dashboardId: number | undefined, widgetId: string | undefined) {
     return useQuery({
-        queryKey: dashboardsKeys.widgetData(dashboardId ?? 0, widgetId ?? ''),
+        queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0),
         queryFn: async () => {
-            const res = await api.get<WidgetData>(
-                `/dashboards/${dashboardId}/widgets/${widgetId}/data`,
+            const res = await api.post<Record<string, WidgetData>>(
+                `/dashboards/${dashboardId}/widgets/data`,
+                {},
             );
             return res.data;
         },
@@ -91,9 +101,8 @@ export function useWidgetData(dashboardId: number | undefined, widgetId: string 
             dashboardId > 0 &&
             widgetId !== undefined &&
             widgetId !== '',
-        // Recargas frecuentes son OK aquí — el evaluator es un par de
-        // queries agregadas. 30s de stale para no martillar el back en
-        // navegaciones rápidas.
         staleTime: 30 * 1000,
+        select: (all: Record<string, WidgetData>): WidgetData | undefined =>
+            widgetId ? all[widgetId] : undefined,
     });
 }
