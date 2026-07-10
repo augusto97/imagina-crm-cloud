@@ -9,6 +9,7 @@ import {
     useUpdateEmailSignature,
 } from '@/hooks/useEmailSignature';
 import { __ } from '@/lib/i18n';
+import { sanitizeHtml } from '@/lib/sanitize';
 
 /**
  * Card en Settings para que el usuario edite su firma de email.
@@ -88,7 +89,7 @@ export function EmailSignatureCard(): JSX.Element {
                                 {/* eslint-disable-next-line react/no-danger */}
                                 <div
                                     className="imcrm-text-sm"
-                                    dangerouslySetInnerHTML={{ __html: draft }}
+                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(draft) }}
                                 />
                             </div>
                         )}

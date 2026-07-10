@@ -1,3 +1,5 @@
+import { sanitizeHref } from '@/lib/sanitize';
+
 interface Props {
     config: {
         title?: string;
@@ -26,6 +28,7 @@ interface Props {
 export function ExternalLinkBlock({ config }: Props): JSX.Element | null {
     const href = config.href?.trim() ?? '';
     if (href === '') return null;
+    const safeHref = sanitizeHref(href);
     const variant = config.variant ?? 'button';
     const newWindow = config.new_window !== false;
     const accentStyle = config.accent_color
@@ -50,7 +53,7 @@ export function ExternalLinkBlock({ config }: Props): JSX.Element | null {
                         )}
                     </div>
                     <a
-                        href={href}
+                        href={safeHref}
                         target={newWindow ? '_blank' : undefined}
                         rel={newWindow ? 'noopener noreferrer' : undefined}
                         className="imcrm-portal-hero-cta__btn"
@@ -82,7 +85,7 @@ export function ExternalLinkBlock({ config }: Props): JSX.Element | null {
                             </p>
                         ) : null}
                         <a
-                            href={href}
+                            href={safeHref}
                             target={newWindow ? '_blank' : undefined}
                             rel={newWindow ? 'noopener noreferrer' : undefined}
                             className="imcrm-portal-cta-card__link"
@@ -108,7 +111,7 @@ export function ExternalLinkBlock({ config }: Props): JSX.Element | null {
                 <p className="imcrm-portal-block__content">{config.description}</p>
             ) : null}
             <a
-                href={href}
+                href={safeHref}
                 target={newWindow ? '_blank' : undefined}
                 rel={newWindow ? 'noopener noreferrer' : undefined}
                 className="imcrm-portal-card__btn imcrm-portal-external-link__btn"

@@ -5,6 +5,7 @@ import {
     Inject,
     Injectable,
     Logger,
+    type OnModuleInit,
     UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -37,7 +38,7 @@ function escapeHtml(s: string): string {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
     private readonly logger = new Logger(AuthService.name);
 
     constructor(
@@ -47,6 +48,45 @@ export class AuthService {
         private readonly mail: MailService,
         private readonly sessions: SessionService,
     ) {}
+
+    /**
+     * SEC-04: pre-provisiona en el arranque una cuenta por cada email de
+     * `PLATFORM_SUPERADMINS` que aún no exista. Así el email de superadmin no
+     * puede ser "reclamado" por un atacante vía el registro público, y el
+     * superadmin legítimo activa su cuenta con "olvidé mi contraseña" (el link
+     * de reset va a SU casilla). Best-effort: no bloquea el boot si la DB no
+     * está lista todavía.
+     */
+    async onModuleInit(): Promise<void> {
+        try {
+            await this.ensureSuperadminAccounts();
+        } catch (err) {
+            this.logger.warn(
+                `No se pudieron pre-provisionar superadmins: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
+
+    private async ensureSuperadminAccounts(): Promise<void> {
+        const emails = this.env.PLATFORM_SUPERADMINS;
+        if (emails.length === 0) return;
+        for (const email of emails) {
+            const [existing] = await this.db
+                .select({ id: users.id })
+                .from(users)
+                .where(sql`lower(${users.email}) = ${email}`)
+                .limit(1);
+            if (existing) continue;
+            const hash = await argon2.hash(randomBytes(32).toString('hex'));
+            await this.db
+                .insert(users)
+                .values({ email, passwordHash: hash, name: email })
+                .onConflictDoNothing();
+            this.logger.log(
+                `Cuenta de superadmin pre-provisionada: ${email} (activar con "olvidé mi contraseña")`,
+            );
+        }
+    }
 
     /**
      * Solicita recuperación de contraseña: genera un token de un solo uso en
@@ -96,6 +136,14 @@ export class AuthService {
      * contexto (WITH CHECK de las policies RLS).
      */
     async register(input: RegisterInput): Promise<AuthSession> {
+        // SEC-04: el registro público nunca puede crear una cuenta con un email
+        // de superadmin (evita reclamar el privilegio de plataforma). Se
+        // responde con el mismo mensaje que un email ya tomado para no revelar
+        // qué emails son superadmin (anti-enumeración).
+        if (this.env.PLATFORM_SUPERADMINS.includes(input.email.trim().toLowerCase())) {
+            throw new ConflictException('Ya existe una cuenta con ese email');
+        }
+
         const passwordHash = await argon2.hash(input.password);
 
         const result = await this.db.transaction(async (tx) => {

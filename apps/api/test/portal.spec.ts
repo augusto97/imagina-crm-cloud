@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
@@ -144,5 +144,14 @@ describe('PortalService (Postgres + Redis reales)', () => {
         await expect(
             portal.issue(tenantId, 'clientes', { record_id: 999999, email: 'x@acme.test' }),
         ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // SEC-01: emitir un magic link acuña una sesión para el usuario del email.
+    // Si el email pertenece a un usuario del equipo (staff), quien lo canjea
+    // obtendría la sesión de esa cuenta → apropiación. Debe rechazarse.
+    it('rechaza emitir un magic link para el email de un usuario del equipo', async () => {
+        await expect(
+            portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'admin@acme.test' }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
     });
 });

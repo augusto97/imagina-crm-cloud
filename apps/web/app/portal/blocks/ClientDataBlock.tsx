@@ -1,3 +1,4 @@
+import { sanitizeHref } from '@/lib/sanitize';
 import type { PortalFieldMeta, PortalRecord } from '../types';
 
 interface Props {
@@ -142,7 +143,7 @@ function renderValue(value: unknown, meta: PortalFieldMeta | undefined): JSX.Ele
         case 'url': {
             const url = String(value);
             return (
-                <a href={url} target="_blank" rel="noopener noreferrer">
+                <a href={sanitizeHref(url)} target="_blank" rel="noopener noreferrer">
                     {url}
                 </a>
             );

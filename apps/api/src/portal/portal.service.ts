@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { IssueMagicLinkInput, MagicLinkResult, PortalBoot } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { and, eq, sql } from 'drizzle-orm';
@@ -81,6 +81,26 @@ export class PortalService {
 
             // set app.user_id para las policies self de memberships/portal_links.
             await tx.execute(sql`select set_config('app.user_id', ${String(uid)}, true)`);
+
+            // Defensa en profundidad (SEC-01): un magic link acuña una SESIÓN
+            // para `uid`. Nunca hay que emitirlo para un usuario del equipo:
+            // quien lo canjea obtendría la sesión de esa cuenta staff (incluso
+            // de OTRO tenant). El self-policy de memberships deja ver todas las
+            // membresías del propio uid, sin filtro de tenant → si alguna no es
+            // `client`, es una cuenta de equipo y rechazamos.
+            const staffMemberships = await tx
+                .select({ role: memberships.role })
+                .from(memberships)
+                .where(and(eq(memberships.userId, uid), sql`${memberships.role} <> 'client'`))
+                .limit(1);
+            if (staffMemberships.length > 0) {
+                throw new ForbiddenException({
+                    code: 'portal_email_not_client',
+                    message: 'Ese email pertenece a un usuario del equipo; el portal es solo para clientes',
+                    data: { status: 403 },
+                });
+            }
+
             await tx
                 .insert(memberships)
                 .values({ userId: uid, tenantId, role: 'client' })
