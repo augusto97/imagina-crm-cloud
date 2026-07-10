@@ -251,7 +251,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rail: no se puede desactivar a un superadmin. Front: card "Usuarios" en
         la consola (alta + grilla con reset/desactivar; superadmin sin botón de
         desactivar). 12 tests + E2E en navegador (alta→invita→desactiva→
-        reactiva). Pendiente: planes editables en DB, detalle/impersonar empresa.
+        reactiva).
+  - [x] **Consola de plataforma — Fase 3 (planes editables en DB)**: los planes
+        dejan de ser una constante y viven en la tabla `plans` (editable). El
+        `plan` de un tenant es un slug dinámico (`planSchema`=string; los 4
+        built-in quedan como semilla/fallback). `PlansService` (billing, @Global)
+        sirve los límites con cache 30s (hot path de `assertCanCreateRecord`) y
+        `BillingService` los consume. `GET/POST /platform/plans` +
+        `PATCH/DELETE /platform/plans/:slug`; `updateTenant` valida el plan;
+        borrar un plan en uso se rechaza. Front: card "Planes" (edición inline de
+        límites + alta/baja) y el select de plan de cada empresa se puebla
+        dinámicamente. 4 tests + E2E en navegador (editar límite→persiste, crear
+        plan→aparece en el dropdown de la empresa). Pendiente: precios de
+        checkout por plan custom, detalle/impersonar empresa.
 - [ ] **F5 — Hardening** (en curso):
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,

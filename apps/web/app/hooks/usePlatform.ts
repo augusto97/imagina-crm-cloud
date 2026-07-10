@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+    CreatePlanInput,
     CreatePlatformUserInput,
+    PlatformPlan,
     PlatformStats,
     PlatformTenant,
     PlatformUser,
+    UpdatePlanInput,
     UpdateTenantInput,
 } from '@imagina-base/shared';
 
@@ -24,6 +27,7 @@ export const platformKeys = {
     stats: () => [...platformKeys.all, 'stats'] as const,
     tenants: () => [...platformKeys.all, 'tenants'] as const,
     users: () => [...platformKeys.all, 'users'] as const,
+    plans: () => [...platformKeys.all, 'plans'] as const,
 };
 
 export function useIsSuperadmin() {
@@ -105,6 +109,49 @@ export function useResetUserPassword() {
     return useMutation({
         mutationFn: async (id: number): Promise<void> => {
             await api.post(`/platform/users/${id}/reset-password`, {});
+        },
+    });
+}
+
+// ─────────────────────────── Planes (F3) ───────────────────────────
+
+export function usePlatformPlans() {
+    return useQuery({
+        queryKey: platformKeys.plans(),
+        queryFn: async () => (await api.get<PlatformPlan[]>('/platform/plans')).data,
+    });
+}
+
+export function useCreatePlan() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: CreatePlanInput): Promise<PlatformPlan> =>
+            (await api.post<PlatformPlan>('/platform/plans', input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.plans() });
+        },
+    });
+}
+
+export function useUpdatePlan() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ slug, input }: { slug: string; input: UpdatePlanInput }): Promise<PlatformPlan> =>
+            (await api.patch<PlatformPlan>(`/platform/plans/${slug}`, input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.plans() });
+        },
+    });
+}
+
+export function useDeletePlan() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (slug: string): Promise<void> => {
+            await api.delete(`/platform/plans/${slug}`);
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.plans() });
         },
     });
 }
