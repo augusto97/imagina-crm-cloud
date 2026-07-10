@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import { Building2, ChevronDown, ChevronRight, Loader2, Plus, Users } from 'lucide-react';
+import { Building2, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Users } from 'lucide-react';
 import {
     BILLING_STATUSES,
     type BillingStatus,
@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     useCreateTenant,
+    useImpersonate,
     usePlatformPlans,
     usePlatformTenants,
     useTenantDetail,
@@ -252,6 +253,13 @@ function NewTenantForm({ onDone }: { onDone: () => void }): JSX.Element {
 
 function TenantDetail({ id }: { id: number }): JSX.Element {
     const detail = useTenantDetail(id);
+    const impersonate = useImpersonate();
+
+    const doImpersonate = (userId: number, name: string): void => {
+        if (confirm(`${__('¿Entrar como')} ${name}? ${__('Se abrirá una sesión de soporte (queda auditada).')}`)) {
+            impersonate.mutate(userId);
+        }
+    };
     if (detail.isLoading) {
         return (
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
@@ -275,7 +283,20 @@ function TenantDetail({ id }: { id: number }): JSX.Element {
                             <span className="imcrm-font-medium">{m.name}</span>
                             <span className="imcrm-text-muted-foreground">{m.email}</span>
                             <span className="imcrm-rounded imcrm-bg-primary/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-primary">{m.role}</span>
-                            {m.disabled && <span className="imcrm-rounded imcrm-bg-red-500/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-red-600 dark:imcrm-text-red-400">{__('desactivado')}</span>}
+                            {m.disabled ? (
+                                <span className="imcrm-rounded imcrm-bg-red-500/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-red-600 dark:imcrm-text-red-400">{__('desactivado')}</span>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => doImpersonate(m.user_id, m.name)}
+                                    disabled={impersonate.isPending}
+                                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-text-xs imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-border-primary hover:imcrm-text-primary disabled:imcrm-opacity-50"
+                                    title={__('Entrar como este usuario (soporte)')}
+                                >
+                                    <LogIn className="imcrm-h-3 imcrm-w-3" />
+                                    {__('Impersonar')}
+                                </button>
+                            )}
                         </li>
                     ))}
                     {d.members.length === 0 && <li className="imcrm-text-sm imcrm-text-muted-foreground">{__('Sin miembros')}</li>}

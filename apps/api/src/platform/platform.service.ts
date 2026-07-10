@@ -6,7 +6,6 @@ import {
     type BillingStatus,
     type CreatePlanInput,
     type CreateTenantInput,
-    type ImpersonateResult,
     type ImpersonationLogEntry,
     type Plan,
     type PlatformOwner,
