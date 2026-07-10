@@ -92,7 +92,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
       esqueleto NestJS+Drizzle, auth por sesión opaca en Redis, tenancy+RLS
       (rol `imagina_app`), primeros schemas Zod en shared/. Tests de RLS y
       auth con Testcontainers en verde.
-- [ ] **F1 — Core dominio** (backend listo; falta front conectado):
+- [x] **F1 — Core dominio**:
   - [x] `lists` — CRUD, slugs, id-o-slug, capabilities.
   - [x] `fields` — 14 tipos, validador de valores compartido, config por
         tipo, reorder, toggle is_indexed.
@@ -136,7 +136,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (campos visibles, orden, dominios, enlace + snippet de iframe). 12 tests;
         verificado E2E contra el build de producción (meta/records/HTML+CSP,
         campos ocultos nunca se filtran, disable→404).
-- [ ] **F2 — Vistas + realtime** (en curso):
+- [x] **F2 — Vistas + realtime**:
   - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
         rooms por tenant) + Redis adapter multi-nodo; los services emiten al
         mutar y el front invalida TanStack. Verificado entre pestañas.
@@ -160,7 +160,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         react-query estaba en las deps del useEffect → `create.reset()` en
         cada render → loop; ahora depende sólo de `open`. Afectaba a toda
         página con esos diálogos montados (records, dashboards).
-- [ ] **F3 — Automatizaciones + portal** (en curso):
+- [x] **F3 — Automatizaciones + portal**:
   - [x] Motor de automatizaciones sobre BullMQ: triggers (record_created/
         updated dispatch), condiciones (filter tree), actions (update_field,
         create_record, call_webhook con HMAC, send_email simulado), runs con
@@ -199,8 +199,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         canjea el magic link y `/portal` renderiza record + campos + template
         (bloques heading/notice/static_text); admin emite el link desde el
         record drawer.
-  - [ ] Editor visual (drag&drop) del template del portal (front, F3+).
-- [ ] **F4 — Comercial** (en curso):
+  - [x] **Editor visual (drag&drop) del template del portal**: el editor ya
+        existía (shell `TemplateEditorShell` compartido con el CRM + `portalRegistry`
+        de ~22 tipos de bloque + `PortalRenderer` en el portal SPA + entrada desde
+        el List Builder), pero el template DISEÑADO no llegaba al cliente: el editor
+        persiste `settings.portal_template` como `{ blocks: [...] }` y el backend
+        `portal.me` hacía `Array.isArray(portal_template)` → como es objeto, devolvía
+        template vacío. Fix: `extractPortalBlocks` normaliza `{blocks}`→array (y acepta
+        el array plano legacy). Ahora el loop completo funciona (diseñar→guardar→el
+        cliente lo ve). Test del shape `{blocks}` + E2E en navegador (editor carga +
+        el portal renderiza heading/client_data del template).
+- [x] **F4 — Comercial**:
   - [x] Límites por plan (PlanService: max records/users/automations) +
         enforcement en create de records. Degradación a solo-lectura por
         impago en el TenantGuard (ADR-S09: los datos nunca se secuestran).

@@ -196,9 +196,9 @@ export class PortalService {
                 .where(eq(fields.listId, link.listId))
                 .orderBy(fields.position);
 
-            const template = Array.isArray(list.settings.portal_template)
-                ? (list.settings.portal_template as Array<Record<string, unknown>>)
-                : [];
+            // El editor visual guarda `portal_template` como objeto `{ blocks: [...] }`
+            // (shape del template-editor). Aceptamos también un array plano legacy.
+            const template = extractPortalBlocks(list.settings.portal_template);
 
             return {
                 list_id: list.id,
@@ -227,4 +227,19 @@ export class PortalService {
             };
         });
     }
+}
+
+/**
+ * Normaliza el `portal_template` guardado en `list.settings` al array plano de
+ * bloques que consume el portal. El editor visual persiste `{ blocks: [...] }`;
+ * también aceptamos un array plano (formato legacy) y devolvemos `[]` si no hay.
+ */
+function extractPortalBlocks(raw: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(raw)) {
+        return raw as Array<Record<string, unknown>>;
+    }
+    if (raw && typeof raw === 'object' && Array.isArray((raw as { blocks?: unknown }).blocks)) {
+        return (raw as { blocks: Array<Record<string, unknown>> }).blocks;
+    }
+    return [];
 }

@@ -123,6 +123,18 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(boot.template).toEqual([{ type: 'client_data' }]);
     });
 
+    it('me: extrae los bloques del shape `{ blocks: [...] }` que guarda el editor visual', async () => {
+        // El editor drag&drop persiste el template como objeto, no como array plano.
+        await listsService.update(tenantId, 'clientes', {
+            settings: { portal_template: { blocks: [{ type: 'hero' }, { type: 'faq' }] } },
+        });
+        const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'c2@acme.test' });
+        const { sessionToken } = await portal.consume(link.token);
+        const session = await sessions.get(sessionToken);
+        const boot = await portal.me(session!.userId);
+        expect(boot.template).toEqual([{ type: 'hero' }, { type: 'faq' }]);
+    });
+
     it('el token es de un solo uso', async () => {
         const link = await portal.issue(tenantId, 'clientes', {
             record_id: recordId,
