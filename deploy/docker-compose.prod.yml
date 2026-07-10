@@ -9,10 +9,26 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # PITR (STANDALONE §14/§17): archivado continuo de WAL. Cada segmento se
+    # copia al volumen `walarchive` (separado de pgdata → sobrevive a su
+    # pérdida). Con un base backup físico (scripts/basebackup.sh) + estos WAL se
+    # restaura a CUALQUIER instante, no sólo al último dump lógico.
+    # `archive_timeout=300` fuerza el archivado aunque haya poca escritura (acota
+    # el RPO a ≤5 min). El `archive_command` es idempotente (no pisa segmentos).
     command:
       - postgres
       - -c
       - shared_preload_libraries=pg_stat_statements
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f
+      - -c
+      - archive_timeout=300
+      - -c
+      - max_wal_senders=3
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set in .env.production}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.production}
@@ -22,6 +38,7 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - walarchive:/wal_archive
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -45,3 +62,6 @@ services:
 volumes:
   pgdata:
   redisdata:
+  # Archivo de WAL para PITR (separado de pgdata a propósito). Sincronizarlo
+  # off-site junto con los base backups — ver docs/runbook-pitr.md.
+  walarchive:

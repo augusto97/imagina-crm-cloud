@@ -282,7 +282,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         y uso vs límite. 4 tests + E2E en navegador (alta→aparece en grilla,
         detalle muestra admin + uso/límite del plan). Pendiente (opcional):
         impersonar empresa para soporte (diseño de auditoría aparte).
-- [ ] **F5 — Hardening** (en curso):
+- [x] **F5 — Hardening**:
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,
         enforcement opt-in BENCH_STRICT. Ambos holgadamente en presupuesto.
@@ -328,7 +328,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la hoja del front del plugin que nunca se copió → el portal salía sin
         estilo. Reconstruidas sobre los tokens del tema (`portal-components.css`),
         light/dark. Verificado E2E en navegador (admin + portal).
-  - [ ] PITR/WAL archiving en el gestor administrado.
+  - [x] **PITR / WAL archiving (STANDALONE §14/§17)**: archivado continuo de
+        WAL en producción (`deploy/docker-compose.prod.yml`: `archive_mode=on`
+        → volumen `walarchive` separado de `pgdata`, `archive_timeout=300` →
+        RPO ≤ 5 min). Base backup físico diario (`scripts/basebackup.sh`:
+        `pg_basebackup -Ft -z -Xs` dentro del contenedor + GPG/retención + poda
+        de WAL con `pg_archivecleanup`). Restore a un instante elegido
+        (`scripts/pitr-restore.sh --target-time` → replay del WAL + promote, en
+        un data-dir NUEVO, sin tocar el pgdata de prod). Drill end-to-end
+        (`scripts/pitr-drill.sh`, PASS: restaura a T1 → trae A y no B). Runbook
+        `docs/runbook-pitr.md` (RPO/RTO, off-site del WAL, promoción, límites).
+        Con esto F5 queda completa.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
