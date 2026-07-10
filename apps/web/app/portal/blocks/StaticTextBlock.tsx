@@ -1,3 +1,5 @@
+import { sanitizeHtml } from '@/lib/sanitize';
+
 interface Props {
     config: {
         html?: string;
@@ -16,9 +18,9 @@ interface Props {
  *  - `bordered_left`: card con border-left de acento (4px), útil
  *    para citas, notas destacadas, anuncios suaves
  *
- * El HTML viene server-side y el admin es quien lo configuró —
- * trusted. Si el modelo cambia para permitir input del cliente, hay
- * que pasar por `dompurify` antes.
+ * El HTML lo configura el admin, pero se renderiza en el navegador del
+ * CLIENTE del portal (identidad de menor confianza), así que se sanitiza
+ * con DOMPurify antes de inyectarlo (SEC-02).
  */
 export function StaticTextBlock({ config }: Props): JSX.Element {
     const variant = config.variant ?? 'card';
@@ -43,7 +45,7 @@ export function StaticTextBlock({ config }: Props): JSX.Element {
             {config.html !== undefined && config.html !== '' ? (
                 <div
                     className="imcrm-portal-block__content"
-                    dangerouslySetInnerHTML={{ __html: config.html }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(config.html) }}
                 />
             ) : null}
         </section>

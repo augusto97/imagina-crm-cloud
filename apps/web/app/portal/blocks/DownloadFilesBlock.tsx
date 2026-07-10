@@ -10,6 +10,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
+import { sanitizeHref } from '@/lib/sanitize';
 import { usePortalPreview } from '../PreviewContext';
 import type { PortalRecord } from '../types';
 
@@ -154,7 +155,7 @@ export function DownloadFilesBlock({ config, record }: Props): JSX.Element {
                         return (
                             <li key={att.id} className="imcrm-portal-downloads-grid__item">
                                 <a
-                                    href={att.url}
+                                    href={sanitizeHref(att.url)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="imcrm-portal-downloads-grid__link"
@@ -185,7 +186,7 @@ export function DownloadFilesBlock({ config, record }: Props): JSX.Element {
                             <li key={att.id} className="imcrm-portal-downloads__item">
                                 <Icon className="imcrm-portal-downloads__icon" aria-hidden />
                                 <a
-                                    href={att.url}
+                                    href={sanitizeHref(att.url)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="imcrm-portal-downloads__link"

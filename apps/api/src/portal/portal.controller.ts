@@ -34,10 +34,17 @@ export class PortalController {
         @Inject(ENV) private readonly env: Env,
     ) {}
 
-    /** Un admin/manager emite el magic link de acceso al portal de un record. */
+    /**
+     * Un admin emite el magic link de acceso al portal de un record.
+     *
+     * SEC: exige `manage_lists` (acción de admin). NO se acepta `access_portal`
+     * aquí: esa es la capability del CONSUMIDOR del portal (rol `client`), y
+     * con semántica OR permitiría que un client emitiera links para el record
+     * y el email que quisiera → apropiación de sesión de un admin. Ver SEC-01.
+     */
     @Post('lists/:list/portal/magic-link')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
-    @RequireCapability('manage_lists', 'access_portal')
+    @RequireCapability('manage_lists')
     issue(
         @Req() req: FastifyRequest,
         @Param('list') list: string,

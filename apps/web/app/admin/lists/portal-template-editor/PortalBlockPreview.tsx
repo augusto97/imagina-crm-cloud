@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
+import { sanitizeHtml } from '@/lib/sanitize';
 import type { FieldEntity } from '@/types/field';
 
 import type { ResolvedPortalBlock } from './portalLayout';
@@ -100,7 +101,7 @@ function StaticTextPreview({ block }: { block: ResolvedPortalBlock }): JSX.Eleme
             ) : (
                 <div
                     className="imcrm-prose-sm imcrm-line-clamp-6"
-                    dangerouslySetInnerHTML={{ __html: html }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
                 />
             )}
         </div>

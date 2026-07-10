@@ -1,3 +1,5 @@
+import { sanitizeHref } from '@/lib/sanitize';
+
 interface QuickAction {
     icon: string;
     label: string;
@@ -36,7 +38,7 @@ export function QuickActionsBlock({ config }: Props): JSX.Element {
                 {items.map((it, i) => (
                     <a
                         key={i}
-                        href={it.href || '#'}
+                        href={sanitizeHref(it.href)}
                         target={it.new_window === false ? undefined : '_blank'}
                         rel={it.new_window === false ? undefined : 'noopener noreferrer'}
                         className="imcrm-portal-actions__item"

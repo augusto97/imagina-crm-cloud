@@ -8,6 +8,7 @@ import {
     type ConditionData,
 } from '@imagina-base/shared';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
+import { safeWebhookFetch } from '../common/safe-fetch';
 import type { Tx } from '../db/client';
 import { automationRuns, records } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
@@ -315,9 +316,13 @@ export class AutomationEngine {
                     headers['x-imagina-signature'] =
                         'sha256=' + createHmac('sha256', String(cfg.secret)).update(body).digest('hex');
                 }
-                const init: RequestInit = { method, headers };
-                if (method !== 'GET' && method !== 'HEAD') init.body = body;
-                const res = await fetch(url, init);
+                // Guard anti-SSRF (SEC-03): bloquea metadata/loopback/red interna
+                // y pinea la IP resuelta (anti DNS-rebinding) + timeout.
+                const res = await safeWebhookFetch(url, {
+                    method,
+                    headers,
+                    body: method !== 'GET' && method !== 'HEAD' ? body : undefined,
+                });
                 return ok('call_webhook', `${method} ${url} → ${res.status}`, { status: res.status });
             }
             case 'send_email': {

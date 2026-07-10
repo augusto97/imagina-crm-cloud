@@ -1,3 +1,4 @@
+import { sanitizeHref } from '@/lib/sanitize';
 import type { PortalRecord } from '../types';
 
 interface Props {
@@ -74,7 +75,7 @@ export function HeroBlock({ config, record }: Props): JSX.Element {
                 )}
                 {ctaLabel !== '' && ctaHref !== '' && (
                     <a
-                        href={ctaHref}
+                        href={sanitizeHref(ctaHref)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="imcrm-portal-hero__cta"

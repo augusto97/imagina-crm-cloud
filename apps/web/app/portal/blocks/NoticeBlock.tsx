@@ -1,3 +1,5 @@
+import { sanitizeHref } from '@/lib/sanitize';
+
 interface Props {
     config: {
         title?: string;
@@ -53,7 +55,7 @@ export function NoticeBlock({ config, onDismiss }: Props): JSX.Element {
                 )}
                 {ctaLabel !== '' && ctaHref !== '' && (
                     <a
-                        href={ctaHref}
+                        href={sanitizeHref(ctaHref)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="imcrm-portal-notice__cta"
