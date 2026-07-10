@@ -34,7 +34,8 @@
             "unrs-resolver"
         ],
         "overrides": {
-            "ioredis": "5.11.1"
+            "ioredis": "5.11.1",
+            "@babel/runtime": ">=7.26.10"
         }
     }
 }

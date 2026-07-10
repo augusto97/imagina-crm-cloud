@@ -138,7 +138,10 @@ export class PortalService {
 
     /** Consume el token (un solo uso) y abre una sesión. Devuelve el token de sesión. */
     async consume(token: string): Promise<{ sessionToken: string }> {
-        const raw = await this.redis.get(magicKey(token));
+        // SEC-15: consumo atómico. `GETDEL` lee y borra en una sola operación,
+        // así dos requests concurrentes con el mismo token no pueden abrir dos
+        // sesiones de un enlace "de un solo uso" (get+del tenía una carrera).
+        const raw = await this.redis.getdel(magicKey(token));
         if (!raw) {
             throw new NotFoundException({
                 code: 'invalid_magic_link',
@@ -146,7 +149,6 @@ export class PortalService {
                 data: { status: 404 },
             });
         }
-        await this.redis.del(magicKey(token)); // un solo uso
         const payload = JSON.parse(raw) as MagicPayload;
         const sessionToken = await this.sessions.create(payload.userId);
         return { sessionToken };

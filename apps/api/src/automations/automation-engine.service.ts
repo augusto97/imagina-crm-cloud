@@ -266,6 +266,9 @@ export class AutomationEngine {
     private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec): Promise<ActionLogEntry> {
         const fv = this.accessor(ctx);
         const merge = (s: unknown): string => applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId);
+        // SEC-08: variante que escapa los valores interpolados para contexto HTML.
+        const mergeHtml = (s: unknown): string =>
+            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeHtml);
         const cfg = spec.config ?? {};
 
         switch (spec.type) {
@@ -326,17 +329,23 @@ export class AutomationEngine {
                 return ok('call_webhook', `${method} ${url} → ${res.status}`, { status: res.status });
             }
             case 'send_email': {
-                const to = merge(cfg.to);
-                if (!to.includes('@')) return skip('send_email', 'Destinatario vacío o inválido.');
+                // SEC-08: destinatarios saneados y CAPADOS (to/cc/bcc son
+                // merge-tag → una lista con comas podría convertir el SMTP en
+                // relay / mail-bomb). El `to` debe resolver a ≥1 email válido.
+                const to = limitRecipients(merge(cfg.to));
+                if (!to) return skip('send_email', 'Destinatario vacío o inválido.');
+                const cc = cfg.cc ? limitRecipients(merge(cfg.cc)) : undefined;
+                const bcc = cfg.bcc ? limitRecipients(merge(cfg.bcc)) : undefined;
                 const subject = merge(cfg.subject);
-                const bodyRaw = merge(cfg.body);
                 const isHtml = Boolean(cfg.is_html);
+                // En HTML, los valores interpolados se escapan (no el template).
+                const body = isHtml ? mergeHtml(cfg.body) : merge(cfg.body);
                 await this.mail.enqueue({
                     to,
                     subject,
-                    ...(isHtml ? { html: bodyRaw } : { text: bodyRaw }),
-                    cc: cfg.cc ? merge(cfg.cc) : undefined,
-                    bcc: cfg.bcc ? merge(cfg.bcc) : undefined,
+                    ...(isHtml ? { html: body } : { text: body }),
+                    cc: cc || undefined,
+                    bcc: bcc || undefined,
                     from: cfg.from_email ? merge(cfg.from_email) : undefined,
                     fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
                 });
@@ -346,6 +355,30 @@ export class AutomationEngine {
                 return skip(spec.type, 'Acción no reconocida.');
         }
     }
+}
+
+/** Escapa un valor para inyectarlo seguro en HTML (SEC-08). */
+function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+    );
+}
+
+/**
+ * Sanea y CAPA una lista de destinatarios (SEC-08). Divide por coma, deja solo
+ * los que parecen email, deduplica y limita a MAX_EMAIL_RECIPIENTS. Devuelve
+ * una lista separada por coma, o '' si no queda ninguno válido.
+ */
+const MAX_EMAIL_RECIPIENTS = 25;
+function limitRecipients(raw: string): string {
+    const seen = new Set<string>();
+    for (const part of raw.split(',')) {
+        const addr = part.trim();
+        // Validación pragmática: algo@algo.algo, sin espacios ni comas.
+        if (/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(addr)) seen.add(addr);
+        if (seen.size >= MAX_EMAIL_RECIPIENTS) break;
+    }
+    return [...seen].join(', ');
 }
 
 function ok(action: string, message: string, details: Record<string, unknown> = {}): ActionLogEntry {

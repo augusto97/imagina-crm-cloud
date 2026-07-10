@@ -163,6 +163,50 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(mailbox.sent[0]).toMatchObject({ to: 'ventas@acme.test', subject: 'Deal vip', text: 'Monto: 5000' });
     });
 
+    // SEC-08: en email HTML, los valores de registro interpolados se escapan
+    // (el dato puede venir de un cliente del portal / import) → no inyectan JS.
+    it('send_email HTML: escapa los merge tags interpolados', async () => {
+        mailbox.sent.length = 0;
+        const nombre = await fieldsService.create(tenantId, 'deals', {
+            label: 'Nombre',
+            type: 'text',
+            slug: 'nombre',
+        });
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Bienvenida HTML',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'send_email',
+                    config: {
+                        to: 'ventas@acme.test',
+                        subject: 'Hola',
+                        is_html: true,
+                        body: '<p>Hola {{nombre}}</p>',
+                    },
+                },
+            ],
+        });
+
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${nombre.id}`]: '<script>alert(1)</script>' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_created',
+            after: { [`f${nombre.id}`]: '<script>alert(1)</script>' },
+        });
+
+        expect(mailbox.sent).toHaveLength(1);
+        const html = mailbox.sent[0]?.html ?? '';
+        expect(html).toContain('&lt;script&gt;');
+        expect(html).not.toContain('<script>');
+        // El template del admin sí conserva su HTML.
+        expect(html).toContain('<p>Hola');
+    });
+
     it('field_filters no cumplido → trigger no matchea, no corre ni loguea', async () => {
         await automationsService.create(tenantId, 'deals', {
             name: 'Sólo grandes',

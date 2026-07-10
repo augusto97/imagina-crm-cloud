@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fields, lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -124,5 +124,47 @@ describe('ImportService (Postgres real)', () => {
                 rows: [{ X: 'y' }],
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // SEC-09: el import valida el LOTE completo contra el tope del plan, no
+    // solo "cabe uno más". Con 499/500 usados, importar 2 debe rechazarse.
+    it('rechaza un import que supera el límite de plan (lote completo)', async () => {
+        const list = await listsService.get(tenantId, 'clientes');
+        // Plan con tope bajo (trial = 500) para el escenario.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(tenants).set({ plan: 'trial' }).where(eq(tenants.id, tenantId)),
+        );
+        // Pre-cargar 499 registros de una.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(records).values(
+                Array.from({ length: 499 }, () => ({
+                    tenantId,
+                    listId: list.id,
+                    data: { [`f${f.nombre!.id}`]: 'x' },
+                    createdBy: admin.userId,
+                })),
+            ),
+        );
+        try {
+            await expect(
+                importService.importRows(tenantId, admin.userId, 'clientes', {
+                    mapping: { Nombre: f.nombre!.id },
+                    rows: [{ Nombre: 'A' }, { Nombre: 'B' }], // 499 + 2 = 501 > 500
+                }),
+            ).rejects.toBeInstanceOf(ForbiddenException);
+
+            // No se insertó ninguna fila del lote rechazado.
+            const [row] = await withTenant(pg.db, tenantId, (tx) =>
+                tx
+                    .select({ n: sql<number>`count(*)::int` })
+                    .from(records)
+                    .where(eq(records.tenantId, tenantId)),
+            );
+            expect(row?.n).toBe(499);
+        } finally {
+            await withTenant(pg.db, tenantId, (tx) =>
+                tx.update(tenants).set({ plan: 'enterprise' }).where(eq(tenants.id, tenantId)),
+            );
+        }
     });
 });
