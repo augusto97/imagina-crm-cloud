@@ -5,7 +5,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
 import { loadEnv } from '../src/config/env';
-import { automations, fields, lists as listsTable, memberships, records, tenants, users } from '../src/db/schema';
+import { automations, fields, impersonationLog, lists as listsTable, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -61,13 +61,14 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     let seq = 0;
     beforeEach(async () => {
         // Limpieza total entre tests (el operador ve TODO; los tests miden totales).
-        // Orden FK-safe: hijos → lists → tenants → users.
+        // Orden FK-safe: hijos → lists → tenants → impersonation_log → users.
         await pg.db.delete(automations);
         await pg.db.delete(records);
         await pg.db.delete(fields);
         await pg.db.delete(listsTable);
         await pg.db.delete(memberships);
         await pg.db.delete(tenants);
+        await pg.db.delete(impersonationLog);
         await pg.db.delete(users);
     });
 
@@ -302,5 +303,57 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('tenantDetail: 404 si la empresa no existe', async () => {
         await expect(platform.tenantDetail(999999)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // ─────────────── Impersonación de soporte (F5) ───────────────
+
+    it('impersonar: abre sesión como el objetivo, me() marca impersonating, audita', async () => {
+        const [op] = await pg.db.insert(users).values({ email: 'op@plat.test', passwordHash: 'x', name: 'Operador' }).returning();
+        const sess = await auth.register({ email: 'cliente@imp.test', password: 'password123', name: 'Cliente', workspace_name: 'ClienteWS' });
+        const opToken = await sessions.create(op!.id);
+
+        const { token, target } = await platform.impersonate(op!.id, opToken, sess.user.id);
+        expect(target).toMatchObject({ email: 'cliente@imp.test' });
+
+        // La sesión de impersonación actúa como el objetivo + recuerda al operador.
+        const data = await sessions.get(token);
+        expect(data).toMatchObject({ userId: sess.user.id, impersonatedBy: op!.id, origToken: opToken });
+
+        // me() con el impersonatedBy expone el banner.
+        const meAs = await auth.me(sess.user.id, op!.id);
+        expect(meAs.impersonating).toMatchObject({ operator_id: op!.id, operator_name: 'Operador' });
+
+        // Auditoría abierta.
+        const log = await platform.listImpersonations();
+        const entry = log.find((l) => l.actor_email === 'op@plat.test' && l.target_email === 'cliente@imp.test');
+        expect(entry).toBeTruthy();
+        expect(entry!.ended_at).toBeNull();
+
+        // Salir: restaura el token del operador, cierra la sesión y la auditoría.
+        const { origToken } = await auth.stopImpersonation(token);
+        expect(origToken).toBe(opToken);
+        expect(await sessions.get(token)).toBeNull();
+        const log2 = await platform.listImpersonations();
+        expect(log2.find((l) => l.id === entry!.id)!.ended_at).not.toBeNull();
+    });
+
+    it('no se puede impersonar a un superadmin', async () => {
+        const [op] = await pg.db.insert(users).values({ email: 'op2@plat.test', passwordHash: 'x', name: 'Op2' }).returning();
+        const [boss] = await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' }).returning();
+        const opToken = await sessions.create(op!.id);
+        await expect(platform.impersonate(op!.id, opToken, boss!.id)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('no se puede impersonar a una cuenta desactivada', async () => {
+        const [op] = await pg.db.insert(users).values({ email: 'op3@plat.test', passwordHash: 'x', name: 'Op3' }).returning();
+        const sess = await auth.register({ email: 'off@imp.test', password: 'password123', name: 'Off', workspace_name: 'OffWS' });
+        await platform.setUserDisabled(sess.user.id, true);
+        const opToken = await sessions.create(op!.id);
+        await expect(platform.impersonate(op!.id, opToken, sess.user.id)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('stopImpersonation sobre una sesión normal → error', async () => {
+        const sess = await auth.register({ email: 'normal@imp.test', password: 'password123', name: 'Normal', workspace_name: 'NormalWS' });
+        await expect(auth.stopImpersonation(sess.token as string)).rejects.toThrow();
     });
 });

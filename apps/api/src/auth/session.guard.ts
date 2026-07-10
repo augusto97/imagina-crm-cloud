@@ -29,6 +29,7 @@ export class SessionGuard implements CanActivate {
         }
         req.authUserId = session.userId;
         req.sessionToken = token;
+        req.impersonatedBy = session.impersonatedBy;
         return true;
     }
 

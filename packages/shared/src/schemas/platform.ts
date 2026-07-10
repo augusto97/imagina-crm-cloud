@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
+import { idSchema } from './common';
 
 /**
  * Consola de PLATAFORMA (operador SaaS / superadmin). A diferencia del resto
@@ -160,6 +161,32 @@ export const updatePlanSchema = z
     })
     .partial();
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
+
+// ─────────────── Impersonación de soporte (F5) ───────────────
+
+/** Body para impersonar a un usuario (por su id). */
+export const impersonateSchema = z.object({ user_id: idSchema });
+export type ImpersonateInput = z.infer<typeof impersonateSchema>;
+
+/** Resultado del alta de impersonación (el token va por cookie, no acá). */
+export interface ImpersonateResult {
+    target: { id: number; name: string; email: string };
+}
+
+/** Una fila del log de auditoría de impersonación. */
+export interface ImpersonationLogEntry {
+    id: number;
+    actor_name: string;
+    actor_email: string;
+    target_name: string;
+    target_email: string;
+    started_at: string;
+    expires_at: string;
+    ended_at: string | null;
+}
+export interface ImpersonationLogResponse {
+    data: ImpersonationLogEntry[];
+}
 
 /** Dashboard del operador: la foto de todo el negocio. */
 export interface PlatformStats {

@@ -56,5 +56,12 @@ export const authSessionSchema = z.object({
     user: sessionUserSchema,
     memberships: z.array(membershipSummarySchema),
     token: z.string().optional(),
+    /**
+     * Presente si la sesión es de IMPERSONACIÓN (el operador entró como este
+     * usuario para soporte). El front muestra un banner con opción de salir.
+     */
+    impersonating: z
+        .object({ operator_id: idSchema, operator_name: z.string() })
+        .optional(),
 });
 export type AuthSession = z.infer<typeof authSessionSchema>;
