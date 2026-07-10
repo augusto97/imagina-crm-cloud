@@ -1,13 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { SlidersHorizontal } from 'lucide-react';
+import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+
+const STATUS_LABEL: Record<BillingSummary['status'], string> = {
+    trialing: 'En prueba',
+    active: 'Activa',
+    past_due: 'Impaga',
+    canceled: 'Cancelada',
+};
 
 /** Ajustes del workspace: plan, estado de facturación, uso vs. límites, miembros. */
 export function SettingsPage(): JSX.Element {
@@ -24,18 +32,20 @@ export function SettingsPage(): JSX.Element {
 
     return (
         <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                    <SlidersHorizontal className="imcrm-h-5 imcrm-w-5 imcrm-text-primary" />
+            <header className="imcrm-flex imcrm-items-center imcrm-gap-4">
+                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-xl imcrm-bg-tone-cyan/15 imcrm-text-tone-cyan">
+                    <SlidersHorizontal className="imcrm-h-5 imcrm-w-5" aria-hidden />
+                </span>
+                <div>
                     <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        Plan y facturación, miembros del workspace y configuración del sistema.
+                    </p>
                 </div>
-                <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    Plan y facturación, miembros del workspace y configuración del sistema.
-                </p>
             </header>
 
             {checkout === 'success' && (
-                <div className="imcrm-rounded-lg imcrm-border imcrm-border-emerald-200 imcrm-bg-emerald-50 imcrm-p-3 imcrm-text-sm imcrm-text-emerald-800 dark:imcrm-border-emerald-900 dark:imcrm-bg-emerald-950/40 dark:imcrm-text-emerald-300">
+                <div className="imcrm-rounded-lg imcrm-border imcrm-border-success/25 imcrm-bg-success/10 imcrm-p-3 imcrm-text-sm imcrm-text-success">
                     ¡Gracias! Estamos confirmando tu pago; el plan se actualiza en cuanto el proveedor lo notifique.
                 </div>
             )}
@@ -45,6 +55,9 @@ export function SettingsPage(): JSX.Element {
                 </div>
             )}
 
+            {billing.isLoading && (
+                <div className="imcrm-h-56 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
+            )}
             {billing.data && <BillingCard summary={billing.data} />}
             {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
             {isAdmin && <MembersPanel />}
@@ -59,27 +72,27 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
     return (
         <Card>
             <CardHeader>
-                <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                    <div>
-                        <div className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                            Plan
+                <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
+                        <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-violet/10 imcrm-text-tone-violet">
+                            <Crown className="imcrm-h-5 imcrm-w-5" aria-hidden />
+                        </span>
+                        <div>
+                            <div className="imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
+                                Plan actual
+                            </div>
+                            <div className="imcrm-text-xl imcrm-font-semibold imcrm-capitalize imcrm-leading-tight imcrm-tracking-tight">
+                                {summary.plan}
+                            </div>
                         </div>
-                        <CardTitle className="imcrm-text-lg imcrm-capitalize">{summary.plan}</CardTitle>
                     </div>
-                    <span
-                        className={[
-                            'imcrm-rounded-full imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium',
-                            summary.read_only
-                                ? 'imcrm-bg-rose-100 imcrm-text-rose-700 dark:imcrm-bg-rose-950/50 dark:imcrm-text-rose-300'
-                                : 'imcrm-bg-emerald-100 imcrm-text-emerald-700 dark:imcrm-bg-emerald-950/50 dark:imcrm-text-emerald-300',
-                        ].join(' ')}
-                    >
-                        {summary.status}
+                    <Badge dot variant={summary.read_only ? 'destructive' : 'success'}>
+                        {STATUS_LABEL[summary.status]}
                         {summary.read_only ? ' · solo lectura' : ''}
-                    </span>
+                    </Badge>
                 </div>
             </CardHeader>
-            <CardContent className="imcrm-space-y-3 imcrm-pt-0">
+            <CardContent className="imcrm-space-y-4 imcrm-pt-1">
                 <UsageBar label="Registros" used={summary.usage.records} limit={summary.limits.max_records} />
                 <UsageBar label="Usuarios" used={summary.usage.users} limit={summary.limits.max_users} />
                 <UsageBar
@@ -102,22 +115,23 @@ function UsageBar({
     limit: number | null;
 }): JSX.Element {
     const pct = limit === null ? 0 : Math.min(100, (used / limit) * 100);
+    // Umbrales semánticos: normal → advertencia (≥75%) → crítico (≥90%).
+    const fill = pct >= 90 ? 'imcrm-bg-destructive' : pct >= 75 ? 'imcrm-bg-warning' : 'imcrm-bg-primary';
     return (
-        <div className="imcrm-space-y-1">
-            <div className="imcrm-flex imcrm-justify-between imcrm-text-sm">
-                <span>{label}</span>
-                <span className="imcrm-tabular-nums imcrm-text-muted-foreground">
-                    {used} / {limit ?? '∞'}
+        <div className="imcrm-space-y-1.5">
+            <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-text-sm">
+                <span className="imcrm-font-medium">{label}</span>
+                <span className="imcrm-tabular-nums imcrm-text-xs imcrm-text-muted-foreground">
+                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}</span>
+                    {' / '}
+                    {limit === null ? '∞' : limit.toLocaleString()}
                 </span>
             </div>
-            <div className="imcrm-h-2 imcrm-rounded imcrm-bg-muted">
+            <div className="imcrm-h-1.5 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">
                 {limit !== null && (
                     <div
-                        className={[
-                            'imcrm-h-2 imcrm-rounded imcrm-transition-all',
-                            pct >= 90 ? 'imcrm-bg-rose-500' : 'imcrm-bg-primary',
-                        ].join(' ')}
-                        style={{ width: `${pct}%` }}
+                        className={['imcrm-h-full imcrm-rounded-full imcrm-transition-all', fill].join(' ')}
+                        style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%` }}
                     />
                 )}
             </div>

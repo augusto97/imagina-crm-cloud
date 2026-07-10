@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { KeyRound, Loader2, Pencil, Save, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
 import type { PlatformUser } from '@imagina-base/shared';
 
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -56,7 +58,9 @@ export function PlatformUsersCard(): JSX.Element {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                    <Users className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-violet/10 imcrm-text-tone-violet">
+                        <Users className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
                     <div>
                         <CardTitle>{__('Usuarios')}</CardTitle>
                         <CardDescription>
@@ -198,39 +202,37 @@ function UserRow({
     const busy = update.isPending || del.isPending || setDisabled.isPending || reset.isPending;
 
     return (
-        <tr className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0">
-            <td className="imcrm-py-3 imcrm-pr-3">
+        <tr className="imcrm-border-b imcrm-border-border/60 imcrm-transition-colors last:imcrm-border-b-0 hover:imcrm-bg-muted/30">
+            <td className="imcrm-py-2.5 imcrm-pr-3">
                 {editing ? (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                         <Input value={name} onChange={(e) => setName(e.target.value)} className="imcrm-h-8" placeholder={__('Nombre')} />
                         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="imcrm-h-8" placeholder="email@empresa.com" />
                     </div>
                 ) : (
-                    <>
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                            <span className="imcrm-font-medium imcrm-text-foreground">{u.name}</span>
-                            {u.is_superadmin && (
-                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-bg-primary/10 imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-primary">
-                                    <ShieldCheck className="imcrm-h-3 imcrm-w-3" /> {__('Superadmin')}
-                                </span>
-                            )}
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
+                        <Avatar name={u.name} />
+                        <div className="imcrm-min-w-0">
+                            <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                <span className="imcrm-truncate imcrm-font-medium imcrm-text-foreground">{u.name}</span>
+                                {u.is_superadmin && (
+                                    <Badge className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">
+                                        <ShieldCheck className="imcrm-h-2.5 imcrm-w-2.5" /> {__('Superadmin')}
+                                    </Badge>
+                                )}
+                            </div>
+                            <div className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{u.email}</div>
                         </div>
-                        <div className="imcrm-text-xs imcrm-text-muted-foreground">{u.email}</div>
-                    </>
+                    </div>
                 )}
             </td>
-            <td className="imcrm-px-2 imcrm-py-3 imcrm-text-center imcrm-tabular-nums imcrm-text-muted-foreground">{u.workspaces}</td>
-            <td className="imcrm-px-2 imcrm-py-3">
-                <span
-                    className={cn(
-                        'imcrm-inline-flex imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium',
-                        u.disabled
-                            ? 'imcrm-bg-red-500/10 imcrm-text-red-600 dark:imcrm-text-red-400'
-                            : 'imcrm-bg-emerald-500/10 imcrm-text-emerald-600 dark:imcrm-text-emerald-400',
-                    )}
-                >
-                    {u.disabled ? __('Desactivada') : __('Activa')}
-                </span>
+            <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-center imcrm-tabular-nums imcrm-text-muted-foreground">{u.workspaces}</td>
+            <td className="imcrm-px-2 imcrm-py-2.5">
+                {u.disabled ? (
+                    <Badge variant="destructive" dot>{__('Desactivada')}</Badge>
+                ) : (
+                    <Badge variant="success" dot>{__('Activa')}</Badge>
+                )}
             </td>
             <td className="imcrm-px-2 imcrm-py-3">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-2">

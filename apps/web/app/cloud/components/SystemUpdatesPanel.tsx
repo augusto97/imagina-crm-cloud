@@ -1,7 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UpdateRunStatus, UpdateStatus } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
+import { RefreshCw } from 'lucide-react';
 import { api } from '@/cloud/session';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -60,16 +62,21 @@ export function SystemUpdatesPanel(): JSX.Element | null {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                    <div>
-                        <CardTitle>Sistema · Actualizaciones</CardTitle>
-                        <CardDescription>
-                            Actualización del servidor desde GitHub Releases (superadmin).
-                        </CardDescription>
+                    <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-slate/10 imcrm-text-tone-slate">
+                            <RefreshCw className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        </span>
+                        <div>
+                            <CardTitle>Sistema · Actualizaciones</CardTitle>
+                            <CardDescription>
+                                Actualización del servidor desde GitHub Releases (superadmin).
+                            </CardDescription>
+                        </div>
                     </div>
                     {s.update_available && (
-                        <span className="imcrm-shrink-0 imcrm-rounded-full imcrm-bg-amber-100 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-amber-800 dark:imcrm-bg-amber-950/50 dark:imcrm-text-amber-300">
+                        <Badge dot variant="warning" className="imcrm-shrink-0">
                             Hay actualización
-                        </span>
+                        </Badge>
                     )}
                 </div>
             </CardHeader>

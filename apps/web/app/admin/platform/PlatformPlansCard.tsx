@@ -91,7 +91,9 @@ export function PlatformPlansCard(): JSX.Element {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                    <CreditCard className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-mint/10 imcrm-text-tone-mint">
+                        <CreditCard className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
                     <div>
                         <CardTitle>{__('Planes')}</CardTitle>
                         <CardDescription>

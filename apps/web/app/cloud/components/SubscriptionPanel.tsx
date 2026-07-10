@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Plan, PaymentProvider, PlanPrice } from '@imagina-base/shared';
+import { CreditCard } from 'lucide-react';
 import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -60,8 +62,15 @@ export function SubscriptionPanel({ currentPlan }: { currentPlan: Plan }): JSX.E
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Suscripción</CardTitle>
-                <CardDescription>Elegí un plan y pagá con el medio que prefieras.</CardDescription>
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-mint/10 imcrm-text-tone-mint">
+                        <CreditCard className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
+                    <div>
+                        <CardTitle>Suscripción</CardTitle>
+                        <CardDescription>Elegí un plan y pagá con el medio que prefieras.</CardDescription>
+                    </div>
+                </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
             {providers.length === 0 ? (
@@ -81,17 +90,15 @@ export function SubscriptionPanel({ currentPlan }: { currentPlan: Plan }): JSX.E
                             <div
                                 key={plan.slug}
                                 className={[
-                                    'imcrm-space-y-2 imcrm-rounded-lg imcrm-border imcrm-p-4',
-                                    isCurrent ? 'imcrm-border-primary' : 'imcrm-border-border',
+                                    'imcrm-space-y-2 imcrm-rounded-xl imcrm-border imcrm-p-4 imcrm-transition-colors',
+                                    isCurrent
+                                        ? 'imcrm-border-primary imcrm-shadow-[0_0_0_3px_hsl(var(--imcrm-primary)/0.12)]'
+                                        : 'imcrm-border-border hover:imcrm-border-input',
                                 ].join(' ')}
                             >
                                 <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
                                     <span className="imcrm-font-semibold">{plan.name}</span>
-                                    {isCurrent && (
-                                        <span className="imcrm-rounded-full imcrm-bg-primary/10 imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-text-primary">
-                                            Actual
-                                        </span>
-                                    )}
+                                    {isCurrent && <Badge dot>Actual</Badge>}
                                 </div>
                                 <p className="imcrm-text-sm imcrm-text-muted-foreground">{priceLabel(plan)}</p>
                                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-pt-1">
