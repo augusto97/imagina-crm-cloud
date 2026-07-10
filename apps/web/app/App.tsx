@@ -30,6 +30,7 @@ const AutomationsPage = lazyWithReload(() => import('@/admin/automations/Automat
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
 const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const SettingsPage = lazyWithReload(() => import('@/admin/settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
 
 /**
  * Fallback minimal mientras un chunk lazy se descarga. Suficiente:
@@ -75,6 +76,9 @@ export function App(): JSX.Element {
                     isCloud()
                         ? <CloudSettingsPage />
                         : <Suspense fallback={<RouteFallback />}><SettingsPage /></Suspense>
+                } />
+                <Route path="platform" element={
+                    <Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense>
                 } />
                 <Route path="*" element={<Navigate to="/lists" replace />} />
             </Route>

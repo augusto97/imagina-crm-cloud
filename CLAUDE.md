@@ -231,6 +231,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         proveedor, webhooks firmados por proveedor (HMAC MP / verify-webhook
         PayPal) → setBilling; front en Ajustes (admin) con planes/precios.
         Tests de firmas, mapeos y service. Falta prueba en sandbox con creds.
+  - [x] **Consola de plataforma / operador (ADR-S15) — Fase 1 (clientes +
+        stats)**: el superadmin de plataforma (allowlist `PLATFORM_SUPERADMINS`)
+        ahora tiene gestión real de CLIENTES, separada de la app por-tenant.
+        Endpoints `/platform/*` (`SuperadminGuard`) sobre la conexión base
+        (superusuario → bypass RLS): `GET /stats` (empresas por estado/plan,
+        impagas, usuarios, records, altas 30d), `GET /tenants` (todas con plan/
+        estado/uso/owner) y `PATCH /tenants/:id` (cambiar plan / suspender-
+        reactivar → solo-lectura, reusa BillingService). Front: sección
+        "Operador → Plataforma" en el sidebar (visible sólo si el probe no da
+        403) con dashboard + grilla de empresas editable. 5 tests + E2E en
+        navegador (login superadmin → nav → 54 empresas → cambio de plan).
+        Pendiente (fases siguientes): alta/desactivación de usuarios, planes
+        editables en DB.
 - [ ] **F5 — Hardening** (en curso):
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,

@@ -7,11 +7,13 @@ import {
     Database,
     Loader2,
     Settings,
+    ShieldAlert,
     Sparkles,
 } from 'lucide-react';
 
 import { useDashboards } from '@/hooks/useDashboards';
 import { useLists } from '@/hooks/useLists';
+import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
@@ -40,9 +42,17 @@ export function Sidebar({
     // El backend ya filtra GET /lists a las visibles para el user, así
     // que la sección "Tus listas" se auto-recorta. Aquí controlamos los
     // items de nivel superior que dependen de caps específicas.
-    const canSeeDashboards =
-        (useCan(CAP.MANAGE_DASHBOARDS) || useCan(CAP.ACCESS_ADMIN)) && moduleEnabled('dashboards');
-    const canSeeSettings = useCan(CAP.MANAGE_LISTS) || useCan('manage_options');
+    // Hooks siempre en el mismo orden (rules-of-hooks): resolvemos cada
+    // capability por separado y recién después combinamos.
+    const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
+    const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
+    const canManageLists = useCan(CAP.MANAGE_LISTS);
+    const canManageOptions = useCan('manage_options');
+    const canSeeDashboards = (canManageDashboards || canAccessAdmin) && moduleEnabled('dashboards');
+    const canSeeSettings = canManageLists || canManageOptions;
+    // Sección de operador (superadmin de plataforma). Se detecta probando el
+    // endpoint (403 → oculto); no depende de la matriz de capabilities.
+    const isSuperadmin = useIsSuperadmin();
 
     return (
         <aside
@@ -166,6 +176,14 @@ export function Sidebar({
                     <Section label={__('Configuración')} hideLabel={collapsed}>
                         <NavItem to="/settings" icon={Settings} collapsed={collapsed}>
                             {__('Ajustes')}
+                        </NavItem>
+                    </Section>
+                )}
+
+                {isSuperadmin.data === true && (
+                    <Section label={__('Operador')} hideLabel={collapsed}>
+                        <NavItem to="/platform" icon={ShieldAlert} collapsed={collapsed}>
+                            {__('Plataforma')}
                         </NavItem>
                     </Section>
                 )}
