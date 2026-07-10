@@ -1,8 +1,11 @@
 import {
     BadRequestException,
     ConflictException,
+    Inject,
     Injectable,
+    Logger,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import {
     fieldSlugSchema,
@@ -13,20 +16,52 @@ import {
     type FieldType,
     type UpdateFieldInput,
 } from '@imagina-base/shared';
-import type { Tx } from '../db/client';
+import { sql } from 'drizzle-orm';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
 import { FieldsRepository, type FieldRow } from './fields.repository';
+import { createIndexStatements, dropIndexStatements } from './record-indexes';
 
 @Injectable()
 export class FieldsService {
+    private readonly logger = new Logger(FieldsService.name);
+
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly repo: FieldsRepository,
         private readonly lists: ListsService,
         private readonly realtime: RealtimeService,
+        // Conexión base (rol owner, fuera de scope de tenant) para el DDL de
+        // índices por campo (PERF-01). Opcional: en tests que instancian el
+        // service a mano queda undefined → el DDL es no-op.
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
+
+    /**
+     * Sincroniza los índices de expresión de un campo (PERF-01). `CREATE/DROP
+     * INDEX CONCURRENTLY` NO puede correr dentro de una transacción, así que se
+     * ejecuta en la conexión base fuera del scope de tenant. Best-effort: un
+     * fallo del DDL se loguea pero no rompe la request (el flag ya se guardó).
+     */
+    private async syncFieldIndexes(fieldId: number, type: FieldType, enable: boolean): Promise<void> {
+        if (!this.db) return;
+        const statements = enable
+            ? createIndexStatements(fieldId, type)
+            : dropIndexStatements(fieldId);
+        for (const stmt of statements) {
+            try {
+                await this.db.execute(sql.raw(stmt));
+            } catch (err) {
+                this.logger.warn(
+                    `Índice de campo f${fieldId} (${enable ? 'create' : 'drop'}) falló: ${
+                        err instanceof Error ? err.message : String(err)
+                    }`,
+                );
+            }
+        }
+    }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
@@ -97,8 +132,6 @@ export class FieldsService {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
             }
             if (patch.is_indexed !== undefined) {
-                // TODO(F2): al pasar a true, encolar CREATE INDEX CONCURRENTLY
-                // por expresión tipada (STANDALONE.md §3.3). Por ahora solo flag.
                 changes.isIndexed = patch.is_indexed;
             }
             if (patch.slug !== undefined && patch.slug !== current.slug) {
@@ -112,6 +145,11 @@ export class FieldsService {
             if (!updated) throw fieldNotFound(fieldIdOrSlug);
             return updated;
         });
+        // PERF-01: crear/soltar el índice de expresión FUERA de la transacción
+        // (CONCURRENTLY no puede correr en un tx). Idempotente (IF [NOT] EXISTS).
+        if (patch.is_indexed !== undefined) {
+            await this.syncFieldIndexes(row.id, row.type as FieldType, patch.is_indexed);
+        }
         // Un cambio de schema (config/slug/required) afecta cómo se leen los
         // records → invalidamos fields Y records de la lista.
         this.realtime.fields(tenantId, listId);
@@ -121,10 +159,13 @@ export class FieldsService {
 
     async remove(tenantId: number, listIdOrSlug: string, fieldIdOrSlug: string): Promise<void> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const removedId = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
             await this.repo.remove(tx, tenantId, listId, current.id);
+            return current.id;
         });
+        // PERF-01: soltar los índices de expresión del campo borrado (best-effort).
+        await this.syncFieldIndexes(removedId, 'text', false);
         this.realtime.fields(tenantId, listId);
         this.realtime.records(tenantId, listId);
     }
