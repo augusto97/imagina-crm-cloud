@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { canonicalListId } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
 import type { FilterTree } from '@/types/record';
 
@@ -54,12 +55,15 @@ export function useAggregates({
     filterTree,
     groupByFieldId,
 }: UseAggregatesArgs) {
+    const qc = useQueryClient();
+    // Key por id numérico canónico (PERF-06); la URL sigue usando el slug.
+    const keyId = canonicalListId(qc, listSlug ?? '');
     const filterKey = filterTree && filterTree.children.length > 0
         ? JSON.stringify(filterTree)
         : null;
 
     return useQuery({
-        queryKey: ['aggregates', listSlug, fieldIds.join(','), filterKey, groupByFieldId ?? 0] as const,
+        queryKey: ['aggregates', keyId, fieldIds.join(','), filterKey, groupByFieldId ?? 0] as const,
         queryFn: async () => {
             const params = new URLSearchParams();
             params.set('fields', fieldIds.join(','));
