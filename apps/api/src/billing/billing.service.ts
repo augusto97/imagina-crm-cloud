@@ -47,6 +47,27 @@ export class BillingService {
         }
     }
 
+    /**
+     * Igual que `assertCanCreateRecord` pero para un LOTE (SEC-09): verifica que
+     * crear `additional` registros no supere el tope del plan. El import antes
+     * solo comprobaba que "cabía uno más" y luego insertaba hasta 10 000 →
+     * bypass del límite. Un solo conteo cubre todo el lote.
+     */
+    async assertCanCreateRecords(tenantId: number, additional: number): Promise<void> {
+        if (additional <= 0) return;
+        const { plan } = await this.planStatus(tenantId);
+        const limit = PLAN_LIMITS[plan].max_records;
+        if (limit === null) return;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countRecords(tx, tenantId));
+        if (count + additional > limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `El import supera el límite de ${limit} registros del plan ${plan} (tenés ${count}, intentás agregar ${additional})`,
+                data: { status: 403, errors: { plan: 'límite de registros' } },
+            });
+        }
+    }
+
     /** Stand-in del webhook de Stripe: setea plan/estado del workspace. */
     async setBilling(tenantId: number, input: SetBillingInput): Promise<BillingSummary> {
         await this.tenantDb.withTenant(tenantId, (tx) =>

@@ -63,7 +63,8 @@ export class PortalController {
         const { sessionToken } = await this.portal.consume(input.token);
         reply.setCookie(SESSION_COOKIE, sessionToken, {
             httpOnly: true,
-            secure: this.env.COOKIE_SECURE,
+            // SEC-14: en producción SIEMPRE Secure.
+            secure: this.env.COOKIE_SECURE || this.env.NODE_ENV === 'production',
             sameSite: 'lax',
             path: '/',
             maxAge: this.env.SESSION_TTL_SECONDS,

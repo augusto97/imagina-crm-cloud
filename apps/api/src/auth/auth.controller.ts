@@ -92,7 +92,9 @@ export class AuthController {
     private setSessionCookie(reply: FastifyReply, token: string): void {
         reply.setCookie(SESSION_COOKIE, token, {
             httpOnly: true,
-            secure: this.env.COOKIE_SECURE,
+            // SEC-14: en producción la cookie de sesión SIEMPRE es Secure,
+            // aunque el env no lo fuerce (evita fugarla por HTTP en claro).
+            secure: this.env.COOKIE_SECURE || this.env.NODE_ENV === 'production',
             sameSite: 'lax',
             path: '/',
             maxAge: this.env.SESSION_TTL_SECONDS,

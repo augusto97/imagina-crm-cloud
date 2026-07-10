@@ -84,17 +84,9 @@ export class ImportService {
             if (rowOk) valid.push(data);
         });
 
-        // Límite de plan: el import completo no debe superar el tope.
-        for (let i = 0; i < valid.length; i++) {
-            await this.billing.assertCanCreateRecord(tenantId).catch(() => {
-                throw new BadRequestException({
-                    code: 'plan_limit_reached',
-                    message: 'El import supera el límite de registros del plan',
-                    data: { status: 400 },
-                });
-            });
-            break; // chequeo de borde; el conteo fino se hace en el bulk de abajo
-        }
+        // Límite de plan (SEC-09): el import COMPLETO no debe superar el tope.
+        // Se valida el lote entero (count + valid.length), no solo "cabe uno".
+        await this.billing.assertCanCreateRecords(tenantId, valid.length);
 
         if (valid.length > 0) {
             await this.tenantDb.withTenant(tenantId, (tx) =>

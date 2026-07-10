@@ -23,6 +23,21 @@ const envSchema = z.object({
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),
 
+    // --- Endurecimiento HTTP (SEC-05).
+    // Confiar en X-Forwarded-For (para ver la IP real del cliente detrás de
+    // nginx/Caddy). El despliegue SIEMPRE está detrás de un reverse proxy, así
+    // que default true; poner en false solo si el API se expone directo.
+    TRUST_PROXY: z
+        .string()
+        .default('true')
+        .transform((v) => v === 'true' || v === '1'),
+    // Tope de tamaño de body (bytes). Acota payloads abusivos; con holgura para
+    // imports por lotes.
+    BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
+    RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
+    RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),
+
     // --- Email (ADR-S11). `log` (default) escribe el mail al logger; `smtp`
     // usa nodemailer contra un servidor SMTP real. Elegir `smtp` sin SMTP_HOST
     // cae a `log` con un warning (no rompe el arranque).
