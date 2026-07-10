@@ -13,15 +13,18 @@ import {
 import {
     createPlanSchema,
     createPlatformUserSchema,
+    createTenantSchema,
     updatePlanSchema,
     updatePlatformUserSchema,
     updateTenantSchema,
     type CreatePlanInput,
     type CreatePlatformUserInput,
+    type CreateTenantInput,
     type PlatformPlan,
     type PlatformPlansResponse,
     type PlatformStats,
     type PlatformTenant,
+    type PlatformTenantDetail,
     type PlatformTenantsResponse,
     type PlatformUser,
     type PlatformUsersResponse,
@@ -55,6 +58,21 @@ export class PlatformController {
     @Get('tenants')
     tenants(): Promise<PlatformTenantsResponse> {
         return this.platform.listTenants().then((data) => ({ data }));
+    }
+
+    /** Alta de una empresa nueva + su admin en un paso. */
+    @Post('tenants')
+    @HttpCode(201)
+    createTenant(
+        @Body(new ZodValidationPipe(createTenantSchema)) input: CreateTenantInput,
+    ): Promise<PlatformTenant> {
+        return this.platform.createTenant(input);
+    }
+
+    /** Detalle de una empresa: datos + miembros + límites del plan. */
+    @Get('tenants/:id')
+    tenantDetail(@Param('id', ParseIntPipe) id: number): Promise<PlatformTenantDetail> {
+        return this.platform.tenantDetail(id);
     }
 
     /** Cambia plan y/o estado (suspender/reactivar) de una empresa. */

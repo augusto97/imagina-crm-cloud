@@ -538,9 +538,18 @@ los consume de ahí. Endpoints `GET/POST /platform/plans` y
 `PATCH/DELETE /platform/plans/:slug`; `updateTenant` valida que el plan exista;
 borrar un plan en uso se rechaza. Front: card "Planes" con edición inline de
 límites + alta/baja, y el select de plan de cada empresa se puebla dinámicamente.
-Pendiente: precios de checkout por plan custom y detalle/impersonación de empresa.
+Pendiente: precios de checkout por plan custom.
+
+**Fase 4 — alta + detalle de empresa.** El operador da de alta una empresa
+nueva + su admin en **un paso** (`POST /platform/tenants`, reusa el patrón RLS
+de `register`: si el email ya existe lo suma como admin, si no crea la cuenta +
+invita). `GET /platform/tenants/:id` devuelve el **detalle** (datos + miembros +
+límites del plan). Front: botón "Nueva empresa" con formulario (empresa + email/
+nombre del admin + plan) y fila expandible por empresa con sus miembros y uso vs
+límite. Pendiente (opcional): impersonar empresa para soporte (requiere un
+diseño de auditoría aparte por ser sensible).
 
 ---
 
 **Última actualización:** 2026-07-10
-**Versión del documento:** 1.7.0 (consola de plataforma F1-F3: clientes/usuarios/planes — ADR-S15)
+**Versión del documento:** 1.8.0 (consola de plataforma F1-F4: clientes/usuarios/planes/alta+detalle — ADR-S15)

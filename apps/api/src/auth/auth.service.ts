@@ -164,6 +164,64 @@ export class AuthService implements OnModuleInit {
         return user;
     }
 
+    /**
+     * El operador da de alta una EMPRESA nueva + su admin en un paso. Si el email
+     * ya tiene cuenta, lo suma como admin del nuevo workspace; si no, la crea y le
+     * manda la invitación. Reusa el patrón RLS de `register`.
+     */
+    async adminCreateTenant(input: {
+        workspace_name: string;
+        admin_email: string;
+        admin_name: string;
+        plan: string;
+    }): Promise<{ tenantId: number; invited: boolean }> {
+        const email = input.admin_email.trim().toLowerCase();
+        if (this.env.PLATFORM_SUPERADMINS.includes(email)) {
+            throw new ConflictException('Ese email está reservado');
+        }
+        const result = await this.db.transaction(async (tx) => {
+            const [existing] = await tx
+                .select({ id: users.id, email: users.email, name: users.name })
+                .from(users)
+                .where(sql`lower(${users.email}) = ${email}`)
+                .limit(1);
+            let userId: number;
+            let invited = false;
+            let name: string;
+            if (existing) {
+                userId = existing.id;
+                name = existing.name;
+            } else {
+                const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
+                const [u] = await tx.insert(users).values({ email, passwordHash, name: input.admin_name.trim() }).returning();
+                if (!u) throw new Error('Insert de usuario no devolvió fila');
+                userId = u.id;
+                name = u.name;
+                invited = true;
+            }
+
+            const slug = await this.availableTenantSlug(tx, slugifyTenant(input.workspace_name));
+            const [tenant] = await tx.insert(tenants).values({ slug, name: input.workspace_name, plan: input.plan }).returning();
+            if (!tenant) throw new Error('Insert de tenant no devolvió fila');
+
+            // Membership admin bajo el rol de app + contexto RLS (WITH CHECK real).
+            await tx.execute(sql`set local role imagina_app`);
+            await tx.execute(sql`select set_config('app.user_id', ${String(userId)}, true)`);
+            await tx.execute(sql`select set_config('app.tenant_id', ${String(tenant.id)}, true)`);
+            await tx.insert(memberships).values({ userId, tenantId: tenant.id, role: 'admin' });
+
+            return { tenantId: tenant.id, userId, invited, email, name };
+        });
+
+        if (result.invited) {
+            await this.issueSetupLink(result.userId, result.email, result.name, 'invite');
+        }
+        this.logger.log(
+            `Empresa ${result.tenantId} creada por operador (admin ${result.email}${result.invited ? ', invitado' : ''})`,
+        );
+        return { tenantId: result.tenantId, invited: result.invited };
+    }
+
     /** Reset de contraseña disparado por el operador (envía el email). */
     async adminResetPassword(userId: number): Promise<void> {
         const [user] = await this.db

@@ -5,11 +5,13 @@ import {
     isReadOnly,
     type BillingStatus,
     type CreatePlanInput,
+    type CreateTenantInput,
     type Plan,
     type PlatformOwner,
     type PlatformPlan,
     type PlatformStats,
     type PlatformTenant,
+    type PlatformTenantDetail,
     type PlatformUser,
     type UpdatePlanInput,
     type UpdateTenantInput,
@@ -67,6 +69,37 @@ export class PlatformService {
                 },
             };
         });
+    }
+
+    /** Alta de una empresa nueva + su admin en un paso (onboarding por el operador). */
+    async createTenant(input: CreateTenantInput): Promise<PlatformTenant> {
+        if (input.plan !== undefined && !(await this.plans.exists(input.plan))) {
+            throw new BadRequestException({ code: 'unknown_plan', message: `El plan '${input.plan}' no existe`, data: { status: 400, errors: { plan: 'No existe' } } });
+        }
+        const { tenantId } = await this.auth.adminCreateTenant({
+            workspace_name: input.workspace_name,
+            admin_email: input.admin_email,
+            admin_name: input.admin_name,
+            plan: input.plan ?? 'trial',
+        });
+        return this.getTenant(tenantId);
+    }
+
+    /** Detalle de una empresa: datos + miembros + límites del plan. */
+    async tenantDetail(id: number): Promise<PlatformTenantDetail> {
+        const tenant = await this.getTenant(id);
+        const rows = await this.db
+            .select({ user_id: users.id, name: users.name, email: users.email, role: memberships.role, disabledAt: users.disabledAt })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(eq(memberships.tenantId, id))
+            .orderBy(memberships.createdAt);
+        const limits = await this.plans.limits(tenant.plan);
+        return {
+            tenant,
+            members: rows.map((m) => ({ user_id: m.user_id, name: m.name, email: m.email, role: m.role, disabled: m.disabledAt != null })),
+            limits,
+        };
     }
 
     /** Una empresa concreta (tras un cambio de plan/estado). */
