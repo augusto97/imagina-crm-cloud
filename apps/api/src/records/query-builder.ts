@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+    dateRangePresetSchema,
     isDataField,
     jsonbKeyForField,
     type DateRangePreset,
@@ -320,7 +321,13 @@ function asPreset(value: unknown): DateRangePreset {
     if (typeof preset !== 'string') {
         throw new BadRequestException('between_relative requiere el slug de un preset');
     }
-    return preset as DateRangePreset;
+    // SEC-19: validar contra el enum. Un preset desconocido dejaba from/to en
+    // undefined → TypeError → 500. Ahora es un 400 explícito.
+    const parsed = dateRangePresetSchema.safeParse(preset);
+    if (!parsed.success) {
+        throw new BadRequestException(`Preset de fecha inválido: ${preset}`);
+    }
+    return parsed.data;
 }
 
 function escapeLike(value: string): string {
