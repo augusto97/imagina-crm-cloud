@@ -13,6 +13,8 @@ interface SessionState {
     memberships: MembershipSummary[];
     activeTenantId: number | null;
     ready: boolean;
+    /** Si la sesión es de impersonación (ADR-S15 F5): datos del operador. */
+    impersonating: AuthSession['impersonating'];
     setSession: (session: AuthSession) => void;
     setActiveTenant: (tenantId: number) => void;
     clear: () => void;
@@ -26,10 +28,12 @@ export const useSession = create<SessionState>()(
             memberships: [],
             activeTenantId: null,
             ready: false,
+            impersonating: undefined,
             setSession: (session) =>
                 set({
                     user: session.user,
                     memberships: session.memberships,
+                    impersonating: session.impersonating,
                     activeTenantId:
                         get().activeTenantId &&
                         session.memberships.some((m) => m.tenant_id === get().activeTenantId)
@@ -37,7 +41,7 @@ export const useSession = create<SessionState>()(
                             : (session.memberships[0]?.tenant_id ?? null),
                 }),
             setActiveTenant: (tenantId) => set({ activeTenantId: tenantId }),
-            clear: () => set({ user: null, memberships: [], activeTenantId: null }),
+            clear: () => set({ user: null, memberships: [], activeTenantId: null, impersonating: undefined }),
             markReady: () => set({ ready: true }),
         }),
         {

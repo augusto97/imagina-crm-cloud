@@ -3,6 +3,8 @@ import type {
     CreatePlanInput,
     CreatePlatformUserInput,
     CreateTenantInput,
+    ImpersonateResult,
+    ImpersonationLogEntry,
     PlatformPlan,
     PlatformStats,
     PlatformTenant,
@@ -176,5 +178,28 @@ export function useDeletePlan() {
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: platformKeys.plans() });
         },
+    });
+}
+
+// ─────────────── Impersonación de soporte (F5) ───────────────
+
+/** Impersona a un usuario. Al terminar recarga la app (cambió la cookie). */
+export function useImpersonate() {
+    return useMutation({
+        mutationFn: async (userId: number): Promise<ImpersonateResult> =>
+            (await api.post<ImpersonateResult>('/platform/impersonate', { user_id: userId })).data,
+        onSuccess: () => {
+            // La cookie ahora es la de impersonación: vamos a /lists y recargamos
+            // para que /auth/me devuelva la sesión del usuario objetivo + el banner.
+            window.location.hash = '#/lists';
+            window.location.reload();
+        },
+    });
+}
+
+export function useImpersonations() {
+    return useQuery({
+        queryKey: [...platformKeys.all, 'impersonations'],
+        queryFn: async () => (await api.get<ImpersonationLogEntry[]>('/platform/impersonations')).data,
     });
 }

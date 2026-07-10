@@ -23,7 +23,7 @@ import { eq, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { memberships, tenants, users } from '../db/schema';
+import { impersonationLog, memberships, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
@@ -258,6 +258,65 @@ export class AuthService implements OnModuleInit {
         this.logger.log(`Usuario ${userId} ${disabled ? 'desactivado' : 'reactivado'} por operador`);
     }
 
+    // ─────────────── Impersonación de soporte (ADR-S15 F5) ───────────────
+
+    private readonly IMPERSONATION_TTL_SECONDS = 60 * 60; // 1 h, tope duro.
+
+    /**
+     * El operador abre una sesión de IMPERSONACIÓN como `targetUserId` (soporte).
+     * Registra la fila de auditoría y crea una sesión de vida corta que recuerda
+     * el token original del operador. No se puede impersonar a un superadmin ni a
+     * una cuenta desactivada.
+     */
+    async impersonate(
+        operatorId: number,
+        operatorToken: string,
+        targetUserId: number,
+    ): Promise<{ token: string; target: { id: number; name: string; email: string } }> {
+        if (operatorId === targetUserId) {
+            throw new BadRequestException({ code: 'self_impersonation', message: 'No tiene sentido impersonarte a vos mismo', data: { status: 400 } });
+        }
+        const [target] = await this.db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+        if (!target) {
+            throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${targetUserId} no existe`, data: { status: 404 } });
+        }
+        if (target.disabledAt) {
+            throw new ForbiddenException({ code: 'account_disabled', message: 'No se puede impersonar una cuenta desactivada', data: { status: 403 } });
+        }
+        if (this.env.PLATFORM_SUPERADMINS.includes(target.email.toLowerCase())) {
+            throw new ForbiddenException({ code: 'cannot_impersonate_superadmin', message: 'No se puede impersonar a un superadmin de plataforma', data: { status: 403 } });
+        }
+
+        const expiresAt = new Date(Date.now() + this.IMPERSONATION_TTL_SECONDS * 1000);
+        const [audit] = await this.db
+            .insert(impersonationLog)
+            .values({ actorUserId: operatorId, targetUserId, expiresAt })
+            .returning({ id: impersonationLog.id });
+        const token = await this.sessions.createImpersonation({
+            targetUserId,
+            operatorId,
+            origToken: operatorToken,
+            auditId: audit!.id,
+            ttlSeconds: this.IMPERSONATION_TTL_SECONDS,
+        });
+        this.logger.warn(`IMPERSONACIÓN: operador ${operatorId} → usuario ${targetUserId} (audit ${audit!.id})`);
+        return { token, target: { id: target.id, name: target.name, email: target.email } };
+    }
+
+    /** Sale de la impersonación: cierra la auditoría y devuelve el token original. */
+    async stopImpersonation(currentToken: string): Promise<{ origToken: string | null }> {
+        const data = await this.sessions.get(currentToken);
+        if (!data?.impersonatedBy) {
+            throw new BadRequestException({ code: 'not_impersonating', message: 'La sesión no es de impersonación', data: { status: 400 } });
+        }
+        if (data.auditId) {
+            await this.db.update(impersonationLog).set({ endedAt: sql`now()` }).where(eq(impersonationLog.id, data.auditId));
+        }
+        await this.sessions.destroy(currentToken);
+        this.logger.warn(`IMPERSONACIÓN cerrada: operador ${data.impersonatedBy} → usuario ${data.userId}`);
+        return { origToken: data.origToken ?? null };
+    }
+
     /** Token de un solo uso + email para invitar o resetear (link a /reset). */
     private async issueSetupLink(
         userId: number,
@@ -386,15 +445,24 @@ export class AuthService implements OnModuleInit {
         };
     }
 
-    async me(userId: number): Promise<AuthSession> {
+    async me(userId: number, impersonatedBy?: number): Promise<AuthSession> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
             throw new UnauthorizedException('Usuario inexistente');
         }
-        return {
+        const session: AuthSession = {
             user: this.toSessionUser(user),
             memberships: await this.membershipsOf(user.id),
         };
+        if (impersonatedBy) {
+            const [op] = await this.db
+                .select({ id: users.id, name: users.name })
+                .from(users)
+                .where(eq(users.id, impersonatedBy))
+                .limit(1);
+            if (op) session.impersonating = { operator_id: op.id, operator_name: op.name };
+        }
+        return session;
     }
 
     async logout(token: string): Promise<void> {

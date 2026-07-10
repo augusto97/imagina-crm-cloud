@@ -127,6 +127,13 @@
       "when": 1783725000000,
       "tag": "0017_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783730000000,
+      "tag": "0018_impersonation_log",
+      "breakpoints": true
     }
   ]
 }

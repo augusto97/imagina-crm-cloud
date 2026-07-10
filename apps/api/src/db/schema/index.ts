@@ -13,3 +13,4 @@ export * from './app-releases';
 export * from './dashboards';
 export * from './public-lists';
 export * from './plans';
+export * from './impersonation-log';

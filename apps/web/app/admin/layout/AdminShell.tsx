@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
+import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
@@ -58,6 +59,7 @@ export function AdminShell(): JSX.Element {
             )}
             <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
+                <ImpersonationBanner />
                 <Topbar onMenuClick={() => setMobileNavOpen(true)} />
                 <main
                     id="imcrm-main"

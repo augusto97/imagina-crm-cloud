@@ -6,6 +6,7 @@ import {
     type BillingStatus,
     type CreatePlanInput,
     type CreateTenantInput,
+    type ImpersonationLogEntry,
     type Plan,
     type PlatformOwner,
     type PlatformPlan,
@@ -17,10 +18,11 @@ import {
     type UpdateTenantInput,
 } from '@imagina-base/shared';
 import { desc, eq, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { automations, memberships, records, tenants, users } from '../db/schema';
+import { automations, impersonationLog, memberships, records, tenants, users } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
 
@@ -132,6 +134,45 @@ export class PlatformService {
         // Reusa el mismo camino que el webhook de pago (BillingService.setBilling).
         await this.billing.setBilling(id, { plan: input.plan, status: input.status });
         return this.getTenant(id);
+    }
+
+    // ─────────────── Impersonación de soporte (F5) ───────────────
+
+    /** Abre una sesión de impersonación como `targetUserId`. Devuelve token+target. */
+    impersonate(operatorId: number, operatorToken: string, targetUserId: number) {
+        return this.auth.impersonate(operatorId, operatorToken, targetUserId);
+    }
+
+    /** Log de auditoría de impersonación (más recientes primero). */
+    async listImpersonations(limit = 50): Promise<ImpersonationLogEntry[]> {
+        const actor = alias(users, 'actor');
+        const target = alias(users, 'target');
+        const rows = await this.db
+            .select({
+                id: impersonationLog.id,
+                actor_name: actor.name,
+                actor_email: actor.email,
+                target_name: target.name,
+                target_email: target.email,
+                started_at: impersonationLog.startedAt,
+                expires_at: impersonationLog.expiresAt,
+                ended_at: impersonationLog.endedAt,
+            })
+            .from(impersonationLog)
+            .innerJoin(actor, eq(actor.id, impersonationLog.actorUserId))
+            .innerJoin(target, eq(target.id, impersonationLog.targetUserId))
+            .orderBy(desc(impersonationLog.startedAt))
+            .limit(limit);
+        return rows.map((r) => ({
+            id: r.id,
+            actor_name: r.actor_name,
+            actor_email: r.actor_email,
+            target_name: r.target_name,
+            target_email: r.target_email,
+            started_at: r.started_at.toISOString(),
+            expires_at: r.expires_at.toISOString(),
+            ended_at: r.ended_at ? r.ended_at.toISOString() : null,
+        }));
     }
 
     // ─────────────────────────── Planes (F3) ───────────────────────────

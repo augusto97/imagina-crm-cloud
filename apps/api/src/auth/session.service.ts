@@ -7,6 +7,14 @@ import { REDIS } from '../redis/redis.module';
 export interface SessionData {
     userId: number;
     createdAt: string;
+    /** Impersonación (ADR-S15 F5): userId del operador que impersona. */
+    impersonatedBy?: number;
+    /** Token de la sesión original del operador (para volver al salir). */
+    origToken?: string;
+    /** Tope duro de la impersonación (ISO); pasada esta fecha la sesión muere. */
+    expiresAt?: string;
+    /** Fila de `impersonation_log` para marcar el cierre. */
+    auditId?: number;
 }
 
 /**
@@ -55,7 +63,42 @@ export class SessionService {
         if (!raw) {
             return null;
         }
-        return JSON.parse(raw) as SessionData;
+        const data = JSON.parse(raw) as SessionData;
+        // Tope duro de impersonación: aunque getex renueve el TTL de Redis, una
+        // sesión impersonada muere pasada su `expiresAt`.
+        if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) {
+            await this.destroy(token);
+            return null;
+        }
+        return data;
+    }
+
+    /**
+     * Crea una sesión de IMPERSONACIÓN (operador → usuario objetivo). TTL corto
+     * y tope duro `expiresAt`. Guarda el token original del operador para poder
+     * volver, y el id de la fila de auditoría para cerrarla al salir.
+     */
+    async createImpersonation(params: {
+        targetUserId: number;
+        operatorId: number;
+        origToken: string;
+        auditId: number;
+        ttlSeconds: number;
+    }): Promise<string> {
+        const token = randomBytes(32).toString('base64url');
+        const data: SessionData = {
+            userId: params.targetUserId,
+            createdAt: new Date().toISOString(),
+            impersonatedBy: params.operatorId,
+            origToken: params.origToken,
+            expiresAt: new Date(Date.now() + params.ttlSeconds * 1000).toISOString(),
+            auditId: params.auditId,
+        };
+        await this.redis.set(this.key(token), JSON.stringify(data), 'EX', params.ttlSeconds);
+        // Bajo el índice del OBJETIVO: si lo desactivan, también cae la impersonación.
+        await this.redis.sadd(this.userKey(params.targetUserId), token);
+        await this.redis.expire(this.userKey(params.targetUserId), params.ttlSeconds);
+        return token;
     }
 
     async destroy(token: string): Promise<void> {

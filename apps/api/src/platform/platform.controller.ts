@@ -4,22 +4,29 @@ import {
     Delete,
     Get,
     HttpCode,
+    Inject,
     Param,
     ParseIntPipe,
     Patch,
     Post,
+    Req,
+    Res,
     UseGuards,
 } from '@nestjs/common';
 import {
     createPlanSchema,
     createPlatformUserSchema,
     createTenantSchema,
+    impersonateSchema,
     updatePlanSchema,
     updatePlatformUserSchema,
     updateTenantSchema,
     type CreatePlanInput,
     type CreatePlatformUserInput,
     type CreateTenantInput,
+    type ImpersonateInput,
+    type ImpersonateResult,
+    type ImpersonationLogResponse,
     type PlatformPlan,
     type PlatformPlansResponse,
     type PlatformStats,
@@ -32,9 +39,11 @@ import {
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
-import { SessionGuard } from '../auth/session.guard';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { ENV, type Env } from '../config/env';
 import { PlatformService } from './platform.service';
 
 /**
@@ -46,7 +55,10 @@ import { PlatformService } from './platform.service';
 @Controller('platform')
 @UseGuards(SessionGuard, SuperadminGuard)
 export class PlatformController {
-    constructor(private readonly platform: PlatformService) {}
+    constructor(
+        private readonly platform: PlatformService,
+        @Inject(ENV) private readonly env: Env,
+    ) {}
 
     /** Dashboard del operador: totales por estado/plan, usuarios, records, altas. */
     @Get('stats')
@@ -149,5 +161,36 @@ export class PlatformController {
     @HttpCode(204)
     async removePlan(@Param('slug') slug: string): Promise<void> {
         await this.platform.removePlan(slug);
+    }
+
+    // ─────────────── Impersonación de soporte (F5) ───────────────
+
+    /**
+     * Abre una sesión de impersonación como el usuario indicado. Cambia la cookie
+     * de sesión por la de impersonación (vida corta) — al salir se restaura la
+     * original (`POST /auth/stop-impersonating`). Queda registrado en auditoría.
+     */
+    @Post('impersonate')
+    @HttpCode(200)
+    async impersonate(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(impersonateSchema)) input: ImpersonateInput,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<ImpersonateResult> {
+        const { token, target } = await this.platform.impersonate(req.authUserId!, req.sessionToken!, input.user_id);
+        reply.setCookie(SESSION_COOKIE, token, {
+            httpOnly: true,
+            secure: this.env.COOKIE_SECURE || this.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 60 * 60,
+        });
+        return { target };
+    }
+
+    /** Log de auditoría de impersonación (transparencia del operador). */
+    @Get('impersonations')
+    impersonations(): Promise<ImpersonationLogResponse> {
+        return this.platform.listImpersonations().then((data) => ({ data }));
     }
 }

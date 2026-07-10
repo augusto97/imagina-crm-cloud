@@ -546,10 +546,20 @@ de `register`: si el email ya existe lo suma como admin, si no crea la cuenta +
 invita). `GET /platform/tenants/:id` devuelve el **detalle** (datos + miembros +
 límites del plan). Front: botón "Nueva empresa" con formulario (empresa + email/
 nombre del admin + plan) y fila expandible por empresa con sus miembros y uso vs
-límite. Pendiente (opcional): impersonar empresa para soporte (requiere un
-diseño de auditoría aparte por ser sensible).
+límite.
+
+**Fase 5 — impersonación de soporte (con auditoría).** El operador puede entrar
+como un usuario de un cliente para dar soporte. Recaudos: (1) **auditoría**
+append-only (`impersonation_log`: quién→a quién, inicio/expiración/fin), visible
+en la consola; (2) **vida corta** con tope duro (1 h — `SessionData.expiresAt`
+mata la sesión aunque el TTL de Redis se renueve); (3) **banner** persistente
+"Modo soporte" con opción de salir; (4) no se puede impersonar a un superadmin ni
+a una cuenta desactivada. `POST /platform/impersonate` cambia la cookie por una
+de impersonación (guarda el token original del operador); `POST /auth/stop-
+impersonating` la restaura; `GET /auth/me` expone `impersonating` para el banner.
+Con esto la consola de operador (F1-F5) queda completa.
 
 ---
 
 **Última actualización:** 2026-07-10
-**Versión del documento:** 1.8.0 (consola de plataforma F1-F4: clientes/usuarios/planes/alta+detalle — ADR-S15)
+**Versión del documento:** 1.9.0 (consola de plataforma F1-F5: +impersonación con auditoría — ADR-S15)

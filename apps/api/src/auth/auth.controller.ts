@@ -68,7 +68,28 @@ export class AuthController {
     @Get('me')
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<AuthSession> {
-        return this.auth.me(req.authUserId as number);
+        return this.auth.me(req.authUserId as number, req.impersonatedBy);
+    }
+
+    /**
+     * Sale de una sesión de impersonación y restaura la del operador (ADR-S15 F5).
+     * Sólo `SessionGuard` (la corre la sesión impersonada, que NO es superadmin);
+     * el service valida que efectivamente sea de impersonación.
+     */
+    @Post('stop-impersonating')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    async stopImpersonating(
+        @Req() req: FastifyRequest,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<{ ok: true }> {
+        const { origToken } = await this.auth.stopImpersonation(req.sessionToken as string);
+        if (origToken) {
+            this.setSessionCookie(reply, origToken);
+        } else {
+            reply.clearCookie(SESSION_COOKIE, { path: '/' });
+        }
+        return { ok: true };
     }
 
     /** Pide el email de reset. Siempre 204 (no revela si el email existe). */

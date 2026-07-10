@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { usePlatformStats } from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
 
+import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
@@ -74,6 +75,9 @@ export function PlatformPage(): JSX.Element {
 
             {/* Usuarios de la plataforma */}
             <PlatformUsersCard />
+
+            {/* Auditoría de impersonación */}
+            <PlatformImpersonationsCard />
         </div>
     );
 }
