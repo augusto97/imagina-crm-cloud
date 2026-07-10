@@ -36,6 +36,35 @@ export interface PlatformTenantsResponse {
     data: PlatformTenant[];
 }
 
+/** Alta de una empresa nueva + su admin, en un paso (onboarding por el operador). */
+export const createTenantSchema = z.object({
+    workspace_name: z.string().trim().min(1).max(120),
+    admin_email: emailSchema,
+    admin_name: z.string().trim().min(1).max(120),
+    plan: planSchema.optional(),
+});
+export type CreateTenantInput = z.infer<typeof createTenantSchema>;
+
+/** Un miembro de una empresa (para el detalle). */
+export interface PlatformTenantMember {
+    user_id: number;
+    name: string;
+    email: string;
+    role: string;
+    disabled: boolean;
+}
+
+/** Detalle de una empresa: sus datos + miembros + límites del plan. */
+export interface PlatformTenantDetail {
+    tenant: PlatformTenant;
+    members: PlatformTenantMember[];
+    limits: {
+        max_records: number | null;
+        max_users: number | null;
+        max_automations: number | null;
+    };
+}
+
 /** Cambio de plan/estado de una empresa desde la consola (mínimo un campo). */
 export const updateTenantSchema = z
     .object({

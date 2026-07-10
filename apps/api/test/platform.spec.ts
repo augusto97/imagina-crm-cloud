@@ -255,4 +255,52 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await expect(platform.removePlan('temp')).resolves.toBeUndefined();
         expect((await platform.listPlans()).some((p) => p.slug === 'temp')).toBe(false);
     });
+
+    // ─────────────── Alta + detalle de empresa (F4) ───────────────
+
+    it('createTenant: alta empresa + admin (invita) con el plan pedido', async () => {
+        sentMail.length = 0;
+        const t = await platform.createTenant({
+            workspace_name: 'Nueva Empresa',
+            admin_email: 'ceo@nueva.test',
+            admin_name: 'CEO Nueva',
+            plan: 'pro',
+        });
+        expect(t).toMatchObject({ name: 'Nueva Empresa', plan: 'pro' });
+        expect(t.owner).toMatchObject({ email: 'ceo@nueva.test' });
+        expect(t.usage.users).toBe(1);
+        expect(sentMail.some((m) => m.to === 'ceo@nueva.test')).toBe(true);
+
+        // El admin puede loguearse tras definir su contraseña (flujo de invitación
+        // simulado: reset directo). Verificamos que la cuenta existe y es admin.
+        const detail = await platform.tenantDetail(t.id);
+        expect(detail.members).toHaveLength(1);
+        expect(detail.members[0]!).toMatchObject({ email: 'ceo@nueva.test', role: 'admin' });
+        expect(detail.limits.max_records).toBe(200_000);
+    });
+
+    it('createTenant: si el email ya existe, lo suma como admin (no re-invita)', async () => {
+        await auth.register({ email: 'ya@existe.test', password: 'password123', name: 'Ya', workspace_name: 'PrimerWS' });
+        sentMail.length = 0;
+        const t = await platform.createTenant({
+            workspace_name: 'Segunda Empresa',
+            admin_email: 'ya@existe.test',
+            admin_name: 'Ya',
+        });
+        expect(t.owner).toMatchObject({ email: 'ya@existe.test' });
+        expect(sentMail).toHaveLength(0); // no se invita a alguien que ya tiene cuenta
+        // El usuario ahora es admin de dos workspaces.
+        const all = await platform.listUsers();
+        expect(all.find((u) => u.email === 'ya@existe.test')?.workspaces).toBe(2);
+    });
+
+    it('createTenant con plan inexistente → 400', async () => {
+        await expect(
+            platform.createTenant({ workspace_name: 'X', admin_email: 'x@x.test', admin_name: 'X', plan: 'no_existe' }),
+        ).rejects.toThrow();
+    });
+
+    it('tenantDetail: 404 si la empresa no existe', async () => {
+        await expect(platform.tenantDetail(999999)).rejects.toBeInstanceOf(NotFoundException);
+    });
 });
