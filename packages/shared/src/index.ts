@@ -22,6 +22,7 @@ export * from './schemas/dashboard';
 export * from './schemas/system';
 export * from './schemas/portal';
 export * from './schemas/billing';
+export * from './schemas/platform';
 export * from './schemas/payment';
 export * from './schemas/update';
 export * from './schemas/export';

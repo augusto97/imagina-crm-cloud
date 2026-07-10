@@ -504,7 +504,23 @@ inline) que consume los endpoints JSON públicos (`/public/lists/:token/meta` y
 `/records`), así el embed no depende del bundle del admin. Config admin en
 `PATCH /lists/:id/public` (`manage_lists`).
 
+**ADR-S15 — Consola de plataforma (operador SaaS) separada de la app de cliente.**
+El **operador** (superadmin de plataforma, allowlist `PLATFORM_SUPERADMINS`)
+tiene una consola propia para gestionar el negocio, distinta de la app por-tenant.
+A diferencia de todo el resto del API —acotado a un tenant por RLS— estos
+endpoints (`/platform/*`, `SuperadminGuard`) ven **todas las empresas**: corren
+sobre la conexión **base** (rol dueño/superusuario, que hace *bypass* de RLS,
+igual que el DDL de índices y las migraciones), nunca dentro de `withTenant`.
+Da: `GET /platform/stats` (foto del negocio — empresas por estado/plan, impagas,
+usuarios, records, altas 30d), `GET /platform/tenants` (todas las empresas con
+plan/estado/uso/owner=primer admin) y `PATCH /platform/tenants/:id` (cambiar
+plan / suspender-reactivar, reusa `BillingService.setBilling` → la suspensión es
+solo-lectura, ADR-S09). El front monta una sección "Operador → Plataforma" en el
+sidebar del admin, visible sólo si el probe del endpoint no da 403 (mismo patrón
+que el panel de auto-update). Es la primera fase de la consola; usuarios y
+edición de planes en DB son fases siguientes.
+
 ---
 
 **Última actualización:** 2026-07-10
-**Versión del documento:** 1.5.0 (listas públicas embebibles — ADR-S14)
+**Versión del documento:** 1.6.0 (consola de plataforma/operador — ADR-S15)

@@ -22,6 +22,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { UpdateModule } from './update/update.module';
 import { PortalModule } from './portal/portal.module';
 import { PublicListsModule } from './public-lists/public-lists.module';
+import { PlatformModule } from './platform/platform.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
 import { RedisModule } from './redis/redis.module';
@@ -54,6 +55,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         DashboardsModule,
         PortalModule,
         PublicListsModule,
+        PlatformModule,
         BillingModule,
         PaymentsModule,
         ExportModule,
