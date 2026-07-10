@@ -1,0 +1,62 @@
+import { z } from 'zod';
+import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
+
+/**
+ * Consola de PLATAFORMA (operador SaaS / superadmin). A diferencia del resto
+ * del API —acotado a un tenant por RLS— estos endpoints ven TODAS las empresas
+ * (tenants) para gestionarlas: plan, estado (suspensión/impago), uso y alta.
+ * Gateado por `SuperadminGuard` (allowlist `PLATFORM_SUPERADMINS`), nunca por
+ * la matriz de capabilities por workspace.
+ */
+
+/** Owner de un tenant (primer admin) — para identificar al cliente. */
+export const platformOwnerSchema = z.object({
+    id: z.number().int(),
+    name: z.string(),
+    email: z.string(),
+});
+export type PlatformOwner = z.infer<typeof platformOwnerSchema>;
+
+/** Una empresa (tenant) vista por el operador. */
+export const platformTenantSchema = z.object({
+    id: z.number().int(),
+    slug: z.string(),
+    name: z.string(),
+    plan: planSchema,
+    status: billingStatusSchema,
+    read_only: z.boolean(),
+    created_at: z.string(),
+    owner: platformOwnerSchema.nullable(),
+    usage: usageSchema,
+});
+export type PlatformTenant = z.infer<typeof platformTenantSchema>;
+
+export interface PlatformTenantsResponse {
+    data: PlatformTenant[];
+}
+
+/** Cambio de plan/estado de una empresa desde la consola (mínimo un campo). */
+export const updateTenantSchema = z
+    .object({
+        plan: planSchema.optional(),
+        status: billingStatusSchema.optional(),
+    })
+    .refine((v) => v.plan !== undefined || v.status !== undefined, {
+        message: 'Indicá al menos plan o estado',
+    });
+export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
+
+/** Dashboard del operador: la foto de todo el negocio. */
+export interface PlatformStats {
+    tenants_total: number;
+    /** Cuenta de tenants por estado de facturación. */
+    by_status: Record<BillingStatus, number>;
+    /** Cuenta de tenants por plan. */
+    by_plan: Record<Plan, number>;
+    /** Tenants en solo-lectura (impago: past_due/canceled). */
+    read_only_tenants: number;
+    users_total: number;
+    records_total: number;
+    /** Altas de empresas en los últimos 30 días. */
+    signups_last_30d: number;
+}
