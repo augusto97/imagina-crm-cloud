@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, LayoutGrid, UserRound } from 'lucide-react';
+import { KeyRound, LayoutGrid, UserRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -10,99 +10,51 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { useFields } from '@/hooks/useFields';
 import { useUpdateList } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import type { ListSummary } from '@/types/list';
 import { PORTAL_DEFAULTS, type PortalSettings, type PortalTemplate } from '@/types/portal';
 
-// El editor visual del portal ahora vive en su propia ruta
-// (`/lists/:slug/portal-editor`, ver `PortalTemplateEditorPage`).
-// Desde acá solo enlazamos vía botón — replica el patrón del editor
-// del CRM panel (Apariencia del registro).
-
 interface Props {
     list: ListSummary;
 }
 
 /**
- * Tab "Configuración del portal" del List Builder (Fase 9 — UI admin).
+ * Panel "Portal del cliente" del editor de lista.
  *
- * Permite al admin configurar:
- *  1. `settings.portal` — habilita la lista como lista-de-portal,
- *     elige el campo de owner (tipo user) que liga records a wp_users.
- *  2. `settings.portal_template` — define qué bloques aparecen en
- *     el portal del cliente.
- *
- * Editor del template: textarea JSON con validación. Un editor visual
- * drag-and-drop es trabajo significativo para una iteración futura —
- * por ahora el admin escribe (o copia/pega) la config del template.
- * Hay un botón "Insertar ejemplo" para cada tipo de bloque que ayuda
- * sin tener que memorizar el shape.
+ * En Imagina Base cloud el portal NO se embebe con un shortcode de WordPress:
+ * cada registro puede tener un portal privado al que su cliente accede con un
+ * MAGIC LINK que el admin emite desde la ficha del registro (el link llega por
+ * email y abre una sesión de un solo uso). Este panel:
+ *  1. Habilita el portal para la lista (`settings.portal.enabled`).
+ *  2. Enlaza al editor visual de la PLANTILLA (qué bloques ve el cliente).
+ *  3. Explica cómo darle acceso a un cliente en la app cloud.
  */
 export function PortalConfigPanel({ list }: Props): JSX.Element {
     const update = useUpdateList(list.id);
-    const fields = useFields(list.id);
 
     const initialPortal = useMemo<PortalSettings>(() => readPortal(list.settings), [list.settings]);
-    const initialTemplate = useMemo<PortalTemplate>(() => readTemplate(list.settings), [list.settings]);
+    const template = useMemo<PortalTemplate>(() => readTemplate(list.settings), [list.settings]);
 
     const [portal, setPortal] = useState<PortalSettings>(initialPortal);
     const [submitError, setSubmitError] = useState<string | null>(null);
-    const [copyHint, setCopyHint] = useState<string | null>(null);
 
     useEffect(() => {
         setPortal(initialPortal);
     }, [initialPortal]);
 
-    // El template solo se lee acá para mostrar el counter de bloques —
-    // se modifica desde la página dedicada `/lists/:slug/portal-editor`.
-    const template = initialTemplate;
-
-    const userFields = useMemo(() => (fields.data ?? []).filter((f) => f.type === 'user'), [fields.data]);
-
-    const handleSave = async (): Promise<void> => {
+    const handleToggle = async (enabled: boolean): Promise<void> => {
         setSubmitError(null);
-
-        // Validación coherencia: si owner_field_id está seteado, debe
-        // existir Y ser tipo `user`. El backend igual valida, pero
-        // alertar acá ahorra un round-trip.
-        if (portal.owner_field_id !== null) {
-            const f = userFields.find((x) => x.id === portal.owner_field_id);
-            if (f === undefined) {
-                setSubmitError(__('El campo de owner seleccionado no existe o no es de tipo Usuario.'));
-                return;
-            }
-        }
-
-        if (portal.enabled && portal.owner_field_id === null) {
-            setSubmitError(__('Para habilitar el portal debes elegir un campo de tipo Usuario como owner.'));
-            return;
-        }
-
+        const next = { ...portal, enabled };
+        setPortal(next);
         try {
-            // No tocamos `portal_template` desde acá — se administra
-            // desde la página dedicada `/lists/:slug/portal-editor`.
-            // Si lo incluyéramos pisaríamos los cambios que el user
-            // hizo allá sin haber refrescado este panel.
-            const nextSettings = mergeIntoSettings(list.settings, portal);
-            await update.mutateAsync({ settings: nextSettings });
+            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, next) });
         } catch (err) {
+            setPortal(portal); // revertir
             setSubmitError(
                 err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'),
             );
-        }
-    };
-
-    const handleCopyShortcode = async (): Promise<void> => {
-        try {
-            await navigator.clipboard.writeText('[imcrm-client-portal]');
-            setCopyHint(__('Copiado al portapapeles.'));
-            window.setTimeout(() => setCopyHint(null), 2000);
-        } catch {
-            setCopyHint(__('No se pudo copiar — selecciónalo manualmente.'));
         }
     };
 
@@ -115,7 +67,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                         <CardTitle>{__('Portal del cliente')}</CardTitle>
                         <CardDescription>
                             {__(
-                                'Marca esta lista como "lista de portal" para que sus registros se conviertan en cuentas accesibles desde el frontend. Cada record corresponde a un cliente.',
+                                'Da a cada registro de esta lista un portal privado. El cliente accede con un enlace de acceso (magic link) que le emitís desde la ficha del registro; no necesita usuario ni contraseña.',
                             )}
                         </CardDescription>
                     </div>
@@ -126,43 +78,18 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                     <input
                         type="checkbox"
                         checked={portal.enabled}
-                        onChange={(e) => setPortal((p) => ({ ...p, enabled: e.target.checked }))}
+                        disabled={update.isPending}
+                        onChange={(e) => void handleToggle(e.target.checked)}
                         className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                     />
-                    {__('Habilitar como lista de portal')}
+                    {__('Habilitar portal para esta lista')}
                 </label>
 
-                {portal.enabled && (
+                {portal.enabled ? (
                     <>
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label htmlFor="portal-owner-field">{__('Campo de owner (tipo Usuario)')}</Label>
-                            <select
-                                id="portal-owner-field"
-                                className="imcrm-h-9 imcrm-w-full imcrm-max-w-md imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
-                                value={portal.owner_field_id ?? ''}
-                                onChange={(e) =>
-                                    setPortal((p) => ({
-                                        ...p,
-                                        owner_field_id: e.target.value === '' ? null : parseInt(e.target.value, 10),
-                                    }))
-                                }
-                            >
-                                <option value="">{__('— Elegir campo —')}</option>
-                                {userFields.map((f) => (
-                                    <option key={f.id} value={f.id}>
-                                        {f.label} ({f.slug})
-                                    </option>
-                                ))}
-                            </select>
-                            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                {__(
-                                    'Este campo conecta cada record de cliente con su cuenta WP. Si no hay campos de tipo Usuario, agrega uno primero.',
-                                )}
-                            </p>
-                        </div>
-
+                        {/* Plantilla del portal — el editor visual real. */}
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                            <Label>{__('Diseño del portal')}</Label>
+                            <span className="imcrm-text-sm imcrm-font-medium">{__('Diseño del portal')}</span>
                             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
                                     <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
@@ -171,7 +98,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                                             : `${template.blocks.length} ${template.blocks.length === 1 ? __('bloque') : __('bloques')} ${__('en la plantilla')}`}
                                     </p>
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Abrí el editor visual para diseñar el portal con grid 12-col, drag-and-drop, palette de bloques y configuración por cada uno.')}
+                                        {__('Diseñá qué ve el cliente: datos del registro, archivos, comentarios, KPIs, etc., con grid drag-and-drop.')}
                                     </p>
                                 </div>
                                 <Button asChild size="sm" variant="outline" className="imcrm-shrink-0 imcrm-gap-1.5">
@@ -183,37 +110,24 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                             </div>
                         </div>
 
-                        <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-3">
-                            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                                <code className="imcrm-truncate imcrm-font-mono imcrm-text-xs">
-                                    [imcrm-client-portal]
-                                </code>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => void handleCopyShortcode()}
-                                    className="imcrm-gap-1.5"
-                                >
-                                    <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Copiar')}
-                                </Button>
+                        {/* Cómo accede el cliente — reemplaza al shortcode de WordPress. */}
+                        <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-4 imcrm-py-3">
+                            <KeyRound className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
+                                    {__('¿Cómo le doy acceso a un cliente?')}
+                                </p>
+                                <ol className="imcrm-flex imcrm-list-decimal imcrm-flex-col imcrm-gap-0.5 imcrm-pl-4 imcrm-text-xs imcrm-text-muted-foreground">
+                                    <li>{__('Abrí el registro del cliente (desde la tabla de la lista).')}</li>
+                                    <li>{__('En la ficha, usá "Emitir acceso al portal" — se le envía el enlace por email.')}</li>
+                                    <li>{__('El cliente abre el enlace y ve su portal, sin registrarse.')}</li>
+                                </ol>
                             </div>
-                            <p className="imcrm-mt-1.5 imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Pega este shortcode en cualquier página WP para mostrar el portal a los clientes logueados.')}
-                            </p>
-                            {copyHint !== null && (
-                                <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-primary">{copyHint}</p>
-                            )}
                         </div>
                     </>
-                )}
-
-                {!portal.enabled && (
+                ) : (
                     <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-3 imcrm-text-xs imcrm-text-muted-foreground">
-                        {__(
-                            'Esta lista no está marcada como portal. Los endpoints /portal/* devuelven 404 cuando se pide referencia a esta lista.',
-                        )}
+                        {__('El portal está desactivado para esta lista. Actívalo para diseñar la plantilla y poder emitir accesos a los clientes.')}
                     </p>
                 )}
 
@@ -222,12 +136,6 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                         {submitError}
                     </div>
                 )}
-
-                <div className="imcrm-flex imcrm-justify-end">
-                    <Button onClick={handleSave} disabled={update.isPending}>
-                        {update.isPending ? __('Guardando…') : __('Guardar configuración del portal')}
-                    </Button>
-                </div>
             </CardContent>
         </Card>
     );
@@ -256,21 +164,19 @@ function readPortal(settings: Record<string, unknown>): PortalSettings {
 
 function readTemplate(settings: Record<string, unknown>): PortalTemplate {
     const raw = settings.portal_template;
-    if (raw === null || raw === undefined || typeof raw !== 'object') {
-        return { blocks: [] };
+    if (Array.isArray(raw)) {
+        // El backend guarda portal_template como ARRAY de bloques.
+        return { blocks: raw as PortalTemplate['blocks'] };
     }
-    const t = raw as Record<string, unknown>;
-    if (!Array.isArray(t.blocks)) return { blocks: [] };
-    return { blocks: t.blocks as PortalTemplate['blocks'] };
+    if (raw !== null && typeof raw === 'object' && Array.isArray((raw as { blocks?: unknown }).blocks)) {
+        return { blocks: (raw as PortalTemplate).blocks };
+    }
+    return { blocks: [] };
 }
 
 function mergeIntoSettings(
     current: Record<string, unknown>,
     portal: PortalSettings,
 ): Record<string, unknown> {
-    return {
-        ...current,
-        portal,
-    };
+    return { ...current, portal };
 }
-
