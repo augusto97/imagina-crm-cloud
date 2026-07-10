@@ -2,9 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
     CreatePlanInput,
     CreatePlatformUserInput,
+    CreateTenantInput,
     PlatformPlan,
     PlatformStats,
     PlatformTenant,
+    PlatformTenantDetail,
     PlatformUser,
     UpdatePlanInput,
     UpdateTenantInput,
@@ -70,6 +72,27 @@ export function useUpdateTenant() {
             void qc.invalidateQueries({ queryKey: platformKeys.stats() });
             void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
         },
+    });
+}
+
+export function useCreateTenant() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: CreateTenantInput): Promise<PlatformTenant> =>
+            (await api.post<PlatformTenant>('/platform/tenants', input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
+            void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
+        },
+    });
+}
+
+export function useTenantDetail(id: number | null) {
+    return useQuery({
+        queryKey: [...platformKeys.all, 'tenant-detail', id],
+        queryFn: async () => (await api.get<PlatformTenantDetail>(`/platform/tenants/${id}`)).data,
+        enabled: id !== null,
     });
 }
 

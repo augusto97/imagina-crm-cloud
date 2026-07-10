@@ -263,7 +263,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         límites + alta/baja) y el select de plan de cada empresa se puebla
         dinámicamente. 4 tests + E2E en navegador (editar límite→persiste, crear
         plan→aparece en el dropdown de la empresa). Pendiente: precios de
-        checkout por plan custom, detalle/impersonar empresa.
+        checkout por plan custom.
+  - [x] **Consola de plataforma — Fase 4 (alta + detalle de empresa)**: el
+        operador da de alta una empresa nueva + su admin en UN paso (`POST
+        /platform/tenants`; si el email ya existe lo suma como admin, si no crea
+        + invita; reusa el patrón RLS de register). `GET /platform/tenants/:id`
+        devuelve el detalle (datos + miembros + límites del plan). Front: botón
+        "Nueva empresa" + formulario, y fila expandible por empresa con miembros
+        y uso vs límite. 4 tests + E2E en navegador (alta→aparece en grilla,
+        detalle muestra admin + uso/límite del plan). Pendiente (opcional):
+        impersonar empresa para soporte (diseño de auditoría aparte).
 - [ ] **F5 — Hardening** (en curso):
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,
