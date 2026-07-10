@@ -7,6 +7,10 @@ export const tenants = pgTable('tenants', {
     plan: varchar('plan', { length: 32 }).notNull().default('trial'),
     status: varchar('status', { length: 16 }).notNull().default('trialing'),
     settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+    // Suscripción 'paga hasta' (operador): al vencer → solo-lectura (ADR-S09).
+    subscriptionEndsAt: timestamp('subscription_ends_at', { withTimezone: true }),
+    // Archivada por el operador: deja de operar (solo-lectura) y se oculta de la grilla.
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

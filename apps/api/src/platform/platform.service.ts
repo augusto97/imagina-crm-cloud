@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import {
     BILLING_STATUSES,
+    isEffectivelyReadOnly,
     isReadOnly,
     type BillingStatus,
     type CreatePlanInput,
@@ -15,14 +16,32 @@ import {
     type PlatformTenantDetail,
     type PlatformUser,
     type UpdatePlanInput,
+    type UpdatePlatformUserInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
-import { desc, eq, isNull, sql } from 'drizzle-orm';
+import { desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { ENV, type Env } from '../config/env';
-import { DRIZZLE, type Db } from '../db/client';
-import { automations, impersonationLog, memberships, records, tenants, users } from '../db/schema';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
+import {
+    activity,
+    automationRuns,
+    automations,
+    comments,
+    dashboards,
+    fields,
+    impersonationLog,
+    lists,
+    memberships,
+    portalLinks,
+    publicLists,
+    records,
+    savedFilters,
+    savedViews,
+    tenants,
+    users,
+} from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
 
@@ -44,7 +63,7 @@ export class PlatformService {
     ) {}
 
     /** Todas las empresas con plan/estado/uso/owner (para la grilla del operador). */
-    async listTenants(): Promise<PlatformTenant[]> {
+    async listTenants(includeArchived = false): Promise<PlatformTenant[]> {
         const rows = await this.db.select().from(tenants).orderBy(desc(tenants.createdAt));
         const [recMap, userMap, autoMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(isNull(records.deletedAt)).groupBy(records.tenantId)),
@@ -53,24 +72,41 @@ export class PlatformService {
             this.ownersByTenant(),
         ]);
 
-        return rows.map((t) => {
-            const status = (t.status ?? 'trialing') as BillingStatus;
-            return {
-                id: t.id,
-                slug: t.slug,
-                name: t.name,
-                plan: (t.plan ?? 'trial') as Plan,
-                status,
-                read_only: isReadOnly(status),
-                created_at: t.createdAt.toISOString(),
-                owner: ownerMap.get(t.id) ?? null,
-                usage: {
+        return rows
+            .filter((t) => includeArchived || t.archivedAt == null)
+            .map((t) =>
+                this.toPlatformTenant(t, ownerMap.get(t.id) ?? null, {
                     records: recMap.get(t.id) ?? 0,
                     users: userMap.get(t.id) ?? 0,
                     automations: autoMap.get(t.id) ?? 0,
-                },
-            };
-        });
+                }),
+            );
+    }
+
+    /** Fila de tenant → DTO del operador (con solo-lectura efectivo). */
+    private toPlatformTenant(
+        t: typeof tenants.$inferSelect,
+        owner: PlatformOwner | null,
+        usage: PlatformTenant['usage'],
+    ): PlatformTenant {
+        const status = (t.status ?? 'trialing') as BillingStatus;
+        return {
+            id: t.id,
+            slug: t.slug,
+            name: t.name,
+            plan: (t.plan ?? 'trial') as Plan,
+            status,
+            read_only: isEffectivelyReadOnly({
+                status,
+                archived_at: t.archivedAt,
+                subscription_ends_at: t.subscriptionEndsAt,
+            }),
+            archived: t.archivedAt != null,
+            subscription_ends_at: t.subscriptionEndsAt ? t.subscriptionEndsAt.toISOString() : null,
+            created_at: t.createdAt.toISOString(),
+            owner,
+            usage,
+        };
     }
 
     /** Alta de una empresa nueva + su admin en un paso (onboarding por el operador). */
@@ -112,28 +148,64 @@ export class PlatformService {
         }
         // El uso lo calcula BillingService (dentro del scope del tenant).
         const summary = await this.billing.summary(id);
-        return {
-            id: t.id,
-            slug: t.slug,
-            name: t.name,
-            plan: summary.plan,
-            status: summary.status,
-            read_only: summary.read_only,
-            created_at: t.createdAt.toISOString(),
-            owner: (await this.ownersByTenant(id)).get(id) ?? null,
-            usage: summary.usage,
-        };
+        return this.toPlatformTenant(t, (await this.ownersByTenant(id)).get(id) ?? null, summary.usage);
     }
 
-    /** Cambia plan y/o estado (suspender = past_due/canceled → solo-lectura). */
+    /**
+     * Edita una empresa: plan/estado (suspender = past_due → solo-lectura),
+     * renombre, archivar/desarchivar y fecha 'paga hasta'. Fijar
+     * `status: active` + `subscription_ends_at` = suscripción manual.
+     */
     async updateTenant(id: number, input: UpdateTenantInput): Promise<PlatformTenant> {
         // El plan debe existir en la tabla de planes (evita asignar un slug inválido).
         if (input.plan !== undefined && !(await this.plans.exists(input.plan))) {
             throw new BadRequestException({ code: 'unknown_plan', message: `El plan '${input.plan}' no existe`, data: { status: 400, errors: { plan: 'No existe' } } });
         }
-        // Reusa el mismo camino que el webhook de pago (BillingService.setBilling).
-        await this.billing.setBilling(id, { plan: input.plan, status: input.status });
+        await this.getTenant(id); // 404 si no existe.
+
+        // Campos del ciclo de vida (nombre / archivado / vencimiento) se escriben
+        // directo en la fila; plan/estado reusan el camino del webhook de pago.
+        const changes: Partial<typeof tenants.$inferInsert> = {};
+        if (input.name !== undefined) changes.name = input.name;
+        if (input.archived !== undefined) changes.archivedAt = input.archived ? new Date() : null;
+        if (input.subscription_ends_at !== undefined) {
+            changes.subscriptionEndsAt = input.subscription_ends_at ? new Date(input.subscription_ends_at) : null;
+        }
+        if (Object.keys(changes).length > 0) {
+            changes.updatedAt = new Date();
+            await this.db.update(tenants).set(changes).where(eq(tenants.id, id));
+        }
+        if (input.plan !== undefined || input.status !== undefined) {
+            await this.billing.setBilling(id, { plan: input.plan, status: input.status });
+        }
         return this.getTenant(id);
+    }
+
+    /**
+     * BORRA una empresa y TODOS sus datos (irreversible). Corre en la conexión
+     * base (bypass RLS) y borra en orden FK-seguro: hijos → padres. `records` y
+     * `public_lists` no tienen ON DELETE CASCADE a `lists`, por eso se borran
+     * explícitamente antes que `lists`. No borra usuarios (pueden estar en otras
+     * empresas): sólo sus membresías.
+     */
+    async deleteTenant(id: number): Promise<void> {
+        await this.getTenant(id); // 404 si no existe.
+        await this.db.transaction(async (tx: Tx) => {
+            await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
+            await tx.delete(automations).where(eq(automations.tenantId, id));
+            await tx.delete(comments).where(eq(comments.tenantId, id));
+            await tx.delete(activity).where(eq(activity.tenantId, id));
+            await tx.delete(portalLinks).where(eq(portalLinks.tenantId, id));
+            await tx.delete(publicLists).where(eq(publicLists.tenantId, id));
+            await tx.delete(savedFilters).where(eq(savedFilters.tenantId, id));
+            await tx.delete(savedViews).where(eq(savedViews.tenantId, id));
+            await tx.delete(records).where(eq(records.tenantId, id));
+            await tx.delete(fields).where(eq(fields.tenantId, id));
+            await tx.delete(dashboards).where(eq(dashboards.tenantId, id));
+            await tx.delete(lists).where(eq(lists.tenantId, id));
+            await tx.delete(memberships).where(eq(memberships.tenantId, id));
+            await tx.delete(tenants).where(eq(tenants.id, id));
+        });
     }
 
     // ─────────────── Impersonación de soporte (F5) ───────────────
@@ -271,6 +343,70 @@ export class PlatformService {
     /** Dispara el email de reset de contraseña de un usuario. */
     async resetUserPassword(userId: number): Promise<void> {
         await this.auth.adminResetPassword(userId);
+    }
+
+    /** Edita nombre/email y/o desactiva-reactiva una cuenta. */
+    async updateUser(userId: number, input: UpdatePlatformUserInput): Promise<PlatformUser> {
+        const [existing] = await this.db.select({ id: users.id, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+        if (!existing) {
+            throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no encontrado`, data: { status: 404 } });
+        }
+        if (input.email !== undefined && input.email.toLowerCase() !== existing.email.toLowerCase()) {
+            const [dup] = await this.db.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
+            if (dup) {
+                throw new BadRequestException({ code: 'email_taken', message: 'Ese email ya está en uso', data: { status: 400, errors: { email: 'Ya existe' } } });
+            }
+        }
+        const changes: Partial<typeof users.$inferInsert> = {};
+        if (input.name !== undefined) changes.name = input.name;
+        if (input.email !== undefined) changes.email = input.email;
+        if (Object.keys(changes).length > 0) {
+            await this.db.update(users).set(changes).where(eq(users.id, userId));
+        }
+        // Desactivar reusa AuthService (revoca sesiones + guard de superadmin).
+        if (input.disabled !== undefined) {
+            await this.auth.setUserDisabled(userId, input.disabled);
+        }
+        return this.userDto(userId);
+    }
+
+    /**
+     * BORRA una cuenta (irreversible). Rechaza a un superadmin. Borra primero el
+     * log de impersonación que la referencia (no tiene ON DELETE CASCADE);
+     * membresías / portal_links / saved_filters caen por cascade.
+     */
+    async deleteUser(userId: number): Promise<void> {
+        const [u] = await this.db.select({ id: users.id, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+        if (!u) {
+            throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no encontrado`, data: { status: 404 } });
+        }
+        const superset = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        if (superset.has(u.email.toLowerCase())) {
+            throw new BadRequestException({ code: 'cannot_delete_superadmin', message: 'No se puede borrar a un superadmin de plataforma', data: { status: 400 } });
+        }
+        // Revoca sesiones antes de borrar (best-effort).
+        await this.auth.setUserDisabled(userId, true).catch(() => undefined);
+        await this.db.transaction(async (tx: Tx) => {
+            await tx
+                .delete(impersonationLog)
+                .where(or(eq(impersonationLog.actorUserId, userId), eq(impersonationLog.targetUserId, userId)));
+            await tx.delete(users).where(eq(users.id, userId));
+        });
+    }
+
+    /** DTO de un usuario por id (con nº de workspaces + flag superadmin). */
+    private async userDto(userId: number): Promise<PlatformUser> {
+        const [u] = await this.db
+            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        if (!u) {
+            throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no encontrado`, data: { status: 404 } });
+        }
+        const [c] = await this.db.select({ n: intCount() }).from(memberships).where(eq(memberships.userId, userId));
+        const superset = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        return this.toUser(u, c?.n ?? 0, superset);
     }
 
     private toUser(

@@ -1,5 +1,5 @@
-import { Fragment, useState } from 'react';
-import { Building2, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Users } from 'lucide-react';
+import { Fragment, useEffect, useState } from 'react';
+import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Save, Trash2, Users } from 'lucide-react';
 import {
     BILLING_STATUSES,
     type BillingStatus,
@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     useCreateTenant,
+    useDeleteTenant,
     useImpersonate,
     usePlatformPlans,
     usePlatformTenants,
@@ -45,7 +46,8 @@ const fmtLimit = (v: number | null): string => (v === null ? '∞' : v.toLocaleS
 
 /** Grilla de empresas + alta en un paso + detalle expandible (ADR-S15 F1/F4). */
 export function PlatformTenantsCard(): JSX.Element {
-    const tenants = usePlatformTenants();
+    const [showArchived, setShowArchived] = useState(false);
+    const tenants = usePlatformTenants(showArchived);
     const plans = usePlatformPlans();
     const update = useUpdateTenant();
     const [expanded, setExpanded] = useState<number | null>(null);
@@ -71,10 +73,16 @@ export function PlatformTenantsCard(): JSX.Element {
                             </CardDescription>
                         </div>
                     </div>
-                    <Button variant={showNew ? 'secondary' : 'default'} size="sm" className="imcrm-gap-1.5 imcrm-shrink-0" onClick={() => setShowNew((v) => !v)}>
-                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                        {__('Nueva empresa')}
-                    </Button>
+                    <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-3">
+                        <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+                            {__('Ver archivadas')}
+                        </label>
+                        <Button variant={showNew ? 'secondary' : 'default'} size="sm" className="imcrm-gap-1.5" onClick={() => setShowNew((v) => !v)}>
+                            <Plus className="imcrm-h-4 imcrm-w-4" />
+                            {__('Nueva empresa')}
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4">
@@ -106,7 +114,14 @@ export function PlatformTenantsCard(): JSX.Element {
                                     <Fragment key={t.id}>
                                         <tr className="imcrm-border-b imcrm-border-border/60">
                                             <td className="imcrm-py-3 imcrm-pr-3">
-                                                <div className="imcrm-font-medium imcrm-text-foreground">{t.name}</div>
+                                                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                                    <span className="imcrm-font-medium imcrm-text-foreground">{t.name}</span>
+                                                    {t.archived && (
+                                                        <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-text-muted-foreground">
+                                                            {__('Archivada')}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">{t.slug}</div>
                                             </td>
                                             <td className="imcrm-px-2 imcrm-py-3 imcrm-text-muted-foreground">
@@ -170,7 +185,7 @@ export function PlatformTenantsCard(): JSX.Element {
                                         {expanded === t.id && (
                                             <tr className="imcrm-border-b imcrm-border-border/60 imcrm-bg-muted/20">
                                                 <td colSpan={7} className="imcrm-px-4 imcrm-py-3">
-                                                    <TenantDetail id={t.id} />
+                                                    <TenantDetail id={t.id} onCollapse={() => setExpanded(null)} />
                                                 </td>
                                             </tr>
                                         )}
@@ -251,7 +266,7 @@ function NewTenantForm({ onDone }: { onDone: () => void }): JSX.Element {
     );
 }
 
-function TenantDetail({ id }: { id: number }): JSX.Element {
+function TenantDetail({ id, onCollapse }: { id: number; onCollapse: () => void }): JSX.Element {
     const detail = useTenantDetail(id);
     const impersonate = useImpersonate();
 
@@ -310,6 +325,103 @@ function TenantDetail({ id }: { id: number }): JSX.Element {
                     <span>{__('Automatizaciones')}: {d.tenant.usage.automations} / {fmtLimit(d.limits.max_automations)}</span>
                 </div>
             </div>
+            <TenantManagement tenant={d.tenant} onDeleted={onCollapse} />
+        </div>
+    );
+}
+
+/**
+ * Gestión de la empresa (operador): renombrar, suscripción manual con fecha
+ * 'paga hasta', archivar/desarchivar y borrado real (confirmación por texto).
+ */
+function TenantManagement({ tenant, onDeleted }: { tenant: PlatformTenant; onDeleted: () => void }): JSX.Element {
+    const update = useUpdateTenant();
+    const del = useDeleteTenant();
+    const [name, setName] = useState(tenant.name);
+    // <input type="date"> quiere YYYY-MM-DD; el backend guarda ISO completo.
+    const [until, setUntil] = useState(tenant.subscription_ends_at ? tenant.subscription_ends_at.slice(0, 10) : '');
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        setName(tenant.name);
+        setUntil(tenant.subscription_ends_at ? tenant.subscription_ends_at.slice(0, 10) : '');
+    }, [tenant]);
+
+    const run = async (input: Parameters<typeof update.mutateAsync>[0]['input']): Promise<void> => {
+        setError(null);
+        try {
+            await update.mutateAsync({ id: tenant.id, input });
+        } catch (err) {
+            setError(err instanceof ApiError || err instanceof Error ? err.message : __('Error'));
+        }
+    };
+
+    const saveSubscription = (): void => {
+        // Suscripción manual: activa + fecha (fin de ese día, UTC). Vacío = sin vencimiento.
+        const iso = until ? new Date(`${until}T23:59:59.000Z`).toISOString() : null;
+        void run({ status: 'active', subscription_ends_at: iso });
+    };
+
+    const remove = async (): Promise<void> => {
+        const typed = window.prompt(`${__('Esto borra la empresa y TODOS sus datos (irreversible). Escribí el nombre para confirmar:')}\n\n${tenant.name}`);
+        if (typed === null) return;
+        if (typed.trim() !== tenant.name) {
+            setError(__('El nombre no coincide; no se borró nada.'));
+            return;
+        }
+        setError(null);
+        try {
+            await del.mutateAsync(tenant.id);
+            onDeleted();
+        } catch (err) {
+            setError(err instanceof ApiError || err instanceof Error ? err.message : __('Error'));
+        }
+    };
+
+    const busy = update.isPending || del.isPending;
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 md:imcrm-min-w-[16rem]">
+            <span className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{__('Gestión')}</span>
+            {/* Renombrar */}
+            <div className="imcrm-flex imcrm-items-end imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs">{__('Nombre')}</Label>
+                    <Input value={name} onChange={(e) => setName(e.target.value)} className="imcrm-h-8" />
+                </div>
+                <Button size="sm" variant="outline" className="imcrm-gap-1.5" disabled={busy || name.trim() === '' || name.trim() === tenant.name} onClick={() => void run({ name: name.trim() })}>
+                    <Save className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Guardar')}
+                </Button>
+            </div>
+            {/* Suscripción manual con fecha 'paga hasta' */}
+            <div className="imcrm-flex imcrm-items-end imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs"><CalendarClock className="imcrm-h-3 imcrm-w-3" /> {__('Suscripción paga hasta')}</Label>
+                    <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} className="imcrm-h-8" />
+                </div>
+                <Button size="sm" variant="outline" className="imcrm-gap-1.5" disabled={busy} onClick={saveSubscription}>
+                    <Save className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Aplicar')}
+                </Button>
+            </div>
+            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                {__('Al vencer, la empresa pasa a solo-lectura automáticamente. Vacío = sin vencimiento.')}
+            </p>
+            {/* Archivar / borrar */}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2 imcrm-pt-1">
+                {tenant.archived ? (
+                    <Button size="sm" variant="outline" className="imcrm-gap-1.5" disabled={busy} onClick={() => void run({ archived: false })}>
+                        <ArchiveRestore className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Desarchivar')}
+                    </Button>
+                ) : (
+                    <Button size="sm" variant="outline" className="imcrm-gap-1.5" disabled={busy} onClick={() => void run({ archived: true })}>
+                        <Archive className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Archivar')}
+                    </Button>
+                )}
+                <Button size="sm" variant="outline" className="imcrm-gap-1.5 imcrm-text-destructive hover:imcrm-text-destructive" disabled={busy} onClick={() => void remove()}>
+                    <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Borrar')}
+                </Button>
+            </div>
+            {error !== null && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
         </div>
     );
 }

@@ -5,7 +5,7 @@ import {
     ForbiddenException,
     Injectable,
 } from '@nestjs/common';
-import { isReadOnly, type BillingStatus } from '@imagina-base/shared';
+import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { memberships, tenants } from '../db/schema';
@@ -52,6 +52,8 @@ export class TenantGuard implements CanActivate {
                     role: memberships.role,
                     tenantSlug: tenants.slug,
                     status: tenants.status,
+                    archivedAt: tenants.archivedAt,
+                    subscriptionEndsAt: tenants.subscriptionEndsAt,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -71,9 +73,15 @@ export class TenantGuard implements CanActivate {
 
         const status = membership.status as BillingStatus;
 
-        // ADR-S09: impago → solo-lectura. Se bloquean las mutaciones; las
-        // lecturas y el export siguen disponibles (los datos son del cliente).
-        if (isReadOnly(status) && MUTATING_METHODS.has(req.method)) {
+        // ADR-S09: impago/archivada/suscripción-vencida → solo-lectura. Se
+        // bloquean las mutaciones; las lecturas y el export siguen disponibles
+        // (los datos son del cliente, nunca se secuestran).
+        const readOnly = isEffectivelyReadOnly({
+            status,
+            archived_at: membership.archivedAt,
+            subscription_ends_at: membership.subscriptionEndsAt,
+        });
+        if (readOnly && MUTATING_METHODS.has(req.method)) {
             throw new ForbiddenException({
                 code: 'workspace_read_only',
                 message: 'El workspace está en solo-lectura por el estado de facturación',
