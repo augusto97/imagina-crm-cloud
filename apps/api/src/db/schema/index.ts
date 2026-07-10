@@ -5,6 +5,7 @@ export * from './lists';
 export * from './fields';
 export * from './records';
 export * from './saved-views';
+export * from './saved-filters';
 export * from './comments';
 export * from './activity';
 export * from './automations';
