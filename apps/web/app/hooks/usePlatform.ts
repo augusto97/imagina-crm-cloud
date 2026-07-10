@@ -11,6 +11,7 @@ import type {
     PlatformTenantDetail,
     PlatformUser,
     UpdatePlanInput,
+    UpdatePlatformUserInput,
     UpdateTenantInput,
 } from '@imagina-base/shared';
 
@@ -58,10 +59,11 @@ export function usePlatformStats() {
     });
 }
 
-export function usePlatformTenants() {
+export function usePlatformTenants(includeArchived = false) {
     return useQuery({
-        queryKey: platformKeys.tenants(),
-        queryFn: async () => (await api.get<PlatformTenant[]>('/platform/tenants')).data,
+        queryKey: [...platformKeys.tenants(), { includeArchived }],
+        queryFn: async () =>
+            (await api.get<PlatformTenant[]>(`/platform/tenants${includeArchived ? '?include_archived=1' : ''}`)).data,
     });
 }
 
@@ -73,6 +75,20 @@ export function useUpdateTenant() {
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: platformKeys.stats() });
             void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+        },
+    });
+}
+
+export function useDeleteTenant() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number): Promise<void> => {
+            await api.delete(`/platform/tenants/${id}`);
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
+            void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
         },
     });
 }
@@ -126,6 +142,30 @@ export function useSetUserDisabled() {
             (await api.patch<PlatformUser>(`/platform/users/${id}`, { disabled })).data,
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: platformKeys.users() });
+        },
+    });
+}
+
+export function useUpdatePlatformUser() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, input }: { id: number; input: UpdatePlatformUserInput }): Promise<PlatformUser> =>
+            (await api.patch<PlatformUser>(`/platform/users/${id}`, input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
+        },
+    });
+}
+
+export function useDeletePlatformUser() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number): Promise<void> => {
+            await api.delete(`/platform/users/${id}`);
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: platformKeys.users() });
+            void qc.invalidateQueries({ queryKey: platformKeys.stats() });
         },
     });
 }

@@ -27,6 +27,10 @@ export const platformTenantSchema = z.object({
     plan: planSchema,
     status: billingStatusSchema,
     read_only: z.boolean(),
+    /** Archivada por el operador (deja de operar, oculta por defecto). */
+    archived: z.boolean(),
+    /** Fecha 'paga hasta' (ISO) o null si no tiene vencimiento. */
+    subscription_ends_at: z.string().nullable(),
     created_at: z.string(),
     owner: platformOwnerSchema.nullable(),
     usage: usageSchema,
@@ -66,15 +70,29 @@ export interface PlatformTenantDetail {
     };
 }
 
-/** Cambio de plan/estado de una empresa desde la consola (mínimo un campo). */
+/**
+ * Edición de una empresa desde la consola (mínimo un campo). Cubre cambio de
+ * plan/estado, renombre, archivar/desarchivar y la fecha 'paga hasta'
+ * (`subscription_ends_at`: ISO para fijarla, `null` para quitarla). Fijar
+ * `status: active` + una fecha = suscripción manual.
+ */
 export const updateTenantSchema = z
     .object({
+        name: z.string().trim().min(1).max(120).optional(),
         plan: planSchema.optional(),
         status: billingStatusSchema.optional(),
+        archived: z.boolean().optional(),
+        subscription_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
     })
-    .refine((v) => v.plan !== undefined || v.status !== undefined, {
-        message: 'Indicá al menos plan o estado',
-    });
+    .refine(
+        (v) =>
+            v.name !== undefined ||
+            v.plan !== undefined ||
+            v.status !== undefined ||
+            v.archived !== undefined ||
+            v.subscription_ends_at !== undefined,
+        { message: 'Indicá al menos un campo a cambiar' },
+    );
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
 
 // ─────────────────────────── Usuarios (F2) ───────────────────────────
@@ -105,10 +123,16 @@ export const createPlatformUserSchema = z.object({
 });
 export type CreatePlatformUserInput = z.infer<typeof createPlatformUserSchema>;
 
-/** Desactivar/reactivar una cuenta. */
-export const updatePlatformUserSchema = z.object({
-    disabled: z.boolean(),
-});
+/** Editar una cuenta: nombre, email y/o desactivar-reactivar (mínimo un campo). */
+export const updatePlatformUserSchema = z
+    .object({
+        name: z.string().trim().min(1).max(120).optional(),
+        email: emailSchema.optional(),
+        disabled: z.boolean().optional(),
+    })
+    .refine((v) => v.name !== undefined || v.email !== undefined || v.disabled !== undefined, {
+        message: 'Indicá al menos un campo a cambiar',
+    });
 export type UpdatePlatformUserInput = z.infer<typeof updatePlatformUserSchema>;
 
 // ─────────────────────────── Planes (F3) ───────────────────────────

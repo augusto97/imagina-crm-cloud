@@ -6,6 +6,7 @@ import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
 import { loadEnv } from '../src/config/env';
 import { automations, fields, impersonationLog, lists as listsTable, memberships, records, tenants, users } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -164,6 +165,62 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await expect(platform.getTenant(999999)).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('updateTenant: renombra la empresa', async () => {
+        const id = await seedTenant({ name: 'Vieja' });
+        const t = await platform.updateTenant(id, { name: 'Nueva SA' });
+        expect(t.name).toBe('Nueva SA');
+    });
+
+    it('suscripción manual: fecha futura = activa; fecha pasada = solo-lectura', async () => {
+        const id = await seedTenant({ name: 'Sub', status: 'active' });
+        const future = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+        let t = await platform.updateTenant(id, { status: 'active', subscription_ends_at: future });
+        expect(t.subscription_ends_at).toBeTruthy();
+        expect(t.read_only).toBe(false);
+        // El billing (que usa el guard el mismo helper) también lo ve escribible.
+        expect((await billing.summary(id)).read_only).toBe(false);
+
+        const past = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        t = await platform.updateTenant(id, { subscription_ends_at: past });
+        expect(t.read_only).toBe(true);
+        expect((await billing.summary(id)).read_only).toBe(true);
+
+        // Quitar la fecha vuelve a escribible.
+        t = await platform.updateTenant(id, { subscription_ends_at: null });
+        expect(t.subscription_ends_at).toBeNull();
+        expect(t.read_only).toBe(false);
+    });
+
+    it('archivar: se oculta de la grilla por defecto, aparece con includeArchived, y es solo-lectura', async () => {
+        const id = await seedTenant({ name: 'Arch', status: 'active' });
+        const t = await platform.updateTenant(id, { archived: true });
+        expect(t.archived).toBe(true);
+        expect(t.read_only).toBe(true);
+
+        expect((await platform.listTenants()).some((x) => x.id === id)).toBe(false);
+        expect((await platform.listTenants(true)).some((x) => x.id === id)).toBe(true);
+
+        const back = await platform.updateTenant(id, { archived: false });
+        expect(back.archived).toBe(false);
+        expect((await platform.listTenants()).some((x) => x.id === id)).toBe(true);
+    });
+
+    it('deleteTenant: borra la empresa y sus datos (records → lists en orden FK-safe)', async () => {
+        const id = await seedTenant({ name: 'Borrar', ownerEmail: 'del@t.test', records: 5, automations: 2 });
+        await platform.deleteTenant(id);
+        await expect(platform.getTenant(id)).rejects.toBeInstanceOf(NotFoundException);
+        // Datos hijos borrados.
+        expect(await pg.db.select().from(records).where(eq(records.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(listsTable).where(eq(listsTable.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(memberships).where(eq(memberships.tenantId, id))).toHaveLength(0);
+        // El owner (usuario) NO se borra (puede estar en otras empresas).
+        expect(await pg.db.select().from(users).where(eq(users.email, 'del@t.test'))).toHaveLength(1);
+    });
+
+    it('deleteTenant: 404 si no existe', async () => {
+        await expect(platform.deleteTenant(999999)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
     // ─────────────────────────── Usuarios (F2) ───────────────────────────
 
     it('createUser: crea la cuenta, envía invitación y aparece en listUsers', async () => {
@@ -219,6 +276,31 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         sentMail.length = 0;
         await platform.resetUserPassword(u!.id);
         expect(sentMail.some((m) => m.to === 'reset@cliente.test' && /restablecer/i.test(m.subject))).toBe(true);
+    });
+
+    it('updateUser: edita nombre y email', async () => {
+        const [u] = await pg.db.insert(users).values({ email: 'old@c.test', passwordHash: 'x', name: 'Viejo' }).returning();
+        const out = await platform.updateUser(u!.id, { name: 'Nuevo Nombre', email: 'new@c.test' });
+        expect(out).toMatchObject({ name: 'Nuevo Nombre', email: 'new@c.test' });
+    });
+
+    it('updateUser: email en uso → 400', async () => {
+        await pg.db.insert(users).values({ email: 'taken@c.test', passwordHash: 'x', name: 'T' });
+        const [u] = await pg.db.insert(users).values({ email: 'me@c.test', passwordHash: 'x', name: 'Me' }).returning();
+        await expect(platform.updateUser(u!.id, { email: 'taken@c.test' })).rejects.toThrow();
+    });
+
+    it('deleteUser: borra la cuenta y sus membresías; rechaza a un superadmin', async () => {
+        const id = await seedTenant({ name: 'Emp', ownerEmail: 'member@c.test' });
+        expect(id).toBeGreaterThan(0);
+        const [u] = await pg.db.select().from(users).where(eq(users.email, 'member@c.test')).limit(1);
+        await platform.deleteUser(u!.id);
+        expect(await pg.db.select().from(users).where(eq(users.id, u!.id))).toHaveLength(0);
+        expect(await pg.db.select().from(memberships).where(eq(memberships.userId, u!.id))).toHaveLength(0);
+
+        // No se puede borrar un superadmin.
+        const [boss] = await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' }).returning();
+        await expect(platform.deleteUser(boss!.id)).rejects.toThrow();
     });
 
     // ─────────────────────────── Planes (F3) ───────────────────────────

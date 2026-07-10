@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { KeyRound, Loader2, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { KeyRound, Loader2, Pencil, Save, ShieldCheck, Trash2, UserPlus, Users, X } from 'lucide-react';
+import type { PlatformUser } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,9 +14,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     useCreatePlatformUser,
+    useDeletePlatformUser,
     usePlatformUsers,
     useResetUserPassword,
     useSetUserDisabled,
+    useUpdatePlatformUser,
 } from '@/hooks/usePlatform';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
@@ -29,8 +32,6 @@ import { cn } from '@/lib/utils';
 export function PlatformUsersCard(): JSX.Element {
     const users = usePlatformUsers();
     const create = useCreatePlatformUser();
-    const setDisabled = useSetUserDisabled();
-    const reset = useResetUserPassword();
 
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
@@ -49,16 +50,6 @@ export function PlatformUsersCard(): JSX.Element {
         } catch (err) {
             setFormError(err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'));
         }
-    };
-
-    const toggle = (id: number, disabled: boolean): void => {
-        setDisabled.mutate({ id, disabled });
-    };
-
-    const doReset = async (id: number, mail: string): Promise<void> => {
-        setNotice(null);
-        await reset.mutateAsync(id);
-        setNotice(`${__('Email de restablecimiento enviado a')} ${mail}`);
     };
 
     return (
@@ -136,63 +127,7 @@ export function PlatformUsersCard(): JSX.Element {
                             </thead>
                             <tbody>
                                 {(users.data ?? []).map((u) => (
-                                    <tr key={u.id} className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0">
-                                        <td className="imcrm-py-3 imcrm-pr-3">
-                                            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                                <span className="imcrm-font-medium imcrm-text-foreground">{u.name}</span>
-                                                {u.is_superadmin && (
-                                                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-bg-primary/10 imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-primary">
-                                                        <ShieldCheck className="imcrm-h-3 imcrm-w-3" /> {__('Superadmin')}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="imcrm-text-xs imcrm-text-muted-foreground">{u.email}</div>
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3 imcrm-text-center imcrm-tabular-nums imcrm-text-muted-foreground">
-                                            {u.workspaces}
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <span
-                                                className={cn(
-                                                    'imcrm-inline-flex imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium',
-                                                    u.disabled
-                                                        ? 'imcrm-bg-red-500/10 imcrm-text-red-600 dark:imcrm-text-red-400'
-                                                        : 'imcrm-bg-emerald-500/10 imcrm-text-emerald-600 dark:imcrm-text-emerald-400',
-                                                )}
-                                            >
-                                                {u.disabled ? __('Desactivada') : __('Activa')}
-                                            </span>
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="imcrm-gap-1.5"
-                                                    disabled={reset.isPending}
-                                                    onClick={() => void doReset(u.id, u.email)}
-                                                >
-                                                    <KeyRound className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                    {__('Reset')}
-                                                </Button>
-                                                {!u.is_superadmin && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className={cn(
-                                                            u.disabled
-                                                                ? 'imcrm-text-emerald-600 hover:imcrm-text-emerald-600'
-                                                                : 'imcrm-text-destructive hover:imcrm-text-destructive',
-                                                        )}
-                                                        disabled={setDisabled.isPending}
-                                                        onClick={() => toggle(u.id, !u.disabled)}
-                                                    >
-                                                        {u.disabled ? __('Reactivar') : __('Desactivar')}
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    <UserRow key={u.id} user={u} onNotice={setNotice} onError={setFormError} />
                                 ))}
                             </tbody>
                         </table>
@@ -200,5 +135,142 @@ export function PlatformUsersCard(): JSX.Element {
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+/** Fila de usuario: estado + acciones (editar nombre/email, reset, desactivar, borrar). */
+function UserRow({
+    user: u,
+    onNotice,
+    onError,
+}: {
+    user: PlatformUser;
+    onNotice: (msg: string) => void;
+    onError: (msg: string | null) => void;
+}): JSX.Element {
+    const setDisabled = useSetUserDisabled();
+    const reset = useResetUserPassword();
+    const update = useUpdatePlatformUser();
+    const del = useDeletePlatformUser();
+
+    const [editing, setEditing] = useState(false);
+    const [name, setName] = useState(u.name);
+    const [email, setEmail] = useState(u.email);
+
+    const fail = (err: unknown): void =>
+        onError(err instanceof ApiError || err instanceof Error ? err.message : __('Error'));
+
+    const doReset = async (): Promise<void> => {
+        onError(null);
+        try {
+            await reset.mutateAsync(u.id);
+            onNotice(`${__('Email de restablecimiento enviado a')} ${u.email}`);
+        } catch (err) {
+            fail(err);
+        }
+    };
+
+    const saveEdit = async (): Promise<void> => {
+        onError(null);
+        try {
+            await update.mutateAsync({ id: u.id, input: { name: name.trim(), email: email.trim() } });
+            setEditing(false);
+        } catch (err) {
+            fail(err);
+        }
+    };
+
+    const remove = async (): Promise<void> => {
+        const typed = window.prompt(`${__('Esto borra la cuenta de forma irreversible. Escribí el email para confirmar:')}\n\n${u.email}`);
+        if (typed === null) return;
+        if (typed.trim().toLowerCase() !== u.email.toLowerCase()) {
+            onError(__('El email no coincide; no se borró nada.'));
+            return;
+        }
+        onError(null);
+        try {
+            await del.mutateAsync(u.id);
+        } catch (err) {
+            fail(err);
+        }
+    };
+
+    const busy = update.isPending || del.isPending || setDisabled.isPending || reset.isPending;
+
+    return (
+        <tr className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0">
+            <td className="imcrm-py-3 imcrm-pr-3">
+                {editing ? (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <Input value={name} onChange={(e) => setName(e.target.value)} className="imcrm-h-8" placeholder={__('Nombre')} />
+                        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="imcrm-h-8" placeholder="email@empresa.com" />
+                    </div>
+                ) : (
+                    <>
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <span className="imcrm-font-medium imcrm-text-foreground">{u.name}</span>
+                            {u.is_superadmin && (
+                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-bg-primary/10 imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-primary">
+                                    <ShieldCheck className="imcrm-h-3 imcrm-w-3" /> {__('Superadmin')}
+                                </span>
+                            )}
+                        </div>
+                        <div className="imcrm-text-xs imcrm-text-muted-foreground">{u.email}</div>
+                    </>
+                )}
+            </td>
+            <td className="imcrm-px-2 imcrm-py-3 imcrm-text-center imcrm-tabular-nums imcrm-text-muted-foreground">{u.workspaces}</td>
+            <td className="imcrm-px-2 imcrm-py-3">
+                <span
+                    className={cn(
+                        'imcrm-inline-flex imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium',
+                        u.disabled
+                            ? 'imcrm-bg-red-500/10 imcrm-text-red-600 dark:imcrm-text-red-400'
+                            : 'imcrm-bg-emerald-500/10 imcrm-text-emerald-600 dark:imcrm-text-emerald-400',
+                    )}
+                >
+                    {u.disabled ? __('Desactivada') : __('Activa')}
+                </span>
+            </td>
+            <td className="imcrm-px-2 imcrm-py-3">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-2">
+                    {editing ? (
+                        <>
+                            <Button variant="outline" size="sm" className="imcrm-gap-1.5" disabled={busy} onClick={() => void saveEdit()}>
+                                <Save className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Guardar')}
+                            </Button>
+                            <Button variant="ghost" size="sm" className="imcrm-gap-1.5" disabled={busy} onClick={() => { setEditing(false); setName(u.name); setEmail(u.email); }}>
+                                <X className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Cancelar')}
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <Button variant="outline" size="sm" className="imcrm-gap-1.5" disabled={busy} onClick={() => setEditing(true)}>
+                                <Pencil className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Editar')}
+                            </Button>
+                            <Button variant="outline" size="sm" className="imcrm-gap-1.5" disabled={busy} onClick={() => void doReset()}>
+                                <KeyRound className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Reset')}
+                            </Button>
+                            {!u.is_superadmin && (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className={cn(u.disabled ? 'imcrm-text-emerald-600 hover:imcrm-text-emerald-600' : 'imcrm-text-amber-600 hover:imcrm-text-amber-600')}
+                                        disabled={busy}
+                                        onClick={() => setDisabled.mutate({ id: u.id, disabled: !u.disabled })}
+                                    >
+                                        {u.disabled ? __('Reactivar') : __('Desactivar')}
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="imcrm-gap-1.5 imcrm-text-destructive hover:imcrm-text-destructive" disabled={busy} onClick={() => void remove()}>
+                                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Borrar')}
+                                    </Button>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+            </td>
+        </tr>
     );
 }

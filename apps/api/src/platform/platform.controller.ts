@@ -9,6 +9,7 @@ import {
     ParseIntPipe,
     Patch,
     Post,
+    Query,
     Req,
     Res,
     UseGuards,
@@ -66,10 +67,11 @@ export class PlatformController {
         return this.platform.getStats();
     }
 
-    /** Todas las empresas (tenants) con plan/estado/uso/owner. */
+    /** Todas las empresas (tenants) con plan/estado/uso/owner. `?include_archived=1` suma las archivadas. */
     @Get('tenants')
-    tenants(): Promise<PlatformTenantsResponse> {
-        return this.platform.listTenants().then((data) => ({ data }));
+    tenants(@Query('include_archived') includeArchived?: string): Promise<PlatformTenantsResponse> {
+        const withArchived = includeArchived === '1' || includeArchived === 'true';
+        return this.platform.listTenants(withArchived).then((data) => ({ data }));
     }
 
     /** Alta de una empresa nueva + su admin en un paso. */
@@ -87,13 +89,20 @@ export class PlatformController {
         return this.platform.tenantDetail(id);
     }
 
-    /** Cambia plan y/o estado (suspender/reactivar) de una empresa. */
+    /** Edita una empresa: plan/estado, nombre, archivar/desarchivar, fecha 'paga hasta'. */
     @Patch('tenants/:id')
     updateTenant(
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateTenantSchema)) input: UpdateTenantInput,
     ): Promise<PlatformTenant> {
         return this.platform.updateTenant(id, input);
+    }
+
+    /** BORRA una empresa y todos sus datos (irreversible; el front confirma por texto). */
+    @Delete('tenants/:id')
+    @HttpCode(204)
+    async deleteTenant(@Param('id', ParseIntPipe) id: number): Promise<void> {
+        await this.platform.deleteTenant(id);
     }
 
     // ─────────────────────────── Usuarios (F2) ───────────────────────────
@@ -113,13 +122,20 @@ export class PlatformController {
         return this.platform.createUser(input.email, input.name);
     }
 
-    /** Desactiva/reactiva una cuenta (al desactivar revoca sus sesiones). */
+    /** Edita nombre/email y/o desactiva-reactiva una cuenta (al desactivar revoca sesiones). */
     @Patch('users/:id')
     updateUser(
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updatePlatformUserSchema)) input: UpdatePlatformUserInput,
     ): Promise<PlatformUser> {
-        return this.platform.setUserDisabled(id, input.disabled);
+        return this.platform.updateUser(id, input);
+    }
+
+    /** BORRA una cuenta (irreversible; rechaza superadmin; el front confirma por texto). */
+    @Delete('users/:id')
+    @HttpCode(204)
+    async deleteUser(@Param('id', ParseIntPipe) id: number): Promise<void> {
+        await this.platform.deleteUser(id);
     }
 
     /** Dispara el email de reset de contraseña de un usuario. */

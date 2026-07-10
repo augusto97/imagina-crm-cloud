@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
-    isReadOnly,
+    isEffectivelyReadOnly,
     type BillingStatus,
     type BillingSummary,
     type Plan,
@@ -21,12 +21,16 @@ export class BillingService {
     ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
-        const { plan, status } = await this.planStatus(tenantId);
+        const { plan, status, archivedAt, subscriptionEndsAt } = await this.planStatus(tenantId);
         const usage = await this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId));
         return {
             plan,
             status,
-            read_only: isReadOnly(status),
+            read_only: isEffectivelyReadOnly({
+                status,
+                archived_at: archivedAt,
+                subscription_ends_at: subscriptionEndsAt,
+            }),
             limits: await this.plans.limits(plan),
             usage,
         };
@@ -86,10 +90,17 @@ export class BillingService {
         return this.summary(tenantId);
     }
 
-    private async planStatus(tenantId: number): Promise<{ plan: Plan; status: BillingStatus }> {
+    private async planStatus(
+        tenantId: number,
+    ): Promise<{ plan: Plan; status: BillingStatus; archivedAt: Date | null; subscriptionEndsAt: Date | null }> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [t] = await tx
-                .select({ plan: tenants.plan, status: tenants.status })
+                .select({
+                    plan: tenants.plan,
+                    status: tenants.status,
+                    archivedAt: tenants.archivedAt,
+                    subscriptionEndsAt: tenants.subscriptionEndsAt,
+                })
                 .from(tenants)
                 .where(eq(tenants.id, tenantId))
                 .limit(1);
@@ -98,6 +109,8 @@ export class BillingService {
         return {
             plan: (row?.plan ?? 'trial') as Plan,
             status: (row?.status ?? 'trialing') as BillingStatus,
+            archivedAt: row?.archivedAt ?? null,
+            subscriptionEndsAt: row?.subscriptionEndsAt ?? null,
         };
     }
 

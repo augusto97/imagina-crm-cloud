@@ -40,6 +40,27 @@ export function isReadOnly(status: BillingStatus): boolean {
     return !WRITABLE_STATUSES.includes(status);
 }
 
+/**
+ * Solo-lectura EFECTIVO de una empresa (ADR-S09). Además del estado de
+ * facturación, cae a solo-lectura si está archivada o si su suscripción
+ * ('paga hasta') venció. Una sola fuente de verdad para el guard, el billing
+ * y la consola de operador.
+ */
+export function isEffectivelyReadOnly(opts: {
+    status: BillingStatus;
+    archived_at?: string | Date | null;
+    subscription_ends_at?: string | Date | null;
+    now?: Date;
+}): boolean {
+    if (isReadOnly(opts.status)) return true;
+    if (opts.archived_at) return true;
+    if (opts.subscription_ends_at) {
+        const ends = opts.subscription_ends_at instanceof Date ? opts.subscription_ends_at : new Date(opts.subscription_ends_at);
+        if (!Number.isNaN(ends.getTime()) && ends.getTime() <= (opts.now ?? new Date()).getTime()) return true;
+    }
+    return false;
+}
+
 export const usageSchema = z.object({
     records: z.number().int().nonnegative(),
     users: z.number().int().nonnegative(),
