@@ -2,9 +2,11 @@ import { randomBytes } from 'node:crypto';
 import {
     BadRequestException,
     ConflictException,
+    ForbiddenException,
     Inject,
     Injectable,
     Logger,
+    NotFoundException,
     type OnModuleInit,
     UnauthorizedException,
 } from '@nestjs/common';
@@ -130,6 +132,98 @@ export class AuthService implements OnModuleInit {
         this.logger.log(`Contraseña restablecida para userId=${userId}`);
     }
 
+    // ─────────── Gestión de usuarios por el operador (ADR-S15 F2) ───────────
+
+    /**
+     * El operador crea una cuenta (sin workspace) y le envía un email de
+     * invitación con un link para DEFINIR su contraseña. Reusa el mismo token
+     * de reset (un solo uso, 30 min). El usuario se suma a workspaces por el
+     * panel de miembros del admin de cada empresa.
+     */
+    async adminCreateUser(email: string, name: string): Promise<typeof users.$inferSelect> {
+        const normEmail = email.trim().toLowerCase();
+        if (this.env.PLATFORM_SUPERADMINS.includes(normEmail)) {
+            throw new ConflictException('Ese email está reservado');
+        }
+        const [existing] = await this.db
+            .select({ id: users.id })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${normEmail}`)
+            .limit(1);
+        if (existing) {
+            throw new ConflictException('Ya existe una cuenta con ese email');
+        }
+        const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
+        const [user] = await this.db
+            .insert(users)
+            .values({ email: normEmail, passwordHash, name: name.trim() })
+            .returning();
+        if (!user) throw new Error('Insert de usuario no devolvió fila');
+        await this.issueSetupLink(user.id, user.email, user.name, 'invite');
+        this.logger.log(`Usuario ${user.id} creado por operador (invitación enviada)`);
+        return user;
+    }
+
+    /** Reset de contraseña disparado por el operador (envía el email). */
+    async adminResetPassword(userId: number): Promise<void> {
+        const [user] = await this.db
+            .select({ id: users.id, email: users.email, name: users.name })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        if (!user) throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no existe`, data: { status: 404 } });
+        await this.issueSetupLink(user.id, user.email, user.name, 'reset');
+    }
+
+    /** Desactiva/reactiva una cuenta. Al desactivar, revoca todas sus sesiones. */
+    async setUserDisabled(userId: number, disabled: boolean): Promise<void> {
+        const [user] = await this.db
+            .select({ id: users.id, email: users.email })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        if (!user) throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no existe`, data: { status: 404 } });
+        // Guard rail: no dejar que el operador se bloquee a sí mismo ni a otro
+        // superadmin de plataforma desde acá.
+        if (disabled && this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase())) {
+            throw new ForbiddenException({
+                code: 'cannot_disable_superadmin',
+                message: 'No se puede desactivar una cuenta de superadmin de plataforma',
+                data: { status: 403 },
+            });
+        }
+        await this.db
+            .update(users)
+            .set({ disabledAt: disabled ? sql`now()` : null })
+            .where(eq(users.id, userId));
+        if (disabled) await this.sessions.destroyAllForUser(userId);
+        this.logger.log(`Usuario ${userId} ${disabled ? 'desactivado' : 'reactivado'} por operador`);
+    }
+
+    /** Token de un solo uso + email para invitar o resetear (link a /reset). */
+    private async issueSetupLink(
+        userId: number,
+        email: string,
+        name: string,
+        kind: 'invite' | 'reset',
+    ): Promise<void> {
+        const token = randomBytes(32).toString('base64url');
+        await this.redis.set(resetKey(token), String(userId), 'EX', RESET_TTL_SECONDS);
+        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}`;
+        const invite = kind === 'invite';
+        const subject = invite ? 'Te crearon una cuenta en Imagina Base' : 'Restablecer tu contraseña — Imagina Base';
+        const intro = invite
+            ? 'Se creó una cuenta para vos en Imagina Base. Definí tu contraseña para entrar'
+            : 'Se solicitó restablecer tu contraseña';
+        const cta = invite ? 'Definir contraseña' : 'Restablecer contraseña';
+        await this.mail.enqueue({
+            to: email,
+            subject,
+            html: `<p>Hola ${escapeHtml(name)},</p><p>${intro} — el enlace vence en 30 minutos:</p><p><a href="${link}">${cta}</a></p>`,
+            text: `${cta} (vence en 30 min): ${link}`,
+        });
+    }
+
     /**
      * Alta de usuario + su primer workspace + membership admin, en UNA
      * transacción. La membership exige `app.tenant_id`/`app.user_id` en el
@@ -214,6 +308,16 @@ export class AuthService implements OnModuleInit {
         const valid = await argon2.verify(hash, input.password).catch(() => false);
         if (!user || !valid) {
             throw new UnauthorizedException('Credenciales inválidas');
+        }
+
+        // Cuenta desactivada por el operador (ADR-S15 F2): credenciales válidas
+        // pero el acceso está bloqueado. Se revela sólo tras autenticar bien.
+        if (user.disabledAt) {
+            throw new ForbiddenException({
+                code: 'account_disabled',
+                message: 'Tu cuenta está desactivada. Contactá al administrador.',
+                data: { status: 403 },
+            });
         }
 
         const token = await this.sessions.create(user.id);

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
 
 /**
@@ -45,6 +46,40 @@ export const updateTenantSchema = z
         message: 'Indicá al menos plan o estado',
     });
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
+
+// ─────────────────────────── Usuarios (F2) ───────────────────────────
+
+/** Un usuario de la plataforma visto por el operador. */
+export const platformUserSchema = z.object({
+    id: z.number().int(),
+    email: z.string(),
+    name: z.string(),
+    created_at: z.string(),
+    /** Cuenta desactivada (login bloqueado + sesiones revocadas). */
+    disabled: z.boolean(),
+    /** Es superadmin de plataforma (allowlist) — no se puede desactivar. */
+    is_superadmin: z.boolean(),
+    /** Cantidad de workspaces (memberships) a los que pertenece. */
+    workspaces: z.number().int(),
+});
+export type PlatformUser = z.infer<typeof platformUserSchema>;
+
+export interface PlatformUsersResponse {
+    data: PlatformUser[];
+}
+
+/** Alta de usuario por el operador (crea la cuenta + email de invitación). */
+export const createPlatformUserSchema = z.object({
+    email: emailSchema,
+    name: z.string().trim().min(1).max(120),
+});
+export type CreatePlatformUserInput = z.infer<typeof createPlatformUserSchema>;
+
+/** Desactivar/reactivar una cuenta. */
+export const updatePlatformUserSchema = z.object({
+    disabled: z.boolean(),
+});
+export type UpdatePlatformUserInput = z.infer<typeof updatePlatformUserSchema>;
 
 /** Dashboard del operador: la foto de todo el negocio. */
 export interface PlatformStats {

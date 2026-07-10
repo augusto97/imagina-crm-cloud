@@ -9,6 +9,8 @@ export const users = pgTable(
         passwordHash: text('password_hash').notNull(),
         name: text('name').notNull(),
         locale: varchar('locale', { length: 10 }).notNull().default('es'),
+        // Desactivación de cuenta por el operador (ADR-S15 F2): NULL = activa.
+        disabledAt: timestamp('disabled_at', { withTimezone: true }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

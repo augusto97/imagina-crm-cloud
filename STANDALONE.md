@@ -517,8 +517,17 @@ plan/estado/uso/owner=primer admin) y `PATCH /platform/tenants/:id` (cambiar
 plan / suspender-reactivar, reusa `BillingService.setBilling` → la suspensión es
 solo-lectura, ADR-S09). El front monta una sección "Operador → Plataforma" en el
 sidebar del admin, visible sólo si el probe del endpoint no da 403 (mismo patrón
-que el panel de auto-update). Es la primera fase de la consola; usuarios y
-edición de planes en DB son fases siguientes.
+que el panel de auto-update).
+
+**Fase 2 — usuarios.** El operador gestiona el ciclo de vida de las cuentas:
+`GET /platform/users` (todos + nº de workspaces + flags), `POST /platform/users`
+(alta + email de invitación con link para definir contraseña — reusa el token de
+reset), `PATCH /platform/users/:id` (desactivar/reactivar) y
+`POST /platform/users/:id/reset-password`. La **desactivación** (`users.disabled_at`)
+bloquea el login (403 `account_disabled`) y **revoca todas las sesiones** del
+usuario al instante (índice inverso `usess:{userId}` en Redis). Guard rail: no se
+puede desactivar a un superadmin de plataforma. Pendiente: planes editables en DB
+y detalle/impersonación de empresa.
 
 ---
 

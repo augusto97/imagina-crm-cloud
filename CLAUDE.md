@@ -242,8 +242,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         "Operador → Plataforma" en el sidebar (visible sólo si el probe no da
         403) con dashboard + grilla de empresas editable. 5 tests + E2E en
         navegador (login superadmin → nav → 54 empresas → cambio de plan).
-        Pendiente (fases siguientes): alta/desactivación de usuarios, planes
-        editables en DB.
+  - [x] **Consola de plataforma — Fase 2 (usuarios)**: gestión del ciclo de vida
+        de cuentas. `GET/POST /platform/users` (listar todos + nº de workspaces/
+        flags; alta con email de invitación → link para definir contraseña),
+        `PATCH /platform/users/:id` (desactivar/reactivar) y `.../reset-password`.
+        Desactivar (`users.disabled_at`) BLOQUEA el login (403) y REVOCA todas
+        las sesiones al instante (índice inverso `usess:{id}` en Redis); guard
+        rail: no se puede desactivar a un superadmin. Front: card "Usuarios" en
+        la consola (alta + grilla con reset/desactivar; superadmin sin botón de
+        desactivar). 12 tests + E2E en navegador (alta→invita→desactiva→
+        reactiva). Pendiente: planes editables en DB, detalle/impersonar empresa.
 - [ ] **F5 — Hardening** (en curso):
   - [x] Benchmarks §13: harness `pnpm bench` (seed 100k) para GET /records
         (2 filtros, cursor 50, ≤100 ms) y PATCH (≤60 ms); PASS/FAIL en tabla,
