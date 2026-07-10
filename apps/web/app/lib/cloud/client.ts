@@ -330,8 +330,8 @@ export class CloudClient {
     deleteAutomation(list: string | number, id: number): Promise<void> {
         return this.request('DELETE', `/lists/${list}/automations/${id}`, {});
     }
-    automationRuns(list: string | number, id: number): Promise<AutomationRun[]> {
-        return this.request('GET', `/lists/${list}/automations/${id}/runs`, {
+    automationRuns(id: number): Promise<AutomationRun[]> {
+        return this.request('GET', `/automations/${id}/runs`, {
             schema: paginated(automationRunSchema),
         }).then((r) => r.data);
     }

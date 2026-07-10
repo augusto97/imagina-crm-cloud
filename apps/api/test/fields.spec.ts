@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, tenants } from '../src/db/schema';
+import { fields, lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -41,6 +41,7 @@ describe('FieldsService (Postgres real + RLS)', () => {
     beforeEach(async () => {
         for (const t of [tenantA, tenantB]) {
             await withTenant(pg.db, t, async (tx) => {
+                await tx.delete(records).where(eq(records.tenantId, t));
                 await tx.delete(fields).where(eq(fields.tenantId, t));
                 await tx.delete(lists).where(eq(lists.tenantId, t));
             });
@@ -176,6 +177,46 @@ describe('FieldsService (Postgres real + RLS)', () => {
 
         await indexed.update(tenantA, 'clientes', 'monto_ix', { is_indexed: false });
         expect(await exists()).toBe(false);
+    });
+
+    it('distinctValues: frecuencia desc, search bindeado y tipos sin autocomplete', async () => {
+        const ciudad = await service.create(tenantA, 'clientes', { label: 'Ciudad', type: 'text' });
+        const estado = await service.create(tenantA, 'clientes', {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'a', label: 'A' }] },
+        });
+        const key = `f${ciudad.id}`;
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(records).values(
+                ['Bogotá', 'Bogotá', 'Medellín', 'Cali', ''].map((v) => ({
+                    tenantId: tenantA,
+                    listId: listA,
+                    data: v === '' ? {} : { [key]: v },
+                    createdBy: 1,
+                })),
+            ),
+        );
+
+        const all = await service.distinctValues(tenantA, 'clientes', String(ciudad.id), '', 50);
+        expect(all).toEqual([
+            { value: 'Bogotá', count: 2 },
+            { value: 'Cali', count: 1 },
+            { value: 'Medellín', count: 1 },
+        ]);
+
+        // Search por substring, case-insensitive; el `%` del user va escapado.
+        const searched = await service.distinctValues(tenantA, 'clientes', String(ciudad.id), 'bogo', 50);
+        expect(searched).toEqual([{ value: 'Bogotá', count: 2 }]);
+        expect(await service.distinctValues(tenantA, 'clientes', String(ciudad.id), '%', 50)).toEqual([]);
+
+        // select está en la blacklist de autocomplete → [].
+        expect(await service.distinctValues(tenantA, 'clientes', String(estado.id), '', 50)).toEqual([]);
+
+        // Otro tenant no resuelve la lista → 404 (RLS + resolver).
+        await expect(
+            service.distinctValues(tenantB, String(listA), String(ciudad.id), '', 50),
+        ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('aislamiento RLS: no se pueden ver/tocar campos de otra lista/tenant', async () => {

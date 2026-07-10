@@ -19,6 +19,7 @@ import {
     useRecurrencesForRecord,
     useUpsertRecurrence,
 } from '@/hooks/useRecurrences';
+import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -80,9 +81,13 @@ export function DateCellEditor({
     // cambiar de vista, porque el thread no llegaba a procesar el
     // re-render hasta que el componente se desmontaba. Fix en 0.57.10.
     const recurrences = useRecurrencesForRecord(listId, recordId);
-    const existingRecurrence = (recurrences.data ?? []).find(
-        (r) => r.date_field_id === field.id,
-    );
+    // En la nube el módulo de recurrencias todavía no está cableado
+    // (POST/DELETE darían 404) — se oculta TODA la UI de recurrencia.
+    // Los hooks se llaman igual (rules of hooks); solo se gatea el JSX.
+    const recurrencesEnabled = moduleEnabled('recurrences');
+    const existingRecurrence = recurrencesEnabled
+        ? (recurrences.data ?? []).find((r) => r.date_field_id === field.id)
+        : undefined;
     const [recurrenceOpen, setRecurrenceOpen] = useState(existingRecurrence !== undefined);
 
     const handleSelect = (next: Date | undefined): void => {
@@ -179,6 +184,7 @@ export function DateCellEditor({
                 {/* Recurrente: sección colapsable bajo el calendario.
                     Por defecto cerrada (a menos que ya haya una
                     recurrencia configurada — entonces abierta). */}
+                {recurrencesEnabled && (
                 <div className="imcrm-border-t imcrm-border-border">
                     <button
                         type="button"
@@ -212,6 +218,7 @@ export function DateCellEditor({
                         />
                     )}
                 </div>
+                )}
             </PopoverContent>
         </Popover>
     );

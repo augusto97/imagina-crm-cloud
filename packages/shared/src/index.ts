@@ -2,6 +2,7 @@ export * from './schemas/common';
 export * from './schemas/slug';
 export * from './schemas/membership';
 export * from './schemas/member';
+export * from './schemas/me';
 export * from './schemas/tenant';
 export * from './schemas/auth';
 export * from './schemas/field';

@@ -11,6 +11,8 @@ export const users = pgTable(
         locale: varchar('locale', { length: 10 }).notNull().default('es'),
         // Desactivación de cuenta por el operador (ADR-S15 F2): NULL = activa.
         disabledAt: timestamp('disabled_at', { withTimezone: true }),
+        // Firma de email del usuario (/me/email-signature): NULL = sin firma.
+        emailSignature: text('email_signature'),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

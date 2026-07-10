@@ -495,7 +495,7 @@ function MapStep({
                                 <span className="imcrm-font-medium">{c.header || `#${c.idx}`}</span>
                                 {' — '}
                                 <span className="imcrm-italic imcrm-text-muted-foreground">
-                                    "{c.sample}"
+                                    &ldquo;{c.sample}&rdquo;
                                 </span>
                             </li>
                         ))}
@@ -671,7 +671,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                                     <>
                                         {' · '}
                                         <span className="imcrm-text-muted-foreground imcrm-italic">
-                                            "{c.sample}"
+                                            &ldquo;{c.sample}&rdquo;
                                         </span>
                                     </>
                                 )}

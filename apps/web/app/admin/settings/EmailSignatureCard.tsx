@@ -14,10 +14,9 @@ import { sanitizeHtml } from '@/lib/sanitize';
 /**
  * Card en Settings para que el usuario edite su firma de email.
  *
- * Persistida en `user_meta:imcrm_email_signature` (per-usuario; cada
- * admin ve la suya). El backend hace `wp_kses_post` así que se acepta
- * HTML básico (links, formato, imágenes con src http(s)) — no
- * scripts.
+ * Persistida en `users.email_signature` (per-usuario; cada uno ve la
+ * suya) vía `GET/PATCH /me/email-signature`. Se acepta HTML básico —
+ * el preview lo pasa por `sanitizeHtml` y el mail sale como HTML.
  *
  * Insertable en el body de cualquier email automatizado vía:
  *  - El botón "+ Agregar firma" en `MergeTagInput`.

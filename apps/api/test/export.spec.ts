@@ -45,7 +45,7 @@ describe('ExportService (Postgres real)', () => {
             activity,
             new AutomationDispatcher(),
         );
-        exportService = new ExportService(tenantDb, listsService, fieldsService, viewsService);
+        exportService = new ExportService(tenantDb, listsService, fieldsService, viewsService, recordsService);
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
@@ -71,6 +71,59 @@ describe('ExportService (Postgres real)', () => {
         expect(bundle.fields.map((x) => x.slug)).toEqual(['nombre']);
         expect(bundle.views).toHaveLength(1);
         expect(bundle.records.map((r) => r.data[`f${f.id}`])).toEqual(['A', 'B', 'C']);
+    });
+
+    it('streamCsvExport: CSV con seleccion de campos, delimiter, BOM y filtro', async () => {
+        await listsService.create(tenantId, { name: 'Ventas' });
+        const nombre = await fieldsService.create(tenantId, 'ventas', { label: 'Nombre', type: 'text', slug: 'nombre' });
+        const monto = await fieldsService.create(tenantId, 'ventas', { label: 'Monto', type: 'number', slug: 'monto' });
+        await recordsService.create(tenantId, admin, 'ventas', {
+            data: { [`f${nombre.id}`]: 'Acme, S.A.', [`f${monto.id}`]: 10 },
+        });
+        await recordsService.create(tenantId, admin, 'ventas', {
+            data: { [`f${nombre.id}`]: 'Globex', [`f${monto.id}`]: 99 },
+        });
+
+        let filename = '';
+        let out = '';
+        await exportService.streamCsvExport(
+            tenantId,
+            admin,
+            'ventas',
+            { fieldIds: [monto.id, nombre.id], delimiter: ',', withBom: true },
+            (f) => { filename = f; },
+            (c) => { out += c; },
+        );
+        expect(filename).toBe('ventas.csv');
+        expect(out.startsWith('\uFEFF')).toBe(true);
+        const lines = out.replace('\uFEFF', '').trimEnd().split('\r\n');
+        // Orden de columnas = orden pedido (monto primero); quoting RFC-4180.
+        expect(lines[0]).toBe('Monto,Nombre');
+        expect(lines[1]).toBe('10,"Acme, S.A."');
+        expect(lines[2]).toBe('99,Globex');
+
+        // Con filter_tree solo salen las filas que matchean.
+        let filtered = '';
+        await exportService.streamCsvExport(
+            tenantId,
+            admin,
+            'ventas',
+            {
+                fieldIds: [nombre.id],
+                delimiter: ';',
+                withBom: false,
+                filterTree: {
+                    type: 'group',
+                    logic: 'and',
+                    children: [
+                        { type: 'condition', field_id: monto.id, op: 'gt', value: 50 },
+                    ],
+                },
+            },
+            () => {},
+            (c) => { filtered += c; },
+        );
+        expect(filtered.trimEnd().split('\r\n')).toEqual(['Nombre', 'Globex']);
     });
 
     // SEC-10: el streaming produce EXACTAMENTE el mismo bundle JSON.

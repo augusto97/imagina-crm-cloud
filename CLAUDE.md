@@ -349,6 +349,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (`scripts/pitr-drill.sh`, PASS: restaura a T1 → trae A y no B). Runbook
         `docs/runbook-pitr.md` (RPO/RTO, off-site del WAL, promoción, límites).
         Con esto F5 queda completa.
+  - [x] **Auditoría integral post-portado (sin vestigios de WordPress)**: se
+        eliminó todo lo WP-only del fork — `@wordpress/i18n` (reemplazado por
+        `lib/i18n.ts` propio), entradas/`vite.config.ts` del build del plugin
+        (`build`/`dev` ahora apuntan al build cloud), el shell cloud viejo
+        (~15 archivos muertos), la Settings page del plugin (License/Webhooks/
+        CustomRoles). Se cablearon los últimos endpoints que la UI llamaba en
+        vacío: `GET /me/users-search` + `/me/users/:id` (pickers de usuario),
+        `GET/PATCH /me/email-signature` (migración 0022; card montada en
+        Ajustes), `POST /lists/:l/import/preview|run` (ImportDialog completo:
+        CSV parser propio, sugerencia de mapping/tipos, campos on-the-fly,
+        auto-expansión de opciones de select, warnings de pérdida de datos),
+        `GET /lists/:l/fields/:f/values` (autocomplete de filtros) y
+        `GET /lists/:l/export?format=csv` (CSV con campos/delimiter/BOM/filtro
+        respetando ACL). Realtime reconectado al fork (el hook quedó montado en
+        `AdminCloudApp` invalidando las queryKeys reales). Gates cloud para
+        media de WP (attachments/FileItem) y recurrencias; fix del path de
+        `automationRuns`. Hardening: CORS del WebSocket ya no refleja cualquier
+        Origin (same-origin por defecto, `WS_ALLOWED_ORIGINS` opt-in). Lint del
+        front en 0 errores (hooks condicionales y hooks tras early-return
+        corregidos). 242 tests API + 13 nuevos en verde; verificado E2E.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

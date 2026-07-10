@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useFields } from '@/hooks/useFields';
 import { getBootData } from '@/lib/boot';
+import { isCloud } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FilterTree } from '@/types/record';
@@ -120,10 +121,17 @@ export function ExportButton({
                 params.set('with_bom', '1');
             }
 
+            const cloud = isCloud();
+            if (cloud) {
+                // El backend cloud sirve CSV cuando format=csv.
+                params.set('format', 'csv');
+            }
+
             // Async opt-in cuando la lista pasa el umbral (Fase 17.A).
             // El backend en modo async devuelve 202 con `job_id`; el
-            // frontend lo polea hasta que esté ready.
-            const useAsync = (totalRecords ?? 0) > ASYNC_THRESHOLD;
+            // frontend lo polea hasta que esté ready. Solo WP: en la
+            // nube no existe /export/jobs/:id — siempre stream síncrono.
+            const useAsync = !cloud && (totalRecords ?? 0) > ASYNC_THRESHOLD;
             if (useAsync) {
                 params.set('async', '1');
             }
@@ -131,10 +139,18 @@ export function ExportButton({
             const base = boot.restRoot.replace(/\/$/, '');
             const url = `${base}/lists/${listSlug}/export${params.toString() ? `?${params}` : ''}`;
 
+            // Auth: en la nube, cookie de sesión + tenant activo; en WP, nonce.
+            const headers: Record<string, string> = {};
+            if (cloud) {
+                if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
+            } else {
+                headers['X-WP-Nonce'] = boot.restNonce;
+            }
+
             const res = await fetch(url, {
                 method: 'GET',
-                headers: { 'X-WP-Nonce': boot.restNonce },
-                credentials: 'same-origin',
+                headers,
+                credentials: cloud ? 'include' : 'same-origin',
             });
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
