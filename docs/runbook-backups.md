@@ -7,7 +7,7 @@
 ## Objetivos (RPO / RTO)
 
 - **RPO** (pérdida máxima aceptable): ≤ 24 h con backup lógico diario; ≤ 5 min
-  si se habilita PITR (WAL archiving) en el gestor administrado.
+  con PITR (WAL archiving) — ya implementado, ver **`docs/runbook-pitr.md`**.
 - **RTO** (tiempo de recuperación): ≤ 1 h para restaurar el último dump en una
   instancia nueva.
 
