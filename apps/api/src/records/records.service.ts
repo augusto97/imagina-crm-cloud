@@ -1,20 +1,26 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     isDataField,
     jsonbKeyForField,
-    roleHasCapability,
     validateFieldValue,
     type CreateRecordInput,
     type Field,
+    type List,
     type ListRecordsQuery,
     type RecordDto,
     type Role,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
-import { records } from '../db/schema';
+import {
+    andWhere,
+    effectivePermissions,
+    hiddenFieldsFor,
+    resolvePermissions,
+    rowInScope,
+    scopeWhere,
+} from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -51,7 +57,16 @@ export class RecordsService {
         listIdOrSlug: string,
         input: CreateRecordInput,
     ): Promise<RecordDto> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const listId = list.id;
+        // ACL por lista: el rol debe tener create habilitado para esta lista.
+        if (!effectivePermissions(list.settings, actor.role).create) {
+            throw new ForbiddenException({
+                code: 'forbidden_create',
+                message: 'Tu rol no puede crear registros en esta lista',
+                data: { status: 403 },
+            });
+        }
         const fields = await this.fields.listByListId(tenantId, listId);
         const data = this.validateData(fields, input.data, { partial: false });
 
@@ -84,13 +99,15 @@ export class RecordsService {
     }
 
     async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<RecordDto> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.findById(tx, tenantId, listId, id),
-        );
-        // Solo-propios: si no ve todos y no es el dueño, 404 (no filtramos info).
-        if (!row || !this.canReach(actor, 'view', row)) throw recordNotFound(id);
-        return toRecord(row);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const { row, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const r = await this.repo.findById(tx, tenantId, list.id, id);
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            return { row: r, hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role) };
+        });
+        // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
+        if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
+        return stripHidden(toRecord(row), hiddenKeys);
     }
 
     async list(
@@ -102,33 +119,34 @@ export class RecordsService {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
-        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { rows, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const fieldsById = new Map<number, FilterableField>(
                 fields.map((f) => [f.id, { id: f.id, type: f.type }]),
             );
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
-            // Solo-propios: los agents ven únicamente sus registros (created_by).
-            const ownerWhere = roleHasCapability(actor.role, 'view_records')
-                ? undefined
-                : eq(records.createdBy, actor.userId);
-            const where =
-                filterWhere && ownerWhere ? and(filterWhere, ownerWhere) : filterWhere ?? ownerWhere;
+            // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
+            const perms = effectivePermissions(list.settings, actor.role);
+            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+            const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
+            const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
+            const where = andWhere(filterWhere, scopeW);
 
-            return this.repo.list(tx, tenantId, list.id, {
+            const result = await this.repo.list(tx, tenantId, list.id, {
                 where,
                 cursor: query.cursor,
                 limit: query.limit,
                 dir: query.sort_dir,
             });
+            return { rows: result, hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role) };
         });
 
         // Pedimos limit+1 para detectar página siguiente sin contar todo.
         const hasMore = rows.length > query.limit;
         const page = hasMore ? rows.slice(0, query.limit) : rows;
         const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
-        return { data: page.map(toRecord), meta: { next_cursor: nextCursor } };
+        return { data: page.map((r) => stripHidden(toRecord(r), hiddenKeys)), meta: { next_cursor: nextCursor } };
     }
 
     async update(
@@ -138,12 +156,13 @@ export class RecordsService {
         id: number,
         input: UpdateRecordInput,
     ): Promise<RecordDto> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const listId = list.id;
         const fields = await this.fields.listByListId(tenantId, listId);
 
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
-            if (!current || !this.canReach(actor, 'edit', current)) throw recordNotFound(id);
+            if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, input.data, { partial: true });
@@ -176,10 +195,11 @@ export class RecordsService {
     }
 
     async remove(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<void> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const listId = list.id;
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
-            if (!current || !this.canReach(actor, 'delete', current)) return false;
+            if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
             const ok = await this.repo.softDelete(tx, tenantId, listId, id);
             if (ok) {
                 await this.activity.logInTx(tx, {
@@ -238,14 +258,23 @@ export class RecordsService {
     }
 
     /**
-     * Scoping de "own records": si el rol tiene la capability plena (view/
-     * edit/delete_records) alcanza cualquier registro; si solo tiene la
-     * variante `_own_`, únicamente los que creó (CONTRACT §6).
+     * ¿El actor alcanza esta fila para la acción, según el ACL de la lista?
+     * Resuelve el scope efectivo del rol (all/assigned/own/none) y evalúa la
+     * fila (created_by / valor del campo de asignación).
      */
-    private canReach(actor: Actor, action: 'view' | 'edit' | 'delete', row: RecordRow): boolean {
-        const full = { view: 'view_records', edit: 'edit_records', delete: 'delete_records' } as const;
-        if (roleHasCapability(actor.role, full[action])) return true;
-        return row.createdBy === actor.userId;
+    private aclCanReach(
+        list: List,
+        actor: Actor,
+        action: 'view' | 'edit' | 'delete',
+        row: RecordRow,
+    ): boolean {
+        const scope = effectivePermissions(list.settings, actor.role)[action];
+        const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+        const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
+        const assignmentValue = assignmentKey
+            ? (row.data as Record<string, unknown>)[assignmentKey]
+            : null;
+        return rowInScope(scope, actor.userId, { createdBy: row.createdBy, assignmentValue });
     }
 
     private async resolveListId(tenantId: number, listIdOrSlug: string): Promise<number> {
@@ -327,6 +356,31 @@ function toRecord(row: RecordRow): RecordDto {
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
     };
+}
+
+/** Claves JSONB (f{id}) de los campos ocultos para el rol (ACL por lista). */
+function hiddenKeysFor(
+    fields: Field[],
+    settings: Record<string, unknown>,
+    role: Role,
+): Set<string> {
+    const hiddenSlugs = hiddenFieldsFor(settings, role);
+    if (hiddenSlugs.size === 0) return new Set();
+    const keys = new Set<string>();
+    for (const f of fields) {
+        if (hiddenSlugs.has(f.slug)) keys.add(jsonbKeyForField(f.id));
+    }
+    return keys;
+}
+
+/** Devuelve el record sin las claves de datos ocultas para el rol. */
+function stripHidden(record: RecordDto, hiddenKeys: Set<string>): RecordDto {
+    if (hiddenKeys.size === 0) return record;
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record.data)) {
+        if (!hiddenKeys.has(k)) data[k] = v;
+    }
+    return { ...record, data };
 }
 
 /** Merge parcial: null borra la clave; el resto sobrescribe. */

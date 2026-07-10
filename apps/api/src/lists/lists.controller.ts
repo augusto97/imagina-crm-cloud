@@ -12,10 +12,13 @@ import {
 } from '@nestjs/common';
 import {
     createListSchema,
+    updateListPermissionsSchema,
     updateListSchema,
     type CreateListInput,
     type List,
+    type ListPermissionsDoc,
     type UpdateListInput,
+    type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -43,6 +46,26 @@ export class ListsController {
     @Get(':idOrSlug')
     get(@Req() req: FastifyRequest, @Param('idOrSlug') idOrSlug: string): Promise<List> {
         return this.lists.get(tenantId(req), idOrSlug);
+    }
+
+    /** ACL por lista (permisos por rol). Solo admin (manage_lists). */
+    @Get(':idOrSlug/permissions')
+    @RequireCapability('manage_lists')
+    getPermissions(
+        @Req() req: FastifyRequest,
+        @Param('idOrSlug') idOrSlug: string,
+    ): Promise<ListPermissionsDoc> {
+        return this.lists.getPermissions(tenantId(req), idOrSlug);
+    }
+
+    @Patch(':idOrSlug/permissions')
+    @RequireCapability('manage_lists')
+    updatePermissions(
+        @Req() req: FastifyRequest,
+        @Param('idOrSlug') idOrSlug: string,
+        @Body(new ZodValidationPipe(updateListPermissionsSchema)) input: UpdateListPermissionsInput,
+    ): Promise<ListPermissionsDoc> {
+        return this.lists.updatePermissions(tenantId(req), idOrSlug, input);
     }
 
     @Post()

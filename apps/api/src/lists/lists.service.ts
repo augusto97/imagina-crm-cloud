@@ -4,12 +4,23 @@ import {
     slugify,
     type CreateListInput,
     type List,
+    type ListPermissionsDoc,
+    type ListRoleMeta,
     type UpdateListInput,
+    type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
 import type { Tx } from '../db/client';
+import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsRepository, type ListRow } from './lists.repository';
+
+/** Roles del workspace cuyos permisos por lista se configuran. */
+const CONFIGURABLE_ROLE_META: ListRoleMeta[] = [
+    { slug: 'manager', label: 'Manager', can_configure: true },
+    { slug: 'agent', label: 'Agente', can_configure: true },
+    { slug: 'viewer', label: 'Visor', can_configure: true },
+];
 
 @Injectable()
 export class ListsService {
@@ -40,6 +51,41 @@ export class ListsService {
      */
     async getWithinTx(tx: Tx, tenantId: number, idOrSlug: string): Promise<List> {
         return toList(await this.resolve(tx, tenantId, idOrSlug));
+    }
+
+    /** Permisos por rol de la lista (ACL) + catálogo de roles configurables. */
+    async getPermissions(tenantId: number, idOrSlug: string): Promise<ListPermissionsDoc> {
+        const list = await this.get(tenantId, idOrSlug);
+        const doc = resolvePermissions(list.settings);
+        return {
+            list_id: list.id,
+            permissions: doc.permissions,
+            assignment_field_id: doc.assignment_field_id,
+            roles: CONFIGURABLE_ROLE_META,
+        };
+    }
+
+    /** Actualiza el ACL de la lista (merge en settings.permissions). */
+    async updatePermissions(
+        tenantId: number,
+        idOrSlug: string,
+        input: UpdateListPermissionsInput,
+    ): Promise<ListPermissionsDoc> {
+        const list = await this.get(tenantId, idOrSlug);
+        const current = resolvePermissions(list.settings);
+        const nextPermissions = input.permissions
+            ? { ...current.permissions, ...input.permissions }
+            : current.permissions;
+        const nextAssignment =
+            input.assignment_field_id !== undefined
+                ? input.assignment_field_id
+                : current.assignment_field_id;
+        const settings = {
+            ...list.settings,
+            permissions: { permissions: nextPermissions, assignment_field_id: nextAssignment },
+        };
+        await this.update(tenantId, idOrSlug, { settings });
+        return this.getPermissions(tenantId, idOrSlug);
     }
 
     async create(tenantId: number, input: CreateListInput): Promise<List> {
