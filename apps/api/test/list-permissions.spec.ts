@@ -2,7 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, records, tenants, users } from '../src/db/schema';
+import { fields, lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
