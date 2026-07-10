@@ -45,6 +45,23 @@ export function listIdentifiersFor(
 }
 
 /**
+ * Resuelve `idOrSlug` al ID NUMÉRICO canónico vía el cache de listas (regla de
+ * oro nº 7 / PERF-06). Todas las query keys deben usar el id numérico para que
+ * la misma lista no se cachee dos veces (bajo su slug y bajo su id) → menos
+ * fetches duplicados y cache misses al navegar. Si el cache de listas aún no
+ * cargó (primer load raro), cae al identificador dado.
+ */
+export function canonicalListId(qc: QueryClient, idOrSlug: string | number): string {
+    const asStr = String(idOrSlug);
+    const all = qc.getQueryData<ListSummary[]>(listsKeys.list());
+    if (Array.isArray(all)) {
+        const match = all.find((l) => l.slug === asStr || String(l.id) === asStr);
+        if (match) return String(match.id);
+    }
+    return asStr;
+}
+
+/**
  * Predicate para invalidar SÓLO las queries de records/fields/views
  * de la lista indicada. Antes invalidábamos `keys.all` por miedo a
  * no matchear el slug — ahora mapeamos id↔slug vía el cache de lists.
@@ -169,8 +186,11 @@ export function useRecordsGroupedBundle({
 
 export function useRecords(listId: string | number | undefined, query: RecordsQuery) {
     const qc = useQueryClient();
+    // Key por id numérico canónico (PERF-06); la URL usa el identificador
+    // original (el backend acepta id o slug).
+    const keyId = canonicalListId(qc, listId ?? '');
     const result = useQuery({
-        queryKey: recordsKeys.list(listId ?? '', query),
+        queryKey: recordsKeys.list(keyId, query),
         queryFn: async () => {
             const res = await api.get<RecordEntity[]>(`/lists/${listId}/records`, {
                 query: query as Record<string, unknown>,
@@ -206,7 +226,7 @@ export function useRecords(listId: string | number | undefined, query: RecordsQu
         if (! shouldPrefetch) return;
         const nextQuery: RecordsQuery = { ...query, page: currentPage + 1 };
         void qc.prefetchQuery({
-            queryKey: recordsKeys.list(listId as string | number, nextQuery),
+            queryKey: recordsKeys.list(keyId, nextQuery),
             queryFn: async () => {
                 const res = await api.get<RecordEntity[]>(`/lists/${listId}/records`, {
                     query: nextQuery as Record<string, unknown>,
@@ -214,7 +234,7 @@ export function useRecords(listId: string | number | undefined, query: RecordsQu
                 return { data: res.data, meta: res.meta } as unknown as RecordListResponse;
             },
         });
-    }, [shouldPrefetch, listId, currentPage, totalPages]);
+    }, [shouldPrefetch, listId, keyId, currentPage, totalPages]);
 
     return result;
 }
