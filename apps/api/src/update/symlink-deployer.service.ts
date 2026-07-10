@@ -7,6 +7,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { AppRelease } from '@imagina-base/shared';
 import type { Env } from '../config/env';
 import type { DeployResult, Deployer } from './update.types';
+import { verifyDetachedSignature } from './verify-signature';
 
 const run = promisify(execFile);
 
@@ -72,6 +73,23 @@ export class SymlinkDeployer implements Deployer {
             const actual = await this.sha256(zipPath);
             if (actual.toLowerCase() !== release.checksum.toLowerCase()) {
                 return { ok: false, message: `Checksum no coincide (esperado ${release.checksum.slice(0, 12)}…)`, prevRelease };
+            }
+
+            // 3b. Verificar FIRMA (SEC-12, opt-in). Con clave pública configurada,
+            // además del checksum se exige una firma detached válida del zip
+            // (asset `<bundle>.zip.sig`). Fail-closed si falta o no valida.
+            if (this.env.UPDATER_PUBLIC_KEY) {
+                const sigPath = `${zipPath}.sig`;
+                try {
+                    await this.download(`${release.bundle_url}.sig`, sigPath);
+                } catch {
+                    return { ok: false, message: 'Verificación de firma activada pero el release no trae .sig', prevRelease };
+                }
+                const validSig = await verifyDetachedSignature(zipPath, sigPath, this.env.UPDATER_PUBLIC_KEY);
+                await run('rm', ['-f', sigPath]).catch(() => undefined);
+                if (!validSig) {
+                    return { ok: false, message: 'La firma del release no es válida; instalación rechazada', prevRelease };
+                }
             }
 
             // 4. Extraer.
