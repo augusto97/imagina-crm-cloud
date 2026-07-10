@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Save, Trash2, Users } from 'lucide-react';
+import { Archive, ArchiveRestore, Building2, CalendarClock, ChevronDown, ChevronRight, Loader2, LogIn, Plus, Save, Search, Trash2, Users } from 'lucide-react';
 import {
     BILLING_STATUSES,
     type BillingStatus,
@@ -52,6 +52,17 @@ export function PlatformTenantsCard(): JSX.Element {
     const update = useUpdateTenant();
     const [expanded, setExpanded] = useState<number | null>(null);
     const [showNew, setShowNew] = useState(false);
+    const [search, setSearch] = useState('');
+
+    const filtered = (tenants.data ?? []).filter((t) => {
+        const q = search.trim().toLowerCase();
+        if (q === '') return true;
+        return (
+            t.name.toLowerCase().includes(q) ||
+            t.slug.toLowerCase().includes(q) ||
+            (t.owner?.email.toLowerCase().includes(q) ?? false)
+        );
+    });
 
     const setPlan = (t: PlatformTenant, plan: Plan): void => {
         if (plan !== t.plan) update.mutate({ id: t.id, input: { plan } });
@@ -88,6 +99,21 @@ export function PlatformTenantsCard(): JSX.Element {
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                 {showNew && <NewTenantForm onDone={() => setShowNew(false)} />}
 
+                {!tenants.isLoading && !tenants.isError && (
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Search className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                        <Input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder={__('Buscar por nombre, slug o email del admin…')}
+                            className="imcrm-h-9 imcrm-max-w-sm"
+                        />
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
+                            {filtered.length}/{(tenants.data ?? []).length}
+                        </span>
+                    </div>
+                )}
+
                 {tenants.isLoading ? (
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
                         <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
@@ -110,7 +136,7 @@ export function PlatformTenantsCard(): JSX.Element {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(tenants.data ?? []).map((t) => (
+                                {filtered.map((t) => (
                                     <Fragment key={t.id}>
                                         <tr className="imcrm-border-b imcrm-border-border/60">
                                             <td className="imcrm-py-3 imcrm-pr-3">
