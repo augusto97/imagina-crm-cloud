@@ -488,7 +488,23 @@ reconcilia el estado final al bootear. Fail-closed en el checksum; lock + marker
 `done` para re-entrancia; auto-sanación de runs colgados. Detalle en
 `docs/runbook-updates.md`.
 
+**ADR-S14 — Listas públicas embebibles por token opaco + restricción por dominio.**
+Una lista puede exponerse de **solo-lectura** en una URL propia y embeberse por
+`<iframe>` en sitios externos, gobernada por un **token opaco** (no filtra ids/
+slug internos). El mapeo `token → (tenant, list)` vive en una tabla auxiliar
+`public_lists` **SIN RLS** (es un índice público que se consulta *antes* de
+resolver tenant); una vez resuelto el tenant, TODA lectura de datos corre dentro
+del scope RLS normal (`withTenant`). Sólo se exponen los campos que el admin marca
+como visibles (`settings.public.visible_field_slugs`) — la búsqueda y el orden
+sólo alcanzan ese subconjunto, nunca un campo oculto. La **restricción por
+dominio** del embed se implementa con la cabecera CSP `frame-ancestors` de la
+página HTML servida (`GET /public/l/:token`): vacío = cualquiera puede embeber;
+con dominios = sólo esos (+`'self'`). La página es HTML autocontenido (CSS+JS
+inline) que consume los endpoints JSON públicos (`/public/lists/:token/meta` y
+`/records`), así el embed no depende del bundle del admin. Config admin en
+`PATCH /lists/:id/public` (`manage_lists`).
+
 ---
 
-**Última actualización:** 2026-07-08
-**Versión del documento:** 1.4.0 (auto-actualización — ADR-S13)
+**Última actualización:** 2026-07-10
+**Versión del documento:** 1.5.0 (listas públicas embebibles — ADR-S14)

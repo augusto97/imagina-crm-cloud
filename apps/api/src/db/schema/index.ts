@@ -11,3 +11,4 @@ export * from './automations';
 export * from './portal-links';
 export * from './app-releases';
 export * from './dashboards';
+export * from './public-lists';

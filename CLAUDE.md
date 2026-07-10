@@ -116,6 +116,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         updated_at. Verificado E2E (login→listas→records CRUD) en navegador.
         Pendiente (etapas siguientes): dashboards, footer de agregados,
         editor de plantillas/portal, automatizaciones, menciones.
+  - [x] **Permisos por lista (ACL por rol)**: `settings.permissions` por rol
+        configurable (manager/agent/viewer) con scopes view/edit/delete
+        (all/assigned/own/none) + create + `fields_hidden`. Enforcement en
+        `records.service` (scope SQL + strip de campos ocultos); endpoints
+        `GET/PATCH /lists/:id/permissions` (`manage_lists`) + panel del List
+        Builder. Tests de ACL. Reconstrucción de ajustes de lista para la nube
+        (se quitaron paneles vestigiales de WordPress: mantenimiento,
+        visibilidad-shortcode; alta de campos por catálogo cliente).
+  - [x] **Listas públicas embebibles (ADR-S14)**: una lista se publica de
+        solo-lectura por **token opaco** y se embebe por `<iframe>` con
+        **restricción por dominio** (CSP `frame-ancestors`). Backend:
+        tabla `public_lists` sin RLS (índice token→lista), `settings.public`
+        (campos visibles/orden/búsqueda/dominios), endpoints públicos sin auth
+        (`/public/lists/:token/meta` + `/records` + página HTML autocontenida
+        `/public/l/:token`) y admin (`GET/PATCH /lists/:id/public`,
+        `manage_lists`). Sólo llegan los campos marcados visibles; búsqueda/orden
+        acotados a ese subconjunto. Front: panel "Lista pública" del List Builder
+        (campos visibles, orden, dominios, enlace + snippet de iframe). 12 tests;
+        verificado E2E contra el build de producción (meta/records/HTML+CSP,
+        campos ocultos nunca se filtran, disable→404).
 - [ ] **F2 — Vistas + realtime** (en curso):
   - [x] Realtime por invalidación push — gateway Socket.io (auth por cookie,
         rooms por tenant) + Redis adapter multi-nodo; los services emiten al

@@ -21,6 +21,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UpdateModule } from './update/update.module';
 import { PortalModule } from './portal/portal.module';
+import { PublicListsModule } from './public-lists/public-lists.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
 import { RedisModule } from './redis/redis.module';
@@ -52,6 +53,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AutomationsModule,
         DashboardsModule,
         PortalModule,
+        PublicListsModule,
         BillingModule,
         PaymentsModule,
         ExportModule,
