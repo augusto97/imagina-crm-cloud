@@ -40,6 +40,12 @@ const envSchema = z.object({
     // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
     // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
     METRICS_TOKEN: z.string().default(''),
+    // Clave opcional de cifrado de secretos en reposo (SEC-20). Vacío = texto
+    // plano (actual). Seteada = AES-256-GCM del password SMTP de plataforma.
+    SECRETS_KEY: z.string().default(''),
+    // Clave pública opcional para verificar la FIRMA de los releases (SEC-12).
+    // Vacío = solo checksum (actual). PEM de una clave pública (ed25519/RSA).
+    UPDATER_PUBLIC_KEY: z.string().default(''),
 
     // --- Email (ADR-S11). `log` (default) escribe el mail al logger; `smtp`
     // usa nodemailer contra un servidor SMTP real. Elegir `smtp` sin SMTP_HOST
