@@ -33,6 +33,15 @@ export class ListsService {
         return toList(row);
     }
 
+    /**
+     * Resuelve id-o-slug DENTRO de un tx ya abierto (PERF-02). Permite que el
+     * hot path de records resuelva lista + fields + records en UNA sola
+     * transacción con scope, en vez de abrir una por paso.
+     */
+    async getWithinTx(tx: Tx, tenantId: number, idOrSlug: string): Promise<List> {
+        return toList(await this.resolve(tx, tenantId, idOrSlug));
+    }
+
     async create(tenantId: number, input: CreateListInput): Promise<List> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const slug = await this.resolveNewSlug(tx, tenantId, input.name, input.slug);
