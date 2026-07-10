@@ -99,26 +99,30 @@ export class RecordsService {
         listIdOrSlug: string,
         query: ListRecordsQuery,
     ): Promise<RecordsPage> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const fields = await this.fields.listByListId(tenantId, listId);
-        const fieldsById = new Map<number, FilterableField>(
-            fields.map((f) => [f.id, { id: f.id, type: f.type }]),
-        );
-        const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
-        // Solo-propios: los agents ven únicamente sus registros (created_by).
-        const ownerWhere = roleHasCapability(actor.role, 'view_records')
-            ? undefined
-            : eq(records.createdBy, actor.userId);
-        const where = filterWhere && ownerWhere ? and(filterWhere, ownerWhere) : filterWhere ?? ownerWhere;
+        // PERF-02: lista + fields + records se resuelven en UNA sola
+        // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
+        // scope por request).
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const fieldsById = new Map<number, FilterableField>(
+                fields.map((f) => [f.id, { id: f.id, type: f.type }]),
+            );
+            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
+            // Solo-propios: los agents ven únicamente sus registros (created_by).
+            const ownerWhere = roleHasCapability(actor.role, 'view_records')
+                ? undefined
+                : eq(records.createdBy, actor.userId);
+            const where =
+                filterWhere && ownerWhere ? and(filterWhere, ownerWhere) : filterWhere ?? ownerWhere;
 
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.list(tx, tenantId, listId, {
+            return this.repo.list(tx, tenantId, list.id, {
                 where,
                 cursor: query.cursor,
                 limit: query.limit,
                 dir: query.sort_dir,
-            }),
-        );
+            });
+        });
 
         // Pedimos limit+1 para detectar página siguiente sin contar todo.
         const hasMore = rows.length > query.limit;

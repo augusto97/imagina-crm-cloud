@@ -80,6 +80,12 @@ export class FieldsService {
         return rows.map(toField);
     }
 
+    /** Igual que listByListId pero DENTRO de un tx ya abierto (PERF-02). */
+    async listByListIdWithinTx(tx: Tx, tenantId: number, listId: number): Promise<Field[]> {
+        const rows = await this.repo.listByList(tx, tenantId, listId);
+        return rows.map(toField);
+    }
+
     async get(tenantId: number, listIdOrSlug: string, fieldIdOrSlug: string): Promise<Field> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
