@@ -11,7 +11,9 @@ import {
     type Role,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
+import { sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
+import { records } from '../db/schema';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
@@ -149,12 +151,15 @@ export class RecordsService {
                 fields.map((f) => [f.id, { id: f.id, type: f.type }]),
             );
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
+            // Búsqueda de texto (paridad con el buscador del plugin): OR de
+            // ILIKE sobre los campos searchables, AND con filtros y scope.
+            const searchWhere = compileSearch(fields, query.search);
             // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
             const perms = effectivePermissions(list.settings, actor.role);
             const assignmentId = resolvePermissions(list.settings).assignment_field_id;
             const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
-            const where = andWhere(filterWhere, scopeW);
+            const where = andWhere(andWhere(filterWhere, searchWhere), scopeW);
 
             const result = await this.repo.list(tx, tenantId, list.id, {
                 where,
@@ -582,4 +587,25 @@ function recordNotFound(id: number): NotFoundException {
         message: `Registro ${id} no encontrado`,
         data: { status: 404 },
     });
+}
+
+/**
+ * WHERE de la búsqueda de texto server-side: OR de `data->>'fN' ILIKE
+ * %needle%` sobre los campos "searchables" (los mismos que buscaba el
+ * plugin: text, long_text, email, url). El needle viaja SIEMPRE bindeado
+ * y con los metacaracteres de LIKE escapados (regla de oro nº 4).
+ * Sin campos searchables en la lista → `false` (cero resultados, no todo).
+ */
+const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url']);
+
+function compileSearch(fields: Field[], search: string | undefined): SQL | undefined {
+    const needle = (search ?? '').trim();
+    if (needle === '') return undefined;
+    const targets = fields.filter((f) => SEARCHABLE_TYPES.has(f.type));
+    if (targets.length === 0) return sql`false`;
+    const escaped = `%${needle.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+    const parts = targets.map(
+        (f) => sql`${records.data} ->> ${jsonbKeyForField(f.id)} ILIKE ${escaped}`,
+    );
+    return sql`(${sql.join(parts, sql` OR `)})`;
 }

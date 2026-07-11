@@ -131,6 +131,7 @@ function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         cursor: raw.cursor,
         limit: raw.limit,
         sort_dir: raw.sort_dir,
+        search: raw.search,
     };
     if (typeof raw.filter === 'string' && raw.filter.trim() !== '') {
         try {

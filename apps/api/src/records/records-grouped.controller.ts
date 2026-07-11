@@ -26,7 +26,7 @@ export class RecordsGroupedController {
         @Query() q: Record<string, unknown>,
     ): Promise<unknown> {
         const groupBy = intParam(q.group_by, 'group_by');
-        return this.grouped.groups(tenantId(req), list, groupBy, parseFilter(q.filter_tree));
+        return this.grouped.groups(tenantId(req), list, groupBy, parseFilter(q.filter_tree), typeof q.search === 'string' ? q.search : undefined);
     }
 
     @Get('grouped-bundle')
@@ -46,6 +46,7 @@ export class RecordsGroupedController {
             groupBy,
             expanded,
             filterTree: parseFilter(q.filter_tree),
+            search: typeof q.search === 'string' ? q.search : undefined,
             perPage,
             aggregateFieldIds,
         });

@@ -55,6 +55,12 @@ export const listRecordsQuerySchema = z.object({
     limit: z.coerce.number().int().positive().max(MAX_RECORDS_LIMIT).default(DEFAULT_RECORDS_LIMIT),
     sort_dir: sortDirSchema.default('asc'),
     filter_tree: filterTreeSchema.optional(),
+    /**
+     * Búsqueda de texto server-side sobre los campos "searchables" (text,
+     * long_text, email, url) — ILIKE por substring, AND con el filter_tree.
+     * La UI la usa cuando la lista supera una página (si no, filtra client-side).
+     */
+    search: z.string().trim().max(200).optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 
