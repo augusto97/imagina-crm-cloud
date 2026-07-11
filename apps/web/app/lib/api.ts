@@ -200,10 +200,17 @@ function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
     for (const [k, v] of Object.entries(source)) {
         fields[map.toSlug[k] ?? k] = v; // f{id} → slug (fallback: deja la clave)
     }
+    // Las relations vienen keyed por f{id} igual que data → traducimos a slug
+    // (la UI del fork las lee por `record.relations[field.slug]`).
+    const relSource = (r.relations as Record<string, unknown> | undefined) ?? {};
+    const relations: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(relSource)) {
+        relations[map.toSlug[k] ?? k] = v;
+    }
     return {
         id: r.id,
         fields,
-        relations: (r.relations as Record<string, unknown>) ?? {},
+        relations,
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
         // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la

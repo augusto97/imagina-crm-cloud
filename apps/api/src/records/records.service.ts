@@ -27,6 +27,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, type FilterableField } from './query-builder';
 import { RecordsRepository, type RecordRow } from './records.repository';
+import { RelationsRepository } from './relations.repository';
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
 export interface Actor {
@@ -49,6 +50,7 @@ export class RecordsService {
         private readonly realtime: RealtimeService,
         private readonly activity: ActivityService,
         private readonly automations: AutomationDispatcher,
+        private readonly relationsRepo: RelationsRepository,
     ) {}
 
     async create(
@@ -68,7 +70,10 @@ export class RecordsService {
             });
         }
         const fields = await this.fields.listByListId(tenantId, listId);
-        const data = this.validateData(fields, input.data, { partial: false });
+        // Los campos `relation` NO viven en el JSONB: se separan del payload
+        // y se sincronizan a la tabla `relations` dentro del mismo tx.
+        const rel = splitRelationValues(fields, input.data);
+        const data = this.validateData(fields, rel.data, { partial: false });
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const inserted = await this.repo.insert(tx, {
@@ -77,6 +82,7 @@ export class RecordsService {
                 data,
                 createdBy: actor.userId,
             });
+            await this.syncRelations(tx, tenantId, inserted.id, rel.values);
             await this.activity.logInTx(tx, {
                 tenantId,
                 listId,
@@ -95,19 +101,36 @@ export class RecordsService {
             trigger: 'record_created',
             after: row.data,
         });
-        return toRecord(row);
+        const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
+        return toRecord(row, {
+            ...byFieldToKeys(relFieldIds, undefined),
+            ...relationsToMap(rel.values),
+        });
     }
 
     async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const { row, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { row, hiddenKeys, relMap, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const r = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
-            return { row: r, hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role) };
+            const rels = r
+                ? await this.relationsRepo.batchTargets(
+                      tx,
+                      tenantId,
+                      [r.id],
+                      fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                  )
+                : new Map<number, Map<number, number[]>>();
+            return {
+                row: r,
+                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
+                relMap: rels,
+                relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
+            };
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
-        return stripHidden(toRecord(row), hiddenKeys);
+        return stripHidden(toRecord(row, byFieldToKeys(relFieldIds, relMap.get(row.id))), hiddenKeys);
     }
 
     async list(
@@ -119,7 +142,7 @@ export class RecordsService {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
-        const { rows, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { rows, hiddenKeys, rels, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const fieldsById = new Map<number, FilterableField>(
@@ -139,14 +162,30 @@ export class RecordsService {
                 limit: query.limit,
                 dir: query.sort_dir,
             });
-            return { rows: result, hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role) };
+            // Relations de la página entera en UNA query (regla de oro nº 8).
+            const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
+            const rels = await this.relationsRepo.batchTargets(
+                tx,
+                tenantId,
+                result.map((r) => r.id),
+                relFieldIds,
+            );
+            return {
+                rows: result,
+                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
+                rels,
+                relFieldIds,
+            };
         });
 
         // Pedimos limit+1 para detectar página siguiente sin contar todo.
         const hasMore = rows.length > query.limit;
         const page = hasMore ? rows.slice(0, query.limit) : rows;
         const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
-        return { data: page.map((r) => stripHidden(toRecord(r), hiddenKeys)), meta: { next_cursor: nextCursor } };
+        return {
+            data: page.map((r) => stripHidden(toRecord(r, byFieldToKeys(relFieldIds, rels.get(r.id))), hiddenKeys)),
+            meta: { next_cursor: nextCursor },
+        };
     }
 
     async update(
@@ -160,15 +199,19 @@ export class RecordsService {
         const listId = list.id;
         const fields = await this.fields.listByListId(tenantId, listId);
 
+        // Los campos `relation` presentes en el patch se sincronizan aparte
+        // (semántica parcial: los ausentes no se tocan).
+        const rel = splitRelationValues(fields, input.data);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
-            const patch = this.validateData(fields, input.data, { partial: true });
+            const patch = this.validateData(fields, rel.data, { partial: true });
             const merged = mergeData(current.data, patch);
             const updated = await this.repo.updateData(tx, tenantId, listId, id, merged);
             if (updated) {
+                await this.syncRelations(tx, tenantId, id, rel.values);
                 await this.activity.logInTx(tx, {
                     tenantId,
                     listId,
@@ -178,7 +221,11 @@ export class RecordsService {
                     diff: computeDiff(current.data, merged),
                 });
             }
-            return { updated, before: current.data };
+            const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
+            const rels = updated
+                ? await this.relationsRepo.batchTargets(tx, tenantId, [id], relFieldIds)
+                : new Map<number, Map<number, number[]>>();
+            return { updated, before: current.data, rels };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -191,7 +238,13 @@ export class RecordsService {
             after: row.data,
             before: result.before, // para changed_fields
         });
-        return toRecord(row);
+        return toRecord(
+            row,
+            byFieldToKeys(
+                fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                result.rels.get(row.id),
+            ),
+        );
     }
 
     async remove(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<void> {
@@ -202,6 +255,9 @@ export class RecordsService {
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
             const ok = await this.repo.softDelete(tx, tenantId, listId, id);
             if (ok) {
+                // Los vínculos que SALEN del record se limpian (paridad con el
+                // plugin); los que ENTRAN se filtran al leer (target borrado).
+                await this.relationsRepo.deleteBySource(tx, tenantId, id);
                 await this.activity.logInTx(tx, {
                     tenantId,
                     listId,
@@ -277,6 +333,39 @@ export class RecordsService {
         return rowInScope(scope, actor.userId, { createdBy: row.createdBy, assignmentValue });
     }
 
+    /**
+     * Sincroniza los campos `relation` presentes en el payload dentro del tx
+     * de la mutación. Valida que CADA target exista vivo en la lista destino
+     * del campo (mismo tenant — RLS + tenant_id explícito); un ID ajeno o
+     * inexistente rechaza la mutación completa (400).
+     */
+    private async syncRelations(
+        tx: Parameters<RelationsRepository['sync']>[0],
+        tenantId: number,
+        recordId: number,
+        values: Array<{ field: Field; targetListId: number; ids: number[] }>,
+    ): Promise<void> {
+        for (const { field, targetListId, ids } of values) {
+            if (ids.length > 0) {
+                const alive = await this.relationsRepo.existingInList(tx, tenantId, targetListId, ids);
+                const missing = ids.filter((id) => !alive.has(id));
+                if (missing.length > 0) {
+                    throw new BadRequestException({
+                        code: 'validation_failed',
+                        message: 'Datos del registro inválidos',
+                        data: {
+                            status: 400,
+                            errors: {
+                                [field.slug]: `Registros inexistentes en la lista destino: ${missing.join(', ')}`,
+                            },
+                        },
+                    });
+                }
+            }
+            await this.relationsRepo.sync(tx, tenantId, field.id, recordId, ids);
+        }
+    }
+
     private async resolveListId(tenantId: number, listIdOrSlug: string): Promise<number> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         return list.id;
@@ -347,15 +436,102 @@ export class RecordsService {
     }
 }
 
-function toRecord(row: RecordRow): RecordDto {
+function toRecord(row: RecordRow, relations: Record<string, number[]> = {}): RecordDto {
     return {
         id: row.id,
         list_id: row.listId,
         data: row.data,
+        relations,
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
     };
+}
+
+/**
+ * Separa del payload los campos tipo `relation` (van a la tabla `relations`,
+ * no al JSONB). Acepta `null` (vaciar), un ID o un array de IDs; cualquier
+ * otro shape rechaza con error por campo. Devuelve el `data` restante y los
+ * sets a sincronizar.
+ */
+function splitRelationValues(
+    fields: Field[],
+    rawData: Record<string, unknown>,
+): {
+    data: Record<string, unknown>;
+    values: Array<{ field: Field; targetListId: number; ids: number[] }>;
+} {
+    const byKey = new Map(fields.filter((f) => f.type === 'relation').map((f) => [jsonbKeyForField(f.id), f]));
+    const data: Record<string, unknown> = {};
+    const values: Array<{ field: Field; targetListId: number; ids: number[] }> = [];
+    const errors: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(rawData)) {
+        const field = byKey.get(key);
+        if (!field) {
+            data[key] = value;
+            continue;
+        }
+        const targetListId = Number((field.config as { target_list_id?: unknown }).target_list_id ?? 0);
+        if (!Number.isInteger(targetListId) || targetListId <= 0) {
+            errors[field.slug] = 'El campo relation no tiene lista destino configurada';
+            continue;
+        }
+        const raw = value === null || value === undefined ? [] : Array.isArray(value) ? value : [value];
+        const ids: number[] = [];
+        let ok = true;
+        for (const v of raw) {
+            const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+            if (!Number.isInteger(n) || n <= 0) {
+                ok = false;
+                break;
+            }
+            if (!ids.includes(n)) ids.push(n);
+        }
+        if (!ok) {
+            errors[field.slug] = 'La relación debe ser un ID o un array de IDs de registros';
+            continue;
+        }
+        if (ids.length > 200) {
+            errors[field.slug] = 'Una relación admite hasta 200 registros vinculados';
+            continue;
+        }
+        values.push({ field, targetListId, ids });
+    }
+
+    if (Object.keys(errors).length > 0) {
+        throw new BadRequestException({
+            code: 'validation_failed',
+            message: 'Datos del registro inválidos',
+            data: { status: 400, errors },
+        });
+    }
+    return { data, values };
+}
+
+/** `values` de splitRelationValues → mapa `f{id} → ids` para el DTO. */
+function relationsToMap(
+    values: Array<{ field: Field; targetListId: number; ids: number[] }>,
+): Record<string, number[]> {
+    const out: Record<string, number[]> = {};
+    for (const { field, ids } of values) out[jsonbKeyForField(field.id)] = ids;
+    return out;
+}
+
+/**
+ * `fieldId → ids` (batchTargets) → mapa `f{id} → ids` para el DTO. Prefill:
+ * TODO campo relation aparece con `[]` aunque no tenga vínculos (paridad con
+ * el plugin — la UI lee `record.relations[slug]` sin chequear presencia).
+ */
+function byFieldToKeys(
+    relFieldIds: number[],
+    byField: Map<number, number[]> | undefined,
+): Record<string, number[]> {
+    const out: Record<string, number[]> = {};
+    for (const id of relFieldIds) out[jsonbKeyForField(id)] = [];
+    if (!byField) return out;
+    for (const [fieldId, ids] of byField) out[jsonbKeyForField(fieldId)] = ids;
+    return out;
 }
 
 /** Claves JSONB (f{id}) de los campos ocultos para el rol (ACL por lista). */
@@ -380,7 +556,11 @@ function stripHidden(record: RecordDto, hiddenKeys: Set<string>): RecordDto {
     for (const [k, v] of Object.entries(record.data)) {
         if (!hiddenKeys.has(k)) data[k] = v;
     }
-    return { ...record, data };
+    const relations: Record<string, number[]> = {};
+    for (const [k, v] of Object.entries(record.relations ?? {})) {
+        if (!hiddenKeys.has(k)) relations[k] = v;
+    }
+    return { ...record, data, relations };
 }
 
 /** Merge parcial: null borra la clave; el resto sobrescribe. */

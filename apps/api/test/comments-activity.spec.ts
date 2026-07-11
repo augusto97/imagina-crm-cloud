@@ -12,6 +12,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
@@ -47,6 +48,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             rt,
             activityService,
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
         commentsService = new CommentsService(
             tenantDb,

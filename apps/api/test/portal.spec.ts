@@ -11,6 +11,7 @@ import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { PortalService } from '../src/portal/portal.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -64,6 +65,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             rt,
             activity,
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
         sessions = new SessionService(redis, env);
         mailbox = new CapturingMailTransport();

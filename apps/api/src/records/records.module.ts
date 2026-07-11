@@ -8,12 +8,13 @@ import { RecordsController } from './records.controller';
 import { RecordsGroupedController } from './records-grouped.controller';
 import { RecordsGroupedService } from './records-grouped.service';
 import { RecordsRepository } from './records.repository';
+import { RelationsRepository } from './relations.repository';
 import { RecordsService } from './records.service';
 
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule, AggregateModule],
     controllers: [RecordsController, RecordsGroupedController],
-    providers: [RecordsService, RecordsRepository, RecordsGroupedService],
+    providers: [RecordsService, RecordsRepository, RelationsRepository, RecordsGroupedService],
     exports: [RecordsService],
 })
 export class RecordsModule {}

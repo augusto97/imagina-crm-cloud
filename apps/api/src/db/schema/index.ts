@@ -4,6 +4,7 @@ export * from './memberships';
 export * from './lists';
 export * from './fields';
 export * from './records';
+export * from './relations';
 export * from './saved-views';
 export * from './saved-filters';
 export * from './comments';

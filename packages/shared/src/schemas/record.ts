@@ -11,6 +11,12 @@ export const recordSchema = z.object({
     id: idSchema,
     list_id: idSchema,
     data: z.record(z.unknown()),
+    /**
+     * Targets de los campos `relation`, keyed por `f{field_id}` (igual que
+     * `data`). Viven en la tabla `relations`, no en el JSONB; el backend los
+     * adjunta en cada lectura (batch por página).
+     */
+    relations: z.record(z.array(idSchema)).optional(),
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,

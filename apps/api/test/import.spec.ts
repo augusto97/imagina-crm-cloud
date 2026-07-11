@@ -12,6 +12,7 @@ import { ImportService } from '../src/import/import.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -46,6 +47,7 @@ describe('ImportService (Postgres real)', () => {
             rt,
             activity,
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
         importService = new ImportService(
             tenantDb,

@@ -9,6 +9,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
@@ -36,7 +37,7 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         const tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
-        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, new ActivityService(tenantDb, new ActivityRepository(), listsService), new AutomationDispatcher());
+        service = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, new ActivityService(tenantDb, new ActivityRepository(), listsService), new AutomationDispatcher(), new RelationsRepository());
 
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();
@@ -225,6 +226,92 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         await expect(
             service.update(tenantA, beto, 'clientes', recAna.id, { data: { [key('nombre')]: 'hack' } }),
         ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // --- Campos relation (tabla `relations`, CONTRACT §3) -------------------
+
+    async function setupRelationField() {
+        await listsService.create(tenantA, { name: 'Proyectos' });
+        const pNombre = await fieldsService.create(tenantA, 'proyectos', {
+            label: 'Nombre', type: 'text', slug: 'p_nombre',
+        });
+        const proyectos = await listsService.get(tenantA, 'proyectos');
+        const relField = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Proyectos', type: 'relation', slug: 'proyectos_rel',
+            config: { target_list_id: proyectos.id },
+        });
+        const p1 = await service.create(tenantA, admin, 'proyectos', { data: { [`f${pNombre.id}`]: 'Web' } });
+        const p2 = await service.create(tenantA, admin, 'proyectos', { data: { [`f${pNombre.id}`]: 'App' } });
+        return { relField, p1, p2 };
+    }
+
+    it('relation: create/update sincroniza y las lecturas la adjuntan', async () => {
+        const { relField, p1, p2 } = await setupRelationField();
+        const rk = `f${relField.id}`;
+
+        const rec = await service.create(tenantA, admin, 'clientes', {
+            data: { [key('nombre')]: 'ACME', [rk]: [p1.id, p2.id] },
+        });
+        // El valor NO va al JSONB; sí al mapa relations (orden preservado).
+        expect(rec.data[rk]).toBeUndefined();
+        expect(rec.relations?.[rk]).toEqual([p1.id, p2.id]);
+
+        const fetched = await service.get(tenantA, admin, 'clientes', rec.id);
+        expect(fetched.relations?.[rk]).toEqual([p1.id, p2.id]);
+
+        const page = await service.list(tenantA, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(page.data[0]!.relations?.[rk]).toEqual([p1.id, p2.id]);
+
+        // Update reemplaza el set completo; patch sin la clave no lo toca.
+        const updated = await service.update(tenantA, admin, 'clientes', rec.id, { data: { [rk]: [p2.id] } });
+        expect(updated.relations?.[rk]).toEqual([p2.id]);
+        const untouched = await service.update(tenantA, admin, 'clientes', rec.id, {
+            data: { [key('monto')]: 5 },
+        });
+        expect(untouched.relations?.[rk]).toEqual([p2.id]);
+        // null vacía la relación.
+        const cleared = await service.update(tenantA, admin, 'clientes', rec.id, { data: { [rk]: null } });
+        expect(cleared.relations?.[rk]).toEqual([]);
+    });
+
+    it('relation: rechaza targets de otra lista, inexistentes o de otro tenant', async () => {
+        const { relField } = await setupRelationField();
+        const rk = `f${relField.id}`;
+
+        // Un record de la MISMA lista clientes no es un target válido.
+        const other = await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'X' } });
+        await expect(
+            service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Y', [rk]: [other.id] } }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        // ID inexistente.
+        await expect(
+            service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Z', [rk]: [999999] } }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        // Record de otro tenant (aunque el ID exista globalmente).
+        await listsService.create(tenantB, { name: 'Proyectos' });
+        const fB = await fieldsService.create(tenantB, 'proyectos', { label: 'N', type: 'text', slug: 'n' });
+        const foreign = await service.create(tenantB, admin, 'proyectos', { data: { [`f${fB.id}`]: 'ajena' } });
+        await expect(
+            service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'W', [rk]: [foreign.id] } }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        // Shape inválido.
+        await expect(
+            service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'V', [rk]: ['abc'] } }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('relation: el target soft-borrado desaparece de la lectura', async () => {
+        const { relField, p1, p2 } = await setupRelationField();
+        const rk = `f${relField.id}`;
+        const rec = await service.create(tenantA, admin, 'clientes', {
+            data: { [key('nombre')]: 'ACME', [rk]: [p1.id, p2.id] },
+        });
+        await service.remove(tenantA, admin, 'proyectos', p1.id);
+        const fetched = await service.get(tenantA, admin, 'clientes', rec.id);
+        expect(fetched.relations?.[rk]).toEqual([p2.id]);
     });
 
     it('aislamiento RLS: los records no cruzan de tenant', async () => {
