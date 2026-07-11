@@ -9,7 +9,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { automations, memberships, records, tenants } from '../db/schema';
+import { attachments, automations, memberships, records, tenants } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PlansService } from './plans.service';
 
@@ -124,7 +124,40 @@ export class BillingService {
             .select({ n: sql<number>`count(*)::int` })
             .from(automations)
             .where(eq(automations.tenantId, tenantId));
-        return { records: recordCount, users: u?.n ?? 0, automations: a?.n ?? 0 };
+        const [st] = await tx
+            .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
+            .from(attachments)
+            .where(eq(attachments.tenantId, tenantId));
+        return {
+            records: recordCount,
+            users: u?.n ?? 0,
+            automations: a?.n ?? 0,
+            storage_bytes: Number(st?.n ?? 0),
+        };
+    }
+
+    /**
+     * Cuota de storage del plan (ADR-S16): rechaza el upload si el uso actual
+     * más el archivo nuevo supera `max_storage_mb`. NULL = ilimitado.
+     */
+    async assertCanUpload(tenantId: number, incomingBytes: number): Promise<void> {
+        const { plan } = await this.planStatus(tenantId);
+        const limits = await this.plans.limits(plan);
+        if (limits.max_storage_mb === null) return;
+        const used = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [st] = await tx
+                .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
+                .from(attachments)
+                .where(eq(attachments.tenantId, tenantId));
+            return Number(st?.n ?? 0);
+        });
+        if (used + incomingBytes > limits.max_storage_mb * 1024 * 1024) {
+            throw new ForbiddenException({
+                code: 'storage_limit_reached',
+                message: `Alcanzaste el límite de almacenamiento de tu plan (${limits.max_storage_mb} MB)`,
+                data: { status: 403 },
+            });
+        }
     }
 
     private async countRecords(tx: Tx, tenantId: number): Promise<number> {

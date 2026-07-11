@@ -11,3 +11,6 @@ coverage/
 .DS_Store
 .turbo/
 *.tsbuildinfo
+
+# Uploads locales del driver de archivos (ADR-S16)
+apps/api/data/

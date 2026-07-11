@@ -476,6 +476,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto F6 queda completa: paridad funcional total con el
         plugin, más todo lo cloud-only (multi-tenant, billing, plataforma,
         listas públicas, PITR, auto-update).**
+  - [x] **Mejoras de archivos (v0.1.55, cierra los pendientes de ADR-S16)**:
+        (a) **driver S3-compatible** (`STORAGE_DRIVER=s3` + `S3_*` por env,
+        Hetzner/R2/MinIO): `S3FileStorage` con upload multipart streameado
+        (`@aws-sdk/lib-storage`) y read lazy — los callers no cambian; test
+        real contra MinIO en Testcontainers (skip si la imagen no está).
+        (b) **URLs firmadas para el portal**: `GET /files/:id/signed?tenant&
+        exp&sig` (HMAC-SHA256 con `FILES_SIGNING_SECRET`, timingSafeEqual,
+        404 opaco, TTL 1h) SIN sesión; `portal.me` y el listado de records
+        del portal traducen los IDs de campos file a URLs firmadas — el rol
+        client ya descarga archivos (pendiente explícito del v0.1.53).
+        (c) **Cuota de storage por plan** (`max_storage_mb`, migración 0027,
+        null=ilimitado): `assertCanUpload` post-upload con revert (403
+        `storage_limit_reached`), uso en `billing summary` (`storage_bytes`)
+        y en la consola (columna Storage en Planes editable, fila Storage en
+        el detalle de empresa, barra "Almacenamiento" en Ajustes). 7 tests
+        nuevos (272 total) + E2E curl (firma válida/mala/expirada/tenant
+        ajeno, cuota 0 rebota y revierte) y navegador (3 pantallas).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

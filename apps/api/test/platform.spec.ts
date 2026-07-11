@@ -314,7 +314,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('crear plan + asignarlo: billing usa los límites del plan de DB (y update los cambia)', async () => {
         const id = await seedTenant({ name: 'Custo', ownerEmail: 'custo@c.test' });
-        await platform.createPlan({ slug: 'probe', name: 'Probe', max_records: 5, max_users: 2, max_automations: 1, price_usd: null, price_cop: null, is_active: true });
+        await platform.createPlan({ slug: 'probe', name: 'Probe', max_records: 5, max_users: 2, max_automations: 1, max_storage_mb: null, price_usd: null, price_cop: null, is_active: true });
 
         const t = await platform.updateTenant(id, { plan: 'probe' });
         expect(t.plan).toBe('probe');
@@ -330,7 +330,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     });
 
     it('precios de checkout: create/update los persiste (para vender planes custom)', async () => {
-        await platform.createPlan({ slug: 'growth', name: 'Growth', max_records: 50000, max_users: 25, max_automations: 100, price_usd: 29, price_cop: 119000, is_active: true });
+        await platform.createPlan({ slug: 'growth', name: 'Growth', max_records: 50000, max_users: 25, max_automations: 100, max_storage_mb: null, price_usd: 29, price_cop: 119000, is_active: true });
         const created = (await platform.listPlans()).find((p) => p.slug === 'growth');
         expect(created).toMatchObject({ price_usd: 29, price_cop: 119000 });
 
@@ -342,7 +342,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('removePlan: rechaza si está en uso, borra si no', async () => {
         const id = await seedTenant({ name: 'Temp' });
-        await platform.createPlan({ slug: 'temp', name: 'Temp', max_records: 1, max_users: 1, max_automations: 1, price_usd: null, price_cop: null, is_active: true });
+        await platform.createPlan({ slug: 'temp', name: 'Temp', max_records: 1, max_users: 1, max_automations: 1, max_storage_mb: null, price_usd: null, price_cop: null, is_active: true });
         await platform.updateTenant(id, { plan: 'temp' });
         await expect(platform.removePlan('temp')).rejects.toThrow(); // en uso
         await platform.updateTenant(id, { plan: 'trial' });

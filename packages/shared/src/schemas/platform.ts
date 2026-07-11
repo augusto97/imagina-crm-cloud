@@ -67,6 +67,7 @@ export interface PlatformTenantDetail {
         max_records: number | null;
         max_users: number | null;
         max_automations: number | null;
+        max_storage_mb: number | null;
     };
 }
 
@@ -147,6 +148,7 @@ export const platformPlanSchema = z.object({
     max_records: z.number().int().nullable(),
     max_users: z.number().int().nullable(),
     max_automations: z.number().int().nullable(),
+    max_storage_mb: z.number().int().nullable(),
     price_usd: z.number().int().nullable(),
     price_cop: z.number().int().nullable(),
     is_active: z.boolean(),
@@ -177,6 +179,7 @@ export const createPlanSchema = z.object({
     max_records: nullableLimit.default(null),
     max_users: nullableLimit.default(null),
     max_automations: nullableLimit.default(null),
+    max_storage_mb: nullableLimit.default(null),
     price_usd: nullablePrice.default(null),
     price_cop: nullablePrice.default(null),
     is_active: z.boolean().default(true),
@@ -190,6 +193,7 @@ export const updatePlanSchema = z
         max_records: nullableLimit,
         max_users: nullableLimit,
         max_automations: nullableLimit,
+        max_storage_mb: nullableLimit,
         price_usd: nullablePrice,
         price_cop: nullablePrice,
         is_active: z.boolean(),

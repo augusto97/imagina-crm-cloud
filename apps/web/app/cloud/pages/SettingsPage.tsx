@@ -103,6 +103,12 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     used={summary.usage.automations}
                     limit={summary.limits.max_automations}
                 />
+                <UsageBar
+                    label="Almacenamiento"
+                    used={Math.round(summary.usage.storage_bytes / (1024 * 1024))}
+                    limit={summary.limits.max_storage_mb}
+                    suffix=" MB"
+                />
             </CardContent>
         </Card>
     );
@@ -112,10 +118,13 @@ function UsageBar({
     label,
     used,
     limit,
+    suffix = '',
 }: {
     label: string;
     used: number;
     limit: number | null;
+    /** Unidad opcional pegada a los números (p.ej. " MB"). */
+    suffix?: string;
 }): JSX.Element {
     const pct = limit === null ? 0 : Math.min(100, (used / limit) * 100);
     // Umbrales semánticos: normal → advertencia (≥75%) → crítico (≥90%).
@@ -125,9 +134,9 @@ function UsageBar({
             <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-text-sm">
                 <span className="imcrm-font-medium">{label}</span>
                 <span className="imcrm-tabular-nums imcrm-text-xs imcrm-text-muted-foreground">
-                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}</span>
+                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}{suffix}</span>
                     {' / '}
-                    {limit === null ? '∞' : limit.toLocaleString()}
+                    {limit === null ? '∞' : `${limit.toLocaleString()}${suffix}`}
                 </span>
             </div>
             <div className="imcrm-h-1.5 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">

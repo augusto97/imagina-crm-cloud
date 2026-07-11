@@ -1,7 +1,8 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { ENV, type Env } from '../config/env';
 import { attachments } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { FILE_STORAGE, type FileStorage } from './file-storage';
@@ -25,10 +26,52 @@ const MAX_BATCH = 100;
  */
 @Injectable()
 export class FilesService {
+    private readonly signingSecret: string;
+
     constructor(
         private readonly tenantDb: TenantDb,
         @Inject(FILE_STORAGE) private readonly storage: FileStorage,
-    ) {}
+        @Inject(ENV) env: Env,
+    ) {
+        // Vacío = secreto efímero por proceso (las URLs firmadas mueren al
+        // reiniciar). En producción se fija FILES_SIGNING_SECRET.
+        this.signingSecret = env.FILES_SIGNING_SECRET || randomBytes(32).toString('hex');
+    }
+
+    // --- URLs firmadas (portal del cliente — ADR-S16) -----------------------
+    // El rol client no tiene capabilities de records, así que la descarga va
+    // por una URL de vida corta firmada con HMAC: quien tiene el link accede
+    // a ESE archivo hasta el vencimiento, sin sesión.
+
+    /** URL relativa firmada, válida por `ttlSeconds`. */
+    signedUrl(tenantId: number, id: number, ttlSeconds = 3600): string {
+        const exp = Math.floor(Date.now() / 1000) + Math.max(60, ttlSeconds);
+        const sig = this.sign(tenantId, id, exp);
+        return `/api/v1/files/${id}/signed?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
+    }
+
+    /** Valida tenant/exp/sig y abre el stream (para la ruta pública). */
+    async openSigned(
+        id: number,
+        tenantId: number,
+        exp: number,
+        sig: string,
+    ): Promise<{ stream: ReturnType<FileStorage['read']>; filename: string; mime: string; size: number }> {
+        const now = Math.floor(Date.now() / 1000);
+        const expected = this.sign(tenantId, id, exp);
+        const a = Buffer.from(sig, 'utf8');
+        const b = Buffer.from(expected, 'utf8');
+        if (exp < now || a.length !== b.length || !timingSafeEqual(a, b)) {
+            throw fileNotFound(id); // 404 opaco: no filtramos si existe.
+        }
+        return this.openDownload(tenantId, id);
+    }
+
+    private sign(tenantId: number, id: number, exp: number): string {
+        return createHmac('sha256', this.signingSecret)
+            .update(`${tenantId}.${id}.${exp}`)
+            .digest('hex');
+    }
 
     /** Sube un archivo: bytes al storage + metadata en el mismo flujo. */
     async upload(

@@ -10,6 +10,8 @@ export const plans = pgTable('plans', {
     maxRecords: integer('max_records'),
     maxUsers: integer('max_users'),
     maxAutomations: integer('max_automations'),
+    /** Cuota de archivos subidos en MB (ADR-S16). NULL = ilimitado. */
+    maxStorageMb: integer('max_storage_mb'),
     // Precio de checkout self-serve (ADR-S12). `null` = no vendible en esa moneda
     // (enterprise = "contactar ventas"). Entero: USD sin centavos, COP sin decimales.
     priceUsd: integer('price_usd'),

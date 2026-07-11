@@ -110,6 +110,7 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Registros')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Usuarios')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Automat.')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Storage')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('USD/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('COP/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium" />
@@ -136,6 +137,9 @@ export function PlatformPlansCard(): JSX.Element {
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_records)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_users)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_automations)}</td>
+                                        <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
+                                            {p.max_storage_mb === null ? '∞' : `${p.max_storage_mb.toLocaleString()} MB`}
+                                        </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
                                             {p.price_usd === null ? <span className="imcrm-text-muted-foreground">—</span> : USD.format(p.price_usd)}
                                         </td>
@@ -189,6 +193,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
     const [rec, setRec] = useState('');
     const [usr, setUsr] = useState('');
     const [aut, setAut] = useState('');
+    const [sto, setSto] = useState('');
     const [usd, setUsd] = useState('');
     const [cop, setCop] = useState('');
     const [active, setActive] = useState(true);
@@ -200,6 +205,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
         setRec(limitStr(plan?.max_records ?? null));
         setUsr(limitStr(plan?.max_users ?? null));
         setAut(limitStr(plan?.max_automations ?? null));
+        setSto(limitStr(plan?.max_storage_mb ?? null));
         setUsd(limitStr(plan?.price_usd ?? null));
         setCop(limitStr(plan?.price_cop ?? null));
         setActive(plan?.is_active ?? true);
@@ -215,6 +221,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
             max_records: toLimit(rec),
             max_users: toLimit(usr),
             max_automations: toLimit(aut),
+            max_storage_mb: toLimit(sto),
             price_usd: toLimit(usd),
             price_cop: toLimit(cop),
             is_active: active,
@@ -275,6 +282,10 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                 <Label htmlFor="ps-aut" className="imcrm-text-xs">{__('Automatizaciones')}</Label>
                                 <Input id="ps-aut" type="number" min={0} value={aut} onChange={(e) => setAut(e.target.value)} placeholder="∞" />
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-sto" className="imcrm-text-xs">{__('Storage (MB)')}</Label>
+                                <Input id="ps-sto" type="number" min={0} value={sto} onChange={(e) => setSto(e.target.value)} placeholder="∞" />
                             </div>
                         </div>
                     </fieldset>

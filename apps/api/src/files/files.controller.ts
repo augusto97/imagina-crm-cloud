@@ -17,6 +17,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { BillingService } from '../billing/billing.service';
 import { FilesService, type AttachmentDto } from './files.service';
 
 /**
@@ -24,10 +25,49 @@ import { FilesService, type AttachmentDto } from './files.service';
  * (tarjetas/galerías) y descarga streameada — SIEMPRE detrás de sesión +
  * tenant (los bytes jamás se sirven sin el check de workspace).
  */
+/**
+ * Descarga por URL firmada (SIN sesión): la usa el portal del cliente.
+ * La firma HMAC + expiración la valida FilesService; 404 opaco si no cuadra.
+ */
+@Controller('files')
+export class SignedFilesController {
+    constructor(private readonly files: FilesService) {}
+
+    @Get(':id/signed')
+    async signed(
+        @Param('id', ParseIntPipe) id: number,
+        @Res() reply: FastifyReply,
+        @Query('tenant') tenant?: string,
+        @Query('exp') exp?: string,
+        @Query('sig') sig?: string,
+    ): Promise<void> {
+        const file = await this.files.openSigned(
+            id,
+            Number(tenant ?? 0),
+            Number(exp ?? 0),
+            String(sig ?? ''),
+        );
+        reply.raw.writeHead(200, {
+            'content-type': file.mime,
+            'content-length': String(file.size),
+            'content-disposition': `inline; filename="${file.filename.replace(/"/g, '')}"`,
+            'x-content-type-options': 'nosniff',
+        });
+        file.stream.pipe(reply.raw);
+        await new Promise<void>((resolve, reject) => {
+            file.stream.on('end', resolve);
+            file.stream.on('error', reject);
+        });
+    }
+}
+
 @Controller('files')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class FilesController {
-    constructor(private readonly files: FilesService) {}
+    constructor(
+        private readonly files: FilesService,
+        private readonly billing: BillingService,
+    ) {}
 
     /** Upload multipart (campo `file`). Subir pasa por poder editar records. */
     @Post()
@@ -57,6 +97,14 @@ export class FilesController {
                 message: 'El archivo supera el tamaño máximo permitido',
                 data: { status: 400 },
             });
+        }
+        // Cuota del plan (ADR-S16): el uso YA incluye este archivo — si con él
+        // se pasa del tope, lo revertimos y rechazamos.
+        try {
+            await this.billing.assertCanUpload(req.tenant!.tenantId, 0);
+        } catch (err) {
+            await this.files.remove(req.tenant!.tenantId, dto.id).catch(() => undefined);
+            throw err;
         }
         return dto;
     }

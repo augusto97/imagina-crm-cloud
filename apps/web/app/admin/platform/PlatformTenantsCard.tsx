@@ -85,6 +85,8 @@ const STATUS_BADGE: Record<BillingStatus, 'info' | 'success' | 'warning' | 'dest
     canceled: 'destructive',
 };
 const fmtLimit = (v: number | null): string => (v === null ? '∞' : v.toLocaleString());
+/** Bytes → MB con 1 decimal (para comparar/mostrar contra `max_storage_mb`). */
+const formatMb = (bytes: number): number => Math.round((bytes / (1024 * 1024)) * 10) / 10;
 
 /** Confirmación de borrado por texto (escribir el nombre). Devuelve si procede. */
 function confirmDeleteByName(name: string): boolean | null {
@@ -453,7 +455,7 @@ function NewTenantForm({ onDone }: { onDone: () => void }): JSX.Element {
 }
 
 /** Mini-barra de uso vs. límite del panel (misma semántica que Ajustes). */
-function UsageRow({ label, used, limit }: { label: string; used: number; limit: number | null }): JSX.Element {
+function UsageRow({ label, used, limit, suffix = '' }: { label: string; used: number; limit: number | null; suffix?: string }): JSX.Element {
     const pct = limit === null ? 0 : Math.min(100, (used / limit) * 100);
     const fill = pct >= 90 ? 'imcrm-bg-destructive' : pct >= 75 ? 'imcrm-bg-warning' : 'imcrm-bg-primary';
     return (
@@ -461,7 +463,7 @@ function UsageRow({ label, used, limit }: { label: string; used: number; limit: 
             <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-text-sm">
                 <span>{label}</span>
                 <span className="imcrm-tabular-nums imcrm-text-xs imcrm-text-muted-foreground">
-                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}</span> / {fmtLimit(limit)}
+                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}{suffix}</span> / {fmtLimit(limit)}{limit === null ? '' : suffix}
                 </span>
             </div>
             <div className="imcrm-h-1.5 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">
@@ -618,6 +620,7 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 <UsageRow label={__('Registros')} used={t.usage.records} limit={detail.data.limits.max_records} />
                                 <UsageRow label={__('Usuarios')} used={t.usage.users} limit={detail.data.limits.max_users} />
                                 <UsageRow label={__('Automatizaciones')} used={t.usage.automations} limit={detail.data.limits.max_automations} />
+                                <UsageRow label={__('Storage')} used={formatMb(t.usage.storage_bytes)} limit={detail.data.limits.max_storage_mb} suffix=" MB" />
                             </section>
 
                             {/* Miembros */}

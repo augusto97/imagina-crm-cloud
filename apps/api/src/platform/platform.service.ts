@@ -26,6 +26,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import {
     activity,
+    attachments,
     automationRuns,
     automations,
     comments,
@@ -65,10 +66,11 @@ export class PlatformService {
     /** Todas las empresas con plan/estado/uso/owner (para la grilla del operador). */
     async listTenants(includeArchived = false): Promise<PlatformTenant[]> {
         const rows = await this.db.select().from(tenants).orderBy(desc(tenants.createdAt));
-        const [recMap, userMap, autoMap, ownerMap] = await Promise.all([
+        const [recMap, userMap, autoMap, storageMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(isNull(records.deletedAt)).groupBy(records.tenantId)),
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).groupBy(automations.tenantId)),
+            this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).groupBy(attachments.tenantId)),
             this.ownersByTenant(),
         ]);
 
@@ -79,6 +81,7 @@ export class PlatformService {
                     records: recMap.get(t.id) ?? 0,
                     users: userMap.get(t.id) ?? 0,
                     automations: autoMap.get(t.id) ?? 0,
+                    storage_bytes: Number(storageMap.get(t.id) ?? 0),
                 }),
             );
     }

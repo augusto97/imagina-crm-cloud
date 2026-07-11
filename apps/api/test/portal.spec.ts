@@ -16,7 +16,12 @@ import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CommentsRepository } from '../src/comments/comments.repository';
+import { LocalFileStorage } from '../src/files/file-storage';
+import { FilesService } from '../src/files/files.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { MailService } from '../src/mail/mail.service';
 import type { MailMessage, MailTransport } from '../src/mail/mail.types';
@@ -87,6 +92,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             activityService,
             rt,
             new AutomationDispatcher(),
+            new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pf-'))), env),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
