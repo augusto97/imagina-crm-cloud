@@ -417,7 +417,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         expone `list_slug`/`user_id` para el boot de los bloques. Fechas de
         los bloques aceptan ISO-Z. 4 tests nuevos (aislamiento por relation,
         whitelist, fail-closed) + E2E en navegador con template completo.
-  - [ ] Búsqueda de records server-side (hoy: client-side sobre la página).
+  - [x] **Búsqueda de records server-side (v0.1.51)**: `?search=` en el
+        listado de records (`listRecordsQuerySchema`) — OR de ILIKE bindeado
+        y escapado sobre los campos searchables (text/long_text/email/url),
+        AND con filter_tree y scope ACL; sin campos searchables → `false`.
+        En la vista agrupada la búsqueda se compone como subtree `OR
+        contains` del filter tree → aplica coherente a buckets, filas y
+        agregados. La UI ya era híbrida (client-side si la lista cabe en una
+        página; server-side con debounce si no) — solo faltaba el backend.
+        Test de search (substring case-insensitive, AND con filtros, escape
+        de metacaracteres LIKE).
   - [ ] Menciones (@ en comentarios + campana).
   - [ ] Módulo de archivos/media propio (upload, thumbnails, covers).
   - [ ] Recurrencias.

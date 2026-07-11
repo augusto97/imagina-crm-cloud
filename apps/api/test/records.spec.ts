@@ -228,6 +228,36 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('search server-side: ILIKE sobre campos searchables, AND con filtros', async () => {
+        await service.create(tenantA, admin, 'clientes', {
+            data: { [key('nombre')]: 'Acme Corporation', [key('monto')]: 10, [key('estado')]: 'activo' },
+        });
+        await service.create(tenantA, admin, 'clientes', {
+            data: { [key('nombre')]: 'Globex', [key('monto')]: 99, [key('estado')]: 'activo' },
+        });
+
+        // Substring case-insensitive.
+        const hit = await service.list(tenantA, admin, 'clientes', { limit: 50, sort_dir: 'asc', search: 'acme corp' });
+        expect(hit.data.map((r) => r.data[key('nombre')])).toEqual(['Acme Corporation']);
+
+        // AND con el filter_tree (monto > 50 + search 'glo').
+        const combined = await service.list(tenantA, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            search: 'glo',
+            filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: fieldByType.monto!.id, op: 'gt', value: 50 }] },
+        });
+        expect(combined.data).toHaveLength(1);
+
+        // Metacaracteres de LIKE van escapados: '%' literal no matchea todo.
+        const literal = await service.list(tenantA, admin, 'clientes', { limit: 50, sort_dir: 'asc', search: '%' });
+        expect(literal.data).toHaveLength(0);
+
+        // Sin match → vacío.
+        const none = await service.list(tenantA, admin, 'clientes', { limit: 50, sort_dir: 'asc', search: 'zzz-nope' });
+        expect(none.data).toHaveLength(0);
+    });
+
     // --- Campos relation (tabla `relations`, CONTRACT §3) -------------------
 
     async function setupRelationField() {

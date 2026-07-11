@@ -40,9 +40,11 @@ export class RecordsGroupedService {
         listKey: string,
         groupBy: number,
         filterTree?: FilterGroup,
+        search?: string,
     ): Promise<{ data: GroupBucket[]; meta: GroupsMeta }> {
         const meta = await this.groupMeta(tenantId, listKey, groupBy);
-        const buckets = await this.buckets(tenantId, listKey, groupBy, filterTree);
+        const effectiveTree = await this.withSearch(tenantId, listKey, filterTree, search);
+        const buckets = await this.buckets(tenantId, listKey, groupBy, effectiveTree);
         return {
             data: buckets,
             meta: { ...meta, total_groups: buckets.length, total_records: buckets.reduce((s, b) => s + b.count, 0) },
@@ -54,10 +56,20 @@ export class RecordsGroupedService {
         tenantId: number,
         actor: Actor,
         listKey: string,
-        opts: { groupBy: number; expanded: string[]; filterTree?: FilterGroup; perPage: number; aggregateFieldIds: number[] },
+        opts: {
+            groupBy: number;
+            expanded: string[];
+            filterTree?: FilterGroup;
+            search?: string;
+            perPage: number;
+            aggregateFieldIds: number[];
+        },
     ): Promise<unknown> {
         const meta = await this.groupMeta(tenantId, listKey, opts.groupBy);
-        const buckets = await this.buckets(tenantId, listKey, opts.groupBy, opts.filterTree);
+        // La búsqueda se COMPONE como subtree OR de `contains` sobre los
+        // campos searchables → aplica igual a buckets, filas y agregados.
+        const effectiveTree = await this.withSearch(tenantId, listKey, opts.filterTree, opts.search);
+        const buckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree);
         const totalRecords = buckets.reduce((s, b) => s + b.count, 0);
 
         const fields = await this.fields.list(tenantId, listKey);
@@ -72,7 +84,7 @@ export class RecordsGroupedService {
             const combined: FilterGroup = {
                 type: 'group',
                 logic: 'and',
-                children: [...(opts.filterTree ? [opts.filterTree] : []), cond],
+                children: [...(effectiveTree ? [effectiveTree] : []), cond],
             };
 
             const page = await this.records.list(tenantId, actor, listKey, {
@@ -111,6 +123,41 @@ export class RecordsGroupedService {
         }
 
         return { buckets, meta: { ...meta, total_groups: buckets.length, total_records: totalRecords }, expanded };
+    }
+
+    /**
+     * Compone la búsqueda como subtree `OR contains` sobre los campos
+     * searchables (text/long_text/email/url) y lo ANDea al tree existente.
+     * Sin campos searchables la búsqueda se ignora (los buckets no cambian).
+     */
+    private async withSearch(
+        tenantId: number,
+        listKey: string,
+        filterTree: FilterGroup | undefined,
+        search: string | undefined,
+    ): Promise<FilterGroup | undefined> {
+        const needle = (search ?? '').trim();
+        if (needle === '') return filterTree;
+        const fields = await this.fields.list(tenantId, listKey);
+        const searchable = fields.filter((f) =>
+            f.type === 'text' || f.type === 'long_text' || f.type === 'email' || f.type === 'url',
+        );
+        if (searchable.length === 0) return filterTree;
+        const or: FilterGroup = {
+            type: 'group',
+            logic: 'or',
+            children: searchable.map((f) => ({
+                type: 'condition',
+                field_id: f.id,
+                op: 'contains',
+                value: needle,
+            })),
+        };
+        return {
+            type: 'group',
+            logic: 'and',
+            children: [...(filterTree ? [filterTree] : []), or],
+        };
     }
 
     private async groupMeta(tenantId: number, listKey: string, groupBy: number): Promise<GroupsMeta> {
