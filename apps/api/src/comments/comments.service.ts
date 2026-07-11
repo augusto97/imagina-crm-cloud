@@ -5,6 +5,9 @@ import type {
     CreateCommentInput,
     UpdateCommentInput,
 } from '@imagina-base/shared';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { Tx } from '../db/client';
+import { memberships, mentions, users } from '../db/schema';
 import { RealtimeService } from '../realtime/realtime.service';
 import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -54,7 +57,7 @@ export class CommentsService {
                     });
                 }
             }
-            return this.repo.insert(tx, {
+            const row = await this.repo.insert(tx, {
                 tenantId,
                 listId,
                 recordId,
@@ -64,6 +67,9 @@ export class CommentsService {
                 parentId: input.parent_id ?? null,
                 metadata: input.metadata ?? {},
             });
+            // Menciones @login: se extraen y persisten en el mismo tx.
+            await this.storeMentions(tx, tenantId, row);
+            return row;
         });
         this.realtime.records(tenantId, listId); // el drawer del record re-fetchea
         return toComment(row);
@@ -116,6 +122,42 @@ export class CommentsService {
     }
 
     /** Resuelve la lista y verifica que el record exista/sea visible al actor. */
+    /**
+     * Extrae los tokens `@login` del body, los matchea contra los emails de
+     * los MIEMBROS del workspace (case-insensitive; jamás usuarios ajenos) y
+     * persiste una mención por usuario (sin auto-mención, dedupe). El bell
+     * (`GET /me/mentions`) las consume; el "no leído" es client-side.
+     */
+    private async storeMentions(tx: Tx, tenantId: number, row: CommentRow): Promise<void> {
+        const tokens = Array.from(row.body.matchAll(/@([\w.+-]+@[\w.-]+\.\w+)/g), (m) => m[1]!.toLowerCase());
+        const unique = Array.from(new Set(tokens));
+        if (unique.length === 0) return;
+        const members = await tx
+            .select({ userId: memberships.userId, email: users.email })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(
+                and(
+                    eq(memberships.tenantId, tenantId),
+                    inArray(sql`lower(${users.email})`, unique),
+                ),
+            );
+        const targets = members.filter((m) => m.userId !== row.userId);
+        if (targets.length === 0) return;
+        const snippet = row.body.slice(0, 180);
+        await tx.insert(mentions).values(
+            targets.map((m) => ({
+                tenantId,
+                commentId: row.id,
+                listId: row.listId,
+                recordId: row.recordId,
+                mentionedUserId: m.userId,
+                authorUserId: row.userId,
+                snippet,
+            })),
+        );
+    }
+
     private async resolveRecord(
         tenantId: number,
         actor: Actor,

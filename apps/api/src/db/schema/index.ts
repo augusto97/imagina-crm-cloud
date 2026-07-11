@@ -8,6 +8,7 @@ export * from './relations';
 export * from './saved-views';
 export * from './saved-filters';
 export * from './comments';
+export * from './mentions';
 export * from './activity';
 export * from './automations';
 export * from './portal-links';

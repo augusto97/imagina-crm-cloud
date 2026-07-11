@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { MeUserSummary } from '@imagina-base/shared';
+import { and, desc, eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
+import { mentions } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MeRepository, type MeUserRow } from './me.repository';
 
@@ -48,6 +50,33 @@ export class MeService {
 
     getEmailSignature(userId: number): Promise<string> {
         return this.repo.getSignature(this.db, userId);
+    }
+
+    /** Últimas menciones del usuario en el tenant (RLS + índice por usuario). */
+    async mentions(
+        tenantId: number,
+        userId: number,
+        rawLimit: number,
+    ): Promise<Array<Record<string, unknown>>> {
+        const limit = Math.min(Math.max(Math.trunc(rawLimit) || 20, 1), 100);
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(mentions)
+                .where(and(eq(mentions.tenantId, tenantId), eq(mentions.mentionedUserId, userId)))
+                .orderBy(desc(mentions.id))
+                .limit(limit),
+        );
+        // Shape estilo activity (lo que consume el NotificationBell).
+        return rows.map((m) => ({
+            id: m.id,
+            list_id: m.listId,
+            record_id: m.recordId,
+            user_id: m.authorUserId,
+            action: 'comment_created',
+            changes: { snippet: m.snippet },
+            created_at: m.createdAt.toISOString(),
+        }));
     }
 
     async updateEmailSignature(userId: number, signature: string): Promise<string> {

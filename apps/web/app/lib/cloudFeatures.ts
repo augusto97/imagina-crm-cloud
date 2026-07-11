@@ -8,7 +8,7 @@ export const CLOUD_WIRED = {
     dashboards: true,
     automations: true,
     aggregates: true,
-    mentions: false,
+    mentions: true,
     recurrences: false,
 } as const;
 
