@@ -40,6 +40,22 @@ export class MeController {
         return { data: await this.me.searchUsers(tenantId(req), q ?? '', parsedLimit) };
     }
 
+    /**
+     * Menciones al usuario en el workspace activo (la campana del topbar).
+     * Shape estilo activity: la UI muestra `changes.snippet` + `created_at`;
+     * el "no leído" es client-side (localStorage del bell).
+     */
+    @Get('mentions')
+    @UseGuards(SessionGuard, TenantGuard)
+    async mentions(
+        @Req() req: FastifyRequest,
+        @Query('limit') limit?: string,
+    ): Promise<{ data: unknown[] }> {
+        return {
+            data: await this.me.mentions(tenantId(req), req.authUserId!, Number(limit ?? 20)),
+        };
+    }
+
     @Get('users/:id')
     @UseGuards(SessionGuard, TenantGuard)
     getUser(

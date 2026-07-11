@@ -427,7 +427,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         página; server-side con debounce si no) — solo faltaba el backend.
         Test de search (substring case-insensitive, AND con filtros, escape
         de metacaracteres LIKE).
-  - [ ] Menciones (@ en comentarios + campana).
+  - [x] **Menciones (v0.1.52)**: tabla `mentions` (migración 0024, RLS,
+        cascada por comment/record/list, índice por usuario). Al crear un
+        comentario se extraen los tokens `@login` del body y se matchean
+        contra los emails de MIEMBROS del workspace (case-insensitive, sin
+        auto-mención, dedupe) → una fila por mencionado con snippet, en el
+        mismo tx. `GET /me/mentions?limit=` (SessionGuard+TenantGuard)
+        devuelve el shape estilo activity que consume el NotificationBell
+        (`changes.snippet` + `created_at`; el "no leído" es client-side por
+        localStorage). `CLOUD_WIRED.mentions=true` → la campana aparece y el
+        stub del adapter se apaga solo. Test (extracción, self/desconocido
+        excluidos, feed por usuario) + E2E por API.
   - [ ] Módulo de archivos/media propio (upload, thumbnails, covers).
   - [ ] Recurrencias.
   - [ ] Campos `computed` (evaluador server-side).

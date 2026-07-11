@@ -1,11 +1,13 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, comments, fields, lists, records, tenants, users } from '../src/db/schema';
+import { activity, comments, fields, lists, memberships, mentions, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { CommentsRepository } from '../src/comments/comments.repository';
+import { MeRepository } from '../src/me/me.repository';
+import { MeService } from '../src/me/me.service';
 import { CommentsService } from '../src/comments/comments.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -28,6 +30,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
     let recordsService: RecordsService;
     let activityService: ActivityService;
     let commentsService: CommentsService;
+    let meService: MeService;
     let tenantA: number;
     let tenantB: number;
     let ana: Actor;
@@ -72,6 +75,14 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             .returning();
         ana = { userId: ua!.id, role: 'admin' };
         beto = { userId: ub!.id, role: 'admin' };
+        // Miembros del workspace A — el matching de menciones exige membership.
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(memberships).values([
+                { userId: ana.userId, tenantId: tenantA, role: 'admin' },
+                { userId: beto.userId, tenantId: tenantA, role: 'admin' },
+            ]),
+        );
+        meService = new MeService(pg.db, tenantDb, new MeRepository());
     });
 
     afterAll(async () => {
@@ -172,6 +183,35 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         expect(updated.body).toBe('editado');
         await commentsService.remove(tenantA, ana, 'clientes', rec.id, c.id);
         expect(await commentsService.list(tenantA, ana, 'clientes', rec.id)).toHaveLength(0);
+    });
+
+    // --- Menciones (@login → tabla mentions + /me/mentions) -----------------
+
+    it('menciones: @email de un miembro crea la mención; self y desconocidos no', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'ACME' } });
+        await commentsService.create(tenantA, ana, 'clientes', rec.id, {
+            kind: 'note',
+            body: 'Hola @beto@acme.test mirá esto (cc @ana@acme.test y @nadie@otro.test)',
+        });
+        const rows = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select().from(mentions).where(eq(mentions.tenantId, tenantA)),
+        );
+        // Solo beto: la auto-mención de ana se excluye y el email desconocido
+        // no matchea ningún miembro.
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+            mentionedUserId: beto.userId,
+            authorUserId: ana.userId,
+            recordId: rec.id,
+        });
+        expect(rows[0]!.snippet).toContain('mirá esto');
+
+        // La campana de beto la ve; la de ana no.
+        const feed = await meService.mentions(tenantA, beto.userId, 20);
+        expect(feed).toHaveLength(1);
+        expect(feed[0]).toMatchObject({ user_id: ana.userId, record_id: rec.id });
+        expect((feed[0]!.changes as { snippet: string }).snippet).toContain('mirá esto');
+        expect(await meService.mentions(tenantA, ana.userId, 20)).toHaveLength(0);
     });
 
     it('comentar sobre un record inexistente/ajeno → 404', async () => {
