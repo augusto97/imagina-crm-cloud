@@ -11,12 +11,32 @@ import { recordSchema } from './record';
  */
 export const portalBootSchema = z.object({
     list_id: idSchema,
+    list_slug: z.string(),
     list_name: z.string(),
+    user_id: idSchema,
     record: recordSchema,
     fields: z.array(fieldSchema),
     template: z.array(z.record(z.unknown())),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
+
+/**
+ * PATCH /portal/me — el cliente edita SU record. Solo se aceptan slugs
+ * declarados en algún bloque `editable_form` del template (whitelist
+ * server-side; slug fuera de la lista → 403 explícito).
+ */
+export const portalUpdateMeSchema = z.object({
+    fields: z.record(z.string(), z.unknown()).refine((v) => Object.keys(v).length > 0, {
+        message: 'No se enviaron cambios',
+    }),
+});
+export type PortalUpdateMeInput = z.infer<typeof portalUpdateMeSchema>;
+
+/** POST /portal/me/comments — nota simple del cliente (sin threading). */
+export const portalCommentSchema = z.object({
+    content: z.string().trim().min(1).max(5000),
+});
+export type PortalCommentInput = z.infer<typeof portalCommentSchema>;
 
 /** Alta de acceso al portal para un record (lo emite un admin/manager). */
 export const issueMagicLinkSchema = z.object({

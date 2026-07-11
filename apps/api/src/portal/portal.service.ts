@@ -1,15 +1,40 @@
 import { randomBytes } from 'node:crypto';
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { IssueMagicLinkInput, MagicLinkResult, PortalBoot } from '@imagina-base/shared';
+import {
+    BadRequestException,
+    ForbiddenException,
+    Inject,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
+import {
+    isDataField,
+    jsonbKeyForField,
+    validateFieldValue,
+    type ActivityDto,
+    type CommentDto,
+    type Field,
+    type IssueMagicLinkInput,
+    type MagicLinkResult,
+    type PortalBoot,
+    type PortalCommentInput,
+    type PortalUpdateMeInput,
+} from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type Redis from 'ioredis';
+import { ActivityRepository } from '../activity/activity.repository';
+import { ActivityService, computeDiff } from '../activity/activity.service';
+import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { SessionService } from '../auth/session.service';
+import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { fields, lists, memberships, portalLinks, records, users } from '../db/schema';
+import { fields, lists, memberships, portalLinks, records, relations, users } from '../db/schema';
+import { FieldsService } from '../fields/fields.service';
+import { hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
@@ -36,6 +61,12 @@ export class PortalService {
         private readonly lists: ListsService,
         private readonly sessions: SessionService,
         private readonly mail: MailService,
+        private readonly fields: FieldsService,
+        private readonly commentsRepo: CommentsRepository,
+        private readonly activityRepo: ActivityRepository,
+        private readonly activity: ActivityService,
+        private readonly realtime: RealtimeService,
+        private readonly automations: AutomationDispatcher,
     ) {}
 
     async issue(
@@ -154,6 +185,349 @@ export class PortalService {
         return { sessionToken };
     }
 
+
+    // --- Endpoints del portal autenticado (paridad con el plugin) ----------
+    // Todos resuelven el cliente desde `portal_links` (fail-closed: sin
+    // vínculo → 404). JAMÁS se aceptan list_id/record_id del cliente para
+    // el propio record — defensa contra spoofing (regla del plugin).
+
+    /** Vínculo portal del usuario o 404. */
+    private async requireLink(userId: number) {
+        const link = await this.tenantDb.withUser(userId, async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(portalLinks)
+                .where(eq(portalLinks.userId, userId))
+                .limit(1);
+            return row ?? null;
+        });
+        if (!link) {
+            throw new NotFoundException({
+                code: 'portal_not_linked',
+                message: 'Este usuario no tiene un portal vinculado',
+                data: { status: 404 },
+            });
+        }
+        return link;
+    }
+
+    /**
+     * PATCH /portal/me — el cliente edita su propio record. Whitelist
+     * server-side: solo slugs declarados en bloques `editable_form` del
+     * template configurado (el default no incluye ninguno → sin template
+     * explícito nadie edita nada). Slug fuera de la lista → 403 explícito,
+     * nunca silencioso.
+     */
+    async updateMe(userId: number, input: PortalUpdateMeInput): Promise<{ ok: true }> {
+        const link = await this.requireLink(userId);
+        const tenantId = link.tenantId;
+
+        const { listId, changedAfter, changedBefore } = await this.tenantDb.withTenant(
+            tenantId,
+            async (tx) => {
+                const [list] = await tx
+                    .select({ id: lists.id, settings: lists.settings })
+                    .from(lists)
+                    .where(eq(lists.id, link.listId))
+                    .limit(1);
+                if (!list) throw portalGone();
+                const allowed = editableSlugsFromTemplate(list.settings.portal_template);
+                if (allowed.size === 0) {
+                    throw new ForbiddenException({
+                        code: 'portal_not_editable',
+                        message: 'Tu portal no permite edición de campos',
+                        data: { status: 403 },
+                    });
+                }
+
+                const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+                const bySlug = new Map(listFields.map((f) => [f.slug, f]));
+
+                const patch: Record<string, unknown> = {};
+                const errors: Record<string, string> = {};
+                for (const [slug, value] of Object.entries(input.fields)) {
+                    if (!allowed.has(slug)) {
+                        throw new ForbiddenException({
+                            code: 'portal_field_forbidden',
+                            message: `No tienes permiso para editar el campo "${slug}"`,
+                            data: { status: 403 },
+                        });
+                    }
+                    const field = bySlug.get(slug);
+                    if (!field || !isDataField(field.type)) {
+                        errors[slug] = 'Campo inexistente o no editable';
+                        continue;
+                    }
+                    const result = validateFieldValue(
+                        { type: field.type, config: field.config, is_required: field.is_required },
+                        value,
+                    );
+                    if (!result.ok) errors[slug] = result.error;
+                    else patch[jsonbKeyForField(field.id)] = result.value;
+                }
+                if (Object.keys(errors).length > 0) {
+                    throw new BadRequestException({
+                        code: 'validation_failed',
+                        message: 'Datos inválidos',
+                        data: { status: 400, errors },
+                    });
+                }
+
+                const [current] = await tx
+                    .select()
+                    .from(records)
+                    .where(and(eq(records.id, link.recordId), eq(records.listId, list.id)))
+                    .limit(1);
+                if (!current) throw portalGone();
+                const merged = { ...current.data, ...patch };
+                await tx
+                    .update(records)
+                    .set({ data: merged, updatedAt: new Date() })
+                    .where(eq(records.id, current.id));
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId: list.id,
+                    recordId: current.id,
+                    userId,
+                    action: 'record_updated',
+                    diff: computeDiff(current.data, merged),
+                });
+                return { listId: list.id, changedBefore: current.data, changedAfter: merged };
+            },
+        );
+        this.realtime.records(tenantId, listId);
+        this.automations.dispatch({
+            tenantId,
+            listId,
+            recordId: link.recordId,
+            trigger: 'record_updated',
+            after: changedAfter,
+            before: changedBefore,
+        });
+        return { ok: true };
+    }
+
+    /** GET /portal/me/comments — comentarios del record del cliente. */
+    async myComments(userId: number): Promise<CommentDto[]> {
+        const link = await this.requireLink(userId);
+        const rows = await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            this.commentsRepo.listByRecord(tx, link.tenantId, link.recordId),
+        );
+        return rows.map(toPortalComment);
+    }
+
+    /** POST /portal/me/comments — nota simple del cliente. */
+    async createMyComment(userId: number, input: PortalCommentInput): Promise<CommentDto> {
+        const link = await this.requireLink(userId);
+        const row = await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            this.commentsRepo.insert(tx, {
+                tenantId: link.tenantId,
+                listId: link.listId,
+                recordId: link.recordId,
+                userId,
+                body: input.content,
+                kind: 'note',
+                parentId: null,
+                metadata: {},
+            }),
+        );
+        this.realtime.records(link.tenantId, link.listId);
+        return toPortalComment(row);
+    }
+
+    /** GET /portal/me/activity — timeline del record del cliente. */
+    async myActivity(userId: number, limit: number): Promise<ActivityDto[]> {
+        const link = await this.requireLink(userId);
+        const cap = Math.min(Math.max(Math.trunc(limit) || 50, 1), 200);
+        const rows = await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            this.activityRepo.list(tx, link.tenantId, link.listId, {
+                recordId: link.recordId,
+                limit: cap,
+            }),
+        );
+        return rows.map((row) => ({
+            id: row.id,
+            list_id: row.listId,
+            record_id: row.recordId,
+            user_id: row.userId,
+            action: row.action as ActivityDto['action'],
+            diff: row.diff,
+            created_at: row.createdAt.toISOString(),
+        }));
+    }
+
+    /**
+     * Scope SQL del portal para una lista (la pieza de seguridad central,
+     * paridad con `PortalScopeService` del plugin). Fail-closed:
+     *  1. lista del portal → solo el record del cliente;
+     *  2. lista con un campo `user` (primero por posición) → filas cuyo
+     *     campo apunta al usuario;
+     *  3. lista con un campo `relation` (primero por posición) hacia la
+     *     lista del portal → filas vinculadas al record del cliente;
+     *  4. cualquier otro caso → `false` (nunca "ver todo").
+     */
+    private portalScope(
+        listId: number,
+        listFields: Field[],
+        link: { tenantId: number; listId: number; recordId: number; userId: number },
+    ): SQL {
+        if (listId === link.listId) return sql`${records.id} = ${link.recordId}`;
+
+        const userField = listFields
+            .filter((f) => f.type === 'user')
+            .sort((a, b) => a.position - b.position)[0];
+        if (userField) {
+            return sql`${records.data} ->> ${jsonbKeyForField(userField.id)} = ${String(link.userId)}`;
+        }
+
+        const relField = listFields
+            .filter(
+                (f) =>
+                    f.type === 'relation'
+                    && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === link.listId,
+            )
+            .sort((a, b) => a.position - b.position)[0];
+        if (relField) {
+            return sql`${records.id} IN (
+                SELECT ${relations.sourceRecordId} FROM ${relations}
+                WHERE ${relations.tenantId} = ${link.tenantId}
+                  AND ${relations.fieldId} = ${relField.id}
+                  AND ${relations.targetRecordId} = ${link.recordId}
+            )`;
+        }
+        return sql`false`;
+    }
+
+    /**
+     * GET /portal/lists/:slug/records — records de OTRA lista visibles para
+     * el cliente (scope del portal). Paginación por página (los sets del
+     * portal son chicos; per_page ≤ 100). Campos por slug, sin los ocultos
+     * para el rol `client`.
+     */
+    async listRecords(
+        userId: number,
+        listSlug: string,
+        page: number,
+        perPage: number,
+    ): Promise<{
+        data: Array<{ id: number; fields: Record<string, unknown>; relations: Record<string, unknown> }>;
+        meta: { page: number; per_page: number; total: number; total_pages: number };
+    }> {
+        const link = await this.requireLink(userId);
+        const tenantId = link.tenantId;
+        const p = Math.min(Math.max(Math.trunc(page) || 1, 1), 1000);
+        const pp = Math.min(Math.max(Math.trunc(perPage) || 10, 1), 100);
+
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, listSlug);
+            const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const scope = this.portalScope(
+                list.id,
+                listFields,
+                { tenantId, listId: link.listId, recordId: link.recordId, userId },
+            );
+            const where = and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, list.id),
+                sql`${records.deletedAt} IS NULL`,
+                scope,
+            );
+            const [{ n: total } = { n: 0 }] = await tx
+                .select({ n: sql<number>`count(*)::int` })
+                .from(records)
+                .where(where);
+            const rows = await tx
+                .select()
+                .from(records)
+                .where(where)
+                .orderBy(records.id)
+                .limit(pp)
+                .offset((p - 1) * pp);
+
+            const hidden = hiddenFieldsFor(list.settings, 'client');
+            const visible = listFields.filter((f) => isDataField(f.type) && !hidden.has(f.slug));
+            return {
+                data: rows.map((r) => ({
+                    id: r.id,
+                    fields: Object.fromEntries(
+                        visible.map((f) => [f.slug, (r.data as Record<string, unknown>)[jsonbKeyForField(f.id)] ?? null]),
+                    ),
+                    relations: {},
+                })),
+                meta: { page: p, per_page: pp, total, total_pages: Math.max(1, Math.ceil(total / pp)) },
+            };
+        });
+    }
+
+    /**
+     * GET /portal/lists/:slug/aggregates?fields=1,2 — totales SIEMPRE bajo
+     * el scope del portal. Keyed por slug: `{count, sum, avg, min, max}`.
+     * Campos ocultos para el rol `client` se filtran (paridad fix S2).
+     */
+    async aggregates(
+        userId: number,
+        listSlug: string,
+        rawFields: string,
+    ): Promise<{ totals: Record<string, Record<string, number | null>> }> {
+        const link = await this.requireLink(userId);
+        const tenantId = link.tenantId;
+        const fieldIds = rawFields
+            .split(',')
+            .map((v) => Number(v.trim()))
+            .filter((n) => Number.isInteger(n) && n > 0)
+            .slice(0, 10);
+        if (fieldIds.length === 0) return { totals: {} };
+
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, listSlug);
+            const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const hidden = hiddenFieldsFor(list.settings, 'client');
+            const targets = listFields.filter(
+                (f) => fieldIds.includes(f.id) && isDataField(f.type) && !hidden.has(f.slug),
+            );
+            if (targets.length === 0) return { totals: {} };
+
+            const scope = this.portalScope(
+                list.id,
+                listFields,
+                { tenantId, listId: link.listId, recordId: link.recordId, userId },
+            );
+            const where = and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, list.id),
+                sql`${records.deletedAt} IS NULL`,
+                scope,
+            );
+
+            const totals: Record<string, Record<string, number | null>> = {};
+            for (const field of targets) {
+                const key = jsonbKeyForField(field.id);
+                // Casteo numérico defensivo: valores no numéricos quedan
+                // fuera de sum/avg/min/max (count cuenta TODAS las filas
+                // del scope — "cuántos pedidos tengo").
+                const num = sql`CASE WHEN ${records.data} ->> ${key} ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (${records.data} ->> ${key})::numeric END`;
+                const [row] = await tx
+                    .select({
+                        count: sql<number>`count(*)::int`,
+                        sum: sql<string | null>`sum(${num})`,
+                        avg: sql<string | null>`avg(${num})`,
+                        min: sql<string | null>`min(${num})`,
+                        max: sql<string | null>`max(${num})`,
+                    })
+                    .from(records)
+                    .where(where);
+                totals[field.slug] = {
+                    count: row?.count ?? 0,
+                    sum: toNum(row?.sum),
+                    avg: toNum(row?.avg),
+                    min: toNum(row?.min),
+                    max: toNum(row?.max),
+                };
+            }
+            return { totals };
+        });
+    }
+
     /** Boot del portal para el client autenticado: su record + fields + template. */
     async me(userId: number): Promise<PortalBoot> {
         const link = await this.tenantDb.withUser(userId, async (tx) => {
@@ -174,7 +548,7 @@ export class PortalService {
 
         return this.tenantDb.withTenant(link.tenantId, async (tx) => {
             const [list] = await tx
-                .select({ id: lists.id, name: lists.name, settings: lists.settings })
+                .select({ id: lists.id, slug: lists.slug, name: lists.name, settings: lists.settings })
                 .from(lists)
                 .where(eq(lists.id, link.listId))
                 .limit(1);
@@ -202,7 +576,9 @@ export class PortalService {
 
             return {
                 list_id: list.id,
+                list_slug: list.slug,
                 list_name: list.name,
+                user_id: userId,
                 record: {
                     id: record.id,
                     list_id: record.listId,
@@ -242,4 +618,74 @@ function extractPortalBlocks(raw: unknown): Array<Record<string, unknown>> {
         return (raw as { blocks: Array<Record<string, unknown>> }).blocks;
     }
     return [];
+}
+
+function portalGone(): NotFoundException {
+    return new NotFoundException({
+        code: 'portal_record_missing',
+        message: 'El record del portal ya no existe',
+        data: { status: 404 },
+    });
+}
+
+function toNum(v: string | number | null | undefined): number | null {
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+}
+
+/** CommentRow → shape que consume el bloque del portal (content = body). */
+function toPortalComment(row: {
+    id: number;
+    listId: number;
+    recordId: number;
+    userId: number;
+    body: string;
+    kind: string;
+    parentId: number | null;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+    updatedAt: Date;
+}): CommentDto & { content: string } {
+    return {
+        id: row.id,
+        list_id: row.listId,
+        record_id: row.recordId,
+        user_id: row.userId,
+        body: row.body,
+        content: row.body,
+        kind: row.kind as CommentDto['kind'],
+        parent_id: row.parentId,
+        metadata: row.metadata,
+        created_at: row.createdAt.toISOString(),
+        updated_at: row.updatedAt.toISOString(),
+    };
+}
+
+/**
+ * Recorre el template (con anidamiento arbitrario — nested_section) y junta
+ * los slugs editables declarados en bloques `editable_form`.
+ */
+function editableSlugsFromTemplate(raw: unknown): Set<string> {
+    const out = new Set<string>();
+    const walk = (node: unknown): void => {
+        if (Array.isArray(node)) {
+            for (const item of node) walk(item);
+            return;
+        }
+        if (!node || typeof node !== 'object') return;
+        const obj = node as Record<string, unknown>;
+        if (obj.type === 'editable_form') {
+            const cfg = (obj.config as Record<string, unknown> | undefined) ?? obj;
+            const slugs = cfg.editable_field_slugs;
+            if (Array.isArray(slugs)) {
+                for (const s of slugs) if (typeof s === 'string' && s !== '') out.add(s);
+            }
+        }
+        for (const v of Object.values(obj)) {
+            if (v && typeof v === 'object') walk(v);
+        }
+    };
+    walk(raw);
+    return out;
 }

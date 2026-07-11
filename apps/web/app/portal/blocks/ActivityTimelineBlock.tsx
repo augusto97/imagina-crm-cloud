@@ -111,7 +111,8 @@ function readableAction(action: string): string {
 
 function formatDate(iso: string): string {
     try {
-        const d = new Date(iso + 'Z');
+        // ISO con 'Z' (backend) o naive-UTC (mocks legacy) — nunca 'ZZ'.
+        const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
         return d.toLocaleString();
     } catch {
         return iso;
