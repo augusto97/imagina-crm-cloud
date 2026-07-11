@@ -3,7 +3,7 @@ import { isReadOnly } from '@imagina-base/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
-import { memberships, records, tenants, users } from '../src/db/schema';
+import { attachments, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -93,6 +93,37 @@ describe('BillingService (Postgres real)', () => {
         // Subir de plan libera el límite.
         await billing.setBilling(tenantId, { plan: 'starter' });
         await expect(billing.assertCanCreateRecord(tenantId)).resolves.toBeUndefined();
+    });
+
+    it('assertCanUpload: cuota de storage del plan (trial 100MB) y enterprise ilimitado', async () => {
+        await billing.setBilling(tenantId, { plan: 'trial' });
+        const [up] = await pg.db
+            .insert(users)
+            .values({ email: `up${tenantId}@acme.test`, passwordHash: 'x', name: 'Up' })
+            .returning();
+        const userId = up!.id;
+        // 99 MB ya usados → subir 2 MB más rebota; 1 MB pasa.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(attachments).values({
+                tenantId,
+                filename: 'grande.bin',
+                mime: 'application/octet-stream',
+                sizeBytes: 99 * 1024 * 1024,
+                storageKey: `t${tenantId}/grande.bin`,
+                createdBy: userId,
+            }),
+        );
+        await expect(billing.assertCanUpload(tenantId, 2 * 1024 * 1024)).rejects.toBeInstanceOf(
+            ForbiddenException,
+        );
+        await expect(billing.assertCanUpload(tenantId, 1024 * 1024)).resolves.toBeUndefined();
+        // El summary expone el uso de storage.
+        const summary = await billing.summary(tenantId);
+        expect(summary.usage.storage_bytes).toBe(99 * 1024 * 1024);
+        expect(summary.limits.max_storage_mb).toBe(100);
+        // Enterprise: ilimitado.
+        await billing.setBilling(tenantId, { plan: 'enterprise' });
+        await expect(billing.assertCanUpload(tenantId, 10 ** 12)).resolves.toBeUndefined();
     });
 
     it('el gate de límite es ortogonal al status (el read-only lo aplica TenantGuard)', async () => {

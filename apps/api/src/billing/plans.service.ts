@@ -12,7 +12,7 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { plans, tenants } from '../db/schema';
 
-const UNLIMITED: PlanLimits = { max_records: null, max_users: null, max_automations: null };
+const UNLIMITED: PlanLimits = { max_records: null, max_users: null, max_automations: null, max_storage_mb: null };
 
 /**
  * Planes de suscripción (ADR-S15 F3). La fuente viva de los límites es la tabla
@@ -36,13 +36,22 @@ export class PlansService {
             max_records: r.maxRecords,
             max_users: r.maxUsers,
             max_automations: r.maxAutomations,
+            max_storage_mb: r.maxStorageMb,
             price_usd: r.priceUsd,
             price_cop: r.priceCop,
             is_active: r.isActive,
             position: r.position,
         }));
         const map = new Map<string, PlanLimits>(
-            list.map((p) => [p.slug, { max_records: p.max_records, max_users: p.max_users, max_automations: p.max_automations }]),
+            list.map((p) => [
+                p.slug,
+                {
+                    max_records: p.max_records,
+                    max_users: p.max_users,
+                    max_automations: p.max_automations,
+                    max_storage_mb: p.max_storage_mb,
+                },
+            ]),
         );
         this.cache = { at: Date.now(), map, list };
         return this.cache;
@@ -97,6 +106,7 @@ export class PlansService {
             maxRecords: input.max_records,
             maxUsers: input.max_users,
             maxAutomations: input.max_automations,
+            maxStorageMb: input.max_storage_mb,
             priceUsd: input.price_usd,
             priceCop: input.price_cop,
             isActive: input.is_active,
@@ -112,6 +122,7 @@ export class PlansService {
         if (input.max_records !== undefined) changes.maxRecords = input.max_records;
         if (input.max_users !== undefined) changes.maxUsers = input.max_users;
         if (input.max_automations !== undefined) changes.maxAutomations = input.max_automations;
+        if (input.max_storage_mb !== undefined) changes.maxStorageMb = input.max_storage_mb;
         if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
         if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;

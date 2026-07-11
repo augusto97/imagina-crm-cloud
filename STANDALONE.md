@@ -570,11 +570,17 @@ tabla `attachments` (RLS) y bytes detrás de la interfaz `FileStorage`, con un
 driver LOCAL en disco (`UPLOADS_DIR`, claves opacas por tenant, guard de path
 traversal). El API sube (multipart, `MAX_UPLOAD_BYTES`) y sirve (stream con
 check de sesión + tenant) — a la escala actual proxear bytes es aceptable y
-queda medido por /metrics. Upgrade previsto SIN tocar callers: driver
-S3-compatible + URLs prefirmadas cuando haya bucket (el shape de
-`attachments.storage_key` ya lo soporta). Los campos `file` guardan el ID del
-attachment como valor; el portal del cliente sigue con URLs planas (servir
-attachments a rol client requerirá URLs firmadas — pendiente explícito).
+queda medido por /metrics. El driver S3-compatible YA existe
+(`STORAGE_DRIVER=s3` + credenciales por env; streams multipart vía SDK,
+probado contra MinIO) — el API sigue en el data path; URLs prefirmadas
+NATIVAS del bucket quedan como optimización cuando haya bucket productivo.
+Los campos `file` guardan el ID del attachment como valor. El portal del
+cliente descarga por **URLs firmadas HMAC de vida corta**
+(`/files/:id/signed?tenant&exp&sig`, secreto `FILES_SIGNING_SECRET`, 404
+opaco): el rol client accede solo a los archivos de SU record, sin sesión de
+records. Cuota de storage por plan (`plans.max_storage_mb`, NULL=ilimitado,
+enforcement post-upload con rollback) editable desde la consola del operador
+y visible en Ajustes.
 
 ---
 

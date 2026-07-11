@@ -169,7 +169,8 @@ export function DownloadFilesBlock({ config, record }: Props): JSX.Element {
  */
 function normalizeFileUrls(value: unknown): ResolvedFile[] {
     const urls = (Array.isArray(value) ? value : [value]).filter(
-        (v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v.trim()),
+        (v): v is string =>
+            typeof v === 'string' && (/^https?:\/\//i.test(v.trim()) || v.trim().startsWith('/')),
     );
     return urls.map((raw, i) => {
         const url = raw.trim();

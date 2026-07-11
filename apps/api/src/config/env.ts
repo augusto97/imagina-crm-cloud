@@ -38,6 +38,21 @@ const envSchema = z.object({
     UPLOADS_DIR: z.string().default('./data/uploads'),
     /** Tamaño máximo por archivo subido (multipart). */
     MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
+    /**
+     * Secreto de las URLs firmadas de archivos (portal del cliente — ADR-S16).
+     * Vacío = se genera uno aleatorio al bootear (las URLs mueren al reiniciar;
+     * en producción conviene fijarlo para que sobrevivan al deploy).
+     */
+    FILES_SIGNING_SECRET: z.string().default(''),
+    /** Driver de storage de archivos (ADR-S16): local (default) o s3. */
+    STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+    S3_ENDPOINT: z.string().default(''),
+    S3_REGION: z.string().default('auto'),
+    S3_BUCKET: z.string().default(''),
+    S3_ACCESS_KEY_ID: z.string().default(''),
+    S3_SECRET_ACCESS_KEY: z.string().default(''),
+    /** true para MinIO y providers path-style. */
+    S3_FORCE_PATH_STYLE: boolFromString.default('true'),
     // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),

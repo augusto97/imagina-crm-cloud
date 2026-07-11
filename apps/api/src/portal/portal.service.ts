@@ -31,6 +31,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { fields, lists, memberships, portalLinks, records, relations, users } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
+import { FilesService } from '../files/files.service';
 import { hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
@@ -67,7 +68,33 @@ export class PortalService {
         private readonly activity: ActivityService,
         private readonly realtime: RealtimeService,
         private readonly automations: AutomationDispatcher,
+        private readonly files: FilesService,
     ) {}
+
+    /**
+     * Reemplaza los IDs de attachments de los campos `file` por URLs firmadas
+     * de vida corta (1 h) — el rol client no tiene capabilities de records,
+     * así el portal descarga sin sesión pero solo ESOS archivos (ADR-S16).
+     */
+    private signFileValues(
+        tenantId: number,
+        fields: Array<{ id: number; type: string }>,
+        data: Record<string, unknown>,
+        keyOf: (fieldId: number) => string,
+    ): Record<string, unknown> {
+        const fileFields = fields.filter((f) => f.type === 'file');
+        if (fileFields.length === 0) return data;
+        const out = { ...data };
+        const signOne = (v: unknown): unknown =>
+            typeof v === 'number' && v > 0 ? this.files.signedUrl(tenantId, v, 3600) : v;
+        for (const f of fileFields) {
+            const key = keyOf(f.id);
+            const v = out[key];
+            if (v === undefined || v === null) continue;
+            out[key] = Array.isArray(v) ? v.map(signOne) : signOne(v);
+        }
+        return out;
+    }
 
     async issue(
         tenantId: number,
@@ -447,13 +474,22 @@ export class PortalService {
             const hidden = hiddenFieldsFor(list.settings, 'client');
             const visible = listFields.filter((f) => isDataField(f.type) && !hidden.has(f.slug));
             return {
-                data: rows.map((r) => ({
-                    id: r.id,
-                    fields: Object.fromEntries(
+                data: rows.map((r) => {
+                    const raw = Object.fromEntries(
                         visible.map((f) => [f.slug, (r.data as Record<string, unknown>)[jsonbKeyForField(f.id)] ?? null]),
-                    ),
-                    relations: {},
-                })),
+                    );
+                    const bySlug = new Map(visible.map((f) => [f.id, f.slug]));
+                    return {
+                        id: r.id,
+                        fields: this.signFileValues(
+                            tenantId,
+                            visible.map((f) => ({ id: f.id, type: f.type })),
+                            raw,
+                            (id) => bySlug.get(id) ?? `f${id}`,
+                        ),
+                        relations: {},
+                    };
+                }),
                 meta: { page: p, per_page: pp, total, total_pages: Math.max(1, Math.ceil(total / pp)) },
             };
         });
@@ -582,7 +618,12 @@ export class PortalService {
                 record: {
                     id: record.id,
                     list_id: record.listId,
-                    data: record.data,
+                    data: this.signFileValues(
+                        link.tenantId,
+                        fieldRows.map((f) => ({ id: f.id, type: f.type })),
+                        record.data as Record<string, unknown>,
+                        (id) => `f${id}`,
+                    ),
                     created_by: record.createdBy,
                     created_at: record.createdAt.toISOString(),
                     updated_at: record.updatedAt.toISOString(),

@@ -17,6 +17,8 @@
         "db:seed": "pnpm build && node dist/db/seed.js"
     },
     "dependencies": {
+        "@aws-sdk/client-s3": "^3.1085.0",
+        "@aws-sdk/lib-storage": "^3.1085.0",
         "@fastify/compress": "^8.3.1",
         "@fastify/cookie": "^11.0.2",
         "@fastify/multipart": "^10.1.0",
@@ -51,6 +53,7 @@
         "@types/pg": "^8.15.4",
         "drizzle-kit": "^0.31.1",
         "eslint": "^9.30.0",
+        "testcontainers": "^12.0.4",
         "tsx": "^4.20.3",
         "typescript": "^5.7.3",
         "typescript-eslint": "^8.35.0",
