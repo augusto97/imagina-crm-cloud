@@ -9,6 +9,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
@@ -43,6 +44,7 @@ describe('ACL por lista (permisos por rol)', () => {
             rt,
             new ActivityService(tenantDb, new ActivityRepository(), lists_),
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;

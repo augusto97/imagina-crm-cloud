@@ -387,6 +387,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `isCloud()` eliminado; `moduleEnabled` lee sólo CLOUD_WIRED.
         Typecheck/lint 0 errores, build OK, verificado E2E en navegador.
 
+- [ ] **F6 — Paridad total con el plugin** (brechas detectadas en la auditoría
+      v0.1.47/48; orden: relations → portal completo → búsqueda → menciones →
+      media → recurrencias → computed):
+  - [x] **Campos `relation` (v0.1.49)**: tabla `relations` (migración 0023,
+        RLS + unique por vínculo, FKs en cascada), `RelationsRepository`
+        (sync reemplaza-set, batchTargets 1-query por página, validación de
+        targets vivos en la lista destino del propio tenant). `records.service`
+        separa los valores relation del JSONB (create/update/bulk), sincroniza
+        en el mismo tx, adjunta `relations` (`f{id}` → ids, prefill `[]`) en
+        get/list/update, respeta ACL de campos ocultos y limpia vínculos
+        salientes al borrar (targets soft-borrados se filtran al leer). El
+        adapter del front traduce las claves a slug (la UI lee
+        `record.relations[slug]`). 3 tests nuevos (245 en verde) + E2E.
+  - [ ] Portal del cliente completo (bloques estáticos + endpoints
+        comments/activity/aggregates/records del portal).
+  - [ ] Búsqueda de records server-side (hoy: client-side sobre la página).
+  - [ ] Menciones (@ en comentarios + campana).
+  - [ ] Módulo de archivos/media propio (upload, thumbnails, covers).
+  - [ ] Recurrencias.
+  - [ ] Campos `computed` (evaluador server-side).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

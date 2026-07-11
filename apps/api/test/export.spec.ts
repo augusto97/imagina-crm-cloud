@@ -7,6 +7,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -44,6 +45,7 @@ describe('ExportService (Postgres real)', () => {
             rt,
             activity,
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
         exportService = new ExportService(tenantDb, listsService, fieldsService, viewsService, recordsService);
 
