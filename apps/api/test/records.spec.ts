@@ -344,6 +344,35 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         expect(fetched.relations?.[rk]).toEqual([p2.id]);
     });
 
+    it('computed: se evalúa lazy en cada lectura (sum + concat encadenado) y no acepta escritura', async () => {
+        const total = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Total', type: 'computed',
+            config: { operation: 'sum', inputs: [fieldByType.monto!.id] },
+        });
+        const resumen = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Resumen', type: 'computed',
+            config: { operation: 'concat', inputs: [fieldByType.nombre!.id, total.id], separator: ' — ' },
+        });
+        const rec = await service.create(tenantA, admin, 'clientes', {
+            data: { [key('nombre')]: 'ACME', [key('monto')]: 1500 },
+        });
+        expect(rec.data[`f${total.id}`]).toBe(1500);
+        expect(rec.data[`f${resumen.id}`]).toBe('ACME — 1500');
+
+        const page = await service.list(tenantA, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(page.data[0]!.data[`f${total.id}`]).toBe(1500);
+
+        const updated = await service.update(tenantA, admin, 'clientes', rec.id, {
+            data: { [key('monto')]: 2000 },
+        });
+        expect(updated.data[`f${total.id}`]).toBe(2000);
+
+        // El computed no acepta input directo (400).
+        await expect(
+            service.update(tenantA, admin, 'clientes', rec.id, { data: { [`f${total.id}`]: 99 } }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('aislamiento RLS: los records no cruzan de tenant', async () => {
         await seed();
         await listsService.create(tenantB, { name: 'Clientes' });

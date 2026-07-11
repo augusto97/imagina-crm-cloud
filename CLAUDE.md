@@ -451,8 +451,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de tarjetas funcionan. Portal: sigue con URLs planas (servir a rol
         client requerirá URLs firmadas — pendiente explícito del ADR).
         3 tests (round-trip, saneo, aislamiento) + E2E API y navegador.
-  - [ ] Recurrencias.
-  - [ ] Campos `computed` (evaluador server-side).
+  - [x] **Recurrencias (v0.1.54)**: tabla `recurrences` (migración 0026,
+        RLS, unique por record+campo fecha), `DateRoller` port puro (daily/
+        weekly/monthly con same_day/first_day/last_day/weekday, yearly con
+        29-feb, days_after con seed=now; parse por componentes + Date.UTC,
+        preserva hora/formato), CRUD del contrato del fork (GET por record +
+        batch `?ids=`, POST upsert, DELETE). Triggers: `status_change`
+        (hook post-update de records, @Optional → los specs no se rompen) y
+        `schedule` (job repeatable global `recurrences-tick` cada 5 min en
+        la cola BullMQ existente; enumeración cross-tenant por conexión base
+        y toda lectura/mutación dentro de withTenant). `fire` idempotente
+        (last_fired_at), corte por repeat_until, acciones update/clone a
+        bajo nivel (tx + activity + realtime + dispatch de automatizaciones,
+        sin ciclo de DI). `CLOUD_WIRED.recurrences=true` → la UI del
+        DateCellEditor aparece. 14 tests + smoke real.
+  - [x] **Campos `computed` (v0.1.54)**: evaluación lazy en CADA lectura
+        (create/get/list/update inyectan `data[f{id}]` — jamás se persiste),
+        usando el evaluador compartido de `packages/shared` (el mismo que
+        puede usar el preview del editor). El FieldConfigEditor del fork ya
+        emitía `{operation, inputs, separator}` — ahora el schema del tipo
+        lo valida de verdad. Escribirle al computed → 400. Test de
+        integración (sum + concat encadenado, re-lectura tras update).
+
+        **Con esto F6 queda completa: paridad funcional total con el
+        plugin, más todo lo cloud-only (multi-tenant, billing, plataforma,
+        listas públicas, PITR, auto-update).**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

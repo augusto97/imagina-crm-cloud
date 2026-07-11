@@ -27,6 +27,7 @@ import { PublicListsModule } from './public-lists/public-lists.module';
 import { PlatformModule } from './platform/platform.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
+import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
@@ -52,6 +53,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ListsModule,
         FieldsModule,
         RecordsModule,
+        RecurrencesModule,
         ViewsModule,
         SavedFiltersModule,
         ActivityModule,

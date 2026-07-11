@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleIn
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { RecurrencesService } from '../recurrences/recurrences.service';
 import { guardRedis } from '../redis/redis.util';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
@@ -13,6 +14,10 @@ interface SchedulerJobData {
 }
 
 export const AUTOMATIONS_QUEUE = 'automations';
+
+/** Tick GLOBAL de recurrencias (barrido de las trigger=schedule) cada 5 min. */
+const RECURRENCES_TICK_JOB = 'recurrences-tick';
+const RECURRENCES_TICK_PATTERN = '*/5 * * * *';
 
 /**
  * Cablea la cola BullMQ y el worker (STANDALONE §8). El worker procesa los
@@ -31,6 +36,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
         private readonly dispatcher: AutomationDispatcher,
         private readonly scheduler: AutomationScheduler,
         private readonly engine: AutomationEngine,
+        private readonly recurrences: RecurrencesService,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -56,6 +62,8 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     } else if (job.name === 'due') {
                         const d = job.data as SchedulerJobData;
                         await this.engine.runDueDate(d.tenantId, d.automationId);
+                    } else if (job.name === RECURRENCES_TICK_JOB) {
+                        await this.recurrences.tick();
                     } else {
                         await this.engine.process(job.data as TriggerEvent);
                     }
@@ -68,6 +76,12 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
             this.worker.on('error', (err) => this.logger.warn(`Worker de automatizaciones con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
             this.scheduler.setQueue(this.queue);
+            // Job repeatable global (persiste en Redis → sobrevive reinicios).
+            await this.queue.upsertJobScheduler(
+                RECURRENCES_TICK_JOB,
+                { pattern: RECURRENCES_TICK_PATTERN },
+                { name: RECURRENCES_TICK_JOB, data: {} },
+            );
             this.logger.log('Cola de automatizaciones lista');
         } catch (err) {
             this.logger.warn(`Automatizaciones deshabilitadas (sin Redis): ${String(err)}`);
