@@ -176,6 +176,13 @@
       "when": 1783770000000,
       "tag": "0024_mentions",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783780000000,
+      "tag": "0025_attachments",
+      "breakpoints": true
     }
   ]
 }

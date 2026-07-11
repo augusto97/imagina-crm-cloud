@@ -562,4 +562,20 @@ Con esto la consola de operador (F1-F5) queda completa.
 ---
 
 **Última actualización:** 2026-07-10
-**Versión del documento:** 1.9.0 (consola de plataforma F1-F5: +impersonación con auditoría — ADR-S15)
+**ADR-S16 — Archivos: storage local detrás de interfaz, S3 prefirmado como upgrade.**
+El §10 preveía object storage S3-compatible con URLs prefirmadas desde el día 1.
+En la infra actual (1 VPS, sin bucket contratado) eso agrega una dependencia
+externa y credenciales que no existen en dev/test. Decisión: metadata en la
+tabla `attachments` (RLS) y bytes detrás de la interfaz `FileStorage`, con un
+driver LOCAL en disco (`UPLOADS_DIR`, claves opacas por tenant, guard de path
+traversal). El API sube (multipart, `MAX_UPLOAD_BYTES`) y sirve (stream con
+check de sesión + tenant) — a la escala actual proxear bytes es aceptable y
+queda medido por /metrics. Upgrade previsto SIN tocar callers: driver
+S3-compatible + URLs prefirmadas cuando haya bucket (el shape de
+`attachments.storage_key` ya lo soporta). Los campos `file` guardan el ID del
+attachment como valor; el portal del cliente sigue con URLs planas (servir
+attachments a rol client requerirá URLs firmadas — pendiente explícito).
+
+---
+
+**Versión del documento:** 1.10.0 (consola de plataforma F1-F5: +impersonación con auditoría — ADR-S15)
