@@ -9,7 +9,7 @@ export const CLOUD_WIRED = {
     automations: true,
     aggregates: true,
     mentions: true,
-    recurrences: false,
+    recurrences: true,
 } as const;
 
 /** ¿Se debe mostrar este módulo? Sólo si su backend ya está cableado. */

@@ -12,6 +12,7 @@ export * from './schemas/public-list';
 export * from './schemas/filter';
 export * from './schemas/saved-filter';
 export * from './schemas/record';
+export * from './schemas/recurrence';
 export * from './schemas/view';
 export * from './schemas/bootstrap';
 export * from './schemas/slug-check';

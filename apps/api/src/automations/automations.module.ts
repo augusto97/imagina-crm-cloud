@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { FieldsRepository } from '../fields/fields.repository';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsRepository } from '../records/records.repository';
+import { RecurrencesModule } from '../recurrences/recurrences.module';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
@@ -18,7 +19,10 @@ import { AutomationsService } from './automations.service';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule],
+    // RecurrencesModule: el worker de la cola procesa el tick global de
+    // recurrencias (job 'recurrences-tick'). Sin ciclo: recurrences NO importa
+    // automations (el dispatcher le llega porque este módulo es @Global).
+    imports: [AuthModule, ListsModule, RecurrencesModule],
     controllers: [AutomationsController, AutomationsCatalogController],
     providers: [
         AutomationsService,

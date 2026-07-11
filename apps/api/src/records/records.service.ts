@@ -1,5 +1,13 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    BadRequestException,
+    ForbiddenException,
+    Injectable,
+    Logger,
+    NotFoundException,
+    Optional,
+} from '@nestjs/common';
+import {
+    evaluateComputed,
     isDataField,
     jsonbKeyForField,
     validateFieldValue,
@@ -28,6 +36,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, type FilterableField } from './query-builder';
+import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordsRepository, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
 
@@ -44,6 +53,8 @@ export interface RecordsPage {
 
 @Injectable()
 export class RecordsService {
+    private readonly logger = new Logger(RecordsService.name);
+
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly repo: RecordsRepository,
@@ -53,6 +64,9 @@ export class RecordsService {
         private readonly activity: ActivityService,
         private readonly automations: AutomationDispatcher,
         private readonly relationsRepo: RelationsRepository,
+        // Optional + al final: los specs que instancian RecordsService a mano
+        // (posicional) siguen funcionando sin el módulo de recurrencias.
+        @Optional() private readonly recurrences?: RecurrencesService,
     ) {}
 
     async create(
@@ -104,7 +118,7 @@ export class RecordsService {
             after: row.data,
         });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-        return toRecord(row, {
+        return toRecord(withComputed(fields, row), {
             ...byFieldToKeys(relFieldIds, undefined),
             ...relationsToMap(rel.values),
         });
@@ -112,7 +126,7 @@ export class RecordsService {
 
     async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const { row, hiddenKeys, relMap, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { row, fields, hiddenKeys, relMap, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const r = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const rels = r
@@ -125,6 +139,7 @@ export class RecordsService {
                 : new Map<number, Map<number, number[]>>();
             return {
                 row: r,
+                fields,
                 hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
@@ -132,7 +147,10 @@ export class RecordsService {
         });
         // ACL: si el scope no alcanza esta fila, 404 (no filtramos info).
         if (!row || !this.aclCanReach(list, actor, 'view', row)) throw recordNotFound(id);
-        return stripHidden(toRecord(row, byFieldToKeys(relFieldIds, relMap.get(row.id))), hiddenKeys);
+        return stripHidden(
+            toRecord(withComputed(fields, row), byFieldToKeys(relFieldIds, relMap.get(row.id))),
+            hiddenKeys,
+        );
     }
 
     async list(
@@ -144,7 +162,7 @@ export class RecordsService {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
-        const { rows, hiddenKeys, rels, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { rows, fields, hiddenKeys, rels, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const fieldsById = new Map<number, FilterableField>(
@@ -177,6 +195,7 @@ export class RecordsService {
             );
             return {
                 rows: result,
+                fields,
                 hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
                 rels,
                 relFieldIds,
@@ -188,7 +207,12 @@ export class RecordsService {
         const page = hasMore ? rows.slice(0, query.limit) : rows;
         const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
         return {
-            data: page.map((r) => stripHidden(toRecord(r, byFieldToKeys(relFieldIds, rels.get(r.id))), hiddenKeys)),
+            data: page.map((r) =>
+                stripHidden(
+                    toRecord(withComputed(fields, r), byFieldToKeys(relFieldIds, rels.get(r.id))),
+                    hiddenKeys,
+                ),
+            ),
             meta: { next_cursor: nextCursor },
         };
     }
@@ -243,8 +267,15 @@ export class RecordsService {
             after: row.data,
             before: result.before, // para changed_fields
         });
+        // Recurrencias con trigger status_change: fire-and-forget (no bloquea
+        // la respuesta del update; un fallo se loguea y no rompe la mutación).
+        void this.recurrences
+            ?.onRecordUpdated(tenantId, listId, row.id, result.before, row.data)
+            .catch((err) =>
+                this.logger.error(`Recurrencias post-update de record ${row.id}: ${String(err)}`),
+            );
         return toRecord(
-            row,
+            withComputed(fields, row),
             byFieldToKeys(
                 fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 result.rels.get(row.id),
@@ -608,4 +639,20 @@ function compileSearch(fields: Field[], search: string | undefined): SQL | undef
         (f) => sql`${records.data} ->> ${jsonbKeyForField(f.id)} ILIKE ${escaped}`,
     );
     return sql`(${sql.join(parts, sql` OR `)})`;
+}
+
+/**
+ * Inyecta los valores de los campos `computed` en `data` del row (evaluación
+ * lazy en cada lectura — paridad con el hydrate del plugin; jamás se
+ * persisten). Devuelve un row con `data` clonado; sin computeds es no-op.
+ */
+function withComputed(fields: Field[], row: RecordRow): RecordRow {
+    const computed = fields.filter((f) => f.type === 'computed');
+    if (computed.length === 0) return row;
+    const data = { ...(row.data as Record<string, unknown>) };
+    const getValue = (fieldId: number): unknown => data[jsonbKeyForField(fieldId)] ?? null;
+    for (const field of computed) {
+        data[jsonbKeyForField(field.id)] = evaluateComputed(field, fields, getValue);
+    }
+    return { ...row, data };
 }
