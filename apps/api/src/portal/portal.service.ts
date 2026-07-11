@@ -20,7 +20,7 @@ import {
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ActivityRepository } from '../activity/activity.repository';
 import { ActivityService, computeDiff } from '../activity/activity.service';
