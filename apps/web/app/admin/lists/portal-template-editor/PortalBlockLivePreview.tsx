@@ -64,7 +64,6 @@ export function PortalBlockLivePreview({ block, fields }: Props): JSX.Element {
     const mockBoot: PortalBootData = useMemo(
         () => ({
             rest_root: '__preview__/',
-            rest_nonce: 'preview',
             list_slug: 'preview',
             user_id: 0,
             record_id: 0,

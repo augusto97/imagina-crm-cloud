@@ -15,7 +15,6 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import { isCloud } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import type { ResolvedV2Block } from '@/lib/crmTemplates';
 import type { FieldEntity } from '@/types/field';
@@ -36,16 +35,11 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
     const items = useMemo(() => {
         const out: Array<{ field: FieldEntity; value: string | number }> = [];
         for (const f of fileFields) {
+            // Sin módulo de media propio, el valor del file field se muestra
+            // crudo: URL clickeable si es http(s), texto/id plano si no.
             const v = record.fields[f.slug];
-            if (isCloud()) {
-                // En la nube no hay media library de WP: mostramos el valor
-                // crudo (URL o texto/id) sin fetch.
-                if (typeof v === 'string' && v.trim() !== '') out.push({ field: f, value: v });
-                else if (typeof v === 'number' && v > 0) out.push({ field: f, value: v });
-                continue;
-            }
-            const id = typeof v === 'number' ? v : Number(v ?? 0);
-            if (id > 0) out.push({ field: f, value: id });
+            if (typeof v === 'string' && v.trim() !== '') out.push({ field: f, value: v });
+            else if (typeof v === 'number' && v > 0) out.push({ field: f, value: v });
         }
         return out;
     }, [fileFields, record]);
@@ -58,13 +52,9 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
                 <Empty>{__('Sin archivos vinculados a este registro.')}</Empty>
             ) : (
                 <ul className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                    {items.map(({ field, value }) =>
-                        isCloud() || typeof value === 'string' ? (
-                            <CloudFileItem key={field.id} field={field} value={value} />
-                        ) : (
-                            <FileItem key={field.id} field={field} attachmentId={value} />
-                        ),
-                    )}
+                    {items.map(({ field, value }) => (
+                        <FileValueItem key={field.id} field={field} value={value} />
+                    ))}
                 </ul>
             )}
         </Card>
@@ -72,10 +62,10 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
 }
 
 /**
- * Variante cloud: no hay media library de WP, así que se renderea el
- * valor crudo del field — link si es una URL http(s), texto plano si no.
+ * Render del valor de un file field — link si es una URL http(s), texto
+ * plano si no. (Cuando exista el módulo de media propio, acá va el thumb.)
  */
-function CloudFileItem({
+function FileValueItem({
     field,
     value,
 }: {
@@ -110,86 +100,6 @@ function CloudFileItem({
                     </span>
                 )}
             </div>
-        </li>
-    );
-}
-
-function FileItem({
-    field,
-    attachmentId,
-}: {
-    field: FieldEntity;
-    attachmentId: number;
-}): JSX.Element {
-    // Resolución vía REST de WP. Cargamos el thumbnail + filename.
-    // Sin un hook específico, el endpoint nativo de WP es
-    // `/wp/v2/media/<id>` — autenticado vía nonce ya configurado.
-    const [data, setData] = useState<{ url?: string; thumb?: string; title?: string } | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
-
-    useMemo(() => {
-        let cancelled = false;
-        setLoading(true);
-        const root = (window as { wpApiSettings?: { root: string; nonce: string } }).wpApiSettings;
-        const headers: Record<string, string> = { Accept: 'application/json' };
-        if (root?.nonce) headers['X-WP-Nonce'] = root.nonce;
-        const base = root?.root ?? '/wp-json/';
-        fetch(`${base}wp/v2/media/${attachmentId}`, { headers, credentials: 'same-origin' })
-            .then((r) => r.ok ? r.json() : Promise.reject(new Error('not ok')))
-            .then((json: {
-                source_url?: string;
-                title?: { rendered?: string };
-                media_details?: { sizes?: { thumbnail?: { source_url?: string } } };
-            }) => {
-                if (cancelled) return;
-                setData({
-                    url: json.source_url,
-                    thumb: json.media_details?.sizes?.thumbnail?.source_url,
-                    title: json.title?.rendered ?? `#${attachmentId}`,
-                });
-                setLoading(false);
-            })
-            .catch(() => {
-                if (cancelled) return;
-                setError(true);
-                setLoading(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [attachmentId]);
-
-    return (
-        <li className="imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20">
-            <a
-                href={data?.url ?? '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-p-2 imcrm-transition-colors hover:imcrm-bg-accent/40"
-            >
-                <div className="imcrm-flex imcrm-h-16 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-bg-card">
-                    {loading ? (
-                        <span className="imcrm-h-4 imcrm-w-4 imcrm-animate-pulse imcrm-rounded imcrm-bg-muted" />
-                    ) : error ? (
-                        <FileIcon className="imcrm-h-6 imcrm-w-6 imcrm-text-muted-foreground" aria-hidden />
-                    ) : data?.thumb ? (
-                        <img
-                            src={data.thumb}
-                            alt={data.title ?? ''}
-                            className="imcrm-h-full imcrm-w-full imcrm-object-cover"
-                        />
-                    ) : (
-                        <FileText className="imcrm-h-6 imcrm-w-6 imcrm-text-muted-foreground" aria-hidden />
-                    )}
-                </div>
-                <span className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                    {field.label}
-                </span>
-                <span className="imcrm-truncate imcrm-text-xs imcrm-font-medium">
-                    {data?.title ?? `#${attachmentId}`}
-                </span>
-            </a>
         </li>
     );
 }

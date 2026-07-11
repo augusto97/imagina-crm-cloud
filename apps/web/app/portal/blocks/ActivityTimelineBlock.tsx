@@ -45,7 +45,7 @@ export function ActivityTimelineBlock({ config, boot }: Props): JSX.Element {
         fetch(url, {
             signal: ac.signal,
             credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'X-WP-Nonce': boot.rest_nonce },
+            headers: { Accept: 'application/json' },
         })
             .then(async (res) => {
                 if (!res.ok) throw new Error(`http-${res.status}`);

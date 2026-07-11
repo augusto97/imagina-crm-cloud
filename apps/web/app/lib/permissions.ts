@@ -49,7 +49,7 @@ export type Capability = (typeof CAP)[keyof typeof CAP];
  * caps no cambian dentro de la sesión SPA (cambiar de rol requiere
  * logout/login).
  */
-export function useCan(cap: Capability | 'manage_options'): boolean {
+export function useCan(cap: Capability | 'workspace_admin'): boolean {
     const caps = getBootData().user.capabilities;
     return Boolean(caps[cap]);
 }
@@ -59,7 +59,7 @@ export function useCan(cap: Capability | 'manage_options'): boolean {
  * Útil cuando un control acepta el OR de varias caps
  * (ej. `view_records || view_own_records`).
  */
-export function useCanAny(...caps: Array<Capability | 'manage_options'>): boolean {
+export function useCanAny(...caps: Array<Capability | 'workspace_admin'>): boolean {
     const map = getBootData().user.capabilities;
     return caps.some((c) => Boolean(map[c]));
 }
@@ -70,7 +70,7 @@ export function useCanAny(...caps: Array<Capability | 'manage_options'>): boolea
  */
 export function useIsPluginAdmin(): boolean {
     const caps = getBootData().user.capabilities;
-    return Boolean(caps.manage_options) || Boolean(caps[CAP.MANAGE_LISTS]);
+    return Boolean(caps.workspace_admin) || Boolean(caps[CAP.MANAGE_LISTS]);
 }
 
 /**

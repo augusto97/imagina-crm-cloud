@@ -1,11 +1,8 @@
-import { getBootData } from './boot';
-
 /**
- * Módulos cuya integración con el backend NestJS (Imagina Base) YA está
- * cableada. A medida que se conectan de verdad, se ponen en `true` y su UI
- * aparece. Mientras estén en `false`, la UI del módulo se oculta en la nube
- * para no mostrar secciones rotas (el fork las expone todas por herencia del
- * plugin WordPress, donde sí existían).
+ * Módulos heredados del fork cuyo backend en Imagina Base aún no existe.
+ * Mientras estén en `false`, su UI se oculta para no mostrar secciones rotas
+ * (el fork las expone todas por herencia del plugin, donde sí existían).
+ * Al implementar el módulo en el API, se pone en `true` y su UI aparece.
  */
 export const CLOUD_WIRED = {
     dashboards: true,
@@ -15,14 +12,7 @@ export const CLOUD_WIRED = {
     recurrences: false,
 } as const;
 
-export function isCloud(): boolean {
-    return getBootData().cloud;
-}
-
-/**
- * ¿Se debe mostrar este módulo? En WordPress (no-cloud) siempre sí; en la nube
- * solo si ya está cableado al backend nuevo.
- */
+/** ¿Se debe mostrar este módulo? Sólo si su backend ya está cableado. */
 export function moduleEnabled(key: keyof typeof CLOUD_WIRED): boolean {
-    return !isCloud() || CLOUD_WIRED[key];
+    return CLOUD_WIRED[key];
 }

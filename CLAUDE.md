@@ -369,6 +369,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Origin (same-origin por defecto, `WS_ALLOWED_ORIGINS` opt-in). Lint del
         front en 0 errores (hooks condicionales y hooks tras early-return
         corregidos). 242 tests API + 13 nuevos en verde; verificado E2E.
+  - [x] **Limpieza final del modo dual (v0.1.48)**: el fork corría con
+        ramas `if (!cloud)` para el build WordPress que ya no existe — se
+        eliminaron por completo. `lib/boot.ts` sin `window.IMAGINA_CRM_BOOT`
+        ni `restNonce/adminUrl/cloud` (runtime puro, restRoot `/api/v1`);
+        `lib/api.ts` siempre-cloud; ExportButton sin branch async de WP;
+        Topbar sin "Ver WP" ni logout a wp-login; `useAttachments` inerte
+        (sin media library aún — interfaz conservada); FileValueItem único
+        (URL→link); cap interna `manage_options` renombrada a
+        `workspace_admin`. Portal: bloques y `portal/api.ts` sin
+        `X-WP-Nonce`; `DownloadFilesBlock` renderiza URLs del field sin
+        `/wp-json` (los bloques con endpoints aún no implementados —
+        comments/activity/aggregates/records del portal— sólo corren en el
+        preview mock del editor; documentado en `portal/api.ts`). Barrido de
+        alcanzabilidad (madge): 4 huérfanos borrados (PortalRenderer,
+        PortalBlockPreview legacy, PropertiesSidebar, visually-hidden).
+        `isCloud()` eliminado; `moduleEnabled` lee sólo CLOUD_WIRED.
+        Typecheck/lint 0 errores, build OK, verificado E2E en navegador.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

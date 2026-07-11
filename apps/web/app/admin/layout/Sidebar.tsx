@@ -47,7 +47,7 @@ export function Sidebar({
     const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageLists = useCan(CAP.MANAGE_LISTS);
-    const canManageOptions = useCan('manage_options');
+    const canManageOptions = useCan('workspace_admin');
     const canSeeDashboards = (canManageDashboards || canAccessAdmin) && moduleEnabled('dashboards');
     const canSeeSettings = canManageLists || canManageOptions;
     // Sección de operador (superadmin de plataforma). Se detecta probando el

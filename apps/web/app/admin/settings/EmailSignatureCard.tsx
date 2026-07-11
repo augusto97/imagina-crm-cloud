@@ -85,7 +85,7 @@ export function EmailSignatureCard(): JSX.Element {
                                 <div className="imcrm-mb-1 imcrm-text-[10px] imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                                     {__('Vista previa')}
                                 </div>
-                                {/* eslint-disable-next-line react/no-danger */}
+                                { }
                                 <div
                                     className="imcrm-text-sm"
                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(draft) }}

@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     componentDidCatch(error: Error, info: ErrorInfo): void {
         // Log a la consola para que el dev pueda diagnosticar; en
         // producción el usuario verá sólo el mensaje del fallback.
-        // eslint-disable-next-line no-console
+         
         console.error('[ImaginaCRM] ErrorBoundary caught:', error, info);
     }
 

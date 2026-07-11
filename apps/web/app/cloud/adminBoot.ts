@@ -20,7 +20,7 @@ function capsForRole(role: MembershipSummary['role']): Record<string, boolean> {
         case 'admin':
         case 'manager':
             grant(ALL_CAPS);
-            caps.manage_options = true;
+            caps.workspace_admin = true;
             break;
         case 'agent':
             grant([
@@ -49,10 +49,7 @@ function capsForRole(role: MembershipSummary['role']): Record<string, boolean> {
 
 export function hydrateAdminBoot(user: SessionUser, membership: MembershipSummary | null): void {
     setBootData({
-        cloud: true,
         restRoot: '/api/v1',
-        rootId: 'root',
-        locale: user.locale ?? 'es',
         tenantId: membership?.tenant_id ?? null,
         user: {
             id: user.id,

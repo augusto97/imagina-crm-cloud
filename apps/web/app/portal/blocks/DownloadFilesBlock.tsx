@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
     Download,
     FileArchive,
@@ -17,7 +17,7 @@ import type { PortalRecord } from '../types';
 interface Props {
     config: {
         title?: string;
-        /** Slug del field tipo `file` cuyo valor es un attachment ID (o array). */
+        /** Slug del field tipo `file` cuyo valor es una URL (o array de URLs). */
         field_slug?: string;
         /** `list` (default) lista vertical. `grid` 3-col con icono encima. */
         variant?: 'list' | 'grid';
@@ -25,7 +25,7 @@ interface Props {
     record: PortalRecord;
 }
 
-interface ResolvedAttachment {
+interface ResolvedFile {
     id: number;
     title: string;
     url: string;
@@ -72,68 +72,24 @@ function extensionFromUrl(url: string): string | null {
 }
 
 /**
- * Bloque `download_files` (Fase 9 — pulidos). Lista archivos
- * adjuntos al record del cliente.
+ * Bloque `download_files`. Lista archivos adjuntos al record del cliente.
  *
- * Implementación 100% client-side — usa el endpoint nativo de WP
- * `/wp-json/wp/v2/media/<id>` que es público para attachments. No
- * requiere agregar superficie REST al plugin.
+ * Implementación 100% client-side y sin red: el valor del field `file` en
+ * Imagina Base es una URL (o array de URLs) — se listan directamente como
+ * links de descarga. El mime se infiere de la extensión para el icono.
  *
  * Edge cases:
- *  - Field tipo `file` con valor null/0 → "sin archivo".
- *  - Si el field permite múltiples archivos (array de IDs) → lista
- *    cada uno.
- *  - Si el media endpoint devuelve 404 (attachment borrado) → se
- *    omite del listado (no se muestra entry rota).
+ *  - Field con valor null/''/no-URL → "sin archivos".
+ *  - Field múltiple (array) → lista cada URL.
  */
 export function DownloadFilesBlock({ config, record }: Props): JSX.Element {
     const fieldSlug = config.field_slug ?? '';
     const value = record.fields[fieldSlug];
-    const attachmentIds = useMemo(() => normalizeAttachmentIds(value), [value]);
 
     const isPreview = usePortalPreview();
-    const [items, setItems] = useState<ResolvedAttachment[] | null>(isPreview ? MOCK_FILES : null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (isPreview) return;
-        if (fieldSlug === '') {
-            setError('Bloque no configurado: falta field_slug.');
-            return;
-        }
-        if (attachmentIds.length === 0) {
-            setItems([]);
-            return;
-        }
-
-        const ac = new AbortController();
-        // El endpoint nativo de WP acepta múltiples IDs como
-        // `?include=1,2,3`. Eso ahorra round-trips.
-        const url = `/wp-json/wp/v2/media?include=${attachmentIds.join(',')}&per_page=${attachmentIds.length}`;
-        fetch(url, { signal: ac.signal, credentials: 'same-origin' })
-            .then(async (res) => {
-                if (!res.ok) throw new Error(`http-${res.status}`);
-                const body = (await res.json()) as Array<{
-                    id: number;
-                    title: { rendered: string };
-                    source_url: string;
-                    mime_type?: string;
-                }>;
-                setItems(
-                    body.map((m) => ({
-                        id: m.id,
-                        title: stripHtml(m.title.rendered) || `Archivo #${m.id}`,
-                        url: m.source_url,
-                        mimeType: m.mime_type ?? '',
-                    })),
-                );
-            })
-            .catch((err: unknown) => {
-                if (err instanceof DOMException && err.name === 'AbortError') return;
-                setError('No se pudieron cargar los archivos.');
-            });
-        return () => ac.abort();
-    }, [attachmentIds, fieldSlug, isPreview]);
+    const resolved = useMemo(() => normalizeFileUrls(value), [value]);
+    const items: ResolvedFile[] | null = isPreview ? MOCK_FILES : resolved;
+    const error = !isPreview && fieldSlug === '' ? 'Bloque no configurado: falta field_slug.' : null;
 
     const variant = config.variant ?? 'list';
     return (
@@ -208,38 +164,39 @@ export function DownloadFilesBlock({ config, record }: Props): JSX.Element {
 }
 
 /**
- * Normaliza el valor del field a array de attachment IDs.
- * El field tipo `file` puede guardar:
- *  - un único int (single file).
- *  - array de ints (multiple files — config.multiple = true).
- *  - null / 0 / '' → sin archivos.
+ * Normaliza el valor del field a archivos descargables. Acepta una URL
+ * http(s) o un array de URLs; cualquier otro shape se ignora.
  */
-function normalizeAttachmentIds(value: unknown): number[] {
-    if (value === null || value === undefined || value === '' || value === 0) return [];
-    if (typeof value === 'number') return value > 0 ? [value] : [];
-    if (typeof value === 'string') {
-        const n = parseInt(value, 10);
-        return n > 0 ? [n] : [];
-    }
-    if (Array.isArray(value)) {
-        const out: number[] = [];
-        for (const v of value) {
-            if (typeof v === 'number' && v > 0) out.push(v);
-            else if (typeof v === 'string') {
-                const n = parseInt(v, 10);
-                if (n > 0) out.push(n);
-            }
+function normalizeFileUrls(value: unknown): ResolvedFile[] {
+    const urls = (Array.isArray(value) ? value : [value]).filter(
+        (v): v is string => typeof v === 'string' && /^https?:\/\//i.test(v.trim()),
+    );
+    return urls.map((raw, i) => {
+        const url = raw.trim();
+        let name = `Archivo ${i + 1}`;
+        try {
+            const path = decodeURIComponent(new URL(url).pathname);
+            const last = path.split('/').filter(Boolean).pop();
+            if (last) name = last;
+        } catch {
+            // URL rara: dejamos el nombre genérico.
         }
-        return out;
-    }
-    return [];
+        return { id: i + 1, title: name, url, mimeType: mimeFromName(name) };
+    });
 }
 
-function stripHtml(html: string): string {
-    return html.replace(/<[^>]+>/g, '').trim();
+/** Mime aproximado por extensión — solo para elegir el icono. */
+function mimeFromName(name: string): string {
+    const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image/' + ext;
+    if (['mp4', 'mov', 'webm'].includes(ext)) return 'video/' + ext;
+    if (['mp3', 'wav', 'ogg'].includes(ext)) return 'audio/' + ext;
+    if (['zip', 'rar', '7z', 'gz'].includes(ext)) return 'application/zip';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return 'text/csv';
+    return 'application/octet-stream';
 }
 
-const MOCK_FILES: ResolvedAttachment[] = [
+const MOCK_FILES: ResolvedFile[] = [
     { id: 1, title: 'Contrato_2026.pdf',  url: '#', mimeType: 'application/pdf' },
     { id: 2, title: 'Factura_mayo.xlsx',  url: '#', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
     { id: 3, title: 'Logo_corporativo.png', url: '#', mimeType: 'image/png' },
