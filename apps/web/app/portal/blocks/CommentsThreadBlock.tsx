@@ -143,7 +143,8 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
 }
 
 function formatRelativeDate(iso: string): string {
-    const date = new Date(iso.replace(' ', 'T') + 'Z');
+    const normalized = iso.replace(' ', 'T');
+    const date = new Date(normalized.endsWith('Z') ? normalized : normalized + 'Z');
     if (Number.isNaN(date.getTime())) return iso;
     return date.toLocaleString();
 }

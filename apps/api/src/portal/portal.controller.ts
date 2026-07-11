@@ -5,7 +5,9 @@ import {
     HttpCode,
     Inject,
     Param,
+    Patch,
     Post,
+    Query,
     Req,
     Res,
     UseGuards,
@@ -13,10 +15,16 @@ import {
 import {
     consumeMagicLinkSchema,
     issueMagicLinkSchema,
+    portalCommentSchema,
+    portalUpdateMeSchema,
+    type ActivityDto,
+    type CommentDto,
     type ConsumeMagicLinkInput,
     type IssueMagicLinkInput,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalCommentInput,
+    type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
@@ -77,5 +85,69 @@ export class PortalController {
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<PortalBoot> {
         return this.portal.me(req.authUserId!);
+    }
+
+    // --- Endpoints de los bloques del portal (client autenticado) ----------
+    // Los bloques del SPA fetchean crudo y esperan el envelope `{data: …}`,
+    // así que estas rutas lo devuelven explícito. El scoping al record del
+    // cliente se resuelve SIEMPRE server-side (portal_links) — jamás por
+    // parámetros del request.
+
+    /** El cliente edita su propio record (whitelist del template). */
+    @Patch('portal/me')
+    @UseGuards(SessionGuard)
+    updateMe(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(portalUpdateMeSchema)) input: PortalUpdateMeInput,
+    ): Promise<{ ok: true }> {
+        return this.portal.updateMe(req.authUserId!, input);
+    }
+
+    @Get('portal/me/comments')
+    @UseGuards(SessionGuard)
+    async myComments(@Req() req: FastifyRequest): Promise<{ data: CommentDto[] }> {
+        return { data: await this.portal.myComments(req.authUserId!) };
+    }
+
+    @Post('portal/me/comments')
+    @HttpCode(201)
+    @UseGuards(SessionGuard)
+    async createMyComment(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(portalCommentSchema)) input: PortalCommentInput,
+    ): Promise<{ data: CommentDto }> {
+        return { data: await this.portal.createMyComment(req.authUserId!, input) };
+    }
+
+    @Get('portal/me/activity')
+    @UseGuards(SessionGuard)
+    async myActivity(
+        @Req() req: FastifyRequest,
+        @Query('limit') limit?: string,
+    ): Promise<{ data: ActivityDto[] }> {
+        return { data: await this.portal.myActivity(req.authUserId!, Number(limit ?? 50)) };
+    }
+
+    /** Records de otra lista visibles bajo el scope del portal. */
+    @Get('portal/lists/:slug/records')
+    @UseGuards(SessionGuard)
+    listRecords(
+        @Req() req: FastifyRequest,
+        @Param('slug') slug: string,
+        @Query('page') page?: string,
+        @Query('per_page') perPage?: string,
+    ) {
+        return this.portal.listRecords(req.authUserId!, slug, Number(page ?? 1), Number(perPage ?? 10));
+    }
+
+    /** Totales bajo el scope del portal (KPI / stats grid). */
+    @Get('portal/lists/:slug/aggregates')
+    @UseGuards(SessionGuard)
+    async aggregates(
+        @Req() req: FastifyRequest,
+        @Param('slug') slug: string,
+        @Query('fields') fields?: string,
+    ) {
+        return { data: await this.portal.aggregates(req.authUserId!, slug, fields ?? '') };
     }
 }

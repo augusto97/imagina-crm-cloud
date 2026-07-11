@@ -400,8 +400,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         salientes al borrar (targets soft-borrados se filtran al leer). El
         adapter del front traduce las claves a slug (la UI lee
         `record.relations[slug]`). 3 tests nuevos (245 en verde) + E2E.
-  - [ ] Portal del cliente completo (bloques estáticos + endpoints
-        comments/activity/aggregates/records del portal).
+  - [x] **Portal del cliente completo (v0.1.50)**: el portal del cliente
+        renderiza los ~18 tipos de bloque del editor (se restauró
+        `PortalRenderer` como componente presentacional puro, montado en el
+        SPA con el record traducido a slugs). Endpoints nuevos del portal
+        (SessionGuard + vínculo `portal_links`, JAMÁS ids del cliente):
+        `GET/POST /portal/me/comments`, `GET /portal/me/activity`,
+        `PATCH /portal/me` (whitelist de slugs desde los bloques
+        `editable_form` del template — sin template nadie edita; slug fuera
+        → 403 explícito), `GET /portal/lists/:slug/records` y
+        `.../aggregates` — ambos bajo el **scope del portal** (paridad
+        `PortalScopeService`): lista del portal → solo su record; campo
+        `user` → filas suyas; campo `relation` hacia la lista del portal →
+        filas vinculadas; si no → `false` (fail-closed). Campos ocultos por
+        ACL (rol client) filtrados en records y aggregates. `portal/me`
+        expone `list_slug`/`user_id` para el boot de los bloques. Fechas de
+        los bloques aceptan ISO-Z. 4 tests nuevos (aislamiento por relation,
+        whitelist, fail-closed) + E2E en navegador con template completo.
   - [ ] Búsqueda de records server-side (hoy: client-side sobre la página).
   - [ ] Menciones (@ en comentarios + campana).
   - [ ] Módulo de archivos/media propio (upload, thumbnails, covers).

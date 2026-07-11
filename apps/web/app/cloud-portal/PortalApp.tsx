@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
+import { PortalRenderer, type PortalRendererData } from '@/portal/PortalRenderer';
+import type { PortalBlock, PortalBootData } from '@/portal/types';
 
 /**
  * SPA del portal del cliente (ADR-S: F3 / CONTRACT §9). Dos rutas:
@@ -64,11 +66,45 @@ function PortalPage(): JSX.Element {
 
 function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
     const dataFields = boot.fields.filter((f) => isDataField(f.type));
+    // Los bloques del portal leen el record por SLUG (herencia del plugin);
+    // el backend keyea por f{id} → traducimos acá una sola vez.
+    const rendererData = useMemo<PortalRendererData>(() => {
+        const fields: Record<string, unknown> = {};
+        const relations: Record<string, unknown> = {};
+        for (const f of boot.fields) {
+            const key = jsonbKeyForField(f.id);
+            if (key in boot.record.data) fields[f.slug] = boot.record.data[key];
+            const rel = boot.record.relations?.[key];
+            if (rel !== undefined) relations[f.slug] = rel;
+        }
+        return {
+            record: { id: boot.record.id, fields, relations },
+            fields: boot.fields.map((f) => ({
+                slug: f.slug,
+                label: f.label,
+                type: f.type,
+                config: f.config,
+            })),
+            template: { blocks: boot.template as unknown as PortalBlock[] },
+        };
+    }, [boot]);
+
+    const portalBoot = useMemo<PortalBootData>(
+        () => ({
+            rest_root: '/api/v1',
+            list_slug: boot.list_slug,
+            user_id: boot.user_id,
+            record_id: boot.record.id,
+        }),
+        [boot],
+    );
+
+    const hasTemplate = rendererData.template.blocks.length > 0;
 
     return (
         <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground">
             <header className="imcrm-border-b imcrm-border-border imcrm-px-6 imcrm-py-4">
-                <div className="imcrm-mx-auto imcrm-max-w-2xl">
+                <div className="imcrm-mx-auto imcrm-max-w-4xl">
                     <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                         {boot.list_name}
                     </p>
@@ -76,15 +112,21 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                 </div>
             </header>
 
-            <main className="imcrm-mx-auto imcrm-max-w-2xl imcrm-space-y-4 imcrm-p-6">
-                <TemplateBlocks template={boot.template} />
-                <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-                    <dl className="imcrm-space-y-3">
-                        {dataFields.map((f) => (
-                            <FieldRow key={f.id} field={f} value={boot.record.data[jsonbKeyForField(f.id)]} />
-                        ))}
-                    </dl>
-                </section>
+            <main className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6">
+                {hasTemplate ? (
+                    // Template diseñado en el editor: TODOS los tipos de bloque
+                    // (estáticos + interactivos contra /portal/*).
+                    <PortalRenderer boot={portalBoot} data={rendererData} />
+                ) : (
+                    // Sin template: fallback con los datos del record.
+                    <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
+                        <dl className="imcrm-space-y-3">
+                            {dataFields.map((f) => (
+                                <FieldRow key={f.id} field={f} value={boot.record.data[jsonbKeyForField(f.id)]} />
+                            ))}
+                        </dl>
+                    </section>
+                )}
             </main>
         </div>
     );
@@ -102,58 +144,7 @@ function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Eleme
     );
 }
 
-/**
- * Renderer mínimo del template del portal. El template es JSON libre
- * (`list.settings.portal_template`); acá cubrimos los bloques de texto más
- * comunes (heading/notice/static_text) y los desconocidos se ignoran en
- * silencio — mismo criterio de versionado que el renderer del plugin.
- */
-function TemplateBlocks({ template }: { template: Array<Record<string, unknown>> }): JSX.Element | null {
-    const blocks = template.filter((b) => typeof b['type'] === 'string');
-    if (blocks.length === 0) return null;
 
-    return (
-        <>
-            {blocks.map((block, i) => {
-                const type = block['type'] as string;
-                const config = (block['config'] as Record<string, unknown> | undefined) ?? block;
-                const title = asText(config['title']);
-                const body = asText(config['html'] ?? config['text'] ?? config['message']);
-                if (type === 'heading') {
-                    return (
-                        <h2 key={i} className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                            {title ?? body ?? ''}
-                        </h2>
-                    );
-                }
-                if (type === 'notice') {
-                    return (
-                        <div
-                            key={i}
-                            className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-4 imcrm-text-sm"
-                        >
-                            {title && <p className="imcrm-font-medium">{title}</p>}
-                            {body && <p className="imcrm-text-muted-foreground">{body}</p>}
-                        </div>
-                    );
-                }
-                if (type === 'static_text' && (title || body)) {
-                    return (
-                        <section key={i} className="imcrm-space-y-1">
-                            {title && <h3 className="imcrm-text-sm imcrm-font-semibold">{title}</h3>}
-                            {body && <p className="imcrm-text-sm imcrm-text-muted-foreground">{body}</p>}
-                        </section>
-                    );
-                }
-                return null;
-            })}
-        </>
-    );
-}
-
-function asText(v: unknown): string | undefined {
-    return typeof v === 'string' && v.trim() !== '' ? v : undefined;
-}
 
 function Centered({ children }: { children: React.ReactNode }): JSX.Element {
     return (

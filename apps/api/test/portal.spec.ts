@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
@@ -16,6 +16,7 @@ import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
+import { CommentsRepository } from '../src/comments/comments.repository';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { MailService } from '../src/mail/mail.service';
 import type { MailMessage, MailTransport } from '../src/mail/mail.types';
@@ -71,7 +72,22 @@ describe('PortalService (Postgres + Redis reales)', () => {
         mailbox = new CapturingMailTransport();
         // MailService sin onModuleInit → enqueue cae a sendNow → transporte captura.
         const mail = new MailService(env, mailbox);
-        portal = new PortalService(pg.db, redis, env, tenantDb, listsService, sessions, mail);
+        const activityService = new ActivityService(tenantDb, new ActivityRepository(), listsService);
+        portal = new PortalService(
+            pg.db,
+            redis,
+            env,
+            tenantDb,
+            listsService,
+            sessions,
+            mail,
+            fieldsService,
+            new CommentsRepository(),
+            new ActivityRepository(),
+            activityService,
+            rt,
+            new AutomationDispatcher(),
+        );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
@@ -135,6 +151,107 @@ describe('PortalService (Postgres + Redis reales)', () => {
         const session = await sessions.get(sessionToken);
         const boot = await portal.me(session!.userId);
         expect(boot.template).toEqual([{ type: 'hero' }, { type: 'faq' }]);
+    });
+
+    // --- Endpoints de bloques del portal (scope + whitelist) ----------------
+
+    /** Sesión de cliente lista para usar (issue + consume). */
+    async function clientSession(email: string, recId: number = recordId): Promise<number> {
+        const link = await portal.issue(tenantId, 'clientes', { record_id: recId, email });
+        const { sessionToken } = await portal.consume(link.token);
+        const session = await sessions.get(sessionToken);
+        return session!.userId;
+    }
+
+    it('comments: el cliente lista y crea notas de SU record', async () => {
+        const uid = await clientSession('coment@acme.test');
+        expect(await portal.myComments(uid)).toHaveLength(0);
+        const created = await portal.createMyComment(uid, { content: 'Hola, ¿novedades?' });
+        expect(created).toMatchObject({ record_id: recordId, user_id: uid, kind: 'note' });
+        expect((created as { content?: string }).content).toBe('Hola, ¿novedades?');
+        const items = await portal.myComments(uid);
+        expect(items).toHaveLength(1);
+    });
+
+    it('activity: timeline del record del cliente', async () => {
+        const uid = await clientSession('act@acme.test');
+        const items = await portal.myActivity(uid, 50);
+        // Al menos el record_created del seed.
+        expect(items.length).toBeGreaterThan(0);
+        expect(items.every((a) => a.record_id === recordId)).toBe(true);
+    });
+
+    it('updateMe: whitelist del template — sin editable_form nadie edita; slug fuera → 403', async () => {
+        const uid = await clientSession('edit@acme.test');
+        // El template actual no tiene editable_form → 403.
+        await expect(portal.updateMe(uid, { fields: { nombre: 'Hackeado' } })).rejects.toBeInstanceOf(
+            ForbiddenException,
+        );
+        // Habilitamos edición SOLO de `nombre`.
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['nombre'] } }],
+                },
+            },
+        });
+        await portal.updateMe(uid, { fields: { nombre: 'ACME Renovada' } });
+        const boot = await portal.me(uid);
+        expect(boot.record.data[`f${fieldId}`]).toBe('ACME Renovada');
+        // Slug fuera de la whitelist → 403 explícito.
+        const extra = await fieldsService.create(tenantId, 'clientes', { label: 'Interno', type: 'text', slug: 'interno' });
+        void extra;
+        await expect(portal.updateMe(uid, { fields: { interno: 'x' } })).rejects.toBeInstanceOf(
+            ForbiddenException,
+        );
+        // Valor inválido → 400.
+        const num = await fieldsService.create(tenantId, 'clientes', { label: 'Cupo', type: 'number', slug: 'cupo' });
+        void num;
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['cupo'] } }],
+                },
+            },
+        });
+        await expect(portal.updateMe(uid, { fields: { cupo: 'no-numero' } })).rejects.toBeInstanceOf(
+            BadRequestException,
+        );
+    });
+
+    it('listRecords + aggregates: scope por relation hacia el record del cliente (fail-closed)', async () => {
+        const uid = await clientSession('scope@acme.test');
+
+        // Lista "pedidos" con relación → clientes y un monto.
+        await listsService.create(tenantId, { name: 'Pedidos' });
+        const monto = await fieldsService.create(tenantId, 'pedidos', { label: 'Monto', type: 'number', slug: 'monto' });
+        const cliRel = await fieldsService.create(tenantId, 'pedidos', {
+            label: 'Cliente', type: 'relation', slug: 'cliente',
+            config: { target_list_id: (await listsService.get(tenantId, 'clientes')).id },
+        });
+
+        // Otro record cliente (ajeno) para verificar el aislamiento.
+        const otro = await recordsService.create(tenantId, admin, 'clientes', { data: { [`f${fieldId}`]: 'Otra Corp' } });
+
+        // 2 pedidos del cliente, 1 del ajeno.
+        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 100, [`f${cliRel.id}`]: [recordId] } });
+        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 250, [`f${cliRel.id}`]: [recordId] } });
+        await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 999, [`f${cliRel.id}`]: [otro.id] } });
+
+        const page = await portal.listRecords(uid, 'pedidos', 1, 10);
+        expect(page.meta.total).toBe(2);
+        expect(page.data.map((r) => r.fields.monto).sort()).toEqual([100, 250]);
+
+        const agg = await portal.aggregates(uid, 'pedidos', String(monto.id));
+        expect(agg.totals.monto).toMatchObject({ count: 2, sum: 350 });
+
+        // Lista sin vínculo con el cliente → fail-closed (vacío), nunca todo.
+        await listsService.create(tenantId, { name: 'Secretos' });
+        const sf = await fieldsService.create(tenantId, 'secretos', { label: 'Dato', type: 'text', slug: 'dato' });
+        await recordsService.create(tenantId, admin, 'secretos', { data: { [`f${sf.id}`]: 'confidencial' } });
+        const closed = await portal.listRecords(uid, 'secretos', 1, 10);
+        expect(closed.meta.total).toBe(0);
+        expect(closed.data).toHaveLength(0);
     });
 
     it('el token es de un solo uso', async () => {
