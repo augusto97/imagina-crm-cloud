@@ -86,7 +86,6 @@ export function EditableFormBlock({ config, record, boot }: Props): JSX.Element 
                 credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-WP-Nonce': boot.rest_nonce,
                     Accept: 'application/json',
                 },
                 body: JSON.stringify({ fields: payload }),
@@ -110,7 +109,7 @@ export function EditableFormBlock({ config, record, boot }: Props): JSX.Element 
             setFeedback({ kind: 'success', msg: 'Cambios guardados.' });
         } catch (err) {
             setFeedback({ kind: 'error', msg: 'Error de conexión. Reintenta.' });
-            // eslint-disable-next-line no-console
+             
             console.warn('[imagina-crm portal] update failed', err);
         } finally {
             setSubmitting(false);

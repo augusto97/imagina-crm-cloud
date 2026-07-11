@@ -173,7 +173,7 @@ export function ImportDialog({
                 );
                 setStep('map');
             } catch (err) {
-                // eslint-disable-next-line no-console
+                 
                 console.error('[imcrm import] preview failed:', err);
                 if (err instanceof ApiError) {
                     setError(err.message);

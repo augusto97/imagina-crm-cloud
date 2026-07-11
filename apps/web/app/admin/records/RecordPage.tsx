@@ -121,7 +121,7 @@ export function RecordPage(): JSX.Element {
                 record={record.data}
                 fields={fields.data}
                 currentUserId={boot.user.id}
-                isAdmin={boot.user.capabilities.manage_options === true}
+                isAdmin={boot.user.capabilities.workspace_admin === true}
                 onDelete={() => void handleDelete()}
                 deleting={remove.isPending}
             />
@@ -276,7 +276,7 @@ export function RecordPage(): JSX.Element {
                                 listId={list.data.id}
                                 recordId={record.data.id}
                                 currentUserId={boot.user.id}
-                                isAdmin={boot.user.capabilities.manage_options === true}
+                                isAdmin={boot.user.capabilities.workspace_admin === true}
                             />
                         ) : (
                             <ActivityPanel listId={list.data.id} recordId={record.data.id} />

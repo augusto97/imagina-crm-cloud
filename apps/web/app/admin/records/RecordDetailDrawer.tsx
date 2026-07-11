@@ -214,7 +214,7 @@ export function RecordDetailDrawer({
                             listId={listId}
                             recordId={record.id}
                             currentUserId={boot.user.id}
-                            isAdmin={boot.user.capabilities.manage_options === true}
+                            isAdmin={boot.user.capabilities.workspace_admin === true}
                         />
                     ) : (
                         <ActivityPanel listId={listId} recordId={record.id} />

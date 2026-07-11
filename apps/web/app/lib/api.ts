@@ -103,11 +103,10 @@ function parseSlugRename(header: string | null): SlugRenamedHint | undefined {
     return out.old !== undefined && out.new !== undefined ? (out as SlugRenamedHint) : undefined;
 }
 
-// --- Adaptación de shape en modo nube (Imagina Base) -----------------------
-// El backend NestJS y el fork WP no comparten exactamente el mismo shape.
-// Estas funciones traducen SOLO en modo cloud (`boot.cloud`), dejando el
-// build WordPress intacto. Deltas cubiertos: envelope inconsistente, record
-// `data`↔`fields`, paginación cursor→página, y body `{fields}`→`{data}`.
+// --- Adaptación de shape al backend NestJS (Imagina Base) -------------------
+// La UI heredada del fork y el backend no comparten exactamente el mismo
+// shape. Estas funciones traducen en el transporte: envelope inconsistente,
+// record `data`↔`fields`, paginación cursor→página y body `{fields}`→`{data}`.
 
 /** ¿El path apunta al recurso records (listado o item), no bulk/groups? */
 function recordsPathKind(path: string): 'list' | 'item' | null {
@@ -328,16 +327,14 @@ function cloudStub(method: Method, path: string): { data: unknown } | null {
 
 async function request<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
     const boot = getBootData();
-    if (boot.cloud) {
-        const stub = cloudStub(method, path);
-        if (stub) return { data: stub.data as T };
-    }
-    // En la nube, el listado de records pagina por CURSOR con `limit` (máx 200),
-    // pero la UI del fork manda `per_page`/`page`. Traducimos `per_page → limit`
-    // (capado a 200) para que Kanban/Tarjetas/Calendario —que piden per_page=500—
-    // traigan más de los 50 por defecto en vez de quedarse cortos.
+    const stub = cloudStub(method, path);
+    if (stub) return { data: stub.data as T };
+    // El listado de records pagina por CURSOR con `limit` (máx 200), pero la
+    // UI del fork manda `per_page`/`page`. Traducimos `per_page → limit`
+    // (capado a 200) para que Kanban/Tarjetas/Calendario —que piden
+    // per_page=500— traigan más de los 50 por defecto.
     const query =
-        boot.cloud && method === 'GET' && recordsPathKind(path) === 'list'
+        method === 'GET' && recordsPathKind(path) === 'list'
             ? cloudRecordsQuery(opts.query)
             : opts.query;
     const url = buildUrl(path, query);
@@ -345,18 +342,14 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
     const headers: Record<string, string> = {
         Accept: 'application/json',
     };
-    // Auth: en la nube, cookie de sesión + tenant activo; en WP, nonce.
-    if (boot.cloud) {
-        if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
-    } else if (boot.restNonce) {
-        headers['X-WP-Nonce'] = boot.restNonce;
-    }
+    // Auth: cookie de sesión httpOnly + workspace activo por header.
+    if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
 
     let body: BodyInit | undefined;
     if (opts.body !== undefined && method !== 'GET') {
         headers['Content-Type'] = 'application/json';
         let payload: unknown = opts.body;
-        if (boot.cloud && recordsPathKind(path) !== null) {
+        if (recordsPathKind(path) !== null) {
             const map = await ensureFieldMap(listKeyFromPath(path) ?? '');
             payload = mapRecordBody(opts.body, map);
         }
@@ -367,7 +360,7 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
         method,
         headers,
         body,
-        credentials: boot.cloud ? 'include' : 'same-origin',
+        credentials: 'include',
         signal: opts.signal,
     });
 
@@ -392,22 +385,8 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
 
     const slugRenamed = parseSlugRename(response.headers.get('X-Imagina-CRM-Slug-Renamed'));
 
-    // Modo nube: normalizamos el shape del backend NestJS.
-    if (boot.cloud) {
-        const normalized = await normalizeCloudResponse<T>(path, payload);
-        return { ...normalized, slugRenamed };
-    }
-
-    // Modo WordPress (build del plugin): envelope `{data, meta}` garantizado.
-    if (payload === null || typeof payload !== 'object') {
-        return { data: undefined as unknown as T };
-    }
-    const envelope = payload as { data?: unknown; meta?: Record<string, unknown> };
-    return {
-        data: envelope.data as T,
-        meta: envelope.meta,
-        slugRenamed,
-    };
+    const normalized = await normalizeCloudResponse<T>(path, payload);
+    return { ...normalized, slugRenamed };
 }
 
 export const api = {

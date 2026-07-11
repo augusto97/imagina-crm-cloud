@@ -1,19 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { isCloud } from '@/lib/cloudFeatures';
-
 /**
- * Resuelve un set de attachment IDs a sus URLs (full + thumbnail).
- * Hace un único request batch al endpoint nativo de WP
- * `/wp-json/wp/v2/media?include=...` — eficiente para listas de
- * tarjetas/galerías que muestran muchas imágenes simultáneamente.
+ * Resolución de attachment IDs a URLs — herencia del plugin, donde los IDs
+ * apuntaban a la media library de WordPress. Imagina Base todavía NO tiene
+ * módulo de archivos propio (STANDALONE: candidato a fase futura con storage
+ * S3-compatible), así que este hook devuelve siempre un mapa vacío y los
+ * consumidores (`CardsView` cover, galerías) degradan a su placeholder.
  *
- * Fase 12.B+ — usado por `CardsView` para resolver el `coverField`.
- * También puede reemplazar el fetch por-ítem de `SimpleBlockViews`
- * en un refactor futuro.
- *
- * El resultado se cachea con TanStack Query: ids ya cargados en
- * otra vista no se vuelven a pedir.
+ * Se conserva la interfaz para que el día que exista el módulo de media el
+ * cableado sea solo reimplementar el queryFn.
  */
 
 export interface ResolvedAttachment {
@@ -30,42 +25,9 @@ export function useAttachments(ids: number[]) {
 
     return useQuery({
         queryKey: ['imcrm', 'attachments', dedupedIds],
-        queryFn: async (): Promise<Map<number, ResolvedAttachment>> => {
-            // En la nube no existe la media library de WP — nunca fetchear.
-            if (isCloud() || dedupedIds.length === 0) return new Map();
-            const root = (window as { wpApiSettings?: { root: string; nonce: string } }).wpApiSettings;
-            const headers: Record<string, string> = { Accept: 'application/json' };
-            if (root?.nonce) headers['X-WP-Nonce'] = root.nonce;
-            const base = root?.root ?? '/wp-json/';
-            const url = `${base}wp/v2/media?include=${dedupedIds.join(',')}&per_page=${dedupedIds.length}&_fields=id,source_url,mime_type,title,media_details`;
-            const res = await fetch(url, { headers, credentials: 'same-origin' });
-            if (! res.ok) throw new Error(`wp-media-fetch-${res.status}`);
-            const body = (await res.json()) as Array<{
-                id: number;
-                source_url: string;
-                mime_type: string;
-                title: { rendered: string };
-                media_details?: { sizes?: { thumbnail?: { source_url?: string }; medium?: { source_url?: string } } };
-            }>;
-            const map = new Map<number, ResolvedAttachment>();
-            for (const m of body) {
-                map.set(m.id, {
-                    id: m.id,
-                    url: m.source_url,
-                    thumbUrl:
-                        m.media_details?.sizes?.medium?.source_url
-                        ?? m.media_details?.sizes?.thumbnail?.source_url,
-                    title: stripHtml(m.title.rendered) || `#${m.id}`,
-                    mimeType: m.mime_type,
-                });
-            }
-            return map;
-        },
-        enabled: dedupedIds.length > 0 && !isCloud(),
-        staleTime: 5 * 60 * 1000, // 5 min — los media de WP rara vez cambian de URL.
+        queryFn: async (): Promise<Map<number, ResolvedAttachment>> => new Map(),
+        // Sin backend de media no hay nada que pedir: la query queda inerte.
+        enabled: false,
+        staleTime: Infinity,
     });
-}
-
-function stripHtml(html: string): string {
-    return html.replace(/<[^>]+>/g, '').trim();
 }

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useFields } from '@/hooks/useFields';
 import { getBootData } from '@/lib/boot';
-import { isCloud } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FilterTree } from '@/types/record';
@@ -18,19 +17,9 @@ interface ExportButtonProps {
     filterTree?: FilterTree;
     /** Si pasas IDs, son los pre-seleccionados en el dialog. */
     fieldIds?: number[];
-    /** Total de records de la lista actual. Si > ASYNC_THRESHOLD,
-     * el export pasa por Action Scheduler en lugar de stream
-     * síncrono (Fase 17.A). */
-    totalRecords?: number;
     disabled?: boolean;
 }
 
-/**
- * Umbral en filas por encima del cual el export se procesa async
- * via Action Scheduler. Sincronizado con
- * `ExportJobService::ASYNC_THRESHOLD_ROWS` del backend.
- */
-const ASYNC_THRESHOLD = 5000;
 
 /**
  * Botón "Exportar" en la toolbar de Records (Fase 15.B).
@@ -52,7 +41,6 @@ export function ExportButton({
     listSlug,
     filterTree,
     fieldIds: initialFieldIds,
-    totalRecords,
     disabled,
 }: ExportButtonProps): JSX.Element {
     const [open, setOpen] = useState(false);
@@ -121,49 +109,23 @@ export function ExportButton({
                 params.set('with_bom', '1');
             }
 
-            const cloud = isCloud();
-            if (cloud) {
-                // El backend cloud sirve CSV cuando format=csv.
-                params.set('format', 'csv');
-            }
-
-            // Async opt-in cuando la lista pasa el umbral (Fase 17.A).
-            // El backend en modo async devuelve 202 con `job_id`; el
-            // frontend lo polea hasta que esté ready. Solo WP: en la
-            // nube no existe /export/jobs/:id — siempre stream síncrono.
-            const useAsync = !cloud && (totalRecords ?? 0) > ASYNC_THRESHOLD;
-            if (useAsync) {
-                params.set('async', '1');
-            }
+            // El backend sirve CSV en streaming cuando format=csv.
+            params.set('format', 'csv');
 
             const base = boot.restRoot.replace(/\/$/, '');
             const url = `${base}/lists/${listSlug}/export${params.toString() ? `?${params}` : ''}`;
 
-            // Auth: en la nube, cookie de sesión + tenant activo; en WP, nonce.
+            // Auth: cookie de sesión + workspace activo por header.
             const headers: Record<string, string> = {};
-            if (cloud) {
-                if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
-            } else {
-                headers['X-WP-Nonce'] = boot.restNonce;
-            }
+            if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
 
             const res = await fetch(url, {
                 method: 'GET',
                 headers,
-                credentials: cloud ? 'include' : 'same-origin',
+                credentials: 'include',
             });
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}`);
-            }
-
-            if (useAsync && res.status === 202) {
-                const body = (await res.json()) as {
-                    data: { job_id: number; poll_url: string };
-                };
-                const jobId = body.data.job_id;
-                await pollAndDownload(boot, jobId);
-                setOpen(false);
-                return;
             }
 
             const blob = await res.blob();
@@ -182,7 +144,7 @@ export function ExportButton({
 
             setOpen(false);
         } catch {
-            // eslint-disable-next-line no-alert
+             
             alert(__('No se pudo exportar. Vuelve a intentarlo.'));
         } finally {
             setBusy(false);
@@ -346,58 +308,3 @@ export function ExportButton({
     );
 }
 
-/**
- * Espera a que el job de export termine (status `ready` o
- * `failed`) y dispara el download del archivo. Polea cada 2s
- * hasta 5 minutos (max ~150 requests).
- *
- * Si el server marca `failed`, lanza Error con el mensaje del
- * backend para que el catch superior muestre alert.
- */
-async function pollAndDownload(
-    boot: ReturnType<typeof getBootData>,
-    jobId: number,
-): Promise<void> {
-    const base = boot.restRoot.replace(/\/$/, '');
-    const pollUrl = `${base}/export/jobs/${jobId}`;
-    const start = Date.now();
-    const TIMEOUT_MS = 5 * 60 * 1000;
-    const INTERVAL_MS = 2000;
-
-    while (Date.now() - start < TIMEOUT_MS) {
-        await new Promise((r) => setTimeout(r, INTERVAL_MS));
-        const res = await fetch(pollUrl, {
-            method: 'GET',
-            headers: { 'X-WP-Nonce': boot.restNonce, Accept: 'application/json' },
-            credentials: 'same-origin',
-        });
-        if (!res.ok) {
-            throw new Error(`Poll HTTP ${res.status}`);
-        }
-        const body = (await res.json()) as {
-            data: {
-                status: string;
-                error?: string | null;
-                download_url?: string;
-            };
-        };
-        const { status, error, download_url: downloadUrl } = body.data;
-
-        if (status === 'ready' && downloadUrl) {
-            // El download URL ya viene con el token firmado.
-            // Apuntamos un <a> al endpoint — el browser dispara el
-            // download nativo via Content-Disposition.
-            const a = document.createElement('a');
-            a.href = downloadUrl;
-            a.target = '_self';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            return;
-        }
-        if (status === 'failed') {
-            throw new Error(error || 'Export job failed.');
-        }
-    }
-    throw new Error('Export job timeout — recargá la página y revisá "Mis exports".');
-}

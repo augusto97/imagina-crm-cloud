@@ -1,12 +1,13 @@
 /**
- * Cliente fetch contra `/imagina-crm/v1/portal/*` (Fase 9 — 3.D).
+ * Cliente fetch de los bloques del portal contra `boot.rest_root/portal/*`.
  *
- * Distinto del cliente del bundle público de Fase 8:
- *  - Manda credenciales (cookies WP) — el portal exige autenticación.
- *  - Envía el `X-WP-Nonce` que el shortcode inyectó vía
- *    `data-imcrm-portal-boot`.
- *  - Sin cache en memoria — las respuestas del portal pueden cambiar
- *    en cualquier momento por updates del admin.
+ *  - Manda credenciales (cookie de sesión del portal) — exige autenticación.
+ *  - Sin cache en memoria — las respuestas del portal pueden cambiar en
+ *    cualquier momento por updates del admin.
+ *
+ * Nota: varios de estos endpoints (`/portal/me/comments`, `…/activity`,
+ * `…/aggregates`, `…/records`) aún no existen en el backend — los bloques
+ * que los usan solo corren en el preview del editor (boot mock, sin red).
  */
 
 import type {
@@ -17,7 +18,7 @@ import type {
 
 export async function fetchMe(boot: PortalBootData, signal?: AbortSignal): Promise<PortalMeResponse> {
     const url = `${boot.rest_root.replace(/\/$/, '')}/portal/me`;
-    return doFetch<PortalMeResponse>(url, boot, signal);
+    return doFetch<PortalMeResponse>(url, signal);
 }
 
 export async function fetchRelatedRecords(
@@ -30,16 +31,15 @@ export async function fetchRelatedRecords(
     const q = new URLSearchParams();
     q.set('page', String(params.page ?? 1));
     if (params.per_page !== undefined) q.set('per_page', String(params.per_page));
-    return doFetch<PortalRecordsResponse>(`${base}?${q.toString()}`, boot, signal);
+    return doFetch<PortalRecordsResponse>(`${base}?${q.toString()}`, signal);
 }
 
-async function doFetch<T>(url: string, boot: PortalBootData, signal?: AbortSignal): Promise<T> {
+async function doFetch<T>(url: string, signal?: AbortSignal): Promise<T> {
     const res = await fetch(url, {
         signal,
         credentials: 'same-origin',
         headers: {
             Accept: 'application/json',
-            'X-WP-Nonce': boot.rest_nonce,
         },
     });
     if (!res.ok) {

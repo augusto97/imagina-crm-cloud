@@ -50,7 +50,7 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
         fetch(`${baseUrl}/portal/me/comments`, {
             signal: ac.signal,
             credentials: 'same-origin',
-            headers: { Accept: 'application/json', 'X-WP-Nonce': boot.rest_nonce },
+            headers: { Accept: 'application/json' },
         })
             .then(async (res) => {
                 if (!res.ok) throw new Error(`http-${res.status}`);
@@ -62,7 +62,7 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
                 setError('No se pudieron cargar los comentarios.');
             });
         return () => ac.abort();
-    }, [baseUrl, boot.rest_nonce, isPreview]);
+    }, [baseUrl, isPreview]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
@@ -77,7 +77,6 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    'X-WP-Nonce': boot.rest_nonce,
                 },
                 body: JSON.stringify({ content }),
             });

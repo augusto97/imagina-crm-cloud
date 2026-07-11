@@ -417,7 +417,6 @@ const applyView = (view: SavedViewEntity | null): void => {
                             listId={list.data.id}
                             listSlug={list.data.slug}
                             filterTree={state.filterTree}
-                            totalRecords={records.data?.meta.total}
                             disabled={!fields.data || fields.data.length === 0}
                         />
                     )}

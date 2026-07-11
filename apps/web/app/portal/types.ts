@@ -1,13 +1,12 @@
 /**
- * Tipos compartidos del bundle del portal del cliente (Fase 9 — 3.D).
+ * Tipos compartidos de los bloques del portal del cliente.
  *
- * Espejan los shapes que emite el `PortalController` y `PortalShortcode`
- * server-side. Estables — cambios deben coordinarse con el PHP.
+ * Espejan los shapes que emite el backend del portal. En el editor de
+ * plantillas, `PortalBlockLivePreview` inyecta un boot mock (sin red).
  */
 
 export interface PortalBootData {
     rest_root: string;
-    rest_nonce: string;
     list_slug: string;
     user_id: number;
     record_id: number;
