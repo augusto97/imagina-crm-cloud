@@ -16,6 +16,7 @@ import { FieldsModule } from './fields/fields.module';
 import { HealthModule } from './health/health.module';
 import { ListsModule } from './lists/lists.module';
 import { MailModule } from './mail/mail.module';
+import { FilesModule } from './files/files.module';
 import { MeModule } from './me/me.module';
 import { MembersModule } from './members/members.module';
 import { ObservabilityModule } from './observability/observability.module';
@@ -46,6 +47,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AuthModule,
         WorkspacesModule,
         MeModule,
+        FilesModule,
         MembersModule,
         ListsModule,
         FieldsModule,

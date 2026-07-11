@@ -1,15 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { api } from '@/lib/api';
+
 /**
- * Resolución de attachment IDs a URLs — herencia del plugin, donde los IDs
- * apuntaban a la media library de WordPress. Imagina Base todavía NO tiene
- * módulo de archivos propio (STANDALONE: candidato a fase futura con storage
- * S3-compatible), así que este hook devuelve siempre un mapa vacío y los
- * consumidores (`CardsView` cover, galerías) degradan a su placeholder.
- *
- * Se conserva la interfaz para que el día que exista el módulo de media el
- * cableado sea solo reimplementar el queryFn.
+ * Resolución batch de attachment IDs → metadata + URL de descarga, contra el
+ * módulo de archivos propio (ADR-S16): `GET /files?ids=1,2,3`. Un solo fetch
+ * por conjunto de IDs (dedupe + sort para queryKey estable); los consumidores
+ * (`CardsView` cover, galerías, file fields) leen del Map resultante.
  */
+
+/** Shape que devuelve el backend por archivo (ADR-S16). */
+export interface AttachmentDto {
+    id: number;
+    /** Ruta de descarga inline, ej. `/api/v1/files/7/download`. */
+    url: string;
+    title: string;
+    mime_type: string;
+    size_bytes: number;
+    created_at: string;
+}
 
 export interface ResolvedAttachment {
     id: number;
@@ -25,9 +34,26 @@ export function useAttachments(ids: number[]) {
 
     return useQuery({
         queryKey: ['imcrm', 'attachments', dedupedIds],
-        queryFn: async (): Promise<Map<number, ResolvedAttachment>> => new Map(),
-        // Sin backend de media no hay nada que pedir: la query queda inerte.
-        enabled: false,
-        staleTime: Infinity,
+        queryFn: async (): Promise<Map<number, ResolvedAttachment>> => {
+            const res = await api.get<AttachmentDto[]>('/files', {
+                query: { ids: dedupedIds.join(',') },
+            });
+            const map = new Map<number, ResolvedAttachment>();
+            for (const dto of res.data) {
+                map.set(dto.id, {
+                    id: dto.id,
+                    url: dto.url,
+                    // Sin thumbnails dedicados aún: para imágenes el propio
+                    // download inline sirve de thumb; para el resto, undefined
+                    // → los consumidores caen a su placeholder/icono.
+                    thumbUrl: dto.mime_type.startsWith('image/') ? dto.url : undefined,
+                    title: dto.title,
+                    mimeType: dto.mime_type,
+                });
+            }
+            return map;
+        },
+        enabled: dedupedIds.length > 0,
+        staleTime: 5 * 60_000,
     });
 }

@@ -34,6 +34,10 @@ const envSchema = z.object({
     // Tope de tamaño de body (bytes). Acota payloads abusivos; con holgura para
     // imports por lotes.
     BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
+    /** Directorio de archivos subidos (driver local de FileStorage — ADR-S16). */
+    UPLOADS_DIR: z.string().default('./data/uploads'),
+    /** Tamaño máximo por archivo subido (multipart). */
+    MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
     // Rate limit por IP/minuto: general y bucket estricto para auth/portal.
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(600),
     RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(15),

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import fastifyCompress from '@fastify/compress';
+import fastifyMultipart from '@fastify/multipart';
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { Logger } from '@nestjs/common';
@@ -62,6 +63,10 @@ async function bootstrap(): Promise<void> {
     // agnóstico: sirve detrás de nginx, Caddy o directo.
     await app.register(fastifyCompress, { threshold: 1024, encodings: ['br', 'gzip', 'deflate'] });
     await app.register(fastifyCookie);
+    // Upload de archivos (ADR-S16): un solo file por request, límite por env.
+    await app.register(fastifyMultipart, {
+        limits: { files: 1, fileSize: env.MAX_UPLOAD_BYTES },
+    });
     app.setGlobalPrefix('api/v1');
     app.useGlobalFilters(new ApiExceptionFilter());
 

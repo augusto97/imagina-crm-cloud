@@ -15,6 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { useAttachments } from '@/hooks/useAttachments';
 import { __ } from '@/lib/i18n';
 import type { ResolvedV2Block } from '@/lib/crmTemplates';
 import type { FieldEntity } from '@/types/field';
@@ -35,8 +36,8 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
     const items = useMemo(() => {
         const out: Array<{ field: FieldEntity; value: string | number }> = [];
         for (const f of fileFields) {
-            // Sin módulo de media propio, el valor del file field se muestra
-            // crudo: URL clickeable si es http(s), texto/id plano si no.
+            // Valor numérico = attachment id del módulo de archivos (ADR-S16),
+            // string = URL externa legacy. FileValueItem resuelve cada caso.
             const v = record.fields[f.slug];
             if (typeof v === 'string' && v.trim() !== '') out.push({ field: f, value: v });
             else if (typeof v === 'number' && v > 0) out.push({ field: f, value: v });
@@ -62,8 +63,12 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
 }
 
 /**
- * Render del valor de un file field — link si es una URL http(s), texto
- * plano si no. (Cuando exista el módulo de media propio, acá va el thumb.)
+ * Render del valor de un file field:
+ *  - numérico → attachment id del módulo de archivos (ADR-S16): se resuelve
+ *    con `useAttachments` y se muestra `title` como link a la descarga
+ *    (mientras carga, el id como texto);
+ *  - string URL http(s) → link directo (valor legacy);
+ *  - otro string → texto plano.
  */
 function FileValueItem({
     field,
@@ -72,10 +77,18 @@ function FileValueItem({
     field: FieldEntity;
     value: string | number;
 }): JSX.Element {
-    const href = typeof value === 'string' && /^https?:\/\//i.test(value.trim())
-        ? value.trim()
-        : null;
-    const text = String(value);
+    // Hook incondicional (rules-of-hooks): array vacío cuando no aplica
+    // → la query queda disabled y no pega al backend.
+    const attachmentId = typeof value === 'number' && value > 0 ? value : null;
+    const attachments = useAttachments(attachmentId !== null ? [attachmentId] : []);
+    const resolved = attachmentId !== null ? attachments.data?.get(attachmentId) ?? null : null;
+
+    const href = resolved !== null
+        ? resolved.url
+        : typeof value === 'string' && /^https?:\/\//i.test(value.trim())
+            ? value.trim()
+            : null;
+    const text = resolved !== null ? resolved.title : String(value);
     return (
         <li className="imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20">
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-p-2">

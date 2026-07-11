@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
+import { FileFieldControl } from '@/admin/records/RecordFieldsForm';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -231,23 +232,8 @@ function EditingControl({
                 />
             );
         case 'file':
-            // `user` no llega acá — está en InlineControl con UserPicker.
-            return (
-                <Input
-                    id={id}
-                    ref={ref as React.Ref<HTMLInputElement>}
-                    type="number"
-                    min={1}
-                    value={value === undefined || value === null ? '' : String(value)}
-                    onChange={(e) =>
-                        onChange(e.target.value === '' ? null : Number(e.target.value))
-                    }
-                    onBlur={onBlur}
-                    onKeyDown={handleKey}
-                    placeholder={__('ID adjunto')}
-                    className="imcrm-h-8 imcrm-text-sm imcrm-tabular-nums"
-                />
-            );
+            // Upload real (ADR-S16) — mismo control que el form completo.
+            return <FileFieldControl id={id} value={value} onChange={onChange} />;
         case 'relation': {
             const current = Array.isArray(value)
                 ? value.join(', ')
