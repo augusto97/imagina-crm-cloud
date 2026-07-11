@@ -74,7 +74,16 @@ export const fieldConfigSchemas = {
     user: z.object({}),
     relation: z.object({ target_list_id: idSchema.optional() }),
     file: z.object({ max_files: z.number().int().positive().optional() }),
-    computed: z.object({ expression: z.string().optional() }),
+    computed: z.object({
+        /** Operación del catálogo cerrado (ver field-types/computed.ts). */
+        operation: z
+            .enum(['date_diff_months', 'date_diff_days', 'sum', 'product', 'subtract', 'divide', 'concat', 'abs'])
+            .optional(),
+        /** Field IDs de entrada (pueden ser otros computed — cadena con guard). */
+        inputs: z.array(idSchema).max(20).optional(),
+        /** Solo para concat. */
+        separator: z.string().max(20).optional(),
+    }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /** Valida la config de un campo contra el schema de su tipo. */
