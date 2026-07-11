@@ -56,7 +56,7 @@ export function CardsView({
 
     // Resolución batch de attachment IDs → URLs. Cuando coverField
     // está set, recolectamos todos los IDs de cover de los records
-    // visibles en un solo fetch a /wp/v2/media?include=...
+    // visibles en un solo fetch a /files?ids=... (ADR-S16).
     const coverIds = useMemo(() => {
         if (! coverField) return [];
         return records

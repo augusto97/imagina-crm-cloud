@@ -438,7 +438,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         localStorage). `CLOUD_WIRED.mentions=true` → la campana aparece y el
         stub del adapter se apaga solo. Test (extracción, self/desconocido
         excluidos, feed por usuario) + E2E por API.
-  - [ ] Módulo de archivos/media propio (upload, thumbnails, covers).
+  - [x] **Módulo de archivos propio (v0.1.53, ADR-S16)**: metadata en
+        `attachments` (migración 0025, RLS) y bytes detrás de la interfaz
+        `FileStorage` con driver local (`UPLOADS_DIR`, claves opacas por
+        tenant, guard de path traversal); upgrade S3-prefirmado previsto sin
+        tocar callers. Endpoints: `POST /files` (multipart, 20MB default,
+        cleanup si truncado), `GET /files?ids=` (batch para tarjetas/
+        galerías), `GET /files/:id/download` (stream con tenant check,
+        nosniff) y `DELETE /files/:id`. Front: `useAttachments` real,
+        `FileFieldControl` (upload + archivo resuelto con link + Quitar) en
+        el form completo y el compacto, `FileValueItem` resuelve IDs, covers
+        de tarjetas funcionan. Portal: sigue con URLs planas (servir a rol
+        client requerirá URLs firmadas — pendiente explícito del ADR).
+        3 tests (round-trip, saneo, aislamiento) + E2E API y navegador.
   - [ ] Recurrencias.
   - [ ] Campos `computed` (evaluador server-side).
 
