@@ -87,13 +87,13 @@ export function Sidebar({
                             className="imcrm-h-8 imcrm-w-8 imcrm-rounded-md imcrm-object-contain"
                         />
                     ) : (
-                        <span className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary imcrm-text-white">
+                        <span className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-white/15 imcrm-text-white imcrm-ring-1 imcrm-ring-white/20">
                             <Sparkles className="imcrm-h-4 imcrm-w-4" />
                         </span>
                     )}
                     {!collapsed && (
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-leading-tight">
-                            <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
+                            <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-white">
                                 {brandAppName ?? 'Imagina Base'}
                             </span>
                         </div>
@@ -129,8 +129,8 @@ export function Sidebar({
                                             cn(
                                                 'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
                                                 isActive
-                                                    ? 'imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary'
-                                                    : 'imcrm-text-sidebar-foreground/75 hover:imcrm-bg-sidebar-accent hover:imcrm-text-foreground',
+                                                    ? 'imcrm-bg-white/10 imcrm-font-medium imcrm-text-white'
+                                                    : 'imcrm-text-sidebar-foreground/75 hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
                                             )
                                         }
                                     >
@@ -157,8 +157,8 @@ export function Sidebar({
                                             cn(
                                                 'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
                                                 isActive
-                                                    ? 'imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary'
-                                                    : 'imcrm-text-sidebar-foreground/75 hover:imcrm-bg-sidebar-accent hover:imcrm-text-foreground',
+                                                    ? 'imcrm-bg-white/10 imcrm-font-medium imcrm-text-white'
+                                                    : 'imcrm-text-sidebar-foreground/75 hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
                                             )
                                         }
                                     >
@@ -175,7 +175,7 @@ export function Sidebar({
                 )}
 
                 {(lists.isLoading || dashboards.isLoading) && !collapsed && (
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-sidebar-foreground/60">
                         <Loader2 className="imcrm-h-3 imcrm-w-3 imcrm-animate-spin" />
                         {__('Cargando…')}
                     </div>
@@ -204,7 +204,7 @@ export function Sidebar({
                     type="button"
                     onClick={() => setCollapsed((c) => !c)}
                     className={cn(
-                        'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[12px] imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-foreground',
+                        'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[12px] imcrm-text-sidebar-foreground/70 imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
                         collapsed && 'imcrm-justify-center',
                     )}
                     aria-label={collapsed ? __('Expandir') : __('Colapsar')}
@@ -236,7 +236,7 @@ function Section({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
             {!hideLabel && (
-                <h3 className="imcrm-px-2.5 imcrm-pb-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.1em] imcrm-text-muted-foreground/70">
+                <h3 className="imcrm-px-2.5 imcrm-pb-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.1em] imcrm-text-sidebar-foreground/50">
                     {label}
                 </h3>
             )}
@@ -264,8 +264,8 @@ function NavItem({ to, icon: Icon, children, end, collapsed }: NavItemProps): JS
                     'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-2 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors imcrm-duration-100',
                     collapsed && 'imcrm-justify-center imcrm-px-0',
                     isActive
-                        ? 'imcrm-bg-primary/10 imcrm-text-primary'
-                        : 'imcrm-text-sidebar-foreground hover:imcrm-bg-sidebar-accent hover:imcrm-text-foreground',
+                        ? 'imcrm-bg-white/10 imcrm-text-white'
+                        : 'imcrm-text-sidebar-foreground hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
                 )
             }
         >
@@ -274,7 +274,7 @@ function NavItem({ to, icon: Icon, children, end, collapsed }: NavItemProps): JS
                     <Icon
                         className={cn(
                             'imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-transition-colors',
-                            isActive ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground',
+                            isActive ? 'imcrm-text-white' : 'imcrm-text-sidebar-foreground/70',
                         )}
                     />
                     {!collapsed && <span className="imcrm-truncate">{children}</span>}

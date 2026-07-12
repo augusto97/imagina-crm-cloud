@@ -126,58 +126,46 @@ export function colorVar(color: OptionColor | undefined | null): string | undefi
 }
 
 /**
- * Estilos inline para un chip "soft" — bg tinted 14%, border 32%,
- * text con contraste forzado.
- *
- * Para **preset**: usa CSS vars (`--imcrm-opt-X` para bg/border y
- * `--imcrm-opt-X-text` para text). Theme-aware automáticamente
- * (dark mode tiene sus propias variantes).
- *
- * Para **hex**: aplica el hex con alpha hex notation (`#xxxxxx24` =
- * 14%, `#xxxxxx52` = 32%). El text usa el HSL del hex forzando
- * lightness a ~28% (light mode) o ~72% (dark mode). El mode se
- * detecta al render via `data-imcrm-theme`; no es reactivo a cambios
- * de tema mid-session (el chip re-rendea cuando React lo hace).
+ * Pasada ClickUp: el chip de opción es SÓLIDO y saturado (bg = el color,
+ * texto blanco — o tinta oscura en los presets claros donde el blanco no
+ * contrasta: yellow/lime/amber). Es lo que hace que las tablas "se vean
+ * vivas": el color fuerte queda reservado a los DATOS del usuario.
  */
+const DARK_TEXT_PRESETS = new Set<PresetColor>(['yellow', 'lime', 'amber']);
+
 export function chipSoftStyle(color: OptionColor | undefined | null): React.CSSProperties | undefined {
     if (!color) return undefined;
 
     if (isPresetColor(color)) {
         const base = `var(--imcrm-opt-${color})`;
-        const text = `var(--imcrm-opt-${color}-text)`;
         return {
-            backgroundColor: `hsl(${base} / 0.14)`,
-            borderColor:     `hsl(${base} / 0.32)`,
-            color:           `hsl(${text})`,
+            backgroundColor: `hsl(${base})`,
+            borderColor:     `hsl(${base})`,
+            color:           DARK_TEXT_PRESETS.has(color) ? 'hsl(224 71% 10% / 0.85)' : '#ffffff',
         };
     }
 
     if (isHexColor(color)) {
         const normalized = normalizeHex(color);
-        const isDark = isDarkTheme();
         return {
-            backgroundColor: normalized + '24',
-            borderColor:     normalized + '52',
-            color:           textColorFromHex(normalized, isDark ? 72 : 28),
+            backgroundColor: normalized,
+            borderColor:     normalized,
+            color:           relativeLuminance(normalized) > 0.55 ? 'hsl(224 71% 10% / 0.85)' : '#ffffff',
         };
     }
 
     return undefined;
 }
 
+/** Luminancia relativa aproximada (0-1) de un hex — decide texto blanco/oscuro. */
+function relativeLuminance(hex: string): number {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return 0;
+    return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+}
+
 // ─── Conversión hex → HSL para text color ─────────────────────────────
 
-/**
- * Convierte un hex a un string `hsl(H S% L%)` forzando la lightness
- * pasada. Preserva hue y saturation del hex original. Garantiza
- * contraste AA contra el bg tintado del chip.
- */
-function textColorFromHex(hex: string, forcedLightness: number): string {
-    const rgb = hexToRgb(hex);
-    if (!rgb) return hex;
-    const { h, s } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-    return `hsl(${Math.round(h)} ${Math.round(s)}% ${forcedLightness}%)`;
-}
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
     const m = HEX_RE.exec(hex);
@@ -194,32 +182,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
     };
 }
 
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    let h = 0, s = 0;
-    if (max !== min) {
-        const d = max - min;
-        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-        switch (max) {
-            case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
-            case g: h = ((b - r) / d + 2); break;
-            case b: h = ((r - g) / d + 4); break;
-        }
-        h *= 60;
-    }
-    return { h, s: s * 100, l: l * 100 };
-}
 
-function isDarkTheme(): boolean {
-    if (typeof document === 'undefined') return false;
-    // El plugin setea `data-imcrm-theme` en `#imcrm-root` (admin) o en
-    // un container themed. Si no encontramos ninguno, asumimos light.
-    const themed = document.querySelector('[data-imcrm-theme]');
-    return themed?.getAttribute('data-imcrm-theme') === 'dark';
-}
 
 // ─── ColorPicker UI ───────────────────────────────────────────────────
 

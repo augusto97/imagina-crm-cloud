@@ -21,8 +21,10 @@ export function brandingQueryKey(tenantId: number | null): readonly [string, num
     return ['branding', tenantId] as const;
 }
 
-/** Tokens del tema que re-pinta el color primario del tenant. */
-const BRANDED_VARS = ['--imcrm-primary', '--imcrm-ring', '--imcrm-sidebar-accent-foreground'] as const;
+/** Tokens que toman el color primario del tenant tal cual. */
+const BRANDED_VARS = ['--imcrm-primary', '--imcrm-ring'] as const;
+/** El sidebar oscuro (estilo ClickUp) se re-tiñe con el HUE del tenant. */
+const SIDEBAR_VARS = ['--imcrm-sidebar', '--imcrm-sidebar-border', '--imcrm-sidebar-accent'] as const;
 
 /**
  * `#RRGGBB` → tripleta HSL `"H S% L%"` (el formato de los tokens del tema,
@@ -82,14 +84,22 @@ export function useBranding() {
     useEffect(() => {
         const style = document.documentElement.style;
         const triplet = primaryColor !== null ? hexToHslTriplet(primaryColor) : null;
+        const clear = (): void => {
+            for (const name of BRANDED_VARS) style.removeProperty(name);
+            for (const name of SIDEBAR_VARS) style.removeProperty(name);
+        };
         if (triplet !== null) {
             for (const name of BRANDED_VARS) style.setProperty(name, triplet);
+            // El riel oscuro conserva el HUE de la marca con lightness fija
+            // (contraste del texto claro garantizado sin importar el color).
+            const [h] = triplet.split(' ');
+            style.setProperty('--imcrm-sidebar', `${h} 60% 13%`);
+            style.setProperty('--imcrm-sidebar-border', `${h} 45% 19%`);
+            style.setProperty('--imcrm-sidebar-accent', `${h} 50% 20%`);
         } else {
-            for (const name of BRANDED_VARS) style.removeProperty(name);
+            clear();
         }
-        return () => {
-            for (const name of BRANDED_VARS) style.removeProperty(name);
-        };
+        return clear;
     }, [primaryColor]);
 
     return query;
