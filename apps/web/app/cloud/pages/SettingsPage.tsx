@@ -1,20 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import {
-    CreditCard,
-    Crown,
-    Gauge,
-    Mail,
-    Palette,
-    PenLine,
-    RefreshCw,
-    SlidersHorizontal,
-    Users,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
+import {
+    resolveSettingsSection,
+    settingsSectionGroups,
+    type SettingsSectionId,
+} from '@/cloud/settingsSections';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
@@ -31,18 +25,14 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     canceled: 'Cancelada',
 };
 
-type SectionId = 'plan' | 'suscripcion' | 'miembros' | 'marca' | 'firma' | 'smtp' | 'updates';
-
-type SectionItem = { id: SectionId; label: string; icon: LucideIcon };
-type SectionGroup = { label: string; items: SectionItem[] };
-
 /**
- * Ajustes del workspace en layout de DOS PANELES (estilo ClickUp): nav fija a
- * la izquierda con las secciones agrupadas (Workspace / Cuenta / Plataforma) y
- * a la derecha el panel de UNA sección a la vez. La sección activa se persiste
- * en el query param `?s=` (sobrevive refresh y es linkeable). Los gates de
- * visibilidad son los mismos de siempre: rol admin del workspace para
- * Suscripción/Miembros/Marca y probe de superadmin de plataforma para
+ * Ajustes del workspace: renderiza UNA sección a la vez. La NAV de secciones
+ * vive en el panel contextual del Sidebar (estilo ClickUp) — acá sólo queda
+ * el select mobile (<lg) como fallback cuando el panel no está visible. La
+ * sección activa se persiste en el query param `?s=` (sobrevive refresh y es
+ * linkeable). Los gates de visibilidad (compartidos con el Sidebar vía
+ * `settingsSectionGroups`) son los mismos de siempre: rol admin del workspace
+ * para Suscripción/Miembros/Marca y probe de superadmin de plataforma para
  * SMTP/Actualizaciones (los paneles además se auto-ocultan ante 403).
  */
 export function SettingsPage(): JSX.Element {
@@ -59,43 +49,13 @@ export function SettingsPage(): JSX.Element {
         queryFn: () => api.billing(),
     });
 
-    const groups: SectionGroup[] = [
-        {
-            label: 'Workspace',
-            items: [
-                { id: 'plan', label: 'Plan y uso', icon: Gauge },
-                ...(isAdmin
-                    ? ([
-                          { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
-                          { id: 'miembros', label: 'Miembros', icon: Users },
-                          { id: 'marca', label: 'Marca', icon: Palette },
-                      ] satisfies SectionItem[])
-                    : []),
-            ],
-        },
-        {
-            label: 'Cuenta',
-            items: [{ id: 'firma', label: 'Firma de email', icon: PenLine }],
-        },
-        ...(isSuperadmin.data === true
-            ? ([
-                  {
-                      label: 'Plataforma',
-                      items: [
-                          { id: 'smtp', label: 'Correo (SMTP)', icon: Mail },
-                          { id: 'updates', label: 'Actualizaciones', icon: RefreshCw },
-                      ],
-                  },
-              ] satisfies SectionGroup[])
-            : []),
-    ];
+    const groups = settingsSectionGroups({ isAdmin, isSuperadmin: isSuperadmin.data === true });
     const visible = groups.flatMap((g) => g.items);
-    const requested = params.get('s');
     // Fallback a "plan" si el param no existe o apunta a una sección gateada.
-    const active: SectionId = visible.find((i) => i.id === requested)?.id ?? 'plan';
+    const active: SettingsSectionId = resolveSettingsSection(groups, params.get('s'));
     const activeItem = visible.find((i) => i.id === active) ?? visible[0];
 
-    const select = (id: SectionId): void => {
+    const select = (id: SettingsSectionId): void => {
         setParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -135,13 +95,14 @@ export function SettingsPage(): JSX.Element {
                 </div>
             )}
 
-            {/* Nav mobile (<lg): select compacto en vez de la columna. */}
+            {/* Nav mobile (<lg): select compacto — fallback cuando el panel
+                contextual del Sidebar (LA nav de Ajustes) no está visible. */}
             <div className="lg:imcrm-hidden">
                 <select
                     aria-label="Sección de ajustes"
                     className="imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-py-2 imcrm-text-sm"
                     value={active}
-                    onChange={(e) => select(e.target.value as SectionId)}
+                    onChange={(e) => select(e.target.value as SettingsSectionId)}
                 >
                     {groups.map((g) => (
                         <optgroup key={g.label} label={g.label}>
@@ -155,68 +116,34 @@ export function SettingsPage(): JSX.Element {
                 </select>
             </div>
 
-            <div className="imcrm-flex imcrm-items-start imcrm-gap-8">
-                {/* Columna izquierda fija (desktop). */}
-                <aside className="imcrm-hidden imcrm-w-[230px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-5 lg:imcrm-flex">
-                    {groups.map((g) => (
-                        <nav key={g.label} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                            <div className="imcrm-mb-1 imcrm-px-2 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
-                                {g.label}
-                            </div>
-                            {g.items.map((i) => {
-                                const Icon = i.icon;
-                                const isActive = i.id === active;
-                                return (
-                                    <button
-                                        key={i.id}
-                                        type="button"
-                                        onClick={() => select(i.id)}
-                                        aria-current={isActive ? 'page' : undefined}
-                                        className={[
-                                            'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-[13px] imcrm-transition-colors',
-                                            isActive
-                                                ? 'imcrm-bg-muted imcrm-font-medium imcrm-text-foreground'
-                                                : 'imcrm-text-muted-foreground hover:imcrm-bg-muted/60 hover:imcrm-text-foreground',
-                                        ].join(' ')}
-                                    >
-                                        <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
-                                        {i.label}
-                                    </button>
-                                );
-                            })}
-                        </nav>
-                    ))}
-                </aside>
-
-                {/* Panel derecho: la sección activa, una a la vez. */}
-                <section className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-4">
-                    {activeItem && (
-                        <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
-                            {activeItem.label}
-                        </h2>
-                    )}
-                    {active === 'plan' && (
-                        <>
-                            {billingSkeleton}
-                            {billing.data && <BillingCard summary={billing.data} />}
-                        </>
-                    )}
-                    {active === 'suscripcion' && isAdmin && (
-                        <>
-                            {billingSkeleton}
-                            {billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
-                        </>
-                    )}
-                    {active === 'miembros' && isAdmin && <MembersPanel />}
-                    {/* Branding white-label del workspace (nombre, color, logo). */}
-                    {active === 'marca' && isAdmin && <BrandingPanel />}
-                    {/* Per-usuario: firma insertable en emails de automatizaciones. */}
-                    {active === 'firma' && <EmailSignatureCard />}
-                    {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
-                    {active === 'smtp' && <SmtpSettingsPanel />}
-                    {active === 'updates' && <SystemUpdatesPanel />}
-                </section>
-            </div>
+            {/* Sección activa, una a la vez (la nav vive en el Sidebar). */}
+            <section className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-4">
+                {activeItem && (
+                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
+                        {activeItem.label}
+                    </h2>
+                )}
+                {active === 'plan' && (
+                    <>
+                        {billingSkeleton}
+                        {billing.data && <BillingCard summary={billing.data} />}
+                    </>
+                )}
+                {active === 'suscripcion' && isAdmin && (
+                    <>
+                        {billingSkeleton}
+                        {billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
+                    </>
+                )}
+                {active === 'miembros' && isAdmin && <MembersPanel />}
+                {/* Branding white-label del workspace (nombre, color, logo). */}
+                {active === 'marca' && isAdmin && <BrandingPanel />}
+                {/* Per-usuario: firma insertable en emails de automatizaciones. */}
+                {active === 'firma' && <EmailSignatureCard />}
+                {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
+                {active === 'smtp' && <SmtpSettingsPanel />}
+                {active === 'updates' && <SystemUpdatesPanel />}
+            </section>
         </div>
     );
 }

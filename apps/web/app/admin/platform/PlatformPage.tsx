@@ -1,11 +1,10 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     AlertTriangle,
     BadgeCheck,
     Building2,
-    CreditCard,
     Database,
-    History,
     ShieldCheck,
     Users,
 } from 'lucide-react';
@@ -16,29 +15,46 @@ import { usePlatformStats } from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { isPlatformTab, PLATFORM_TABS, type PlatformTabId } from './platformTabs';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
 
-type Tab = 'tenants' | 'users' | 'plans' | 'audit';
-
 /**
  * Consola de PLATAFORMA (operador SaaS). Sólo la ve el superadmin. Header de
  * operador (icon chip + badge Superadmin), KPIs con StatTile (la primitiva
  * premium del resto de la app) y gestión por pestañas con contadores.
+ *
+ * La pestaña activa se lee de `?tab=` (así el panel contextual del Sidebar
+ * puede linkear `/platform?tab=users`), con fallback al estado interno para
+ * no romper los clicks dentro de la página; el click además persiste el
+ * param (replace, sin ensuciar el historial).
  */
 export function PlatformPage(): JSX.Element {
     const stats = usePlatformStats();
-    const [tab, setTab] = useState<Tab>('tenants');
+    const [params, setParams] = useSearchParams();
+    const [fallbackTab, setFallbackTab] = useState<PlatformTabId>('tenants');
+    const requested = params.get('tab');
+    const tab: PlatformTabId = isPlatformTab(requested) ? requested : fallbackTab;
+    const setTab = (id: PlatformTabId): void => {
+        setFallbackTab(id);
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', id);
+                return next;
+            },
+            { replace: true },
+        );
+    };
     const s = stats.data;
 
-    const TABS: Array<{ id: Tab; label: string; icon: typeof Building2; count?: number }> = [
-        { id: 'tenants', label: __('Empresas'), icon: Building2, count: s?.tenants_total },
-        { id: 'users', label: __('Usuarios'), icon: Users, count: s?.users_total },
-        { id: 'plans', label: __('Planes'), icon: CreditCard },
-        { id: 'audit', label: __('Auditoría'), icon: History },
-    ];
+    const counts: Partial<Record<PlatformTabId, number | undefined>> = {
+        tenants: s?.tenants_total,
+        users: s?.users_total,
+    };
+    const TABS = PLATFORM_TABS.map((t) => ({ ...t, label: __(t.label), count: counts[t.id] }));
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
