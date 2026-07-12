@@ -5,6 +5,8 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+
 interface LineChartWidgetProps {
     dashboardId: number;
     widget: WidgetSpec;
@@ -24,23 +26,33 @@ interface LineChartWidgetProps {
  * único por widget (antes dos area charts en el mismo dashboard
  * colisionaban en `#imcrm-area-grad` — el segundo quedaba sin fill).
  *
+ * Estilo ClickUp: badge "Promedio: N" arriba a la derecha del header +
+ * línea de referencia horizontal punteada ROJA en el promedio.
+ * Default ON; `show_average_line: false` explícito lo apaga.
+ *
  * Toggles del widget:
- *  - `show_average_line` → línea horizontal punteada con valor del
- *                          promedio
+ *  - `show_average_line` → promedio en header + línea punteada (default on)
  *  - `show_data_labels`  → valor numérico encima de cada punto
  */
 export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
-    const showAvg = Boolean(widget.config.show_average_line);
+    const showAvg = widget.config.show_average_line !== false;
     const showLabels = Boolean(widget.config.show_data_labels);
+    const subtitle = useWidgetSubtitle(widget);
+
+    const rows =
+        data.data && 'data' in data.data
+            ? data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
+            : [];
+    const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
-            <header className="imcrm-shrink-0">
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Tendencia mensual')}
-                </h3>
-            </header>
+            <WidgetHeader
+                title={widget.title || __('Tendencia mensual')}
+                subtitle={subtitle}
+                right={showAvg && avg !== null ? <AverageBadge value={avg} /> : null}
+            />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-stretch imcrm-justify-center imcrm-min-h-0">
                 {data.isLoading ? (
@@ -55,9 +67,9 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                         <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
                         {__('Error')}
                     </div>
-                ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
+                ) : rows.length > 0 ? (
                     <SparkLine
-                        rows={data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))}
+                        rows={rows}
                         area={area ?? false}
                         showAvg={showAvg}
                         showLabels={showLabels}
@@ -154,11 +166,6 @@ function SparkLine({
 
     return (
         <div className="imcrm-flex imcrm-w-full imcrm-flex-col imcrm-gap-1 imcrm-min-h-0">
-            {showAvg && (
-                <div className="imcrm-flex imcrm-shrink-0 imcrm-justify-end imcrm-text-[10px] imcrm-text-muted-foreground">
-                    {__('Promedio')}: <span className="imcrm-ml-1 imcrm-font-medium imcrm-text-foreground">{avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                </div>
-            )}
             <div ref={ref} className="imcrm-relative imcrm-w-full imcrm-flex-1 imcrm-min-h-0">
                 {width > 0 && height > 0 && (
                     <svg
@@ -204,15 +211,17 @@ function SparkLine({
 
                         {area && areaPath !== '' && <path d={areaPath} fill={`url(#imcrm-area-${gradId})`} />}
                         {showAvg && (
+                            // Línea de referencia del promedio — punteada y
+                            // roja (paridad ClickUp).
                             <line
                                 x1={PAD_X}
                                 x2={width - PAD_X}
                                 y1={yFor(avg)}
                                 y2={yFor(avg)}
-                                stroke="hsl(var(--imcrm-destructive))"
+                                stroke={AVG_LINE_COLOR}
                                 strokeWidth="1"
-                                strokeDasharray="3 3"
-                                opacity="0.7"
+                                strokeDasharray="6 4"
+                                opacity="0.85"
                             />
                         )}
                         <polyline

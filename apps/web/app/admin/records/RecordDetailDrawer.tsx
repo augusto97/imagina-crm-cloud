@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, ExternalLink, FileText, MessageSquare, Save, Trash2 } from 'lucide-react';
+import {
+    Activity,
+    ChevronDown,
+    ChevronRight,
+    ExternalLink,
+    FileText,
+    MessageSquare,
+    Save,
+    Trash2,
+} from 'lucide-react';
 
 import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
@@ -24,6 +33,7 @@ import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
 import { RecordFieldsForm } from './RecordFieldsForm';
+import { RecordMetaGrid } from './RecordMetaGrid';
 
 interface RecordDetailDrawerProps {
     listId: number;
@@ -68,6 +78,7 @@ export function RecordDetailDrawer({
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'details' | 'comments' | 'activity'>('details');
+    const [fieldsOpen, setFieldsOpen] = useState(true);
     const boot = getBootData();
 
     useEffect(() => {
@@ -75,6 +86,7 @@ export function RecordDetailDrawer({
         setError(null);
         setFieldErrors({});
         setTab('details');
+        setFieldsOpen(true);
         update.reset();
         remove.reset();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,6 +97,20 @@ export function RecordDetailDrawer({
     }
 
     const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
+
+    // Título del record (mismo criterio que RecordPage): valor del campo
+    // primario — o del primer text — con fallback "Registro #id".
+    const titleField =
+        fields.find((f) => f.is_primary) ?? fields.find((f) => f.type === 'text');
+    const titleValue = titleField ? record.fields[titleField.slug] : undefined;
+    const title =
+        typeof titleValue === 'string' && titleValue !== ''
+            ? titleValue
+            : sprintf(
+                  /* translators: %d: record id */
+                  __('Registro #%d'),
+                  record.id,
+              );
 
     const handleSave = async (): Promise<void> => {
         setError(null);
@@ -136,19 +162,13 @@ export function RecordDetailDrawer({
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent>
                 <SheetHeader>
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                        <SheetTitle>
-                            {__('Registro')}{' '}
-                            <span className="imcrm-font-mono imcrm-text-muted-foreground">#{record.id}</span>
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
+                        <SheetTitle className="imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
+                            {title}
                         </SheetTitle>
-                        <SheetDescription>
-                            {sprintf(
-                                /* translators: %s: localized creation date */
-                                __('Creado %s'),
-                                record.created_at
-                                    ? new Date(record.created_at + 'Z').toLocaleString()
-                                    : '—',
-                            )}
+                        <SheetDescription className="imcrm-text-xs">
+                            {__('Registro')}{' '}
+                            <span className="imcrm-font-mono">#{record.id}</span>
                         </SheetDescription>
                     </div>
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
@@ -194,14 +214,43 @@ export function RecordDetailDrawer({
                 <SheetBody>
                     {tab === 'details' ? (
                         <>
-                            <RecordFieldsForm
-                                listId={listId}
+                            {/* Metadatos estilo ClickUp — 1 columna (drawer angosto). */}
+                            <RecordMetaGrid
+                                record={record}
                                 fields={fields}
                                 values={values}
-                                onChange={setValues}
-                                fieldErrors={fieldErrors}
-                                density="compact"
+                                twoCols={false}
+                                className="imcrm-mb-4"
                             />
+
+                            {/* Sección "Campos" colapsable con icono del tipo por fila. */}
+                            <button
+                                type="button"
+                                onClick={() => setFieldsOpen((v) => !v)}
+                                aria-expanded={fieldsOpen}
+                                className="imcrm-mb-2 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-py-1 imcrm-pr-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground hover:imcrm-text-foreground imcrm-transition-colors"
+                            >
+                                {fieldsOpen ? (
+                                    <ChevronDown className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                ) : (
+                                    <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                )}
+                                {__('Campos')}
+                                <span className="imcrm-font-normal imcrm-normal-case imcrm-text-muted-foreground/70">
+                                    {fields.length}
+                                </span>
+                            </button>
+                            {fieldsOpen && (
+                                <RecordFieldsForm
+                                    listId={listId}
+                                    fields={fields}
+                                    values={values}
+                                    onChange={setValues}
+                                    fieldErrors={fieldErrors}
+                                    density="compact"
+                                    showTypeIcon
+                                />
+                            )}
 
                             {error !== null && (
                                 <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

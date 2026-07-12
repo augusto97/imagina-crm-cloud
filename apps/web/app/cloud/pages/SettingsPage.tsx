@@ -1,8 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Crown, SlidersHorizontal } from 'lucide-react';
+import {
+    CreditCard,
+    Crown,
+    Gauge,
+    Mail,
+    Palette,
+    PenLine,
+    RefreshCw,
+    SlidersHorizontal,
+    Users,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
+import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
@@ -19,21 +31,87 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     canceled: 'Cancelada',
 };
 
-/** Ajustes del workspace: plan, estado de facturación, uso vs. límites, miembros. */
+type SectionId = 'plan' | 'suscripcion' | 'miembros' | 'marca' | 'firma' | 'smtp' | 'updates';
+
+type SectionItem = { id: SectionId; label: string; icon: LucideIcon };
+type SectionGroup = { label: string; items: SectionItem[] };
+
+/**
+ * Ajustes del workspace en layout de DOS PANELES (estilo ClickUp): nav fija a
+ * la izquierda con las secciones agrupadas (Workspace / Cuenta / Plataforma) y
+ * a la derecha el panel de UNA sección a la vez. La sección activa se persiste
+ * en el query param `?s=` (sobrevive refresh y es linkeable). Los gates de
+ * visibilidad son los mismos de siempre: rol admin del workspace para
+ * Suscripción/Miembros/Marca y probe de superadmin de plataforma para
+ * SMTP/Actualizaciones (los paneles además se auto-ocultan ante 403).
+ */
 export function SettingsPage(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
     const isAdmin = useSession(
         (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
     );
-    const [params] = useSearchParams();
+    // Mismo probe (cacheado 5 min) que usa el Sidebar para "Operador → Plataforma".
+    const isSuperadmin = useIsSuperadmin();
+    const [params, setParams] = useSearchParams();
     const checkout = params.get('checkout');
     const billing = useQuery({
         queryKey: ['billing', tenantId],
         queryFn: () => api.billing(),
     });
 
+    const groups: SectionGroup[] = [
+        {
+            label: 'Workspace',
+            items: [
+                { id: 'plan', label: 'Plan y uso', icon: Gauge },
+                ...(isAdmin
+                    ? ([
+                          { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
+                          { id: 'miembros', label: 'Miembros', icon: Users },
+                          { id: 'marca', label: 'Marca', icon: Palette },
+                      ] satisfies SectionItem[])
+                    : []),
+            ],
+        },
+        {
+            label: 'Cuenta',
+            items: [{ id: 'firma', label: 'Firma de email', icon: PenLine }],
+        },
+        ...(isSuperadmin.data === true
+            ? ([
+                  {
+                      label: 'Plataforma',
+                      items: [
+                          { id: 'smtp', label: 'Correo (SMTP)', icon: Mail },
+                          { id: 'updates', label: 'Actualizaciones', icon: RefreshCw },
+                      ],
+                  },
+              ] satisfies SectionGroup[])
+            : []),
+    ];
+    const visible = groups.flatMap((g) => g.items);
+    const requested = params.get('s');
+    // Fallback a "plan" si el param no existe o apunta a una sección gateada.
+    const active: SectionId = visible.find((i) => i.id === requested)?.id ?? 'plan';
+    const activeItem = visible.find((i) => i.id === active) ?? visible[0];
+
+    const select = (id: SectionId): void => {
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('s', id);
+                return next;
+            },
+            { replace: true },
+        );
+    };
+
+    const billingSkeleton = billing.isLoading && (
+        <div className="imcrm-h-56 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
+    );
+
     return (
-        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-6">
+        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-5xl imcrm-flex-col imcrm-gap-6">
             <header className="imcrm-flex imcrm-items-center imcrm-gap-4">
                 <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                     <SlidersHorizontal className="imcrm-h-5 imcrm-w-5" aria-hidden />
@@ -57,19 +135,88 @@ export function SettingsPage(): JSX.Element {
                 </div>
             )}
 
-            {billing.isLoading && (
-                <div className="imcrm-h-56 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
-            )}
-            {billing.data && <BillingCard summary={billing.data} />}
-            {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
-            {isAdmin && <MembersPanel />}
-            {/* Branding white-label del workspace (nombre, color, logo). */}
-            {isAdmin && <BrandingPanel />}
-            {/* Per-usuario: firma insertable en emails de automatizaciones. */}
-            <EmailSignatureCard />
-            {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
-            <SmtpSettingsPanel />
-            <SystemUpdatesPanel />
+            {/* Nav mobile (<lg): select compacto en vez de la columna. */}
+            <div className="lg:imcrm-hidden">
+                <select
+                    aria-label="Sección de ajustes"
+                    className="imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-py-2 imcrm-text-sm"
+                    value={active}
+                    onChange={(e) => select(e.target.value as SectionId)}
+                >
+                    {groups.map((g) => (
+                        <optgroup key={g.label} label={g.label}>
+                            {g.items.map((i) => (
+                                <option key={i.id} value={i.id}>
+                                    {i.label}
+                                </option>
+                            ))}
+                        </optgroup>
+                    ))}
+                </select>
+            </div>
+
+            <div className="imcrm-flex imcrm-items-start imcrm-gap-8">
+                {/* Columna izquierda fija (desktop). */}
+                <aside className="imcrm-hidden imcrm-w-[230px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-5 lg:imcrm-flex">
+                    {groups.map((g) => (
+                        <nav key={g.label} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                            <div className="imcrm-mb-1 imcrm-px-2 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
+                                {g.label}
+                            </div>
+                            {g.items.map((i) => {
+                                const Icon = i.icon;
+                                const isActive = i.id === active;
+                                return (
+                                    <button
+                                        key={i.id}
+                                        type="button"
+                                        onClick={() => select(i.id)}
+                                        aria-current={isActive ? 'page' : undefined}
+                                        className={[
+                                            'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-[13px] imcrm-transition-colors',
+                                            isActive
+                                                ? 'imcrm-bg-muted imcrm-font-medium imcrm-text-foreground'
+                                                : 'imcrm-text-muted-foreground hover:imcrm-bg-muted/60 hover:imcrm-text-foreground',
+                                        ].join(' ')}
+                                    >
+                                        <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
+                                        {i.label}
+                                    </button>
+                                );
+                            })}
+                        </nav>
+                    ))}
+                </aside>
+
+                {/* Panel derecho: la sección activa, una a la vez. */}
+                <section className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-4">
+                    {activeItem && (
+                        <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
+                            {activeItem.label}
+                        </h2>
+                    )}
+                    {active === 'plan' && (
+                        <>
+                            {billingSkeleton}
+                            {billing.data && <BillingCard summary={billing.data} />}
+                        </>
+                    )}
+                    {active === 'suscripcion' && isAdmin && (
+                        <>
+                            {billingSkeleton}
+                            {billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
+                        </>
+                    )}
+                    {active === 'miembros' && isAdmin && <MembersPanel />}
+                    {/* Branding white-label del workspace (nombre, color, logo). */}
+                    {active === 'marca' && isAdmin && <BrandingPanel />}
+                    {/* Per-usuario: firma insertable en emails de automatizaciones. */}
+                    {active === 'firma' && <EmailSignatureCard />}
+                    {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
+                    {active === 'smtp' && <SmtpSettingsPanel />}
+                    {active === 'updates' && <SystemUpdatesPanel />}
+                </section>
+            </div>
         </div>
     );
 }

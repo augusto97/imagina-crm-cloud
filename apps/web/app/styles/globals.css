@@ -132,14 +132,15 @@
         --imcrm-input: 220 13% 87%;
         --imcrm-ring: 191 85% 32%;
 
-        /* Sidebar: bg ligeramente off-white para que se distinga del
-         * canvas principal sin ser una franja oscura. Item activo
-         * usa primary muy suave. */
-        --imcrm-sidebar: 220 17% 98%;
-        --imcrm-sidebar-foreground: 224 12% 28%;
-        --imcrm-sidebar-border: 220 13% 91%;
-        --imcrm-sidebar-accent: 220 14% 95%;
-        --imcrm-sidebar-accent-foreground: 191 85% 32%;
+        /* Sidebar OSCURO en el color de marca (estilo ClickUp): el chrome
+         * lleva la identidad — teal profundo casi-tinta, texto claro,
+         * item activo con velo blanco. El white-label por tenant re-tiñe
+         * estas variables desde useBranding (mismo hue del primary). */
+        --imcrm-sidebar: 194 60% 13%;
+        --imcrm-sidebar-foreground: 190 15% 82%;
+        --imcrm-sidebar-border: 194 45% 19%;
+        --imcrm-sidebar-accent: 194 50% 20%;
+        --imcrm-sidebar-accent-foreground: 0 0% 100%;
 
         /* Background del canvas principal (área a la derecha del sidebar).
          * Un gris muy suave (slate-50ish) para que las cards en blanco

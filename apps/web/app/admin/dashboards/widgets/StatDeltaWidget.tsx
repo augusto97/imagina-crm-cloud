@@ -5,6 +5,8 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+
 interface StatDeltaWidgetProps {
     dashboardId: number;
     widget: WidgetSpec;
@@ -18,19 +20,13 @@ interface StatDeltaWidgetProps {
  */
 export function StatDeltaWidget({ dashboardId, widget }: StatDeltaWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
+    const subtitle = useWidgetSubtitle(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-1.5">
-            <header>
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Crecimiento')}
-                </h3>
-            </header>
+            <WidgetHeader title={widget.title || __('Crecimiento')} subtitle={subtitle} />
 
-            <div
-                className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-justify-center imcrm-gap-1 imcrm-min-h-0"
-                style={{ containerType: 'size' }}
-            >
+            <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-justify-center imcrm-gap-1 imcrm-min-h-0">
                 {data.isLoading ? (
                     <Loader2 className="imcrm-h-6 imcrm-w-6 imcrm-animate-spin imcrm-text-muted-foreground" />
                 ) : data.isError ? (
@@ -73,10 +69,7 @@ function Body({
               * línea compacta. Antes el número iba solo y el delta en
               * otra fila → el card necesitaba más alto para lo mismo. */}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-0.5">
-                <span
-                    className="imcrm-font-bold imcrm-leading-none imcrm-tabular-nums imcrm-text-foreground"
-                    style={{ fontSize: 'clamp(1.375rem, 26cqh, 2.25rem)' }}
-                >
+                <span className="imcrm-text-[26px] imcrm-font-bold imcrm-leading-none imcrm-tabular-nums imcrm-text-foreground">
                     {format(value)}
                 </span>
                 {deltaPct !== null && (

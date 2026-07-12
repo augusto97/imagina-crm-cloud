@@ -6,6 +6,7 @@ import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
 import { FileFieldControl } from '@/admin/records/RecordFieldsForm';
+import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -19,6 +20,12 @@ interface CompactFieldRowProps {
     value: unknown;
     onChange: (value: unknown) => void;
     error?: string;
+    /**
+     * Muestra el icono lucide del TIPO de campo junto al label (estilo
+     * ClickUp). Opt-in para no alterar las superficies existentes
+     * (layout CRM) que ya usan esta fila sin icono.
+     */
+    showTypeIcon?: boolean;
 }
 
 /**
@@ -40,8 +47,10 @@ export function CompactFieldRow({
     value,
     onChange,
     error,
+    showTypeIcon = false,
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
+    const TypeIcon = fieldTypeIcon(field.type);
 
     // Tipos que tienen control inline siempre visible (no necesitan
     // "click para editar"). Para user incluimos el UserPicker que
@@ -68,9 +77,15 @@ export function CompactFieldRow({
                 htmlFor={`field-${field.id}`}
                 className={cn(
                     'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
-                    'imcrm-w-[120px]',
+                    showTypeIcon ? 'imcrm-w-[148px]' : 'imcrm-w-[120px]',
                 )}
             >
+                {showTypeIcon && (
+                    <TypeIcon
+                        className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70"
+                        aria-hidden
+                    />
+                )}
                 <span className="imcrm-truncate">{field.label}</span>
                 {field.is_required && <span className="imcrm-text-destructive">*</span>}
             </label>

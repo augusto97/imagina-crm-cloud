@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap } from './useChartColors';
+import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface PieChartWidgetProps {
     dashboardId: number;
@@ -32,14 +33,11 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const showLabels = widget.config.show_data_labels !== false;
     const showLegend = widget.config.show_legend !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
+    const subtitle = useWidgetSubtitle(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
-            <header className="imcrm-shrink-0">
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Distribución')}
-                </h3>
-            </header>
+            <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-min-h-0">
                 {data.isLoading ? (
@@ -180,14 +178,21 @@ function Donut({ rows, showLabels, showLegend, colorMap }: DonutProps): JSX.Elem
                                     stroke={color}
                                     strokeWidth="0.8"
                                 />
+                                {/* Callout externo estilo ClickUp: nombre muted
+                                  * + porcentaje en foreground. fontSize en
+                                  * unidades del viewBox (190) — a tamaño real
+                                  * del card queda ≈11px. */}
                                 <text
                                     x={xText}
                                     y={y2 + 3}
                                     textAnchor={onRight ? 'start' : 'end'}
-                                    className="imcrm-fill-foreground"
-                                    style={{ fontSize: 7, fontWeight: 600 }}
+                                    className="imcrm-fill-muted-foreground"
+                                    style={{ fontSize: 9, fontWeight: 500 }}
                                 >
-                                    {row.label} {(pct * 100).toFixed(1)}%
+                                    {row.label}{' '}
+                                    <tspan className="imcrm-fill-foreground" style={{ fontWeight: 600 }}>
+                                        {(pct * 100).toFixed(1)}%
+                                    </tspan>
                                 </text>
                             </g>
                         );
