@@ -4,6 +4,7 @@ import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
+import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
@@ -62,6 +63,8 @@ export function SettingsPage(): JSX.Element {
             {billing.data && <BillingCard summary={billing.data} />}
             {isAdmin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
             {isAdmin && <MembersPanel />}
+            {/* Branding white-label del workspace (nombre, color, logo). */}
+            {isAdmin && <BrandingPanel />}
             {/* Per-usuario: firma insertable en emails de automatizaciones. */}
             <EmailSignatureCard />
             {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}

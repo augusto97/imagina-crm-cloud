@@ -7,6 +7,7 @@ import {
     automationRunSchema,
     billingSummarySchema,
     bootstrapSchema,
+    brandingResponseSchema,
     commentSchema,
     consumeMagicLinkSchema,
     createAutomationSchema,
@@ -38,6 +39,7 @@ import {
     smtpConfigSchema,
     smtpConfigPublicSchema,
     updateAutomationSchema,
+    updateBrandingSchema,
     updateCommentSchema,
     updateFieldSchema,
     updateListSchema,
@@ -52,6 +54,7 @@ import {
     type AutomationRun,
     type BillingSummary,
     type Bootstrap,
+    type BrandingResponse,
     type CommentDto,
     type CreateAutomationInput,
     type CreateCommentInput,
@@ -83,6 +86,7 @@ import {
     type SmtpConfig,
     type SmtpConfigPublic,
     type UpdateAutomationInput,
+    type UpdateBrandingInput,
     type UpdateCommentInput,
     type UpdateFieldInput,
     type UpdateListInput,
@@ -358,6 +362,37 @@ export class CloudClient {
     }
     removeMember(userId: number): Promise<void> {
         return this.request('DELETE', `/workspaces/current/members/${userId}`, {});
+    }
+
+    // --- branding white-label del workspace ---
+    getBranding(): Promise<BrandingResponse> {
+        return this.request('GET', '/workspaces/current/branding', { schema: brandingResponseSchema });
+    }
+    updateBranding(patch: UpdateBrandingInput): Promise<BrandingResponse> {
+        return this.request('PATCH', '/workspaces/current/branding', {
+            body: updateBrandingSchema.parse(patch),
+            schema: brandingResponseSchema,
+        });
+    }
+    /**
+     * Sube un archivo al módulo de archivos (ADR-S16, `POST /files` multipart
+     * campo `file`). Sin `Content-Type` manual: el browser arma el boundary.
+     */
+    async uploadFile(file: File): Promise<{ id: number }> {
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        const tenantId = this.getTenantId();
+        if (tenantId !== null && tenantId !== undefined) headers['X-Tenant-Id'] = String(tenantId);
+        const form = new FormData();
+        form.append('file', file);
+        const response = await fetch(`${this.baseUrl}/files`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: form,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok) throw toApiError(payload, response.status);
+        return z.object({ id: z.number().int().positive() }).parse(payload);
     }
 
     // --- billing ---

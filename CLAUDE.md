@@ -504,6 +504,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         títulos de página contenidos (text-2xl→text-xl en las ~12 páginas).
         Sin cambios de backend. Verificado E2E en navegador (login, listas,
         records, Ajustes, Plataforma).
+  - [x] **Branding white-label por tenant + permisos finos de dashboards
+        (v0.1.57)**: (a) cada empresa personaliza color primario (hex),
+        logo (attachment propio, módulo de archivos) y nombre de la app —
+        vive en `tenants.settings.branding` (sin migración), GET/PATCH
+        `/workspaces/current/branding` (PATCH sólo admin), card "Marca" en
+        Ajustes, y el boot del front convierte hex→HSL y re-pinta los
+        tokens (`--imcrm-primary`/ring/sidebar-accent) + logo/nombre del
+        sidebar; (b) visibilidad POR dashboard (migración 0028):
+        `workspace` (default) / `private` (sólo creador) / `roles`
+        (lista de roles) — enforcement server-side en list/get/widgets
+        (404 opaco) y mutación sólo creador/admin (403); UI: selector en
+        crear/editar + badge candado en la grilla (se quitó el checkbox
+        vestigial "compartir"). 4 tests nuevos (274 en verde) + E2E en
+        navegador (branding aplicado al bootear, card Marca, badge y
+        selector).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

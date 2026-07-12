@@ -7,6 +7,7 @@ import { App } from '@/App';
 import { activeMembership, api as cloudApi, useSession } from '@/cloud/session';
 import { hydrateAdminBoot } from '@/cloud/adminBoot';
 import { useRealtime } from '@/cloud/useRealtime';
+import { useBranding } from '@/hooks/useBranding';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 
 /**
@@ -36,6 +37,10 @@ export function AdminCloudApp(): JSX.Element {
 
     // Invalidación push del workspace activo (no-op hasta tener sesión+tenant).
     useRealtime();
+
+    // Branding white-label del tenant: aplica `primary_color` a los tokens del
+    // tema (una sola vez acá; el Sidebar lee del mismo query cache).
+    useBranding();
 
     const me = useQuery({ queryKey: ['me'], queryFn: () => cloudApi.me(), retry: false });
 
