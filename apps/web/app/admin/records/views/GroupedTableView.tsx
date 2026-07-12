@@ -270,7 +270,7 @@ export function GroupedTableView({
 
     if (buckets.length === 0) {
         return (
-            <div className="imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-4 imcrm-py-8">
+            <div className="imcrm-px-4 imcrm-py-8">
                 <EmptyState
                     icon={Inbox}
                     title={__('No hay registros')}
@@ -615,20 +615,18 @@ function GroupBucketSection({
 
     return (
         <section
-            // No usar `overflow-hidden` aquí — rompe `position: sticky`
-            // de las celdas internas (crea un containing block para el
-            // sticky que NO scrollea, así que las cells quedan
-            // pegadas a la sección y no al outer scroll). Sin él, los
-            // rounded corners siguen funcionando porque el contenido
-            // interno cabe naturalmente. El `border` y `rounded-xl`
-            // siguen aplicando como bordes externos.
-            className="imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm"
+            // Grupo PLANO (estilo ClickUp): sin card (border/rounded/
+            // shadow/bg-card) alrededor — header del grupo (chip +
+            // contador) directo sobre el canvas, filas debajo separadas
+            // por hairlines. OJO: tampoco usar `overflow-hidden` acá —
+            // rompe `position: sticky` de las celdas internas (crea un
+            // containing block para el sticky que NO scrollea).
             aria-expanded={isOpen}
         >
             <button
                 type="button"
                 onClick={onToggle}
-                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-3 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-accent/40"
+                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40"
             >
                 {isOpen ? (
                     <ChevronDown className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
@@ -674,15 +672,19 @@ function GroupBucketSection({
                         </p>
                     ) : (
                         <table
-                            className="imcrm-text-sm"
-                            style={{ tableLayout: 'fixed', width: tableWidth }}
+                            className="imcrm-w-full imcrm-text-sm"
+                            // `width: 100%` + `minWidth: tableWidth`: la tabla
+                            // llena el contenedor (sin vacío a la derecha) y
+                            // todos los buckets comparten el mismo min-width
+                            // para que las columnas queden alineadas.
+                            style={{ tableLayout: 'fixed', width: '100%', minWidth: tableWidth }}
                             aria-label={labelText}
                         >
-                            <thead className="imcrm-bg-muted/30">
+                            <thead>
                                 <tr className="imcrm-border-b imcrm-border-border">
                                     <th
                                         scope="col"
-                                        className="imcrm-w-10 imcrm-px-3 imcrm-py-2.5"
+                                        className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
                                     >
                                         <input
                                             type="checkbox"
@@ -708,8 +710,11 @@ function GroupBucketSection({
                                                 scope="col"
                                                 style={{ width: w, minWidth: w, ...(sticky ?? {}) }}
                                                 className={cn(
-                                                    'imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2.5 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
-                                                    sticky && 'imcrm-bg-muted/30',
+                                                    'imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                                    // Sticky cell necesita bg sólido para
+                                                    // tapar las celdas al scrollear
+                                                    // horizontal — canvas, no card.
+                                                    sticky && 'imcrm-bg-canvas',
                                                 )}
                                             >
                                                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
@@ -727,7 +732,7 @@ function GroupBucketSection({
                                     {onAddColumn && (
                                         <th
                                             scope="col"
-                                            className="imcrm-w-12 imcrm-px-2 imcrm-py-2.5"
+                                            className="imcrm-w-12 imcrm-px-2 imcrm-py-2"
                                         >
                                             <button
                                                 type="button"
@@ -752,7 +757,7 @@ function GroupBucketSection({
                                                 'imcrm-group/row imcrm-border-t imcrm-border-border/50',
                                                 isSelected
                                                     ? 'imcrm-bg-primary/5'
-                                                    : 'hover:imcrm-bg-accent/40',
+                                                    : 'hover:imcrm-bg-muted/40',
                                             )}
                                         >
                                             <td
@@ -785,7 +790,7 @@ function GroupBucketSection({
                                                             'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
                                                             sticky && (isSelected
                                                                 ? 'imcrm-bg-primary/5'
-                                                                : 'imcrm-bg-card group-hover/row:imcrm-bg-accent/40'),
+                                                                : 'imcrm-bg-canvas group-hover/row:imcrm-bg-muted/40'),
                                                             ci === 0 &&
                                                                 onRowClick &&
                                                                 'imcrm-cursor-pointer imcrm-font-medium',
@@ -829,13 +834,13 @@ function GroupBucketSection({
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                         className={cn(
                                                             'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                            sticky && 'imcrm-bg-card',
+                                                            sticky && 'imcrm-bg-canvas',
                                                         )}
                                                     >
                                                         <button
                                                             type="button"
                                                             onClick={onAddRecord}
-                                                            className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent/40 hover:imcrm-text-foreground"
+                                                            className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground"
                                                         >
                                                             <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                                             {__('Agregar tarea')}
@@ -850,7 +855,7 @@ function GroupBucketSection({
                                                     <td
                                                         key={c.id}
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
-                                                        className={cn(sticky && 'imcrm-bg-card')}
+                                                        className={cn(sticky && 'imcrm-bg-canvas')}
                                                     />
                                                 );
                                             }
@@ -864,7 +869,7 @@ function GroupBucketSection({
                                                     style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                     className={cn(
                                                         'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                        sticky && 'imcrm-bg-card',
+                                                        sticky && 'imcrm-bg-canvas',
                                                     )}
                                                 >
                                                     <FooterAggregateCell
