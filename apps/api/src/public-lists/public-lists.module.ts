@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FilesModule } from '../files/files.module';
 import { AuthModule } from '../auth/auth.module';
 import { ListsModule } from '../lists/lists.module';
 import {
@@ -14,7 +15,7 @@ import { PublicListsService } from './public-lists.service';
  * (`PublicAdminController`) exige sesión + `manage_lists`.
  */
 @Module({
-    imports: [AuthModule, ListsModule],
+    imports: [AuthModule, ListsModule, FilesModule],
     controllers: [PublicController, PublicPageController, PublicAdminController],
     providers: [PublicListsService],
     exports: [PublicListsService],

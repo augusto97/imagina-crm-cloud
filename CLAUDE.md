@@ -519,6 +519,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         vestigial "compartir"). 4 tests nuevos (274 en verde) + E2E en
         navegador (branding aplicado al bootear, card Marca, badge y
         selector).
+  - [x] **White-label en portal + listas públicas (v0.1.58)**: el branding
+        del tenant llega a las superficies SIN sesión de miembro —
+        `portal.me` y `GET /public/lists/:token/meta` exponen `branding`
+        (color + app_name + **logo por URL firmada** HMAC, porque ni el rol
+        client ni el visitante anónimo pueden usar la descarga con sesión).
+        El SPA del portal re-pinta `--imcrm-primary`/ring y muestra
+        logo+nombre en el header; la página HTML embebible setea `--accent`
+        y muestra el logo junto al título. 2 tests nuevos (275 en verde) +
+        E2E navegador (portal y página pública con la marca del tenant).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

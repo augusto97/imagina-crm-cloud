@@ -1,8 +1,14 @@
 import { NotFoundException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, publicLists, records, tenants } from '../src/db/schema';
+import { loadEnv } from '../src/config/env';
+import { LocalFileStorage } from '../src/files/file-storage';
+import { FilesService } from '../src/files/files.service';
+import { attachments, fields, lists, publicLists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -47,7 +53,16 @@ describe('Listas públicas embebibles', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        pub = new PublicListsService(pg.db, tenantDb, lists_);
+        pub = new PublicListsService(
+            pg.db,
+            tenantDb,
+            lists_,
+            new FilesService(
+                tenantDb,
+                new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pub-'))),
+                loadEnv({ FILES_SIGNING_SECRET: 'test-public-secret' }),
+            ),
+        );
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
     });
@@ -116,6 +131,46 @@ describe('Listas públicas embebibles', () => {
         expect(meta.fields.map((x) => x.slug).sort()).toEqual(['email', 'monto', 'nombre']);
         expect(meta.fields.some((x) => x.slug === 'interno')).toBe(false);
         expect(meta.sort_allowed.sort()).toEqual(['monto', 'nombre']);
+    });
+
+    it('getMeta incluye el branding del tenant (logo por URL firmada)', async () => {
+        const cfg = await publish();
+        // Default: todo null.
+        expect((await pub.getMeta(cfg.token)).branding).toEqual({
+            primary_color: null,
+            app_name: null,
+            logo_url: null,
+        });
+        // Con branding seteado (y logo attachment del propio tenant).
+        const [uploader] = await pg.db
+            .insert(users)
+            .values({ email: `logo-${tenantId}@acme.test`, passwordHash: 'x', name: 'Logo' })
+            .returning();
+        const [file] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(attachments)
+                .values({
+                    tenantId,
+                    filename: 'logo.png',
+                    mime: 'image/png',
+                    sizeBytes: 5,
+                    storageKey: `t${tenantId}/logo.png`,
+                    createdBy: uploader!.id,
+                })
+                .returning(),
+        );
+        await pg.db
+            .update(tenants)
+            .set({
+                settings: {
+                    branding: { primary_color: '#112233', app_name: 'Acme Pública', logo_file_id: file!.id },
+                },
+            })
+            .where(eq(tenants.id, tenantId));
+        const meta = await pub.getMeta(cfg.token);
+        expect(meta.branding.primary_color).toBe('#112233');
+        expect(meta.branding.app_name).toBe('Acme Pública');
+        expect(meta.branding.logo_url).toMatch(new RegExp(`^/api/v1/files/${file!.id}/signed\\?tenant=${tenantId}&exp=\\d+&sig=[0-9a-f]+$`));
     });
 
     it('getRecords devuelve solo slugs visibles, nunca el campo interno', async () => {

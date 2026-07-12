@@ -101,9 +101,12 @@ export function renderPublicListPage(token: string, name: string): string {
 </head>
 <body>
   <div class="plw-head">
-    <div>
-      <h1 class="plw-title" id="plw-title">${safeName}</h1>
-      <p class="plw-desc" id="plw-desc" hidden></p>
+    <div style="display:flex;align-items:center;gap:10px">
+      <img id="plw-logo" alt="" hidden style="width:32px;height:32px;border-radius:6px;object-fit:contain" />
+      <div>
+        <h1 class="plw-title" id="plw-title">${safeName}</h1>
+        <p class="plw-desc" id="plw-desc" hidden></p>
+      </div>
     </div>
     <input type="search" class="plw-search" id="plw-search" placeholder="Buscar…" hidden />
   </div>
@@ -132,6 +135,7 @@ export function renderPublicListPage(token: string, name: string): string {
 
   var els = {
     title: document.getElementById('plw-title'),
+    logo: document.getElementById('plw-logo'),
     desc: document.getElementById('plw-desc'),
     search: document.getElementById('plw-search'),
     thead: document.getElementById('plw-thead'),
@@ -242,6 +246,13 @@ export function renderPublicListPage(token: string, name: string): string {
       meta = m;
       els.title.textContent = m.name || els.title.textContent;
       if (m.description) { els.desc.textContent = m.description; els.desc.hidden = false; }
+      // White-label del workspace dueño: acento + logo (URL firmada).
+      if (m.branding) {
+        if (m.branding.primary_color && /^#[0-9a-fA-F]{6}$/.test(m.branding.primary_color)) {
+          document.documentElement.style.setProperty('--accent', m.branding.primary_color);
+        }
+        if (m.branding.logo_url) { els.logo.src = m.branding.logo_url; els.logo.hidden = false; }
+      }
       if (m.search_enabled) els.search.hidden = false;
       if (m.default_sort) sort = m.default_sort;
       renderHead();

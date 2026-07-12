@@ -55,3 +55,16 @@ export const brandingResponseSchema = brandingSchema.extend({
     logo_url: z.string().nullable().default(null),
 });
 export type BrandingResponse = z.infer<typeof brandingResponseSchema>;
+
+/**
+ * Branding para superficies SIN sesión de miembro (portal del cliente,
+ * listas públicas embebibles): color + nombre + logo por URL FIRMADA
+ * (HMAC, TTL corto — el rol client / el visitante anónimo no pueden usar
+ * la descarga con sesión). Nunca expone el file_id crudo.
+ */
+export const publicBrandingSchema = z.object({
+    primary_color: z.string().nullable().default(null),
+    app_name: z.string().nullable().default(null),
+    logo_url: z.string().nullable().default(null),
+});
+export type PublicBranding = z.infer<typeof publicBrandingSchema>;
