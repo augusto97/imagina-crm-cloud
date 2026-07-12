@@ -11,6 +11,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 
+import { useBrandingData } from '@/hooks/useBranding';
 import { useDashboards } from '@/hooks/useDashboards';
 import { useLists } from '@/hooks/useLists';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
@@ -37,6 +38,12 @@ export function Sidebar({
     const lists = useLists();
     const dashboards = useDashboards();
     const [collapsed, setCollapsed] = useState(false);
+
+    // Branding white-label del tenant (logo + nombre). Lee del query cache
+    // que puebla `useBranding` en AdminCloudApp; nulls → marca por defecto.
+    const branding = useBrandingData();
+    const brandLogoUrl = branding.data?.logo_url ?? null;
+    const brandAppName = branding.data?.app_name ?? null;
 
     // Gating del sidebar por capability (Fase 7 — 1.E).
     // El backend ya filtra GET /lists a las visibles para el user, así
@@ -73,13 +80,21 @@ export function Sidebar({
                 )}
             >
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
-                    <span className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary imcrm-text-white">
-                        <Sparkles className="imcrm-h-4 imcrm-w-4" />
-                    </span>
+                    {brandLogoUrl ? (
+                        <img
+                            src={brandLogoUrl}
+                            alt=""
+                            className="imcrm-h-8 imcrm-w-8 imcrm-rounded-md imcrm-object-contain"
+                        />
+                    ) : (
+                        <span className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary imcrm-text-white">
+                            <Sparkles className="imcrm-h-4 imcrm-w-4" />
+                        </span>
+                    )}
                     {!collapsed && (
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-leading-tight">
                             <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
-                                Imagina Base
+                                {brandAppName ?? 'Imagina Base'}
                             </span>
                         </div>
                     )}

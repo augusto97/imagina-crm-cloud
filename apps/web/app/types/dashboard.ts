@@ -156,6 +156,16 @@ export interface WidgetSpec {
     layout: WidgetLayout;
 }
 
+/**
+ * Visibilidad por dashboard (espejo de `dashboardVisibilitySchema` en
+ * `@imagina-base/shared`):
+ *  - `workspace` (default): lo ve todo miembro interno.
+ *  - `private`: sólo el creador (el admin siempre ve todo).
+ *  - `roles`: sólo los roles en `allowed_roles` (+ creador y admin).
+ * El backend SIEMPRE filtra en list/get — la UI no filtra client-side.
+ */
+export type DashboardVisibility = 'workspace' | 'private' | 'roles';
+
 export interface DashboardEntity {
     id: number;
     user_id: number | null;
@@ -164,6 +174,8 @@ export interface DashboardEntity {
     widgets: WidgetSpec[];
     is_default: boolean;
     position: number;
+    visibility: DashboardVisibility;
+    allowed_roles: string[];
     created_by: number;
     created_at: string;
     updated_at: string;
@@ -174,8 +186,9 @@ export interface CreateDashboardInput {
     description?: string | null;
     widgets?: WidgetSpec[];
     is_default?: boolean;
-    is_shared?: boolean;
     position?: number;
+    visibility?: DashboardVisibility;
+    allowed_roles?: string[];
 }
 
 export interface UpdateDashboardInput {
@@ -184,6 +197,8 @@ export interface UpdateDashboardInput {
     widgets?: WidgetSpec[];
     is_default?: boolean;
     position?: number;
+    visibility?: DashboardVisibility;
+    allowed_roles?: string[];
 }
 
 export type WidgetData =

@@ -37,6 +37,16 @@ export const widgetSpecSchema = z.object({
 });
 export type WidgetSpec = z.infer<typeof widgetSpecSchema>;
 
+/**
+ * Visibilidad por dashboard:
+ *  - `workspace` (default): lo ve todo miembro interno (comportamiento previo).
+ *  - `private`: sólo el creador (y el admin, que siempre ve todo).
+ *  - `roles`: sólo los roles en `allowed_roles` (+ creador y admin).
+ * El backend SIEMPRE filtra en list/get/widgets; la UI sólo pinta el selector.
+ */
+export const dashboardVisibilitySchema = z.enum(['workspace', 'private', 'roles']);
+export type DashboardVisibility = z.infer<typeof dashboardVisibilitySchema>;
+
 export const dashboardSchema = z.object({
     id: idSchema,
     user_id: idSchema.nullable(),
@@ -45,6 +55,8 @@ export const dashboardSchema = z.object({
     widgets: z.array(widgetSpecSchema),
     is_default: z.boolean(),
     position: z.number().int(),
+    visibility: dashboardVisibilitySchema.default('workspace'),
+    allowed_roles: z.array(z.string()).default([]),
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
@@ -57,6 +69,8 @@ export const createDashboardSchema = z.object({
     widgets: z.array(widgetSpecSchema).default([]),
     is_default: z.boolean().optional(),
     position: z.number().int().nonnegative().optional(),
+    visibility: dashboardVisibilitySchema.optional(),
+    allowed_roles: z.array(z.string()).max(10).optional(),
 });
 export type CreateDashboardInput = z.infer<typeof createDashboardSchema>;
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     type AggregateMetric,
     type AggregateRequest,
@@ -13,6 +13,24 @@ import { dashboards } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 type Row = typeof dashboards.$inferSelect;
+
+/** Quién mira: para filtrar por visibilidad (el backend SIEMPRE decide). */
+export interface DashboardViewer {
+    userId: number;
+    role: string;
+}
+
+/**
+ * ¿`viewer` puede VER este dashboard? El admin y el creador siempre;
+ * `workspace` lo ve cualquiera; `roles` sólo los roles listados.
+ */
+function canSee(row: Row, viewer: DashboardViewer): boolean {
+    if (viewer.role === 'admin') return true;
+    if (row.createdBy === viewer.userId) return true;
+    if (row.visibility === 'workspace') return true;
+    if (row.visibility === 'roles') return (row.allowedRoles ?? []).includes(viewer.role);
+    return false; // private de otro usuario
+}
 
 /** Métricas que operan sobre un campo (sin field_id caen a `count`). */
 const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min', 'max', 'count_true', 'count_false']);
@@ -29,14 +47,14 @@ export class DashboardsService {
         private readonly aggregate: AggregateService,
     ) {}
 
-    async list(tenantId: number): Promise<Dashboard[]> {
+    async list(tenantId: number, viewer: DashboardViewer): Promise<Dashboard[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.select().from(dashboards).where(eq(dashboards.tenantId, tenantId)).orderBy(dashboards.position),
         );
-        return rows.map(toDashboard);
+        return rows.filter((r) => canSee(r, viewer)).map(toDashboard);
     }
 
-    async get(tenantId: number, id: number): Promise<Dashboard> {
+    async get(tenantId: number, id: number, viewer: DashboardViewer): Promise<Dashboard> {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select()
@@ -44,7 +62,8 @@ export class DashboardsService {
                 .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
                 .limit(1),
         );
-        if (!row) throw notFound(id);
+        // 404 también cuando existe pero no es visible (no filtramos existencia).
+        if (!row || !canSee(row, viewer)) throw notFound(id);
         return toDashboard(row);
     }
 
@@ -61,6 +80,8 @@ export class DashboardsService {
                     widgets: (input.widgets ?? []) as unknown[],
                     isDefault: input.is_default ?? false,
                     position: input.position ?? 0,
+                    visibility: input.visibility ?? 'workspace',
+                    allowedRoles: input.allowed_roles ?? [],
                     createdBy: userId,
                 })
                 .returning();
@@ -68,7 +89,8 @@ export class DashboardsService {
         return toDashboard(row!);
     }
 
-    async update(tenantId: number, id: number, patch: UpdateDashboardInput): Promise<Dashboard> {
+    async update(tenantId: number, id: number, viewer: DashboardViewer, patch: UpdateDashboardInput): Promise<Dashboard> {
+        await this.assertCanManage(tenantId, id, viewer);
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (patch.is_default) await clearDefault(tx, tenantId);
             return tx
@@ -79,6 +101,8 @@ export class DashboardsService {
                     ...(patch.widgets !== undefined ? { widgets: patch.widgets as unknown[] } : {}),
                     ...(patch.is_default !== undefined ? { isDefault: patch.is_default } : {}),
                     ...(patch.position !== undefined ? { position: patch.position } : {}),
+                    ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
+                    ...(patch.allowed_roles !== undefined ? { allowedRoles: patch.allowed_roles } : {}),
                     updatedAt: new Date(),
                 })
                 .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
@@ -88,10 +112,34 @@ export class DashboardsService {
         return toDashboard(row);
     }
 
-    async remove(tenantId: number, id: number): Promise<void> {
+    async remove(tenantId: number, id: number, viewer: DashboardViewer): Promise<void> {
+        await this.assertCanManage(tenantId, id, viewer);
         await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.delete(dashboards).where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id))),
         );
+    }
+
+    /**
+     * Mutar un dashboard exige (además de `manage_dashboards`, que valida el
+     * guard) ser el CREADOR o admin — un manager no edita/borra tableros
+     * ajenos que ni siquiera puede ver.
+     */
+    private async assertCanManage(tenantId: number, id: number, viewer: DashboardViewer): Promise<void> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(dashboards)
+                .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
+                .limit(1),
+        );
+        if (!row) throw notFound(id);
+        if (viewer.role === 'admin' || row.createdBy === viewer.userId) return;
+        if (!canSee(row, viewer)) throw notFound(id); // invisible → existencia opaca
+        throw new ForbiddenException({
+            code: 'dashboard_not_owner',
+            message: 'Sólo el creador o un admin pueden modificar este dashboard',
+            data: { status: 403 },
+        });
     }
 
     /**
@@ -100,8 +148,8 @@ export class DashboardsService {
      * stat_delta `{value, previous, delta_pct, period_days, metric}`, table
      * `{columns, rows}`.
      */
-    async widgetData(tenantId: number, dashboardId: number, widgetId: string): Promise<unknown> {
-        const dash = await this.get(tenantId, dashboardId);
+    async widgetData(tenantId: number, dashboardId: number, viewer: DashboardViewer, widgetId: string): Promise<unknown> {
+        const dash = await this.get(tenantId, dashboardId, viewer);
         const widget = dash.widgets.find((w) => w.id === widgetId);
         if (!widget) throw new NotFoundException({ code: 'widget_not_found', message: 'Widget no encontrado', data: { status: 404 } });
         return this.computeWidget(tenantId, widget);
@@ -113,8 +161,8 @@ export class DashboardsService {
      * queries). Devuelve `{ [widgetId]: data }`. El front lo comparte entre los
      * widgets vía un único queryKey → una sola llamada HTTP para todo el tablero.
      */
-    async widgetsData(tenantId: number, dashboardId: number): Promise<Record<string, unknown>> {
-        const dash = await this.get(tenantId, dashboardId);
+    async widgetsData(tenantId: number, dashboardId: number, viewer: DashboardViewer): Promise<Record<string, unknown>> {
+        const dash = await this.get(tenantId, dashboardId, viewer);
         const entries = await Promise.all(
             dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, w)] as const),
         );
@@ -172,6 +220,8 @@ function toDashboard(row: Row): Dashboard {
         widgets: (row.widgets as WidgetSpec[]) ?? [],
         is_default: row.isDefault,
         position: row.position,
+        visibility: (row.visibility ?? 'workspace') as Dashboard['visibility'],
+        allowed_roles: row.allowedRoles ?? [],
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
