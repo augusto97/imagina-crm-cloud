@@ -493,6 +493,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el detalle de empresa, barra "Almacenamiento" en Ajustes). 7 tests
         nuevos (272 total) + E2E curl (firma válida/mala/expirada/tenant
         ajeno, cuota 0 rebota y revierte) y navegador (3 pantallas).
+  - [x] **Pasada premium de UI (v0.1.56, estilo Cloudflare)**: rediseño
+        visual sistémico del admin — primary teal profundo (`191 85% 32%`,
+        antes cyan neón; dark mode alineado, era índigo), escala de radios
+        nítida (sm 3→ 2xl 10px), borders hairline definidos, y se eliminó
+        el "confeti": StatTile/Avatar/EmptyState y todos los chips de icono
+        de headers ahora NEUTROS (muted+ring; el color queda SOLO para
+        semántica: rose/amber en tiles, estados, barras de uso), avatares
+        sin hash de colores, logo del sidebar flat (sin gradiente radial),
+        títulos de página contenidos (text-2xl→text-xl en las ~12 páginas).
+        Sin cambios de backend. Verificado E2E en navegador (login, listas,
+        records, Ajustes, Plataforma).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

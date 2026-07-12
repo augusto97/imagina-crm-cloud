@@ -201,7 +201,7 @@ export function RecordPage(): JSX.Element {
                             {list.data.name}
                         </Link>
                     </Button>
-                    <h1 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                         {title}
                         <Badge variant="outline" className="imcrm-font-mono imcrm-text-xs">
                             #{record.data.id}
