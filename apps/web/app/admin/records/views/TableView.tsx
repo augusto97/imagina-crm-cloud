@@ -350,8 +350,10 @@ export function TableView({
             // header + ViewsTabs + filtros toolbar arriba. Si el
             // contenido cabe en ese alto, no hay scrollbar — comportamiento
             // natural.
+            // Sin card chrome (border/rounded/shadow/bg-card): la tabla
+            // va plana sobre el canvas, estilo ClickUp — solo hairlines.
             ref={tableContainerRef}
-            className="imcrm-overflow-auto imcrm-max-h-[calc(100vh-220px)] imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm"
+            className="imcrm-overflow-auto imcrm-max-h-[calc(100vh-220px)]"
             role="region"
             aria-label={__('Tabla de registros')}
             onScroll={(e) => {
@@ -361,12 +363,16 @@ export function TableView({
         >
             <table
                 className="imcrm-w-full imcrm-text-sm"
-                style={{ tableLayout: 'fixed', width: table.getCenterTotalSize() }}
+                // `width: 100%` + `minWidth: totalSize`: la tabla llena el
+                // contenedor (las columnas estiran proporcionalmente, sin
+                // vacío a la derecha) y conserva el scroll horizontal
+                // cuando la suma de anchos supera el viewport.
+                style={{ tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() }}
                 aria-label={__('Registros de la lista')}
             >
                 <thead
                     className={cn(
-                        'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-muted/60 imcrm-backdrop-blur imcrm-transition-shadow imcrm-duration-150',
+                        'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-canvas imcrm-transition-shadow imcrm-duration-150',
                         scrolled && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.06)]',
                     )}
                 >
@@ -374,7 +380,7 @@ export function TableView({
                         <tr key={hg.id} className="imcrm-border-b imcrm-border-border">
                             <th
                                 scope="col"
-                                className="imcrm-w-10 imcrm-px-3 imcrm-py-3"
+                                className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
                             >
                                 <input
                                     type="checkbox"
@@ -440,11 +446,11 @@ export function TableView({
                                             setOverColId(null);
                                         } : undefined}
                                         className={cn(
-                                            'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-3 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                            'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                             // Sticky cells necesitan bg sólido para
                                             // tapar las celdas que pasan por detrás
                                             // horizontalmente al scrollear.
-                                            stickyStyle && 'imcrm-bg-muted/60',
+                                            stickyStyle && 'imcrm-bg-canvas',
                                             isDragOver && 'imcrm-bg-primary/10',
                                             draggingColId === h.id && 'imcrm-opacity-50',
                                         )}
@@ -516,7 +522,7 @@ export function TableView({
                             {onAddColumn && (
                                 <th
                                     scope="col"
-                                    className="imcrm-w-12 imcrm-px-2 imcrm-py-3 imcrm-text-left"
+                                    className="imcrm-w-12 imcrm-px-2 imcrm-py-2 imcrm-text-left"
                                 >
                                     <button
                                         type="button"
@@ -570,7 +576,7 @@ export function TableView({
                                         'imcrm-group/row imcrm-border-t imcrm-border-border/50',
                                         isSelected
                                             ? 'imcrm-bg-primary/5'
-                                            : 'hover:imcrm-bg-accent/40',
+                                            : 'hover:imcrm-bg-muted/40',
                                     )}
                                 >
                                     <td
@@ -611,7 +617,7 @@ export function TableView({
                                                     'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
                                                     cellSticky && (isSelected
                                                         ? 'imcrm-bg-primary/5'
-                                                        : 'imcrm-bg-card group-hover/row:imcrm-bg-accent/40'),
+                                                        : 'imcrm-bg-canvas group-hover/row:imcrm-bg-muted/40'),
                                                     isOpenerCell && onRowClick && 'imcrm-cursor-pointer imcrm-font-medium',
                                                 )}
                                                 onClick={
@@ -670,13 +676,13 @@ export function TableView({
                                             }}
                                             className={cn(
                                                 'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                cellSticky && 'imcrm-bg-card',
+                                                cellSticky && 'imcrm-bg-canvas',
                                             )}
                                         >
                                             <button
                                                 type="button"
                                                 onClick={onAddRecord}
-                                                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent/40 hover:imcrm-text-foreground"
+                                                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground"
                                             >
                                                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                                 {__('Agregar tarea')}
@@ -695,7 +701,7 @@ export function TableView({
                                                 maxWidth: col.getSize(),
                                                 ...(cellSticky ?? {}),
                                             }}
-                                            className={cn(cellSticky && 'imcrm-bg-card')}
+                                            className={cn(cellSticky && 'imcrm-bg-canvas')}
                                         />
                                     );
                                 }
@@ -713,7 +719,7 @@ export function TableView({
                                         }}
                                         className={cn(
                                             'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                            cellSticky && 'imcrm-bg-card',
+                                            cellSticky && 'imcrm-bg-canvas',
                                         )}
                                     >
                                         <FooterAggregateCell

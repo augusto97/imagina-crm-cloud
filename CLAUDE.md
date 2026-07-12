@@ -564,6 +564,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         compartido + checkbox en el FieldConfigEditor). Verificado lado a
         lado contra las capturas de ClickUp del usuario.
 
+  - [x] **Refinamiento ClickUp (v0.1.61, feedback directo del usuario)**:
+        (a) riel de marca VIVO — el tinte a L=13% era imperceptible; ahora
+        branded a L=30% (sat clamp 70) y default teal 26% (el riel ES el
+        color del tema, como ClickUp); (b) panel lateral CONTEXTUAL — el
+        segundo sidebar cambia según el item del riel (Inicio→listas,
+        Dashboards→tableros, Ajustes→secciones vía settingsSections
+        compartido con SettingsPage que pierde su nav interna,
+        Plataforma→tabs vía ?tab=); (c) área de trabajo PLANA — la tabla
+        (plana y agrupada) sin card contenedora, width 100% sin vacío a la
+        derecha, headers compactos, hover por fila; (d) registro flotante
+        como MODAL GRANDE centrado (min(1150px,94vw)×88vh) de dos columnas
+        (contenido + aside 380px de Comentarios/Actividad con composer).
+        Verificado en navegador con branding verde aplicado (riel teñido).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
