@@ -73,18 +73,12 @@ export function Sidebar({
                 )}
             >
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
-                    <span
-                        className="imcrm-relative imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-text-white imcrm-shadow-imcrm-sm"
-                        style={{
-                            background:
-                                'radial-gradient(circle at 30% 30%, hsl(186 95% 55%), hsl(186 95% 35%) 70%, hsl(217 91% 40%))',
-                        }}
-                    >
+                    <span className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary imcrm-text-white">
                         <Sparkles className="imcrm-h-4 imcrm-w-4" />
                     </span>
                     {!collapsed && (
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-leading-tight">
-                            <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-foreground">
+                            <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
                                 Imagina Base
                             </span>
                         </div>

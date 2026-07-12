@@ -120,7 +120,7 @@ export function ListBuilderPage(): JSX.Element {
                         <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                         {__('Listas')}
                     </Button>
-                    <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>
                 </div>

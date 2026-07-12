@@ -34,11 +34,11 @@ export function SettingsPage(): JSX.Element {
     return (
         <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-6">
             <header className="imcrm-flex imcrm-items-center imcrm-gap-4">
-                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-xl imcrm-bg-tone-cyan/15 imcrm-text-tone-cyan">
+                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                     <SlidersHorizontal className="imcrm-h-5 imcrm-w-5" aria-hidden />
                 </span>
                 <div>
-                    <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
+                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">Ajustes</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         Plan y facturación, miembros del workspace y configuración del sistema.
                     </p>
@@ -77,7 +77,7 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
-                        <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-violet/10 imcrm-text-tone-violet">
+                        <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                             <Crown className="imcrm-h-5 imcrm-w-5" aria-hidden />
                         </span>
                         <div>

@@ -34,16 +34,12 @@ export function EmptyState({
             className={cn(
                 'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-px-6 imcrm-py-12 imcrm-text-center',
                 variant === 'card' &&
-                    'imcrm-rounded-xl imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-gradient-to-b imcrm-from-muted/20 imcrm-to-transparent',
+                    'imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20',
                 className,
             )}
         >
-            <div className="imcrm-relative imcrm-flex imcrm-h-14 imcrm-w-14 imcrm-items-center imcrm-justify-center imcrm-rounded-2xl imcrm-bg-gradient-to-br imcrm-from-primary/10 imcrm-to-primary/5 imcrm-shadow-imcrm-sm">
-                <Icon className="imcrm-h-6 imcrm-w-6 imcrm-text-primary" aria-hidden />
-                <span
-                    aria-hidden
-                    className="imcrm-absolute imcrm--inset-1 imcrm-rounded-3xl imcrm-bg-primary/5 imcrm-blur-md"
-                />
+            <div className="imcrm-flex imcrm-h-12 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted/70 imcrm-ring-1 imcrm-ring-border">
+                <Icon className="imcrm-h-5 imcrm-w-5 imcrm-text-foreground/60" aria-hidden />
             </div>
 
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

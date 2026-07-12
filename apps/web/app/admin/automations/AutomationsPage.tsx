@@ -111,7 +111,7 @@ export function AutomationsPage(): JSX.Element {
                         </Link>
                     </Button>
                     <div className="imcrm-min-w-0">
-                        <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                        <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                             {__('Automatizaciones')}
                         </h1>
                         <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">

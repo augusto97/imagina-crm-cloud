@@ -44,12 +44,12 @@ export function PlatformPage(): JSX.Element {
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
             {/* Header de operador */}
             <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-4">
-                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-xl imcrm-bg-tone-violet/15 imcrm-text-tone-violet">
+                <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                     <ShieldCheck className="imcrm-h-5 imcrm-w-5" aria-hidden />
                 </span>
                 <div className="imcrm-min-w-0 imcrm-flex-1">
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-2.5">
-                        <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                        <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                             {__('Plataforma')}
                         </h1>
                         <Badge dot>{__('Superadmin')}</Badge>

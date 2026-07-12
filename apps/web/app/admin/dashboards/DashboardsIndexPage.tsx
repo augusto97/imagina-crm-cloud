@@ -25,7 +25,7 @@ export function DashboardsIndexPage(): JSX.Element {
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-min-w-0">
-                    <h1 className="imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                         {__('Dashboards')}
                     </h1>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">

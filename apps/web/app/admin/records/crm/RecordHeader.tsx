@@ -132,7 +132,7 @@ export function RecordHeader({
             <div className="imcrm-flex imcrm-flex-col imcrm-justify-center imcrm-gap-2 imcrm-rounded-lg imcrm-p-4">
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
-                        <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                        <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                             <span className="imcrm-truncate">{title}</span>
                             {idBadge}
                         </h1>
@@ -168,7 +168,7 @@ export function RecordHeader({
                     </div>
                 )}
                 <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5 imcrm-text-center">
-                    <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                         <span>{title}</span>
                         {idBadge}
                     </h1>
@@ -223,7 +223,7 @@ export function RecordHeader({
                             </div>
                         )}
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1.5">
-                            <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                            <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                                 <span className="imcrm-truncate">{title}</span>
                                 {idBadge}
                             </h1>

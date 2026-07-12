@@ -197,7 +197,7 @@ export function DashboardPage(): JSX.Element {
                             {__('Dashboards')}
                         </Link>
                     </Button>
-                    <h1 className="imcrm-group/title imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-group/title imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
                         {d.name}
                         {d.user_id === null && (
                             <Badge variant="outline">{__('Compartido')}</Badge>
