@@ -539,8 +539,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (page + drawer): título grande = campo primario, grilla de metadatos
         con iconos, sección "Campos" colapsable con icono por tipo (mapa
         compartido fieldTypeIcons) y panel derecho de Comentarios/Actividad.
-        Layout CRM por template intacto. Pendiente Fase 2: dashboards
-        (promedio anotado, callouts, list widgets) + Ajustes en dos paneles.
+        Layout CRM por template intacto. **Fase 2 (mismo release)**:
+        dashboards estilo ClickUp (WidgetHeader compartido con subtítulo
+        métrica·lista, "Promedio: N" + línea de referencia punteada en
+        bar/line/area, callouts del pie, KPI 26px bold) y Ajustes en DOS
+        PANELES (nav izquierda por grupos con gates de rol intactos,
+        sección activa en ?s= linkeable, select en mobile).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
