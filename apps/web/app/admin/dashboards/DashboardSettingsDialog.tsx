@@ -11,7 +11,13 @@ import { useUpdateDashboard } from '@/hooks/useDashboards';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { DashboardEntity } from '@/types/dashboard';
+import type {
+    DashboardEntity,
+    DashboardVisibility,
+    UpdateDashboardInput,
+} from '@/types/dashboard';
+
+import { DashboardVisibilityFields } from './DashboardVisibilityFields';
 
 interface DashboardSettingsDialogProps {
     dashboard: DashboardEntity;
@@ -20,10 +26,9 @@ interface DashboardSettingsDialogProps {
 }
 
 /**
- * Dialog para editar nombre + descripción del dashboard. El share
- * (`is_shared`) NO se edita aquí — está atado al `user_id` que se
- * fija al crear y cambiarlo después implica reasignar ownership;
- * fuera de scope.
+ * Dialog para editar nombre + descripción + visibilidad del dashboard.
+ * `visibility`/`allowed_roles` sólo van en el PATCH si el usuario los
+ * cambió — así una edición de nombre no pisa la visibilidad guardada.
  */
 export function DashboardSettingsDialog({
     dashboard,
@@ -34,15 +39,25 @@ export function DashboardSettingsDialog({
     const toast = useToast();
     const [name, setName] = useState(dashboard.name);
     const [description, setDescription] = useState(dashboard.description ?? '');
+    const [visibility, setVisibility] = useState<DashboardVisibility>(
+        dashboard.visibility ?? 'workspace',
+    );
+    const [allowedRoles, setAllowedRoles] = useState<string[]>(dashboard.allowed_roles ?? []);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (open) {
             setName(dashboard.name);
             setDescription(dashboard.description ?? '');
+            setVisibility(dashboard.visibility ?? 'workspace');
+            setAllowedRoles(dashboard.allowed_roles ?? []);
             setError(null);
         }
-    }, [open, dashboard.name, dashboard.description]);
+        // `dashboard` cambia de referencia en cada refetch; dependemos sólo de
+        // los campos que precargamos (y NUNCA del objeto de mutación — ver el
+        // bug histórico de loop de render en DashboardCreateDialog).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, dashboard.name, dashboard.description, dashboard.visibility]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
@@ -52,11 +67,23 @@ export function DashboardSettingsDialog({
             setError(__('El nombre es obligatorio.'));
             return;
         }
+        // visibility/allowed_roles sólo si cambiaron — un PATCH de nombre no
+        // debe pisar lo guardado en el server.
+        const savedVisibility = dashboard.visibility ?? 'workspace';
+        const savedRoles = dashboard.allowed_roles ?? [];
+        const rolesChanged =
+            allowedRoles.length !== savedRoles.length ||
+            allowedRoles.some((r) => !savedRoles.includes(r));
+        const patch: UpdateDashboardInput = {
+            name: trimmedName,
+            description: description.trim() === '' ? null : description.trim(),
+        };
+        if (visibility !== savedVisibility || (visibility === 'roles' && rolesChanged)) {
+            patch.visibility = visibility;
+            patch.allowed_roles = visibility === 'roles' ? allowedRoles : [];
+        }
         try {
-            await update.mutateAsync({
-                name: trimmedName,
-                description: description.trim() === '' ? null : description.trim(),
-            });
+            await update.mutateAsync(patch);
             toast.success(__('Dashboard actualizado'));
             onOpenChange(false);
         } catch (err) {
@@ -85,7 +112,7 @@ export function DashboardSettingsDialog({
                                 {__('Configuración del dashboard')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Cambia el nombre o la descripción.')}
+                                {__('Cambia el nombre, la descripción o la visibilidad.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -115,6 +142,14 @@ export function DashboardSettingsDialog({
                                 onChange={(e) => setDescription(e.target.value)}
                             />
                         </div>
+
+                        <DashboardVisibilityFields
+                            idPrefix="db-edit"
+                            visibility={visibility}
+                            allowedRoles={allowedRoles}
+                            onVisibilityChange={setVisibility}
+                            onAllowedRolesChange={setAllowedRoles}
+                        />
 
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

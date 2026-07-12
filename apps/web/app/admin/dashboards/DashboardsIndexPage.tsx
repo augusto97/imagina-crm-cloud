@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, BarChart3, Plus, Users } from 'lucide-react';
+import { AlertCircle, BarChart3, Lock, Plus, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,12 +62,17 @@ export function DashboardsIndexPage(): JSX.Element {
                                             <BarChart3 className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                             {d.name}
                                         </span>
-                                        {d.user_id === null && (
+                                        {d.visibility !== 'workspace' ? (
+                                            <Badge variant="outline" className="imcrm-gap-1">
+                                                <Lock className="imcrm-h-3 imcrm-w-3" />
+                                                {d.visibility === 'private' ? __('Sólo yo') : __('Roles')}
+                                            </Badge>
+                                        ) : d.user_id === null ? (
                                             <Badge variant="outline" className="imcrm-gap-1">
                                                 <Users className="imcrm-h-3 imcrm-w-3" />
                                                 {__('Compartido')}
                                             </Badge>
-                                        )}
+                                        ) : null}
                                     </CardTitle>
                                     {d.description && <CardDescription>{d.description}</CardDescription>}
                                 </CardHeader>

@@ -11,6 +11,9 @@ import { useCreateDashboard } from '@/hooks/useDashboards';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import type { DashboardVisibility } from '@/types/dashboard';
+
+import { DashboardVisibilityFields } from './DashboardVisibilityFields';
 
 interface DashboardCreateDialogProps {
     open: boolean;
@@ -31,14 +34,16 @@ export function DashboardCreateDialog({
     const create = useCreateDashboard();
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
-    const [isShared, setIsShared] = useState(false);
+    const [visibility, setVisibility] = useState<DashboardVisibility>('workspace');
+    const [allowedRoles, setAllowedRoles] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!open) {
             setName('');
             setDescription('');
-            setIsShared(false);
+            setVisibility('workspace');
+            setAllowedRoles([]);
             setError(null);
             create.reset();
         }
@@ -55,7 +60,8 @@ export function DashboardCreateDialog({
             const dashboard = await create.mutateAsync({
                 name: name.trim(),
                 description: description.trim() === '' ? null : description.trim(),
-                is_shared: isShared,
+                visibility,
+                allowed_roles: visibility === 'roles' ? allowedRoles : [],
                 widgets: [],
             });
             onOpenChange(false);
@@ -118,14 +124,13 @@ export function DashboardCreateDialog({
                             />
                         </div>
 
-                        <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                            <input
-                                type="checkbox"
-                                checked={isShared}
-                                onChange={(e) => setIsShared(e.target.checked)}
-                            />
-                            {__('Compartir con todo el equipo')}
-                        </label>
+                        <DashboardVisibilityFields
+                            idPrefix="db-create"
+                            visibility={visibility}
+                            allowedRoles={allowedRoles}
+                            onVisibilityChange={setVisibility}
+                            onAllowedRolesChange={setAllowedRoles}
+                        />
 
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
