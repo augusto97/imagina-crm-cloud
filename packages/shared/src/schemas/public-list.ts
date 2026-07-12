@@ -63,6 +63,8 @@ export interface PublicListMeta {
     default_sort: string | null;
     per_page: number;
     search_enabled: boolean;
+    /** White-label del workspace dueño (logo por URL firmada, sin sesión). */
+    branding: { primary_color: string | null; app_name: string | null; logo_url: string | null };
 }
 
 export interface PublicRecord {

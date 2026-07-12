@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    brandingSchema,
     jsonbKeyForField,
     publicListSettingsSchema,
     PUBLIC_LIST_DEFAULTS,
@@ -14,8 +15,9 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { fields, lists, publicLists, records } from '../db/schema';
+import { fields, lists, publicLists, records, tenants } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
+import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 /** Tipos de campo cuyo texto se busca en la búsqueda pública. */
@@ -27,6 +29,7 @@ export class PublicListsService {
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly tenantDb: TenantDb,
         private readonly lists: ListsService,
+        private readonly files: FilesService,
     ) {}
 
     // ─────────────────────────── Admin ───────────────────────────
@@ -130,6 +133,18 @@ export class PublicListsService {
                 l && typeof (l.settings as Record<string, unknown>).description === 'string'
                     ? ((l.settings as Record<string, unknown>).description as string)
                     : null;
+            // White-label del workspace dueño: color/nombre/logo (URL firmada
+            // — la página pública no tiene sesión alguna).
+            const [tenantRow] = await tx
+                .select({ settings: tenants.settings })
+                .from(tenants)
+                .where(eq(tenants.id, tenantId))
+                .limit(1);
+            const parsed = brandingSchema.safeParse(
+                (tenantRow?.settings as Record<string, unknown> | undefined)?.branding ?? {},
+            );
+            const b = parsed.success ? parsed.data : brandingSchema.parse({});
+
             return {
                 name: l?.name ?? 'Lista',
                 description,
@@ -138,6 +153,14 @@ export class PublicListsService {
                 default_sort: cfg.default_sort,
                 per_page: cfg.per_page,
                 search_enabled: cfg.search_enabled,
+                branding: {
+                    primary_color: b.primary_color,
+                    app_name: b.app_name,
+                    logo_url:
+                        b.logo_file_id !== null
+                            ? this.files.signedUrl(tenantId, b.logo_file_id, 3600)
+                            : null,
+                },
             };
         });
     }

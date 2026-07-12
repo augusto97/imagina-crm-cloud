@@ -7,6 +7,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import {
+    brandingSchema,
     isDataField,
     jsonbKeyForField,
     validateFieldValue,
@@ -29,7 +30,7 @@ import { SessionService } from '../auth/session.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { fields, lists, memberships, portalLinks, records, relations, users } from '../db/schema';
+import { fields, lists, memberships, portalLinks, records, relations, users, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { hiddenFieldsFor } from '../lists/list-acl';
@@ -610,7 +611,29 @@ export class PortalService {
             // (shape del template-editor). Aceptamos también un array plano legacy.
             const template = extractPortalBlocks(list.settings.portal_template);
 
+            // White-label del workspace: el cliente ve el portal con la marca
+            // de la empresa. El logo va por URL FIRMADA (el rol client no
+            // tiene la descarga con sesión, mismo criterio que los campos file).
+            const [tenantRow] = await tx
+                .select({ settings: tenants.settings })
+                .from(tenants)
+                .where(eq(tenants.id, link.tenantId))
+                .limit(1);
+            const parsedBranding = brandingSchema.safeParse(
+                (tenantRow?.settings as Record<string, unknown> | undefined)?.branding ?? {},
+            );
+            const b = parsedBranding.success ? parsedBranding.data : brandingSchema.parse({});
+            const branding = {
+                primary_color: b.primary_color,
+                app_name: b.app_name,
+                logo_url:
+                    b.logo_file_id !== null
+                        ? this.files.signedUrl(link.tenantId, b.logo_file_id, 3600)
+                        : null,
+            };
+
             return {
+                branding,
                 list_id: list.id,
                 list_slug: list.slug,
                 list_name: list.name,

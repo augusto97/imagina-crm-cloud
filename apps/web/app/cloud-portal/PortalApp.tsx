@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
@@ -66,6 +67,26 @@ function PortalPage(): JSX.Element {
 
 function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
     const dataFields = boot.fields.filter((f) => isDataField(f.type));
+
+    // White-label: el portal sale con la marca de la empresa (mismo mecanismo
+    // que el admin — re-pintamos los tokens del tema con el color del tenant).
+    // Defensivo ante un boot sin branding (respuesta cacheada de una versión previa).
+    const branding = boot.branding ?? { primary_color: null, app_name: null, logo_url: null };
+    useEffect(() => {
+        const root = document.documentElement;
+        const hsl = branding.primary_color ? hexToHslTriplet(branding.primary_color) : null;
+        if (hsl) {
+            root.style.setProperty('--imcrm-primary', hsl);
+            root.style.setProperty('--imcrm-ring', hsl);
+        } else {
+            root.style.removeProperty('--imcrm-primary');
+            root.style.removeProperty('--imcrm-ring');
+        }
+        return () => {
+            root.style.removeProperty('--imcrm-primary');
+            root.style.removeProperty('--imcrm-ring');
+        };
+    }, [branding.primary_color]);
     // Los bloques del portal leen el record por SLUG (herencia del plugin);
     // el backend keyea por f{id} → traducimos acá una sola vez.
     const rendererData = useMemo<PortalRendererData>(() => {
@@ -104,11 +125,20 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
     return (
         <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground">
             <header className="imcrm-border-b imcrm-border-border imcrm-px-6 imcrm-py-4">
-                <div className="imcrm-mx-auto imcrm-max-w-4xl">
-                    <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                        {boot.list_name}
-                    </p>
-                    <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Tu portal</h1>
+                <div className="imcrm-mx-auto imcrm-flex imcrm-max-w-4xl imcrm-items-center imcrm-gap-3">
+                    {branding.logo_url && (
+                        <img
+                            src={branding.logo_url}
+                            alt=""
+                            className="imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-rounded-md imcrm-object-contain"
+                        />
+                    )}
+                    <div>
+                        <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            {branding.app_name ?? boot.list_name}
+                        </p>
+                        <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Tu portal</h1>
+                    </div>
                 </div>
             </header>
 
