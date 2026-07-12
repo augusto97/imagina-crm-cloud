@@ -24,7 +24,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { DashboardsService } from './dashboards.service';
+import { DashboardsService, type DashboardViewer } from './dashboards.service';
 
 /**
  * Dashboards del workspace (CONTRACT.md §5). Requiere sesión + tenant; la
@@ -43,13 +43,13 @@ export class DashboardsController {
     @Get()
     @RequireCapability('access_admin')
     list(@Req() req: FastifyRequest): Promise<Dashboard[]> {
-        return this.dashboards.list(tenantId(req));
+        return this.dashboards.list(tenantId(req), viewer(req));
     }
 
     @Get(':id')
     @RequireCapability('access_admin')
     get(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<Dashboard> {
-        return this.dashboards.get(tenantId(req), id);
+        return this.dashboards.get(tenantId(req), id, viewer(req));
     }
 
     @Get(':id/widgets/:widgetId/data')
@@ -59,7 +59,7 @@ export class DashboardsController {
         @Param('id', ParseIntPipe) id: number,
         @Param('widgetId') widgetId: string,
     ): Promise<unknown> {
-        return this.dashboards.widgetData(tenantId(req), id, widgetId);
+        return this.dashboards.widgetData(tenantId(req), id, viewer(req), widgetId);
     }
 
     /** Bundle: evalúa TODOS los widgets del dashboard en un request (PERF-03). */
@@ -70,7 +70,7 @@ export class DashboardsController {
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<Record<string, unknown>> {
-        return this.dashboards.widgetsData(tenantId(req), id);
+        return this.dashboards.widgetsData(tenantId(req), id, viewer(req));
     }
 
     @Post()
@@ -90,17 +90,21 @@ export class DashboardsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateDashboardSchema)) patch: UpdateDashboardInput,
     ): Promise<Dashboard> {
-        return this.dashboards.update(tenantId(req), id, patch);
+        return this.dashboards.update(tenantId(req), id, viewer(req), patch);
     }
 
     @Delete(':id')
     @HttpCode(204)
     @RequireCapability('manage_dashboards')
     async remove(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<void> {
-        await this.dashboards.remove(tenantId(req), id);
+        await this.dashboards.remove(tenantId(req), id, viewer(req));
     }
 }
 
 function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
+}
+
+function viewer(req: FastifyRequest): DashboardViewer {
+    return { userId: req.authUserId!, role: req.tenant!.role };
 }

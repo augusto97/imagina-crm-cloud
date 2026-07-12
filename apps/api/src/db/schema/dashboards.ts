@@ -6,6 +6,7 @@ import {
     pgTable,
     text,
     timestamp,
+    varchar,
 } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants';
 
@@ -26,6 +27,9 @@ export const dashboards = pgTable('dashboards', {
     widgets: jsonb('widgets').$type<unknown[]>().notNull().default([]),
     isDefault: boolean('is_default').notNull().default(false),
     position: integer('position').notNull().default(0),
+    // Permisos finos (migración 0028): workspace | private | roles.
+    visibility: varchar('visibility', { length: 16 }).notNull().default('workspace'),
+    allowedRoles: jsonb('allowed_roles').$type<string[]>().notNull().default([]),
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
