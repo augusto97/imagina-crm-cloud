@@ -63,7 +63,7 @@ export function SystemUpdatesPanel(): JSX.Element | null {
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-tone-slate/10 imcrm-text-tone-slate">
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                             <RefreshCw className="imcrm-h-4 imcrm-w-4" aria-hidden />
                         </span>
                         <div>
