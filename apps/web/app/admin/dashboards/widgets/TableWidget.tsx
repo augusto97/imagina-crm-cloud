@@ -7,6 +7,8 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import type { FieldEntity } from '@/types/field';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+
 interface TableWidgetProps {
     dashboardId: number;
     widget: WidgetSpec;
@@ -25,14 +27,11 @@ export function TableWidget({ dashboardId, widget }: TableWidgetProps): JSX.Elem
     // Config de los fields de la lista — para pintar chips de select/
     // multi_select con sus colores reales (igual que la tabla de records).
     const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
+    const subtitle = useWidgetSubtitle(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <header>
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Top registros')}
-                </h3>
-            </header>
+            <WidgetHeader title={widget.title || __('Top registros')} subtitle={subtitle} />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-min-h-0 imcrm-flex-col imcrm-overflow-auto imcrm-rounded-lg imcrm-border imcrm-border-border">
                 {data.isLoading ? (

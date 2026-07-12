@@ -5,6 +5,7 @@ import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
+import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface FunnelWidgetProps {
     dashboardId: number;
@@ -30,14 +31,11 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const data = useWidgetData(dashboardId, widget.id);
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const orderMap = useGroupOptionOrder(widget.list_id, widget.config.group_by_field_id);
+    const subtitle = useWidgetSubtitle(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <header>
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Embudo')}
-                </h3>
-            </header>
+            <WidgetHeader title={widget.title || __('Embudo')} subtitle={subtitle} />
 
             {/* Ver nota en BarChartWidget: my-auto en vez de justify-center
               * para que el scroll no recorte las primeras filas. */}

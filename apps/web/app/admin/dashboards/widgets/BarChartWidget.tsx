@@ -5,6 +5,7 @@ import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap } from './useChartColors';
+import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface BarChartWidgetProps {
     dashboardId: number;
@@ -21,23 +22,34 @@ interface BarChartWidgetProps {
  * rotativa para categorías sin color. Se muestra el % del total
  * junto al valor.
  *
+ * Estilo ClickUp: badge "Promedio: N" arriba a la derecha del header
+ * + línea de referencia punteada ROJA en el promedio. Default ON;
+ * `show_average_line: false` explícito lo apaga.
+ *
  * Toggles del widget config:
- *  - `show_average_line` → línea vertical punteada en el promedio
+ *  - `show_average_line` → promedio en header + línea punteada (default on)
  *  - `show_data_labels`  → siempre mostramos el valor numérico, ya
  *                          es parte del layout base (no aplica acá)
  */
 export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
-    const showAvg = Boolean(widget.config.show_average_line);
+    const showAvg = widget.config.show_average_line !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
+    const subtitle = useWidgetSubtitle(widget);
+
+    const rows =
+        data.data && 'data' in data.data
+            ? data.data.data.map((r) => ({ label: r.label, value: toNumber(r.value) }))
+            : [];
+    const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <header>
-                <h3 className="imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">
-                    {widget.title || __('Distribución')}
-                </h3>
-            </header>
+            <WidgetHeader
+                title={widget.title || __('Distribución')}
+                subtitle={subtitle}
+                right={showAvg && avg !== null ? <AverageBadge value={avg} /> : null}
+            />
 
             {/* Sin justify-center en el scroll container: con muchas filas
               * + overflow, centraría recortando las primeras (inaccesibles).
@@ -55,12 +67,8 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                         <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
                         {__('Error')}
                     </div>
-                ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
-                    <BarRows
-                        rows={data.data.data.map((r) => ({ label: r.label, value: toNumber(r.value) }))}
-                        showAvg={showAvg}
-                        colorMap={colorMap}
-                    />
+                ) : rows.length > 0 ? (
+                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} />
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Sin datos.')}
@@ -99,11 +107,6 @@ function BarRows({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            {showAvg && (
-                <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-text-[10px] imcrm-text-muted-foreground">
-                    {__('Promedio')}: <span className="imcrm-ml-1 imcrm-font-medium imcrm-text-foreground">{avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                </div>
-            )}
             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                 {rows.map((row, i) => {
                     const pct = (row.value / max) * 100;
@@ -125,9 +128,16 @@ function BarRows({
                                     aria-hidden
                                 />
                                 {showAvg && (
+                                    // Línea de referencia del promedio (paridad
+                                    // ClickUp): punteada y roja. Es vertical
+                                    // porque las barras son horizontales.
                                     <div
-                                        className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-w-px imcrm-border-l imcrm-border-dashed imcrm-border-destructive"
-                                        style={{ left: `${avgPct}%` }}
+                                        className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-w-px"
+                                        style={{
+                                            left: `${avgPct}%`,
+                                            // Dash 6/4 (equivalente a strokeDasharray="6 4").
+                                            backgroundImage: `repeating-linear-gradient(to bottom, ${AVG_LINE_COLOR} 0 6px, transparent 6px 10px)`,
+                                        }}
                                         aria-hidden
                                     />
                                 )}
