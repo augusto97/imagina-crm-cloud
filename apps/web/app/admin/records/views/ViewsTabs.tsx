@@ -28,14 +28,18 @@ interface ViewsTabsProps {
 }
 
 /**
- * Switcher de vistas guardadas tipo Linear/ClickUp.
+ * Tab bar de vistas guardadas tipo ClickUp (subrayado 2px en la activa).
  *
  * - Tab "Todos" virtual al inicio: vista neutra sin filters/sort/search.
- * - Tabs por cada vista persistida; estrella si es default.
- * - Tab activa con un dropdown "..." con acciones (set default, eliminar).
- * - "+" al final para crear vista a partir del estado actual.
+ * - Tabs por cada vista persistida (icono por view_type + nombre);
+ *   estrella si es default.
+ * - Tab activa con subrayado primary + dropdown "..." con acciones
+ *   (editar config, set default, eliminar). Inactivas en muted.
+ * - "+ Vista" al final para crear vista a partir del estado actual
+ *   (abre el SaveViewDialog del padre).
  * - Cuando el estado actual difiere de la vista activa: badge "modificado"
  *   + botones "Guardar" (PATCH) y "Descartar" (re-aplica config persistida).
+ * - Mobile: scroll horizontal (sin wrap).
  */
 export function ViewsTabs({
     listId,
@@ -90,7 +94,7 @@ export function ViewsTabs({
     };
 
     return (
-        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-pb-1">
+        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border">
             <ViewTab
                 label={__('Todos')}
                 active={activeViewId === null}
@@ -162,37 +166,23 @@ export function ViewsTabs({
             })}
 
             {/*
-              Mostramos un botón labeled "Guardar como vista" cuando el
-              usuario está en el tab "Todos" (sin vista activa) — así
-              entiende que sus filtros/columnas pueden persistirse. En
-              vistas guardadas usamos el "+" compacto para "duplicar /
-              guardar como nueva".
+              "+ Vista" al final de la tab bar (patrón ClickUp): guarda
+              el estado actual (filtros/orden/columnas) como una vista
+              nombrada via el SaveViewDialog del padre.
             */}
-            {activeView === null ? (
-                <button
-                    type="button"
-                    onClick={onAskCreateView}
-                    title={__('Guardar filtros, ordenamiento y columnas como una vista nombrada')}
-                    className="imcrm-ml-1 imcrm-inline-flex imcrm-h-7 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-primary/40 imcrm-bg-primary/5 imcrm-px-2.5 imcrm-text-[12px] imcrm-font-medium imcrm-text-primary hover:imcrm-bg-primary/10"
-                    aria-label={__('Guardar como vista')}
-                >
-                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Guardar como vista')}
-                </button>
-            ) : (
-                <button
-                    type="button"
-                    onClick={onAskCreateView}
-                    title={__('Guardar estado actual como nueva vista')}
-                    className="imcrm-ml-1 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                    aria-label={__('Crear vista nueva')}
-                >
-                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                </button>
-            )}
+            <button
+                type="button"
+                onClick={onAskCreateView}
+                title={__('Guardar filtros, ordenamiento y columnas como una vista nombrada')}
+                className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
+                aria-label={__('Crear vista nueva')}
+            >
+                <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Vista')}
+            </button>
 
             {isDirty && activeView !== null && (
-                <div className="imcrm-ml-auto imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-pl-3">
+                <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cambios sin guardar')}</span>
                     <Button
                         size="sm"
@@ -217,7 +207,7 @@ export function ViewsTabs({
             )}
 
             {isDirty && activeView === null && (
-                <div className="imcrm-ml-auto imcrm-pl-3">
+                <div className="imcrm-ml-auto imcrm-shrink-0 imcrm-pl-3">
                     <Button
                         size="sm"
                         variant="outline"
@@ -268,10 +258,13 @@ function ViewTab({ label, active, onClick, isDefault, typeIcon, rightAction }: V
     return (
         <div
             className={cn(
-                'imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-sm imcrm-transition-colors',
+                // Tab estilo ClickUp: subrayado 2px que pisa (-mb-px) el
+                // border-b del contenedor. Sin wrap: la tab bar scrollea
+                // horizontal en mobile.
+                'imcrm--mb-px imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-transition-colors',
                 active
-                    ? 'imcrm-bg-secondary imcrm-text-foreground imcrm-font-medium'
-                    : 'imcrm-text-muted-foreground hover:imcrm-bg-accent/40 hover:imcrm-text-foreground',
+                    ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground'
+                    : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-border-border hover:imcrm-text-foreground',
             )}
         >
             <button type="button" onClick={onClick} className="imcrm-flex imcrm-items-center imcrm-gap-1.5">

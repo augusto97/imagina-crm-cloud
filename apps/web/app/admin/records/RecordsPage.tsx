@@ -1,8 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileUp, Loader2, Plus, Search, Settings, Zap } from 'lucide-react';
+import {
+    ArrowLeft,
+    Download,
+    FileUp,
+    Filter,
+    Loader2,
+    MoreHorizontal,
+    Plus,
+    Search,
+    Settings,
+    Zap,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFields } from '@/hooks/useFields';
@@ -200,7 +217,15 @@ export function RecordsPage(): JSX.Element {
         return serverSearch;
     }, [hasSearch, isSmallList, baseRecords, serverSearch, state.search, fields.data]);
     const [createOpen, setCreateOpen] = useState(false);
+    // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
+    // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
+    // Vive en state para que su identidad sea estable mientras el
+    // diálogo está abierto (el efecto del diálogo depende de ella).
+    const [createDefaults, setCreateDefaults] = useState<Record<string, unknown> | undefined>(undefined);
     const [importOpen, setImportOpen] = useState(false);
+    // El dialog de export es controlado desde acá: lo abren tanto el
+    // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
+    const [exportOpen, setExportOpen] = useState(false);
 
     // Capability gating (Fase 7 — 1.E). El backend ya rechaza acciones
     // sin cap; aquí solo ocultamos los botones para evitar UX de
@@ -369,69 +394,152 @@ const applyView = (view: SavedViewEntity | null): void => {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate('/lists')}
-                        className="imcrm-gap-2 imcrm-self-start imcrm-text-muted-foreground"
+            {/*
+              Fila 1 — breadcrumb (patrón ClickUp): "Listas / {nombre}".
+              A la derecha, las acciones secundarias de la lista como
+              botones ghost compactos (>= md) o un menú "···" (mobile).
+              La acción primaria "+ Nuevo registro" vive en la toolbar
+              (fila 3), junto a la búsqueda.
+            */}
+            <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
+                <nav
+                    aria-label={__('Ruta de navegación')}
+                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-sm"
+                >
+                    <Link
+                        to="/lists"
+                        className="imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                     >
-                        <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                         {__('Listas')}
-                    </Button>
-                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
+                    </Link>
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                        /
+                    </span>
+                    <h1 className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>
-                </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    {canManageAutomations && (
-                        <Button asChild variant="outline" className="imcrm-gap-2">
-                            <Link to={`/lists/${list.data.slug}/automations`}>
-                                <Zap className="imcrm-h-4 imcrm-w-4" />
-                                {__('Automatizaciones')}
-                            </Link>
-                        </Button>
-                    )}
-                    {canManageList && (
-                        <Button asChild variant="outline" className="imcrm-gap-2">
-                            <Link to={`/lists/${list.data.slug}/edit`}>
-                                <Settings className="imcrm-h-4 imcrm-w-4" />
-                                {__('Configurar lista')}
-                            </Link>
-                        </Button>
-                    )}
-                    {canImportRecords && (
-                        <Button
-                            variant="outline"
-                            onClick={() => setImportOpen(true)}
-                            disabled={!fields.data || fields.data.length === 0}
-                            className="imcrm-gap-2"
-                        >
-                            <FileUp className="imcrm-h-4 imcrm-w-4" />
-                            {__('Importar')}
-                        </Button>
-                    )}
-                    {canExportRecords && (
-                        <ExportButton
-                            listId={list.data.id}
-                            listSlug={list.data.slug}
-                            filterTree={state.filterTree}
-                            disabled={!fields.data || fields.data.length === 0}
-                        />
-                    )}
-                    {canCreateRecords && (
-                        <Button
-                            onClick={() => setCreateOpen(true)}
-                            disabled={!fields.data || fields.data.length === 0}
-                            className="imcrm-gap-2"
-                        >
-                            <Plus className="imcrm-h-4 imcrm-w-4" />
-                            {__('Nuevo registro')}
-                        </Button>
-                    )}
-                </div>
+                </nav>
+
+                {(canManageAutomations || canManageList || canImportRecords || canExportRecords) && (
+                    <>
+                        {/* Desktop: iconos + label compactos. */}
+                        <div className="imcrm-hidden imcrm-shrink-0 imcrm-items-center imcrm-gap-1 md:imcrm-flex">
+                            {canManageAutomations && (
+                                <Button
+                                    asChild
+                                    variant="ghost"
+                                    size="sm"
+                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                >
+                                    <Link to={`/lists/${list.data.slug}/automations`}>
+                                        <Zap className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        {__('Automatizaciones')}
+                                    </Link>
+                                </Button>
+                            )}
+                            {canManageList && (
+                                <Button
+                                    asChild
+                                    variant="ghost"
+                                    size="sm"
+                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                >
+                                    <Link to={`/lists/${list.data.slug}/edit`}>
+                                        <Settings className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        {__('Configurar lista')}
+                                    </Link>
+                                </Button>
+                            )}
+                            {canImportRecords && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setImportOpen(true)}
+                                    disabled={!fields.data || fields.data.length === 0}
+                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                >
+                                    <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Importar')}
+                                </Button>
+                            )}
+                            {canExportRecords && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setExportOpen(true)}
+                                    disabled={!fields.data || fields.data.length === 0}
+                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                >
+                                    <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Exportar')}
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Mobile: colapsa a "···". */}
+                        <div className="imcrm-shrink-0 md:imcrm-hidden">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label={__('Más acciones')}>
+                                        <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    {canManageAutomations && (
+                                        <DropdownMenuItem
+                                            onSelect={() => navigate(`/lists/${list.data!.slug}/automations`)}
+                                        >
+                                            <Zap className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Automatizaciones')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canManageList && (
+                                        <DropdownMenuItem
+                                            onSelect={() => navigate(`/lists/${list.data!.slug}/edit`)}
+                                        >
+                                            <Settings className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Configurar lista')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canImportRecords && (
+                                        <DropdownMenuItem
+                                            disabled={!fields.data || fields.data.length === 0}
+                                            onSelect={() => setImportOpen(true)}
+                                        >
+                                            <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Importar')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canExportRecords && (
+                                        <DropdownMenuItem
+                                            disabled={!fields.data || fields.data.length === 0}
+                                            onSelect={() => setExportOpen(true)}
+                                        >
+                                            <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Exportar')}
+                                        </DropdownMenuItem>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </>
+                )}
             </header>
+
+            {/*
+              Dialog de export sin trigger propio — lo abren los botones
+              del breadcrumb / menú "···" via `exportOpen`.
+            */}
+            {canExportRecords && (
+                <ExportButton
+                    listId={list.data.id}
+                    listSlug={list.data.slug}
+                    filterTree={state.filterTree}
+                    open={exportOpen}
+                    onOpenChange={setExportOpen}
+                    hideTrigger
+                />
+            )}
 
             {fields.data && fields.data.length === 0 && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-8 imcrm-text-center">
@@ -459,28 +567,18 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onAskCreateView={() => setSaveViewOpen(true)}
                     />
 
+                    {/*
+                      Fila 3 — toolbar: a la izquierda el chip de la vista/
+                      filtro guardado activo ("Todos" si no hay) + los
+                      controles de Filtrar/Columnas/Agrupar; a la derecha
+                      la búsqueda y la acción primaria "+ Nuevo registro".
+                    */}
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
-                        <div className="imcrm-flex imcrm-flex-1 imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                            <div className="imcrm-relative imcrm-w-72">
-                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                <Input
-                                    value={state.search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder={__('Buscar…')}
-                                    className="imcrm-pl-8 imcrm-pr-8"
-                                />
-                                {/*
-                                  Spinner in-input mientras la query
-                                  está en vuelo (tras el debounce).
-                                  isFetching también es true en otros
-                                  fetches (paginación, sort), pero
-                                  visualmente todos se ven igual de
-                                  reactivos — no es problema.
-                                */}
-                                {(records.isFetching || state.search !== debouncedSearch) && (
-                                    <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
-                                )}
-                            </div>
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                            <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                                <Filter aria-hidden className="imcrm-h-3 imcrm-w-3" />
+                                {activeView?.name ?? __('Todos')}
+                            </span>
                             <FiltersPanel
                                 listId={list.data?.id}
                                 fields={fields.data}
@@ -512,9 +610,44 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 />
                             )}
                         </div>
-                        {records.isFetching && !records.isLoading && (
-                            <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
-                        )}
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            {records.isFetching && !records.isLoading && (
+                                <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
+                            )}
+                            <div className="imcrm-relative imcrm-w-56 sm:imcrm-w-64">
+                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                <Input
+                                    value={state.search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder={__('Buscar…')}
+                                    className="imcrm-pl-8 imcrm-pr-8"
+                                />
+                                {/*
+                                  Spinner in-input mientras la query
+                                  está en vuelo (tras el debounce).
+                                  isFetching también es true en otros
+                                  fetches (paginación, sort), pero
+                                  visualmente todos se ven igual de
+                                  reactivos — no es problema.
+                                */}
+                                {(records.isFetching || state.search !== debouncedSearch) && (
+                                    <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
+                                )}
+                            </div>
+                            {canCreateRecords && (
+                                <Button
+                                    onClick={() => {
+                                        setCreateDefaults(undefined);
+                                        setCreateOpen(true);
+                                    }}
+                                    disabled={!fields.data || fields.data.length === 0}
+                                    className="imcrm-gap-2"
+                                >
+                                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                                    {__('Nuevo registro')}
+                                </Button>
+                            )}
+                        </div>
                     </div>
 
                     {records.isLoading ? (
@@ -584,7 +717,12 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, collapsedGroups: next }))
                                     }
                                     onAddColumn={() => navigate(`/lists/${list.data!.slug}/edit?focus=fields`)}
-                                    onAddRecord={() => setCreateOpen(true)}
+                                    onAddRecord={(groupField, bucketValue) => {
+                                        // Prefill: crear desde el grupo "Hecho"
+                                        // → el form abre con estado=hecho.
+                                        setCreateDefaults(prefillForGroup(groupField, bucketValue));
+                                        setCreateOpen(true);
+                                    }}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))
@@ -614,7 +752,10 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, columnOrder: next }))
                                     }
                                     filterTree={state.filterTree}
-                                    onAddRecord={() => setCreateOpen(true)}
+                                    onAddRecord={() => {
+                                        setCreateDefaults(undefined);
+                                        setCreateOpen(true);
+                                    }}
                                     onAddColumn={() => navigate(`/lists/${list.data!.slug}/edit?focus=fields`)}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
@@ -641,6 +782,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         fields={fields.data}
                         open={createOpen}
                         onOpenChange={setCreateOpen}
+                        initialValues={createDefaults}
                     />
 
                     <ImportDialog
@@ -672,4 +814,33 @@ const applyView = (view: SavedViewEntity | null): void => {
             )}
         </div>
     );
+}
+
+/**
+ * Valores iniciales del diálogo de creación cuando el user agrega un
+ * registro DESDE un grupo (modo agrupado): el campo agrupado se
+ * pre-carga con el valor del bucket, así "+ Agregar tarea" dentro de
+ * "Hecho" crea con estado=hecho. El bucket "(Sin valor)" no pre-carga
+ * nada. El valor del bucket llega como string del server — lo
+ * convertimos al tipo que espera el form según el tipo del campo.
+ */
+function prefillForGroup(
+    field: FieldEntity,
+    bucketValue: string | null,
+): Record<string, unknown> | undefined {
+    if (bucketValue === null) return undefined;
+    switch (field.type) {
+        case 'multi_select':
+            return { [field.slug]: [bucketValue] };
+        case 'checkbox':
+            return { [field.slug]: bucketValue === '1' || bucketValue === 'true' };
+        case 'number':
+        case 'currency':
+        case 'user': {
+            const n = Number(bucketValue);
+            return Number.isFinite(n) ? { [field.slug]: n } : undefined;
+        }
+        default:
+            return { [field.slug]: bucketValue };
+    }
 }
