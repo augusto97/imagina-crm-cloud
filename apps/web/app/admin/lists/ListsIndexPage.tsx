@@ -64,7 +64,6 @@ export function ListsIndexPage(): JSX.Element {
                     label={__('Total')}
                     value={stats.total}
                     tone="cyan"
-                    active
                 />
                 <StatTile
                     icon={Calendar}
