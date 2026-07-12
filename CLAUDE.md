@@ -546,6 +546,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         PANELES (nav izquierda por grupos con gates de rol intactos,
         sección activa en ?s= linkeable, select en mobile).
 
+  - [x] **Rediseño ESTRUCTURAL ClickUp (v0.1.60)**: feedback del usuario —
+        la pasada v0.1.59 fue cosmética; lo que define a ClickUp es la
+        FORMA. (a) Shell de DOBLE SIDEBAR: riel oscuro de 68px (iconos+
+        etiqueta, marca con logo del branding, gates intactos) + panel
+        interno claro de 240px con el workspace y el árbol (listas/
+        dashboards); el colapso cierra el panel y deja el riel
+        (localStorage). (b) Página de records en 3 filas: breadcrumb
+        (Listas / nombre + acciones secundarias compactas), TAB BAR de
+        vistas guardadas (subrayado primary, "+ Vista") y toolbar (chip de
+        vista activa + filtros/columnas/agrupar | búsqueda + Nuevo).
+        (c) Tabla agrupada: header de grupo con CHIP del valor (color real
+        de la opción) + contador, subtotales por bucket del server,
+        add-inline por grupo con PREFILL del valor agrupado
+        (RecordCreateDialog.initialValues), y fechas vencidas en rojo
+        OPT-IN (`config.highlight_overdue` en date/datetime — schema
+        compartido + checkbox en el FieldConfigEditor). Verificado lado a
+        lado contra las capturas de ClickUp del usuario.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

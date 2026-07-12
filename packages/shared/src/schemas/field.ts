@@ -66,8 +66,14 @@ export const fieldConfigSchemas = {
     }),
     select: z.object({ options: z.array(selectOptionSchema).default([]) }),
     multi_select: z.object({ options: z.array(selectOptionSchema).default([]) }),
-    date: z.object({}),
-    datetime: z.object({}),
+    date: z.object({
+        /** Opt-in: pintar en rojo los valores anteriores a hoy (fecha límite). */
+        highlight_overdue: z.boolean().optional(),
+    }),
+    datetime: z.object({
+        /** Opt-in: pintar en rojo los valores anteriores a ahora (fecha límite). */
+        highlight_overdue: z.boolean().optional(),
+    }),
     checkbox: z.object({}),
     url: z.object({}),
     email: z.object({}),

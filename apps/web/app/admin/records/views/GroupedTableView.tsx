@@ -19,7 +19,8 @@ import type {
 } from '@/types/record';
 
 import { EditableCell } from '@/admin/records/EditableCell';
-import { renderCellValue } from '@/admin/records/renderCellValue';
+import { extractFieldOptions } from '@/admin/records/fieldOptions';
+import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode, isFlatAndTree } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 
@@ -574,8 +575,17 @@ function GroupBucketSection({
         ? { data: prefetchedAggregates }
         : { data: fallbackAggregates.data };
 
-    const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
     const labelText = formatBucketLabel(groupByField, bucket.value);
+    // Header chip: cuando el campo agrupado es select/multi_select y el
+    // bucket matchea una opción declarada, el chip usa el COLOR real de
+    // la opción (mismo render que las celdas — estilo ClickUp). Para el
+    // resto de tipos (texto, fecha, etc.) cae al chip genérico.
+    const bucketOption = bucket.value !== null
+        && (groupByField.type === 'select' || groupByField.type === 'multi_select')
+        ? extractFieldOptions(groupByField).find((o) => o.value === bucket.value)
+        : undefined;
+    const useOptionChip = groupByField.type === 'select' || groupByField.type === 'multi_select';
+    const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
 
     const allRecordsSelected =
         records.data?.data.every((r) => selectedIds.includes(r.id)) ?? false;
@@ -625,20 +635,26 @@ function GroupBucketSection({
                 ) : (
                     <ChevronRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                 )}
-                <span
-                    className={cn(
-                        'imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-semibold',
-                        colorAccent,
-                    )}
-                >
-                    {labelText}
-                </span>
+                {useOptionChip && bucket.value !== null ? (
+                    <OptionChip opt={bucketOption} fallback={labelText} />
+                ) : (
+                    <span
+                        className={cn(
+                            'imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-semibold',
+                            colorAccent,
+                        )}
+                    >
+                        {labelText}
+                    </span>
+                )}
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {sprintf(
-                        /* translators: %d count */
-                        __('%d registros'),
-                        bucket.count,
-                    )}
+                    {bucket.count === 1
+                        ? __('1 registro')
+                        : sprintf(
+                              /* translators: %d count */
+                              __('%d registros'),
+                              bucket.count,
+                          )}
                 </span>
             </button>
 

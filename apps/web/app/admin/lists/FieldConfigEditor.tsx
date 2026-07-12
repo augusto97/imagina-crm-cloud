@@ -72,7 +72,10 @@ export function FieldConfigEditor({
             />
         );
     }
-    // date/datetime/url/email/user/file: no requieren config extra en MVP.
+    if (type === 'date' || type === 'datetime') {
+        return <DateHighlightEditor config={config} onChange={onChange} />;
+    }
+    // url/email/user/file: no requieren config extra en MVP.
     return null;
 }
 
@@ -318,6 +321,38 @@ function CheckboxDefaultEditor({ config, onChange }: SubProps): JSX.Element {
             />
             {__('Marcado por defecto')}
         </label>
+    );
+}
+
+/**
+ * Config de date/datetime: opt-in para pintar en rojo los valores
+ * vencidos (anteriores a hoy). Opt-in porque no toda fecha es una
+ * fecha límite — un cumpleaños pasado no está "vencido".
+ */
+function DateHighlightEditor({ config, onChange }: SubProps): JSX.Element {
+    const enabled = config.highlight_overdue === true;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={(e) => {
+                        if (e.target.checked) {
+                            onChange({ ...config, highlight_overdue: true });
+                        } else {
+                            const next = { ...config };
+                            delete next.highlight_overdue;
+                            onChange(next);
+                        }
+                    }}
+                />
+                {__('Resaltar vencidas')}
+            </label>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Las fechas anteriores a hoy se muestran en rojo (útil para fechas límite).')}
+            </p>
+        </div>
     );
 }
 
