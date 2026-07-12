@@ -529,6 +529,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         y muestra el logo junto al título. 2 tests nuevos (275 en verde) +
         E2E navegador (portal y página pública con la marca del tenant).
 
+  - [x] **Pasada ClickUp — Fase 1 (v0.1.59)**: el usuario prefirió el look
+        ClickUp sobre el Cloudflare-minimal → (a) sidebar OSCURO en el color
+        de marca (teal-tinta, texto claro, activo con velo blanco; el
+        white-label re-tiñe el riel con el hue del tenant desde useBranding);
+        (b) chips de select/multi_select SÓLIDOS saturados con texto de
+        contraste calculado (blanco / tinta en presets claros) — el color
+        fuerte vive en los datos; (c) registro abierto estilo tarea ClickUp
+        (page + drawer): título grande = campo primario, grilla de metadatos
+        con iconos, sección "Campos" colapsable con icono por tipo (mapa
+        compartido fieldTypeIcons) y panel derecho de Comentarios/Actividad.
+        Layout CRM por template intacto. Pendiente Fase 2: dashboards
+        (promedio anotado, callouts, list widgets) + Ajustes en dos paneles.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
