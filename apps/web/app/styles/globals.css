@@ -136,10 +136,10 @@
          * lleva la identidad — teal profundo casi-tinta, texto claro,
          * item activo con velo blanco. El white-label por tenant re-tiñe
          * estas variables desde useBranding (mismo hue del primary). */
-        --imcrm-sidebar: 194 60% 13%;
-        --imcrm-sidebar-foreground: 190 15% 82%;
-        --imcrm-sidebar-border: 194 45% 19%;
-        --imcrm-sidebar-accent: 194 50% 20%;
+        --imcrm-sidebar: 192 55% 26%;
+        --imcrm-sidebar-foreground: 190 25% 88%;
+        --imcrm-sidebar-border: 192 50% 33%;
+        --imcrm-sidebar-accent: 192 50% 34%;
         --imcrm-sidebar-accent-foreground: 0 0% 100%;
 
         /* Background del canvas principal (área a la derecha del sidebar).

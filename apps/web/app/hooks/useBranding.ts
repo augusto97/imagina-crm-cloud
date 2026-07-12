@@ -90,12 +90,14 @@ export function useBranding() {
         };
         if (triplet !== null) {
             for (const name of BRANDED_VARS) style.setProperty(name, triplet);
-            // El riel oscuro conserva el HUE de la marca con lightness fija
-            // (contraste del texto claro garantizado sin importar el color).
-            const [h] = triplet.split(' ');
-            style.setProperty('--imcrm-sidebar', `${h} 60% 13%`);
-            style.setProperty('--imcrm-sidebar-border', `${h} 45% 19%`);
-            style.setProperty('--imcrm-sidebar-accent', `${h} 50% 20%`);
+            // El riel toma el color de marca VIVO (estilo ClickUp: el riel ES
+            // el color del tema, no una tinta imperceptible). Lightness fija
+            // ~30% → texto blanco siempre contrasta, con cualquier hue.
+            const [h, sRaw] = triplet.split(' ');
+            const sat = Math.min(parseInt(sRaw ?? '60', 10) || 60, 70);
+            style.setProperty('--imcrm-sidebar', `${h} ${sat}% 30%`);
+            style.setProperty('--imcrm-sidebar-border', `${h} ${sat}% 37%`);
+            style.setProperty('--imcrm-sidebar-accent', `${h} ${sat}% 38%`);
         } else {
             clear();
         }
