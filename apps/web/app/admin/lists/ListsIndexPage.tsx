@@ -42,7 +42,7 @@ export function ListsIndexPage(): JSX.Element {
             {/* Page header */}
             <header className="imcrm-flex imcrm-items-end imcrm-justify-between imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                    <h1 className="imcrm-text-[28px] imcrm-font-semibold imcrm-leading-none imcrm-tracking-tight imcrm-text-foreground">
+                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-leading-none imcrm-tracking-tight imcrm-text-foreground">
                         {__('Listas')}
                     </h1>
                     <p className="imcrm-text-[13px] imcrm-text-muted-foreground">
@@ -129,7 +129,7 @@ function ListCard({
             className="imcrm-group imcrm-relative imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5 imcrm-shadow-imcrm-sm imcrm-transition-all imcrm-duration-200 hover:imcrm--translate-y-0.5 hover:imcrm-border-primary/30 hover:imcrm-shadow-imcrm-md"
         >
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-primary/10 imcrm-text-primary imcrm-ring-1 imcrm-ring-primary/15">
+                <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
                     <Database className="imcrm-h-4 imcrm-w-4" />
                 </span>
                 <ArrowRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground/40 imcrm-transition-all group-hover:imcrm-translate-x-0.5 group-hover:imcrm-text-primary" />

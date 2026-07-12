@@ -36,11 +36,12 @@
         --imcrm-popover: 0 0% 100%;
         --imcrm-popover-foreground: 224 71% 4%;
 
-        /* Primary cyan — alineado con la identidad de Imagina La Web /
-         * la app de audit. Cyan-500ish (186 95% 42%) — saturado, claro,
-         * visualmente distintivo. NO usar indigo / violet aquí: rompe
-         * la identidad visual del producto. */
-        --imcrm-primary: 186 95% 42%;
+        /* Primary cyan PROFUNDO — misma familia de la identidad Imagina,
+         * pero bajado de lightness/saturación (el 186 95% 42% original
+         * era neón y abarataba la UI). Un teal-cyan hondo lee "enterprise"
+         * (estilo Cloudflare/Stripe: el acento es funcional, no gritón).
+         * NO usar indigo / violet aquí: rompe la identidad del producto. */
+        --imcrm-primary: 191 85% 32%;
         --imcrm-primary-foreground: 0 0% 100%;
 
         /* Tones para los StatTiles — cada uno tiene su icon-square
@@ -123,21 +124,22 @@
         --imcrm-info: 217 91% 50%;
         --imcrm-info-foreground: 0 0% 100%;
 
-        /* Border hairline más sutil que el default — 220 13% 91% se
-         * veía gris pesado. 220 14% 94% es casi invisible pero
-         * suficiente para definir el edge. */
-        --imcrm-border: 220 14% 93%;
-        --imcrm-input: 220 14% 90%;
-        --imcrm-ring: 186 95% 42%;
+        /* Border hairline visible pero liviano — el edge definido con
+         * 1px nítido es lo que da el look "crisp" tipo Cloudflare
+         * (bordes demasiado fantasma hacían que las cards floten sin
+         * estructura). */
+        --imcrm-border: 220 13% 91%;
+        --imcrm-input: 220 13% 87%;
+        --imcrm-ring: 191 85% 32%;
 
         /* Sidebar: bg ligeramente off-white para que se distinga del
          * canvas principal sin ser una franja oscura. Item activo
          * usa primary muy suave. */
         --imcrm-sidebar: 220 17% 98%;
         --imcrm-sidebar-foreground: 224 12% 28%;
-        --imcrm-sidebar-border: 220 14% 93%;
+        --imcrm-sidebar-border: 220 13% 91%;
         --imcrm-sidebar-accent: 220 14% 95%;
-        --imcrm-sidebar-accent-foreground: 186 95% 42%;
+        --imcrm-sidebar-accent-foreground: 191 85% 32%;
 
         /* Background del canvas principal (área a la derecha del sidebar).
          * Un gris muy suave (slate-50ish) para que las cards en blanco
@@ -156,7 +158,7 @@
         --imcrm-popover: 224 16% 10%;
         --imcrm-popover-foreground: 220 14% 96%;
 
-        --imcrm-primary: 234 89% 65%;
+        --imcrm-primary: 190 80% 52%;
         --imcrm-primary-foreground: 224 16% 8%;
 
         --imcrm-secondary: 224 14% 16%;
@@ -173,13 +175,13 @@
 
         --imcrm-border: 224 14% 18%;
         --imcrm-input: 224 14% 18%;
-        --imcrm-ring: 234 89% 65%;
+        --imcrm-ring: 190 80% 52%;
 
         --imcrm-sidebar: 224 16% 9%;
         --imcrm-sidebar-foreground: 220 14% 90%;
         --imcrm-sidebar-border: 224 14% 16%;
         --imcrm-sidebar-accent: 224 14% 14%;
-        --imcrm-sidebar-accent-foreground: 234 89% 70%;
+        --imcrm-sidebar-accent-foreground: 190 80% 60%;
 
         /* Override de las variantes "-text" para dark mode: en lugar
          * de oscurecer (chip sobre fondo claro), aclaramos para que

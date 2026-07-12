@@ -21,24 +21,29 @@ import { cn } from '@/lib/utils';
  */
 type Tone = 'cyan' | 'mint' | 'rose' | 'blue' | 'violet' | 'amber' | 'slate';
 
+/* Pasada premium: los tiles YA NO pintan el icon-square con el arcoíris
+ * tonal (leía "dashboard template"). El chip es neutro (muted) y el
+ * énfasis lo lleva el NÚMERO — estilo Cloudflare, donde el color aparece
+ * sólo cuando significa algo. El tone `rose`/`amber` se conserva como
+ * señal semántica (negativo/atención); el resto colapsa a neutro. */
 const TONE_BG: Record<Tone, string> = {
-    cyan:   'imcrm-bg-tone-cyan/10',
-    mint:   'imcrm-bg-tone-mint/10',
+    cyan:   'imcrm-bg-muted/70',
+    mint:   'imcrm-bg-muted/70',
     rose:   'imcrm-bg-tone-rose/10',
-    blue:   'imcrm-bg-tone-blue/10',
-    violet: 'imcrm-bg-tone-violet/10',
+    blue:   'imcrm-bg-muted/70',
+    violet: 'imcrm-bg-muted/70',
     amber:  'imcrm-bg-tone-amber/10',
-    slate:  'imcrm-bg-tone-slate/10',
+    slate:  'imcrm-bg-muted/70',
 };
 
 const TONE_FG: Record<Tone, string> = {
-    cyan:   'imcrm-text-tone-cyan',
-    mint:   'imcrm-text-tone-mint',
+    cyan:   'imcrm-text-foreground/60',
+    mint:   'imcrm-text-foreground/60',
     rose:   'imcrm-text-tone-rose',
-    blue:   'imcrm-text-tone-blue',
-    violet: 'imcrm-text-tone-violet',
+    blue:   'imcrm-text-foreground/60',
+    violet: 'imcrm-text-foreground/60',
     amber:  'imcrm-text-tone-amber',
-    slate:  'imcrm-text-tone-slate',
+    slate:  'imcrm-text-foreground/60',
 };
 
 interface StatTileProps {
@@ -78,7 +83,7 @@ export function StatTile({
             )}
         >
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
-                <span className="imcrm-flex-1 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
+                <span className="imcrm-flex-1 imcrm-text-[11px] imcrm-font-medium imcrm-tracking-[0.02em] imcrm-text-muted-foreground">
                     {label}
                 </span>
                 <span
@@ -93,7 +98,7 @@ export function StatTile({
             </div>
 
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                <span className="imcrm-text-[28px] imcrm-font-semibold imcrm-leading-none imcrm-tabular-nums imcrm-tracking-tight imcrm-text-foreground">
+                <span className="imcrm-text-[24px] imcrm-font-semibold imcrm-leading-none imcrm-tabular-nums imcrm-tracking-tight imcrm-text-foreground">
                     {value}
                 </span>
                 {hint !== undefined && hint !== null && hint !== '' && (

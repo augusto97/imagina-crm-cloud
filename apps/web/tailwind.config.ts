@@ -85,11 +85,16 @@ const config: Config = {
                     slate: 'hsl(var(--imcrm-tone-slate))',
                 },
             },
+            /* Escala de radios NÍTIDA (estilo Cloudflare/Stripe): los
+             * radios generosos (12-16px) leían "template". Achicar acá
+             * re-esquina toda la app sin tocar componentes. */
             borderRadius: {
-                sm: '4px',
-                md: '6px',
-                lg: '8px',
-                xl: '12px',
+                sm: '3px',
+                md: '5px',
+                lg: '6px',
+                xl: '8px',
+                '2xl': '10px',
+                '3xl': '12px',
             },
             fontFamily: {
                 sans: [
