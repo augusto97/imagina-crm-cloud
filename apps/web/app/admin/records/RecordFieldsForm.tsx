@@ -38,6 +38,11 @@ interface RecordFieldsFormProps {
      * que usa el layout CRM en sus properties_group y PropertiesSidebar).
      */
     density?: 'comfortable' | 'compact';
+    /**
+     * Solo densidad `compact`: muestra el icono lucide del tipo de
+     * campo junto al label de cada fila (estilo ClickUp).
+     */
+    showTypeIcon?: boolean;
 }
 
 const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
@@ -56,6 +61,7 @@ export function RecordFieldsForm({
     fieldErrors,
     onlyNonInline,
     density = 'comfortable',
+    showTypeIcon = false,
 }: RecordFieldsFormProps): JSX.Element {
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
@@ -79,6 +85,7 @@ export function RecordFieldsForm({
                         value={values[field.slug]}
                         onChange={(v) => setValue(field.slug, v)}
                         error={fieldErrors?.[field.slug]}
+                        showTypeIcon={showTypeIcon}
                     />
                 ))}
             </div>

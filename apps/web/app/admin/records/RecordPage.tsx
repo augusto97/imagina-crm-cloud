@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
     Activity as ActivityIcon,
     ArrowLeft,
+    ChevronDown,
+    ChevronRight,
     ExternalLink,
     Loader2,
     MessageSquare,
@@ -14,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
+import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -60,6 +63,7 @@ export function RecordPage(): JSX.Element {
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
+    const [fieldsOpen, setFieldsOpen] = useState(true);
     const boot = getBootData();
 
     useEffect(() => {
@@ -201,21 +205,12 @@ export function RecordPage(): JSX.Element {
                             {list.data.name}
                         </Link>
                     </Button>
-                    <h1 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
                         {title}
                         <Badge variant="outline" className="imcrm-font-mono imcrm-text-xs">
                             #{record.data.id}
                         </Badge>
                     </h1>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {sprintf(
-                            /* translators: %s: localized creation date */
-                            __('Creado %s'),
-                            record.data.created_at
-                                ? new Date(record.data.created_at + 'Z').toLocaleString()
-                                : '—',
-                        )}
-                    </p>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                     <Button
@@ -235,30 +230,67 @@ export function RecordPage(): JSX.Element {
             </header>
 
             <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-6 lg:imcrm-grid-cols-3">
-                <main className="imcrm-flex imcrm-flex-col imcrm-gap-4 lg:imcrm-col-span-2">
-                    <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6">
-                        {fields.data && (
+                <main className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
+                    {/* Grilla de metadatos estilo ClickUp: icono+label → valor. */}
+                    <RecordMetaGrid record={record.data} fields={fields.data} values={values} />
+
+                    {/* Sección "Campos" colapsable: una fila por campo custom
+                     * (icono del tipo + label a la izquierda, editor inline a
+                     * la derecha — CompactFieldRow, el mismo editor del drawer
+                     * y del layout CRM). */}
+                    <section className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setFieldsOpen((v) => !v)}
+                            aria-expanded={fieldsOpen}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-rounded-md imcrm-py-1 imcrm-pr-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground hover:imcrm-text-foreground imcrm-transition-colors"
+                        >
+                            {fieldsOpen ? (
+                                <ChevronDown className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            ) : (
+                                <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            )}
+                            {__('Campos')}
+                            {fields.data && (
+                                <span className="imcrm-font-normal imcrm-normal-case imcrm-text-muted-foreground/70">
+                                    {fields.data.length}
+                                </span>
+                            )}
+                        </button>
+                        {fieldsOpen && fields.data && (
                             <RecordFieldsForm
                                 listId={list.data.id}
                                 fields={fields.data}
                                 values={values}
                                 onChange={setValues}
                                 fieldErrors={fieldErrors}
+                                density="compact"
+                                showTypeIcon
                             />
                         )}
                         {error !== null && (
-                            <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                            <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                                 {error}
                             </div>
                         )}
                     </section>
                 </main>
 
-                <aside className="imcrm-flex imcrm-flex-col imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
+                {/* Panel derecho "Actividad" estilo ClickUp: en lg+ pierde el
+                 * chrome de card y queda como columna con hairline izquierda;
+                 * en mobile sigue siendo la card apilada de siempre. */}
+                <aside className="imcrm-flex imcrm-flex-col imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card lg:imcrm-rounded-none lg:imcrm-border-y-0 lg:imcrm-border-r-0 lg:imcrm-bg-transparent lg:imcrm-pl-6">
+                    <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-3 imcrm-pt-3 imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight lg:imcrm-px-0 lg:imcrm-pt-1">
+                        <ActivityIcon
+                            className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground"
+                            aria-hidden
+                        />
+                        {__('Actividad')}
+                    </h2>
                     <div
                         role="tablist"
                         aria-label={__('Vista del registro')}
-                        className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-3"
+                        className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-3 lg:imcrm-px-0"
                     >
                         <TabButton active={tab === 'comments'} onClick={() => setTab('comments')}>
                             <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -270,7 +302,7 @@ export function RecordPage(): JSX.Element {
                         </TabButton>
                     </div>
 
-                    <div className="imcrm-flex imcrm-min-h-[60vh] imcrm-flex-col imcrm-overflow-hidden imcrm-p-4">
+                    <div className="imcrm-flex imcrm-min-h-[60vh] imcrm-flex-col imcrm-overflow-hidden imcrm-p-4 lg:imcrm-px-0">
                         {tab === 'comments' ? (
                             <CommentsPanel
                                 listId={list.data.id}
