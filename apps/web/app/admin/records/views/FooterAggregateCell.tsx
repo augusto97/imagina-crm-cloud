@@ -97,7 +97,15 @@ export function FooterAggregateCell({
                     )}
                     title={kind ? labelForKind(kind) : __('Elegir cálculo')}
                 >
-                    <span className="imcrm-truncate">
+                    <span
+                        className={cn(
+                            'imcrm-truncate',
+                            // Resultado calculado (subtotal del grupo /
+                            // total): números tabulares + semibold,
+                            // estilo ClickUp.
+                            formatted !== null && 'imcrm-tabular-nums imcrm-font-semibold',
+                        )}
+                    >
                         {formatted ?? __('Calcular')}
                     </span>
                     <ChevronDown className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-opacity-60" />

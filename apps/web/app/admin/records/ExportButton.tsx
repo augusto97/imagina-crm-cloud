@@ -18,6 +18,15 @@ interface ExportButtonProps {
     /** Si pasas IDs, son los pre-seleccionados en el dialog. */
     fieldIds?: number[];
     disabled?: boolean;
+    /**
+     * Modo controlado opcional: el dialog se abre/cierra desde afuera
+     * (ej. el botón compacto del breadcrumb o el menú "···" mobile de
+     * RecordsPage). Si no se pasan, el estado es interno como siempre.
+     */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    /** No renderiza el botón trigger propio (cuando lo abre un trigger externo). */
+    hideTrigger?: boolean;
 }
 
 
@@ -42,8 +51,13 @@ export function ExportButton({
     filterTree,
     fieldIds: initialFieldIds,
     disabled,
+    open: controlledOpen,
+    onOpenChange,
+    hideTrigger,
 }: ExportButtonProps): JSX.Element {
-    const [open, setOpen] = useState(false);
+    const [internalOpen, setInternalOpen] = useState(false);
+    const open = controlledOpen ?? internalOpen;
+    const setOpen = onOpenChange ?? setInternalOpen;
     const [busy, setBusy] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set(initialFieldIds ?? []));
     const [delimiter, setDelimiter] = useState<',' | ';'>(',');
@@ -153,12 +167,14 @@ export function ExportButton({
 
     return (
         <Dialog.Root open={open} onOpenChange={setOpen}>
-            <Dialog.Trigger asChild>
-                <Button variant="outline" disabled={disabled} className="imcrm-gap-2">
-                    <Download className="imcrm-h-4 imcrm-w-4" />
-                    {__('Exportar')}
-                </Button>
-            </Dialog.Trigger>
+            {!hideTrigger && (
+                <Dialog.Trigger asChild>
+                    <Button variant="outline" disabled={disabled} className="imcrm-gap-2">
+                        <Download className="imcrm-h-4 imcrm-w-4" />
+                        {__('Exportar')}
+                    </Button>
+                </Dialog.Trigger>
+            )}
             <Dialog.Portal>
                 <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />
                 <Dialog.Content

@@ -16,6 +16,12 @@ interface RecordCreateDialogProps {
     fields: FieldEntity[];
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /**
+     * Valores iniciales por slug para pre-cargar el form al abrir.
+     * Lo usa el modo agrupado: "+ Agregar tarea" en el grupo "Hecho"
+     * abre el diálogo con estado=hecho ya seteado.
+     */
+    initialValues?: Record<string, unknown>;
 }
 
 export function RecordCreateDialog({
@@ -23,6 +29,7 @@ export function RecordCreateDialog({
     fields,
     open,
     onOpenChange,
+    initialValues,
 }: RecordCreateDialogProps): JSX.Element {
     const create = useCreateRecord(listId);
     const { reset: resetCreate } = create;
@@ -38,8 +45,13 @@ export function RecordCreateDialog({
             setError(null);
             setFieldErrors({});
             resetCreate();
+        } else if (initialValues !== undefined) {
+            // Al abrir con prefill (add-inline de un grupo) sembramos el
+            // form. `initialValues` vive en el state del caller — identidad
+            // estable mientras el diálogo está abierto, no pisa el tipeo.
+            setValues(initialValues);
         }
-    }, [open, resetCreate]);
+    }, [open, resetCreate, initialValues]);
 
     const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();

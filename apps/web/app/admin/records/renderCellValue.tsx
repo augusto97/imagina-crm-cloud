@@ -10,7 +10,7 @@ import { extractFieldOptions, type FieldOption } from './fieldOptions';
  * tonal soft (bg/14 + border/32 + text-color); si no, cae a un chip
  * neutral con border hairline.
  */
-function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: string }): JSX.Element {
+export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: string }): JSX.Element {
     const color = opt?.color as OptionColor | undefined;
     const style = chipSoftStyle(color);
     return (
@@ -64,11 +64,17 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     }
 
     if (field.type === 'datetime' && typeof value === 'string') {
+        let text: string = value;
         try {
-            return new Date(value + 'Z').toLocaleString();
+            text = new Date(value + 'Z').toLocaleString();
         } catch {
-            return value;
+            // keep raw value
         }
+        return withOverdueHighlight(field, value, text);
+    }
+
+    if (field.type === 'date' && typeof value === 'string') {
+        return withOverdueHighlight(field, value, value);
     }
 
     if (field.type === 'currency' && typeof value === 'number') {
@@ -116,6 +122,48 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     }
 
     return String(value);
+}
+
+/**
+ * Resalta en rojo los valores de fecha VENCIDOS (anteriores a hoy /
+ * ahora) cuando el campo lo pide explícitamente vía
+ * `config.highlight_overdue === true` (opt-in — un cumpleaños pasado
+ * no es "vencido", una fecha límite sí). Sin el flag devuelve el
+ * texto sin decorar.
+ */
+function withOverdueHighlight(
+    field: FieldEntity,
+    rawValue: string,
+    text: React.ReactNode,
+): React.ReactNode {
+    const optIn = (field.config as { highlight_overdue?: unknown }).highlight_overdue === true;
+    if (!optIn || !isOverdueDateValue(field.type, rawValue)) return text;
+    return (
+        <span className="imcrm-text-destructive imcrm-font-medium">
+            {text}
+        </span>
+    );
+}
+
+/**
+ * ¿El valor está vencido?
+ * - `date` (`YYYY-MM-DD`): estrictamente anterior a HOY (local) —
+ *   comparación lexicográfica de strings, sin parsear timezone.
+ * - `datetime` (naive-UTC del backend): timestamp anterior a AHORA.
+ */
+function isOverdueDateValue(type: string, value: string): boolean {
+    if (type === 'date') {
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // 'YYYY-MM-DD' ordena lexicográficamente igual que cronológicamente.
+        return value.slice(0, 10) < today;
+    }
+    if (type === 'datetime') {
+        const d = new Date(value.replace(' ', 'T') + 'Z');
+        if (Number.isNaN(d.getTime())) return false;
+        return d.getTime() < Date.now();
+    }
+    return false;
 }
 
 /**
