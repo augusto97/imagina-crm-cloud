@@ -1,5 +1,7 @@
 /** Un mensaje de correo listo para enviar. `text` es el fallback plano. */
 export interface MailMessage {
+    /** Tenant emisor: si tiene SMTP propio, el correo sale por él. */
+    tenantId?: number;
     to: string;
     subject: string;
     html?: string;

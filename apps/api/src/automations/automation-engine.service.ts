@@ -341,6 +341,7 @@ export class AutomationEngine {
                 // En HTML, los valores interpolados se escapan (no el template).
                 const body = isHtml ? mergeHtml(cfg.body) : merge(cfg.body);
                 await this.mail.enqueue({
+                    tenantId: ctx.tenantId,
                     to,
                     subject,
                     ...(isHtml ? { html: body } : { text: body }),
