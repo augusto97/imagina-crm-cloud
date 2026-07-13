@@ -788,6 +788,7 @@ const applyView = (view: SavedViewEntity | null): void => {
 
                     <RecordCreateDialog
                         listId={list.data.id}
+                        listName={list.data.name}
                         fields={fields.data}
                         open={createOpen}
                         onOpenChange={setCreateOpen}
