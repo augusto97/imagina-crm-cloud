@@ -600,6 +600,15 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         process.env.NODE_ENV en vite (react-draggable moría con "process
         is not defined"). Verificado E2E (drag real movió el widget).
 
+  - [x] **Recarga automática tras deploy (v0.1.64)**: una pestaña abierta
+        durante una auto-actualización pedía chunks con hash viejo → 404
+        "Failed to fetch dynamically imported module" (reportado por el
+        usuario en Automatizaciones). Ambos SPAs (admin + portal) escuchan
+        `vite:preloadError` y recargan UNA vez (guard en sessionStorage,
+        rearmado al bootear OK). Los ERR_NETWORK_CHANGED/502 de socket.io
+        del mismo reporte eran red del cliente + reinicio del deploy
+        (benignos, reconectan solos).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
