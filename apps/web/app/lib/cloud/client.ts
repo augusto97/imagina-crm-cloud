@@ -374,6 +374,27 @@ export class CloudClient {
             schema: brandingResponseSchema,
         });
     }
+
+    // --- SMTP propio del workspace (white-label de correo, sólo admin) ---
+    tenantSmtpGet(): Promise<SmtpConfigPublic> {
+        return this.request('GET', '/workspaces/current/smtp', { schema: smtpConfigPublicSchema });
+    }
+    tenantSmtpSet(input: SmtpConfig): Promise<SmtpConfigPublic> {
+        return this.request('PATCH', '/workspaces/current/smtp', {
+            body: smtpConfigSchema.parse(input),
+            schema: smtpConfigPublicSchema,
+        });
+    }
+    /** Vuelve al correo de la plataforma (borra la config propia). */
+    tenantSmtpClear(): Promise<void> {
+        return this.request('DELETE', '/workspaces/current/smtp', {});
+    }
+    /** Envía un correo de prueba al email del propio admin (sin cola). */
+    tenantSmtpTest(): Promise<{ ok: boolean; error?: string }> {
+        return this.request('POST', '/workspaces/current/smtp/test', {
+            schema: z.object({ ok: z.boolean(), error: z.string().optional() }),
+        });
+    }
     /**
      * Sube un archivo al módulo de archivos (ADR-S16, `POST /files` multipart
      * campo `file`). Sin `Content-Type` manual: el browser arma el boundary.
