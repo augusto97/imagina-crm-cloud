@@ -38,6 +38,7 @@ import {
     slugCheckResultSchema,
     smtpConfigSchema,
     smtpConfigPublicSchema,
+    smtpDnsReportSchema,
     updateAutomationSchema,
     updateBrandingSchema,
     updateCommentSchema,
@@ -85,6 +86,7 @@ import {
     type SlugCheckResult,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type SmtpDnsReport,
     type UpdateAutomationInput,
     type UpdateBrandingInput,
     type UpdateCommentInput,
@@ -388,6 +390,10 @@ export class CloudClient {
     /** Vuelve al correo de la plataforma (borra la config propia). */
     tenantSmtpClear(): Promise<void> {
         return this.request('DELETE', '/workspaces/current/smtp', {});
+    }
+    /** Registros DNS (SPF/DKIM/DMARC) del SMTP propio, verificados en vivo. */
+    tenantSmtpDns(): Promise<SmtpDnsReport> {
+        return this.request('GET', '/workspaces/current/smtp/dns', { schema: smtpDnsReportSchema });
     }
     /** Envía un correo de prueba al email del propio admin (sin cola). */
     tenantSmtpTest(): Promise<{ ok: boolean; error?: string }> {

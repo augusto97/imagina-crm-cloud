@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SmtpConfigPublic } from '@imagina-base/shared';
-import { Mail } from 'lucide-react';
+import type { DnsRecordCheck, SmtpConfigPublic } from '@imagina-base/shared';
+import { Check, Copy, Mail } from 'lucide-react';
 import { api, useSession } from '@/cloud/session';
+import { CloudApiError } from '@/lib/cloud/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -251,8 +252,172 @@ export function TenantSmtpPanel(): JSX.Element | null {
                 )}
             </div>
             </form>
+
+            {c.configured && <DnsSection />}
             </CardContent>
         </Card>
+    );
+}
+
+const PURPOSE_LABEL: Record<DnsRecordCheck['purpose'], string> = {
+    spf: 'SPF',
+    dkim: 'DKIM',
+    dmarc: 'DMARC',
+};
+
+const STATUS_META: Record<
+    DnsRecordCheck['status'],
+    { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' }
+> = {
+    ok: { label: 'Configurado', variant: 'success' },
+    partial: { label: 'Parcial', variant: 'warning' },
+    missing: { label: 'Falta', variant: 'destructive' },
+    unknown: { label: 'Desconocido', variant: 'secondary' },
+};
+
+/**
+ * Registros DNS (SPF/DKIM/DMARC) que el admin debe crear en el dominio del
+ * remitente para que los correos del SMTP propio no caigan en spam. La
+ * verificación es on-demand ("Verificar DNS" → el backend resuelve en vivo).
+ */
+function DnsSection(): JSX.Element {
+    const tenantId = useSession((s) => s.activeTenantId);
+    const [copied, setCopied] = useState<string | null>(null);
+
+    const dnsQ = useQuery({
+        queryKey: ['tenant-smtp-dns', tenantId],
+        queryFn: () => api.tenantSmtpDns(),
+        enabled: false,
+        retry: false,
+    });
+
+    const handleCopy = async (key: string, text: string): Promise<void> => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(key);
+            setTimeout(() => setCopied(null), 1500);
+        } catch {
+            /* clipboard bloqueado — no-op */
+        }
+    };
+
+    const report = dnsQ.data;
+    const errorText = dnsQ.isError
+        ? dnsQ.error instanceof CloudApiError && dnsQ.error.code === 'smtp_not_configured'
+            ? 'Guardá primero la configuración SMTP con un remitente válido.'
+            : dnsQ.error instanceof Error
+              ? dnsQ.error.message
+              : 'No se pudo verificar el DNS.'
+        : null;
+
+    return (
+        <section className="imcrm-space-y-3 imcrm-border-t imcrm-border-border imcrm-pt-4">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <div>
+                    <h4 className="imcrm-text-sm imcrm-font-medium">
+                        Registros DNS (SPF / DKIM / DMARC)
+                    </h4>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        Para que tus correos no caigan en spam, creá estos registros en el DNS de tu
+                        dominio remitente
+                        {report ? (
+                            <>
+                                {' '}
+                                (<span className="imcrm-font-medium imcrm-text-foreground">{report.domain}</span>
+                                {report.provider !== 'desconocido' && <> · proveedor detectado: {report.provider}</>}
+                                ).
+                            </>
+                        ) : (
+                            '.'
+                        )}
+                    </p>
+                </div>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void dnsQ.refetch()}
+                    disabled={dnsQ.isFetching}
+                >
+                    {dnsQ.isFetching ? 'Verificando…' : 'Verificar DNS'}
+                </Button>
+            </div>
+
+            {errorText && (
+                <div className="imcrm-rounded-md imcrm-bg-rose-100 imcrm-p-2 imcrm-text-sm imcrm-text-rose-800">
+                    {errorText}
+                </div>
+            )}
+
+            {report && (
+                <ul className="imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-border imcrm-border-border">
+                    {report.records.map((rec) => {
+                        const meta = STATUS_META[rec.status];
+                        const fqdn = rec.host === '@' ? report.domain : `${rec.host}.${report.domain}`;
+                        const copyKey = `${rec.purpose}:${rec.host}`;
+                        return (
+                            <li key={copyKey} className="imcrm-space-y-2 imcrm-p-3">
+                                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                                    <Badge variant="outline">{PURPOSE_LABEL[rec.purpose]}</Badge>
+                                    <Badge dot variant={meta.variant}>{meta.label}</Badge>
+                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        Tipo: <span className="imcrm-font-medium imcrm-text-foreground">{rec.type}</span>
+                                    </span>
+                                </div>
+                                <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                                    <div className="imcrm-min-w-0 imcrm-text-sm">
+                                        <div className="imcrm-text-xs imcrm-text-muted-foreground">Host</div>
+                                        <code className="imcrm-break-all imcrm-font-mono imcrm-text-xs">{rec.host}</code>
+                                        <div className="imcrm-break-all imcrm-text-xs imcrm-text-muted-foreground">
+                                            ({fqdn})
+                                        </div>
+                                    </div>
+                                    <div className="imcrm-min-w-0 imcrm-text-sm">
+                                        <div className="imcrm-text-xs imcrm-text-muted-foreground">Valor</div>
+                                        {rec.value ? (
+                                            <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
+                                                <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-xs">
+                                                    {rec.value}
+                                                </code>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="imcrm-h-6 imcrm-shrink-0 imcrm-px-1.5"
+                                                    onClick={() => void handleCopy(copyKey, rec.value)}
+                                                    title="Copiar valor"
+                                                >
+                                                    {copied === copyKey ? (
+                                                        <>
+                                                            <Check className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                                            <span className="imcrm-ml-1 imcrm-text-xs">Copiado</span>
+                                                        </>
+                                                    ) : (
+                                                        <Copy className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                                {rec.note || 'La clave la genera tu proveedor de correo.'}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                {rec.value.length > 0 && rec.note && (
+                                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{rec.note}</p>
+                                )}
+                                {(rec.status === 'partial' || rec.status === 'ok') && rec.current && (
+                                    <p className="imcrm-break-all imcrm-text-xs imcrm-text-muted-foreground">
+                                        Encontrado: <code className="imcrm-font-mono">{rec.current}</code>
+                                    </p>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </section>
     );
 }
 
