@@ -393,18 +393,19 @@ const applyView = (view: SavedViewEntity | null): void => {
     const meta = records.data?.meta;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             {/*
-              Fila 1 — breadcrumb (patrón ClickUp): "Listas / {nombre}".
-              A la derecha, las acciones secundarias de la lista como
-              botones ghost compactos (>= md) o un menú "···" (mobile).
-              La acción primaria "+ Nuevo registro" vive en la toolbar
-              (fila 3), junto a la búsqueda.
+              Fila 1 — breadcrumb (patrón ClickUp): fila DELGADA (~36px)
+              con "Listas / {nombre}" a 13-14px. A la derecha, las
+              acciones secundarias de la lista como botones ghost h-7
+              muy discretos (>= md) o un menú "···" (mobile). La acción
+              primaria "+ Nuevo registro" vive en la toolbar (fila 3),
+              junto a la búsqueda.
             */}
-            <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
+            <header className="imcrm-flex imcrm-min-h-[36px] imcrm-items-center imcrm-justify-between imcrm-gap-3">
                 <nav
                     aria-label={__('Ruta de navegación')}
-                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-sm"
+                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[13px]"
                 >
                     <Link
                         to="/lists"
@@ -415,21 +416,21 @@ const applyView = (view: SavedViewEntity | null): void => {
                     <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
                         /
                     </span>
-                    <h1 className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-tracking-tight">
+                    <h1 className="imcrm-truncate imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight">
                         {list.data.name}
                     </h1>
                 </nav>
 
                 {(canManageAutomations || canManageList || canImportRecords || canExportRecords) && (
                     <>
-                        {/* Desktop: iconos + label compactos. */}
-                        <div className="imcrm-hidden imcrm-shrink-0 imcrm-items-center imcrm-gap-1 md:imcrm-flex">
+                        {/* Desktop: iconos + label extra discretos (h-7, 12px). */}
+                        <div className="imcrm-hidden imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5 md:imcrm-flex">
                             {canManageAutomations && (
                                 <Button
                                     asChild
                                     variant="ghost"
                                     size="sm"
-                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
                                     <Link to={`/lists/${list.data.slug}/automations`}>
                                         <Zap className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -442,7 +443,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     asChild
                                     variant="ghost"
                                     size="sm"
-                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
                                     <Link to={`/lists/${list.data.slug}/edit`}>
                                         <Settings className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -456,7 +457,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     size="sm"
                                     onClick={() => setImportOpen(true)}
                                     disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
                                     <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Importar')}
@@ -468,7 +469,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     size="sm"
                                     onClick={() => setExportOpen(true)}
                                     disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-gap-1.5 imcrm-text-muted-foreground"
+                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
                                     <Download className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Exportar')}
@@ -480,7 +481,12 @@ const applyView = (view: SavedViewEntity | null): void => {
                         <div className="imcrm-shrink-0 md:imcrm-hidden">
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" aria-label={__('Más acciones')}>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        aria-label={__('Más acciones')}
+                                        className="imcrm-h-7 imcrm-w-7 imcrm-rounded-md"
+                                    >
                                         <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
                                     </Button>
                                 </DropdownMenuTrigger>
@@ -568,14 +574,15 @@ const applyView = (view: SavedViewEntity | null): void => {
                     />
 
                     {/*
-                      Fila 3 — toolbar: a la izquierda el chip de la vista/
-                      filtro guardado activo ("Todos" si no hay) + los
-                      controles de Filtrar/Columnas/Agrupar; a la derecha
-                      la búsqueda y la acción primaria "+ Nuevo registro".
+                      Fila 3 — toolbar compacta (~40px): a la izquierda el
+                      chip de la vista/filtro guardado activo ("Todos" si
+                      no hay) + los controles de Filtrar/Columnas/Agrupar
+                      (sm, h-8); a la derecha la búsqueda angosta y la
+                      acción primaria "+ Nuevo registro" (sm).
                     */}
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
-                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
-                            <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
+                            <span className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
                                 <Filter aria-hidden className="imcrm-h-3 imcrm-w-3" />
                                 {activeView?.name ?? __('Todos')}
                             </span>
@@ -614,13 +621,14 @@ const applyView = (view: SavedViewEntity | null): void => {
                             {records.isFetching && !records.isLoading && (
                                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                             )}
-                            <div className="imcrm-relative imcrm-w-56 sm:imcrm-w-64">
+                            {/* Búsqueda angosta (200px) que crece al enfocar. */}
+                            <div className="imcrm-relative imcrm-w-[200px] imcrm-transition-[width] imcrm-duration-150 focus-within:imcrm-w-[240px]">
                                 <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                 <Input
                                     value={state.search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder={__('Buscar…')}
-                                    className="imcrm-pl-8 imcrm-pr-8"
+                                    className="imcrm-h-8 imcrm-rounded-md imcrm-pl-8 imcrm-pr-8 imcrm-text-[13px]"
                                 />
                                 {/*
                                   Spinner in-input mientras la query
@@ -636,14 +644,15 @@ const applyView = (view: SavedViewEntity | null): void => {
                             </div>
                             {canCreateRecords && (
                                 <Button
+                                    size="sm"
                                     onClick={() => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);
                                     }}
                                     disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-gap-2"
+                                    className="imcrm-gap-1.5"
                                 >
-                                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Nuevo registro')}
                                 </Button>
                             )}

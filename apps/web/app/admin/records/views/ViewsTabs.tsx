@@ -99,6 +99,7 @@ export function ViewsTabs({
                 label={__('Todos')}
                 active={activeViewId === null}
                 onClick={() => onSelectView(null)}
+                typeIcon={<Table className="imcrm-h-3.5 imcrm-w-3.5" />}
             />
 
             {sortedViews.map((view) => {
@@ -112,13 +113,13 @@ export function ViewsTabs({
                         isDefault={view.is_default}
                         typeIcon={
                             view.type === 'kanban' ? (
-                                <Columns3 className="imcrm-h-3 imcrm-w-3" />
+                                <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.type === 'calendar' ? (
-                                <Calendar className="imcrm-h-3 imcrm-w-3" />
+                                <Calendar className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.type === 'cards' ? (
-                                <LayoutGrid className="imcrm-h-3 imcrm-w-3" />
+                                <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : (
-                                <Table className="imcrm-h-3 imcrm-w-3" />
+                                <Table className="imcrm-h-3.5 imcrm-w-3.5" />
                             )
                         }
                         rightAction={
@@ -174,7 +175,7 @@ export function ViewsTabs({
                 type="button"
                 onClick={onAskCreateView}
                 title={__('Guardar filtros, ordenamiento y columnas como una vista nombrada')}
-                className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
+                className="imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                 aria-label={__('Crear vista nueva')}
             >
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -189,7 +190,7 @@ export function ViewsTabs({
                         variant="ghost"
                         onClick={handleDiscardChanges}
                         disabled={update.isPending}
-                        className="imcrm-gap-1 imcrm-text-xs"
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
                     >
                         <Undo2 className="imcrm-h-3 imcrm-w-3" />
                         {__('Descartar')}
@@ -198,7 +199,7 @@ export function ViewsTabs({
                         size="sm"
                         onClick={() => void handleSaveChanges()}
                         disabled={update.isPending}
-                        className="imcrm-gap-1 imcrm-text-xs"
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
                     >
                         <Save className="imcrm-h-3 imcrm-w-3" />
                         {update.isPending ? __('Guardando…') : __('Guardar')}
@@ -212,7 +213,7 @@ export function ViewsTabs({
                         size="sm"
                         variant="outline"
                         onClick={onAskCreateView}
-                        className="imcrm-gap-1 imcrm-text-xs"
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
                     >
                         <Save className="imcrm-h-3 imcrm-w-3" />
                         {__('Guardar como vista…')}
@@ -258,13 +259,14 @@ function ViewTab({ label, active, onClick, isDefault, typeIcon, rightAction }: V
     return (
         <div
             className={cn(
-                // Tab estilo ClickUp: subrayado 2px que pisa (-mb-px) el
-                // border-b del contenedor. Sin wrap: la tab bar scrollea
+                // Tab estilo ClickUp: fila de ~36px (h-9), nombre 13px
+                // medium, subrayado 2px que pisa (-mb-px) el border-b
+                // del contenedor. Sin wrap: la tab bar scrollea
                 // horizontal en mobile.
-                'imcrm--mb-px imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-transition-colors',
+                'imcrm--mb-px imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
                 active
-                    ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground'
-                    : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-border-border hover:imcrm-text-foreground',
+                    ? 'imcrm-border-primary imcrm-text-foreground'
+                    : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground',
             )}
         >
             <button type="button" onClick={onClick} className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
