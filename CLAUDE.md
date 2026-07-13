@@ -585,6 +585,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con icono por view_type a 14px, toolbar h-8 con búsqueda que crece
         en focus, acciones secundarias ghost h-7).
 
+  - [x] **Refinamiento ClickUp II (v0.1.63)**: (a) padding del área de
+        trabajo a 0.5rem/1rem y topbar+header del panel a 48px (h-12);
+        (b) modal del registro con la ESTRUCTURA exacta de la tarea
+        ClickUp — barra superior full-width (breadcrumb lista/registro +
+        fecha + X al extremo derecho), chip "Registro", Campos SIN caja
+        (filas planas con hairlines) y aside de Actividad COLAPSABLE
+        (persistido); (c) "Nuevo registro" usa EL MISMO modal (barra +
+        chip + filas con icono por tipo + footer Crear), conservando
+        prefill por grupo y validación; (d) fix: los widgets del
+        dashboard vuelven a ARRASTRARSE/redimensionarse — un wrapper
+        imcrm-no-drag cubría toda la tarjeta; ahora el header del widget
+        es el asa (draggableHandle) y se agregó el define de
+        process.env.NODE_ENV en vite (react-draggable moría con "process
+        is not defined"). Verificado E2E (drag real movió el widget).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
