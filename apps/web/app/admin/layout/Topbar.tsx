@@ -28,7 +28,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
     };
 
     return (
-        <header className="imcrm-admin-topbar imcrm-flex imcrm-h-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-4 sm:imcrm-gap-4 sm:imcrm-px-6">
+        <header className="imcrm-admin-topbar imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-4 sm:imcrm-gap-4 sm:imcrm-px-6">
             <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
                 {/* Hamburguesa: abre el sidebar (riel+panel) como drawer (sólo mobile). */}
                 <button

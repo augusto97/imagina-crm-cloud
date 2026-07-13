@@ -44,6 +44,10 @@ function spaFallback(): Plugin {
  * Dev: navegar a http://localhost:5174/cloud/index.html
  */
 export default defineConfig({
+    // react-draggable (react-grid-layout) referencia process.env en el
+    // browser; sin este define el drag de widgets muere con
+    // "process is not defined".
+    define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') },
     root: __dirname,
     plugins: [react(), spaFallback()],
     resolve: {

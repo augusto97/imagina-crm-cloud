@@ -283,7 +283,7 @@ export function DashboardPage(): JSX.Element {
                                         <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                     </button>
                                 </div>
-                                <div className="imcrm-no-drag imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+                                <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
                                     <WidgetRenderer dashboardId={id} widget={widget} />
                                 </div>
                             </article>

@@ -74,9 +74,10 @@ export function RecordFieldsForm({
     if (density === 'compact') {
         // Delega a `CompactFieldRow` por field — mismo componente que usa
         // el layout CRM en properties_group + PropertiesSidebar.
-        // Sin gap entre filas: CompactFieldRow ya pone border-b interno.
+        // Sin caja contenedora (estilo ClickUp): las filas van full-width
+        // separadas solo por el border-b hairline interno de cada fila.
         return (
-            <div className="imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border">
+            <div className="imcrm-flex imcrm-flex-col">
                 {visible.map((field) => (
                     <CompactFieldRow
                         key={field.id}
