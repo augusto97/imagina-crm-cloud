@@ -1,5 +1,6 @@
 import { Global, Logger, Module } from '@nestjs/common';
 import { ENV, type Env } from '../config/env';
+import { TenantSmtpService } from './tenant-smtp.service';
 import { MailService } from './mail.service';
 import { MAIL_TRANSPORT, type MailTransport } from './mail.types';
 import { PlatformSettingsService } from './platform-settings.service';
@@ -15,6 +16,7 @@ import { SmtpMailTransport } from './transports/smtp.transport';
 @Global()
 @Module({
     providers: [
+        TenantSmtpService,
         {
             provide: MAIL_TRANSPORT,
             inject: [ENV],
@@ -40,6 +42,7 @@ import { SmtpMailTransport } from './transports/smtp.transport';
         MailService,
         PlatformSettingsService,
     ],
-    exports: [MailService, PlatformSettingsService],
+    exports: [
+        TenantSmtpService,MailService, PlatformSettingsService],
 })
 export class MailModule {}

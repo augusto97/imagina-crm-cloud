@@ -11,6 +11,7 @@ import { ENV, type Env } from '../config/env';
 import { guardRedis } from '../redis/redis.util';
 import { MAIL_TRANSPORT, type MailMessage, type MailTransport } from './mail.types';
 import { PlatformSettingsService } from './platform-settings.service';
+import { TenantSmtpService } from './tenant-smtp.service';
 import { SmtpMailTransport } from './transports/smtp.transport';
 
 export const MAIL_QUEUE = 'mail';
@@ -29,11 +30,14 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
     private connections: IORedis[] = [];
 
     private cachedSmtp: { hash: string; transport: SmtpMailTransport } | null = null;
+    /** Cache de transportes por-tenant (hash de config → transporte). */
+    private readonly tenantSmtpCache = new Map<number, { hash: string; transport: SmtpMailTransport }>();
 
     constructor(
         @Inject(ENV) private readonly env: Env,
         @Inject(MAIL_TRANSPORT) private readonly transport: MailTransport,
         private readonly platform?: PlatformSettingsService,
+        private readonly tenantSmtp?: TenantSmtpService,
     ) {}
 
     /**
@@ -41,7 +45,27 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
      * (Redis) si existe, con fallback al transporte por env (log/smtp). Se
      * cachea el SmtpMailTransport por hash de config (se reconstruye al cambiar).
      */
-    private async activeTransport(): Promise<MailTransport> {
+    private async activeTransport(message?: MailMessage): Promise<MailTransport> {
+        // 1) SMTP PROPIO del tenant emisor (white-label de correo): si la
+        //    empresa configuró el suyo, sus correos salen por él.
+        if (message?.tenantId !== undefined && this.tenantSmtp) {
+            try {
+                const cfg = await this.tenantSmtp.getForSend(message.tenantId);
+                if (cfg) {
+                    const hash = JSON.stringify(cfg);
+                    const cached = this.tenantSmtpCache.get(message.tenantId);
+                    if (cached?.hash === hash) return cached.transport;
+                    const transport = new SmtpMailTransport(cfg);
+                    if (this.tenantSmtpCache.size > 100) this.tenantSmtpCache.clear();
+                    this.tenantSmtpCache.set(message.tenantId, { hash, transport });
+                    return transport;
+                }
+                this.tenantSmtpCache.delete(message.tenantId);
+            } catch (err) {
+                this.logger.warn(`SMTP del tenant ${message.tenantId} falló al resolver, uso plataforma: ${String(err)}`);
+            }
+        }
+        // 2) SMTP de PLATAFORMA (superadmin) → 3) transporte por env.
         try {
             const cfg = this.platform ? await this.platform.getSmtp() : null;
             if (cfg) {
@@ -73,7 +97,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             this.queue.on('error', (err) => this.logger.warn(`Cola de correo con error: ${err.message}`));
             this.worker = new Worker<MailMessage>(
                 MAIL_QUEUE,
-                async (job) => (await this.activeTransport()).send(job.data),
+                async (job) => (await this.activeTransport(job.data)).send(job.data),
                 { connection: conn(), concurrency: 5 },
             );
             this.worker.on('failed', (job, err) =>
@@ -102,7 +126,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
 
     /** Envía sin pasar por la cola (tests, o degradación sin Redis). */
     async sendNow(message: MailMessage): Promise<void> {
-        return (await this.activeTransport()).send(message);
+        return (await this.activeTransport(message)).send(message);
     }
 
     async onApplicationShutdown(): Promise<void> {

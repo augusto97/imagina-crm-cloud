@@ -185,6 +185,7 @@ export class PortalService {
         const url = `${this.env.APP_BASE_URL}${path}`;
         await this.mail
             .enqueue({
+                tenantId,
                 to: input.email,
                 subject: `Tu acceso al portal de ${list.name}`,
                 text: `Hola,\n\nAccedé a tu portal con este enlace (válido por 24 h):\n${url}\n\nSi no esperabas este correo, ignoralo.`,

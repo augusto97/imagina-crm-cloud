@@ -273,11 +273,7 @@ export function Sidebar({
                     )}
 
                     {section === 'settings' && (
-                        <SettingsPanelNav
-                            isAdmin={isAdmin}
-                            isSuperadmin={isSuperadmin.data === true}
-                            requested={params.get('s')}
-                        />
+                        <SettingsPanelNav isAdmin={isAdmin} requested={params.get('s')} />
                     )}
 
                     {section === 'platform' && (
@@ -298,14 +294,12 @@ export function Sidebar({
  */
 function SettingsPanelNav({
     isAdmin,
-    isSuperadmin,
     requested,
 }: {
     isAdmin: boolean;
-    isSuperadmin: boolean;
     requested: string | null;
 }): JSX.Element {
-    const groups = settingsSectionGroups({ isAdmin, isSuperadmin });
+    const groups = settingsSectionGroups({ isAdmin });
     const active = resolveSettingsSection(groups, requested);
     return (
         <>

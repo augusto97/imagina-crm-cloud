@@ -609,6 +609,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         del mismo reporte eran red del cliente + reinicio del deploy
         (benignos, reconectan solos).
 
+  - [x] **SMTP por empresa + ajustes globales a Plataforma (v0.1.65)**:
+        (a) cada workspace puede configurar SU SMTP (white-label de correo):
+        vive en `tenants.settings.smtp` con la contraseña cifrada en reposo
+        (secret-box SEC-20), endpoints GET/PATCH/DELETE
+        `/workspaces/current/smtp` + POST test (solo admin), y MailService
+        resuelve el transporte POR MENSAJE: SMTP del tenant → SMTP de
+        plataforma → env (cache por hash). El magic link del portal y
+        send_email de automatizaciones emiten con tenantId; los correos de
+        cuenta (reset/invitaciones de plataforma) siguen por el global.
+        Card "Correo (SMTP)" en Ajustes→Workspace. 3 tests (roundtrip sin
+        exponer password, cifrado verificado en la fila cruda, pass vacío
+        conserva, clear→fallback). (b) Los ajustes GLOBALES (SMTP de
+        plataforma y Actualizaciones) se MUDARON de Ajustes a pestañas de
+        la consola Plataforma (?tab=correo|updates) — Ajustes queda solo
+        con Workspace y Cuenta. E2E curl + navegador en ambas ubicaciones.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

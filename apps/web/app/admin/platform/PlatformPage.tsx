@@ -20,6 +20,8 @@ import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
+import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
+import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
 
 /**
  * Consola de PLATAFORMA (operador SaaS). Sólo la ve el superadmin. Header de
@@ -171,6 +173,9 @@ export function PlatformPage(): JSX.Element {
             {tab === 'users' && <PlatformUsersCard />}
             {tab === 'plans' && <PlatformPlansCard />}
             {tab === 'audit' && <PlatformImpersonationsCard />}
+            {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
+            {tab === 'correo' && <SmtpSettingsPanel />}
+            {tab === 'updates' && <SystemUpdatesPanel />}
         </div>
     );
 }

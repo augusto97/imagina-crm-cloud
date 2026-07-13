@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
-import { useIsSuperadmin } from '@/hooks/usePlatform';
 import {
     resolveSettingsSection,
     settingsSectionGroups,
@@ -13,8 +12,7 @@ import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
-import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
-import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
+import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
@@ -32,16 +30,14 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
  * sección activa se persiste en el query param `?s=` (sobrevive refresh y es
  * linkeable). Los gates de visibilidad (compartidos con el Sidebar vía
  * `settingsSectionGroups`) son los mismos de siempre: rol admin del workspace
- * para Suscripción/Miembros/Marca y probe de superadmin de plataforma para
- * SMTP/Actualizaciones (los paneles además se auto-ocultan ante 403).
+ * para Suscripción/Miembros/Marca/Correo (los paneles además se auto-ocultan
+ * ante 403). Los ajustes globales de la app viven en la consola de Plataforma.
  */
 export function SettingsPage(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
     const isAdmin = useSession(
         (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
     );
-    // Mismo probe (cacheado 5 min) que usa el Sidebar para "Operador → Plataforma".
-    const isSuperadmin = useIsSuperadmin();
     const [params, setParams] = useSearchParams();
     const checkout = params.get('checkout');
     const billing = useQuery({
@@ -49,7 +45,7 @@ export function SettingsPage(): JSX.Element {
         queryFn: () => api.billing(),
     });
 
-    const groups = settingsSectionGroups({ isAdmin, isSuperadmin: isSuperadmin.data === true });
+    const groups = settingsSectionGroups({ isAdmin });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" si el param no existe o apunta a una sección gateada.
     const active: SettingsSectionId = resolveSettingsSection(groups, params.get('s'));
@@ -138,11 +134,10 @@ export function SettingsPage(): JSX.Element {
                 {active === 'miembros' && isAdmin && <MembersPanel />}
                 {/* Branding white-label del workspace (nombre, color, logo). */}
                 {active === 'marca' && isAdmin && <BrandingPanel />}
+                {/* SMTP propio del workspace (white-label de correo). */}
+                {active === 'correo' && isAdmin && <TenantSmtpPanel />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
-                {/* Se auto-ocultan si el usuario no es superadmin de plataforma (403). */}
-                {active === 'smtp' && <SmtpSettingsPanel />}
-                {active === 'updates' && <SystemUpdatesPanel />}
             </section>
         </div>
     );

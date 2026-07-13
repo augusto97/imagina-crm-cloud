@@ -4,7 +4,6 @@ import {
     Mail,
     Palette,
     PenLine,
-    RefreshCw,
     Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -12,29 +11,23 @@ import type { LucideIcon } from 'lucide-react';
 /**
  * Secciones de la página de Ajustes — ÚNICA fuente de verdad, compartida por
  * SettingsPage (render del panel activo + select mobile) y el Sidebar (el
- * panel contextual del shell es LA nav de Ajustes en escritorio). Los gates
- * son los de siempre: rol admin del workspace para Suscripción/Miembros/Marca
- * y probe de superadmin de plataforma para SMTP/Actualizaciones.
+ * panel contextual del shell es LA nav de Ajustes en escritorio). El gate es
+ * el de siempre: rol admin del workspace para Suscripción/Miembros/Marca/
+ * Correo. Los ajustes GLOBALES (SMTP de plataforma, actualizaciones) viven en
+ * la consola de Plataforma (`platformTabs.ts`), no acá.
  */
 export type SettingsSectionId =
     | 'plan'
     | 'suscripcion'
     | 'miembros'
     | 'marca'
-    | 'firma'
-    | 'smtp'
-    | 'updates';
+    | 'correo'
+    | 'firma';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
 
-export function settingsSectionGroups({
-    isAdmin,
-    isSuperadmin,
-}: {
-    isAdmin: boolean;
-    isSuperadmin: boolean;
-}): SettingsSectionGroup[] {
+export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): SettingsSectionGroup[] {
     return [
         {
             label: 'Workspace',
@@ -45,6 +38,7 @@ export function settingsSectionGroups({
                           { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
                           { id: 'miembros', label: 'Miembros', icon: Users },
                           { id: 'marca', label: 'Marca', icon: Palette },
+                          { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
                       ] satisfies SettingsSectionItem[])
                     : []),
             ],
@@ -53,17 +47,6 @@ export function settingsSectionGroups({
             label: 'Cuenta',
             items: [{ id: 'firma', label: 'Firma de email', icon: PenLine }],
         },
-        ...(isSuperadmin
-            ? ([
-                  {
-                      label: 'Plataforma',
-                      items: [
-                          { id: 'smtp', label: 'Correo (SMTP)', icon: Mail },
-                          { id: 'updates', label: 'Actualizaciones', icon: RefreshCw },
-                      ],
-                  },
-              ] satisfies SettingsSectionGroup[])
-            : []),
     ];
 }
 
