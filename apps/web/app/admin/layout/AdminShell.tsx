@@ -47,7 +47,7 @@ export function AdminShell(): JSX.Element {
     }, [isInTemplateEditor]);
 
     return (
-        <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-canvas imcrm-text-foreground">
+        <div className="imcrm-flex imcrm-h-screen imcrm-min-h-screen imcrm-w-full imcrm-overflow-hidden imcrm-bg-background imcrm-text-foreground">
             <SkipLink />
             {/* Backdrop del drawer en mobile. */}
             {mobileNavOpen && (

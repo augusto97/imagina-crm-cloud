@@ -714,7 +714,7 @@ function GroupBucketSection({
                                                     // Sticky cell necesita bg sólido para
                                                     // tapar las celdas al scrollear
                                                     // horizontal — canvas, no card.
-                                                    sticky && 'imcrm-bg-canvas',
+                                                    sticky && 'imcrm-bg-background',
                                                 )}
                                             >
                                                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
@@ -790,7 +790,7 @@ function GroupBucketSection({
                                                             'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
                                                             sticky && (isSelected
                                                                 ? 'imcrm-bg-primary/5'
-                                                                : 'imcrm-bg-canvas group-hover/row:imcrm-bg-muted/40'),
+                                                                : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
                                                             ci === 0 &&
                                                                 onRowClick &&
                                                                 'imcrm-cursor-pointer imcrm-font-medium',
@@ -834,7 +834,7 @@ function GroupBucketSection({
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                         className={cn(
                                                             'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                            sticky && 'imcrm-bg-canvas',
+                                                            sticky && 'imcrm-bg-background',
                                                         )}
                                                     >
                                                         <button
@@ -855,7 +855,7 @@ function GroupBucketSection({
                                                     <td
                                                         key={c.id}
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
-                                                        className={cn(sticky && 'imcrm-bg-canvas')}
+                                                        className={cn(sticky && 'imcrm-bg-background')}
                                                     />
                                                 );
                                             }
@@ -869,7 +869,7 @@ function GroupBucketSection({
                                                     style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                     className={cn(
                                                         'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                        sticky && 'imcrm-bg-canvas',
+                                                        sticky && 'imcrm-bg-background',
                                                     )}
                                                 >
                                                     <FooterAggregateCell
