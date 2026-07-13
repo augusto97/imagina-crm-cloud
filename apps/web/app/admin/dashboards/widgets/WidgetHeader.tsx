@@ -25,7 +25,7 @@ export function WidgetHeader({
     right?: React.ReactNode;
 }): JSX.Element {
     return (
-        <header className="imcrm-flex imcrm-shrink-0 imcrm-items-start imcrm-justify-between imcrm-gap-2">
+        <header className="imcrm-drag-handle imcrm-flex imcrm-shrink-0 imcrm-cursor-grab imcrm-select-none imcrm-items-start imcrm-justify-between imcrm-gap-2 active:imcrm-cursor-grabbing">
             <div className="imcrm-min-w-0">
                 <h3 className="imcrm-truncate imcrm-text-[13px] imcrm-font-semibold imcrm-leading-tight imcrm-text-foreground">
                     {title}

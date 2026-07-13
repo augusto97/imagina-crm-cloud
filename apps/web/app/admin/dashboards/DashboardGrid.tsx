@@ -80,6 +80,7 @@ export function DashboardGrid({
             // como `Responsive` con cols pequeños hacía. La posición x
             // que el usuario eligió se respeta.
             compactType="vertical"
+            draggableHandle=".imcrm-drag-handle"
             draggableCancel=".imcrm-no-drag"
             onDragStop={handleStop}
             onResizeStop={handleStop}
