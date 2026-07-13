@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import {
     smtpConfigSchema,
     updateBrandingSchema,
@@ -14,6 +14,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
 import { MailService } from '../mail/mail.service';
+import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { BrandingService } from './branding.service';
 
@@ -25,6 +26,7 @@ export class WorkspacesController {
         private readonly branding: BrandingService,
         private readonly smtp: TenantSmtpService,
         private readonly mail: MailService,
+        private readonly smtpDns: SmtpDnsService,
     ) {}
 
     /** Gate compartido: mutaciones de configuración = solo admin del workspace. */
@@ -97,6 +99,27 @@ export class WorkspacesController {
     async clearSmtp(@Req() req: FastifyRequest): Promise<void> {
         this.assertAdmin(req);
         await this.smtp.clear(req.tenant!.tenantId);
+    }
+
+    /**
+     * Registros DNS exactos (SPF/DKIM/DMARC) que el cliente debe crear para
+     * su dominio remitente, VERIFICADOS en vivo contra el DNS real.
+     * 404 si el workspace no tiene SMTP propio configurado.
+     */
+    @Get('current/smtp/dns')
+    @UseGuards(TenantGuard)
+    async smtpDnsReport(@Req() req: FastifyRequest): Promise<SmtpDnsReport> {
+        this.assertAdmin(req);
+        const cfg = await this.smtp.getForSend(req.tenant!.tenantId);
+        const report = cfg ? await this.smtpDns.report(cfg) : null;
+        if (!report) {
+            throw new NotFoundException({
+                code: 'smtp_not_configured',
+                message: 'Configurá primero el SMTP del workspace (con un remitente válido)',
+                data: { status: 404 },
+            });
+        }
+        return report;
     }
 
     /** Correo de prueba por el transporte del tenant (sin cola: error visible). */

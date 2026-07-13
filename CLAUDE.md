@@ -625,6 +625,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la consola Plataforma (?tab=correo|updates) — Ajustes queda solo
         con Workspace y Cuenta. E2E curl + navegador en ambas ubicaciones.
 
+  - [x] **Registros DNS del SMTP propio (v0.1.66)**: al habilitar SMTP de
+        empresa, el panel le indica al cliente los registros EXACTOS que debe
+        crear en su DNS (SPF/DKIM/DMARC) y los VERIFICA en vivo.
+        `SmtpDnsService` (mail): catálogo de 7 proveedores conocidos (Google,
+        M365, Brevo, SES, Mailgun, SendGrid, Zoho → include SPF + selectores/
+        tipo DKIM + guía), `deriveDnsRecords` PURO (SPF exacto o `a:host`
+        genérico, DKIM guiado —la clave la genera el proveedor—, DMARC de
+        arranque p=none) + verificación contra 1.1.1.1/8.8.8.8 (timeout 2 s,
+        1 intento, checks en paralelo; fallo de red = `unknown`, distinto de
+        `missing`; DKIM prueba selectores TXT y CNAME Easy-DKIM). Endpoint
+        `GET /workspaces/current/smtp/dns` (admin; 404 sin SMTP propio).
+        Front: sección "Registros DNS" en el panel SMTP (badges de estado
+        ok/parcial/falta/desconocido, host relativo + FQDN, valor copiable,
+        "Encontrado: …" para diagnóstico). Schema compartido
+        `smtpDnsReportSchema`. 7 tests unitarios (285 en verde) + E2E curl y
+        navegador.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
