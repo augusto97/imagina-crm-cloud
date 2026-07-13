@@ -5,6 +5,8 @@ import {
     Activity,
     ChevronDown,
     ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
     ExternalLink,
     MessageSquare,
     Save,
@@ -19,7 +21,6 @@ import {
     SheetCloseButton,
     SheetDescription,
     SheetFooter,
-    SheetHeader,
     SheetTitle,
 } from '@/components/ui/sheet';
 import { useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
@@ -41,18 +42,47 @@ interface RecordDetailDrawerProps {
      * link no se muestra.
      */
     listSlug?: string;
+    /**
+     * Nombre humano de la lista para el breadcrumb de la barra superior
+     * ("{lista} / Registro #id"). Si no se pasa, cae al slug.
+     */
+    listName?: string;
     fields: FieldEntity[];
     record: RecordEntity | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
+/** Clave de localStorage para recordar si el aside de Actividad está abierto. */
+const ASIDE_STORAGE_KEY = 'imcrm-record-modal-aside';
+
+function readAsidePref(): boolean {
+    try {
+        return window.localStorage.getItem(ASIDE_STORAGE_KEY) !== '0';
+    } catch {
+        return true;
+    }
+}
+
+/** Timestamps del API vienen naive-UTC (`YYYY-MM-DD HH:MM:SS`). */
+function formatCreatedDate(value: string | null | undefined): string {
+    if (!value) return '—';
+    const d = new Date(value + 'Z');
+    return Number.isNaN(d.getTime())
+        ? value
+        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 /**
  * Modal flotante grande (patrón ClickUp) con el form completo del
- * registro. Dos columnas en lg+: a la izquierda el contenido (título,
- * metadatos, sección "Campos" colapsable) con scroll propio; a la
- * derecha un panel fijo de 380px con las tabs Comentarios/Actividad y
- * el composer abajo. En <lg se apila: contenido arriba, tabs debajo.
+ * registro. Estructura calcada de la vista de tarea de ClickUp:
+ * una barra superior full-width (breadcrumb lista/registro + fecha de
+ * creación + link a página completa + cerrar), y debajo dos columnas en
+ * lg+: a la izquierda el contenido (chip "Registro", título, metadatos,
+ * sección "Campos" con filas separadas solo por hairlines) con scroll
+ * propio; a la derecha un panel COLAPSABLE de 380px con las tabs
+ * Comentarios/Actividad y el composer abajo. En <lg se apila:
+ * contenido arriba, tabs debajo.
  *
  * Se usa como complemento al inline edit: aquí se editan también los
  * campos `user`, `file` y `relation`.
@@ -67,6 +97,7 @@ interface RecordDetailDrawerProps {
 export function RecordDetailDrawer({
     listId,
     listSlug,
+    listName,
     fields,
     record,
     open,
@@ -85,7 +116,21 @@ export function RecordDetailDrawer({
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
     const [fieldsOpen, setFieldsOpen] = useState(true);
+    // Aside de Actividad colapsable (persistido en localStorage).
+    const [asideOpen, setAsideOpen] = useState<boolean>(readAsidePref);
     const boot = getBootData();
+
+    const toggleAside = (): void => {
+        setAsideOpen((v) => {
+            const next = !v;
+            try {
+                window.localStorage.setItem(ASIDE_STORAGE_KEY, next ? '1' : '0');
+            } catch {
+                // localStorage no disponible — el estado queda solo en memoria.
+            }
+            return next;
+        });
+    };
 
     useEffect(() => {
         setValues(initialValues);
@@ -177,147 +222,209 @@ export function RecordDetailDrawer({
                 <div className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <DialogPrimitive.Content
                         className={cn(
-                            'imcrm-grid imcrm-h-[88vh] imcrm-w-[min(1150px,94vw)] imcrm-overflow-hidden',
-                            'imcrm-grid-rows-[minmax(0,3fr)_minmax(0,2fr)] lg:imcrm-grid-rows-1 lg:imcrm-grid-cols-[minmax(0,1fr)_380px]',
+                            'imcrm-flex imcrm-h-[88vh] imcrm-w-[min(1150px,94vw)] imcrm-flex-col imcrm-overflow-hidden',
                             'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                             'imcrm-animate-imcrm-scale-in',
                         )}
                     >
-                        {/* ——— Columna izquierda: contenido con scroll propio ——— */}
-                        <div className="imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-col">
-                            <SheetHeader>
-                                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
-                                    <SheetTitle className="imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
-                                        {title}
-                                    </SheetTitle>
-                                    <SheetDescription className="imcrm-text-xs">
-                                        {__('Registro')}{' '}
-                                        <span className="imcrm-inline-flex imcrm-items-center imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono">
-                                            #{record.id}
-                                        </span>
-                                    </SheetDescription>
-                                </div>
-                                <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                                    {listSlug !== undefined && (
-                                        <Button
-                                            asChild
-                                            variant="ghost"
-                                            size="icon"
-                                            aria-label={__('Abrir página completa')}
-                                            title={__('Abrir página completa')}
-                                        >
-                                            <Link
-                                                to={`/lists/${listSlug}/records/${record.id}`}
-                                                onClick={() => onOpenChange(false)}
-                                            >
-                                                <ExternalLink className="imcrm-h-4 imcrm-w-4" />
-                                            </Link>
-                                        </Button>
-                                    )}
-                                    <SheetCloseButton />
-                                </div>
-                            </SheetHeader>
-
-                            <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-5 imcrm-py-4">
-                                {/* Metadatos estilo ClickUp — 2 columnas (modal ancho). */}
-                                <RecordMetaGrid
-                                    record={record}
-                                    fields={fields}
-                                    values={values}
-                                    twoCols
-                                    className="imcrm-mb-4"
-                                />
-
-                                {/* Sección "Campos" colapsable con icono del tipo por fila. */}
-                                <button
-                                    type="button"
-                                    onClick={() => setFieldsOpen((v) => !v)}
-                                    aria-expanded={fieldsOpen}
-                                    className="imcrm-mb-2 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-py-1 imcrm-pr-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground hover:imcrm-text-foreground imcrm-transition-colors"
-                                >
-                                    {fieldsOpen ? (
-                                        <ChevronDown className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                                    ) : (
-                                        <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                                    )}
-                                    {__('Campos')}
-                                    <span className="imcrm-font-normal imcrm-normal-case imcrm-text-muted-foreground/70">
-                                        {fields.length}
-                                    </span>
-                                </button>
-                                {fieldsOpen && (
-                                    <RecordFieldsForm
-                                        listId={listId}
-                                        fields={fields}
-                                        values={values}
-                                        onChange={setValues}
-                                        fieldErrors={fieldErrors}
-                                        density="compact"
-                                        showTypeIcon
-                                    />
+                        {/* ——— Barra superior full-width (patrón ClickUp) ——— */}
+                        <div className="imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-4">
+                            <SheetDescription className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[13px] imcrm-text-muted-foreground">
+                                {(listName ?? listSlug) !== undefined && (
+                                    <>
+                                        {listName ?? listSlug}
+                                        <span className="imcrm-mx-1.5 imcrm-text-muted-foreground/50">/</span>
+                                    </>
                                 )}
-
-                                {error !== null && (
-                                    <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                                        {error}
-                                    </div>
+                                {sprintf(
+                                    /* translators: %d: record id */
+                                    __('Registro #%d'),
+                                    record.id,
                                 )}
-                            </div>
-
-                            <SheetFooter>
+                            </SheetDescription>
+                            <span className="imcrm-hidden imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground sm:imcrm-inline">
+                                {sprintf(
+                                    /* translators: %s: fecha de creación del registro */
+                                    __('Se creó el %s'),
+                                    formatCreatedDate(record.created_at),
+                                )}
+                            </span>
+                            {listSlug !== undefined && (
                                 <Button
+                                    asChild
                                     variant="ghost"
-                                    className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                                    onClick={handleDelete}
-                                    disabled={remove.isPending}
+                                    size="icon"
+                                    aria-label={__('Abrir página completa')}
+                                    title={__('Abrir página completa')}
                                 >
-                                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                    {__('Eliminar')}
+                                    <Link
+                                        to={`/lists/${listSlug}/records/${record.id}`}
+                                        onClick={() => onOpenChange(false)}
+                                    >
+                                        <ExternalLink className="imcrm-h-4 imcrm-w-4" />
+                                    </Link>
                                 </Button>
-                                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                                    {__('Cancelar')}
-                                </Button>
-                                <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
-                                    <Save className="imcrm-h-4 imcrm-w-4" />
-                                    {update.isPending ? __('Guardando…') : __('Guardar cambios')}
-                                </Button>
-                            </SheetFooter>
+                            )}
+                            <SheetCloseButton />
                         </div>
 
-                        {/* ——— Columna derecha: Comentarios / Actividad ——— */}
-                        <aside className="imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-col imcrm-border-t imcrm-border-border lg:imcrm-border-t-0 lg:imcrm-border-l">
-                            <div
-                                role="tablist"
-                                aria-label={__('Vista del registro')}
-                                className="imcrm-flex imcrm-shrink-0 imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-4"
-                            >
-                                <TabButton active={tab === 'comments'} onClick={() => setTab('comments')}>
-                                    <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Comentarios')}
-                                </TabButton>
-                                <TabButton active={tab === 'activity'} onClick={() => setTab('activity')}>
-                                    <Activity className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Actividad')}
-                                </TabButton>
+                        {/* ——— Fila: contenido + aside colapsable ——— */}
+                        <div className="imcrm-relative imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col lg:imcrm-flex-row">
+                            {/* ——— Columna de contenido con scroll propio ——— */}
+                            <div className="imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
+                                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-6 imcrm-py-5 sm:imcrm-px-8">
+                                    {/* Chip de tipo de entidad (como el chip "Tarea" de ClickUp). */}
+                                    <span className="imcrm-inline-flex imcrm-w-fit imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
+                                        {__('Registro')}
+                                    </span>
+
+                                    <SheetTitle className="imcrm-mt-2 imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
+                                        {title}
+                                    </SheetTitle>
+
+                                    {/* Metadatos estilo ClickUp — 2 columnas (modal ancho). */}
+                                    <RecordMetaGrid
+                                        record={record}
+                                        fields={fields}
+                                        values={values}
+                                        twoCols
+                                        className="imcrm-mb-4 imcrm-mt-4"
+                                    />
+
+                                    {/* Sección "Campos" colapsable con icono del tipo por fila. */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setFieldsOpen((v) => !v)}
+                                        aria-expanded={fieldsOpen}
+                                        className="imcrm-mb-2 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-py-1 imcrm-pr-2 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground hover:imcrm-text-foreground imcrm-transition-colors"
+                                    >
+                                        {fieldsOpen ? (
+                                            <ChevronDown className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                        ) : (
+                                            <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                        )}
+                                        {__('Campos')}
+                                        <span className="imcrm-font-normal imcrm-normal-case imcrm-text-muted-foreground/70">
+                                            {fields.length}
+                                        </span>
+                                    </button>
+                                    {fieldsOpen && (
+                                        <RecordFieldsForm
+                                            listId={listId}
+                                            fields={fields}
+                                            values={values}
+                                            onChange={setValues}
+                                            fieldErrors={fieldErrors}
+                                            density="compact"
+                                            showTypeIcon
+                                        />
+                                    )}
+
+                                    {error !== null && (
+                                        <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                                            {error}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <SheetFooter>
+                                    <Button
+                                        variant="ghost"
+                                        className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
+                                        onClick={handleDelete}
+                                        disabled={remove.isPending}
+                                    >
+                                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                        {__('Eliminar')}
+                                    </Button>
+                                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                                        {__('Cancelar')}
+                                    </Button>
+                                    <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
+                                        <Save className="imcrm-h-4 imcrm-w-4" />
+                                        {update.isPending ? __('Guardando…') : __('Guardar cambios')}
+                                    </Button>
+                                </SheetFooter>
                             </div>
 
-                            <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-px-4 imcrm-py-3">
-                                {tab === 'comments' ? (
-                                    // CommentsPanel es h-full flex-col: lista con
-                                    // scroll propio + composer abajo.
-                                    <CommentsPanel
-                                        listId={listId}
-                                        recordId={record.id}
-                                        currentUserId={boot.user.id}
-                                        isAdmin={boot.user.capabilities.workspace_admin === true}
-                                    />
-                                ) : (
-                                    <div className="imcrm-h-full imcrm-overflow-y-auto imcrm-pr-1">
-                                        <ActivityPanel listId={listId} recordId={record.id} />
-                                    </div>
+                            {/* Botón flotante para re-expandir el aside colapsado. */}
+                            {!asideOpen && (
+                                <button
+                                    type="button"
+                                    onClick={toggleAside}
+                                    aria-expanded={false}
+                                    aria-label={__('Ampliar')}
+                                    title={__('Ampliar')}
+                                    className="imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
+                                >
+                                    <ChevronsLeft className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                                </button>
+                            )}
+
+                            {/* ——— Aside derecho colapsable: Comentarios / Actividad ——— */}
+                            <aside
+                                aria-hidden={!asideOpen}
+                                className={cn(
+                                    'imcrm-flex imcrm-min-h-0 imcrm-flex-col imcrm-overflow-hidden imcrm-border-border',
+                                    'imcrm-transition-all imcrm-duration-200',
+                                    asideOpen
+                                        ? 'imcrm-h-[40%] imcrm-shrink-0 imcrm-border-t lg:imcrm-h-auto lg:imcrm-w-[380px] lg:imcrm-border-l lg:imcrm-border-t-0'
+                                        : 'imcrm-pointer-events-none imcrm-h-0 imcrm-shrink-0 lg:imcrm-h-auto lg:imcrm-w-0',
                                 )}
-                            </div>
-                        </aside>
+                            >
+                                {/* Ancho interno fijo en lg: el contenido no se aplasta
+                                 * mientras el width del aside anima. */}
+                                <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col lg:imcrm-w-[380px]">
+                                    <div className="imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-border-b imcrm-border-border imcrm-px-2">
+                                        <button
+                                            type="button"
+                                            onClick={toggleAside}
+                                            aria-expanded
+                                            aria-label={__('Contraer')}
+                                            title={__('Contraer')}
+                                            className="imcrm-inline-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground imcrm-transition-colors"
+                                        >
+                                            <ChevronsRight className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                                        </button>
+                                        <span className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                            {__('Actividad')}
+                                        </span>
+                                    </div>
+
+                                    <div
+                                        role="tablist"
+                                        aria-label={__('Vista del registro')}
+                                        className="imcrm-flex imcrm-shrink-0 imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-4"
+                                    >
+                                        <TabButton active={tab === 'comments'} onClick={() => setTab('comments')}>
+                                            <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Comentarios')}
+                                        </TabButton>
+                                        <TabButton active={tab === 'activity'} onClick={() => setTab('activity')}>
+                                            <Activity className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Actividad')}
+                                        </TabButton>
+                                    </div>
+
+                                    <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-px-4 imcrm-py-3">
+                                        {tab === 'comments' ? (
+                                            // CommentsPanel es h-full flex-col: lista con
+                                            // scroll propio + composer abajo.
+                                            <CommentsPanel
+                                                listId={listId}
+                                                recordId={record.id}
+                                                currentUserId={boot.user.id}
+                                                isAdmin={boot.user.capabilities.workspace_admin === true}
+                                            />
+                                        ) : (
+                                            <div className="imcrm-h-full imcrm-overflow-y-auto imcrm-pr-1">
+                                                <ActivityPanel listId={listId} recordId={record.id} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </aside>
+                        </div>
                     </DialogPrimitive.Content>
                 </div>
             </DialogPrimitive.Portal>

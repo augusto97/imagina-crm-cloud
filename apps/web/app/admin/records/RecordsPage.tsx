@@ -804,6 +804,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     <RecordDetailDrawer
                         listId={list.data.id}
                         listSlug={list.data.slug}
+                        listName={list.data.name}
                         fields={fields.data}
                         record={drawerRecord}
                         open={drawerRecordId !== null}

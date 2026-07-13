@@ -77,7 +77,9 @@ export function CompactFieldRow({
                 htmlFor={`field-${field.id}`}
                 className={cn(
                     'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
-                    showTypeIcon ? 'imcrm-w-[148px]' : 'imcrm-w-[120px]',
+                    // Con icono de tipo (drawer/página, estilo ClickUp) el
+                    // label ocupa ~200px; sin icono (layout CRM) queda 120px.
+                    showTypeIcon ? 'imcrm-w-[200px]' : 'imcrm-w-[120px]',
                 )}
             >
                 {showTypeIcon && (
