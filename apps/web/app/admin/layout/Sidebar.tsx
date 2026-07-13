@@ -212,7 +212,7 @@ export function Sidebar({
             {/* ── Panel interno claro (contextual según el riel) ────────── */}
             <div
                 className={cn(
-                    'imcrm-flex imcrm-w-[240px] imcrm-shrink-0 imcrm-flex-col imcrm-border-r imcrm-border-border imcrm-bg-background',
+                    'imcrm-flex imcrm-w-[240px] imcrm-shrink-0 imcrm-flex-col imcrm-border-r imcrm-border-border imcrm-bg-canvas',
                     // Colapsado → sólo en escritorio (en mobile el drawer
                     // siempre muestra el conjunto completo).
                     collapsed && 'lg:imcrm-hidden',
@@ -406,7 +406,7 @@ function PanelLink({ to, name }: { to: string; name: string }): JSX.Element {
                 cn(
                     'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
                     isActive
-                        ? 'imcrm-bg-muted imcrm-font-medium imcrm-text-foreground'
+                        ? 'imcrm-bg-background imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
                         : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
                 )
             }
@@ -440,7 +440,7 @@ function PanelNavItem({
             className={cn(
                 'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
                 active
-                    ? 'imcrm-bg-muted imcrm-font-medium imcrm-text-foreground'
+                    ? 'imcrm-bg-background imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
                     : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
             )}
         >

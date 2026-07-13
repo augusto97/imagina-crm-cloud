@@ -578,6 +578,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (contenido + aside 380px de Comentarios/Actividad con composer).
         Verificado en navegador con branding verde aplicado (riel teñido).
 
+  - [x] **Ajuste ClickUp final (v0.1.62)**: fondos INTERCAMBIADOS — panel
+        del menú gris claro (canvas, activo blanco+ring) y área de trabajo
+        BLANCA (los fondos sticky de las tablas la siguen), como ClickUp; y
+        cabecera de records compactada a ~118px (breadcrumb 36px, tabs h-9
+        con icono por view_type a 14px, toolbar h-8 con búsqueda que crece
+        en focus, acciones secundarias ghost h-7).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -372,7 +372,7 @@ export function TableView({
             >
                 <thead
                     className={cn(
-                        'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-canvas imcrm-transition-shadow imcrm-duration-150',
+                        'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-background imcrm-transition-shadow imcrm-duration-150',
                         scrolled && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.06)]',
                     )}
                 >
@@ -450,7 +450,7 @@ export function TableView({
                                             // Sticky cells necesitan bg sólido para
                                             // tapar las celdas que pasan por detrás
                                             // horizontalmente al scrollear.
-                                            stickyStyle && 'imcrm-bg-canvas',
+                                            stickyStyle && 'imcrm-bg-background',
                                             isDragOver && 'imcrm-bg-primary/10',
                                             draggingColId === h.id && 'imcrm-opacity-50',
                                         )}
@@ -617,7 +617,7 @@ export function TableView({
                                                     'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
                                                     cellSticky && (isSelected
                                                         ? 'imcrm-bg-primary/5'
-                                                        : 'imcrm-bg-canvas group-hover/row:imcrm-bg-muted/40'),
+                                                        : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
                                                     isOpenerCell && onRowClick && 'imcrm-cursor-pointer imcrm-font-medium',
                                                 )}
                                                 onClick={
@@ -676,7 +676,7 @@ export function TableView({
                                             }}
                                             className={cn(
                                                 'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                                cellSticky && 'imcrm-bg-canvas',
+                                                cellSticky && 'imcrm-bg-background',
                                             )}
                                         >
                                             <button
@@ -701,7 +701,7 @@ export function TableView({
                                                 maxWidth: col.getSize(),
                                                 ...(cellSticky ?? {}),
                                             }}
-                                            className={cn(cellSticky && 'imcrm-bg-canvas')}
+                                            className={cn(cellSticky && 'imcrm-bg-background')}
                                         />
                                     );
                                 }
@@ -719,7 +719,7 @@ export function TableView({
                                         }}
                                         className={cn(
                                             'imcrm-overflow-hidden imcrm-px-1 imcrm-py-1 imcrm-align-middle',
-                                            cellSticky && 'imcrm-bg-canvas',
+                                            cellSticky && 'imcrm-bg-background',
                                         )}
                                     >
                                         <FooterAggregateCell
