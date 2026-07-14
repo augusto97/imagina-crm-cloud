@@ -1,17 +1,22 @@
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import {
+    customDomainInputSchema,
     smtpConfigSchema,
     updateBrandingSchema,
+    type CustomDomainInput,
+    type DomainDnsReport,
     type SmtpConfig,
     type SmtpConfigPublic,
     type BrandingResponse,
     type MembershipSummary,
+    type TenantDomain,
     type UpdateBrandingInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from '../auth/auth.service';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { DomainsService } from '../domains/domains.service';
 import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
 import { MailService } from '../mail/mail.service';
 import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
@@ -27,6 +32,7 @@ export class WorkspacesController {
         private readonly smtp: TenantSmtpService,
         private readonly mail: MailService,
         private readonly smtpDns: SmtpDnsService,
+        private readonly domains: DomainsService,
     ) {}
 
     /** Gate compartido: mutaciones de configuración = solo admin del workspace. */
@@ -116,6 +122,49 @@ export class WorkspacesController {
             throw new NotFoundException({
                 code: 'smtp_not_configured',
                 message: 'Configurá primero el SMTP del workspace (con un remitente válido)',
+                data: { status: 404 },
+            });
+        }
+        return report;
+    }
+
+    /**
+     * Dominio personalizado del workspace (ADR-S17). GET lo lee cualquier
+     * miembro (muestra el subdominio); mutar y verificar es solo admin.
+     */
+    @Get('current/domain')
+    @UseGuards(TenantGuard)
+    getDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
+        return this.domains.getForTenant(req.tenant!.tenantId);
+    }
+
+    @Patch('current/domain')
+    @UseGuards(TenantGuard)
+    setDomain(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(customDomainInputSchema)) input: CustomDomainInput,
+    ): Promise<TenantDomain> {
+        this.assertAdmin(req);
+        return this.domains.set(req.tenant!.tenantId, input.domain);
+    }
+
+    @Delete('current/domain')
+    @UseGuards(TenantGuard)
+    clearDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
+        this.assertAdmin(req);
+        return this.domains.clear(req.tenant!.tenantId);
+    }
+
+    /** Verificación en vivo del CNAME/A del dominio propio. 404 sin dominio. */
+    @Get('current/domain/dns')
+    @UseGuards(TenantGuard)
+    async domainDnsReport(@Req() req: FastifyRequest): Promise<DomainDnsReport> {
+        this.assertAdmin(req);
+        const report = await this.domains.dnsReport(req.tenant!.tenantId);
+        if (!report) {
+            throw new NotFoundException({
+                code: 'domain_not_configured',
+                message: 'Configurá primero el dominio personalizado',
                 data: { status: 404 },
             });
         }

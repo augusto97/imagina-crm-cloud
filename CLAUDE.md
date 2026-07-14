@@ -642,6 +642,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `smtpDnsReportSchema`. 7 tests unitarios (285 en verde) + E2E curl y
         navegador.
 
+  - [x] **Dominio personalizado por tenant (v0.1.67, ADR-S17)**: cierre del
+        white-label — cada empresa entra por SU dominio. Dos niveles: (a)
+        subdominio automático `slug.PUBLIC_BASE_DOMAIN` (nuevo env; requiere
+        DNS wildcard) y (b) dominio propio en `tenants.custom_domain`
+        (migración 0029, UNIQUE global). `DomainsModule`: `resolveHost`
+        (Host→tenant, sin sesión, ignora archivados), `GET /public/boot`
+        (marca del tenant del Host — color/logo firmado/app_name — para
+        pintar el LOGIN antes de autenticarse), `GET /public/domains/check`
+        (el `ask` del `on_demand_tls` de Caddy: solo emite certs de dominios
+        registrados), `GET/PATCH/DELETE /workspaces/current/domain` +
+        `/domain/dns` (verificación CNAME en vivo; apex sin CNAME → compara
+        A/IPs; mismo patrón unknown≠missing del SMTP), y `baseUrlFor` → los
+        magic links del portal salen por el dominio del tenant. Reservados:
+        la base y sus subdominios (400) + unicidad (409). Caddyfile
+        reescrito: snippet común + bloque `https://` con `tls on_demand`
+        gateado por el ask. Front: boot pre-login (publicBoot pinta tokens +
+        logo/nombre en Login, workspace fijado al tenant del dominio) + card
+        "Dominio personalizado" en Ajustes→Marca (subdominio copiable,
+        CNAME exacto + verificación con badges). ADR-S17 en STANDALONE.md.
+        7 tests nuevos + E2E curl (boot por dominio/subdominio, ask 200/404,
+        reservados) y navegador.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

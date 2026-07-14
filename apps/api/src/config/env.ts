@@ -78,6 +78,14 @@ const envSchema = z.object({
         .url()
         .default('http://localhost:5174')
         .transform((v) => v.replace(/\/$/, '')),
+    // Dominio base de la plataforma (ADR-S17), ej. `app.imaginabase.com`:
+    // habilita los subdominios automáticos `slug.BASE` y es el destino del
+    // CNAME de los dominios propios. Vacío = solo dominios propios exactos
+    // (el target del CNAME se deriva del host de APP_BASE_URL).
+    PUBLIC_BASE_DOMAIN: z
+        .string()
+        .default('')
+        .transform((v) => v.trim().toLowerCase().replace(/\.$/, '')),
     SMTP_HOST: z.string().default(''),
     SMTP_PORT: z.coerce.number().int().positive().default(587),
     SMTP_SECURE: boolFromString,

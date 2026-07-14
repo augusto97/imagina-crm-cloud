@@ -6,8 +6,26 @@
 #
 # Reemplazá `app.tu-dominio.com` por tu dominio real y apuntá su DNS (A/AAAA) a
 # la IP del VPS ANTES de arrancar Caddy (necesita validar el certificado).
+#
+# ── Dominios personalizados por empresa (ADR-S17) ───────────────────────────
+# `on_demand_tls` emite el certificado de un dominio la PRIMERA vez que alguien
+# lo visita, preguntándole antes al API si ese dominio pertenece a un tenant
+# (`ask` → 200 emite / 404 rechaza). Así un cliente apunta su CNAME a
+# `app.tu-dominio.com`, lo registra en Ajustes → Marca, y su dominio queda
+# vivo con HTTPS sin tocar el servidor.
+#
+# Subdominios automáticos (`slug.app.tu-dominio.com`): apuntá también el DNS
+# wildcard `*.app.tu-dominio.com` (A/AAAA) a la IP del VPS; el mismo bloque
+# on-demand los sirve (el `ask` valida el slug contra la DB).
 
-app.tu-dominio.com {
+{
+    on_demand_tls {
+        ask http://127.0.0.1:3001/api/v1/public/domains/check
+    }
+}
+
+# Bloque común: API + los dos SPA (mismo layout para todos los hostnames).
+(imagina_app) {
     encode zstd gzip
 
     # --- Backend: API REST + webhooks + WebSocket del realtime ---
@@ -43,4 +61,18 @@ app.tu-dominio.com {
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
     }
+}
+
+# Dominio principal de la plataforma (certificado normal de Let's Encrypt).
+app.tu-dominio.com {
+    import imagina_app
+}
+
+# Dominios personalizados + subdominios de empresas: certificado on-demand,
+# gateado por el endpoint `ask` de arriba (solo dominios registrados).
+https:// {
+    tls {
+        on_demand
+    }
+    import imagina_app
 }

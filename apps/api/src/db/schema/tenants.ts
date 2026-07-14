@@ -7,6 +7,8 @@ export const tenants = pgTable('tenants', {
     plan: varchar('plan', { length: 32 }).notNull().default('trial'),
     status: varchar('status', { length: 16 }).notNull().default('trialing'),
     settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+    // Dominio propio del cliente (ADR-S17): entrada white-label a la app.
+    customDomain: varchar('custom_domain', { length: 253 }).unique(),
     // Suscripción 'paga hasta' (operador): al vencer → solo-lectura (ADR-S09).
     subscriptionEndsAt: timestamp('subscription_ends_at', { withTimezone: true }),
     // Archivada por el operador: deja de operar (solo-lectura) y se oculta de la grilla.
