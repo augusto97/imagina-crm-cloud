@@ -17,6 +17,11 @@ export function LoginPage(): JSX.Element {
     const [sent, setSent] = useState(false);
     const [busy, setBusy] = useState(false);
     const setSession = useSession((s) => s.setSession);
+    // Marca del dominio white-label (ADR-S17): si se entró por el dominio de
+    // una empresa, el login muestra SU logo y nombre (el color ya lo aplica
+    // `useBranding` con el mismo boot público).
+    const domainTenant = useSession((s) => s.domainTenant);
+    const appName = domainTenant?.app_name ?? 'Imagina Base';
     const qc = useQueryClient();
 
     async function submit(e: React.FormEvent): Promise<void> {
@@ -49,8 +54,15 @@ export function LoginPage(): JSX.Element {
                 className="imcrm-w-full imcrm-max-w-sm imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-shadow-sm"
             >
                 <div className="imcrm-space-y-1">
+                    {domainTenant?.logo_url && (
+                        <img
+                            src={domainTenant.logo_url}
+                            alt=""
+                            className="imcrm-mb-2 imcrm-h-10 imcrm-w-10 imcrm-rounded-md imcrm-object-contain"
+                        />
+                    )}
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                        Imagina Base
+                        {appName}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {mode === 'login'

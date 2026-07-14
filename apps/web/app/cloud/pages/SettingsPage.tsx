@@ -10,6 +10,7 @@ import {
 } from '@/cloud/settingsSections';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
+import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
@@ -132,8 +133,14 @@ export function SettingsPage(): JSX.Element {
                     </>
                 )}
                 {active === 'miembros' && isAdmin && <MembersPanel />}
-                {/* Branding white-label del workspace (nombre, color, logo). */}
-                {active === 'marca' && isAdmin && <BrandingPanel />}
+                {/* Branding white-label del workspace (nombre, color, logo) +
+                    dominio personalizado (ADR-S17). */}
+                {active === 'marca' && isAdmin && (
+                    <>
+                        <BrandingPanel />
+                        <DomainPanel />
+                    </>
+                )}
                 {/* SMTP propio del workspace (white-label de correo). */}
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
