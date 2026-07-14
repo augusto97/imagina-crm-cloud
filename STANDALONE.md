@@ -584,4 +584,27 @@ y visible en Ajustes.
 
 ---
 
-**Versión del documento:** 1.10.0 (consola de plataforma F1-F5: +impersonación con auditoría — ADR-S15)
+**ADR-S17 — Dominio personalizado por tenant (white-label completo).**
+El white-label de marca (ADR de branding, v0.1.57/58) quedaba incompleto si el
+cliente entra por el dominio de la plataforma. Decisión: dos niveles de entrada
+white-label, ambos resueltos por el header `Host` SIN sesión. (a) **Subdominio
+automático** `slug.PUBLIC_BASE_DOMAIN` — si el operador configura la base y su
+DNS wildcard, cada workspace ya tiene su URL sin tocar nada. (b) **Dominio
+propio** (`crm.acme.com`): vive en `tenants.custom_domain` (UNIQUE global,
+migración 0029); el cliente crea un CNAME hacia la plataforma (apex sin CNAME:
+registro A, la verificación en vivo compara IPs — mismo patrón resolver que el
+DNS del SMTP: timeout 2 s, `unknown` ≠ `missing`) y Caddy emite el certificado
+**on-demand** la primera vez que alguien visita el dominio, gateado por
+`GET /public/domains/check` (`ask`): solo dominios/subdominios registrados —
+nunca certs arbitrarios. `GET /public/boot` devuelve la marca del tenant del
+Host (logo por URL firmada) para pintar el login ANTES de autenticarse, y el
+front bloquea el workspace al tenant del dominio (un dominio = una empresa).
+Los magic links del portal salen por el dominio del tenant
+(`DomainsService.baseUrlFor`); los correos de cuenta (reset) siguen por
+`APP_BASE_URL`. La cookie de sesión es por-dominio (sin cambios: mismo origen).
+Se rechazan como dominio propio la base y sus subdominios (reservados para el
+nivel a). Gestión en Ajustes → Marca (solo admin), con verificación en vivo.
+
+---
+
+**Versión del documento:** 1.11.0 (dominio personalizado por tenant — ADR-S17)

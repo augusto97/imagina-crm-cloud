@@ -30,6 +30,7 @@ import { SessionService } from '../auth/session.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
+import { DomainsService } from '../domains/domains.service';
 import { fields, lists, memberships, portalLinks, records, relations, users, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -70,6 +71,7 @@ export class PortalService {
         private readonly realtime: RealtimeService,
         private readonly automations: AutomationDispatcher,
         private readonly files: FilesService,
+        private readonly domains: DomainsService,
     ) {}
 
     /**
@@ -182,7 +184,8 @@ export class PortalService {
         // Email transaccional: le mandamos el acceso al cliente. Best-effort —
         // si el correo falla, igual devolvemos el link para que el admin lo
         // comparta manualmente (la cola BullMQ ya reintenta por su cuenta).
-        const url = `${this.env.APP_BASE_URL}${path}`;
+        // Con dominio propio (ADR-S17) el link sale por el dominio del tenant.
+        const url = `${await this.domains.baseUrlFor(tenantId)}${path}`;
         await this.mail
             .enqueue({
                 tenantId,

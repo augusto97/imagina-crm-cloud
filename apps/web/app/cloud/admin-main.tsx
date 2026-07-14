@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { AdminCloudApp } from '@/cloud/AdminCloudApp';
+import { initDomainBoot } from '@/cloud/domainBoot';
 import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
@@ -26,6 +27,10 @@ window.addEventListener('load', () => {
     window.sessionStorage.removeItem('imcrm-chunk-reload');
 });
 
+
+// White-label por dominio (ADR-S17): en paralelo del check de sesión — si el
+// Host pertenece a una empresa, su marca se aplica DESDE el login.
+initDomainBoot();
 
 /**
  * Entry standalone de Imagina Base: monta la UI REAL del admin (fork pulido

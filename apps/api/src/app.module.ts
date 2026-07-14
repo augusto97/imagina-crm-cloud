@@ -4,6 +4,7 @@ import { AggregateModule } from './aggregate/aggregate.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
+import { DomainsModule } from './domains/domains.module';
 import { BillingModule } from './billing/billing.module';
 import { ExportModule } from './export/export.module';
 import { ImportModule } from './import/import.module';
@@ -61,6 +62,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AggregateModule,
         AutomationsModule,
         DashboardsModule,
+        DomainsModule,
         PortalModule,
         PublicListsModule,
         PlatformModule,

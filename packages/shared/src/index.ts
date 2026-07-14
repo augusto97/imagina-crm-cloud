@@ -23,6 +23,7 @@ export * from './schemas/aggregate';
 export * from './schemas/automation';
 export * from './schemas/dashboard';
 export * from './schemas/system';
+export * from './schemas/domains';
 export * from './schemas/portal';
 export * from './schemas/billing';
 export * from './schemas/platform';

@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommentsRepository } from '../src/comments/comments.repository';
 import { LocalFileStorage } from '../src/files/file-storage';
+import { DomainsService } from '../src/domains/domains.service';
 import { FilesService } from '../src/files/files.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { MailService } from '../src/mail/mail.service';
@@ -93,6 +94,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             rt,
             new AutomationDispatcher(),
             new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pf-'))), env),
+            new DomainsService(pg.db, env, new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pd-'))), env)),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();

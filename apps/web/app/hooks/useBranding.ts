@@ -76,10 +76,17 @@ export function useBrandingData() {
  * Con `primary_color` → setea las variables inline en `<html>`; con null (o
  * mientras carga otro tenant sin data) → las remueve y el CSS vuelve al
  * default (incluye el override de dark mode, que las inline pisarían).
+ *
+ * Tramo pre-login (ADR-S17): sin data del branding del tenant activo (sin
+ * sesión, o cargando), manda el color del tenant del DOMINIO white-label
+ * (`/public/boot` → `domainTenant` en el store) — así el LOGIN ya sale con la
+ * marca de la empresa y no parpadea al hidratar. Con data del tenant activo,
+ * ese branding SIEMPRE manda (misma fórmula, mismas vars: sin conflicto).
  */
 export function useBranding() {
     const query = useBrandingData();
-    const primaryColor = query.data?.primary_color ?? null;
+    const domainColor = useSession((s) => s.domainTenant?.primary_color ?? null);
+    const primaryColor = query.data !== undefined ? (query.data.primary_color ?? null) : domainColor;
 
     useEffect(() => {
         const style = document.documentElement.style;

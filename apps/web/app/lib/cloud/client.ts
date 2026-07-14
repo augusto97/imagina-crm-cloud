@@ -16,6 +16,8 @@ import {
     createListSchema,
     createRecordSchema,
     createViewSchema,
+    customDomainInputSchema,
+    domainDnsReportSchema,
     exportBundleSchema,
     fieldSchema,
     importResultSchema,
@@ -30,7 +32,9 @@ import {
     paginated,
     paymentConfigSchema,
     portalBootSchema,
+    publicBootSchema,
     recordSchema,
+    tenantDomainSchema,
     updateMemberRoleSchema,
     updateStatusSchema,
     workspaceMemberSchema,
@@ -63,6 +67,8 @@ import {
     type CreateListInput,
     type CreateRecordInput,
     type CreateViewInput,
+    type CustomDomainInput,
+    type DomainDnsReport,
     type ExportBundle,
     type Field,
     type ImportResult,
@@ -77,7 +83,9 @@ import {
     type MagicLinkResult,
     type PaymentConfig,
     type PortalBoot,
+    type PublicBoot,
     type RecordDto,
+    type TenantDomain,
     type UpdateMemberRoleInput,
     type UpdateStatus,
     type WorkspaceMember,
@@ -401,6 +409,38 @@ export class CloudClient {
             schema: z.object({ ok: z.boolean(), error: z.string().optional() }),
         });
     }
+    // --- dominio personalizado del workspace (ADR-S17, white-label) ---
+    /**
+     * Boot público SIN sesión: el backend resuelve el `Host` de la request y
+     * devuelve la marca del tenant dueño del dominio (o `tenant: null` en el
+     * dominio de la plataforma). El header `X-Tenant-Id` que pueda ir de más
+     * no molesta: el endpoint lo ignora.
+     */
+    publicBoot(): Promise<PublicBoot> {
+        return this.request('GET', '/public/boot', { schema: publicBootSchema });
+    }
+    /** Estado del dominio del workspace (cualquier miembro). */
+    tenantDomainGet(): Promise<TenantDomain> {
+        return this.request('GET', '/workspaces/current/domain', { schema: tenantDomainSchema });
+    }
+    /** Configura el dominio propio (sólo admin; 400 `domain_reserved` / 409 `domain_taken`). */
+    tenantDomainSet(input: CustomDomainInput): Promise<TenantDomain> {
+        return this.request('PATCH', '/workspaces/current/domain', {
+            body: customDomainInputSchema.parse(input),
+            schema: tenantDomainSchema,
+        });
+    }
+    /** Quita el dominio propio (sólo admin). */
+    tenantDomainClear(): Promise<TenantDomain> {
+        return this.request('DELETE', '/workspaces/current/domain', { schema: tenantDomainSchema });
+    }
+    /** Verificación en vivo del apuntamiento DNS del dominio propio (admin). */
+    tenantDomainDns(): Promise<DomainDnsReport> {
+        return this.request('GET', '/workspaces/current/domain/dns', {
+            schema: domainDnsReportSchema,
+        });
+    }
+
     /**
      * Sube un archivo al módulo de archivos (ADR-S16, `POST /files` multipart
      * campo `file`). Sin `Content-Type` manual: el browser arma el boundary.
