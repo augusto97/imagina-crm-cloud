@@ -393,7 +393,12 @@ const applyView = (view: SavedViewEntity | null): void => {
     const meta = records.data?.meta;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+        // `h-full min-h-0`: la página llena EXACTO el alto del <main> y el
+        // scroll vertical vive en UN solo lugar (el contenedor de la tabla,
+        // flex-1 más abajo) — sin esto convivían la barra del main y la de
+        // la tabla (doble scrollbar). Las vistas alternativas (kanban/cards/
+        // calendario) conservan el scroll natural de la página.
+        <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col imcrm-gap-2">
             {/*
               Fila 1 — breadcrumb (patrón ClickUp): fila DELGADA (~36px)
               con "Listas / {nombre}" a 13-14px. A la derecha, las
@@ -659,6 +664,18 @@ const applyView = (view: SavedViewEntity | null): void => {
                         </div>
                     </div>
 
+                    {/*
+                      Área de la vista: para tabla (plana/agrupada) es
+                      flex-1 min-h-0 → el scroll queda DENTRO del
+                      contenedor de la tabla y la página nunca duplica
+                      la barra. Kanban/cards/calendario: alto natural.
+                    */}
+                    <div
+                        className={
+                            'imcrm-flex imcrm-min-h-0 imcrm-flex-col' +
+                            (!isAlternativeView ? ' imcrm-flex-1' : '')
+                        }
+                    >
                     {records.isLoading ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
@@ -775,6 +792,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                             )}
                         </>
                     )}
+                    </div>
 
                     {meta && !isAlternativeView && !isTableGrouped && (
                         <Pagination meta={meta} onPageChange={setPage} />

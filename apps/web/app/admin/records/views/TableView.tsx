@@ -343,17 +343,16 @@ export function TableView({
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
         <div
-            // `max-h: calc(100vh - 220px)` mantiene el scroll horizontal
-            // (y vertical) DENTRO de este box, así la barra de scroll
-            // queda siempre visible al fondo del viewport en lugar de
-            // al fondo de la página. 220px ≈ altura combinada de
-            // header + ViewsTabs + filtros toolbar arriba. Si el
-            // contenido cabe en ese alto, no hay scrollbar — comportamiento
-            // natural.
+            // `flex-1 min-h-0`: el padre (RecordsPage) reserva el alto
+            // restante del viewport para la tabla y el scroll (vertical
+            // y horizontal) vive DENTRO de este box — la página nunca
+            // muestra una segunda barra. (Antes: max-h calc(100vh-220px),
+            // una aproximación que desincronizaba con el chrome real y
+            // producía doble scrollbar.)
             // Sin card chrome (border/rounded/shadow/bg-card): la tabla
             // va plana sobre el canvas, estilo ClickUp — solo hairlines.
             ref={tableContainerRef}
-            className="imcrm-overflow-auto imcrm-max-h-[calc(100vh-220px)]"
+            className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto"
             role="region"
             aria-label={__('Tabla de registros')}
             onScroll={(e) => {
