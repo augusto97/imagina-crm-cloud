@@ -67,7 +67,10 @@ export function AdminShell(): JSX.Element {
                     className="imcrm-flex-1 imcrm-overflow-auto imcrm-px-3 imcrm-py-2 focus:imcrm-outline-none focus-visible:imcrm-outline-none sm:imcrm-px-4 sm:imcrm-py-2"
                     tabIndex={-1}
                 >
-                    <div className="imcrm-mx-auto imcrm-w-full imcrm-max-w-screen-2xl">
+                    {/* `h-full`: da altura definida a las páginas que capan
+                        su scroll adentro (records); las demás desbordan y
+                        scrollea el main, como siempre. */}
+                    <div className="imcrm-mx-auto imcrm-h-full imcrm-w-full imcrm-max-w-screen-2xl">
                         <Outlet />
                     </div>
                 </main>

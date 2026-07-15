@@ -664,6 +664,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         7 tests nuevos + E2E curl (boot por dominio/subdominio, ask 200/404,
         reservados) y navegador.
 
+  - [x] **Fix triple de filtros/vistas + scroll único (v0.1.68, reporte
+        del usuario)**: (1) **los filtros de la tabla NO filtraban
+        server-side**: el listado de records leía el árbol del query param
+        `filter` mientras el front (y grouped-bundle/aggregates) usan
+        `filter_tree` → se descartaba en silencio; además el front mandaba
+        los árboles AND planos en formato WP `filter[field][op]` que el
+        API tampoco entiende. Fix: el controller acepta `filter_tree`
+        (+alias `filter`) y `buildRecordsQuery`/GroupedTableView mandan
+        SIEMPRE `filter_tree` JSON. (2) **"Cambios sin guardar" eterno**
+        en vistas guardadas: la comparación dirty usaba JSON.stringify
+        crudo (JSONB reordena claves → dirty perpetuo con cualquier
+        filtro) y omitía column_order/collapsed_groups/footer_aggregates
+        del lado guardado. Fix: canonicalización por round-trip
+        (config→estado→config) + stringify de claves ordenadas.
+        (3) **doble scrollbar vertical**: la tabla usaba
+        `max-h-[calc(100vh-220px)]` aproximado → barra de la tabla + barra
+        del main. Fix: layout de alto exacto (wrapper del Outlet h-full,
+        página h-full flex-col, contenedor de tabla flex-1 min-h-0) — UNA
+        sola barra, paginación fija abajo; kanban/cards/calendario
+        conservan scroll de página. Primeros tests del front (vitest.config
+        + 5 specs de savedViewMapping) + 4 specs de parseListQuery.
+        Verificado E2E en navegador (vista aplicada 11/67 filas, filtro en
+        vivo 2/67, dirty se limpia al guardar y tras reload, main sin
+        scroll).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

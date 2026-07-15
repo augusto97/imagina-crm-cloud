@@ -21,7 +21,7 @@ import type {
 import { EditableCell } from '@/admin/records/EditableCell';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
-import { addNode, isFlatAndTree } from '@/admin/records/filterTree';
+import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 
 interface GroupedTableViewProps {
@@ -286,7 +286,7 @@ export function GroupedTableView({
 
     return (
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+        <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col imcrm-gap-3">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-text-xs imcrm-text-muted-foreground">
                 <span>
                     {sprintf(
@@ -306,10 +306,11 @@ export function GroupedTableView({
                 tiene `min-width: tableWidth` para que todos midan
                 igual. Sticky-left funciona contra este outer div.
 
-                `max-h: calc(100vh - 220px)` mantiene el scroll DENTRO
-                de este wrapper, así la barra horizontal queda al fondo
-                del viewport en lugar de al fondo de la página. */}
-            <div className="imcrm-overflow-auto imcrm-max-h-[calc(100vh-220px)] imcrm-pb-2">
+                `flex-1 min-h-0` mantiene el scroll DENTRO de este
+                wrapper (el padre reserva el alto restante del viewport):
+                una sola barra vertical y la horizontal siempre al fondo
+                del viewport, nunca al fondo de la página. */}
+            <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-pb-2">
                 <div
                     className="imcrm-flex imcrm-flex-col imcrm-gap-3"
                     style={{ minWidth: tableWidth }}
@@ -530,17 +531,9 @@ function GroupBucketSection({
 
     const fallbackQuery: RecordsQuery = useMemo(() => {
         const q: RecordsQuery = { page, per_page: perPage };
-        if (isFlatAndTree(bucketTree)) {
-            const filter: NonNullable<RecordsQuery['filter']> = {};
-            for (const c of bucketTree.children) {
-                if (c.type !== 'condition') continue;
-                const key = `field_${c.field_id}`;
-                const existing = (filter[key] as Partial<Record<FilterOperator, unknown>> | undefined) ?? {};
-                existing[c.op] = c.value;
-                filter[key] = existing;
-            }
-            q.filter = filter;
-        } else {
+        // Siempre filter_tree JSON: la forma plana WP-style era ignorada
+        // por el backend cloud (ver buildRecordsQuery en recordsState.ts).
+        if (bucketTree.children.length > 0) {
             q.filter_tree = JSON.stringify(bucketTree);
         }
         if (search.trim() !== '') q.search = search.trim();

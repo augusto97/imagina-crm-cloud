@@ -122,24 +122,27 @@ function actor(req: FastifyRequest): Actor {
 }
 
 /**
- * Parsea la query de listado. El `filter_tree` viaja como JSON codificado en
- * el query param `filter` (un árbol no cabe cómodo en pares clave=valor);
- * el resto (cursor/limit/sort_dir) son params planos. Todo se valida con Zod.
+ * Parsea la query de listado. El árbol de filtros viaja como JSON codificado
+ * en el query param `filter_tree` (mismo nombre que usan grouped-bundle y
+ * aggregates — y que manda el front); se acepta también el alias histórico
+ * `filter`. El resto (cursor/limit/sort_dir) son params planos. Todo se
+ * valida con Zod.
  */
-function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
+export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
     const candidate: Record<string, unknown> = {
         cursor: raw.cursor,
         limit: raw.limit,
         sort_dir: raw.sort_dir,
         search: raw.search,
     };
-    if (typeof raw.filter === 'string' && raw.filter.trim() !== '') {
+    const rawTree = typeof raw.filter_tree === 'string' ? raw.filter_tree : raw.filter;
+    if (typeof rawTree === 'string' && rawTree.trim() !== '') {
         try {
-            candidate.filter_tree = JSON.parse(raw.filter);
+            candidate.filter_tree = JSON.parse(rawTree);
         } catch {
             throw new BadRequestException({
                 code: 'invalid_filter',
-                message: 'El parámetro filter debe ser JSON válido',
+                message: 'El parámetro filter_tree debe ser JSON válido',
                 data: { status: 400 },
             });
         }

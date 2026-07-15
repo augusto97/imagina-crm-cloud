@@ -5,7 +5,7 @@ import {
     type RecordsQuery,
 } from '@/types/record';
 
-import { isFlatAndTree, treeFromActiveFilters } from './filterTree';
+import { treeFromActiveFilters } from './filterTree';
 
 /**
  * `ActiveFilter` se mantiene como compatibilidad para SavedViews
@@ -98,11 +98,9 @@ export const INITIAL_STATE: RecordsState = {
 };
 
 /**
- * Convierte el state del frontend al shape `RecordsQuery`. Para
- * filtros usa el atajo plano `filter[...]` cuando el árbol es un
- * AND plano sin subgrupos (compat con backends legacy / cache keys
- * más estables); cuando hay OR o anidación, serializa el árbol
- * completo a `filter_tree` (JSON-encoded en la URL).
+ * Convierte el state del frontend al shape `RecordsQuery`. Los filtros
+ * van SIEMPRE como `filter_tree` (JSON-encoded en la URL) — es la única
+ * forma que entiende el backend cloud.
  */
 export function buildRecordsQuery(state: RecordsState): RecordsQuery {
     const query: RecordsQuery = {
@@ -119,23 +117,12 @@ export function buildRecordsQuery(state: RecordsState): RecordsQuery {
     }
 
     if (state.filterTree.children.length > 0) {
-        if (isFlatAndTree(state.filterTree)) {
-            const filter: NonNullable<RecordsQuery['filter']> = {};
-            for (const c of state.filterTree.children) {
-                if (c.type !== 'condition') continue;
-                const key = `field_${c.field_id}`;
-                const existing = (filter[key] as Partial<Record<FilterOperator, unknown>> | undefined) ?? {};
-                existing[c.op] = c.value;
-                filter[key] = existing;
-            }
-            query.filter = filter;
-        } else {
-            // El árbol con OR / nesting va JSON-encoded para no
-            // explotar la URL con docenas de `filter_tree[children]
-            // [0][children][1]…`. El backend acepta ambas formas
-            // (string JSON o array decodificado por WP REST).
-            query.filter_tree = JSON.stringify(state.filterTree);
-        }
+        // SIEMPRE como filter_tree JSON: el backend cloud sólo entiende
+        // `filter_tree` (listRecordsQuerySchema) — la forma plana WP-style
+        // `filter[field_x][op]` que se mandaba para árboles AND planos era
+        // un vestigio del plugin y el API la IGNORABA en silencio: los
+        // filtros simples no filtraban nada server-side.
+        query.filter_tree = JSON.stringify(state.filterTree);
     }
 
     return query;

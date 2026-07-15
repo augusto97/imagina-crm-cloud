@@ -119,27 +119,33 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
  * Compara semánticamente el estado actual contra la configuración de la
  * vista activa. Devuelve `true` si hay diferencias persistibles. La
  * paginación NO cuenta como cambio.
+ *
+ * Ambos lados se CANONICALIZAN por el mismo camino
+ * (`config → estado → config` + claves ordenadas) antes de comparar:
+ * la config guardada vuelve de Postgres como JSONB, que REORDENA las
+ * claves de cada objeto (p.ej. las condiciones del filter_tree), y una
+ * comparación por `JSON.stringify` crudo daba "dirty" eterno con
+ * cualquier filtro activo — aunque se acabara de guardar. La versión
+ * anterior además omitía column_order/collapsed_groups/footer_aggregates
+ * del lado guardado (mismo síntoma con columnas reordenadas o footer).
  */
 export function hasChangesVsView(state: RecordsState, config: SavedViewConfig): boolean {
-    const a = JSON.stringify(stateToViewConfig(state));
-    const b = JSON.stringify(stripPaginationOnlyKeys(config));
+    const a = stableStringify(stateToViewConfig(state));
+    const b = stableStringify(stateToViewConfig(viewConfigToState(config, state.perPage)));
     return a !== b;
 }
 
-function stripPaginationOnlyKeys(config: SavedViewConfig): SavedViewConfig {
-    const out: SavedViewConfig = {};
-    if (config.filter_tree) out.filter_tree = config.filter_tree;
-    if (config.filters && config.filters.length > 0) out.filters = config.filters;
-    if (config.sort && config.sort.length > 0) out.sort = config.sort;
-    if (config.search && config.search.trim() !== '') out.search = config.search.trim();
-    if (config.hidden_columns && config.hidden_columns.length > 0) {
-        out.hidden_columns = config.hidden_columns;
+/** JSON.stringify con claves de objeto ordenadas, recursivo (orden-estable). */
+function stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(',')}]`;
     }
-    if (config.column_widths && Object.keys(config.column_widths).length > 0) {
-        out.column_widths = config.column_widths;
+    if (value !== null && typeof value === 'object') {
+        const entries = Object.entries(value as Record<string, unknown>)
+            .filter(([, v]) => v !== undefined)
+            .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+            .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+        return `{${entries.join(',')}}`;
     }
-    if (config.group_by_field_id !== undefined) {
-        out.group_by_field_id = config.group_by_field_id;
-    }
-    return out;
+    return JSON.stringify(value) ?? 'null';
 }
