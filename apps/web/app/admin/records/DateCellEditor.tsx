@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
@@ -131,13 +131,37 @@ export function DateCellEditor({
         setOpen(false);
     };
 
+    // ── Entrada manual (estilo ClickUp): tipear la fecha y Enter ──
+    // Acepta AAAA-MM-DD, DD/MM/AAAA y DD/MM/AA (también con "-" o ".").
+    const [manual, setManual] = useState('');
+    const [manualError, setManualError] = useState(false);
+    useEffect(() => {
+        setManual(pickedDate ? toIsoDay(pickedDate) : '');
+        setManualError(false);
+    }, [pickedDate?.getTime()]);
+
+    const commitManual = (): void => {
+        const parsed = parseManualDate(manual);
+        if (parsed === undefined) {
+            setManualError(manual.trim() !== '');
+            if (manual.trim() === '') clear();
+            return;
+        }
+        setManualError(false);
+        handleSelect(parsed);
+    };
+
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>{children}</PopoverTrigger>
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="imcrm-w-[445px] imcrm-p-0"
+                // `w-auto`: el contenido dicta el ancho — con 445px fijos el
+                // calendario desbordaba y la flecha de "mes siguiente"
+                // quedaba RECORTADA (navegar hacia adelante era imposible
+                // sin scroll horizontal).
+                className="imcrm-w-auto imcrm-max-w-[min(560px,calc(100vw-2rem))] imcrm-p-0"
                 onOpenAutoFocus={(e) => e.preventDefault()}
             >
                 <div className="imcrm-flex">
@@ -147,6 +171,31 @@ export function DateCellEditor({
                         hasValue={pickedDate !== undefined}
                     />
                     <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-2 imcrm-border-l imcrm-border-border imcrm-p-3">
+                        {/* Entrada manual rápida (estilo ClickUp). */}
+                        <Input
+                            value={manual}
+                            onChange={(e) => {
+                                setManual(e.target.value);
+                                setManualError(false);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    commitManual();
+                                }
+                            }}
+                            onBlur={() => {
+                                if (manual.trim() !== '' && manual !== (pickedDate ? toIsoDay(pickedDate) : '')) {
+                                    commitManual();
+                                }
+                            }}
+                            placeholder={__('AAAA-MM-DD o DD/MM/AAAA')}
+                            aria-label={__('Escribir fecha')}
+                            className={cn(
+                                'imcrm-h-8 imcrm-text-sm',
+                                manualError && 'imcrm-border-destructive focus-visible:imcrm-ring-destructive',
+                            )}
+                        />
                         <DayPicker
                             mode="single"
                             selected={pickedDate}
@@ -720,6 +769,35 @@ interface ParsedDateValue {
     date: Date | undefined;
     /** "HH:mm" para datetime, "" para date. */
     time: string;
+}
+
+/** Date → `YYYY-MM-DD` (componentes locales, sin timezone). */
+function toIsoDay(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Parsea la fecha tipeada a mano: `AAAA-MM-DD`, `DD/MM/AAAA` o `DD/MM/AA`
+ * (separadores `/`, `-` o `.`). Devuelve undefined si no es una fecha real.
+ */
+function parseManualDate(text: string): Date | undefined {
+    const t = text.trim();
+    if (t === '') return undefined;
+    let y: number, m: number, d: number;
+    let match = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(t);
+    if (match) {
+        y = Number(match[1]); m = Number(match[2]); d = Number(match[3]);
+    } else {
+        match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(t);
+        if (!match) return undefined;
+        d = Number(match[1]); m = Number(match[2]); y = Number(match[3]);
+        if (y < 100) y += 2000;
+    }
+    if (m < 1 || m > 12 || d < 1 || d > 31) return undefined;
+    const date = new Date(y, m - 1, d);
+    // Rechazar overflow (31/02 → 03/03).
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return undefined;
+    return date;
 }
 
 function parseDateValue(value: string | null): ParsedDateValue {
