@@ -36,6 +36,7 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { ExportButton } from './ExportButton';
+import { FieldCreateDialog } from './FieldCreateDialog';
 import { FiltersPanel } from './FiltersPanel';
 import { ImportDialog } from './ImportDialog';
 import { Pagination } from './Pagination';
@@ -241,6 +242,21 @@ export function RecordsPage(): JSX.Element {
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [drawerRecordId, setDrawerRecordId] = useState<number | null>(null);
+
+    // Modal de campos (v0.1.74): crear una columna nueva o editar una
+    // existente SIN salir de la tabla. `editingField === null` = modo
+    // creación (catálogo de tipos); con field = modo edición.
+    const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
+    const [editingField, setEditingField] = useState<FieldEntity | null>(null);
+
+    const openFieldCreate = (): void => {
+        setEditingField(null);
+        setFieldDialogOpen(true);
+    };
+    const openFieldEdit = (field: FieldEntity): void => {
+        setEditingField(field);
+        setFieldDialogOpen(true);
+    };
 
     // Reset al cambiar de lista.
     useEffect(() => {
@@ -730,7 +746,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onCollapsedGroupsChange={(next) =>
                                         setState((s) => ({ ...s, collapsedGroups: next }))
                                     }
-                                    onAddColumn={() => navigate(`/lists/${list.data!.slug}/edit?focus=fields`)}
+                                    onAddColumn={openFieldCreate}
+                                    onEditField={canManageList ? openFieldEdit : undefined}
                                     onAddRecord={(groupField, bucketValue) => {
                                         // Prefill: crear desde el grupo "Hecho"
                                         // → el form abre con estado=hecho.
@@ -770,7 +787,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);
                                     }}
-                                    onAddColumn={() => navigate(`/lists/${list.data!.slug}/edit?focus=fields`)}
+                                    onAddColumn={openFieldCreate}
+                                    onEditField={canManageList ? openFieldEdit : undefined}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))
@@ -789,6 +807,14 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
+                    />
+
+                    <FieldCreateDialog
+                        listId={list.data.id}
+                        listSlug={list.data.slug}
+                        field={editingField}
+                        open={fieldDialogOpen}
+                        onOpenChange={setFieldDialogOpen}
                     />
 
                     <RecordCreateDialog

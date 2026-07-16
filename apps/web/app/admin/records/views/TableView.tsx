@@ -21,6 +21,7 @@ import type { FieldEntity } from '@/types/field';
 import type { FilterTree, RecordEntity } from '@/types/record';
 
 import { EditableCell } from '@/admin/records/EditableCell';
+import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
@@ -58,6 +59,13 @@ interface TableViewProps {
     onAddRecord?: () => void;
     /** Click en "+ Agregar columna" al final del header. Si no se pasa, no se renderea. */
     onAddColumn?: () => void;
+    /**
+     * Abre el editor del campo (FieldCreateDialog en modo edición) —
+     * habilita el menú contextual "⌄" del header de cada columna de
+     * campo (Modificar/Renombrar/Duplicar/Copiar ID/Eliminar). Si no
+     * se pasa (p.ej. sin cap manage_lists), el menú no se renderea.
+     */
+    onEditField?: (field: FieldEntity) => void;
     /**
      * Cálculo opt-in elegido por el user para cada columna del
      * footer. Map `{column_id: kind_slug}`. Si la column id no
@@ -98,6 +106,7 @@ export function TableView({
     filterTree,
     onAddRecord,
     onAddColumn,
+    onEditField,
     footerAggregates,
     onFooterAggregatesChange,
     totalCount,
@@ -138,6 +147,13 @@ export function TableView({
             onSelectionChange([...selectedIds, id]);
         }
     };
+
+    // fieldId (del meta de la columna) → FieldEntity, para el menú
+    // contextual del header (necesita el entity completo).
+    const fieldsById = useMemo(
+        () => new Map(fields.map((f) => [f.id, f])),
+        [fields],
+    );
 
     const columns = useMemo<ColumnDef<RecordEntity>[]>(() => {
         const dynamic = fields
@@ -453,7 +469,7 @@ export function TableView({
                                             draggingColId === h.id && 'imcrm-opacity-50',
                                         )}
                                     >
-                                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                        <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1">
                                             {isDraggable && (
                                                 <span
                                                     className="imcrm-cursor-grab imcrm-text-muted-foreground/40 imcrm-opacity-0 imcrm-transition-opacity group-hover/th:imcrm-opacity-100 active:imcrm-cursor-grabbing"
@@ -467,12 +483,12 @@ export function TableView({
                                                 <button
                                                     type="button"
                                                     onClick={(e) => onSortChange(fieldId, e.shiftKey)}
-                                                    className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
+                                                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
                                                 >
                                                     {isPrimary && (
-                                                        <KeyRound className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" aria-hidden="true" />
+                                                        <KeyRound className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary" aria-hidden="true" />
                                                     )}
-                                                    <span>
+                                                    <span className="imcrm-truncate">
                                                         {h.isPlaceholder
                                                             ? null
                                                             : flexRender(h.column.columnDef.header, h.getContext())}
@@ -481,6 +497,15 @@ export function TableView({
                                                 </button>
                                             ) : h.isPlaceholder ? null : (
                                                 flexRender(h.column.columnDef.header, h.getContext())
+                                            )}
+                                            {fieldId !== null
+                                                && onEditField !== undefined
+                                                && fieldsById.has(fieldId) && (
+                                                <FieldHeaderMenu
+                                                    listId={listId}
+                                                    field={fieldsById.get(fieldId)!}
+                                                    onEdit={onEditField}
+                                                />
                                             )}
                                         </div>
                                         {/* Resize handle estilo Excel: barra
