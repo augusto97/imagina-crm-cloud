@@ -910,6 +910,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         reload → reabrir muestra resumen + "No repetir" → quitar → icono
         desaparece sin reload).
 
+  - [x] **Variables en campos numéricos/fecha del mapeo de automatizaciones
+        (v0.1.84, reporte del usuario)**: en "Crear un registro" (y
+        "Actualizar campo") no se podían mapear variables a campos
+        moneda/número ni fecha — `FieldValueInput` renderizaba inputs
+        TIPADOS (`type=number` "0.00", `type=date` dd/mm/aaaa) que no
+        aceptan ni muestran merge tags → imposible `monto =
+        {{monto_mensual}}` o `periodo = {{before.proximo_cobro}}` (el caso
+        central de la facturación). Fix: date/datetime/number/currency usan
+        `MergeTagInput` con placeholder del formato esperado ("AAAA-MM-DD o
+        {{campo}}", "0 o {{campo}}"); un valor fijo se tipea a mano y el
+        backend valida/coerciona con el schema del campo destino. E2E
+        navegador (la automatización sembrada muestra {{monto_mensual}} y
+        {{before.proximo_cobro}} en sus filas — antes esos inputs se veían
+        vacíos).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
