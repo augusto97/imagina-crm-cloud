@@ -15,6 +15,7 @@ import {
 import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
+import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
@@ -269,6 +270,13 @@ export function RecordPage(): JSX.Element {
                                 showTypeIcon
                             />
                         )}
+
+                        {/* Acceso al portal del cliente — también sin
+                            plantilla CRM (se auto-oculta si el portal de
+                            la lista no está habilitado). */}
+                        <div className="imcrm-mt-4">
+                            <PortalAccessButton list={list.data} record={record.data} />
+                        </div>
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                                 {error}
