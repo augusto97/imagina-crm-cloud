@@ -219,6 +219,41 @@ describe('FieldsService (Postgres real + RLS)', () => {
         ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('conversión de tipo: migra datos, auto-genera options y rechaza los no convertibles', async () => {
+        const ciudad = await service.create(tenantA, 'clientes', { label: 'Ciudad', type: 'text' });
+        const monto = await service.create(tenantA, 'clientes', { label: 'Monto', type: 'text' });
+        const kCiudad = `f${ciudad.id}`;
+        const kMonto = `f${monto.id}`;
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(records).values([
+                { tenantId: tenantA, listId: listA, data: { [kCiudad]: 'Bogotá', [kMonto]: '450000' }, createdBy: 1 },
+                { tenantId: tenantA, listId: listA, data: { [kCiudad]: 'Cali', [kMonto]: 'no-numérico' }, createdBy: 1 },
+            ]),
+        );
+
+        // text → select SIN options: se generan de los valores distintos y
+        // NADA se pierde.
+        const asSelect = await service.update(tenantA, 'clientes', String(ciudad.id), { type: 'select' });
+        expect(asSelect.type).toBe('select');
+        const optionValues = (asSelect.config.options as Array<{ value: string }>).map((o) => o.value).sort();
+        expect(optionValues).toEqual(['Bogotá', 'Cali']);
+
+        // text → currency: los strings numéricos se coercionan a número; lo
+        // no numérico se LIMPIA (jamás basura con el tipo equivocado).
+        const asCurrency = await service.update(tenantA, 'clientes', String(monto.id), { type: 'currency' });
+        expect(asCurrency.type).toBe('currency');
+        const rows = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ data: records.data }).from(records).where(eq(records.tenantId, tenantA)),
+        );
+        const values = rows.map((r) => (r.data as Record<string, unknown>)[kMonto]).sort();
+        expect(values).toEqual([450000, undefined]);
+
+        // relation/file/computed no se convierten → 400.
+        await expect(
+            service.update(tenantA, 'clientes', String(ciudad.id), { type: 'relation' }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('aislamiento RLS: no se pueden ver/tocar campos de otra lista/tenant', async () => {
         await service.create(tenantA, 'clientes', { label: 'Secreto', type: 'text' });
         // tenantB tiene su propia lista 'clientes' (vacía): no ve la de tenantA.

@@ -16,7 +16,7 @@ export const publicLists = pgTable(
             .references(() => tenants.id),
         listId: bigint('list_id', { mode: 'number' })
             .notNull()
-            .references(() => lists.id),
+            .references(() => lists.id, { onDelete: 'cascade' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     },
     (t) => [uniqueIndex('public_lists_list_ux').on(t.tenantId, t.listId)],

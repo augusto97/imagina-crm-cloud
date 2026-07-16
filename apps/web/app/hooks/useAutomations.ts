@@ -13,8 +13,13 @@ import type {
 
 export const automationsKeys = {
     all: ['automations'] as const,
+    // El identificador va en el índice 1 (igual que records/fields):
+    // el segmento 'list' extra corría el id al índice 2 y
+    // `invalidateForList` —que matchea el índice 1— NUNCA invalidaba →
+    // la página de automatizaciones no mostraba altas/cambios sin
+    // recargar (misma clase de bug que fieldsKeys, ya documentada ahí).
     forList: (listId: string | number) =>
-        [...automationsKeys.all, 'list', String(listId)] as const,
+        [...automationsKeys.all, String(listId)] as const,
     runs: (automationId: number) =>
         [...automationsKeys.all, 'runs', String(automationId)] as const,
     triggers: ['automations', 'triggers'] as const,

@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
-    Popover,
-    PopoverAnchor,
-    PopoverContent,
-} from '@/components/ui/popover';
-import {
     useFieldDistinctValues,
     type FieldDistinctValue,
 } from '@/hooks/useFields';
@@ -103,35 +98,37 @@ export function AutocompleteInput({
 
     return (
         <div ref={containerRef} className={cn('imcrm-relative', className)}>
-            <Popover open={open && fieldId !== undefined} onOpenChange={setOpen}>
-                <PopoverAnchor asChild>
-                    <Input
-                        type={type}
-                        value={value}
-                        onChange={(e) => {
-                            onChange(e.target.value);
-                            setOpen(true);
-                        }}
-                        onFocus={() => setOpen(true)}
-                        onBlur={() => {
-                            // Delay para permitir el click en una sugerencia
-                            // antes de cerrar.
-                            window.setTimeout(() => setOpen(false), 120);
-                        }}
-                        onKeyDown={handleKeyDown}
-                        placeholder={placeholder}
-                        aria-label={ariaLabel}
-                        aria-autocomplete="list"
-                        aria-expanded={open}
-                        disabled={disabled}
-                        autoComplete="off"
-                    />
-                </PopoverAnchor>
-                <PopoverContent
-                    align="start"
-                    sideOffset={4}
-                    onOpenAutoFocus={(e) => e.preventDefault()}
-                    className="imcrm-w-[var(--radix-popover-trigger-width)] imcrm-min-w-[200px] imcrm-p-0"
+            <Input
+                type={type}
+                value={value}
+                onChange={(e) => {
+                    onChange(e.target.value);
+                    setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onBlur={() => {
+                    // Delay para permitir el click en una sugerencia
+                    // antes de cerrar.
+                    window.setTimeout(() => setOpen(false), 120);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                aria-label={ariaLabel}
+                aria-autocomplete="list"
+                aria-expanded={open}
+                disabled={disabled}
+                autoComplete="off"
+            />
+            {/* Dropdown PLANO (sin portal): un Popover de Radix acá adentro
+                — este input suele vivir dentro de OTRO popover (el panel de
+                Filtros) — se auto-descartaba a los pocos ms por el juego de
+                capas anidadas (el anchor no es parte del content). Un div
+                absoluto dentro del propio contenedor no participa de ese
+                sistema y sobrevive. */}
+            {open && fieldId !== undefined && !disabled && (
+                <div
+                    className="imcrm-absolute imcrm-left-0 imcrm-right-0 imcrm-top-full imcrm-z-50 imcrm-mt-1 imcrm-min-w-[200px] imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-popover imcrm-text-popover-foreground imcrm-shadow-md"
+                    role="listbox"
                 >
                     {showError ? (
                         <div className="imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive">
@@ -180,8 +177,8 @@ export function AutocompleteInput({
                             ))}
                         </ul>
                     )}
-                </PopoverContent>
-            </Popover>
+                </div>
+            )}
         </div>
     );
 }

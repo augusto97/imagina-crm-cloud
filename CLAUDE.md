@@ -925,6 +925,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         {{before.proximo_cobro}} en sus filas — antes esos inputs se veían
         vacíos).
 
+  - [x] **Lote de 7 reportes del usuario (v0.1.85)**: (1) **conversión de
+        tipo de campo** — el FieldDialog del List Builder siempre mandó
+        `type` pero `updateFieldSchema` lo descartaba en silencio ("guardo y
+        guardo y queda igual"); ahora el schema lo acepta y `FieldsService`
+        convierte con MIGRACIÓN de datos por lotes en la misma tx (puente de
+        coerción + `validateFieldValue` del tipo destino; inválidos se
+        limpian; a select/multi_select sin options se AUTO-GENERAN de los
+        valores distintos; computed/relation/file → 400; índices de
+        expresión recreados). (2) **500 al eliminar listas** — `records.
+        list_id` y `public_lists.list_id` eran los únicos FKs sin ON DELETE
+        CASCADE (migración 0030). (3) **dropdown de filtros se cerraba en
+        ms** — el AutocompleteInput usaba un Popover de Radix ANIDADO dentro
+        del popover del panel de Filtros (capas que se auto-descartan);
+        ahora es un div absoluto sin portal. (4) **la página de
+        automatizaciones no refrescaba sin recargar** — `automationsKeys.
+        forList` tenía un segmento 'list' extra (id en índice 2;
+        `invalidateForList` matchea índice 1 — misma clase de bug que
+        fieldsKeys). (5) **logo white-label roto** — el branding devolvía
+        `/files/:id/download` (exige header X-Tenant-Id que un `<img>` no
+        manda); ahora URL FIRMADA (TTL 24h). (6) riel "Inicio" → "Listas".
+        (7) **layout del mapeo de "Crear un registro"/"Actualizar campo"** —
+        filas en tarjeta (selector+eliminar arriba, valor a ancho completo
+        abajo) en vez del flex en línea que se desarmaba en el panel del
+        Diagrama. Tests: conversión (options auto + coerción + 400),
+        cascade del delete, branding firmado. E2E navegador consolidado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -211,6 +211,13 @@
       "when": 1784000000000,
       "tag": "0029_custom_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784100000000,
+      "tag": "0030_list_delete_cascade",
+      "breakpoints": true
     }
   ]
 }

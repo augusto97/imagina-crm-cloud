@@ -161,7 +161,7 @@ export function Sidebar({
                     )}
                 </div>
 
-                <RailItem to="/lists" active={section === 'home'} icon={Home} label={__('Inicio')} />
+                <RailItem to="/lists" active={section === 'home'} icon={Home} label={__('Listas')} />
                 {canSeeDashboards && (
                     <RailItem
                         to="/dashboards"

@@ -3,7 +3,7 @@ import type { Role } from '@imagina-base/shared';
 import { roleHasCapability } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { lists, tenants } from '../src/db/schema';
+import { lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -116,6 +116,22 @@ describe('ListsService (Postgres real + RLS)', () => {
         const l = await service.create(tenantA, { name: 'Descartable' });
         await service.remove(tenantA, l.slug);
         await expect(service.get(tenantA, l.slug)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('remove elimina una lista CON registros (cascade — antes 500 por FK)', async () => {
+        const l = await service.create(tenantA, { name: 'Con Datos' });
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(records).values([
+                { tenantId: tenantA, listId: l.id, data: { f1: 'a' }, createdBy: 1 },
+                { tenantId: tenantA, listId: l.id, data: { f1: 'b' }, createdBy: 1 },
+            ]),
+        );
+        await service.remove(tenantA, l.slug);
+        await expect(service.get(tenantA, l.slug)).rejects.toBeInstanceOf(NotFoundException);
+        const left = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ id: records.id }).from(records).where(eq(records.listId, l.id)),
+        );
+        expect(left).toHaveLength(0);
     });
 
     it('aislamiento RLS: el mismo slug convive en dos tenants y no se filtran', async () => {

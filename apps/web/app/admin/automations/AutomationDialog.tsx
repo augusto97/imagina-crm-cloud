@@ -1114,30 +1114,47 @@ function UpdateFieldConfig({
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                 {__('Setea pares campo → valor en el registro que disparó el trigger. Soporta merge tags como {{slug}} o {{record.id}}.')}
             </p>
+            {/* Misma estructura de fila que CreateRecordConfig: selector +
+                eliminar arriba, valor a ancho completo abajo. */}
             {valueRows.map((v, i) => {
                 const selectedField = fields.find((f) => f.slug === v.slug);
                 return (
-                    <div key={i} className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                        <Select
-                            value={v.slug}
-                            onChange={(e) => {
-                                const next = [...valueRows];
-                                // Reset value cuando cambia el campo: el valor
-                                // que tenía sentido para el field anterior
-                                // probablemente no aplica al nuevo.
-                                next[i] = { slug: e.target.value, value: '' };
-                                commitValues(next);
-                            }}
-                            aria-label={__('Campo a actualizar')}
-                            className="imcrm-flex-1"
-                        >
-                            <option value="">{__('— Campo —')}</option>
-                            {fields.map((field) => (
-                                <option key={field.id} value={field.slug}>
-                                    {field.label}
-                                </option>
-                            ))}
-                        </Select>
+                    <div
+                        key={i}
+                        className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-p-2"
+                    >
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <Select
+                                value={v.slug}
+                                onChange={(e) => {
+                                    const next = [...valueRows];
+                                    // Reset value cuando cambia el campo: el valor
+                                    // que tenía sentido para el field anterior
+                                    // probablemente no aplica al nuevo.
+                                    next[i] = { slug: e.target.value, value: '' };
+                                    commitValues(next);
+                                }}
+                                aria-label={__('Campo a actualizar')}
+                                className="imcrm-h-8 imcrm-flex-1"
+                            >
+                                <option value="">{__('— Campo —')}</option>
+                                {fields.map((field) => (
+                                    <option key={field.id} value={field.slug}>
+                                        {field.label}
+                                    </option>
+                                ))}
+                            </Select>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => commitValues(valueRows.filter((_, j) => j !== i))}
+                                aria-label={__('Eliminar')}
+                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                            >
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        </div>
                         <FieldValueInput
                             field={selectedField}
                             availableFields={fields}
@@ -1148,15 +1165,6 @@ function UpdateFieldConfig({
                                 commitValues(arr);
                             }}
                         />
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => commitValues(valueRows.filter((_, j) => j !== i))}
-                            aria-label={__('Eliminar')}
-                        >
-                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        </Button>
                     </div>
                 );
             })}
@@ -1250,29 +1258,48 @@ function CreateRecordConfig({
                     ))}
                 </Select>
             </div>
+            {/* Fila por campo: selector + eliminar arriba, valor a ancho
+                completo abajo — en columnas angostas (el panel del Diagrama)
+                el layout en línea hacía que inputs y chips se entremezclaran
+                sin estructura visible. */}
             {valueRows.map((v, i) => {
                 const selectedField = tf.find((f) => f.slug === v.slug);
                 return (
-                    <div key={i} className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                        <Select
-                            value={v.slug}
-                            onChange={(e) => {
-                                const next = [...valueRows];
-                                next[i] = { slug: e.target.value, value: '' };
-                                commitValues(next);
-                            }}
-                            aria-label={__('Campo del registro nuevo')}
-                            className="imcrm-flex-1"
-                        >
-                            <option value="">{__('— Campo —')}</option>
-                            {tf
-                                .filter((field) => field.type !== 'computed')
-                                .map((field) => (
-                                    <option key={field.id} value={field.slug}>
-                                        {field.label}
-                                    </option>
-                                ))}
-                        </Select>
+                    <div
+                        key={i}
+                        className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-p-2"
+                    >
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <Select
+                                value={v.slug}
+                                onChange={(e) => {
+                                    const next = [...valueRows];
+                                    next[i] = { slug: e.target.value, value: '' };
+                                    commitValues(next);
+                                }}
+                                aria-label={__('Campo del registro nuevo')}
+                                className="imcrm-h-8 imcrm-flex-1"
+                            >
+                                <option value="">{__('— Campo —')}</option>
+                                {tf
+                                    .filter((field) => field.type !== 'computed')
+                                    .map((field) => (
+                                        <option key={field.id} value={field.slug}>
+                                            {field.label}
+                                        </option>
+                                    ))}
+                            </Select>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => commitValues(valueRows.filter((_, j) => j !== i))}
+                                aria-label={__('Eliminar')}
+                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                            >
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        </div>
                         <FieldValueInput
                             field={selectedField}
                             availableFields={fields}
@@ -1283,15 +1310,6 @@ function CreateRecordConfig({
                                 commitValues(arr);
                             }}
                         />
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => commitValues(valueRows.filter((_, j) => j !== i))}
-                            aria-label={__('Eliminar')}
-                        >
-                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        </Button>
                     </div>
                 );
             })}
