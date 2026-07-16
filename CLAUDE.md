@@ -884,6 +884,18 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         E2E navegador (lista vacía → CSV 4 columnas → 4 campos + 3 registros
         → tabla renderiza al toque).
 
+  - [x] **Fix doble scrollbar horizontal (v0.1.82, reporte del usuario)**:
+        al llegar al fondo de la tabla se veían DOS barras horizontales
+        apiladas — la StickyHScrollbar (espejo fijo de v0.1.75) MÁS la
+        nativa del wrapper `overflow-x-auto`, que entra al viewport justo
+        al final de la tabla (mismo thumb, sincronizadas). Fix: clase
+        `imcrm-native-hscroll-hidden` (`scrollbar-width: none` +
+        `::-webkit-scrollbar { display: none }`) en los scrollers de
+        TableView y GroupedTableView — el espejo queda como ÚNICA barra;
+        rueda/trackpad/touch siguen scrolleando igual. E2E navegador
+        (overflow real, nativa oculta, 1 solo espejo sticky, sync
+        espejo→tabla).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
