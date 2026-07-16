@@ -469,7 +469,7 @@ export function TableView({
                                             draggingColId === h.id && 'imcrm-opacity-50',
                                         )}
                                     >
-                                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                        <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1">
                                             {isDraggable && (
                                                 <span
                                                     className="imcrm-cursor-grab imcrm-text-muted-foreground/40 imcrm-opacity-0 imcrm-transition-opacity group-hover/th:imcrm-opacity-100 active:imcrm-cursor-grabbing"
@@ -483,12 +483,12 @@ export function TableView({
                                                 <button
                                                     type="button"
                                                     onClick={(e) => onSortChange(fieldId, e.shiftKey)}
-                                                    className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
+                                                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
                                                 >
                                                     {isPrimary && (
-                                                        <KeyRound className="imcrm-h-3 imcrm-w-3 imcrm-text-primary" aria-hidden="true" />
+                                                        <KeyRound className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary" aria-hidden="true" />
                                                     )}
-                                                    <span>
+                                                    <span className="imcrm-truncate">
                                                         {h.isPlaceholder
                                                             ? null
                                                             : flexRender(h.column.columnDef.header, h.getContext())}
