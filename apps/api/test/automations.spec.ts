@@ -74,6 +74,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationsRepository(),
             new FieldsRepository(),
             new RecordsRepository(),
+            new RelationsRepository(),
             mail,
         );
 
@@ -318,6 +319,71 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const tareasRecords = await recordsService.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
         expect(tareasRecords.data).toHaveLength(1);
         expect(tareasRecords.data[0]!.data[`f${titulo.id}`]).toBe('Follow-up');
+    });
+
+    it('create_record cross-list: slugs del DESTINO, coerción por validador, relation al trigger y skip tolerante', async () => {
+        // Lista Facturas: cliente (texto), monto (currency), estado (select),
+        // deal (relation → Deals). El caso de uso de facturación recurrente.
+        await listsService.create(tenantId, { name: 'Facturas' });
+        const cliente = await fieldsService.create(tenantId, 'facturas', { label: 'Cliente', type: 'text', slug: 'cliente' });
+        const monto = await fieldsService.create(tenantId, 'facturas', { label: 'Monto', type: 'currency', slug: 'monto' });
+        const estadoF = await fieldsService.create(tenantId, 'facturas', {
+            label: 'Estado',
+            type: 'select',
+            slug: 'estado',
+            config: { options: [{ value: 'pendiente', label: 'Pendiente' }, { value: 'pagada', label: 'Pagada' }] },
+        });
+        const dealRel = await fieldsService.create(tenantId, 'facturas', {
+            label: 'Deal',
+            type: 'relation',
+            slug: 'deal',
+            config: { target_list_id: listId },
+        });
+
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Generar factura',
+            trigger_type: 'record_updated',
+            actions: [
+                {
+                    type: 'create_record',
+                    config: {
+                        target_list: (await listsService.get(tenantId, 'facturas')).id,
+                        values: {
+                            // Slugs de la lista DESTINO (no f{id}) + merge tags del trigger.
+                            cliente: 'Deal {{estado}}',
+                            monto: '{{monto}}', // merge tag → string "5000" → coerción a número
+                            estado: 'pendiente',
+                            deal: '{{record.id}}', // relation → vínculo al record del trigger
+                            inexistente: 'x', // campo que no existe → skip con nota
+                        },
+                    },
+                },
+            ],
+        });
+
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 5000, [key('estado')]: 'vip' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_updated',
+            before: { [key('monto')]: 4000, [key('estado')]: 'vip' },
+            after: { [key('monto')]: 5000, [key('estado')]: 'vip' },
+        });
+
+        const facturas = await recordsService.list(tenantId, admin, 'facturas', { limit: 10, sort_dir: 'asc' });
+        expect(facturas.data).toHaveLength(1);
+        const factura = facturas.data[0]!;
+        expect(factura.data[`f${cliente.id}`]).toBe('Deal vip');
+        expect(factura.data[`f${monto.id}`]).toBe(5000); // número real, no string
+        expect(factura.data[`f${estadoF.id}`]).toBe('pendiente');
+        expect(factura.data[`f${dealRel.id}`]).toBeUndefined(); // relation NO vive en el JSONB
+        expect(factura.relations?.[`f${dealRel.id}`]).toEqual([rec.id]); // vínculo real
+        const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
+        expect(runs.data[0]!.status).toBe('success');
+        expect(runs.data[0]!.actions_log[0]!.message).toContain('inexistente');
     });
 
     it('scheduled: runScheduled ejecuta acciones sin record (create_record)', async () => {

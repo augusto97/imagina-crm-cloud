@@ -95,6 +95,19 @@ export class RecurrencesRepository {
             .orderBy(asc(recurrences.id));
     }
 
+    /**
+     * Re-ancla la recurrencia a otro record. Lo usa la acción `clone`: la
+     * cadena mensual sigue viva en el CLON (que tiene la fecha rodada) —
+     * sin esto el original quedaba dormido (su fecha nunca avanza) y el
+     * clon nacía sin recurrencia → la serie moría al primer disparo.
+     */
+    async moveToRecord(tx: Tx, tenantId: number, id: number, recordId: number): Promise<void> {
+        await tx
+            .update(recurrences)
+            .set({ recordId, updatedAt: sql`now()` })
+            .where(and(eq(recurrences.tenantId, tenantId), eq(recurrences.id, id)));
+    }
+
     /** Marca la recurrencia como disparada (last_fired_at = now naive UTC). */
     async markFired(tx: Tx, tenantId: number, id: number, firedAt: string): Promise<void> {
         await tx

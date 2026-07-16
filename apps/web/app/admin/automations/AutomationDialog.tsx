@@ -40,6 +40,7 @@ import {
     useUpdateAutomation,
 } from '@/hooks/useAutomations';
 import { useFields } from '@/hooks/useFields';
+import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -909,6 +910,8 @@ export function ActionConfigEditor({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {spec.type === 'update_field' ? (
                 <UpdateFieldConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'create_record' ? (
+                <CreateRecordConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'call_webhook' ? (
                 <CallWebhookConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'send_email' ? (
@@ -1162,6 +1165,142 @@ function UpdateFieldConfig({
                 variant="ghost"
                 size="sm"
                 onClick={() => commitValues([...valueRows, { slug: '', value: '' }])}
+                className="imcrm-self-start imcrm-gap-2"
+            >
+                <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Añadir valor')}
+            </Button>
+        </div>
+    );
+}
+
+/**
+ * Editor visual de `create_record`: selector de LISTA DESTINO + filas
+ * campo (de la lista destino) → valor. Los valores aceptan merge tags
+ * de la lista del TRIGGER (`{{slug}}`, `{{record.id}}`) — el backend
+ * los resuelve contra el registro que disparó la automatización, valida
+ * cada valor con el schema del campo destino y vincula los campos
+ * relation (ej. `{{record.id}}` en una relación hacia la lista origen).
+ */
+function CreateRecordConfig({
+    spec,
+    onChange,
+    fields,
+}: ActionConfigEditorProps): JSX.Element {
+    const currentListId = useAutomationListId();
+    const lists = useLists();
+    const targetListId =
+        typeof spec.config.target_list === 'number' && spec.config.target_list > 0
+            ? spec.config.target_list
+            : currentListId;
+    const targetFields = useFields(targetListId);
+
+    // Mismo patrón de state local que UpdateFieldConfig: filas con slug
+    // vacío sobreviven durante la edición; solo las completas se comitean.
+    const [valueRows, setValueRows] = useState<Array<{ slug: string; value: string }>>(() => {
+        const rawValues = spec.config.values;
+        if (!rawValues || typeof rawValues !== 'object') return [];
+        return Object.entries(rawValues as Record<string, unknown>).map(([slug, v]) => ({
+            slug,
+            value: typeof v === 'string' ? v : String(v ?? ''),
+        }));
+    });
+
+    const commitValues = (next: Array<{ slug: string; value: string }>): void => {
+        setValueRows(next);
+        const out: Record<string, string> = {};
+        for (const v of next) {
+            if (v.slug.trim() === '') continue;
+            out[v.slug.trim()] = v.value;
+        }
+        onChange({ ...spec, config: { ...spec.config, values: out } });
+    };
+
+    const setTargetList = (raw: string): void => {
+        const id = Number(raw);
+        // Cambiar de lista invalida el mapeo: los slugs pertenecen a la
+        // lista anterior. Se limpia para no mandar claves fantasma.
+        setValueRows([]);
+        onChange({
+            ...spec,
+            config: { ...spec.config, target_list: Number.isFinite(id) && id > 0 ? id : undefined, values: {} },
+        });
+    };
+
+    const tf = targetFields.data ?? [];
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Crea un registro en la lista elegida. Los valores aceptan merge tags del registro que disparó el trigger ({{slug}}, {{record.id}}); en un campo de relación, {{record.id}} lo vincula a ese registro.')}
+            </p>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                <Label className="imcrm-shrink-0 imcrm-text-xs">{__('Lista destino')}</Label>
+                <Select
+                    value={targetListId !== undefined ? String(targetListId) : ''}
+                    onChange={(e) => setTargetList(e.target.value)}
+                    aria-label={__('Lista destino')}
+                    className="imcrm-flex-1"
+                >
+                    <option value="">{__('— Lista —')}</option>
+                    {(lists.data ?? []).map((l) => (
+                        <option key={l.id} value={String(l.id)}>
+                            {l.name}
+                        </option>
+                    ))}
+                </Select>
+            </div>
+            {valueRows.map((v, i) => {
+                const selectedField = tf.find((f) => f.slug === v.slug);
+                return (
+                    <div key={i} className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Select
+                            value={v.slug}
+                            onChange={(e) => {
+                                const next = [...valueRows];
+                                next[i] = { slug: e.target.value, value: '' };
+                                commitValues(next);
+                            }}
+                            aria-label={__('Campo del registro nuevo')}
+                            className="imcrm-flex-1"
+                        >
+                            <option value="">{__('— Campo —')}</option>
+                            {tf
+                                .filter((field) => field.type !== 'computed')
+                                .map((field) => (
+                                    <option key={field.id} value={field.slug}>
+                                        {field.label}
+                                    </option>
+                                ))}
+                        </Select>
+                        <FieldValueInput
+                            field={selectedField}
+                            availableFields={fields}
+                            value={v.value}
+                            onChange={(next) => {
+                                const arr = [...valueRows];
+                                arr[i] = { ...arr[i]!, value: next };
+                                commitValues(arr);
+                            }}
+                        />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => commitValues(valueRows.filter((_, j) => j !== i))}
+                            aria-label={__('Eliminar')}
+                        >
+                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                    </div>
+                );
+            })}
+            <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => commitValues([...valueRows, { slug: '', value: '' }])}
+                disabled={targetListId === undefined || targetFields.data === undefined}
                 className="imcrm-self-start imcrm-gap-2"
             >
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
