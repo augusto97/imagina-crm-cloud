@@ -760,6 +760,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         input manual de fecha, chevrons visibles). Tipos nuevos (teléfono/
         progreso/calificación…) quedan como candidato a release aparte.
 
+  - [x] **Scrollbar horizontal fija + paridad del agrupado (v0.1.75,
+        reporte del usuario)**: (a) `StickyHScrollbar` compartido — barra
+        espejo `sticky bottom-0` sincronizada bidireccional con el
+        scroller real: el scroll horizontal queda SIEMPRE visible al
+        fondo de la PANTALLA (estilo ClickUp), no al fondo de la tabla;
+        montada en tabla plana y agrupada. (b) Vista agrupada: RESIZE de
+        columnas por drag del borde del th (ancho compartido entre
+        grupos, persiste en la vista) y "+ Agregar columna" en TODOS los
+        grupos. El menú contextual del header ya estaba en ambas vistas
+        (v0.1.74) — el reporte "no quedó" era bundle previo al update.
+        E2E navegador (barra visible en viewport y sincronizada, resize
+        70→188px, 3 botones "+", 24 triggers de menú en agrupada).
+
   - [x] **Date picker + recurrencias en TODAS las superficies (v0.1.72,
         reporte del usuario)**: el `DateCellEditor` (calendario ClickUp +
         atajos + sección "Recurrente") solo vivía en las celdas de la
