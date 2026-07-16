@@ -477,7 +477,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setImportOpen(true)}
-                                    disabled={!fields.data || fields.data.length === 0}
+                                    // Sin gate por campos: el ImportDialog crea los
+                                    // campos on-the-fly desde el CSV — importar a una
+                                    // lista recién creada (vacía) es el caso típico.
                                     className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
                                 >
                                     <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -529,10 +531,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         </DropdownMenuItem>
                                     )}
                                     {canImportRecords && (
-                                        <DropdownMenuItem
-                                            disabled={!fields.data || fields.data.length === 0}
-                                            onSelect={() => setImportOpen(true)}
-                                        >
+                                        <DropdownMenuItem onSelect={() => setImportOpen(true)}>
                                             <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
                                             {__('Importar')}
                                         </DropdownMenuItem>
@@ -568,17 +567,35 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
+            {/* El ImportDialog vive FUERA de la rama "hay campos": importar un
+                CSV/Excel a una lista recién creada (sin campos) es el caso
+                típico — el diálogo crea los campos on-the-fly. */}
+            <ImportDialog
+                listId={list.data.id}
+                listSlug={list.data.slug}
+                open={importOpen}
+                onOpenChange={setImportOpen}
+            />
+
             {fields.data && fields.data.length === 0 && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-8 imcrm-text-center">
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Esta lista aún no tiene campos. Configúralos primero para poder crear registros.')}
+                        {__('Esta lista aún no tiene campos. Créalos a mano, o importa un archivo CSV/Excel y se crearán solos desde las columnas.')}
                     </p>
-                    <Button asChild variant="outline" className="imcrm-mt-3 imcrm-gap-2">
-                        <Link to={`/lists/${list.data.slug}/edit`}>
-                            <Settings className="imcrm-h-4 imcrm-w-4" />
-                            {__('Configurar campos')}
-                        </Link>
-                    </Button>
+                    <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-center imcrm-gap-2">
+                        {canImportRecords && (
+                            <Button onClick={() => setImportOpen(true)} className="imcrm-gap-2">
+                                <FileUp className="imcrm-h-4 imcrm-w-4" />
+                                {__('Importar CSV / Excel')}
+                            </Button>
+                        )}
+                        <Button asChild variant="outline" className="imcrm-gap-2">
+                            <Link to={`/lists/${list.data.slug}/edit`}>
+                                <Settings className="imcrm-h-4 imcrm-w-4" />
+                                {__('Configurar campos')}
+                            </Link>
+                        </Button>
+                    </div>
                 </div>
             )}
 
@@ -827,13 +844,6 @@ const applyView = (view: SavedViewEntity | null): void => {
                         open={createOpen}
                         onOpenChange={setCreateOpen}
                         initialValues={createDefaults}
-                    />
-
-                    <ImportDialog
-                        listId={list.data.id}
-                        listSlug={list.data.slug}
-                        open={importOpen}
-                        onOpenChange={setImportOpen}
                     />
 
                     <RecordDetailDrawer

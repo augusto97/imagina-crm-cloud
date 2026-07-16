@@ -867,6 +867,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         por campo. Test (before + date.today en create_record) + verificación
         en vivo (roll de fecha → factura con periodo = fecha anterior).
 
+  - [x] **Importar a una lista SIN campos (v0.1.81, reporte del usuario)**:
+        crear una lista desde un Excel/CSV estaba bloqueado — el botón
+        Importar estaba `disabled` sin campos y, peor, el `ImportDialog` solo
+        se montaba en la rama "hay campos" (el empty state no lo renderizaba
+        → click sin efecto), pese a que el diálogo YA crea campos on-the-fly.
+        Fix: (a) ImportDialog montado incondicionalmente + botón Importar sin
+        gate (desktop y mobile); (b) el empty state ofrece "Importar CSV /
+        Excel" como acción primaria junto a "Configurar campos"; (c) con
+        lista vacía, el paso de mapeo PRE-MARCA todas las columnas como
+        "Crear campo nuevo" (label = cabecera, tipo = detectado) — antes
+        había que elegirlo columna por columna; (d) fix de invalidación:
+        el import invalidaba `fieldsKeys.forList(listId)` pero RecordsPage
+        monta `useFields(listSlug)` → el empty state quedaba congelado tras
+        importar; ahora usa `invalidateForList` (id↔slug, regla de oro nº 7).
+        E2E navegador (lista vacía → CSV 4 columnas → 4 campos + 3 registros
+        → tabla renderiza al toque).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

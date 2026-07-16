@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { api, ApiError } from '@/lib/api';
 import { fieldsKeys } from '@/hooks/useFields';
-import { recordsKeys } from '@/hooks/useRecords';
+import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -171,6 +171,24 @@ export function ImportDialog({
                         Object.entries(res.data.suggested_mapping ?? {}).map(([k, v]) => [Number(k), v]),
                     ),
                 );
+                // Lista SIN campos (recién creada desde un Excel/CSV): no hay
+                // nada contra qué mapear — pre-marcamos TODAS las columnas
+                // como "Crear campo nuevo" con el tipo detectado, así el
+                // usuario solo revisa y dispara (antes: tenía que elegir
+                // "Crear campo nuevo" columna por columna a mano).
+                if ((res.data.fields ?? []).length === 0) {
+                    setNewFields(
+                        Object.fromEntries(
+                            res.data.headers.map((header, idx) => [
+                                idx,
+                                {
+                                    label: header || `${__('Columna')} ${idx + 1}`,
+                                    type: res.data.suggested_types?.[String(idx)] ?? 'text',
+                                },
+                            ]),
+                        ),
+                    );
+                }
                 setStep('map');
             } catch (err) {
                  
@@ -231,11 +249,12 @@ export function ImportDialog({
             setResult(res.data);
             setStep('done');
             // Invalida queries de records y fields (creamos campos nuevos).
-            // Usamos las factories — los hooks indexan por `String(listId)`
-            // y un keyArray manual con `listId` numérico no matchearía
-            // (TanStack Query compara cada posición por igualdad estricta).
-            await qc.invalidateQueries({ queryKey: recordsKeys.forList(listId) });
-            await qc.invalidateQueries({ queryKey: fieldsKeys.forList(listId) });
+            // Con `invalidateForList` (id ↔ slug): RecordsPage monta
+            // useFields(listSlug) — invalidar sólo la key por ID dejaba el
+            // empty state "sin campos" congelado tras importar a una lista
+            // vacía.
+            invalidateForList(qc, recordsKeys.all, listId);
+            invalidateForList(qc, fieldsKeys.all, listId);
         } catch (err) {
             setError(err instanceof ApiError ? err.message : __('Error al importar.'));
         } finally {
