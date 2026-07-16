@@ -35,7 +35,7 @@ import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { compileFilterTree, type FilterableField } from './query-builder';
+import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordsRepository, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
@@ -179,9 +179,18 @@ export class RecordsService {
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
             const where = andWhere(andWhere(filterWhere, searchWhere), scopeW);
 
+            // Orden por CAMPO (`sort=field_{id}:{dir},...`): expresiones
+            // tipadas whitelisted (regla de oro nº 4) con NULLS LAST. Los
+            // tipos sin orden útil (relation/file/computed) se descartan.
+            const orderBy = parseFieldSort(query.sort, fieldsById);
+            const sorted = orderBy.length > 0;
             const result = await this.repo.list(tx, tenantId, list.id, {
                 where,
-                cursor: query.cursor,
+                // Con sort por campo el keyset por id no aplica: el cursor
+                // se reinterpreta como OFFSET (opaco para el cliente).
+                cursor: sorted ? undefined : query.cursor,
+                offset: sorted ? (query.cursor ?? 0) : undefined,
+                orderBy: sorted ? orderBy : undefined,
                 limit: query.limit,
                 dir: query.sort_dir,
             });
@@ -205,7 +214,11 @@ export class RecordsService {
         // Pedimos limit+1 para detectar página siguiente sin contar todo.
         const hasMore = rows.length > query.limit;
         const page = hasMore ? rows.slice(0, query.limit) : rows;
-        const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
+        const nextCursor = hasMore
+            ? query.sort !== undefined && query.sort !== ''
+                ? String((query.cursor ?? 0) + page.length)
+                : String(page[page.length - 1]!.id)
+            : null;
         return {
             data: page.map((r) =>
                 stripHidden(
@@ -655,4 +668,29 @@ function withComputed(fields: Field[], row: RecordRow): RecordRow {
         data[jsonbKeyForField(field.id)] = evaluateComputed(field, fields, getValue);
     }
     return { ...row, data };
+}
+
+/**
+ * `sort=field_{id}:{asc|desc},...` → expresiones ORDER BY tipadas. Whitelist
+ * estricta: solo campos existentes de la lista con tipo ordenable; lo demás
+ * se descarta en silencio (mismo criterio que el filter tree). NULLS LAST en
+ * ambas direcciones — las celdas vacías siempre al final, estilo hoja.
+ */
+const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed'];
+
+function parseFieldSort(
+    raw: string | undefined,
+    fieldsById: Map<number, FilterableField>,
+): SQL[] {
+    if (raw === undefined || raw === '') return [];
+    const out: SQL[] = [];
+    for (const part of raw.split(',')) {
+        const m = /^field_(\d+):(asc|desc)$/.exec(part.trim());
+        if (!m) continue;
+        const field = fieldsById.get(Number(m[1]));
+        if (!field || NON_SORTABLE.includes(field.type)) continue;
+        const expr = fieldTypedExpr(field);
+        out.push(m[2] === 'desc' ? sql`${expr} DESC NULLS LAST` : sql`${expr} ASC NULLS LAST`);
+    }
+    return out;
 }

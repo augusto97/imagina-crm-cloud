@@ -461,6 +461,16 @@ export function TableView({
                                             setDraggingColId(null);
                                             setOverColId(null);
                                         } : undefined}
+                                        // Click DERECHO sobre el header = abrir el menú
+                                        // contextual de la columna (además del chevron).
+                                        onContextMenu={
+                                            fieldId !== null && onEditField !== undefined
+                                                ? (e) => {
+                                                    e.preventDefault();
+                                                    (e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null)?.click();
+                                                }
+                                                : undefined
+                                        }
                                         className={cn(
                                             'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                             // Sticky cells necesitan bg sólido para

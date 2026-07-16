@@ -133,6 +133,7 @@ export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         cursor: raw.cursor,
         limit: raw.limit,
         sort_dir: raw.sort_dir,
+        sort: raw.sort,
         search: raw.search,
     };
     const rawTree = typeof raw.filter_tree === 'string' ? raw.filter_tree : raw.filter;

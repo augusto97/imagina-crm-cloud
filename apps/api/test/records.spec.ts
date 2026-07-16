@@ -143,6 +143,47 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
     const cond = (slug: string, op: string, value?: unknown) =>
         ({ type: 'condition', field_id: fieldByType[slug]!.id, op, value });
 
+    it('sort por campo: numérico desc con NULLS LAST + paginación por offset', async () => {
+        await seed();
+        // Un cuarto record SIN monto → debe quedar al final aun en desc.
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Delta' } });
+
+        const sortParam = `field_${fieldByType['monto']!.id}:desc`;
+        const page = await service.list(tenantA, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            sort: sortParam,
+        });
+        expect(page.data.map((r) => r.data[key('nombre')])).toEqual(['Gamma', 'Beta', 'Alpha', 'Delta']);
+
+        // Offset-paging bajo sort: cursor = filas ya servidas.
+        const p1 = await service.list(tenantA, admin, 'clientes', {
+            limit: 2,
+            sort_dir: 'asc',
+            sort: sortParam,
+        });
+        expect(p1.data.map((r) => r.data[key('nombre')])).toEqual(['Gamma', 'Beta']);
+        expect(p1.meta.next_cursor).toBe('2');
+        const p2 = await service.list(tenantA, admin, 'clientes', {
+            limit: 2,
+            sort_dir: 'asc',
+            sort: sortParam,
+            cursor: 2,
+        });
+        expect(p2.data.map((r) => r.data[key('nombre')])).toEqual(['Alpha', 'Delta']);
+        expect(p2.meta.next_cursor).toBeNull();
+    });
+
+    it('sort por campo: texto asc + campo desconocido se descarta', async () => {
+        await seed();
+        const page = await service.list(tenantA, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            sort: `field_${fieldByType['nombre']!.id}:asc,field_99999:desc`,
+        });
+        expect(page.data.map((r) => r.data[key('nombre')])).toEqual(['Alpha', 'Beta', 'Gamma']);
+    });
+
     it('filtro: comparación numérica tipada (gte)', async () => {
         await seed();
         const page = await service.list(tenantA, admin, 'clientes', {

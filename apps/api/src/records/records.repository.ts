@@ -10,6 +10,13 @@ export interface ListRecordsOpts {
     cursor?: number;
     limit: number;
     dir: 'asc' | 'desc';
+    /**
+     * Orden por CAMPO (expresiones tipadas whitelisted del QueryBuilder).
+     * Cuando está presente, el keyset por id no aplica: se pagina por
+     * `offset` (el service reinterpreta el cursor).
+     */
+    orderBy?: SQL[];
+    offset?: number;
 }
 
 /**
@@ -45,14 +52,15 @@ export class RecordsRepository {
      * Pide `limit + 1` para saber si hay página siguiente sin contar todo.
      */
     async list(tx: Tx, tenantId: number, listId: number, opts: ListRecordsOpts): Promise<RecordRow[]> {
+        const sorted = opts.orderBy !== undefined && opts.orderBy.length > 0;
         const cursorClause =
-            opts.cursor !== undefined
+            !sorted && opts.cursor !== undefined
                 ? opts.dir === 'asc'
                     ? gt(records.id, opts.cursor)
                     : lt(records.id, opts.cursor)
                 : undefined;
 
-        return tx
+        const base = tx
             .select()
             .from(records)
             .where(
@@ -64,8 +72,13 @@ export class RecordsRepository {
                     cursorClause,
                 ),
             )
-            .orderBy(opts.dir === 'asc' ? asc(records.id) : desc(records.id))
+            .orderBy(
+                ...(sorted ? opts.orderBy! : []),
+                // Tiebreaker estable (y orden canónico sin sort por campo).
+                opts.dir === 'asc' ? asc(records.id) : desc(records.id),
+            )
             .limit(opts.limit + 1);
+        return sorted ? base.offset(opts.offset ?? 0) : base;
     }
 
     async updateData(
