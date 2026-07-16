@@ -70,7 +70,7 @@ export function BlockRenderer({
         );
     }
     if (block.type === 'properties_group') {
-        return <PropertiesGroupView block={block} listId={listId} values={values} onChange={onChange} fieldErrors={fieldErrors} />;
+        return <PropertiesGroupView block={block} listId={listId} recordId={recordId} values={values} onChange={onChange} fieldErrors={fieldErrors} />;
     }
     if (block.type === 'timeline') {
         return (
@@ -202,12 +202,14 @@ export function BlockRenderer({
 function PropertiesGroupView({
     block,
     listId,
+    recordId,
     values,
     onChange,
     fieldErrors,
 }: {
     block: Extract<ResolvedV2Block, { type: 'properties_group' }>;
     listId: number;
+    recordId?: number;
     values: Record<string, unknown>;
     onChange: (values: Record<string, unknown>) => void;
     fieldErrors?: Record<string, string>;
@@ -233,6 +235,7 @@ function PropertiesGroupView({
                 <FieldsContent
                     fields={block.config.fields}
                     listId={listId}
+                    recordId={recordId}
                     values={values}
                     setValue={setValue}
                     onChange={onChange}
@@ -275,6 +278,7 @@ function PropertiesGroupView({
                     <FieldsContent
                         fields={block.config.fields}
                         listId={listId}
+                        recordId={recordId}
                         values={values}
                         setValue={setValue}
                         onChange={onChange}
@@ -290,6 +294,7 @@ function PropertiesGroupView({
 function FieldsContent({
     fields,
     listId,
+    recordId,
     values,
     setValue,
     onChange,
@@ -298,6 +303,7 @@ function FieldsContent({
 }: {
     fields: FieldEntity[];
     listId: number;
+    recordId?: number;
     values: Record<string, unknown>;
     setValue: (slug: string, v: unknown) => void;
     onChange: (values: Record<string, unknown>) => void;
@@ -319,6 +325,7 @@ function FieldsContent({
                         key={f.id}
                         field={f}
                         listId={listId}
+                        recordId={recordId}
                         value={values[f.slug]}
                         onChange={(v) => setValue(f.slug, v)}
                         error={fieldErrors?.[f.slug]}
@@ -330,6 +337,7 @@ function FieldsContent({
     return (
         <RecordFieldsForm
             listId={listId}
+            recordId={recordId}
             fields={fields}
             values={values}
             onChange={onChange}

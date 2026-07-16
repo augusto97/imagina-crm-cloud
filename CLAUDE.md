@@ -731,6 +731,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         chips sin dot, sin caja residual, multi 2 opciones sin cerrar,
         persistencia tras reload).
 
+  - [x] **Date picker + recurrencias en TODAS las superficies (v0.1.72,
+        reporte del usuario)**: el `DateCellEditor` (calendario ClickUp +
+        atajos + sección "Recurrente") solo vivía en las celdas de la
+        tabla — el modal del registro, la página del registro, el layout
+        CRM y el form de creación usaban `<input type=date>` nativo.
+        Ahora `recordId` es OPCIONAL en DateCellEditor (sin record —
+        creación — se oculta solo la sección de recurrencia) y los campos
+        date/datetime de `CompactFieldRow` (control inline, un click) y
+        `RecordFieldsForm` (trigger estilo input) montan el picker,
+        con `recordId` roscado desde drawer/página/BlockRenderer (el
+        diálogo de creación no lo pasa). Los casos nativos muertos se
+        eliminaron. Verificado E2E en navegador (modal: calendario +
+        "Hacer recurrente"; creación: calendario sin recurrencia).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

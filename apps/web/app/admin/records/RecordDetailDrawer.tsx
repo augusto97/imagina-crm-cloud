@@ -311,6 +311,7 @@ export function RecordDetailDrawer({
                                     {fieldsOpen && (
                                         <RecordFieldsForm
                                             listId={listId}
+                                            recordId={record.id}
                                             fields={fields}
                                             values={values}
                                             onChange={setValues}
