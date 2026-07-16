@@ -11,6 +11,7 @@ import { getBootData } from '@/lib/boot';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
+import { DateCellEditor } from './DateCellEditor';
 import { CompactFieldRow } from './crm/CompactFieldRow';
 
 interface RecordFieldsFormProps {
@@ -19,6 +20,11 @@ interface RecordFieldsFormProps {
      * select/multi_select, que puede crear opciones inline via REST.
      */
     listId: number | string;
+    /**
+     * Record en edición (si ya existe): habilita la sección "Recurrente"
+     * del date picker. En creación va undefined (solo calendario).
+     */
+    recordId?: number;
     fields: FieldEntity[];
     values: Record<string, unknown>;
     onChange: (values: Record<string, unknown>) => void;
@@ -55,6 +61,7 @@ const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
  */
 export function RecordFieldsForm({
     listId,
+    recordId,
     fields,
     values,
     onChange,
@@ -83,6 +90,7 @@ export function RecordFieldsForm({
                         key={field.id}
                         field={field}
                         listId={listId}
+                        recordId={recordId}
                         value={values[field.slug]}
                         onChange={(v) => setValue(field.slug, v)}
                         error={fieldErrors?.[field.slug]}
@@ -99,6 +107,7 @@ export function RecordFieldsForm({
                 <FieldInput
                     key={field.id}
                     listId={listId}
+                    recordId={recordId}
                     field={field}
                     value={values[field.slug]}
                     onChange={(v) => setValue(field.slug, v)}
@@ -111,13 +120,14 @@ export function RecordFieldsForm({
 
 interface FieldInputProps {
     listId: number | string;
+    recordId?: number;
     field: FieldEntity;
     value: unknown;
     onChange: (value: unknown) => void;
     error?: string;
 }
 
-function FieldInput({ listId, field, value, onChange, error }: FieldInputProps): JSX.Element {
+function FieldInput({ listId, recordId, field, value, onChange, error }: FieldInputProps): JSX.Element {
     const id = `record-field-${field.id}`;
 
     let control: JSX.Element;
@@ -146,23 +156,28 @@ function FieldInput({ listId, field, value, onChange, error }: FieldInputProps):
             );
             break;
         case 'date':
-            control = (
-                <Input
-                    id={id}
-                    type="date"
-                    value={typeof value === 'string' ? value : ''}
-                    onChange={(e) => onChange(e.target.value || null)}
-                />
-            );
-            break;
         case 'datetime':
+            // El MISMO date picker de la tabla (calendario + atajos +
+            // recurrencia cuando el record ya existe). El trigger imita
+            // un input para no romper el layout del form.
             control = (
-                <Input
-                    id={id}
-                    type="datetime-local"
-                    value={typeof value === 'string' ? value.replace(' ', 'T').slice(0, 16) : ''}
-                    onChange={(e) => onChange(e.target.value || null)}
-                />
+                <DateCellEditor
+                    listId={Number(listId)}
+                    recordId={recordId}
+                    field={field}
+                    value={typeof value === 'string' ? value : null}
+                    onCommit={(next) => onChange(next)}
+                >
+                    <button
+                        id={id}
+                        type="button"
+                        className="imcrm-flex imcrm-h-9 imcrm-w-full imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-left imcrm-text-sm hover:imcrm-border-primary/40"
+                    >
+                        {typeof value === 'string' && value !== ''
+                            ? <span>{field.type === 'datetime' ? value.replace('T', ' ').slice(0, 16) : value.slice(0, 10)}</span>
+                            : <span className="imcrm-text-muted-foreground">{__('Elegir fecha…')}</span>}
+                    </button>
+                </DateCellEditor>
             );
             break;
         case 'number':

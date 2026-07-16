@@ -32,7 +32,12 @@ import type {
 
 interface DateCellEditorProps {
     listId: number;
-    recordId: number;
+    /**
+     * Opcional: sin recordId (p.ej. el form de CREACIÓN, donde el record
+     * aún no existe) el calendario funciona igual pero la sección
+     * "Recurrente" se oculta — la recurrencia se persiste por record.
+     */
+    recordId?: number;
     field: FieldEntity;
     /** Valor actual (`YYYY-MM-DD` o `YYYY-MM-DD HH:MM:SS` / con T). */
     value: string | null;
@@ -81,10 +86,10 @@ export function DateCellEditor({
     // cambiar de vista, porque el thread no llegaba a procesar el
     // re-render hasta que el componente se desmontaba. Fix en 0.57.10.
     const recurrences = useRecurrencesForRecord(listId, recordId);
-    // En la nube el módulo de recurrencias todavía no está cableado
-    // (POST/DELETE darían 404) — se oculta TODA la UI de recurrencia.
+    // La UI de recurrencia requiere el módulo cableado Y un record
+    // existente (en creación no hay recordId → solo calendario).
     // Los hooks se llaman igual (rules of hooks); solo se gatea el JSX.
-    const recurrencesEnabled = moduleEnabled('recurrences');
+    const recurrencesEnabled = moduleEnabled('recurrences') && recordId !== undefined;
     const existingRecurrence = recurrencesEnabled
         ? (recurrences.data ?? []).find((r) => r.date_field_id === field.id)
         : undefined;

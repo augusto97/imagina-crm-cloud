@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
+import { DateCellEditor } from '@/admin/records/DateCellEditor';
 import { FileFieldControl } from '@/admin/records/RecordFieldsForm';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
@@ -17,6 +18,11 @@ interface CompactFieldRowProps {
     field: FieldEntity;
     /** Necesario para que OptionPicker pueda crear opciones inline. */
     listId: number | string;
+    /**
+     * Record al que pertenece la fila (si ya existe): habilita la
+     * sección "Recurrente" del date picker. En creación va undefined.
+     */
+    recordId?: number;
     value: unknown;
     onChange: (value: unknown) => void;
     error?: string;
@@ -44,6 +50,7 @@ interface CompactFieldRowProps {
 export function CompactFieldRow({
     field,
     listId,
+    recordId,
     value,
     onChange,
     error,
@@ -60,7 +67,11 @@ export function CompactFieldRow({
         field.type === 'checkbox' ||
         field.type === 'select' ||
         field.type === 'multi_select' ||
-        field.type === 'user';
+        field.type === 'user' ||
+        // Fechas: el DateCellEditor (calendario + recurrencia, el mismo
+        // de la tabla) se abre con UN click — sin modo edición nativo.
+        field.type === 'date' ||
+        field.type === 'datetime';
 
     // Tipos read-only (computed): nunca editables.
     const isReadOnly = field.type === 'computed';
@@ -94,7 +105,7 @@ export function CompactFieldRow({
 
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
                 {isInlineControl ? (
-                    <InlineControl field={field} listId={listId} value={value} onChange={onChange} />
+                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} />
                 ) : isReadOnly ? (
                     <div className="imcrm-min-h-[24px] imcrm-py-0.5 imcrm-text-sm">
                         <FieldValueDisplay field={field} value={value} />
@@ -179,32 +190,7 @@ function EditingControl({
                     className="imcrm-text-sm"
                 />
             );
-        case 'date':
-            return (
-                <Input
-                    id={id}
-                    ref={ref as React.Ref<HTMLInputElement>}
-                    type="date"
-                    value={typeof value === 'string' ? value : ''}
-                    onChange={(e) => onChange(e.target.value || null)}
-                    onBlur={onBlur}
-                    onKeyDown={handleKey}
-                    className="imcrm-h-8 imcrm-text-sm"
-                />
-            );
-        case 'datetime':
-            return (
-                <Input
-                    id={id}
-                    ref={ref as React.Ref<HTMLInputElement>}
-                    type="datetime-local"
-                    value={typeof value === 'string' ? value.replace(' ', 'T').slice(0, 16) : ''}
-                    onChange={(e) => onChange(e.target.value || null)}
-                    onBlur={onBlur}
-                    onKeyDown={handleKey}
-                    className="imcrm-h-8 imcrm-text-sm"
-                />
-            );
+        // date/datetime no llegan acá: son inline controls (DateCellEditor).
         case 'number':
         case 'currency':
             return (
@@ -298,15 +284,40 @@ function EditingControl({
 function InlineControl({
     field,
     listId,
+    recordId,
     value,
     onChange,
 }: {
     field: FieldEntity;
     listId: number | string;
+    recordId?: number;
     value: unknown;
     onChange: (v: unknown) => void;
 }): JSX.Element {
     const id = `field-${field.id}`;
+
+    if (field.type === 'date' || field.type === 'datetime') {
+        // El MISMO editor de la tabla (calendario visual + atajos +
+        // recurrencia si el record existe). onChange acumula en el draft
+        // del padre; el guardado sigue el flujo normal del form.
+        return (
+            <DateCellEditor
+                listId={Number(listId)}
+                recordId={recordId}
+                field={field}
+                value={typeof value === 'string' ? value : null}
+                onCommit={(next) => onChange(next)}
+            >
+                <button
+                    type="button"
+                    className="imcrm-inline-flex imcrm-min-h-[24px] imcrm-w-full imcrm-items-center imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent/40"
+                    title={__('Editar fecha y recurrencia')}
+                >
+                    <FieldValueDisplay field={field} value={value} />
+                </button>
+            </DateCellEditor>
+        );
+    }
 
     if (field.type === 'user') {
         const userId = typeof value === 'number' ? value : value ? Number(value) : null;

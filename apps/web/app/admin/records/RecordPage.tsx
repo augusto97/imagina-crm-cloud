@@ -260,6 +260,7 @@ export function RecordPage(): JSX.Element {
                         {fieldsOpen && fields.data && (
                             <RecordFieldsForm
                                 listId={list.data.id}
+                                recordId={id}
                                 fields={fields.data}
                                 values={values}
                                 onChange={setValues}
