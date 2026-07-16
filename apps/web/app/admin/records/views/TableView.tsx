@@ -25,6 +25,7 @@ import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
+import { StickyHScrollbar } from './StickyHScrollbar';
 
 interface TableViewProps {
     listId: number;
@@ -358,6 +359,7 @@ export function TableView({
 
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
+       <>
         <div
             // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
             // vertical es el de la PÁGINA (main del shell) — la tabla
@@ -769,6 +771,11 @@ export function TableView({
                 )}
             </table>
         </div>
+        {/* Scrollbar horizontal fija al fondo del viewport (estilo
+            ClickUp) — la nativa del wrapper queda al fondo de la tabla,
+            invisible en listas largas. */}
+        <StickyHScrollbar targetRef={tableContainerRef} />
+       </>
       </RecurrencesBatchProvider>
     );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -24,6 +24,7 @@ import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
+import { StickyHScrollbar } from './StickyHScrollbar';
 
 interface GroupedTableViewProps {
     listId: number;
@@ -48,6 +49,9 @@ interface GroupedTableViewProps {
      * width al agrupar.
      */
     columnSizing?: Record<string, number>;
+    /** Callback de resize por columna (drag del borde derecho del th).
+     * Sin él, los handles no se renderizan. */
+    onColumnSizingChange?: (next: Record<string, number>) => void;
     /**
      * Orden custom del flat view (column ids). Si está vacío, usamos
      * `field.position`. Sin esto el user perdía su reordenamiento al
@@ -114,6 +118,7 @@ export function GroupedTableView({
     onRowClick,
     columnVisibility,
     columnSizing,
+    onColumnSizingChange,
     columnOrder,
     collapsedGroups,
     onCollapsedGroupsChange,
@@ -136,6 +141,8 @@ export function GroupedTableView({
         [collapsedGroups],
     );
     const [openLocally, setOpenLocally] = useState<Set<string>>(new Set());
+    // Scroller horizontal compartido — target de la StickyHScrollbar.
+    const hScrollRef = useRef<HTMLDivElement>(null);
 
     const isOpen = (key: string): boolean => {
         if (openLocally.has(key)) return true;
@@ -316,12 +323,12 @@ export function GroupedTableView({
                 Solo scroll HORIZONTAL acá: el vertical es el de la
                 página (pedido del usuario, v0.1.70) — los buckets crecen
                 a su alto natural. */}
-            <div className="imcrm-overflow-x-auto imcrm-pb-2">
+            <div ref={hScrollRef} className="imcrm-overflow-x-auto imcrm-pb-2">
                 <div
                     className="imcrm-flex imcrm-flex-col imcrm-gap-3"
                     style={{ minWidth: tableWidth }}
                 >
-                    {buckets.map((bucket, idx) => {
+                    {buckets.map((bucket) => {
                         const key = bucketKey(bucket);
                         const rawKey = bucketRawKey(bucket);
                         const prefetched = expandedMap[rawKey];
@@ -336,6 +343,7 @@ export function GroupedTableView({
                                 onToggle={() => toggleGroup(key)}
                                 columns={visibleColumns}
                                 columnSizing={columnSizing ?? {}}
+                                onColumnSizingChange={onColumnSizingChange}
                                 tableWidth={tableWidth}
                                 baseTree={filterTree}
                                 search={search}
@@ -350,7 +358,7 @@ export function GroupedTableView({
                                 // en el header del PRIMER bucket — sino sale
                                 // duplicado en cada grupo. UX consistent con
                                 // el flat view (un solo trigger).
-                                onAddColumn={idx === 0 ? onAddColumn : undefined}
+                                onAddColumn={onAddColumn}
                                 onEditField={onEditField}
                                 onAddRecord={
                                     onAddRecord
@@ -364,6 +372,10 @@ export function GroupedTableView({
                     })}
                 </div>
             </div>
+            {/* Scrollbar horizontal fija al fondo del viewport (estilo
+                ClickUp) — la nativa del wrapper queda al fondo de la
+                lista de grupos. */}
+            <StickyHScrollbar targetRef={hScrollRef} />
         </div>
         </RecurrencesBatchProvider>
     );
@@ -452,6 +464,7 @@ interface GroupBucketSectionProps {
     onToggle: () => void;
     columns: ColumnDef[];
     columnSizing: Record<string, number>;
+    onColumnSizingChange?: (next: Record<string, number>) => void;
     /**
      * Ancho total compartido por todos los buckets. La tabla se
      * estira a este ancho con `tableLayout: 'fixed'` para que las
@@ -499,6 +512,7 @@ function GroupBucketSection({
     onToggle,
     columns,
     columnSizing,
+    onColumnSizingChange,
     tableWidth,
     baseTree,
     search,
@@ -715,7 +729,8 @@ function GroupBucketSection({
                                                 className={cn(
                                                     // `group/th` habilita el reveal on-hover del
                                                     // menú contextual de la columna (FieldHeaderMenu).
-                                                    'imcrm-group/th imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                                    // `relative` ancla el handle de resize.
+                                                    'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                                     // Sticky cell necesita bg sólido para
                                                     // tapar las celdas al scrollear
                                                     // horizontal — canvas, no card.
@@ -738,6 +753,34 @@ function GroupBucketSection({
                                                         />
                                                     )}
                                                 </span>
+                                                {onColumnSizingChange !== undefined && (
+                                                    // Resize estilo Excel (paridad con el flat
+                                                    // view): drag del borde derecho. El ancho es
+                                                    // compartido — todos los buckets se alinean.
+                                                    <div
+                                                        onPointerDown={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            const startX = e.clientX;
+                                                            const startW = w;
+                                                            const move = (ev: PointerEvent): void => {
+                                                                onColumnSizingChange({
+                                                                    ...columnSizing,
+                                                                    [c.id]: Math.min(800, Math.max(80, Math.round(startW + ev.clientX - startX))),
+                                                                });
+                                                            };
+                                                            const up = (): void => {
+                                                                window.removeEventListener('pointermove', move);
+                                                                window.removeEventListener('pointerup', up);
+                                                            };
+                                                            window.addEventListener('pointermove', move);
+                                                            window.addEventListener('pointerup', up);
+                                                        }}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="imcrm-absolute imcrm-right-0 imcrm-top-0 imcrm-z-20 imcrm-h-full imcrm-w-1 imcrm-cursor-col-resize imcrm-select-none imcrm-touch-none imcrm-bg-border/40 hover:imcrm-bg-primary/60"
+                                                        aria-hidden
+                                                    />
+                                                )}
                                             </th>
                                         );
                                     })}

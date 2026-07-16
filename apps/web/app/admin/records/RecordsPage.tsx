@@ -741,6 +741,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onRowClick={(record) => setDrawerRecordId(record.id)}
                                     columnVisibility={state.columnVisibility}
                                     columnSizing={state.columnSizing}
+                                    onColumnSizingChange={(next) =>
+                                        setState((s) => ({ ...s, columnSizing: next }))
+                                    }
                                     columnOrder={state.columnOrder}
                                     collapsedGroups={state.collapsedGroups}
                                     onCollapsedGroupsChange={(next) =>
