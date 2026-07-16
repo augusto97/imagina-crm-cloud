@@ -101,7 +101,9 @@ export function OptionPicker({
 
     const pickOption = (opt: FieldOption): void => {
         if (mode === 'single') {
-            onChange(opt.value);
+            // Toggle: clickear la opción YA seleccionada la des-selecciona
+            // (estilo ClickUp) — así el trigger de celda no necesita la ×.
+            onChange(currentSingle === opt.value ? null : opt.value);
             setOpen(false);
         } else {
             const next = currentSet.has(opt.value)
@@ -166,7 +168,10 @@ export function OptionPicker({
                         label={opt?.label ?? currentSingle}
                         color={opt?.color as OptionColor | undefined}
                     />
-                    {!disabled && (
+                    {/* Sin × en celdas (roba ancho, estilo ClickUp): para
+                        limpiar se clickea la opción seleccionada en el
+                        popover. En forms (default) la × se conserva. */}
+                    {!disabled && !isCell && (
                         <button
                             type="button"
                             onClick={clearSingle}

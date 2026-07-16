@@ -731,6 +731,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         chips sin dot, sin caja residual, multi 2 opciones sin cerrar,
         persistencia tras reload).
 
+  - [x] **Selects de celda sin × (v0.1.73, feedback del usuario)**: la ×
+        de limpiar a la derecha del chip robaba ancho de celda — se quitó
+        en `variant="cell"` (en forms se conserva). Para limpiar, clickear
+        la opción YA seleccionada en el popover la des-selecciona (toggle,
+        estilo ClickUp). E2E navegador (sin ×, toggle-off limpia,
+        re-selección OK, form conserva la ×).
+
   - [x] **Date picker + recurrencias en TODAS las superficies (v0.1.72,
         reporte del usuario)**: el `DateCellEditor` (calendario ClickUp +
         atajos + sección "Recurrente") solo vivía en las celdas de la
