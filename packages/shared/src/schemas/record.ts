@@ -54,6 +54,16 @@ export const listRecordsQuerySchema = z.object({
     cursor: z.coerce.number().int().positive().optional(),
     limit: z.coerce.number().int().positive().max(MAX_RECORDS_LIMIT).default(DEFAULT_RECORDS_LIMIT),
     sort_dir: sortDirSchema.default('asc'),
+    /**
+     * Orden por CAMPO (`field_{id}:{asc|desc}`, multi separado por coma) —
+     * lo manda la tabla al clickear un header. Con sort por campo la
+     * paginación pasa a offset (el cursor se reinterpreta como offset;
+     * opaco para el cliente, que solo lo devuelve tal cual).
+     */
+    sort: z
+        .string()
+        .regex(/^field_\d+:(asc|desc)(,field_\d+:(asc|desc))*$/)
+        .optional(),
     filter_tree: filterTreeSchema.optional(),
     /**
      * Búsqueda de texto server-side sobre los campos "searchables" (text,

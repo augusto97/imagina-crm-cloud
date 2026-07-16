@@ -760,6 +760,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         input manual de fecha, chevrons visibles). Tipos nuevos (teléfono/
         progreso/calificación…) quedan como candidato a release aparte.
 
+  - [x] **Sort server-side + menú por click derecho (v0.1.76, reporte
+        del usuario)**: (a) ordenar por columna POR FIN funciona — el
+        listado de records ignoraba `sort=field_{id}:{dir}` (solo ordenaba
+        por id; el front lo mandaba desde siempre). Ahora: ORDER BY con
+        expresiones JSONB tipadas whitelisted (regla de oro nº 4), NULLS
+        LAST, multi-columna por coma, id tiebreaker; con sort por campo la
+        paginación pasa a OFFSET (el cursor se reinterpreta, opaco para el
+        cliente). (b) click DERECHO sobre el header abre el menú contextual
+        de la columna (dispara pointerdown — Radix no abre con click
+        programático), en plana y agrupada. (c) fix: el header agrupado
+        desbordaba en columnas angostas y el chevron quedaba solapado con
+        el "+" (overflow-hidden + min-w-0/truncate). 2 tests de
+        integración del sort + E2E navegador (asc 100 / desc 6000, click
+        derecho en ambas vistas, chevron sin overlap).
+
   - [x] **Scrollbar horizontal fija + paridad del agrupado (v0.1.75,
         reporte del usuario)**: (a) `StickyHScrollbar` compartido — barra
         espejo `sticky bottom-0` sincronizada bidireccional con el

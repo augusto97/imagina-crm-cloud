@@ -461,6 +461,19 @@ export function TableView({
                                             setDraggingColId(null);
                                             setOverColId(null);
                                         } : undefined}
+                                        // Click DERECHO sobre el header = abrir el menú
+                                        // contextual de la columna (además del chevron).
+                                        onContextMenu={
+                                            fieldId !== null && onEditField !== undefined
+                                                ? (e) => {
+                                                    const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
+                                                    if (!btn) return;
+                                                    e.preventDefault();
+                                                    // Radix DropdownMenu abre en pointerdown (no en click).
+                                                    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+                                                }
+                                                : undefined
+                                        }
                                         className={cn(
                                             'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                             // Sticky cells necesitan bg sólido para

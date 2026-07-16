@@ -726,25 +726,39 @@ function GroupBucketSection({
                                                 key={c.id}
                                                 scope="col"
                                                 style={{ width: w, minWidth: w, ...(sticky ?? {}) }}
+                                                onContextMenu={
+                                                    c.field !== null && onEditField !== undefined
+                                                        ? (e) => {
+                                                    const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
+                                                    if (!btn) return;
+                                                    e.preventDefault();
+                                                    // Radix DropdownMenu abre en pointerdown (no en click).
+                                                    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+                                                }
+                                                        : undefined
+                                                }
                                                 className={cn(
                                                     // `group/th` habilita el reveal on-hover del
                                                     // menú contextual de la columna (FieldHeaderMenu).
-                                                    // `relative` ancla el handle de resize.
-                                                    'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                                    // `relative` ancla el handle de resize;
+                                                    // `overflow-hidden` evita que el contenido de
+                                                    // columnas angostas desborde al th vecino (el
+                                                    // chevron quedaba solapado con el botón "+").
+                                                    'imcrm-group/th imcrm-relative imcrm-overflow-hidden imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                                     // Sticky cell necesita bg sólido para
                                                     // tapar las celdas al scrollear
                                                     // horizontal — canvas, no card.
                                                     sticky && 'imcrm-bg-background',
                                                 )}
                                             >
-                                                <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5">
                                                     {c.isPrimary && (
                                                         <KeyRound
-                                                            className="imcrm-h-3 imcrm-w-3 imcrm-text-primary"
+                                                            className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-primary"
                                                             aria-hidden="true"
                                                         />
                                                     )}
-                                                    {c.label}
+                                                    <span className="imcrm-truncate">{c.label}</span>
                                                     {c.field !== null && onEditField !== undefined && (
                                                         <FieldHeaderMenu
                                                             listId={listId}
