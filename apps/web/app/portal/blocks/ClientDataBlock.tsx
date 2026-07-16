@@ -137,7 +137,7 @@ function renderValue(value: unknown, meta: PortalFieldMeta | undefined): JSX.Ele
         case 'currency':
             return formatCurrency(value, meta.config);
         case 'number':
-            return formatNumber(value);
+            return formatNumber(value, meta.config);
         case 'checkbox':
             return value === true || value === 1 || value === '1' ? '✓' : '✗';
         case 'url': {
@@ -235,24 +235,37 @@ function formatDateTime(value: unknown): string {
     }
 }
 
+/** Decimales configurados del campo (`config.precision`) con fallback por tipo. */
+function configPrecision(config: Record<string, unknown>, fallback: number): number {
+    const raw = config.precision;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
+        return Math.min(Math.floor(raw), 10);
+    }
+    return fallback;
+}
+
 function formatCurrency(value: unknown, config: Record<string, unknown>): string {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (! Number.isFinite(num)) return String(value);
     const currency = typeof config.currency === 'string' ? config.currency : 'USD';
+    const decimals = configPrecision(config, 2);
     try {
         return new Intl.NumberFormat(undefined, {
             style: 'currency',
             currency,
-            maximumFractionDigits: 2,
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
         }).format(num);
     } catch {
         // Currency code inválido — fallback a formato decimal sin símbolo.
-        return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(num);
+        return new Intl.NumberFormat(undefined, { maximumFractionDigits: decimals }).format(num);
     }
 }
 
-function formatNumber(value: unknown): string {
+function formatNumber(value: unknown, config: Record<string, unknown>): string {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (! Number.isFinite(num)) return String(value);
-    return new Intl.NumberFormat(undefined).format(num);
+    return new Intl.NumberFormat(undefined, {
+        maximumFractionDigits: configPrecision(config, 0),
+    }).format(num);
 }

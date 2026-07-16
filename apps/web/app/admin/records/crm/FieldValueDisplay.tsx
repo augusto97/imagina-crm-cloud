@@ -3,6 +3,7 @@ import { Check, ExternalLink, Mail, Minus, Paperclip, User as UserIcon } from 'l
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
@@ -73,9 +74,9 @@ function CheckboxDisplay({ value }: { value: unknown }): JSX.Element {
 }
 
 function CurrencyDisplay({ field, value }: { field: FieldEntity; value: unknown }): JSX.Element {
-    const cfg = field.config as { currency?: string; decimals?: number };
+    const cfg = field.config as { currency?: string };
     const currency = cfg.currency || 'COP';
-    const decimals = cfg.decimals ?? 0;
+    const decimals = fieldPrecision(field);
     const num = typeof value === 'number' ? value : Number(value);
     if (Number.isNaN(num)) return <span>{String(value)}</span>;
     let formatted: string;
@@ -88,24 +89,15 @@ function CurrencyDisplay({ field, value }: { field: FieldEntity; value: unknown 
         }).format(num);
     } catch {
         // Currency code inválido (ej. usuario puso "X"); fallback a número plano.
-        formatted = num.toLocaleString(undefined, { minimumFractionDigits: decimals });
+        formatted = formatFieldNumber(field, num);
     }
     return <span className="imcrm-font-medium imcrm-tabular-nums">{formatted}</span>;
 }
 
 function NumberDisplay({ field, value }: { field: FieldEntity; value: unknown }): JSX.Element {
-    const cfg = field.config as { decimals?: number };
-    const decimals = cfg.decimals ?? 0;
     const num = typeof value === 'number' ? value : Number(value);
     if (Number.isNaN(num)) return <span>{String(value)}</span>;
-    return (
-        <span className="imcrm-tabular-nums">
-            {num.toLocaleString(undefined, {
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: Math.max(decimals, 2),
-            })}
-        </span>
-    );
+    return <span className="imcrm-tabular-nums">{formatFieldNumber(field, num)}</span>;
 }
 
 function DateDisplay({ value, kind }: { value: unknown; kind: 'date' | 'datetime' }): JSX.Element {

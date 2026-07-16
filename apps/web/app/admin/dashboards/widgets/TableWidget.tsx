@@ -2,6 +2,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
+import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
 import { useWidgetData } from '@/hooks/useDashboards';
 import type { FieldEntity } from '@/types/field';
@@ -126,8 +127,11 @@ function formatCell(type: string, value: unknown, field?: FieldEntity): React.Re
     if (type === 'date' && typeof value === 'string') {
         return value;
     }
-    if (type === 'currency' && typeof value === 'number') {
-        return value.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    if ((type === 'currency' || type === 'number') && typeof value === 'number') {
+        // Respeta los decimales configurados del campo si lo tenemos a mano
+        // (`config.precision`); sin field cae a entero con separador de miles.
+        if (field !== undefined) return formatFieldNumber(field, value);
+        return value.toLocaleString();
     }
     if (type === 'select' && typeof value === 'string') {
         // Chip con el color real de la opción — coherente con la tabla

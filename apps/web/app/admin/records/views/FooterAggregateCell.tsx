@@ -12,6 +12,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { AggregateBag } from '@/hooks/useAggregates';
+import { fieldPrecision } from '@/lib/fieldNumberFormat';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -213,26 +214,32 @@ function formatAggregate(
     if (kind === undefined) return null;
     if (agg === undefined) return null;
 
-    const num = (n: number | null | undefined): string => {
+    // Counts (count/count_unique/count_empty) son SIEMPRE enteros; los
+    // agregados de VALOR (sum/avg/min/max/range) respetan los decimales
+    // configurados del campo (`config.precision`) — avg permite hasta 2
+    // extra para no perder la fracción de un promedio de enteros.
+    const int = (n: number | null | undefined): string =>
+        n === null || n === undefined ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    const num = (n: number | null | undefined, extra = 0): string => {
         if (n === null || n === undefined) return '—';
-        const decimals = field.type === 'currency' ? 2 : (field.type === 'number' ? 4 : 0);
+        const p = fieldPrecision(field);
         return n.toLocaleString(undefined, {
-            minimumFractionDigits: field.type === 'currency' ? 2 : 0,
-            maximumFractionDigits: decimals,
+            minimumFractionDigits: field.type === 'currency' ? p : 0,
+            maximumFractionDigits: Math.max(p, extra),
         });
     };
     const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
 
     switch (kind) {
         case 'count':
-            return num(agg.count ?? 0);
+            return int(agg.count ?? 0);
         case 'count_unique':
-            return num(agg.count_unique ?? 0);
+            return int(agg.count_unique ?? 0);
         case 'count_empty': {
             // Para text/select/etc el endpoint trae count_empty; para
             // checkbox/number/date lo derivamos de total - count.
             const empty = agg.count_empty ?? Math.max(0, totalCount - (agg.count ?? 0));
-            return num(empty);
+            return int(empty);
         }
         case 'pct_empty': {
             if (totalCount === 0) return '0%';
@@ -246,7 +253,7 @@ function formatAggregate(
         case 'sum':
             return num(agg.sum ?? null);
         case 'avg':
-            return num(agg.avg ?? null);
+            return num(agg.avg ?? null, 2);
         case 'min':
             return num(typeof agg.min === 'number' ? agg.min : (agg.min === null ? null : Number(agg.min)));
         case 'max':
