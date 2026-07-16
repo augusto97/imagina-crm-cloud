@@ -1385,40 +1385,36 @@ function FieldValueInput({
         );
     }
 
-    if (field.type === 'date') {
+    // date / datetime / number / currency: MergeTagInput — un input
+    // tipado (type=date / type=number) NO acepta merge tags, y mapear
+    // variables acá es el caso central de create_record/update_field
+    // (ej. monto = {{monto_mensual}}, periodo = {{before.proximo_cobro}}).
+    // El backend valida/coerciona con el schema del campo destino; un
+    // valor fijo se tipea a mano en el formato del placeholder.
+    if (field.type === 'date' || field.type === 'datetime') {
         return (
-            <Input
-                type="date"
+            <MergeTagInput
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={onChange}
+                fields={availableFields ?? []}
+                placeholder={
+                    field.type === 'date'
+                        ? __('AAAA-MM-DD o {{campo}}')
+                        : __('AAAA-MM-DD HH:MM o {{campo}}')
+                }
                 className="imcrm-flex-1"
-            />
-        );
-    }
-
-    if (field.type === 'datetime') {
-        return (
-            <Input
-                type="datetime-local"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="imcrm-flex-1"
+                aria-label={__('Valor')}
             />
         );
     }
 
     if (field.type === 'number' || field.type === 'currency') {
-        // Numérico: input simple. No usamos MergeTagInput porque los
-        // chips abajo no tienen mucho sentido para `{{slug}}` numéricos
-        // (la mayoría de tags devuelven strings); el usuario puede
-        // tipear manualmente si quiere.
         return (
-            <Input
-                type="number"
-                step="any"
+            <MergeTagInput
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={field.type === 'currency' ? '0.00' : '0'}
+                onChange={onChange}
+                fields={availableFields ?? []}
+                placeholder={__('0 o {{campo}}')}
                 className="imcrm-flex-1"
                 aria-label={__('Valor')}
             />
