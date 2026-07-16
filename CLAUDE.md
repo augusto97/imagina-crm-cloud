@@ -896,6 +896,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (overflow real, nativa oculta, 1 solo espejo sticky, sync
         espejo→tabla).
 
+  - [x] **Recurrencias en vivo: icono + "No repetir" (v0.1.83, reporte del
+        usuario)**: el icono de recurrente solo aparecía tras RECARGAR y no
+        se veía cómo quitar la recurrencia. Causa raíz única: las mutaciones
+        (`useUpsertRecurrence`/`useDeleteRecurrence`) invalidaban solo la
+        query individual `forRecord`, pero las celdas de la tabla leen del
+        BATCH (`RecurrencesBatchProvider`) que nunca se invalidaba → icono
+        congelado, y al reabrir el popover el panel creía que no había
+        recurrencia (mostraba "Hacer recurrente"/Cancelar en vez del resumen
+        + el botón "No repetir", que ya existía). Fix: prefijo
+        `keys.forList(listId)` en la invalidación (cubre forRecord + todas
+        las batch de la lista). E2E navegador (guardar → icono aparece SIN
+        reload → reabrir muestra resumen + "No repetir" → quitar → icono
+        desaparece sin reload).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
