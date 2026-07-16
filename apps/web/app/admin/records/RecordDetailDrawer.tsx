@@ -29,8 +29,10 @@ import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import { useList } from '@/hooks/useLists';
 import type { RecordEntity } from '@/types/record';
 
+import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordMetaGrid } from './RecordMetaGrid';
 
@@ -142,6 +144,10 @@ export function RecordDetailDrawer({
         remove.reset();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [record?.id]);
+
+    // ListSummary para PortalAccessButton (cacheado por TanStack; el
+    // drawer solo recibe listId/slug/nombre).
+    const listData = useList(listId);
 
     if (!record) {
         return <Sheet open={open} onOpenChange={onOpenChange} />;
@@ -319,6 +325,16 @@ export function RecordDetailDrawer({
                                             density="compact"
                                             showTypeIcon
                                         />
+                                    )}
+
+                                    {/* Acceso al portal del cliente (magic link) —
+                                        también en el layout SIN plantilla CRM. El
+                                        botón se auto-oculta si la lista no tiene
+                                        portal habilitado. */}
+                                    {listData.data !== undefined && (
+                                        <div className="imcrm-mt-4">
+                                            <PortalAccessButton list={listData.data} record={record} />
+                                        </div>
                                     )}
 
                                     {error !== null && (

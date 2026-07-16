@@ -760,6 +760,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         input manual de fecha, chevrons visibles). Tipos nuevos (teléfono/
         progreso/calificación…) quedan como candidato a release aparte.
 
+  - [x] **Acceso al portal en el layout lista + fix de comentarios
+        (v0.1.77, reporte del usuario)**: el `PortalAccessButton` (emisión
+        de magic link al cliente) solo se montaba en el layout CRM por
+        plantilla — en la vista individual y el modal del registro con
+        apariencia de lista había desaparecido. Se monta bajo la sección
+        Campos en `RecordPage` y `RecordDetailDrawer` (auto-oculto si la
+        lista no tiene portal habilitado). De paso: un comentario con body
+        indefinido tiraba TypeError y volteaba la página completa del
+        registro — `CommentContent` blindado. E2E navegador (botón visible
+        en página y modal, 0 crashes).
+
   - [x] **Sort server-side + menú por click derecho (v0.1.76, reporte
         del usuario)**: (a) ordenar por columna POR FIN funciona — el
         listado de records ignoraba `sort=field_{id}:{dir}` (solo ordenaba
