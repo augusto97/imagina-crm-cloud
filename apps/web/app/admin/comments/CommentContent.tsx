@@ -9,7 +9,11 @@
  */
 const MENTION_RE = /(^|\s)@([A-Za-z0-9._-]{1,60})/g;
 
-export function CommentContent({ content }: { content: string }): JSX.Element {
+export function CommentContent({ content: rawContent }: { content: string }): JSX.Element {
+    // Blindaje: comentarios legados/sistémicos pueden venir sin body —
+    // sin esto, `.length` sobre undefined tiraba TODA la página del
+    // registro (error boundary en cascada, 5+ crashes por render).
+    const content = typeof rawContent === 'string' ? rawContent : '';
     const parts: Array<JSX.Element | string> = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
