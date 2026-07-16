@@ -190,16 +190,18 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
 
     const visibleFields = fields.filter((f) => matches(f.label) || matches(f.slug));
 
+    // "Valor anterior": el valor que tenía el campo ANTES del cambio que
+    // disparó el trigger (solo triggers de actualización). Clave para
+    // facturación recurrente: {{before.proximo_cobro}} = el período que
+    // acaba de vencer, antes de que la recurrencia ruede la fecha.
+    const visibleBefore = fields.filter(
+        (f) => matches(`before.${f.slug}`) || matches(f.label) || matches(__('Valor anterior')),
+    );
+
     const systemTags: Array<{ tag: string; label: string; hint?: string }> = [
         { tag: 'record.id', label: __('ID del registro'), hint: '#42' },
-        { tag: 'record.created_at', label: __('Creado'), hint: '2026-04-29 10:30' },
-        { tag: 'record.updated_at', label: __('Actualizado'), hint: '2026-04-29 10:30' },
-        { tag: 'record.created_by', label: __('ID del autor') },
-        { tag: 'date.now', label: __('Fecha y hora ahora'), hint: 'ISO 8601' },
+        { tag: 'date.now', label: __('Fecha y hora del disparo'), hint: 'YYYY-MM-DD HH:MM:SS' },
         { tag: 'date.today', label: __('Fecha de hoy'), hint: 'YYYY-MM-DD' },
-        { tag: 'user.display_name', label: __('Nombre del autor') },
-        { tag: 'user.email', label: __('Email del autor') },
-        { tag: 'signature', label: __('Firma del autor'), hint: __('De la firma guardada') },
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
 
@@ -225,6 +227,17 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
                             tag: f.slug,
                             label: f.label,
                             hint: f.slug,
+                        }))}
+                        onPick={onPick}
+                    />
+                )}
+                {visibleBefore.length > 0 && (
+                    <Section
+                        title={__('Valor anterior (antes del cambio)')}
+                        items={visibleBefore.map((f) => ({
+                            tag: `before.${f.slug}`,
+                            label: f.label,
+                            hint: `before.${f.slug}`,
                         }))}
                         onPick={onPick}
                     />

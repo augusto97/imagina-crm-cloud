@@ -339,6 +339,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             slug: 'deal',
             config: { target_list_id: listId },
         });
+        const nota = await fieldsService.create(tenantId, 'facturas', { label: 'Nota', type: 'text', slug: 'nota' });
 
         await automationsService.create(tenantId, 'deals', {
             name: 'Generar factura',
@@ -355,6 +356,9 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
                             estado: 'pendiente',
                             deal: '{{record.id}}', // relation → vínculo al record del trigger
                             inexistente: 'x', // campo que no existe → skip con nota
+                            // {{before.slug}} = valor previo al cambio (el "período"
+                            // en facturación recurrente); {{date.today}} = día del disparo.
+                            nota: 'Antes: {{before.monto}} | Hoy: {{date.today}}',
                         },
                     },
                 },
@@ -381,6 +385,8 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(factura.data[`f${estadoF.id}`]).toBe('pendiente');
         expect(factura.data[`f${dealRel.id}`]).toBeUndefined(); // relation NO vive en el JSONB
         expect(factura.relations?.[`f${dealRel.id}`]).toEqual([rec.id]); // vínculo real
+        const hoy = new Date().toISOString().slice(0, 10);
+        expect(factura.data[`f${nota.id}`]).toBe(`Antes: 4000 | Hoy: ${hoy}`);
         const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
         expect(runs.data[0]!.status).toBe('success');
         expect(runs.data[0]!.actions_log[0]!.message).toContain('inexistente');

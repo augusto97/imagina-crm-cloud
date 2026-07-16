@@ -170,9 +170,24 @@ export class AutomationEngine {
     }
 
     /** Accessor slug → valor del record (desde `data` keyed por f{id}). */
+    /**
+     * Accessor de merge tags / condiciones. Además de `{{slug}}` (valor
+     * actual) resuelve:
+     * - `{{before.slug}}`: valor ANTERIOR al cambio (triggers de update —
+     *   ej. la fecha de cobro que acaba de vencer ANTES de que la
+     *   recurrencia la ruede al mes siguiente = el período facturado).
+     * - `{{date.now}}` / `{{date.today}}`: timestamp/fecha del disparo
+     *   (naive UTC, el formato de los campos datetime/date).
+     */
     private accessor(ctx: RunContext): (slug: string) => unknown {
-        return (slug: string) => {
-            const key = ctx.slugToKey.get(slug);
+        return (token: string) => {
+            if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+            if (token === 'date.today') return new Date().toISOString().slice(0, 10);
+            if (token.startsWith('before.')) {
+                const key = ctx.slugToKey.get(token.slice('before.'.length));
+                return key !== undefined && ctx.before ? ctx.before[key] : undefined;
+            }
+            const key = ctx.slugToKey.get(token);
             return key ? ctx.data[key] : undefined;
         };
     }

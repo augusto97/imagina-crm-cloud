@@ -852,6 +852,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rodó la fecha, la automatización creó la factura pendiente vinculada,
         editor verificado en navegador).
 
+  - [x] **Merge tag `{{before.slug}}` — el período de la factura (v0.1.80,
+        pregunta del usuario)**: al dispararse la automatización de
+        facturación, la fecha del cliente YA rodó al mes siguiente →
+        `{{proximo_cobro}}` daba el período equivocado. El accessor del motor
+        ahora resuelve `{{before.slug}}` (valor ANTERIOR al cambio, del
+        `ctx.before` de los triggers de update) — mapear un campo "período"
+        de Facturas a `{{before.proximo_cobro}}` estampa la fecha exacta que
+        venció. Además `{{date.now}}`/`{{date.today}}` se resuelven de verdad
+        (naive UTC; antes eran tags del picker que el backend ignoraba → '')
+        y se removieron del picker los tags de sistema MUERTOS
+        (record.created_at/updated_at/created_by, user.*, signature — jamás
+        se resolvieron); sección nueva "Valor anterior" con `before.{slug}`
+        por campo. Test (before + date.today en create_record) + verificación
+        en vivo (roll de fecha → factura con periodo = fecha anterior).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
