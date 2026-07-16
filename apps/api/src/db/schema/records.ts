@@ -14,7 +14,7 @@ export const records = pgTable('records', {
         .references(() => tenants.id),
     listId: bigint('list_id', { mode: 'number' })
         .notNull()
-        .references(() => lists.id),
+        .references(() => lists.id, { onDelete: 'cascade' }),
     data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

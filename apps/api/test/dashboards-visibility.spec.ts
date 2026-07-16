@@ -21,7 +21,11 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         const tenantDb = new TenantDb(pg.db);
         // El CRUD no toca el motor de agregados — dummy suficiente.
         dashboards = new DashboardsService(tenantDb, null as never);
-        branding = new BrandingService(tenantDb);
+        // Stub de FilesService.signedUrl — el branding ahora sirve el logo
+        // por URL firmada (un <img> no puede mandar X-Tenant-Id).
+        branding = new BrandingService(tenantDb, {
+            signedUrl: (t: number, id: number) => `/api/v1/files/${id}/signed?tenant=${t}&stub=1`,
+        } as never);
     });
 
     afterAll(async () => {
@@ -132,7 +136,7 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
                 .returning(),
         );
         const withLogo = await branding.update(tenantId, { logo_file_id: file!.id });
-        expect(withLogo.logo_url).toBe(`/api/v1/files/${file!.id}/download`);
+        expect(withLogo.logo_url).toBe(`/api/v1/files/${file!.id}/signed?tenant=${tenantId}&stub=1`);
 
         // Volver al default con null.
         const cleared = await branding.update(tenantId, { logo_file_id: null, primary_color: null });

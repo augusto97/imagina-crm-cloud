@@ -147,6 +147,13 @@ export const updateFieldSchema = z
     .object({
         label: z.string().trim().min(1).max(190),
         slug: fieldSlugSchema,
+        /**
+         * Conversión de tipo (v0.1.85): el backend migra los datos existentes
+         * registro a registro con el validador compartido (los valores
+         * incompatibles se limpian). `computed`/`relation`/`file` no se
+         * convierten (su almacenamiento difiere) — 400.
+         */
+        type: fieldTypeSchema,
         config: z.record(z.unknown()),
         is_required: z.boolean(),
         is_unique: z.boolean(),

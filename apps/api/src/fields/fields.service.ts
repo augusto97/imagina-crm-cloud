@@ -12,6 +12,7 @@ import {
     jsonbKeyForField,
     parseFieldConfig,
     slugify,
+    validateFieldValue,
     type CreateFieldInput,
     type Field,
     type FieldType,
@@ -177,6 +178,7 @@ export class FieldsService {
     ): Promise<Field> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
 
+        let typeChanged = false;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
 
@@ -185,7 +187,28 @@ export class FieldsService {
             if (patch.is_required !== undefined) changes.isRequired = patch.is_required;
             if (patch.is_unique !== undefined) changes.isUnique = patch.is_unique;
             if (patch.position !== undefined) changes.position = patch.position;
-            if (patch.config !== undefined) {
+
+            // Conversión de tipo: valida compatibilidad, arma la config del
+            // tipo NUEVO y migra los datos existentes en la misma tx.
+            const toType = patch.type as FieldType | undefined;
+            if (toType !== undefined && toType !== current.type) {
+                assertConvertible(current.type as FieldType, toType);
+                let newConfig = safeConfig(toType, patch.config ?? {});
+                // A select/multi_select sin opciones: se generan de los
+                // valores DISTINTOS existentes (mismo espíritu que la
+                // auto-expansión del import) — así nada se pierde.
+                if (
+                    (toType === 'select' || toType === 'multi_select')
+                    && !(Array.isArray((newConfig as { options?: unknown[] }).options) && (newConfig as { options: unknown[] }).options.length > 0)
+                ) {
+                    const distinct = await collectDistinctValues(tx, tenantId, listId, current.id, current.type as FieldType);
+                    newConfig = { ...newConfig, options: distinct.map((v) => ({ value: v, label: v })) };
+                }
+                changes.type = toType;
+                changes.config = newConfig;
+                await migrateFieldData(tx, tenantId, listId, current.id, current.type as FieldType, toType, newConfig);
+                typeChanged = true;
+            } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
             }
             if (patch.is_indexed !== undefined) {
@@ -204,7 +227,14 @@ export class FieldsService {
         });
         // PERF-01: crear/soltar el índice de expresión FUERA de la transacción
         // (CONCURRENTLY no puede correr en un tx). Idempotente (IF [NOT] EXISTS).
-        if (patch.is_indexed !== undefined) {
+        if (typeChanged) {
+            // El índice viejo indexa la expresión del tipo ANTERIOR — se
+            // suelta siempre y se recrea con la del nuevo si estaba activo.
+            await this.syncFieldIndexes(row.id, row.type as FieldType, false);
+            if (row.isIndexed) {
+                await this.syncFieldIndexes(row.id, row.type as FieldType, true);
+            }
+        } else if (patch.is_indexed !== undefined) {
             await this.syncFieldIndexes(row.id, row.type as FieldType, patch.is_indexed);
         }
         // Un cambio de schema (config/slug/required) afecta cómo se leen los
@@ -355,4 +385,156 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
         message: `Campo '${idOrSlug}' no encontrado`,
         data: { status: 404 },
     });
+}
+
+// ─── Conversión de tipo (v0.1.85) ────────────────────────────────────────
+
+/**
+ * Tipos NO convertibles: su almacenamiento/semántica difiere del JSONB plano
+ * (relation vive en la tabla `relations`, computed jamás se persiste, file
+ * son IDs de attachments que dejarían huérfanos silenciosos).
+ */
+const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file'];
+
+function assertConvertible(from: FieldType, to: FieldType): void {
+    if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
+        throw new BadRequestException({
+            code: 'type_not_convertible',
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo y calculado no admiten conversión.`,
+            data: { status: 400 },
+        });
+    }
+}
+
+const CONVERT_BATCH = 500;
+
+/**
+ * Valores DISTINTOS no vacíos del campo (hasta 50) — para auto-generar las
+ * options al convertir a select/multi_select sin perder datos. Fuente
+ * multi_select: se desanidan los elementos del array.
+ */
+async function collectDistinctValues(
+    tx: Tx,
+    tenantId: number,
+    listId: number,
+    fieldId: number,
+    fromType: FieldType,
+): Promise<string[]> {
+    const key = jsonbKeyForField(fieldId);
+    const valueExpr =
+        fromType === 'multi_select'
+            ? sql<string | null>`jsonb_array_elements_text(${records.data} -> ${key})`
+            : sql<string | null>`${records.data} ->> ${key}`;
+    const rows = await tx
+        .selectDistinct({ v: valueExpr })
+        .from(records)
+        .where(
+            and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, listId),
+                isNull(records.deletedAt),
+                // Forma función de `data ? key` — el operador `?` choca con
+                // los placeholders de algunos drivers.
+                sql`jsonb_exists(${records.data}, ${key})`,
+            ),
+        )
+        .limit(50);
+    return rows
+        .map((r) => r.v)
+        .filter((v): v is string => typeof v === 'string' && v !== '');
+}
+
+/**
+ * Migra los valores existentes al tipo nuevo, por lotes keyset dentro de la
+ * MISMA tx del cambio de schema: cada valor pasa por un puente de coerción
+ * (fechas recortadas/extendidas, arrays↔escalares, números↔strings) y por
+ * `validateFieldValue` del tipo destino; lo inválido se LIMPIA (la celda
+ * queda vacía — jamás datos corruptos con el tipo equivocado).
+ */
+async function migrateFieldData(
+    tx: Tx,
+    tenantId: number,
+    listId: number,
+    fieldId: number,
+    fromType: FieldType,
+    toType: FieldType,
+    config: Record<string, unknown>,
+): Promise<void> {
+    const key = jsonbKeyForField(fieldId);
+    const spec = { type: toType, config, is_required: false };
+    let cursor = 0;
+    for (;;) {
+        const batch = await tx
+            .select({ id: records.id, data: records.data })
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    isNull(records.deletedAt),
+                    sql`${records.id} > ${cursor}`,
+                    sql`jsonb_exists(${records.data}, ${key})`,
+                ),
+            )
+            .orderBy(records.id)
+            .limit(CONVERT_BATCH);
+        if (batch.length === 0) break;
+        for (const row of batch) {
+            cursor = row.id;
+            const raw = (row.data as Record<string, unknown>)[key];
+            if (raw === null || raw === undefined) continue;
+            const bridged = bridgeValue(fromType, toType, raw);
+            const result = validateFieldValue(spec, bridged);
+            const next = result.ok ? result.value : null;
+            // Solo escribimos si el valor CAMBIA (la mayoría de conversiones
+            // compatibles —ej. text→select con options de los valores— no
+            // tocan ninguna fila).
+            if (JSON.stringify(next) === JSON.stringify(raw)) continue;
+            if (next === null) {
+                await tx
+                    .update(records)
+                    .set({ data: sql`data - ${key}`, updatedAt: sql`now()` })
+                    .where(and(eq(records.tenantId, tenantId), eq(records.id, row.id)));
+            } else {
+                await tx
+                    .update(records)
+                    .set({
+                        data: sql`jsonb_set(data, ${sql.raw(`'{${key}}'`)}, ${JSON.stringify(next)}::jsonb)`,
+                        updatedAt: sql`now()`,
+                    })
+                    .where(and(eq(records.tenantId, tenantId), eq(records.id, row.id)));
+            }
+        }
+        if (batch.length < CONVERT_BATCH) break;
+    }
+}
+
+/**
+ * Puente de coerción entre tipos ANTES del validador destino: cubre los
+ * saltos razonables que el validador (estricto por diseño) rechazaría.
+ */
+function bridgeValue(from: FieldType, to: FieldType, raw: unknown): unknown {
+    // multi_select destino: un escalar se envuelve en lista.
+    if (to === 'multi_select' && !Array.isArray(raw)) {
+        return raw === '' ? null : [String(raw)];
+    }
+    // multi_select origen → escalar: texto largo une con coma; select/resto
+    // toman la primera opción.
+    if (from === 'multi_select' && Array.isArray(raw) && to !== 'multi_select') {
+        if (to === 'text' || to === 'long_text') return raw.map((x) => String(x)).join(', ');
+        return raw.length > 0 ? String(raw[0]) : null;
+    }
+    if (to === 'date' && typeof raw === 'string' && raw.length > 10) return raw.slice(0, 10);
+    if (to === 'datetime' && typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return `${raw} 00:00:00`;
+    }
+    // Destinos string-like: cualquier escalar se vuelve texto (5000 → "5000").
+    if (
+        (to === 'text' || to === 'long_text' || to === 'select' || to === 'email' || to === 'url')
+        && typeof raw !== 'string'
+        && (typeof raw === 'number' || typeof raw === 'boolean')
+    ) {
+        return String(raw);
+    }
+    return raw;
 }

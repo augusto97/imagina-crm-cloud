@@ -7,25 +7,30 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { attachments, tenants } from '../db/schema';
+import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 /**
  * Branding white-label por workspace (color primario + logo + nombre).
  * Vive en `tenants.settings.branding` (jsonb — sin migración); el logo es un
  * attachment del PROPIO tenant (módulo de archivos, ADR-S16) y se sirve por
- * la ruta de descarga con sesión — el branding sólo se ve logueado, así que
- * no hace falta URL firmada acá.
+ * URL FIRMADA: un `<img src>` no puede mandar el header `X-Tenant-Id` que
+ * exige la ruta de descarga con sesión — con la ruta plana el logo salía
+ * como imagen rota en el sidebar y en la card de Marca.
  */
 @Injectable()
 export class BrandingService {
-    constructor(private readonly tenantDb: TenantDb) {}
+    constructor(
+        private readonly tenantDb: TenantDb,
+        private readonly files: FilesService,
+    ) {}
 
     async get(tenantId: number): Promise<BrandingResponse> {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
         );
         const branding = parseBranding(row?.settings);
-        return withLogoUrl(branding);
+        return this.withLogoUrl(tenantId, branding);
     }
 
     async update(tenantId: number, patch: UpdateBrandingInput): Promise<BrandingResponse> {
@@ -63,7 +68,19 @@ export class BrandingService {
                 .where(eq(tenants.id, tenantId));
             return merged;
         });
-        return withLogoUrl(next);
+        return this.withLogoUrl(tenantId, next);
+    }
+
+    private withLogoUrl(tenantId: number, branding: Branding): BrandingResponse {
+        return {
+            ...branding,
+            // TTL 24h: el boot refetchea el branding en cada recarga, así
+            // que la firma se renueva mucho antes de vencer.
+            logo_url:
+                branding.logo_file_id !== null
+                    ? this.files.signedUrl(tenantId, branding.logo_file_id, 86_400)
+                    : null,
+        };
     }
 }
 
@@ -72,9 +89,3 @@ function parseBranding(settings: Record<string, unknown> | undefined | null): Br
     return parsed.success ? parsed.data : brandingSchema.parse({});
 }
 
-function withLogoUrl(branding: Branding): BrandingResponse {
-    return {
-        ...branding,
-        logo_url: branding.logo_file_id !== null ? `/api/v1/files/${branding.logo_file_id}/download` : null,
-    };
-}
