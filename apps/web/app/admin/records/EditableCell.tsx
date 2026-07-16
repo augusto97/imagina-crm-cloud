@@ -109,6 +109,30 @@ function EditableCellInner({
     if (!editing) {
         const isDateField = field.type === 'date' || field.type === 'datetime';
 
+        // select / multi_select: popover directo estilo ClickUp — UN click
+        // abre las opciones (nada de doble click ni modo edición
+        // "encajonado" que quedaba pegado). En multi el popover queda
+        // abierto para marcar varias opciones; cada toggle commitea
+        // optimista y los chips de la celda se actualizan en vivo.
+        if ((field.type === 'select' || field.type === 'multi_select') && canEdit) {
+            return (
+                <OptionPicker
+                    field={field}
+                    listId={listId}
+                    mode={field.type === 'select' ? 'single' : 'multi'}
+                    variant="cell"
+                    value={
+                        field.type === 'select'
+                            ? (typeof value === 'string' ? value : null)
+                            : (Array.isArray(value) ? (value as string[]) : [])
+                    }
+                    onChange={(v) => {
+                        void commit(field.type === 'select' ? (v ?? null) : (Array.isArray(v) ? v : []));
+                    }}
+                />
+            );
+        }
+
         // Para fechas usamos el `<DateCellEditor>` (calendario visual +
         // recurrencia ClickUp-style) en lugar del input nativo. Click
         // simple abre el picker; las mutaciones se confirman vía
@@ -158,7 +182,6 @@ function EditableCellInner({
         <div className="imcrm-relative imcrm--mx-1 imcrm--my-0.5">
             <CellEditor
                 field={field}
-                listId={listId}
                 value={draft}
                 onChange={setDraft}
                 onCommit={(v) => void commit(v)}
@@ -204,7 +227,6 @@ export const EditableCell = memo(EditableCellInner, (prev, next) => {
 
 interface CellEditorProps {
     field: FieldEntity;
-    listId: number;
     value: unknown;
     onChange: (value: unknown) => void;
     onCommit: (value: unknown) => void;
@@ -212,7 +234,7 @@ interface CellEditorProps {
     isPending: boolean;
 }
 
-function CellEditor({ field, listId, value, onChange, onCommit, onCancel, isPending }: CellEditorProps): JSX.Element {
+function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: CellEditorProps): JSX.Element {
     const ref = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null);
 
     useEffect(() => {
@@ -276,40 +298,8 @@ function CellEditor({ field, listId, value, onChange, onCommit, onCancel, isPend
                     disabled={isPending}
                 />
             );
-        case 'select':
-            return (
-                <OptionPicker
-                    field={field}
-                    listId={listId}
-                    mode="single"
-                    value={typeof value === 'string' ? value : null}
-                    onChange={(v) => {
-                        // Auto-commit al cambiar (igual que la versión
-                        // con `<select>` que llamaba a onCommit en
-                        // `onChange`). El OptionPicker cierra su popover
-                        // tras la selección.
-                        onChange(v ?? null);
-                        onCommit(v ?? null);
-                    }}
-                />
-            );
-        case 'multi_select':
-            return (
-                <OptionPicker
-                    field={field}
-                    listId={listId}
-                    mode="multi"
-                    value={Array.isArray(value) ? (value as string[]) : []}
-                    onChange={(v) => {
-                        // Commit on every toggle — TanStack Query dedupea
-                        // mutations sucesivas con la misma key, así que
-                        // marcar 3 opciones seguidas genera ~1 request.
-                        const next = Array.isArray(v) ? v : [];
-                        onChange(next);
-                        onCommit(next);
-                    }}
-                />
-            );
+        // select / multi_select NO pasan por acá: en modo lectura la celda
+        // ya renderiza el OptionPicker (variant="cell") con popover directo.
         case 'number':
         case 'currency':
             return (

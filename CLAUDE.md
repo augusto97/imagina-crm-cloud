@@ -714,6 +714,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         auditoría de scrollers = solo `imcrm-main`, scroll hasta la última
         fila + footer.
 
+  - [x] **Selects de la tabla estilo ClickUp (v0.1.71, reporte del
+        usuario)**: (1) chips de select/multi_select SIN el punto de color
+        a la izquierda (el chip sólido ya ES el color — el punto duplicaba
+        y desperdiciaba ancho); (2) select/multi_select en la celda son
+        ahora POPOVER DIRECTO — un solo click abre las opciones (antes:
+        doble click); (3) se eliminó el modo edición "encajonado" para
+        selects (el input con borde que quedaba PEGADO si cerrabas el
+        popover sin elegir y solo se iba recargando) — ya no existe ese
+        estado; (4) multi_select deja marcar VARIAS opciones: el popover
+        queda abierto entre toggles (antes el commit desmontaba el editor
+        y se cerraba tras la 1ª). `OptionPicker` ganó `variant="cell"`
+        (trigger plano estilo celda, stopPropagation para no abrir el
+        modal del registro) y `EditableCell` lo monta en modo lectura para
+        esos tipos. Verificado E2E en navegador (8 checks: click único,
+        chips sin dot, sin caja residual, multi 2 opciones sin cerrar,
+        persistencia tras reload).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

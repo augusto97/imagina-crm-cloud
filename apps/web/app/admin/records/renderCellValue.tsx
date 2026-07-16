@@ -14,20 +14,16 @@ export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: str
     const color = opt?.color as OptionColor | undefined;
     const style = chipSoftStyle(color);
     return (
+        // Sin punto/dot a la izquierda: el chip sólido YA es el color de la
+        // opción — el punto duplicaba la señal y desperdiciaba ancho de celda.
         <span
-            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
+            className="imcrm-inline-flex imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor:     'hsl(var(--imcrm-border))',
                 color:           'hsl(var(--imcrm-foreground))',
             }}
         >
-            {color && (
-                <span
-                    aria-hidden
-                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-current imcrm-opacity-90"
-                />
-            )}
             {opt?.label ?? fallback}
         </span>
     );
