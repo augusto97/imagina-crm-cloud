@@ -27,6 +27,13 @@ interface OptionPickerProps {
     disabled?: boolean;
     /** Variante visual del trigger. `compact` baja la altura. */
     compact?: boolean;
+    /**
+     * `cell`: trigger PLANO para celdas de tabla — sin caja/borde ni
+     * chevron, mismo layout que la celda en lectura (los chips tal cual,
+     * hover accent). Un solo click abre el popover; al elegir en un
+     * multi el popover queda abierto para marcar varios.
+     */
+    variant?: 'default' | 'cell';
 }
 
 /**
@@ -48,6 +55,7 @@ export function OptionPicker({
     onChange,
     disabled,
     compact,
+    variant = 'default',
 }: OptionPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -139,13 +147,15 @@ export function OptionPicker({
         onChange(null);
     };
 
+    const isCell = variant === 'cell';
+
     // Layout del trigger según mode + valor actual.
     const triggerContent = (() => {
         if (mode === 'single') {
             if (currentSingle === null || currentSingle === '') {
                 return (
                     <span className="imcrm-text-muted-foreground">
-                        {__('— Seleccionar —')}
+                        {isCell ? '—' : __('— Seleccionar —')}
                     </span>
                 );
             }
@@ -173,7 +183,7 @@ export function OptionPicker({
         if (currentSet.size === 0) {
             return (
                 <span className="imcrm-text-muted-foreground">
-                    {__('— Seleccionar —')}
+                    {isCell ? '—' : __('— Seleccionar —')}
                 </span>
             );
         }
@@ -199,15 +209,24 @@ export function OptionPicker({
                 <button
                     type="button"
                     disabled={disabled}
+                    // En celdas, que el click no burbujee a la fila (que
+                    // en la columna primaria abre el modal del registro).
+                    onClick={isCell ? (e) => e.stopPropagation() : undefined}
                     className={cn(
-                        'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
-                        compact ? 'imcrm-min-h-8 imcrm-px-2 imcrm-py-1' : 'imcrm-min-h-9 imcrm-px-3 imcrm-py-1.5',
-                        !disabled && 'hover:imcrm-border-primary/40',
+                        isCell
+                            ? 'imcrm-flex imcrm-w-full imcrm-min-h-[1.5rem] imcrm-items-center imcrm-rounded imcrm-text-left imcrm-text-sm imcrm--mx-1 imcrm-px-1 hover:imcrm-bg-accent/40'
+                            : cn(
+                                'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
+                                compact ? 'imcrm-min-h-8 imcrm-px-2 imcrm-py-1' : 'imcrm-min-h-9 imcrm-px-3 imcrm-py-1.5',
+                                !disabled && 'hover:imcrm-border-primary/40',
+                            ),
                         disabled && 'imcrm-cursor-not-allowed imcrm-opacity-60',
                     )}
                 >
                     {triggerContent}
-                    <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                    {!isCell && (
+                        <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                    )}
                 </button>
             </PopoverTrigger>
 
@@ -338,21 +357,16 @@ function OptionChipDisplay({
     color: OptionColor | undefined;
 }): JSX.Element {
     const style = chipSoftStyle(color);
+    // Sin punto/dot: el chip sólido ya lleva el color de la opción.
     return (
         <span
-            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
+            className="imcrm-inline-flex imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor: 'hsl(var(--imcrm-border))',
                 color: 'hsl(var(--imcrm-foreground))',
             }}
         >
-            {color && (
-                <span
-                    aria-hidden
-                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-current imcrm-opacity-90"
-                />
-            )}
             {label}
         </span>
     );
