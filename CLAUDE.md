@@ -703,6 +703,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         + E2E navegador (ocultar Ciudad → guardar → reload → sigue oculta,
         dirty limpio).
 
+  - [x] **Scroll de página única (v0.1.70, pedido del usuario)**: el capado
+        tipo ClickUp de v0.1.68 (tabla con scroll vertical propio) no era lo
+        que el usuario quería — pidió UNA sola barra, la del borde derecho
+        de la ventana. Ahora la tabla (plana y agrupada) crece a su alto
+        natural y el único scroll vertical es el del `<main>` del shell;
+        dentro del wrapper de la tabla queda SOLO el horizontal
+        (`overflow-x-auto`). Se revirtieron los `h-full`/`flex-1`/`min-h-0`
+        de RecordsPage/TableView/GroupedTableView/AdminShell. E2E navegador:
+        auditoría de scrollers = solo `imcrm-main`, scroll hasta la última
+        fila + footer.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
