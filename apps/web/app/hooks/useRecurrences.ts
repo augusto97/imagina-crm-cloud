@@ -9,6 +9,14 @@ const keys = {
         ['recurrences', listId, recordId] as const,
     batch: (listId: number, ids: number[]) =>
         ['recurrences', listId, 'batch', ids.slice().sort((a, b) => a - b).join(',')] as const,
+    /**
+     * Prefijo por lista — invalida forRecord Y todas las batch de la
+     * lista. Las mutaciones DEBEN usar este: la tabla lee del batch
+     * (RecurrencesBatchProvider); invalidar solo forRecord dejaba el
+     * icono de recurrencia (y el estado del panel) congelado hasta
+     * recargar la página.
+     */
+    forList: (listId: number) => ['recurrences', listId] as const,
 };
 
 export function useRecurrences(listId: number | undefined, recordId: number | undefined) {
@@ -59,7 +67,7 @@ export function useUpsertRecurrence(listId: number, recordId: number) {
             return res.data;
         },
         onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: keys.forRecord(listId, recordId) });
+            void qc.invalidateQueries({ queryKey: keys.forList(listId) });
         },
     });
 }
@@ -146,7 +154,7 @@ export function useDeleteRecurrence(listId: number, recordId: number) {
             );
         },
         onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: keys.forRecord(listId, recordId) });
+            void qc.invalidateQueries({ queryKey: keys.forList(listId) });
         },
     });
 }
