@@ -689,6 +689,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         vivo 2/67, dirty se limpia al guardar y tras reload, main sin
         scroll).
 
+  - [x] **Fix: columnas ocultas/anchos/búsqueda no persistían en vistas
+        (v0.1.69, reporte del usuario)**: `tableViewConfigSchema` en shared
+        whitelisteaba el shape del shell cloud VIEJO (`visible_field_ids`,
+        `column_sizing`, `column_order` numérico) → Zod descartaba en
+        silencio las claves que el fork realmente guarda (`hidden_columns`,
+        `column_widths`, `search`, `filters`, column ids string de TanStack):
+        ocultar columnas funcionaba en vivo pero se perdía al guardar la
+        vista. Fix: `viewStateCommon` con el shape real (column ids string;
+        coerce para column_order numérico legacy) mergeado en los 4 schemas
+        de vista (table/kanban/calendar/cards conservan filtros+búsqueda+
+        columnas; claves legacy conservadas). 3 tests de `parseViewConfig`
+        + E2E navegador (ocultar Ciudad → guardar → reload → sigue oculta,
+        dirty limpio).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
