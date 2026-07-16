@@ -738,6 +738,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         estilo ClickUp). E2E navegador (sin ×, toggle-off limpia,
         re-selección OK, form conserva la ×).
 
+  - [x] **Campos ClickUp-style + picker con entrada manual (v0.1.74,
+        feedback del usuario con capturas)**: (a) el date picker gana un
+        INPUT MANUAL arriba del calendario (AAAA-MM-DD / DD/MM/AAAA /
+        DD/MM/AA, Enter commitea, inválida = borde rojo) y se arregló el
+        popover de 445px fijos que RECORTABA la flecha de "mes siguiente"
+        (ahora w-auto); (b) los campos se CREAN SIN SALIR de la tabla:
+        `FieldCreateDialog` de dos pasos (catálogo de tipos buscable con
+        icono+descripción estilo ClickUp → form con FieldConfigEditor +
+        Obligatorio), abierto por "+ Agregar columna"; (c) menú contextual
+        por columna (`FieldHeaderMenu`, tabla plana y agrupada, gate
+        manage_lists): Modificar / Cambiar el nombre / Duplicar / Copiar
+        ID de campo / Eliminar ("Convertir" tipo queda fuera — migración
+        de datos); (d) UN click para editar CUALQUIER tipo inline (antes
+        doble click; fechas/selects ya lo tenían); (e) la × de limpiar se
+        quitó de TODAS las superficies del OptionPicker — el toggle de la
+        opción seleccionada en el popover la reemplaza; (f) fix: el header
+        de columnas angostas desbordaba y el menú quedaba bajo el th
+        vecino (min-w-0 + truncate). E2E navegador (crear campo Número →
+        renombrar → eliminar por menú, click único en texto, cero ×,
+        input manual de fecha, chevrons visibles). Tipos nuevos (teléfono/
+        progreso/calificación…) quedan como candidato a release aparte.
+
   - [x] **Date picker + recurrencias en TODAS las superficies (v0.1.72,
         reporte del usuario)**: el `DateCellEditor` (calendario ClickUp +
         atajos + sección "Recurrente") solo vivía en las celdas de la
