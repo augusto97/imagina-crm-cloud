@@ -1,5 +1,6 @@
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import type { FieldEntity } from '@/types/field';
 
 import { extractFieldOptions, type FieldOption } from './fieldOptions';
@@ -73,8 +74,10 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         return withOverdueHighlight(field, value, value);
     }
 
-    if (field.type === 'currency' && typeof value === 'number') {
-        return value.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    if ((field.type === 'currency' || field.type === 'number') && typeof value === 'number') {
+        // Respeta los decimales configurados del campo (`config.precision`) —
+        // antes currency cableaba 2 y number salía sin separador de miles.
+        return formatFieldNumber(field, value);
     }
 
     // Computed: el evaluator backend pone null si falta input o

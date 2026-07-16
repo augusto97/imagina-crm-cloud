@@ -813,6 +813,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         eliminaron. Verificado E2E en navegador (modal: calendario +
         "Hacer recurrente"; creación: calendario sin recurrencia).
 
+  - [x] **Decimales configurados respetados en campos de valor (v0.1.78,
+        reporte del usuario)**: los campos currency/number mostraban
+        "1,032,000.00" aunque el usuario configurara 0 decimales — la clave
+        canónica es `config.precision` (la que escribe el FieldConfigEditor y
+        valida el schema compartido) pero cada superficie leía
+        `config.decimals` (que Zod ni deja persistir) o cableaba 2. Fix:
+        helper compartido `lib/fieldNumberFormat` (`fieldPrecision` con
+        defaults currency 2 / number 0 + `formatFieldNumber`: currency con
+        decimales FIJOS, number hasta `precision` sin ceros de relleno)
+        aplicado en renderCellValue (tabla/kanban/tarjetas — number además
+        gana separador de miles), FieldValueDisplay (modal/página/CRM),
+        RightRail (stats), FooterAggregateCell (counts SIEMPRE enteros; sum/
+        min/max/range con la precisión del campo, avg hasta 2 extra),
+        TableWidget del dashboard y ClientDataBlock del portal. 6 tests
+        unitarios del helper (front) + E2E navegador (currency precision 0 →
+        "1,032,000" sin decimales en tabla y modal).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

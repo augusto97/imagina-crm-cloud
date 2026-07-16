@@ -14,6 +14,7 @@ import { useRecordActivity } from '@/hooks/useActivity';
 import { useComments } from '@/hooks/useComments';
 import { useList } from '@/hooks/useLists';
 import { useRecords } from '@/hooks/useRecords';
+import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ResolvedLayout, RightRailBlock } from '@/lib/crmTemplates';
@@ -193,11 +194,7 @@ function formatFieldStatValue(field: FieldEntity, value: unknown): string {
     if (field.type === 'number' || field.type === 'currency') {
         const num = typeof value === 'number' ? value : Number(value);
         if (Number.isNaN(num)) return String(value);
-        const decimals = (field.config as { decimals?: number }).decimals ?? 0;
-        return num.toLocaleString(undefined, {
-            minimumFractionDigits: decimals,
-            maximumFractionDigits: Math.max(decimals, 2),
-        });
+        return formatFieldNumber(field, num);
     }
     if (field.type === 'date' && typeof value === 'string') {
         const d = new Date(value);
