@@ -343,16 +343,15 @@ export function TableView({
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
         <div
-            // `flex-1 min-h-0`: el padre (RecordsPage) reserva el alto
-            // restante del viewport para la tabla y el scroll (vertical
-            // y horizontal) vive DENTRO de este box — la página nunca
-            // muestra una segunda barra. (Antes: max-h calc(100vh-220px),
-            // una aproximación que desincronizaba con el chrome real y
-            // producía doble scrollbar.)
+            // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
+            // vertical es el de la PÁGINA (main del shell) — la tabla
+            // crece a su alto natural; el usuario pidió explícitamente
+            // una sola barra al borde derecho de la ventana, sin scroll
+            // interno de la tabla.
             // Sin card chrome (border/rounded/shadow/bg-card): la tabla
             // va plana sobre el canvas, estilo ClickUp — solo hairlines.
             ref={tableContainerRef}
-            className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto"
+            className="imcrm-overflow-x-auto"
             role="region"
             aria-label={__('Tabla de registros')}
             onScroll={(e) => {
