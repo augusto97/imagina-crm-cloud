@@ -466,8 +466,11 @@ export function TableView({
                                         onContextMenu={
                                             fieldId !== null && onEditField !== undefined
                                                 ? (e) => {
+                                                    const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
+                                                    if (!btn) return;
                                                     e.preventDefault();
-                                                    (e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null)?.click();
+                                                    // Radix DropdownMenu abre en pointerdown (no en click).
+                                                    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
                                                 }
                                                 : undefined
                                         }

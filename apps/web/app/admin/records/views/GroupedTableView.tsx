@@ -729,9 +729,12 @@ function GroupBucketSection({
                                                 onContextMenu={
                                                     c.field !== null && onEditField !== undefined
                                                         ? (e) => {
-                                                            e.preventDefault();
-                                                            (e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null)?.click();
-                                                        }
+                                                    const btn = e.currentTarget.querySelector('button[aria-haspopup="menu"]') as HTMLButtonElement | null;
+                                                    if (!btn) return;
+                                                    e.preventDefault();
+                                                    // Radix DropdownMenu abre en pointerdown (no en click).
+                                                    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+                                                }
                                                         : undefined
                                                 }
                                                 className={cn(
