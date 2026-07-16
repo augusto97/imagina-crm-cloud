@@ -2,10 +2,12 @@ import { createHmac } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import {
     jsonbKeyForField,
+    validateFieldValue,
     type ActionLogEntry,
     type ActionSpec,
     type AutomationRunStatus,
     type ConditionData,
+    type FieldValueSpec,
 } from '@imagina-base/shared';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
@@ -15,6 +17,7 @@ import { FieldsRepository } from '../fields/fields.repository';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
+import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import type { TriggerEvent } from './automation-dispatcher.service';
@@ -54,6 +57,7 @@ export class AutomationEngine {
         private readonly automations: AutomationsRepository,
         private readonly fields: FieldsRepository,
         private readonly recordsRepo: RecordsRepository,
+        private readonly relationsRepo: RelationsRepository,
         private readonly mail: MailService,
     ) {}
 
@@ -289,20 +293,75 @@ export class AutomationEngine {
                 return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).`, { values: applied });
             }
             case 'create_record': {
+                // Los slugs de `values` se resuelven contra la lista DESTINO
+                // (no la del trigger — pueden ser listas distintas), cada valor
+                // pasa por el validador compartido del campo (coerción de
+                // números/fechas/selects; los inválidos se saltan con nota), y
+                // los campos relation se sincronizan en la tabla `relations`
+                // con targets verificados vivos en su lista destino.
                 const targetList = Number(cfg.target_list ?? cfg.list_id ?? ctx.listId) || ctx.listId;
                 const rawValues = (cfg.values as Record<string, unknown>) ?? {};
+                const targetFields = await this.fields.listByList(tx, ctx.tenantId, targetList);
+                const byKey = new Map(targetFields.map((f) => [jsonbKeyForField(f.id), f]));
+                const bySlug = new Map(targetFields.map((f) => [f.slug, f]));
+
                 const data: Record<string, unknown> = {};
+                const relationValues: Array<{ fieldId: number; targetListId: number; ids: number[] }> = [];
+                const skipped: string[] = [];
                 for (const [k, v] of Object.entries(rawValues)) {
-                    const key = /^f\d+$/.test(k) ? k : (ctx.slugToKey.get(k) ?? k);
-                    data[key] = typeof v === 'string' ? merge(v) : v;
+                    const field = /^f\d+$/.test(k) ? byKey.get(k) : bySlug.get(k);
+                    if (!field) {
+                        skipped.push(`${k} (campo inexistente en la lista destino)`);
+                        continue;
+                    }
+                    if (field.type === 'computed') {
+                        skipped.push(`${k} (computed es solo lectura)`);
+                        continue;
+                    }
+                    const resolved = typeof v === 'string' ? merge(v) : v;
+                    if (field.type === 'relation') {
+                        const targetListId = Number(
+                            (field.config as { target_list_id?: unknown }).target_list_id ?? 0,
+                        );
+                        const ids = parseRelationIds(resolved);
+                        if (targetListId <= 0 || ids.length === 0) {
+                            skipped.push(`${k} (relación sin destino o sin IDs)`);
+                            continue;
+                        }
+                        relationValues.push({ fieldId: field.id, targetListId, ids });
+                        continue;
+                    }
+                    const result = validateFieldValue(
+                        { type: field.type as FieldValueSpec['type'], config: field.config as Record<string, unknown>, is_required: false },
+                        resolved,
+                    );
+                    if (!result.ok) {
+                        skipped.push(`${k} (${result.error})`);
+                        continue;
+                    }
+                    if (result.value !== null) data[jsonbKeyForField(field.id)] = result.value;
                 }
+
                 const row = await this.recordsRepo.insert(tx, {
                     tenantId: ctx.tenantId,
                     listId: targetList,
                     data,
                     createdBy: SYSTEM_USER,
                 });
-                return ok('create_record', `Creó registro #${row.id} en lista ${targetList}.`, { record_id: row.id });
+                for (const rel of relationValues) {
+                    const alive = await this.relationsRepo.existingInList(
+                        tx,
+                        ctx.tenantId,
+                        rel.targetListId,
+                        rel.ids,
+                    );
+                    const valid = rel.ids.filter((id) => alive.has(id));
+                    if (valid.length > 0) {
+                        await this.relationsRepo.sync(tx, ctx.tenantId, rel.fieldId, row.id, valid);
+                    }
+                }
+                const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
+                return ok('create_record', `Creó registro #${row.id} en lista ${targetList}.${note}`, { record_id: row.id });
             }
             case 'call_webhook': {
                 const url = merge(cfg.url);
@@ -395,6 +454,25 @@ function normalizeChangedFields(cfg: Record<string, unknown>): string[] {
     if (Array.isArray(cf)) return cf.map((x) => String(x)).filter(Boolean);
     if (typeof cfg.field === 'string' && cfg.field !== '') return [cfg.field];
     return [];
+}
+
+/**
+ * Normaliza el valor de un campo relation en create_record a IDs de record:
+ * acepta número, string numérico (típico de un merge tag `{{record.id}}`),
+ * lista separada por comas y arrays mixtos. IDs inválidos se descartan.
+ */
+function parseRelationIds(raw: unknown): number[] {
+    const candidates: unknown[] = Array.isArray(raw)
+        ? raw
+        : typeof raw === 'string'
+          ? raw.split(',')
+          : [raw];
+    const out: number[] = [];
+    for (const c of candidates) {
+        const n = typeof c === 'number' ? c : Number(String(c).trim());
+        if (Number.isInteger(n) && n > 0 && !out.includes(n)) out.push(n);
+    }
+    return out;
 }
 
 /** Resuelve el field_id del campo fecha del due_date_reached (por id o slug). */

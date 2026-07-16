@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { FieldsRepository } from '../fields/fields.repository';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsRepository } from '../records/records.repository';
+import { RelationsRepository } from '../records/relations.repository';
 import { RecurrencesModule } from '../recurrences/recurrences.module';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
@@ -33,6 +34,7 @@ import { AutomationsService } from './automations.service';
         AutomationsQueueBootstrap,
         FieldsRepository,
         RecordsRepository,
+        RelationsRepository,
     ],
     exports: [AutomationsService, AutomationDispatcher],
 })

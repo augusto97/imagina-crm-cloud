@@ -295,6 +295,10 @@ export class RecurrencesService {
                 diff: computeDiff({}, inserted.data),
             });
             await this.repo.markFired(tx, tenantId, rec.id, firedAt);
+            // La recurrencia se re-ancla al clon: es el que tiene la fecha
+            // rodada, así la serie sigue disparando mes a mes. El original
+            // queda como histórico (su fecha vieja, sin recurrencia).
+            await this.repo.moveToRecord(tx, tenantId, rec.id, inserted.id);
             return { kind: 'created', recordId: inserted.id, after: inserted.data };
         }
 

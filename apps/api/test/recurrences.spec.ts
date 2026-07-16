@@ -310,6 +310,23 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         expect(clone.data[key('vence')]).toBe('2030-01-22'); // +1 semana
         expect(clone.data[key('nombre')]).toBe('Factura'); // data completo copiado
         expect(clone.data[key('estado')]).toBe('pendiente'); // reset en el clon
+
+        // La recurrencia se RE-ANCLA al clon (el que tiene la fecha rodada):
+        // el original queda como histórico sin recurrencia, y la serie sigue.
+        const after = await recRow(dto.id);
+        expect(after.recordId).toBe(clone.id);
+
+        // Segundo disparo → la cadena sigue viva: un tercer record con la
+        // fecha rodada otra semana, y la recurrencia anclada al más nuevo.
+        await service.fire(after);
+        const page2 = await recordsService.list(tenantA, admin, 'tareas', {
+            limit: 50,
+            sort_dir: 'asc',
+        });
+        expect(page2.data).toHaveLength(3);
+        const third = page2.data.find((r) => r.id !== recordId && r.id !== clone.id)!;
+        expect(third.data[key('vence')]).toBe('2030-01-29');
+        expect((await recRow(dto.id)).recordId).toBe(third.id);
     });
 
     it('status_change vía onRecordUpdated dispara sólo en la transición al valor target', async () => {

@@ -830,6 +830,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         unitarios del helper (front) + E2E navegador (currency precision 0 →
         "1,032,000" sin decimales en tabla y modal).
 
+  - [x] **Facturación recurrente robusta (v0.1.79, caso de uso del usuario:
+        CRM de facturación)**: (a) la recurrencia con acción **clone** ahora
+        RE-ANCLA la recurrencia al clon (el que tiene la fecha rodada) — antes
+        disparaba una vez y la serie moría (el original quedaba dormido y el
+        clon nacía sin recurrencia); test de cadena (2 fires → 3 records).
+        (b) La acción **create_record** del motor quedó de primera clase:
+        resuelve slugs contra la lista DESTINO (antes contra la del trigger —
+        cross-list roto salvo con f{id}), valida/coerciona cada valor con
+        `validateFieldValue` compartido ("{{monto}}" → número real; inválidos
+        se saltan con nota en el log, tolerante), soporta campos **relation**
+        (`{{record.id}}` vincula la factura al cliente; targets verificados
+        vivos con existingInList, sync en el mismo tx) y saltea computed.
+        (c) Editor VISUAL de "Crear un registro" en el AutomationDialog
+        (Formulario y Diagrama): selector de lista destino + filas campo→valor
+        con MergeTagInput del trigger y dropdown de opciones para selects —
+        reemplaza el JSON crudo. Receta documentada: lista Clientes con fecha
+        recurrente mensual (action update) + automatización record_updated
+        (changed_fields: fecha) → create_record en Facturas con estado
+        pendiente. 302 tests API + E2E completo (tick real de recurrencias
+        rodó la fecha, la automatización creó la factura pendiente vinculada,
+        editor verificado en navegador).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
