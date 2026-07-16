@@ -12,37 +12,55 @@ const sortSchema = z.array(
 );
 
 /**
- * Config por tipo de vista. TODO referencia por field_id, jamás slug
- * (CONTRACT.md §7 / regla de oro nº 1) — así renombrar no rompe la vista.
+ * Estado COMÚN que el front captura en cualquier vista guardada (filtros,
+ * búsqueda, columnas). OJO: los ids de columna del fork son los column ids
+ * de TanStack Table — para campos dinámicos es el SLUG del campo y para
+ * columnas fijas 'id'/'updated_at' — por eso son strings, no field_ids.
+ * (El schema anterior whitelisteaba otro shape — `visible_field_ids`,
+ * `column_sizing`, `column_order` numérico — y Zod DESCARTABA en silencio
+ * `hidden_columns`/`column_widths`/`search`: ocultar columnas funcionaba en
+ * vivo pero se perdía al guardar la vista.)
  */
-export const tableViewConfigSchema = z.object({
-    visible_field_ids: z.array(idSchema).default([]),
-    column_order: z.array(idSchema).default([]),
-    column_sizing: z.record(z.string(), z.number()).default({}),
-    sort: sortSchema.default([]),
+const viewStateCommon = {
     filter_tree: filterTreeSchema.optional(),
-    group_by_field_id: idSchema.nullable().default(null),
+    /** Espejo legacy plano de filter_tree cuando el árbol es AND plano. */
+    filters: z
+        .array(z.object({ field_id: idSchema, op: z.string(), value: z.unknown() }))
+        .optional(),
+    search: z.string().optional(),
+    sort: sortSchema.default([]),
+    hidden_columns: z.array(z.string()).default([]),
+    column_widths: z.record(z.string(), z.number()).default({}),
+    column_order: z.array(z.coerce.string()).default([]),
     collapsed_groups: z.array(z.string()).default([]),
     footer_aggregates: z.record(z.string(), z.string()).default({}),
+};
+
+export const tableViewConfigSchema = z.object({
+    ...viewStateCommon,
+    // Legacy del shell cloud viejo — se conservan para vistas ya guardadas.
+    visible_field_ids: z.array(idSchema).default([]),
+    column_sizing: z.record(z.string(), z.number()).default({}),
+    group_by_field_id: idSchema.nullable().default(null),
 });
 
 export const kanbanViewConfigSchema = z.object({
+    ...viewStateCommon,
     group_by_field_id: idSchema,
     kanban_title_field_id: idSchema.nullable().default(null),
     kanban_meta_field_ids: z.array(idSchema).default([]),
-    filter_tree: filterTreeSchema.optional(),
 });
 
 export const calendarViewConfigSchema = z.object({
+    ...viewStateCommon,
     date_field_id: idSchema,
-    filter_tree: filterTreeSchema.optional(),
 });
 
 export const cardsViewConfigSchema = z.object({
+    ...viewStateCommon,
     card_field_ids: z.array(idSchema).default([]),
     card_cover_field_id: idSchema.nullable().default(null),
     card_size: z.enum(['compact', 'comfortable', 'spacious']).default('comfortable'),
-    filter_tree: filterTreeSchema.optional(),
 });
 
 export const viewConfigSchemas = {
