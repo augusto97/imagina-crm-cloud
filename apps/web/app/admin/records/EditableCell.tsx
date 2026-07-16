@@ -33,7 +33,7 @@ interface EditableCellProps {
 /**
  * Celda con edición inline.
  *
- * - Doble click activa modo edición (input apropiado al tipo).
+ * - UN click activa modo edición (input apropiado al tipo).
  * - Enter o blur confirma → mutación optimistic.
  * - Escape cancela.
  * - Si el server rechaza, mostramos un tooltip de error sobre la celda
@@ -164,14 +164,17 @@ function EditableCellInner({
         return (
             <button
                 type="button"
-                onDoubleClick={startEdit}
+                // UN click para editar (feedback del usuario, estilo
+                // ClickUp) — antes exigía doble click. No choca con abrir
+                // el registro: eso vive solo en la columna primaria/ID.
+                onClick={startEdit}
                 disabled={!canEdit}
                 className={cn(
                     'imcrm-block imcrm-w-full imcrm-truncate imcrm-text-left imcrm-min-h-[1.5rem]',
                     canEdit && 'hover:imcrm-bg-accent/40 imcrm-rounded imcrm--mx-1 imcrm-px-1',
                     !canEdit && 'imcrm-cursor-default',
                 )}
-                title={canEdit ? __('Doble click para editar') : __('No editable inline')}
+                title={canEdit ? __('Click para editar') : __('No editable inline')}
             >
                 {renderCellValue(field, value)}
             </button>

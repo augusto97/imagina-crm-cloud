@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, Loader2, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Plus } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
 import {
@@ -143,12 +143,6 @@ export function OptionPicker({
         );
     };
 
-    const clearSingle = (e: React.MouseEvent): void => {
-        e.stopPropagation();
-        if (disabled) return;
-        onChange(null);
-    };
-
     const isCell = variant === 'cell';
 
     // Layout del trigger según mode + valor actual.
@@ -168,19 +162,9 @@ export function OptionPicker({
                         label={opt?.label ?? currentSingle}
                         color={opt?.color as OptionColor | undefined}
                     />
-                    {/* Sin × en celdas (roba ancho, estilo ClickUp): para
-                        limpiar se clickea la opción seleccionada en el
-                        popover. En forms (default) la × se conserva. */}
-                    {!disabled && !isCell && (
-                        <button
-                            type="button"
-                            onClick={clearSingle}
-                            aria-label={__('Limpiar')}
-                            className="imcrm-ml-auto imcrm-shrink-0 imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
-                        >
-                            <X className="imcrm-h-3 imcrm-w-3" />
-                        </button>
-                    )}
+                    {/* Sin × en NINGUNA superficie (feedback del usuario,
+                        estilo ClickUp): para limpiar se clickea la opción
+                        ya seleccionada en el popover (toggle). */}
                 </span>
             );
         }

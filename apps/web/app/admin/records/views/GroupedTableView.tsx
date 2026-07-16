@@ -19,6 +19,7 @@ import type {
 } from '@/types/record';
 
 import { EditableCell } from '@/admin/records/EditableCell';
+import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
@@ -62,6 +63,11 @@ interface GroupedTableViewProps {
     onCollapsedGroupsChange?: (next: string[]) => void;
     /** Click "+ Agregar columna" en el header del primer bucket. */
     onAddColumn?: () => void;
+    /**
+     * Abre el editor del campo — habilita el menú contextual "⌄" en
+     * los headers de columna de cada bucket (mismo menú que TableView).
+     */
+    onEditField?: (field: FieldEntity) => void;
     /**
      * Click "+ Agregar tarea" al pie de un bucket. Recibe el field
      * de agrupación y el `value` del bucket para que el caller pueda
@@ -112,6 +118,7 @@ export function GroupedTableView({
     collapsedGroups,
     onCollapsedGroupsChange,
     onAddColumn,
+    onEditField,
     onAddRecord,
     footerAggregates,
     onFooterAggregatesChange,
@@ -344,6 +351,7 @@ export function GroupedTableView({
                                 // duplicado en cada grupo. UX consistent con
                                 // el flat view (un solo trigger).
                                 onAddColumn={idx === 0 ? onAddColumn : undefined}
+                                onEditField={onEditField}
                                 onAddRecord={
                                     onAddRecord
                                         ? () => onAddRecord(groupByField, bucket.value)
@@ -468,6 +476,8 @@ interface GroupBucketSectionProps {
      *  necesitamos por si caemos al fallback `useAggregates`. */
     aggregateFieldIds: number[];
     onAddColumn?: () => void;
+    /** Menú contextual "⌄" por columna de campo (ver GroupedTableViewProps). */
+    onEditField?: (field: FieldEntity) => void;
     onAddRecord?: () => void;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
@@ -500,6 +510,7 @@ function GroupBucketSection({
     bundleFetching,
     aggregateFieldIds,
     onAddColumn,
+    onEditField,
     onAddRecord,
     footerAggregates,
     onFooterAggregatesChange,
@@ -702,7 +713,9 @@ function GroupBucketSection({
                                                 scope="col"
                                                 style={{ width: w, minWidth: w, ...(sticky ?? {}) }}
                                                 className={cn(
-                                                    'imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                                    // `group/th` habilita el reveal on-hover del
+                                                    // menú contextual de la columna (FieldHeaderMenu).
+                                                    'imcrm-group/th imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
                                                     // Sticky cell necesita bg sólido para
                                                     // tapar las celdas al scrollear
                                                     // horizontal — canvas, no card.
@@ -717,6 +730,13 @@ function GroupBucketSection({
                                                         />
                                                     )}
                                                     {c.label}
+                                                    {c.field !== null && onEditField !== undefined && (
+                                                        <FieldHeaderMenu
+                                                            listId={listId}
+                                                            field={c.field}
+                                                            onEdit={onEditField}
+                                                        />
+                                                    )}
                                                 </span>
                                             </th>
                                         );
