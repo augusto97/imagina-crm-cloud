@@ -369,7 +369,7 @@ export function TableView({
             // Sin card chrome (border/rounded/shadow/bg-card): la tabla
             // va plana sobre el canvas, estilo ClickUp — solo hairlines.
             ref={tableContainerRef}
-            className="imcrm-overflow-x-auto"
+            className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden"
             role="region"
             aria-label={__('Tabla de registros')}
             onScroll={(e) => {

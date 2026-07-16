@@ -752,3 +752,17 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 .imcrm-prose-sm {
     font-size: 0.875rem;
 }
+
+/* ─── Tabla de records ──────────────────────────────────────────────── */
+
+/* El scroller horizontal de la tabla usa la StickyHScrollbar (barra
+   espejo fija al fondo del viewport, estilo ClickUp) como ÚNICA barra:
+   la nativa del wrapper se oculta — si no, al llegar al fondo de la
+   tabla entraban EN PANTALLA las dos apiladas (espejo + nativa). El
+   scroll por rueda/trackpad/touch sigue funcionando igual. */
+.imcrm-native-hscroll-hidden {
+    scrollbar-width: none; /* Firefox */
+}
+.imcrm-native-hscroll-hidden::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Edge */
+}

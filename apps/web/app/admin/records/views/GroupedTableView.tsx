@@ -323,7 +323,7 @@ export function GroupedTableView({
                 Solo scroll HORIZONTAL acá: el vertical es el de la
                 página (pedido del usuario, v0.1.70) — los buckets crecen
                 a su alto natural. */}
-            <div ref={hScrollRef} className="imcrm-overflow-x-auto imcrm-pb-2">
+            <div ref={hScrollRef} className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden imcrm-pb-2">
                 <div
                     className="imcrm-flex imcrm-flex-col imcrm-gap-3"
                     style={{ minWidth: tableWidth }}
