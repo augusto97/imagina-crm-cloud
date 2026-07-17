@@ -98,7 +98,15 @@ function fromAutomation(a: AutomationEntity): FormState {
         description: a.description ?? '',
         triggerType: a.trigger_type,
         triggerConfig: { ...a.trigger_config },
-        actions: a.actions.map((s) => ({ type: s.type, config: { ...s.config } })),
+        // OJO: conservar `condition` — reconstruir la acción solo con
+        // {type, config} hacía que al REABRIR el diálogo la condición por
+        // acción desapareciera del editor (y un re-guardado la borraba de
+        // la DB en silencio).
+        actions: a.actions.map((s) => ({
+            type: s.type,
+            config: { ...s.config },
+            ...(s.condition !== undefined && s.condition !== null ? { condition: s.condition } : {}),
+        })),
         isActive: a.is_active,
     };
 }
