@@ -15,6 +15,14 @@ export interface FileStorage {
     write(key: string, source: Readable): Promise<number>;
     read(key: string): Readable;
     delete(key: string): Promise<void>;
+    /**
+     * ¿Existen los bytes? Opcional (el driver S3 no lo implementa — un HEAD
+     * extra por request no paga). Lo usan las descargas para responder 404
+     * RÁPIDO cuando el archivo se perdió (ej. uploads huérfanos de releases
+     * viejos) en vez de fallar a mitad de stream y colgar la request hasta
+     * el 504 del proxy.
+     */
+    probe?(key: string): Promise<boolean>;
 }
 
 /**
@@ -46,6 +54,15 @@ export class LocalFileStorage implements FileStorage {
 
     read(key: string): Readable {
         return createReadStream(this.resolve(key));
+    }
+
+    async probe(key: string): Promise<boolean> {
+        try {
+            await stat(this.resolve(key));
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     async delete(key: string): Promise<void> {

@@ -47,18 +47,33 @@ export class SignedFilesController {
             Number(exp ?? 0),
             String(sig ?? ''),
         );
-        reply.raw.writeHead(200, {
-            'content-type': file.mime,
-            'content-length': String(file.size),
-            'content-disposition': `inline; filename="${file.filename.replace(/"/g, '')}"`,
-            'x-content-type-options': 'nosniff',
-        });
-        file.stream.pipe(reply.raw);
-        await new Promise<void>((resolve, reject) => {
-            file.stream.on('end', resolve);
-            file.stream.on('error', reject);
-        });
+        await streamFile(file, reply);
     }
+}
+
+/**
+ * Streamea un archivo con guard de errores: si el stream falla a mitad de
+ * respuesta (bytes corruptos/perdidos), se DESTRUYE la conexión — sin esto
+ * la request quedaba colgada hasta el timeout del proxy (504).
+ */
+async function streamFile(
+    file: { stream: NodeJS.ReadableStream; filename: string; mime: string; size: number },
+    reply: FastifyReply,
+): Promise<void> {
+    reply.raw.writeHead(200, {
+        'content-type': file.mime,
+        'content-length': String(file.size),
+        'content-disposition': `inline; filename="${file.filename.replace(/"/g, '')}"`,
+        'x-content-type-options': 'nosniff',
+    });
+    file.stream.pipe(reply.raw);
+    await new Promise<void>((resolve) => {
+        file.stream.on('end', resolve);
+        file.stream.on('error', () => {
+            reply.raw.destroy();
+            resolve();
+        });
+    });
 }
 
 @Controller('files')
@@ -132,17 +147,7 @@ export class FilesController {
         @Res() reply: FastifyReply,
     ): Promise<void> {
         const file = await this.files.openDownload(req.tenant!.tenantId, id);
-        reply.raw.writeHead(200, {
-            'content-type': file.mime,
-            'content-length': String(file.size),
-            'content-disposition': `inline; filename="${file.filename.replace(/"/g, '')}"`,
-            'x-content-type-options': 'nosniff',
-        });
-        file.stream.pipe(reply.raw);
-        await new Promise<void>((resolve, reject) => {
-            file.stream.on('end', resolve);
-            file.stream.on('error', reject);
-        });
+        await streamFile(file, reply);
     }
 
     @Delete(':id')

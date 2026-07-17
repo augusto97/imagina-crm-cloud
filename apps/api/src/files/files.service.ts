@@ -141,6 +141,13 @@ export class FilesService {
                 .limit(1),
         );
         if (!row) throw fileNotFound(id);
+        // Bytes perdidos (ej. uploads huérfanos de un release viejo,
+        // pre-fix de shared/uploads): 404 rápido — dejar que el stream
+        // falle a mitad de respuesta colgaba la request hasta el 504
+        // del proxy (el logo "roto" que nunca cargaba).
+        if (this.storage.probe && !(await this.storage.probe(row.storageKey))) {
+            throw fileNotFound(id);
+        }
         return {
             stream: this.storage.read(row.storageKey),
             filename: row.filename,

@@ -979,6 +979,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         slug filtra de verdad) + E2E navegador (agregar condición desde la
         UI → guardar sin 400).
 
+  - [x] **Condición visible al reabrir + uploads persistentes (v0.1.88,
+        reportes del usuario)**: (1) la condición por acción se guardaba
+        (v0.1.87) pero al REABRIR el diálogo aparecía vacía — `fromAutomation`
+        reconstruía las actions solo con `{type, config}`, descartando
+        `condition` (y un re-guardado la BORRABA de la DB en silencio); el
+        round-trip del backend estaba intacto (verificado por API). (2) El
+        logo del white-label "se rompe en cada actualización": el default de
+        `UPLOADS_DIR` (`./data/uploads`) es RELATIVO al release activo
+        (`current/apps/api`) → cada auto-update dejaba los archivos subidos
+        atrás y la poda de releases los borraba; encima, los bytes perdidos
+        colgaban la request hasta el 504 del proxy (stream que falla tras
+        los headers). Fix: `deploy.sh` crea `shared/uploads` + RESCATE
+        best-effort de uploads en releases anteriores + symlink
+        `data/uploads → shared/uploads` en cada release (self-heal en el
+        próximo update, sin tocar el env); `FileStorage.probe` (stat) → 404
+        opaco RÁPIDO cuando faltan los bytes; `streamFile` con guard
+        (destroy de la conexión si el stream falla a mitad de respuesta).
+        Tests (bytes perdidos → 404) + E2E navegador (condición visible al
+        reabrir, logo firmado 200, bytes borrados → 404 en ms).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

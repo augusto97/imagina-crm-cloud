@@ -20,6 +20,24 @@ echo "→ preparando ${RELEASE_DIR}"
 # symlink dentro del release es para herramientas/CLI que corran desde ahí.
 ln -sfn "${SHARED}/.env.production" "${RELEASE_DIR}/apps/api/.env.production"
 
+echo "→ uploads persistentes (shared/uploads)"
+# El default de UPLOADS_DIR es ./data/uploads RELATIVO al cwd del servicio
+# (current/apps/api) — o sea DENTRO del release: cada update dejaba los
+# archivos subidos (logos, adjuntos) atrás y la poda de releases los borraba.
+# Fix: los bytes viven en shared/uploads y cada release apunta ahí por
+# symlink — el default resuelve al lugar correcto sin tocar el env.
+mkdir -p "${SHARED}/uploads"
+# Rescate best-effort: recuperar uploads que quedaron dentro de releases
+# anteriores (sin sobreescribir; claves opacas → colisiones nulas).
+for OLD in "${BASE_PATH}"/releases/*/apps/api/data/uploads; do
+    if [ -d "${OLD}" ] && [ ! -L "${OLD%/uploads}/uploads" ]; then
+        cp -an "${OLD}/." "${SHARED}/uploads/" 2>/dev/null || true
+    fi
+done
+mkdir -p "${RELEASE_DIR}/apps/api/data"
+rm -rf "${RELEASE_DIR}/apps/api/data/uploads"
+ln -sfn "${SHARED}/uploads" "${RELEASE_DIR}/apps/api/data/uploads"
+
 echo "→ migraciones (forward-only)"
 set -a
 # shellcheck disable=SC1091
