@@ -951,6 +951,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Diagrama. Tests: conversión (options auto + coerción + 400),
         cascade del delete, branding firmado. E2E navegador consolidado.
 
+  - [x] **Aritmética de fechas en merge tags (v0.1.86, caso del usuario:
+        períodos anticipado/vencido)**: clientes que pagan mes ANTICIPADO
+        (16/07→15/08) y mes VENCIDO (16/06→15/07) en la misma facturación.
+        `applyMergeTags` acepta modificadores encadenables de fecha —
+        `{{campo|+1m|-1d}}` (unidades d/m/y; meses con CLAMP al último día:
+        31/01+1m→28/02; cruces de año; datetime preserva la hora; valores
+        no-fecha los ignoran). Receta: campo `modalidad` (select) en
+        Clientes + UNA automatización con DOS acciones create_record
+        condicionadas POR ACCIÓN (feature existente): anticipado ⇒ desde
+        `{{before.proximo_cobro}}` hasta `{{before.proximo_cobro|+1m|-1d}}`;
+        vencido ⇒ desde `{{before.proximo_cobro|-1m}}` hasta
+        `{{before.proximo_cobro|-1d}}`. 4 tests unitarios (merge-tags.spec)
+        + tip de sintaxis en el editor de "Crear un registro".
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
