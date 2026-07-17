@@ -749,13 +749,18 @@ function DueDateConfig({
             {currentPreset === 'custom' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Offset en minutos (negativo = antes, positivo = después)')}
+                        {__('Días desde la fecha (negativo = antes, positivo = después) — ej. 20, 45, 70')}
                     </Label>
                     <Input
                         type="number"
-                        value={offset}
+                        step="any"
+                        value={offset === 0 ? '' : offset / 1440}
+                        placeholder="20"
                         onChange={(e) =>
-                            onChange({ ...config, offset_minutes: Number(e.target.value) })
+                            onChange({
+                                ...config,
+                                offset_minutes: Math.round(Number(e.target.value || 0) * 1440),
+                            })
                         }
                     />
                 </div>

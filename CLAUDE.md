@@ -999,6 +999,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Tests (bytes perdidos → 404) + E2E navegador (condición visible al
         reabrir, logo firmado 200, bytes borrados → 404 en ms).
 
+  - [x] **Secuencia de mora por fecha límite (v0.1.89, caso del usuario:
+        correos a los 0/20/45/70 días si la factura sigue pendiente)**: tres
+        gaps del trigger `due_date_reached`: (a) `resolveDateFieldId` no leía
+        `due_field` — la clave que escribe el `DueDateConfig` de la UI — así
+        que una automatización configurada desde la interfaz JAMÁS disparaba;
+        (b) `runDueDate` no evaluaba los `field_filters` del trigger al
+        disparar (solo `process()` los chequeaba) → imposible "recordar SI
+        sigue pendiente"; ahora se evalúan por record en el scan, y un record
+        filtrado NO registra run (si vuelve a cumplir, dispara); (c) el
+        offset personalizado de la UI pasó de minutos a DÍAS (20/45/70).
+        Test del flujo exacto (due_field por slug + offset 20d + filtro
+        estado: impaga dispara, pagada no y sin run, reciente fuera de
+        ventana). Receta: 4 automatizaciones en Facturas — record_created →
+        email de emisión; due_date_reached sobre fecha de emisión con
+        offsets 20/45/70 días + filtro estado=pendiente → recordatorios.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
