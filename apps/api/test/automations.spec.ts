@@ -492,6 +492,43 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(runs.data.filter((r) => r.record_id === past.id)).toHaveLength(1);
     });
 
+    it('due_date_reached: acepta due_field (la clave de la UI) y evalúa field_filters al disparar', async () => {
+        const vence = await fieldsService.create(tenantId, 'deals', { label: 'Emitida', type: 'datetime', slug: 'emitida' });
+        // Recordatorio a los 20 días SI sigue "nueva" (la secuencia de mora
+        // del caso de facturación). Config EXACTA que emite la UI:
+        // due_field por slug + offset positivo + field_filters.
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Recordatorio 20d impagas',
+            trigger_type: 'due_date_reached',
+            trigger_config: {
+                due_field: 'emitida',
+                offset_minutes: 20 * 1440,
+                field_filters: [{ slug: 'estado', op: 'eq', value: 'nueva' }],
+            },
+            actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
+        });
+
+        // Emitida hace 30 días y sigue "nueva" → dispara.
+        const impaga = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${vence.id}`]: '2020-01-01T00:00:00.000Z', [key('estado')]: 'nueva' },
+        });
+        // Emitida hace 30 días pero ya "vip" (≈pagada) → NO dispara y NO
+        // registra run (si vuelve a cumplir más adelante, dispararía).
+        const pagada = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${vence.id}`]: '2020-01-01T00:00:00.000Z', [key('estado')]: 'vip' },
+        });
+        // Emitida hace poco (< 20 días) → fuera de la ventana.
+        const reciente = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [`f${vence.id}`]: '2999-01-01T00:00:00.000Z', [key('estado')]: 'nueva' },
+        });
+
+        await engine.runDueDate(tenantId, auto.id);
+        const runs = await automationsService.runsById(tenantId, auto.id, {});
+        expect(runs.data.map((r) => r.record_id)).toEqual([impaga.id]);
+        expect((await recordsService.get(tenantId, admin, 'deals', pagada.id)).data[key('estado')]).toBe('vip');
+        expect((await recordsService.get(tenantId, admin, 'deals', reciente.id)).data[key('estado')]).toBe('nueva');
+    });
+
     async function firstAutomationId(): Promise<number> {
         const list = await automationsService.list(tenantId, 'deals');
         return list[0]!.id;

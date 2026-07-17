@@ -136,11 +136,21 @@ export class AutomationEngine {
                 .limit(500);
 
             for (const rec of due) {
-                await this.runOne(
-                    tx,
-                    { tenantId, listId: auto.listId, recordId: rec.id, data: rec.data, slugToKey },
-                    auto,
-                );
+                const ctx: RunContext = {
+                    tenantId,
+                    listId: auto.listId,
+                    recordId: rec.id,
+                    data: rec.data,
+                    slugToKey,
+                };
+                // Los field_filters del trigger se evalúan AL DISPARAR (no
+                // solo en process()): "recordar a los 20 días SI la factura
+                // sigue pendiente" depende de esto. Un record filtrado no
+                // registra run → si más adelante vuelve a cumplir, dispara.
+                if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
+                    continue;
+                }
+                await this.runOne(tx, ctx, auto);
             }
         });
     }
@@ -490,14 +500,25 @@ function parseRelationIds(raw: unknown): number[] {
     return out;
 }
 
-/** Resuelve el field_id del campo fecha del due_date_reached (por id o slug). */
+/**
+ * Resuelve el field_id del campo fecha del due_date_reached (por id o slug).
+ * Acepta `due_field` — la clave que escribe el DueDateConfig de la UI; sin
+ * este alias, una automatización configurada desde la interfaz jamás
+ * resolvía el campo y el trigger no disparaba nunca.
+ */
 function resolveDateFieldId(
     cfg: Record<string, unknown>,
     fieldRows: Array<{ id: number; slug: string }>,
 ): number | null {
     if (typeof cfg.field_id === 'number') return cfg.field_id;
     const bySlug =
-        typeof cfg.field === 'string' ? cfg.field : typeof cfg.date_field === 'string' ? cfg.date_field : null;
+        typeof cfg.due_field === 'string' && cfg.due_field !== ''
+            ? cfg.due_field
+            : typeof cfg.field === 'string'
+              ? cfg.field
+              : typeof cfg.date_field === 'string'
+                ? cfg.date_field
+                : null;
     if (bySlug) {
         const f = fieldRows.find((x) => x.slug === bySlug);
         return f ? f.id : null;
