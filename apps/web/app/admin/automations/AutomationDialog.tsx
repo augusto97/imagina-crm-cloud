@@ -166,8 +166,15 @@ export function AutomationDialog({
             onOpenChange(false);
         } catch (err) {
             if (err instanceof ApiError) {
-                setError(err.message);
                 setFieldErrors(err.errors);
+                // "Datos inválidos" a secas no dice QUÉ está mal — el backend
+                // manda el detalle por path Zod (ej. "actions.0.condition.0:
+                // ...") pero los paths anidados no matchean ningún FieldGroup;
+                // se muestran en el banner.
+                const detail = Object.entries(err.errors)
+                    .map(([path, msg]) => `${path}: ${msg}`)
+                    .join(' · ');
+                setError(detail !== '' ? `${err.message} — ${detail}` : err.message);
             } else if (err instanceof Error) {
                 setError(err.message);
             }

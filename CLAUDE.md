@@ -965,6 +965,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `{{before.proximo_cobro|-1d}}`. 4 tests unitarios (merge-tags.spec)
         + tip de sintaxis en el editor de "Crear un registro".
 
+  - [x] **Fix "Datos inválidos" al guardar condiciones de automatización
+        (v0.1.87, reporte del usuario)**: la receta anticipado/vencido no se
+        podía guardar — `conditionRuleSchema` exigía `field` pero el
+        `ConditionEditor` del fork emite `{slug, op, value}` (el evaluador
+        del motor acepta AMBOS desde siempre; solo la capa Zod del
+        controller rechazaba con 400). Fix: el schema acepta `field` O
+        `slug` (refine: al menos uno no vacío). Además el diálogo ahora
+        muestra el DETALLE de los errores Zod en el banner — los paths
+        anidados (`actions.0.condition.0`) no matchean ningún FieldGroup y
+        el usuario solo veía "Datos inválidos" sin saber qué corregir.
+        3 asserts de schema + test del motor (condición por acción en shape
+        slug filtra de verdad) + E2E navegador (agregar condición desde la
+        UI → guardar sin 400).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

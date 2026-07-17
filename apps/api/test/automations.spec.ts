@@ -321,6 +321,63 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(tareasRecords.data[0]!.data[`f${titulo.id}`]).toBe('Follow-up');
     });
 
+    it('condición por acción en shape {slug,op,value} (lo que emite el ConditionEditor): guarda y filtra', async () => {
+        // El schema rechazaba `slug` (exigía `field`) → "Datos inválidos" al
+        // guardar cualquier condición desde la UI, aunque el evaluador acepta
+        // ambos desde siempre. Regresión en la capa Zod (el pipe del
+        // controller): el shape de la UI debe parsear.
+        const { createAutomationSchema } = await import('@imagina-base/shared');
+        expect(
+            createAutomationSchema.safeParse({
+                name: 'x',
+                trigger_type: 'record_created',
+                actions: [
+                    { type: 'update_field', config: {}, condition: [{ slug: 'monto', op: 'gte', value: 1 }] },
+                ],
+            }).success,
+        ).toBe(true);
+        // Sin campo alguno → sigue rechazando.
+        expect(
+            createAutomationSchema.safeParse({
+                name: 'x',
+                trigger_type: 'record_created',
+                actions: [{ type: 'update_field', config: {}, condition: [{ op: 'eq', value: 1 }] }],
+            }).success,
+        ).toBe(false);
+
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Marcar VIP solo grandes',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'update_field',
+                    config: { values: { estado: 'vip' } },
+                    condition: [{ slug: 'monto', op: 'gte', value: 1000 }],
+                },
+            ],
+        });
+
+        // Deal chico: la condición NO cumple → el campo queda igual.
+        const chico = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 100, [key('estado')]: 'nueva' },
+        });
+        await engine.process({
+            tenantId, listId, recordId: chico.id, trigger: 'record_created',
+            after: { [key('monto')]: 100, [key('estado')]: 'nueva' },
+        });
+        expect((await recordsService.get(tenantId, admin, 'deals', chico.id)).data[key('estado')]).toBe('nueva');
+
+        // Deal grande: cumple → vip.
+        const grande = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 5000, [key('estado')]: 'nueva' },
+        });
+        await engine.process({
+            tenantId, listId, recordId: grande.id, trigger: 'record_created',
+            after: { [key('monto')]: 5000, [key('estado')]: 'nueva' },
+        });
+        expect((await recordsService.get(tenantId, admin, 'deals', grande.id)).data[key('estado')]).toBe('vip');
+    });
+
     it('create_record cross-list: slugs del DESTINO, coerción por validador, relation al trigger y skip tolerante', async () => {
         // Lista Facturas: cliente (texto), monto (currency), estado (select),
         // deal (relation → Deals). El caso de uso de facturación recurrente.

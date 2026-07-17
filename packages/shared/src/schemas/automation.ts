@@ -31,11 +31,20 @@ export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
 // --- Condiciones ---
 // Shape rico: array de `{field, op, value}` unidas por AND (lo que escribe el
 // ConditionEditor del plugin). Se acepta también el legacy plano `{slug:value}`.
-export const conditionRuleSchema = z.object({
-    field: z.string().min(1),
-    op: filterOperatorSchema,
-    value: z.unknown().optional(),
-});
+// `field` o `slug` (alias): el ConditionEditor del fork emite `{slug, op,
+// value}` y el evaluador del motor acepta ambos desde siempre — el schema
+// exigía `field` a secas y rechazaba con "Datos inválidos" cualquier
+// condición guardada desde la UI.
+export const conditionRuleSchema = z
+    .object({
+        field: z.string().min(1).optional(),
+        slug: z.string().min(1).optional(),
+        op: filterOperatorSchema,
+        value: z.unknown().optional(),
+    })
+    .refine((r) => (r.field ?? r.slug ?? '') !== '', {
+        message: 'La condición necesita un campo (field o slug)',
+    });
 export type ConditionRule = z.infer<typeof conditionRuleSchema>;
 
 export const conditionDataSchema = z.union([
