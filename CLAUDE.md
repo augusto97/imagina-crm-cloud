@@ -1061,6 +1061,21 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 18/18 (ramas en paralelo con Sí/No, añadir a rama vacía,
         editar condición por panel, round-trip API intacto, modo persistido).
 
+  - [x] **Fix bloqueos del panel del lienzo (v0.1.92, reporte del
+        usuario)**: en el canvas v0.1.91 los botones del panel de nodo
+        (cerrar, chips de variables, popover "+N", algunos selects) no
+        respondían. Causa: el Sheet vivía DENTRO del contenedor del lienzo
+        en el árbol de React — los portales de Radix mueven el DOM pero los
+        eventos burbujean por el ÁRBOL DE COMPONENTES, así que cada
+        pointerdown dentro del panel llegaba al handler de paneo, cuyo
+        `setPointerCapture` sobre el contenedor le robaba el pointerup al
+        botón (el click jamás se completaba; los menús "+" se salvaban por
+        el stopPropagation de sus wrappers). Fix doble: el Sheet es HERMANO
+        del contenedor (fragment) y el handler de paneo ignora eventos cuyo
+        target no está contenido en el DOM del contenedor. E2E 12/12 (chips
+        insertan, popover abre/inserta, select cambia tipo, X cierra, body
+        sin pointer-events residual, pan +100px exacto, reapertura).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
