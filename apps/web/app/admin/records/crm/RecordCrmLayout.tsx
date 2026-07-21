@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
-import { blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
+import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
 import { getResolvedV2 } from '@/lib/crmTemplates';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
@@ -184,6 +184,7 @@ export function RecordCrmLayout({
                                             // (config.style), idéntico al del editor.
                                             <div
                                                 key={b.id}
+                                                className={blockStyleClass(readBlockStyle({ style: b.style }))}
                                                 style={blockStyleCss(readBlockStyle({ style: b.style }))}
                                             >
                                                 <BlockRenderer

@@ -17,7 +17,7 @@ import {
     X,
 } from 'lucide-react';
 
-import { blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
+import { blockStyleClass, blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns, WIDTH_PRESETS } from '@/lib/rowsLayout';
 import { cn } from '@/lib/utils';
@@ -643,7 +643,10 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                                             // WYSIWYG: el mismo wrapper de estilo
                                             // (config.style) que aplican la ficha
                                             // real y el portal.
-                                            <div style={blockStyleCss(readBlockStyle(block.config))}>
+                                            <div
+                                                className={blockStyleClass(readBlockStyle(block.config))}
+                                                style={blockStyleCss(readBlockStyle(block.config))}
+                                            >
                                                 {registry.renderPreview(block, ctx)}
                                             </div>
                                         )}
@@ -1376,7 +1379,7 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                                             </div>
                                         )}
                                         <div
-                                            className="imcrm-overflow-x-auto"
+                                            className={`imcrm-overflow-x-auto ${blockStyleClass(readBlockStyle(subBlock.config))}`}
                                             style={blockStyleCss(readBlockStyle(subBlock.config))}
                                         >
                                             {registry.renderPreview(subBlock, ctx)}

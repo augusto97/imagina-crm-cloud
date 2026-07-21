@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    blockStyleClass,
     blockStyleCss,
     hasBlockStyle,
+    hexToHslTriplet,
     readBlockStyle,
     readPageSettings,
     wrapperStyleCss,
@@ -70,6 +72,33 @@ describe('blockStyle', () => {
         });
         // ancho mínimo 480 y font desconocida → fuera
         expect(readPageSettings({ bg: 'blue', max_width: 100, font: 'comic' })).toEqual({});
+    });
+
+    it('v0.1.95 — el fondo re-tiñe los tokens del tema (tarjetas internas)', () => {
+        expect(hexToHslTriplet('#ffffff')).toBe('0 0% 100%');
+        expect(hexToHslTriplet('#2563eb')).toBe('221 83% 53%');
+        expect(hexToHslTriplet('azul')).toBeNull();
+
+        const css = blockStyleCss({ bg: '#2563eb', text: '#ffffff' }) as Record<string, unknown>;
+        // La tarjeta propia del bloque adopta el color (nada de tarjeta blanca)
+        expect(css['--imcrm-card']).toBe('221 83% 53%');
+        expect(css['--imcrm-muted']).toBe('221 83% 53%');
+        // Sin borde elegido, los hairlines internos se funden con el fondo
+        expect(css['--imcrm-border']).toBe('221 83% 53%');
+        // El texto re-tiñe los foregrounds (labels incluidos)
+        expect(css['--imcrm-card-foreground']).toBe('0 0% 100%');
+        expect(css['--imcrm-muted-foreground']).toBe('0 0% 100%');
+
+        // Borde explícito gana sobre el melt
+        const bordered = blockStyleCss({ bg: '#2563eb', border: '#ffffff' }) as Record<string, unknown>;
+        expect(bordered['--imcrm-border']).toBe('0 0% 100%');
+    });
+
+    it('v0.1.95 — blockStyleClass activa la herencia tipográfica', () => {
+        expect(blockStyleClass({})).toBe('');
+        expect(blockStyleClass({ size: 'xl' })).toBe('imcrm-style-fs');
+        expect(blockStyleClass({ weight: 'bold' })).toBe('imcrm-style-fw');
+        expect(blockStyleClass({ size: 'sm', weight: 'medium' })).toBe('imcrm-style-fs imcrm-style-fw');
     });
 
     it('wrapperStyleCss: fondo de sección con padding default y override', () => {

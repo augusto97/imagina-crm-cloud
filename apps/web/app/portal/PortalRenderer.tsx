@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
+import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
 
 import { ActivityTimelineBlock } from './blocks/ActivityTimelineBlock';
@@ -145,7 +145,15 @@ export function PortalRenderer({ boot, data }: Props): JSX.Element {
                                                 : {}),
                                         };
                                         return (
-                                            <div key={block.__idx} style={wrapStyle}>
+                                            <div
+                                                key={block.__idx}
+                                                className={blockStyleClass(
+                                                    readBlockStyle(
+                                                        block.config as Record<string, unknown>,
+                                                    ),
+                                                )}
+                                                style={wrapStyle}
+                                            >
                                                 {rendered}
                                             </div>
                                         );
@@ -269,6 +277,11 @@ function renderBlock(
                                         return (
                                             <div
                                                 key={`s-${cIdx}-${subIdx}`}
+                                                className={blockStyleClass(
+                                                    readBlockStyle(
+                                                        subBlock.config as Record<string, unknown>,
+                                                    ),
+                                                )}
                                                 style={blockStyleCss(
                                                     readBlockStyle(
                                                         subBlock.config as Record<string, unknown>,
