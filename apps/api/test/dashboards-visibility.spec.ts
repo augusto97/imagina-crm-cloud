@@ -20,7 +20,7 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
         // El CRUD no toca el motor de agregados — dummy suficiente.
-        dashboards = new DashboardsService(tenantDb, null as never);
+        dashboards = new DashboardsService(tenantDb, null as never, null as never, null as never);
         // Stub de FilesService.signedUrl — el branding ahora sirve el logo
         // por URL firmada (un <img> no puede mandar X-Tenant-Id).
         branding = new BrandingService(tenantDb, {

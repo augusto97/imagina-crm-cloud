@@ -1,15 +1,21 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    dateRangePresetSchema,
+    timeBucketSchema,
     type AggregateMetric,
     type AggregateRequest,
     type CreateDashboardInput,
     type Dashboard,
+    type FilterNode,
+    type Role,
     type UpdateDashboardInput,
     type WidgetSpec,
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { AggregateService } from '../aggregate/aggregate.service';
 import { dashboards } from '../db/schema';
+import { FieldsService } from '../fields/fields.service';
+import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 type Row = typeof dashboards.$inferSelect;
@@ -45,6 +51,8 @@ export class DashboardsService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly aggregate: AggregateService,
+        private readonly records: RecordsService,
+        private readonly fields: FieldsService,
     ) {}
 
     async list(tenantId: number, viewer: DashboardViewer): Promise<Dashboard[]> {
@@ -152,7 +160,7 @@ export class DashboardsService {
         const dash = await this.get(tenantId, dashboardId, viewer);
         const widget = dash.widgets.find((w) => w.id === widgetId);
         if (!widget) throw new NotFoundException({ code: 'widget_not_found', message: 'Widget no encontrado', data: { status: 404 } });
-        return this.computeWidget(tenantId, widget);
+        return this.computeWidget(tenantId, viewer, widget);
     }
 
     /**
@@ -164,19 +172,22 @@ export class DashboardsService {
     async widgetsData(tenantId: number, dashboardId: number, viewer: DashboardViewer): Promise<Record<string, unknown>> {
         const dash = await this.get(tenantId, dashboardId, viewer);
         const entries = await Promise.all(
-            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, w)] as const),
+            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, viewer, w)] as const),
         );
         return Object.fromEntries(entries);
     }
 
-    private async computeWidget(tenantId: number, widget: WidgetSpec): Promise<unknown> {
+    private async computeWidget(tenantId: number, viewer: DashboardViewer, widget: WidgetSpec): Promise<unknown> {
         const cfg = widget.config as Record<string, unknown>;
         const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);
         let metric: AggregateMetric = (typeof cfg.metric === 'string' ? cfg.metric : 'count') as AggregateMetric;
         // Métricas que necesitan campo pero no lo tienen → caen a count.
         if (FIELD_METRICS.has(metric) && metricFieldId === undefined) metric = 'count';
-        const filterTree = cfg.filter_tree as AggregateRequest['filter_tree'];
+        // v0.1.97 — el "Período" del widget POR FIN filtra: se inyecta como
+        // condición `between_relative` en AND con el filter_tree (se resuelve
+        // contra now() en cada evaluación — "este mes" es siempre el actual).
+        const filterTree = withPeriod(cfg);
 
         if (widget.type === 'kpi') {
             const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
@@ -184,24 +195,43 @@ export class DashboardsService {
         }
 
         if (widget.type === 'stat_delta') {
-            const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
-            // Delta básico: sin partición temporal previa devolvemos previous=value.
-            return { value: r.value ?? 0, previous: r.value ?? 0, delta_pct: 0, period_days: 30, metric };
+            // v0.1.97 — delta REAL: misma métrica sobre dos ventanas
+            // consecutivas de `period_days` días sobre el campo de fecha.
+            const dateFieldId = numOrUndef(cfg.date_field_id);
+            if (dateFieldId === undefined) {
+                const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
+                return { value: r.value ?? 0, previous: r.value ?? 0, delta_pct: null, period_days: 0, metric };
+            }
+            const d = await this.aggregate.runDelta(
+                tenantId,
+                list,
+                { metric, field_id: metricFieldId, filter_tree: filterTree },
+                { dateFieldId, periodDays: Number(cfg.period_days) || 30 },
+            );
+            return { ...d, metric };
         }
 
         if (widget.type === 'table') {
-            // El detalle de filas del widget de tabla llega en una iteración
-            // siguiente; por ahora no rompe (se muestra vacío).
-            return { columns: [], rows: [] };
+            // v0.1.97 — tabla REAL: reusa RecordsService.list (ACL del viewer:
+            // scope por rol + campos ocultos ya stripped) y traduce data
+            // f{id}→slug al shape {columns, rows} que consume la UI.
+            return this.computeTable(tenantId, viewer, widget, filterTree);
         }
 
-        // charts (bar/pie/line/area/funnel): agrupado.
+        // charts (bar/pie/line/area/funnel): agrupado. Si el campo agrupado es
+        // date/datetime, `time_bucket` define la granularidad (default month
+        // para los charts de tendencia, que agrupan por date_field_id).
         const groupBy = numOrUndef(cfg.group_by_field_id) ?? numOrUndef(cfg.date_field_id);
+        const bucketParsed = timeBucketSchema.safeParse(cfg.time_bucket);
+        const timeBucket = bucketParsed.success
+            ? bucketParsed.data
+            : (widget.type === 'chart_line' || widget.type === 'chart_area' ? 'month' as const : undefined);
         const r = await this.aggregate.run(tenantId, list, {
             metric,
             field_id: metricFieldId,
             group_by_field_id: groupBy,
             filter_tree: filterTree,
+            time_bucket: timeBucket,
         });
         const data = (r.groups ?? []).map((g) => ({
             label: g.group ?? '(sin valor)',
@@ -209,6 +239,69 @@ export class DashboardsService {
         }));
         return { data };
     }
+
+    /** Widget de tabla: Top N registros con columnas visibles y orden. */
+    private async computeTable(
+        tenantId: number,
+        viewer: DashboardViewer,
+        widget: WidgetSpec,
+        filterTree: AggregateRequest['filter_tree'],
+    ): Promise<{ columns: Array<{ label: string; slug: string; type: string }>; rows: Array<{ id: number; fields: Record<string, unknown> }> }> {
+        const cfg = widget.config as Record<string, unknown>;
+        const fields = await this.fields.list(tenantId, String(widget.list_id));
+
+        // Columnas: las visibles configuradas (en su orden) o todas (orden de
+        // la lista) capadas a 8 para que el card no explote.
+        const visibleIds = Array.isArray(cfg.visible_field_ids)
+            ? (cfg.visible_field_ids as unknown[]).map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0)
+            : [];
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const columns = (visibleIds.length > 0
+            ? visibleIds.map((id) => byId.get(id)).filter((f): f is NonNullable<typeof f> => f !== undefined)
+            : fields.slice(0, 8)
+        ).map((f) => ({ label: f.label, slug: f.slug, type: f.type, id: f.id }));
+
+        const sortFieldId = numOrUndef(cfg.sort_field_id);
+        const sortDir: 'asc' | 'desc' = cfg.sort_dir === 'asc' ? 'asc' : 'desc';
+        const limit = Math.max(1, Math.min(50, Number(cfg.limit) || 10));
+
+        const page = await this.records.list(
+            tenantId,
+            { userId: viewer.userId, role: viewer.role as Role },
+            String(widget.list_id),
+            {
+                limit,
+                // Sin campo de orden: los más recientes primero (id desc).
+                sort_dir: sortFieldId === undefined ? 'desc' : 'asc',
+                sort: sortFieldId !== undefined ? `field_${sortFieldId}:${sortDir}` : undefined,
+                filter_tree: filterTree,
+            },
+        );
+
+        const rows = page.data.map((rec) => {
+            const out: Record<string, unknown> = {};
+            for (const col of columns) {
+                out[col.slug] = (rec.data as Record<string, unknown>)[`f${col.id}`] ?? null;
+            }
+            return { id: rec.id, fields: out };
+        });
+        return { columns: columns.map(({ label, slug, type }) => ({ label, slug, type })), rows };
+    }
+}
+
+/**
+ * Compone el filter_tree del widget con su período relativo (si tiene). Un
+ * preset desconocido se ignora (no rompe el bundle completo del dashboard).
+ */
+function withPeriod(cfg: Record<string, unknown>): AggregateRequest['filter_tree'] {
+    const base = cfg.filter_tree as AggregateRequest['filter_tree'];
+    const period = cfg.period as { field_id?: unknown; preset?: unknown } | null | undefined;
+    const fieldId = numOrUndef(period?.field_id);
+    const preset = dateRangePresetSchema.safeParse(period?.preset);
+    if (fieldId === undefined || !preset.success) return base;
+    const cond: FilterNode = { type: 'condition', field_id: fieldId, op: 'between_relative', value: preset.data };
+    const children: FilterNode[] = base ? [base, cond] : [cond];
+    return { type: 'group', logic: 'and', children };
 }
 
 function toDashboard(row: Row): Dashboard {
