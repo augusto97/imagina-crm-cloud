@@ -417,6 +417,7 @@ export function AutomationCanvas({
     const triggerMeta = triggerMetaFor(triggerType);
 
     return (
+        <>
         <div
             ref={containerRef}
             data-testid="automation-canvas"
@@ -428,6 +429,12 @@ export function AutomationCanvas({
             }}
             onPointerDown={(e) => {
                 if (e.button !== 0) return;
+                // Los eventos de React burbujean por el ÁRBOL DE COMPONENTES,
+                // no por el DOM: un click dentro de contenido PORTALEADO
+                // (menús, popovers) llegaría acá y el setPointerCapture le
+                // robaría el pointerup a ese botón (bloqueaba cerrar/chips).
+                // Solo paneamos si el evento nació dentro del contenedor real.
+                if (!(e.currentTarget as HTMLElement).contains(e.target as Node)) return;
                 panRef.current = {
                     startX: e.clientX,
                     startY: e.clientY,
@@ -612,8 +619,12 @@ export function AutomationCanvas({
                 {__('Arrastra para moverte · Ctrl+rueda para zoom · click en un nodo para configurarlo')}
             </div>
 
-            {/* Panel de configuración del nodo seleccionado */}
-            <Sheet
+        </div>
+
+        {/* Panel de configuración del nodo seleccionado — HERMANO del
+            contenedor, no hijo: si viviera dentro, sus eventos burbujearían
+            (árbol React) hasta los handlers de paneo del lienzo. */}
+        <Sheet
                 open={selected !== null}
                 onOpenChange={(open) => {
                     if (!open) setSelected(null);
@@ -671,7 +682,7 @@ export function AutomationCanvas({
                     )}
                 </SheetContent>
             </Sheet>
-        </div>
+        </>
     );
 }
 
