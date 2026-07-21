@@ -1125,6 +1125,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         blockStyle (front 22), spec de presets + spec de galería/página en
         portal (API 314 en verde). E2E navegador 11/11.
 
+  - [x] **Fix estilos en bloques con tarjeta (v0.1.95, reporte del
+        usuario con captura)**: el fondo del panel Diseño dejaba la
+        TARJETA BLANCA propia del bloque encima (client_data, texto, etc.
+        pintan con `hsl(var(--imcrm-card))`) y la tipografía no hacía nada
+        (los bloques traen tamaños en px). Fix: (a) `blockStyleCss`
+        RE-TIÑE los tokens del tema localmente — `--imcrm-card`/`--imcrm-
+        muted`/`--imcrm-border` con el fondo elegido (hex→HSL; sin borde
+        explícito los hairlines se funden) y los foregrounds con el color
+        de texto → la tarjeta del bloque ADOPTA el color en las 3
+        superficies; (b) clases `imcrm-style-fs`/`imcrm-style-fw` en el
+        wrapper + reglas CSS `:where(...) !important` que fuerzan la
+        herencia tipográfica conservando jerarquía relativa (h1 1.7em,
+        títulos 1.2em, labels 0.78em, cifras KPI 1.9em) — OJO: el selector
+        NO incluye al wrapper mismo (se pisaba su propio font-size inline).
+        3 tests unit nuevos (front 24) + E2E navegador (client_data azul
+        sin tarjeta blanca, título blanco 26.4px).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

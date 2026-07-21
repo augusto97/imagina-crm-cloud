@@ -1882,3 +1882,27 @@
     }
     .imcrm-public-list__long { max-width: none; text-align: right; }
 }
+
+/* ── v0.1.95 — Tipografía del panel "Diseño" ─────────────────────────
+ * Los bloques con tarjeta traen tamaños/pesos propios en px; estas
+ * reglas fuerzan la herencia desde el wrapper estilizado conservando
+ * la jerarquía en unidades relativas (títulos más grandes, labels más
+ * chicos, cifras de KPI destacadas). */
+.imcrm-style-fs :where(section, p, span, div, a, li, td, dd, blockquote, time) {
+    font-size: inherit !important;
+}
+.imcrm-style-fs :where(h1, .imcrm-portal-hero__title) {
+    font-size: 1.7em !important;
+}
+.imcrm-style-fs :where(h2, h3, h4, .imcrm-portal-block__title) {
+    font-size: 1.2em !important;
+}
+.imcrm-style-fs :where(dt, label, .imcrm-portal-data-cards__label) {
+    font-size: 0.78em !important;
+}
+.imcrm-style-fs :where(.imcrm-portal-kpi__value, .imcrm-portal-stat__value) {
+    font-size: 1.9em !important;
+}
+.imcrm-style-fw :where(p, span, div, a, li, td, dd, blockquote) {
+    font-weight: inherit !important;
+}

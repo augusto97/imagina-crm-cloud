@@ -85,17 +85,68 @@ export function hasBlockStyle(style: BlockStyle): boolean {
     return Object.keys(style).length > 0;
 }
 
+/** hex `#rrggbb`/`#rgb` → triplete HSL `"h s% l%"` (formato de los tokens). */
+export function hexToHslTriplet(hex: string): string | null {
+    if (!HEX_RE.test(hex)) return null;
+    let h = hex.slice(1);
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    const r = parseInt(h.slice(0, 2), 16) / 255;
+    const g = parseInt(h.slice(2, 4), 16) / 255;
+    const b = parseInt(h.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    let hue = 0;
+    let sat = 0;
+    if (max !== min) {
+        const d = max - min;
+        sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) hue = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+        else if (max === g) hue = ((b - r) / d + 2) * 60;
+        else hue = ((r - g) / d + 4) * 60;
+    }
+    return `${Math.round(hue)} ${Math.round(sat * 100)}% ${Math.round(l * 100)}%`;
+}
+
 /**
  * CSS del wrapper del bloque. Regla de comodidad: si hay fondo o borde
  * pero no se eligió relleno/radio, se aplican defaults amables (md) —
  * un fondo pegado al contenido sin padding se ve roto.
+ *
+ * v0.1.95 — además de pintar el wrapper, el fondo/texto RE-TIÑEN los
+ * tokens del tema localmente (`--imcrm-card`, `--imcrm-border`,
+ * `--imcrm-muted`, foregrounds): los bloques con tarjeta propia (portal
+ * y ficha CRM pintan con `hsl(var(--imcrm-card))`) adoptan el color
+ * elegido en vez de quedar como tarjeta blanca sobre la banda.
  */
 export function blockStyleCss(style: BlockStyle): React.CSSProperties {
-    const css: React.CSSProperties = {};
+    const css: React.CSSProperties & Record<string, string | number> = {};
     const boxed = style.bg !== undefined || style.border !== undefined;
-    if (style.bg !== undefined) css.backgroundColor = style.bg;
-    if (style.text !== undefined) css.color = style.text;
-    if (style.border !== undefined) css.border = `1px solid ${style.border}`;
+    if (style.bg !== undefined) {
+        css.backgroundColor = style.bg;
+        const t = hexToHslTriplet(style.bg);
+        if (t !== null) {
+            css['--imcrm-card'] = t;
+            css['--imcrm-muted'] = t;
+            // Sin borde elegido, los hairlines internos se funden con el
+            // fondo (una banda sólida no quiere bordecitos grises adentro).
+            css['--imcrm-border'] = hexToHslTriplet(style.border ?? style.bg) ?? t;
+        }
+    }
+    if (style.text !== undefined) {
+        css.color = style.text;
+        const t = hexToHslTriplet(style.text);
+        if (t !== null) {
+            css['--imcrm-card-foreground'] = t;
+            css['--imcrm-foreground'] = t;
+            css['--imcrm-muted-foreground'] = t;
+        }
+    }
+    if (style.border !== undefined) {
+        css.border = `1px solid ${style.border}`;
+        const t = hexToHslTriplet(style.border);
+        if (t !== null) css['--imcrm-border'] = t;
+    }
     const pad = style.pad ?? (boxed ? 'md' : undefined);
     if (pad !== undefined && pad !== 'none') css.padding = `${PAD_PX[pad]}px`;
     const radius = style.radius ?? (boxed ? 'md' : undefined);
@@ -105,6 +156,18 @@ export function blockStyleCss(style: BlockStyle): React.CSSProperties {
     if (style.size !== undefined) css.fontSize = `${SIZE_PX[style.size]}px`;
     if (style.weight !== undefined) css.fontWeight = WEIGHTS[style.weight];
     return css;
+}
+
+/**
+ * Clases del wrapper — activan las reglas CSS que fuerzan la HERENCIA
+ * tipográfica dentro de bloques cuyo CSS trae tamaños/pesos propios en
+ * px (sin esto, "Tamaño de texto" no hacía nada en bloques con tarjeta).
+ */
+export function blockStyleClass(style: BlockStyle): string {
+    const cls: string[] = [];
+    if (style.size !== undefined) cls.push('imcrm-style-fs');
+    if (style.weight !== undefined) cls.push('imcrm-style-fw');
+    return cls.join(' ');
 }
 
 /* ── Ajustes de PÁGINA del portal (v0.1.94) ───────────────────────── */
