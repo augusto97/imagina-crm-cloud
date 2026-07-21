@@ -161,6 +161,42 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(boot.template).toEqual([{ type: 'hero' }, { type: 'faq' }]);
     });
 
+    it('me: los bloques image con archivo subido reciben URL FIRMADA (incluye nested_section)', async () => {
+        // v0.1.93 — el rol client no puede usar la descarga con sesión de
+        // miembro: portal.me inyecta config.url firmada. La URL externa y
+        // el estilo del bloque pasan intactos; los settings no se mutan.
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [
+                        { type: 'image', config: { image_file_id: 77, alt: 'Logo', style: { bg: '#ffffff' } } },
+                        { type: 'image', config: { url: 'https://cdn.acme.test/banner.png' } },
+                        {
+                            type: 'nested_section',
+                            config: {
+                                columns: [
+                                    { id: 'c1', width: 6, blocks: [{ type: 'image', config: { image_file_id: 88 } }] },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        });
+        const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'img@acme.test' });
+        const { sessionToken } = await portal.consume(link.token);
+        const session = await sessions.get(sessionToken);
+        const boot = await portal.me(session!.userId);
+
+        const [uploaded, external, nested] = boot.template as Array<Record<string, any>>;
+        expect(String(uploaded!.config.url)).toContain('/files/77/signed?');
+        expect(String(uploaded!.config.url)).toContain(`tenant=${tenantId}`);
+        expect(uploaded!.config.style).toEqual({ bg: '#ffffff' });
+        expect(external!.config.url).toBe('https://cdn.acme.test/banner.png');
+        const sub = nested!.config.columns[0].blocks[0];
+        expect(String(sub.config.url)).toContain('/files/88/signed?');
+    });
+
     // --- Endpoints de bloques del portal (scope + whitelist) ----------------
 
     /** Sesión de cliente lista para usar (issue + consume). */

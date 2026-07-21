@@ -16,6 +16,7 @@ import {
     X,
 } from 'lucide-react';
 
+import { blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns, WIDTH_PRESETS } from '@/lib/rowsLayout';
 import { cn } from '@/lib/utils';
@@ -117,12 +118,14 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
         width: number;
         padding?: string;
         margin?: string;
+        bg?: string;
         blocks: TBlock[];
     };
     type Section = {
         id: string;
         padding?: string;
         margin?: string;
+        bg?: string;
         columns: Column[];
     };
 
@@ -137,6 +140,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                 id: `sec-${sIdx}-${row.index}`,
                 padding: firstBlockOfSection?.secPadding,
                 margin: firstBlockOfSection?.secMargin,
+                bg: firstBlockOfSection?.secBg,
                 columns: row.columns.map((col, cIdx) => {
                     const firstBlockOfCol = col.blocks[0];
                     return {
@@ -144,6 +148,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                         width: col.width,
                         padding: firstBlockOfCol?.colPadding,
                         margin: firstBlockOfCol?.colMargin,
+                        bg: firstBlockOfCol?.colBg,
                         blocks: col.blocks,
                     };
                 }),
@@ -184,8 +189,10 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                         h: 0,
                         secPadding: section.padding,
                         secMargin: section.margin,
+                        secBg: section.bg,
                         colPadding: col.padding,
                         colMargin: col.margin,
+                        colBg: col.bg,
                     });
                 });
             });
@@ -496,6 +503,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                     preview={preview}
                     padding={section.padding}
                     margin={section.margin}
+                    bg={section.bg}
                     onSetPadding={(v) => {
                         const next = sections.map((s) => s.id === section.id ? { ...s, padding: v } : s);
                         const hasBlocks = section.columns.some((c) => c.blocks.length > 0);
@@ -504,6 +512,12 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                     }}
                     onSetMargin={(v) => {
                         const next = sections.map((s) => s.id === section.id ? { ...s, margin: v } : s);
+                        const hasBlocks = section.columns.some((c) => c.blocks.length > 0);
+                        if (hasBlocks) persistSections(next);
+                        else updateSectionsOnly(next);
+                    }}
+                    onSetBg={(v) => {
+                        const next = sections.map((s) => s.id === section.id ? { ...s, bg: v === '' ? undefined : v } : s);
                         const hasBlocks = section.columns.some((c) => c.blocks.length > 0);
                         if (hasBlocks) persistSections(next);
                         else updateSectionsOnly(next);
@@ -519,6 +533,15 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                                 preview={preview}
                                 padding={col.padding}
                                 margin={col.margin}
+                                bg={col.bg}
+                                onSetBg={(v) => {
+                                    const next = sections.map((s) => s.id === section.id ? {
+                                        ...s,
+                                        columns: s.columns.map((c) => c.id === col.id ? { ...c, bg: v === '' ? undefined : v } : c),
+                                    } : s);
+                                    if (col.blocks.length > 0) persistSections(next);
+                                    else updateSectionsOnly(next);
+                                }}
                                 onSetPadding={(v) => {
                                     const next = sections.map((s) => s.id === section.id ? {
                                         ...s,
@@ -587,7 +610,12 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                                                 onSetDropTarget={setDropTargetColId}
                                             />
                                         ) : (
-                                            registry.renderPreview(block, ctx)
+                                            // WYSIWYG: el mismo wrapper de estilo
+                                            // (config.style) que aplican la ficha
+                                            // real y el portal.
+                                            <div style={blockStyleCss(readBlockStyle(block.config))}>
+                                                {registry.renderPreview(block, ctx)}
+                                            </div>
                                         )}
                                     </BlockCard>
                                 ))}
@@ -633,8 +661,10 @@ function SectionCard({
     preview,
     padding,
     margin,
+    bg,
     onSetPadding,
     onSetMargin,
+    onSetBg,
     onDelete,
     children,
 }: {
@@ -642,18 +672,21 @@ function SectionCard({
     preview: boolean;
     padding?: string;
     margin?: string;
+    bg?: string;
     onSetPadding: (v: string) => void;
     onSetMargin: (v: string) => void;
+    onSetBg: (v: string) => void;
     onDelete: () => void;
     children: ReactNode;
 }): JSX.Element {
-    // El style se aplica solo en preview mode para que el editor
-    // refleje el resultado final. En modo edición, NO aplicamos el
-    // padding/margin al card (sino se mueve el cursor y el drag se
-    // siente raro). Solo lo previsualizamos como tooltip.
+    // El spacing se aplica solo en preview mode para que el editor
+    // refleje el resultado final (en edición movería el cursor y el
+    // drag se sentiría raro). El FONDO sí se aplica siempre — no
+    // afecta la geometría y ver el color mientras editás es clave.
     const previewStyle: CSSProperties = preview
         ? { padding, margin }
         : {};
+    if (bg !== undefined && bg !== '') previewStyle.backgroundColor = bg;
     return (
         <div
             className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3 imcrm-shadow-imcrm-xs"
@@ -668,9 +701,11 @@ function SectionCard({
                         <SpacingPopover
                             padding={padding}
                             margin={margin}
+                            bg={bg}
                             onSetPadding={onSetPadding}
                             onSetMargin={onSetMargin}
-                            title={__('Espaciado de la sección')}
+                            onSetBg={onSetBg}
+                            title={__('Estilo de la sección')}
                         />
                         <button
                             type="button"
@@ -694,9 +729,11 @@ interface ColumnCardProps {
     preview: boolean;
     padding?: string;
     margin?: string;
+    bg?: string;
     onSetWidth: (w: number) => void;
     onSetPadding: (v: string) => void;
     onSetMargin: (v: string) => void;
+    onSetBg: (v: string) => void;
     onDelete: () => void;
     isDropTarget: boolean;
     onDragOver: (e: React.DragEvent) => void;
@@ -712,9 +749,11 @@ function ColumnCard({
     preview,
     padding,
     margin,
+    bg,
     onSetWidth,
     onSetPadding,
     onSetMargin,
+    onSetBg,
     onDelete,
     isDropTarget,
     onDragOver,
@@ -730,6 +769,7 @@ function ColumnCard({
         flex: `${width} ${width} 0`,
         minWidth: 0,
     };
+    if (bg !== undefined && bg !== '') style.backgroundColor = bg;
 
     return (
         <div
@@ -766,9 +806,11 @@ function ColumnCard({
                         <SpacingPopover
                             padding={padding}
                             margin={margin}
+                            bg={bg}
                             onSetPadding={onSetPadding}
                             onSetMargin={onSetMargin}
-                            title={__('Espaciado de la columna')}
+                            onSetBg={onSetBg}
+                            title={__('Estilo de la columna')}
                             compact
                         />
                         <button
@@ -1293,7 +1335,10 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                                                 </button>
                                             </div>
                                         )}
-                                        <div className="imcrm-overflow-x-auto">
+                                        <div
+                                            className="imcrm-overflow-x-auto"
+                                            style={blockStyleCss(readBlockStyle(subBlock.config))}
+                                        >
                                             {registry.renderPreview(subBlock, ctx)}
                                         </div>
                                     </div>
@@ -1311,23 +1356,35 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
 // SpacingPopover — input compacto para padding/margin de sec/col
 // ───────────────────────────────────────────────────────────────────
 
+const SECTION_BG_SWATCHES = [
+    '#ffffff', '#f8fafc', '#f1f5f9', '#eff6ff', '#ecfdf5',
+    '#fefce8', '#fef2f2', '#faf5ff', '#0f172a', '#1e293b',
+];
+
 function SpacingPopover({
     padding,
     margin,
+    bg,
     onSetPadding,
     onSetMargin,
+    onSetBg,
     title,
     compact,
 }: {
     padding?: string;
     margin?: string;
+    bg?: string;
     onSetPadding: (v: string) => void;
     onSetMargin: (v: string) => void;
+    onSetBg: (v: string) => void;
     title: string;
     compact?: boolean;
 }): JSX.Element {
     const [open, setOpen] = useState(false);
-    const hasSpacing = (padding && padding.trim() !== '') || (margin && margin.trim() !== '');
+    const hasSpacing =
+        (padding && padding.trim() !== '') ||
+        (margin && margin.trim() !== '') ||
+        (bg && bg.trim() !== '');
     return (
         <div className="imcrm-relative">
             <button
@@ -1374,8 +1431,53 @@ function SpacingPopover({
                                 className="imcrm-mt-0.5 imcrm-block imcrm-w-full imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px] imcrm-text-foreground focus:imcrm-outline-none focus:imcrm-ring-1 focus:imcrm-ring-primary"
                             />
                         </label>
+                        <div className="imcrm-mt-1.5 imcrm-block imcrm-text-[10px] imcrm-text-muted-foreground">
+                            {__('Fondo')}
+                            <div className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-1">
+                                {SECTION_BG_SWATCHES.map((hex) => (
+                                    <button
+                                        key={hex}
+                                        type="button"
+                                        aria-label={hex}
+                                        title={hex}
+                                        onClick={() => onSetBg(hex)}
+                                        className={cn(
+                                            'imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border imcrm-transition-transform hover:imcrm-scale-110',
+                                            bg === hex
+                                                ? 'imcrm-border-primary imcrm-ring-1 imcrm-ring-primary/50'
+                                                : 'imcrm-border-border',
+                                        )}
+                                        style={{ backgroundColor: hex }}
+                                    />
+                                ))}
+                                {bg !== undefined && bg !== '' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onSetBg('')}
+                                        className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground hover:imcrm-text-destructive"
+                                    >
+                                        {__('Quitar')}
+                                    </button>
+                                )}
+                            </div>
+                            <input
+                                type="text"
+                                value={bg ?? ''}
+                                onChange={(e) => {
+                                    const raw = e.target.value.trim();
+                                    if (raw === '') {
+                                        onSetBg('');
+                                        return;
+                                    }
+                                    const hex = raw.startsWith('#') ? raw : `#${raw}`;
+                                    if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) onSetBg(hex.toLowerCase());
+                                }}
+                                placeholder="#hex"
+                                className="imcrm-mt-1 imcrm-block imcrm-w-24 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-1.5 imcrm-py-1 imcrm-font-mono imcrm-text-[11px] imcrm-text-foreground focus:imcrm-outline-none focus:imcrm-ring-1 focus:imcrm-ring-primary"
+                            />
+                        </div>
                         <p className="imcrm-mt-1.5 imcrm-text-[10px] imcrm-text-muted-foreground">
-                            {__('Acepta cualquier valor CSS válido. Vacío = sin estilo.')}
+                            {__('Padding/margin aceptan cualquier valor CSS. Vacío = sin estilo.')}
                         </p>
                     </div>
                 </>

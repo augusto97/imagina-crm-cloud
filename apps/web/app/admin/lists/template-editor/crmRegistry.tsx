@@ -5,6 +5,7 @@ import {
     FileText,
     Hash,
     Heading as HeadingIcon,
+    Image as ImageIcon,
     Layout,
     MessageSquare,
     Minus,
@@ -38,6 +39,7 @@ import {
     RelatedForm,
     StatsForm,
 } from './forms/BlockForms';
+import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
 import { createBlock as createBlockHelper } from './utils/createBlock';
 
 import type {
@@ -185,6 +187,13 @@ const TYPES: BlockTypeDef[] = [
         icon: MousePointerClick,
         category: 'actions',
     },
+    {
+        type: 'image',
+        label: __('Imagen'),
+        description: __('Imagen subida o por URL, con alto, ajuste y enlace opcional.'),
+        icon: ImageIcon,
+        category: 'content',
+    },
     // Estructura
     {
         type: 'nested_section',
@@ -212,6 +221,7 @@ const LABEL_BY_TYPE: Record<V2BlockType, string> = {
     heading:          __('Título de sección'),
     comments_thread:  __('Hilo de comentarios'),
     nested_section:   __('Sub-sección con columnas'),
+    image:            __('Imagen'),
 };
 
 const DESC_BY_TYPE: Record<V2BlockType, string> = {
@@ -231,6 +241,7 @@ const DESC_BY_TYPE: Record<V2BlockType, string> = {
     heading:          __('Título de sección con nivel jerárquico.'),
     comments_thread:  __('Hilo de comentarios del record.'),
     nested_section:   __('Contenedor con N sub-columnas anidadas adentro de otra columna.'),
+    image:            __('Imagen subida al módulo de archivos o por URL externa.'),
 };
 
 /**
@@ -284,6 +295,13 @@ function renderInspectorForBlock(
             return <HeadingForm block={block} onUpdate={update} />;
         case 'comments_thread':
             return <CommentsThreadForm block={block} onUpdate={update} />;
+        case 'image':
+            return (
+                <ImageBlockForm
+                    config={block.config as Record<string, unknown>}
+                    onConfigChange={(config) => update({ config })}
+                />
+            );
         case 'nested_section':
             // Las sub-columnas y sub-bloques se gestionan EN EL CANVAS
             // (drag desde paleta, ↑/↓/× en cada sub-bloque, dropdown

@@ -6,6 +6,7 @@ import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import { adminImageSrc, ImageBlockView } from '@/admin/template-editor-core/ImageBlockForm';
 import type { ResolvedV2Block } from '@/lib/crmTemplates';
 import type { RecordEntity } from '@/types/record';
 
@@ -136,6 +137,17 @@ export function BlockRenderer({
     }
     if (block.type === 'divider') {
         return <DividerView label={block.config.label} />;
+    }
+    if (block.type === 'image') {
+        const cfg = {
+            url: block.config.url,
+            image_file_id: block.config.imageFileId,
+            alt: block.config.alt,
+            height: block.config.height,
+            fit: block.config.fit,
+            link_url: block.config.linkUrl,
+        };
+        return <ImageBlockView config={cfg} src={adminImageSrc(cfg)} />;
     }
     if (block.type === 'heading') {
         return <HeadingView text={block.config.text} level={block.config.level} />;

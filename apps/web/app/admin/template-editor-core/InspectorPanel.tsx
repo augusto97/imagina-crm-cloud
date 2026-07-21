@@ -2,9 +2,11 @@ import { Copy, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { readBlockStyle } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
+import { BlockStyleEditor } from './BlockStyleEditor';
 import type { BaseTemplateBlock, BlockRegistry } from './types';
 
 interface Props<TBlock extends BaseTemplateBlock> {
@@ -58,6 +60,20 @@ export function InspectorPanel<TBlock extends BaseTemplateBlock>({
 
             <div className="imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-4 imcrm-py-4">
                 {registry.renderInspector(block, { fields }, onUpdate)}
+
+                {/* Sección "Diseño" universal — fondo/texto/borde/relleno/
+                    esquinas/sombra/alineación para CUALQUIER bloque. Vive en
+                    `config.style` y la aplican el canvas, la ficha real del
+                    registro y el portal con la misma función (blockStyleCss). */}
+                <BlockStyleEditor
+                    value={readBlockStyle(block.config)}
+                    onChange={(style) => {
+                        const config: Record<string, unknown> = { ...block.config };
+                        if (Object.keys(style).length > 0) config.style = style;
+                        else delete config.style;
+                        onUpdate({ config } as unknown as Partial<TBlock>);
+                    }}
+                />
             </div>
 
             <footer className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-px-4 imcrm-py-3">
