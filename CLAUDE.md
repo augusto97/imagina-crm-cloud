@@ -1076,6 +1076,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         insertan, popover abre/inserta, select cambia tipo, X cierra, body
         sin pointer-events residual, pan +100px exacto, reapertura).
 
+  - [x] **Editores de plantilla nivel page-builder (v0.1.93, pedido del
+        usuario: "solo edita bordecitos, se siente capado")**: capa de
+        ESTILO universal para los dos editores (ficha del registro +
+        portal del cliente). (a) `lib/blockStyle.ts` — `config.style`
+        declarativo por bloque (fondo/texto/borde hex, relleno, esquinas,
+        sombra, alineación; defaults amables: fondo sin padding elegido →
+        md) interpretado por LA MISMA función en el canvas del editor, la
+        ficha real (`RecordCrmLayout`) y el portal (`PortalRenderer`,
+        top-level y anidados) — WYSIWYG por construcción; (b) sección
+        **"Diseño"** en el inspector para CUALQUIER bloque de ambos
+        registries (`BlockStyleEditor` en el core: swatches curados + hex
+        libre + segmentados + alineación + restablecer); (c) **fondo de
+        sección y de columna** (`secBg`/`colBg`, mismo mecanismo que el
+        spacing) editable desde el popover de estilo de sección/columna
+        del canvas y aplicado en las 3 superficies; (d) **bloque IMAGEN**
+        en ambos editores (`ImageBlockForm` compartido: subir al módulo
+        de archivos o URL externa, alt, alto, ajuste cover/contain,
+        enlace): en el admin se sirve por la descarga con sesión (mismo
+        camino que los covers), y en el portal `portal.me` inyecta la
+        **URL FIRMADA** (TTL 24h) recorriendo el template incluso dentro
+        de `nested_section` (el rol client no puede usar la descarga).
+        Tests: 4 unit de blockStyle (front 20 en verde) + spec del portal
+        con firma de imágenes anidadas (API 312 en verde). E2E navegador
+        9/9 (imagen por URL renderiza en canvas, fondo aplicado EN VIVO,
+        persistencia con style.bg, y la ficha real del registro renderiza
+        la imagen con su fondo — WYSIWYG verificado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

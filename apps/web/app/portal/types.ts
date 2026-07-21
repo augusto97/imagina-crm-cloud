@@ -47,6 +47,9 @@ export interface PortalBlockGridPosition {
     secMargin?: string;
     colPadding?: string;
     colMargin?: string;
+    /** v0.1.93 — fondo (hex) de la sección/columna contenedora. */
+    secBg?: string;
+    colBg?: string;
 }
 
 export type PortalBlock = PortalBlockGridPosition & (
@@ -269,6 +272,23 @@ export type PortalBlock = PortalBlockGridPosition & (
                   /** Sub-bloques apilados verticalmente. */
                   blocks: PortalBlock[];
               }>;
+          };
+      }
+    | {
+          /**
+           * v0.1.93 — Imagen. Con `image_file_id`, el backend inyecta
+           * `url` como URL FIRMADA (el rol client no puede usar la
+           * descarga con sesión de miembro); con URL externa llega tal
+           * cual. Sin `url` el bloque no renderiza.
+           */
+          type: 'image';
+          config: {
+              url?: string;
+              image_file_id?: number;
+              alt?: string;
+              height?: number;
+              fit?: 'cover' | 'contain';
+              link_url?: string;
           };
       }
 );

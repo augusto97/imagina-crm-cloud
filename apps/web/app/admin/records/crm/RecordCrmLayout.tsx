@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
+import { blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
 import { getResolvedV2 } from '@/lib/crmTemplates';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
@@ -145,11 +146,14 @@ export function RecordCrmLayout({
             ) : (
                 <div className="imcrm-rows-layout">
                     {rows.map((row) => {
-                        // 0.57.29 — spacing leído del primer bloque (consistente).
+                        // 0.57.29 — spacing (y desde v0.1.93 fondo) leído del
+                        // primer bloque (consistente entre hermanos).
                         const firstBlockOfSec = row.columns[0]?.blocks[0];
-                        const sectionStyle: React.CSSProperties = {};
-                        if (firstBlockOfSec?.secPadding) sectionStyle.padding = firstBlockOfSec.secPadding;
-                        if (firstBlockOfSec?.secMargin) sectionStyle.margin = firstBlockOfSec.secMargin;
+                        const sectionStyle = wrapperStyleCss({
+                            bg: firstBlockOfSec?.secBg,
+                            padding: firstBlockOfSec?.secPadding,
+                            margin: firstBlockOfSec?.secMargin,
+                        });
                         return (
                         <div
                             key={`row-${row.index}`}
@@ -163,9 +167,12 @@ export function RecordCrmLayout({
                                 const firstBlockOfCol = col.blocks[0];
                                 const colStyle: React.CSSProperties = {
                                     flex: `${col.width} ${col.width} 0`,
+                                    ...wrapperStyleCss({
+                                        bg: firstBlockOfCol?.colBg,
+                                        padding: firstBlockOfCol?.colPadding,
+                                        margin: firstBlockOfCol?.colMargin,
+                                    }),
                                 };
-                                if (firstBlockOfCol?.colPadding) colStyle.padding = firstBlockOfCol.colPadding;
-                                if (firstBlockOfCol?.colMargin) colStyle.margin = firstBlockOfCol.colMargin;
                                 return (
                                     <div
                                         key={`col-${row.index}-${col.colIdx}`}
@@ -173,19 +180,25 @@ export function RecordCrmLayout({
                                         style={colStyle}
                                     >
                                         {col.blocks.map((b) => (
-                                            <BlockRenderer
+                                            // v0.1.93 — wrapper de estilo del bloque
+                                            // (config.style), idéntico al del editor.
+                                            <div
                                                 key={b.id}
-                                                block={b}
-                                                listId={list.id}
-                                                recordId={record.id}
-                                                currentUserId={currentUserId}
-                                                isAdmin={isAdmin}
-                                                values={values}
-                                                onChange={setValues}
-                                                fieldErrors={fieldErrors}
-                                                record={record}
-                                                headerData={resolved.header}
-                                            />
+                                                style={blockStyleCss(readBlockStyle({ style: b.style }))}
+                                            >
+                                                <BlockRenderer
+                                                    block={b}
+                                                    listId={list.id}
+                                                    recordId={record.id}
+                                                    currentUserId={currentUserId}
+                                                    isAdmin={isAdmin}
+                                                    values={values}
+                                                    onChange={setValues}
+                                                    fieldErrors={fieldErrors}
+                                                    record={record}
+                                                    headerData={resolved.header}
+                                                />
+                                            </div>
                                         ))}
                                     </div>
                                 );

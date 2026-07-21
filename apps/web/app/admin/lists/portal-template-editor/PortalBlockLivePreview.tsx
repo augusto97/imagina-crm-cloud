@@ -22,6 +22,8 @@ import { StaticTextBlock } from '@/portal/blocks/StaticTextBlock';
 import { StatsGridBlock } from '@/portal/blocks/StatsGridBlock';
 import type { PortalBootData, PortalRecord } from '@/portal/types';
 
+import { adminImageSrc, ImageBlockView } from '@/admin/template-editor-core/ImageBlockForm';
+
 import type { ResolvedPortalBlock } from './portalLayout';
 
 interface Props {
@@ -219,6 +221,11 @@ function renderBlock(
                     config={block.config as Parameters<typeof ContactCardBlock>[0]['config']}
                 />
             );
+        case 'image':
+            // En el editor el src se resuelve contra el download del
+            // módulo de archivos (el admin tiene sesión); el portal real
+            // recibe la URL firmada desde el backend.
+            return <ImageBlockView config={block.config} src={adminImageSrc(block.config)} />;
         case 'nested_section': {
             // Renderea las sub-columnas con sus sub-bloques recursivamente.
             // El preview usa el mismo mock que el padre.

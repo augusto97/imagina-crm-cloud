@@ -9,6 +9,7 @@ import {
     HeadphonesIcon,
     Heading as HeadingIcon,
     HelpCircle,
+    Image as ImageIcon,
     LayoutTemplate,
     MessageSquare,
     Minus,
@@ -153,6 +154,13 @@ const TYPES: BlockTypeDef[] = [
         category: 'content',
     },
     {
+        type: 'image',
+        label: __('Imagen'),
+        description: __('Imagen subida o por URL, con alto, ajuste y enlace opcional.'),
+        icon: ImageIcon,
+        category: 'content',
+    },
+    {
         type: 'external_link',
         label: __('Enlace externo'),
         description: __('CTA a URL externa (pagos, soporte, docs).'),
@@ -202,6 +210,7 @@ const LABEL_BY_TYPE: Record<PortalBlockType, string> = {
     faq:                    __('Preguntas frecuentes'),
     contact_card:           __('Tarjeta de contacto'),
     nested_section:         __('Sub-sección con columnas'),
+    image:                  __('Imagen'),
 };
 
 const DESC_BY_TYPE: Record<PortalBlockType, string> = {
@@ -223,6 +232,7 @@ const DESC_BY_TYPE: Record<PortalBlockType, string> = {
     faq:                    __('Acordeón Q&A — preguntas frecuentes colapsables.'),
     contact_card:           __('Tarjeta del asesor con avatar, nombre y datos de contacto.'),
     nested_section:         __('Contenedor con N columnas anidadas dentro de otra columna. Permite layouts de columnas dentro de columnas.'),
+    image:                  __('Imagen subida al módulo de archivos o por URL externa, con alto, ajuste y enlace opcional.'),
 };
 
 function makeId(type: string): string {

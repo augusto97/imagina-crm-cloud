@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
 
 import { ActivityTimelineBlock } from './blocks/ActivityTimelineBlock';
@@ -13,6 +14,7 @@ import { ExternalLinkBlock } from './blocks/ExternalLinkBlock';
 import { FaqBlock } from './blocks/FaqBlock';
 import { HeadingBlock } from './blocks/HeadingBlock';
 import { HeroBlock } from './blocks/HeroBlock';
+import { ImageBlock } from './blocks/ImageBlock';
 import { KpiWidgetBlock } from './blocks/KpiWidgetBlock';
 import { NoticeBlock } from './blocks/NoticeBlock';
 import { QuickActionsBlock } from './blocks/QuickActionsBlock';
@@ -77,12 +79,14 @@ export function PortalRenderer({ boot, data }: Props): JSX.Element {
 
                 if (visibleColumns.length === 0) return null;
 
-                // 0.57.29 — spacing de la sección leído del primer bloque
-                // (consistente entre bloques hermanos).
+                // 0.57.29 — spacing (y desde v0.1.93 fondo) de la sección
+                // leído del primer bloque (consistente entre hermanos).
                 const firstBlockOfSec = visibleColumns[0]?.blocks[0];
-                const sectionStyle: React.CSSProperties = {};
-                if (firstBlockOfSec?.secPadding) sectionStyle.padding = firstBlockOfSec.secPadding;
-                if (firstBlockOfSec?.secMargin) sectionStyle.margin = firstBlockOfSec.secMargin;
+                const sectionStyle = wrapperStyleCss({
+                    bg: firstBlockOfSec?.secBg,
+                    padding: firstBlockOfSec?.secPadding,
+                    margin: firstBlockOfSec?.secMargin,
+                });
 
                 return (
                     <div
@@ -92,13 +96,15 @@ export function PortalRenderer({ boot, data }: Props): JSX.Element {
                     >
                         {visibleColumns.map((col) => {
                             // 0.57.38 — `flex: w w 0` (ver nota en globals.css).
+                            const firstBlockOfCol = col.blocks[0];
                             const cellStyle: React.CSSProperties = {
                                 flex: `${col.width} ${col.width} 0`,
+                                ...wrapperStyleCss({
+                                    bg: firstBlockOfCol?.colBg,
+                                    padding: firstBlockOfCol?.colPadding,
+                                    margin: firstBlockOfCol?.colMargin,
+                                }),
                             };
-                            // 0.57.29 — spacing de la columna leído del primer bloque.
-                            const firstBlockOfCol = col.blocks[0];
-                            if (firstBlockOfCol?.colPadding) cellStyle.padding = firstBlockOfCol.colPadding;
-                            if (firstBlockOfCol?.colMargin) cellStyle.margin = firstBlockOfCol.colMargin;
                             return (
                                 <div
                                     key={`col-${row.index}-${col.colIdx}`}
@@ -124,10 +130,18 @@ export function PortalRenderer({ boot, data }: Props): JSX.Element {
                                         const maxH = readMaxHeight(
                                             block.config as Record<string, unknown>,
                                         );
-                                        const wrapStyle: React.CSSProperties | undefined =
-                                            maxH !== null
-                                                ? { maxHeight: `${maxH}px`, overflowY: 'auto' }
-                                                : undefined;
+                                        // v0.1.93 — estilo por bloque (config.style):
+                                        // el mismo wrapper que aplica el editor.
+                                        const wrapStyle: React.CSSProperties = {
+                                            ...blockStyleCss(
+                                                readBlockStyle(
+                                                    block.config as Record<string, unknown>,
+                                                ),
+                                            ),
+                                            ...(maxH !== null
+                                                ? { maxHeight: `${maxH}px`, overflowY: 'auto' as const }
+                                                : {}),
+                                        };
                                         return (
                                             <div key={block.__idx} style={wrapStyle}>
                                                 {rendered}
@@ -216,6 +230,8 @@ function renderBlock(
             return <FaqBlock key={idx} config={block.config} />;
         case 'contact_card':
             return <ContactCardBlock key={idx} config={block.config} />;
+        case 'image':
+            return <ImageBlock key={idx} config={block.config} />;
         case 'nested_section':
             return (
                 <div key={idx} className="imcrm-rows-layout">
@@ -227,11 +243,11 @@ function renderBlock(
                                     className="imcrm-row__cell"
                                     style={{ flex: `${col.width} ${col.width} 0` }}
                                 >
-                                    {col.blocks.map((subBlock, subIdx) =>
+                                    {col.blocks.map((subBlock, subIdx) => {
                                         // Recursivo — los sub-bloques son del mismo tipo
                                         // que los top-level (excepto nested_section, que
                                         // se filtra a 1 nivel desde el editor).
-                                        renderBlock(
+                                        const sub = renderBlock(
                                             subBlock,
                                             // Key compuesta para evitar colisiones con
                                             // los keys del nivel superior.
@@ -242,8 +258,21 @@ function renderBlock(
                                             // notice dismissibles solo tienen sentido a
                                             // nivel top-level del template).
                                             () => undefined,
-                                        ),
-                                    )}
+                                        );
+                                        if (sub === null) return null;
+                                        return (
+                                            <div
+                                                key={`s-${cIdx}-${subIdx}`}
+                                                style={blockStyleCss(
+                                                    readBlockStyle(
+                                                        subBlock.config as Record<string, unknown>,
+                                                    ),
+                                                )}
+                                            >
+                                                {sub}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             );
                         })}

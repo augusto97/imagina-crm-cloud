@@ -613,7 +613,12 @@ export class PortalService {
 
             // El editor visual guarda `portal_template` como objeto `{ blocks: [...] }`
             // (shape del template-editor). Aceptamos también un array plano legacy.
-            const template = extractPortalBlocks(list.settings.portal_template);
+            // v0.1.93 — los bloques `image` con archivo subido reciben la URL
+            // FIRMADA (el rol client no puede usar la descarga con sesión).
+            const template = this.signImageBlocks(
+                link.tenantId,
+                extractPortalBlocks(list.settings.portal_template),
+            );
 
             // White-label del workspace: el cliente ve el portal con la marca
             // de la empresa. El logo va por URL FIRMADA (el rol client no
@@ -670,6 +675,59 @@ export class PortalService {
                 template,
             };
         });
+    }
+
+    /**
+     * v0.1.93 — Recorre el template (incluyendo las columnas de
+     * `nested_section`, 1 nivel) y a cada bloque `image` con
+     * `image_file_id` le inyecta `config.url` como URL FIRMADA (TTL 24h).
+     * El rol client no tiene la descarga con sesión de miembro — mismo
+     * criterio que los campos file y el logo del branding. Devuelve
+     * COPIAS: jamás muta los settings de la lista.
+     */
+    private signImageBlocks(
+        tenantId: number,
+        blocks: Array<Record<string, unknown>>,
+    ): Array<Record<string, unknown>> {
+        const signBlock = (raw: Record<string, unknown>): Record<string, unknown> => {
+            if (!raw || typeof raw !== 'object') return raw;
+            const config =
+                raw.config && typeof raw.config === 'object'
+                    ? (raw.config as Record<string, unknown>)
+                    : undefined;
+            if (raw.type === 'image' && config) {
+                const fileId = config.image_file_id;
+                if (typeof fileId === 'number' && fileId > 0) {
+                    return {
+                        ...raw,
+                        config: {
+                            ...config,
+                            url: this.files.signedUrl(tenantId, fileId, 86_400),
+                        },
+                    };
+                }
+                return raw;
+            }
+            if (raw.type === 'nested_section' && config && Array.isArray(config.columns)) {
+                return {
+                    ...raw,
+                    config: {
+                        ...config,
+                        columns: (config.columns as Array<Record<string, unknown>>).map((col) => {
+                            if (!col || typeof col !== 'object' || !Array.isArray(col.blocks)) {
+                                return col;
+                            }
+                            return {
+                                ...col,
+                                blocks: (col.blocks as Array<Record<string, unknown>>).map(signBlock),
+                            };
+                        }),
+                    },
+                };
+            }
+            return raw;
+        };
+        return blocks.map(signBlock);
     }
 }
 

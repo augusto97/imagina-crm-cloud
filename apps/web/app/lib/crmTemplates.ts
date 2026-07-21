@@ -1543,7 +1543,9 @@ export type V2BlockType =
     | 'heading'
     | 'comments_thread'
     // 0.57.29 — sub-sección con N columnas anidadas (1 nivel)
-    | 'nested_section';
+    | 'nested_section'
+    // v0.1.93 — imagen (upload propio o URL externa)
+    | 'image';
 
 interface V2BlockBase {
     id: string;
@@ -1568,6 +1570,9 @@ interface V2BlockBase {
     secMargin?: string;
     colPadding?: string;
     colMargin?: string;
+    /** v0.1.93 — fondo (hex) de la sección/columna contenedora. */
+    secBg?: string;
+    colBg?: string;
 }
 
 /**
@@ -1853,6 +1858,24 @@ export interface V2NestedSectionBlock extends V2BlockBase {
     };
 }
 
+/**
+ * v0.1.93 — Imagen: subida al módulo de archivos (`image_file_id`,
+ * servida por el download con sesión — mismo camino que los covers de
+ * tarjetas) o URL externa. Alto fijo opcional, ajuste cover/contain y
+ * enlace al hacer click.
+ */
+export interface V2ImageBlock extends V2BlockBase {
+    type: 'image';
+    config: {
+        url?: string;
+        image_file_id?: number;
+        alt?: string;
+        height?: number;
+        fit?: 'cover' | 'contain';
+        link_url?: string;
+    };
+}
+
 export type V2Block =
     | V2HeaderBlock
     | V2PropertiesGroupBlock
@@ -1869,7 +1892,8 @@ export type V2Block =
     | V2DividerBlock
     | V2HeadingBlock
     | V2CommentsThreadBlock
-    | V2NestedSectionBlock;
+    | V2NestedSectionBlock
+    | V2ImageBlock;
 
 export interface CustomTemplateConfigV2 {
     v: 2;
@@ -2084,6 +2108,11 @@ interface ResolvedBase {
     secMargin?: string;
     colPadding?: string;
     colMargin?: string;
+    /** v0.1.93 — fondo de la sección/columna contenedora (hex). */
+    secBg?: string;
+    colBg?: string;
+    /** v0.1.93 — estilo del bloque (`config.style` crudo, lo lee blockStyle). */
+    style?: Record<string, unknown>;
 }
 
 export type ResolvedV2Block =
@@ -2180,6 +2209,17 @@ export type ResolvedV2Block =
             padding?: string;
             margin?: string;
         };
+    })
+    | (ResolvedBase & {
+        type: 'image';
+        config: {
+            url?: string;
+            imageFileId?: number;
+            alt?: string;
+            height?: number;
+            fit?: 'cover' | 'contain';
+            linkUrl?: string;
+        };
     });
 
 /**
@@ -2203,6 +2243,10 @@ function resolveNestedSubBlocks(
             pos: b.pos,
             secPadding: b.secPadding, secMargin: b.secMargin,
             colPadding: b.colPadding, colMargin: b.colMargin,
+            secBg: b.secBg, colBg: b.colBg,
+            // El estilo del bloque viaja crudo — lo interpreta blockStyle
+            // en el render (mismo criterio que el editor y el portal).
+            style: (b.config as { style?: Record<string, unknown> } | undefined)?.style,
         };
 
         if (b.type === 'header') {
@@ -2304,6 +2348,15 @@ function resolveNestedSubBlocks(
             resolved.push({ ...base, type: 'heading', config: { text: b.config.text, level: b.config.level } });
         } else if (b.type === 'comments_thread') {
             resolved.push({ ...base, type: 'comments_thread', config: { title: b.config.title } });
+        } else if (b.type === 'image') {
+            resolved.push({ ...base, type: 'image', config: {
+                url: b.config.url,
+                imageFileId: b.config.image_file_id,
+                alt: b.config.alt,
+                height: b.config.height,
+                fit: b.config.fit,
+                linkUrl: b.config.link_url,
+            } });
         }
     }
     return resolved;
@@ -2327,6 +2380,10 @@ export function resolveV2(
             pos: b.pos,
             secPadding: b.secPadding, secMargin: b.secMargin,
             colPadding: b.colPadding, colMargin: b.colMargin,
+            secBg: b.secBg, colBg: b.colBg,
+            // El estilo del bloque viaja crudo — lo interpreta blockStyle
+            // en el render (mismo criterio que el editor y el portal).
+            style: (b.config as { style?: Record<string, unknown> } | undefined)?.style,
         };
         if (b.type === 'header') {
             hasHeader = true;
@@ -2481,6 +2538,19 @@ export function resolveV2(
                 ...base,
                 type: 'comments_thread',
                 config: { title: b.config.title },
+            });
+        } else if (b.type === 'image') {
+            blocks.push({
+                ...base,
+                type: 'image',
+                config: {
+                    url: b.config.url,
+                    imageFileId: b.config.image_file_id,
+                    alt: b.config.alt,
+                    height: b.config.height,
+                    fit: b.config.fit,
+                    linkUrl: b.config.link_url,
+                },
             });
         } else if (b.type === 'nested_section') {
             // Resolver recursivo: cada sub-bloque pasa por el mismo

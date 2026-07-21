@@ -9,6 +9,8 @@ import { useLists } from '@/hooks/useLists';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
+import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
+
 import type { ResolvedPortalBlock } from './portalLayout';
 
 interface FormProps {
@@ -67,6 +69,8 @@ export function PortalBlockForm({ block, fields, onConfigChange }: FormProps): J
                 return <FaqForm config={block.config} onChange={onConfigChange} />;
             case 'contact_card':
                 return <ContactCardForm config={block.config} onChange={onConfigChange} />;
+            case 'image':
+                return <ImageBlockForm config={block.config} onConfigChange={onConfigChange} />;
             case 'nested_section':
                 // Las sub-columnas y sub-bloques se gestionan directamente
                 // EN EL CANVAS (drag desde paleta, drag-and-drop entre

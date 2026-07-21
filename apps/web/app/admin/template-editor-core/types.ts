@@ -38,6 +38,12 @@ export interface BaseTemplateBlock {
      */
     colPadding?: string;
     colMargin?: string;
+    /**
+     * v0.1.93 — Fondo (hex) de la sección/columna contenedora. Mismo
+     * mecanismo que el spacing: viaja en cada bloque, se lee del primero.
+     */
+    secBg?: string;
+    colBg?: string;
 }
 
 export interface BaseTemplateConfig<TBlock extends BaseTemplateBlock> {
