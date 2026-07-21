@@ -1158,6 +1158,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (editor con chrome=control, preview cero dashed/labels/bordes,
         fondo de página aplicado).
 
+- [ ] **F7 — Dashboards premium** (plan acordado con el usuario: motor
+      honesto → look premium → widgets nuevos → interactividad; el grid
+      sigue en react-grid-layout — física correcta para tableros — y se
+      COMPARTEN las piezas del editor de plantillas: blockStyle/presets/
+      bloques de contenido/preview):
+  - [x] **Fase 1 — Motor honesto de widgets (v0.1.97)**: cuatro funciones
+        que la UI del fork ofrecía pero el backend cloud nunca implementó
+        (mostraban datos INCORRECTOS): (a) el **período relativo** del
+        widget (`config.period {field_id, preset}`) ahora filtra de
+        verdad — se inyecta como condición `between_relative` en AND con
+        el filter_tree en cada evaluación (preset inválido se ignora, no
+        rompe el bundle); (b) **stat_delta real**: `AggregateService.
+        runDelta` evalúa la métrica sobre dos ventanas consecutivas de
+        `period_days` días ancladas a hoy (naive-UTC) sobre el campo de
+        fecha → value/previous/delta_pct reales (antes: previous=value,
+        delta=0 cableado); (c) el **widget de tabla** devuelve
+        columns/rows REALES vía `RecordsService.list` (ACL del viewer:
+        scope por rol + campos ocultos stripped), columnas visibles
+        configuradas (o todas, cap 8), orden `field_{id}:{dir}`, límite
+        1-50, filas `f{id}`→slug (antes: `{columns:[],rows:[]}` stub);
+        (d) **bucketing temporal**: `time_bucket` (day/week/month/
+        quarter/year, schema compartido nuevo) agrupa charts de fecha
+        por `date_trunc` con labels ordenables (`2026-07`, `2026-W30`,
+        `2026-Q3`) — line/area defaultean month (antes: un punto por
+        fecha cruda). 5 tests de integración nuevos (324 en verde) +
+        E2E API 8/8 contra datos reales.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

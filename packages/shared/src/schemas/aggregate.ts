@@ -33,12 +33,29 @@ export const FIELD_METRICS: readonly AggregateMetric[] = [
     'count_false',
 ];
 
+/**
+ * Granularidad temporal para agrupar por un campo date/datetime (widgets
+ * de tendencia — v0.1.97). Cada bucket se etiqueta con un formato estable
+ * y ordenable cronológicamente como string: `2026-07-21` (day),
+ * `2026-W30` (week ISO), `2026-07` (month), `2026-Q3` (quarter), `2026`
+ * (year).
+ */
+export const TIME_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
+export const timeBucketSchema = z.enum(TIME_BUCKETS);
+export type TimeBucket = z.infer<typeof timeBucketSchema>;
+
 export const aggregateRequestSchema = z
     .object({
         metric: aggregateMetricSchema,
         field_id: idSchema.optional(),
         group_by_field_id: idSchema.optional(),
         filter_tree: filterTreeSchema.optional(),
+        /**
+         * Sólo aplica cuando `group_by_field_id` es un campo date/datetime:
+         * agrupa por bucket temporal en vez de por valor crudo. Se ignora
+         * para cualquier otro tipo de campo.
+         */
+        time_bucket: timeBucketSchema.optional(),
     })
     .refine((r) => !FIELD_METRICS.includes(r.metric) || r.field_id !== undefined, {
         message: 'Esta métrica requiere field_id',

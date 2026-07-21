@@ -5,6 +5,8 @@ import {
     type AggregateResult,
     type Field,
     type FieldType,
+    type FilterNode,
+    type TimeBucket,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
@@ -65,7 +67,15 @@ export class AggregateService {
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
             if (!groupField) throw badRequest('group_by_field_id no pertenece a la lista');
-            const groupExpr = fieldTextExpr(groupField.id);
+            // v0.1.97 — bucketing temporal: si el campo agrupado es fecha y el
+            // request trae `time_bucket`, agrupamos por bucket (día/semana/mes/
+            // trimestre/año) en vez de por valor crudo. Los labels resultantes
+            // ordenan cronológicamente como string.
+            const groupExpr =
+                req.time_bucket !== undefined
+                    && (groupField.type === 'date' || groupField.type === 'datetime')
+                    ? timeBucketExpr(groupField, req.time_bucket)
+                    : fieldTextExpr(groupField.id);
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx
                     .select({ grp: groupExpr, val: aggExpr })
@@ -87,6 +97,65 @@ export class AggregateService {
             tx.select({ val: aggExpr }).from(records).where(baseWhere),
         );
         return { metric: req.metric, value: normalize(row?.val) };
+    }
+
+    /**
+     * v0.1.97 — Delta vs período anterior (widget `stat_delta`). Evalúa la
+     * MISMA métrica sobre dos ventanas consecutivas de N días ancladas a hoy
+     * (naive-UTC, como se guardan los datos):
+     *
+     *   actual   = [hoy-(N-1) .. hoy]
+     *   anterior = [hoy-(2N-1) .. hoy-N]
+     *
+     * Cada ventana se compone como condiciones gte/lte sobre el campo de
+     * fecha, en AND con el filter_tree del widget. `delta_pct` es null si el
+     * período anterior es 0 o la métrica no es numérica (min/max de fecha).
+     */
+    async runDelta(
+        tenantId: number,
+        listIdOrSlug: string,
+        req: AggregateRequest,
+        opts: { dateFieldId: number; periodDays: number },
+    ): Promise<{
+        value: number | string | null;
+        previous: number | string | null;
+        delta_pct: number | null;
+        period_days: number;
+    }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.list(tenantId, String(list.id));
+        const dateField = fields.find((f) => f.id === opts.dateFieldId);
+        if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime')) {
+            throw badRequest('date_field_id debe ser un campo date/datetime de la lista');
+        }
+        const days = Math.max(1, Math.min(365, Math.floor(opts.periodDays) || 30));
+
+        const boundary = (daysAgo: number, edge: 'start' | 'end'): string => {
+            const d = new Date(Date.now() - daysAgo * 86_400_000);
+            const ymd = d.toISOString().slice(0, 10);
+            if (dateField.type === 'date') return ymd;
+            return edge === 'start' ? `${ymd}T00:00:00` : `${ymd}T23:59:59`;
+        };
+        const windowTree = (fromDaysAgo: number, toDaysAgo: number): AggregateRequest['filter_tree'] => {
+            const children: FilterNode[] = [];
+            if (req.filter_tree) children.push(req.filter_tree);
+            children.push({ type: 'condition', field_id: dateField.id, op: 'gte', value: boundary(fromDaysAgo, 'start') });
+            children.push({ type: 'condition', field_id: dateField.id, op: 'lte', value: boundary(toDaysAgo, 'end') });
+            return { type: 'group', logic: 'and', children };
+        };
+
+        const [cur, prev] = await Promise.all([
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }),
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }),
+        ]);
+
+        const value = cur.value ?? 0;
+        const previous = prev.value ?? 0;
+        let deltaPct: number | null = null;
+        if (typeof value === 'number' && typeof previous === 'number' && previous !== 0) {
+            deltaPct = Math.round(((value - previous) / Math.abs(previous)) * 1000) / 10;
+        }
+        return { value, previous, delta_pct: deltaPct, period_days: days };
     }
 
     /**
@@ -220,6 +289,28 @@ function metricsFor(type: FieldType): AggregateMetric[] {
     if (type === 'date' || type === 'datetime') return ['count', 'count_empty', 'min', 'max'];
     if (type === 'checkbox') return ['count', 'count_true', 'count_false'];
     return ['count', 'count_empty', 'count_unique'];
+}
+
+/**
+ * Expresión de bucket temporal para agrupar por un campo date/datetime
+ * (v0.1.97). Los formatos elegidos ordenan cronológicamente como string
+ * (así el ORDER BY del group sigue siendo correcto) y son los labels que
+ * muestra el chart: 2026-07-21 / 2026-W30 / 2026-07 / 2026-Q3 / 2026.
+ */
+function timeBucketExpr(field: Field, bucket: TimeBucket): SQL {
+    const typed = fieldTypedExpr({ id: field.id, type: field.type });
+    switch (bucket) {
+        case 'day':
+            return sql`to_char(date_trunc('day', ${typed}), 'YYYY-MM-DD')`;
+        case 'week':
+            return sql`to_char(date_trunc('week', ${typed}), 'IYYY-"W"IW')`;
+        case 'month':
+            return sql`to_char(date_trunc('month', ${typed}), 'YYYY-MM')`;
+        case 'quarter':
+            return sql`to_char(date_trunc('quarter', ${typed}), 'YYYY-"Q"Q')`;
+        case 'year':
+            return sql`to_char(date_trunc('year', ${typed}), 'YYYY')`;
+    }
 }
 
 /** Postgres devuelve numéricos como string; los convertimos a number. */
