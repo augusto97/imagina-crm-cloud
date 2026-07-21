@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
     AlertCircle,
     ArrowLeft,
-    CheckCircle2,
+    ArrowRight,
     History,
-    Pencil,
     Plus,
     Trash2,
-    XCircle,
     Zap,
 } from 'lucide-react';
 
@@ -18,52 +16,48 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import {
-    useActionCatalog,
     useAutomations,
     useDeleteAutomation,
-    useTriggerCatalog,
     useUpdateAutomation,
 } from '@/hooks/useAutomations';
-import { useList } from '@/hooks/useLists';
+import { useFields } from '@/hooks/useFields';
+import { useList, useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import type { AutomationEntity, TriggerMeta } from '@/types/automation';
+import { cn } from '@/lib/utils';
+import type { AutomationEntity } from '@/types/automation';
+import type { FieldEntity } from '@/types/field';
+import type { ListSummary } from '@/types/list';
 
-import { AutomationDialog } from './AutomationDialog';
 import { AutomationRunsDrawer } from './AutomationRunsDrawer';
+import {
+    actionMetaFor,
+    summarizeAction,
+    summarizeTrigger,
+    triggerMetaFor,
+} from './automationMeta';
 
 /**
- * Página `/lists/:listSlug/automations`.
+ * Página `/lists/:listSlug/automations` (v0.1.90).
  *
- * Lista las automatizaciones de la lista activa con su estado, trigger,
- * cantidad de acciones, y permite togglear `is_active`, editar, borrar y
- * abrir el log de runs en un drawer lateral. La creación / edición se
- * resuelve en `<AutomationDialog />`.
+ * Índice de automatizaciones de la lista: cada una es una TARJETA con
+ * el flujo resumido en lenguaje humano (trigger → acciones), toggle de
+ * estado tipo switch, historial de runs y eliminar. Crear/editar navega
+ * al editor de página completa (`AutomationEditorPage`).
  */
 export function AutomationsPage(): JSX.Element {
     const { listSlug } = useParams<{ listSlug: string }>();
+    const navigate = useNavigate();
     const list = useList(listSlug);
     const automations = useAutomations(list.data?.id);
-    const triggers = useTriggerCatalog();
-    const actions = useActionCatalog();
+    const fields = useFields(list.data?.id);
+    const lists = useLists();
 
-    const [dialogOpen, setDialogOpen] = useState(false);
-    const [editing, setEditing] = useState<AutomationEntity | null>(null);
     const [runsFor, setRunsFor] = useState<AutomationEntity | null>(null);
 
     const deleteMutation = useDeleteAutomation(list.data?.id ?? 0);
     const toast = useToast();
     const confirm = useConfirm();
-
-    const handleEdit = (automation: AutomationEntity): void => {
-        setEditing(automation);
-        setDialogOpen(true);
-    };
-
-    const handleNew = (): void => {
-        setEditing(null);
-        setDialogOpen(true);
-    };
 
     const handleDelete = async (id: number): Promise<void> => {
         if (!list.data) return;
@@ -96,8 +90,10 @@ export function AutomationsPage(): JSX.Element {
         );
     }
 
+    const newHref = `/lists/${list.data.slug}/automations/new`;
+
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
+        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[880px] imcrm-flex-col imcrm-gap-6">
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-min-w-0 imcrm-items-start imcrm-gap-3">
                     <Button
@@ -123,9 +119,11 @@ export function AutomationsPage(): JSX.Element {
                         </p>
                     </div>
                 </div>
-                <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={handleNew}>
-                    <Plus className="imcrm-h-4 imcrm-w-4" />
-                    {__('Nueva automatización')}
+                <Button asChild className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start">
+                    <Link to={newHref}>
+                        <Plus className="imcrm-h-4 imcrm-w-4" />
+                        {__('Nueva automatización')}
+                    </Link>
                 </Button>
             </header>
 
@@ -142,34 +140,36 @@ export function AutomationsPage(): JSX.Element {
                 </div>
             )}
 
-            {automations.isLoading || triggers.isLoading ? (
+            {automations.isLoading ? (
                 <ListSkeleton />
             ) : automations.data && automations.data.length > 0 ? (
-                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                     {automations.data.map((a) => (
-                        <AutomationRow
+                        <AutomationCard
                             key={a.id}
                             automation={a}
-                            triggers={triggers.data ?? []}
-                            listId={list.data!.id}
-                            onEdit={handleEdit}
+                            list={list.data!}
+                            fields={fields.data ?? []}
+                            lists={lists.data ?? []}
+                            onOpen={() => navigate(`/lists/${list.data!.slug}/automations/${a.id}`)}
                             onDelete={handleDelete}
                             onShowRuns={setRunsFor}
                         />
                     ))}
                 </ul>
             ) : (
-                <AutomationsEmpty onCreate={handleNew} />
-            )}
-
-            {dialogOpen && list.data && triggers.data && actions.data && (
-                <AutomationDialog
-                    open={dialogOpen}
-                    onOpenChange={setDialogOpen}
-                    listId={list.data.id}
-                    triggers={triggers.data}
-                    actions={actions.data}
-                    automation={editing}
+                <EmptyState
+                    icon={Zap}
+                    title={__('Aún no hay automatizaciones')}
+                    description={__('Crea reglas que reaccionen a cambios en tus registros: enviar correos, actualizar campos, crear registros en otras listas, llamar webhooks…')}
+                    action={
+                        <Button asChild className="imcrm-gap-2">
+                            <Link to={newHref}>
+                                <Plus className="imcrm-h-4 imcrm-w-4" />
+                                {__('Nueva automatización')}
+                            </Link>
+                        </Button>
+                    }
                 />
             )}
 
@@ -184,27 +184,28 @@ export function AutomationsPage(): JSX.Element {
     );
 }
 
-interface AutomationRowProps {
+interface AutomationCardProps {
     automation: AutomationEntity;
-    triggers: TriggerMeta[];
-    listId: number;
-    onEdit: (a: AutomationEntity) => void;
+    list: ListSummary;
+    fields: FieldEntity[];
+    lists: ListSummary[];
+    onOpen: () => void;
     onDelete: (id: number) => void;
     onShowRuns: (a: AutomationEntity) => void;
 }
 
-function AutomationRow({
+function AutomationCard({
     automation,
-    triggers,
-    listId,
-    onEdit,
+    list,
+    fields,
+    lists,
+    onOpen,
     onDelete,
     onShowRuns,
-}: AutomationRowProps): JSX.Element {
-    const update = useUpdateAutomation(listId);
+}: AutomationCardProps): JSX.Element {
+    const update = useUpdateAutomation(list.id);
     const toast = useToast();
-    const triggerLabel =
-        triggers.find((t) => t.slug === automation.trigger_type)?.label ?? automation.trigger_type;
+    const triggerMeta = triggerMetaFor(automation.trigger_type);
 
     const handleToggle = async (): Promise<void> => {
         try {
@@ -218,103 +219,157 @@ function AutomationRow({
     };
 
     return (
-        <li className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-4 imcrm-py-3 sm:imcrm-flex-row sm:imcrm-items-center sm:imcrm-gap-3">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-3">
+        <li
+            className={cn(
+                'imcrm-group imcrm-flex imcrm-cursor-pointer imcrm-flex-col imcrm-gap-3 imcrm-rounded-2xl imcrm-border imcrm-bg-card imcrm-px-4 imcrm-py-3.5 imcrm-shadow-imcrm-sm imcrm-transition-shadow hover:imcrm-shadow-imcrm-md',
+                automation.is_active ? 'imcrm-border-border' : 'imcrm-border-border imcrm-opacity-70',
+            )}
+            onClick={onOpen}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') onOpen();
+            }}
+        >
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
                 <span
-                    className={
-                        'imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full ' +
-                        (automation.is_active
-                            ? 'imcrm-bg-primary/10 imcrm-text-primary'
-                            : 'imcrm-bg-muted imcrm-text-muted-foreground')
-                    }
+                    className={cn(
+                        'imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-xl imcrm-ring-1',
+                        automation.is_active
+                            ? 'imcrm-bg-primary/10 imcrm-text-primary imcrm-ring-primary/20'
+                            : 'imcrm-bg-muted imcrm-text-muted-foreground imcrm-ring-border',
+                    )}
                     aria-hidden
                 >
-                    <Zap className="imcrm-h-4 imcrm-w-4" />
+                    <triggerMeta.icon className="imcrm-h-4 imcrm-w-4" />
                 </span>
                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
-                        <button
-                            type="button"
-                            onClick={() => onEdit(automation)}
-                            className="imcrm-text-sm imcrm-font-medium imcrm-text-left hover:imcrm-underline"
-                        >
-                            {automation.name}
-                        </button>
-                        {automation.is_active ? (
-                            <Badge variant="success">{__('Activa')}</Badge>
-                        ) : (
-                            <Badge variant="outline">{__('Pausada')}</Badge>
-                        )}
-                    </div>
-                    <div className="imcrm-mt-0.5 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
-                        <span>{triggerLabel}</span>
-                        <span aria-hidden>·</span>
-                        <span>
-                            {sprintf(
-                                /* translators: %d: action count */
-                                __('%d acciones'),
-                                automation.actions.length,
-                            )}
+                    <span className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">
+                        {automation.name}
+                    </span>
+                    {automation.description !== null && automation.description !== '' && (
+                        <span className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
+                            {automation.description}
                         </span>
-                    </div>
+                    )}
+                </div>
+                <div
+                    className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <SwitchPill
+                        active={automation.is_active}
+                        disabled={update.isPending}
+                        onToggle={handleToggle}
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        onClick={() => onShowRuns(automation)}
+                        aria-label={__('Ver historial de ejecuciones')}
+                        title={__('Historial')}
+                    >
+                        <History className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        onClick={() => onDelete(automation.id)}
+                        aria-label={__('Eliminar')}
+                        title={__('Eliminar')}
+                    >
+                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
                 </div>
             </div>
-            <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-self-end sm:imcrm-self-auto">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleToggle}
-                    disabled={update.isPending}
-                    aria-label={automation.is_active ? __('Pausar') : __('Activar')}
-                >
-                    {automation.is_active ? (
-                        <XCircle className="imcrm-h-4 imcrm-w-4" />
-                    ) : (
-                        <CheckCircle2 className="imcrm-h-4 imcrm-w-4" />
-                    )}
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onShowRuns(automation)}
-                    aria-label={__('Ver historial de ejecuciones')}
-                >
-                    <History className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onEdit(automation)}
-                    aria-label={__('Editar')}
-                >
-                    <Pencil className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onDelete(automation.id)}
-                    aria-label={__('Eliminar')}
-                >
-                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                </Button>
+
+            {/* Flujo resumido: trigger → acciones, en lenguaje humano. */}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-pl-12 imcrm-text-xs">
+                <FlowChip highlight>
+                    {summarizeTrigger(automation.trigger_type, automation.trigger_config, fields)}
+                </FlowChip>
+                {automation.actions.slice(0, 3).map((spec, i) => {
+                    const meta = actionMetaFor(spec.type);
+                    return (
+                        <span key={i} className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                            <ArrowRight className="imcrm-h-3 imcrm-w-3 imcrm-text-muted-foreground/60" aria-hidden />
+                            <FlowChip>
+                                <meta.icon className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                <span className="imcrm-max-w-[260px] imcrm-truncate">
+                                    {summarizeAction(spec, fields, lists)}
+                                </span>
+                            </FlowChip>
+                        </span>
+                    );
+                })}
+                {automation.actions.length > 3 && (
+                    <Badge variant="outline">
+                        {sprintf(
+                            /* translators: %d: hidden action count */
+                            __('+%d más'),
+                            automation.actions.length - 3,
+                        )}
+                    </Badge>
+                )}
             </div>
         </li>
     );
 }
 
-function AutomationsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
+function FlowChip({
+    children,
+    highlight,
+}: {
+    children: React.ReactNode;
+    highlight?: boolean;
+}): JSX.Element {
     return (
-        <EmptyState
-            icon={Zap}
-            title={__('Aún no hay automatizaciones')}
-            description={__('Crea reglas que reaccionen a cambios en tus registros: actualizar campos, llamar webhooks, etc.')}
-            action={
-                <Button onClick={onCreate} className="imcrm-gap-2">
-                    <Plus className="imcrm-h-4 imcrm-w-4" />
-                    {__('Nueva automatización')}
-                </Button>
-            }
-        />
+        <span
+            className={cn(
+                'imcrm-inline-flex imcrm-max-w-full imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-px-2.5 imcrm-py-1 imcrm-font-medium',
+                highlight
+                    ? 'imcrm-border-primary/25 imcrm-bg-primary/5 imcrm-text-primary'
+                    : 'imcrm-border-border imcrm-bg-canvas imcrm-text-foreground/80',
+            )}
+        >
+            {children}
+        </span>
+    );
+}
+
+/**
+ * Switch compacto Activa/Pausada para la tarjeta del índice.
+ */
+function SwitchPill({
+    active,
+    disabled,
+    onToggle,
+}: {
+    active: boolean;
+    disabled: boolean;
+    onToggle: () => void;
+}): JSX.Element {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={active}
+            aria-label={active ? __('Pausar') : __('Activar')}
+            title={active ? __('Pausar') : __('Activar')}
+            disabled={disabled}
+            onClick={onToggle}
+            className={cn(
+                'imcrm-relative imcrm-inline-flex imcrm-h-5 imcrm-w-9 imcrm-items-center imcrm-rounded-full imcrm-transition-colors disabled:imcrm-opacity-50',
+                active ? 'imcrm-bg-success' : 'imcrm-bg-border',
+            )}
+        >
+            <span
+                className="imcrm-inline-block imcrm-h-4 imcrm-w-4 imcrm-rounded-full imcrm-bg-white imcrm-shadow imcrm-transition-transform"
+                style={{ transform: active ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+        </button>
     );
 }
 
@@ -329,11 +384,11 @@ function PageSkeleton(): JSX.Element {
 
 function ListSkeleton(): JSX.Element {
     return (
-        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {[0, 1, 2].map((i) => (
                 <li
                     key={i}
-                    className="imcrm-h-16 imcrm-animate-pulse imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30"
+                    className="imcrm-h-24 imcrm-animate-pulse imcrm-rounded-2xl imcrm-border imcrm-border-border imcrm-bg-muted/30"
                 />
             ))}
         </ul>
