@@ -199,6 +199,41 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(String(sub.config.url)).toContain('/files/88/signed?');
     });
 
+    it('me: galería firmada + ajustes de página del portal (template_page)', async () => {
+        // v0.1.94 — cada imagen subida de la galería se firma; los ajustes
+        // de página (fondo/ancho/tipografía) viajan en template_page.
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [
+                        {
+                            type: 'gallery',
+                            config: {
+                                images: [
+                                    { image_file_id: 91 },
+                                    { url: 'https://cdn.acme.test/foto.jpg' },
+                                ],
+                                columns: 3,
+                            },
+                        },
+                    ],
+                    page: { bg: '#f1f5f9', max_width: 1100, font: 'serif' },
+                },
+            },
+        });
+        const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'gal@acme.test' });
+        const { sessionToken } = await portal.consume(link.token);
+        const session = await sessions.get(sessionToken);
+        const boot = await portal.me(session!.userId);
+
+        type RawBlock = { config: Record<string, unknown> };
+        const [gallery] = boot.template as unknown as RawBlock[];
+        const images = gallery!.config.images as Array<Record<string, unknown>>;
+        expect(String(images[0]!.url)).toContain('/files/91/signed?');
+        expect(images[1]!.url).toBe('https://cdn.acme.test/foto.jpg');
+        expect(boot.template_page).toEqual({ bg: '#f1f5f9', max_width: 1100, font: 'serif' });
+    });
+
     // --- Endpoints de bloques del portal (scope + whitelist) ----------------
 
     /** Sesión de cliente lista para usar (issue + consume). */

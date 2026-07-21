@@ -6,6 +6,8 @@ import {
     Hash,
     Heading as HeadingIcon,
     Image as ImageIcon,
+    Images as ImagesIcon,
+    StretchVertical,
     Layout,
     MessageSquare,
     Minus,
@@ -39,7 +41,7 @@ import {
     RelatedForm,
     StatsForm,
 } from './forms/BlockForms';
-import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
+import { GalleryBlockForm, ImageBlockForm, SpacerBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
 import { createBlock as createBlockHelper } from './utils/createBlock';
 
 import type {
@@ -194,6 +196,20 @@ const TYPES: BlockTypeDef[] = [
         icon: ImageIcon,
         category: 'content',
     },
+    {
+        type: 'gallery',
+        label: __('Galería de imágenes'),
+        description: __('Varias imágenes en grilla de 2-4 columnas.'),
+        icon: ImagesIcon,
+        category: 'content',
+    },
+    {
+        type: 'spacer',
+        label: __('Espaciador'),
+        description: __('Espacio vertical fijo para respirar entre bloques.'),
+        icon: StretchVertical,
+        category: 'layout',
+    },
     // Estructura
     {
         type: 'nested_section',
@@ -222,6 +238,8 @@ const LABEL_BY_TYPE: Record<V2BlockType, string> = {
     comments_thread:  __('Hilo de comentarios'),
     nested_section:   __('Sub-sección con columnas'),
     image:            __('Imagen'),
+    spacer:           __('Espaciador'),
+    gallery:          __('Galería de imágenes'),
 };
 
 const DESC_BY_TYPE: Record<V2BlockType, string> = {
@@ -242,6 +260,8 @@ const DESC_BY_TYPE: Record<V2BlockType, string> = {
     comments_thread:  __('Hilo de comentarios del record.'),
     nested_section:   __('Contenedor con N sub-columnas anidadas adentro de otra columna.'),
     image:            __('Imagen subida al módulo de archivos o por URL externa.'),
+    spacer:           __('Espacio vertical fijo entre bloques.'),
+    gallery:          __('Varias imágenes en una grilla de 2-4 columnas.'),
 };
 
 /**
@@ -298,6 +318,20 @@ function renderInspectorForBlock(
         case 'image':
             return (
                 <ImageBlockForm
+                    config={block.config as Record<string, unknown>}
+                    onConfigChange={(config) => update({ config })}
+                />
+            );
+        case 'spacer':
+            return (
+                <SpacerBlockForm
+                    config={block.config as Record<string, unknown>}
+                    onConfigChange={(config) => update({ config })}
+                />
+            );
+        case 'gallery':
+            return (
+                <GalleryBlockForm
                     config={block.config as Record<string, unknown>}
                     onConfigChange={(config) => update({ config })}
                 />

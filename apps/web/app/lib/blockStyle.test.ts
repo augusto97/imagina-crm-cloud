@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { blockStyleCss, hasBlockStyle, readBlockStyle, wrapperStyleCss } from './blockStyle';
+import {
+    blockStyleCss,
+    hasBlockStyle,
+    readBlockStyle,
+    readPageSettings,
+    wrapperStyleCss,
+} from './blockStyle';
 
 describe('blockStyle', () => {
     it('readBlockStyle tolera basura y acepta claves válidas', () => {
@@ -43,6 +49,27 @@ describe('blockStyle', () => {
         expect(css.color).toBe('#333333');
         expect(hasBlockStyle({})).toBe(false);
         expect(hasBlockStyle({ align: 'right' })).toBe(true);
+    });
+
+    it('v0.1.94 — tipografía por bloque (size + weight)', () => {
+        const style = readBlockStyle({ style: { size: '2xl', weight: 'bold', align: 'center' } });
+        expect(style).toEqual({ size: '2xl', weight: 'bold', align: 'center' });
+        const css = blockStyleCss(style);
+        expect(css.fontSize).toBe('28px');
+        expect(css.fontWeight).toBe(700);
+        // valores inválidos se descartan
+        expect(readBlockStyle({ style: { size: 'gigante', weight: 900 } })).toEqual({});
+    });
+
+    it('v0.1.94 — readPageSettings valida fondo/ancho/tipografía de página', () => {
+        expect(readPageSettings(undefined)).toEqual({});
+        expect(readPageSettings({ bg: '#f1f5f9', max_width: 1100, font: 'serif' })).toEqual({
+            bg: '#f1f5f9',
+            max_width: 1100,
+            font: 'serif',
+        });
+        // ancho mínimo 480 y font desconocida → fuera
+        expect(readPageSettings({ bg: 'blue', max_width: 100, font: 'comic' })).toEqual({});
     });
 
     it('wrapperStyleCss: fondo de sección con padding default y override', () => {

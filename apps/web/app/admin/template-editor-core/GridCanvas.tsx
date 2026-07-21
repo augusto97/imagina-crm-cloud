@@ -9,6 +9,7 @@ import {
 import {
     ArrowDown,
     ArrowUp,
+    Copy as CopyIcon,
     GripVertical,
     LayoutGrid,
     Plus,
@@ -224,6 +225,34 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
 
     const deleteSection = (sectionId: string): void => {
         persistSections(sections.filter((s) => s.id !== sectionId));
+    };
+
+    /**
+     * v0.1.94 — Duplica la sección COMPLETA (columnas + bloques, con ids
+     * nuevos) y la inserta justo debajo de la original.
+     */
+    const duplicateSection = (sectionId: string): void => {
+        const idx = sections.findIndex((s) => s.id === sectionId);
+        const src = sections[idx];
+        if (!src) return;
+        const stamp = Date.now();
+        const clone: Section = {
+            ...src,
+            id: `sec-dup-${stamp}`,
+            columns: src.columns.map((col, cIdx) => ({
+                ...col,
+                id: `col-dup-${stamp}-${cIdx}`,
+                blocks: col.blocks.map((block, bIdx) => ({
+                    ...(JSON.parse(JSON.stringify(block)) as TBlock),
+                    id: `${block.type}-dup-${stamp}-${cIdx}-${bIdx}`,
+                })),
+            })),
+        };
+        const next = [...sections];
+        next.splice(idx + 1, 0, clone);
+        const hasBlocks = src.columns.some((c) => c.blocks.length > 0);
+        if (hasBlocks) persistSections(next);
+        else updateSectionsOnly(next);
     };
 
     const addColumnToSection = (sectionId: string): void => {
@@ -523,6 +552,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                         else updateSectionsOnly(next);
                     }}
                     onDelete={() => deleteSection(section.id)}
+                    onDuplicate={() => duplicateSection(section.id)}
                 >
                     <div className="imcrm-flex imcrm-flex-row imcrm-gap-3">
                         {section.columns.map((col, cIdx) => (
@@ -666,6 +696,7 @@ function SectionCard({
     onSetMargin,
     onSetBg,
     onDelete,
+    onDuplicate,
     children,
 }: {
     label: string;
@@ -677,6 +708,7 @@ function SectionCard({
     onSetMargin: (v: string) => void;
     onSetBg: (v: string) => void;
     onDelete: () => void;
+    onDuplicate: () => void;
     children: ReactNode;
 }): JSX.Element {
     // El spacing se aplica solo en preview mode para que el editor
@@ -707,6 +739,14 @@ function SectionCard({
                             onSetBg={onSetBg}
                             title={__('Estilo de la sección')}
                         />
+                        <button
+                            type="button"
+                            onClick={onDuplicate}
+                            title={__('Duplicar sección completa')}
+                            className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground"
+                        >
+                            <CopyIcon className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </button>
                         <button
                             type="button"
                             onClick={onDelete}

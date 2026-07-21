@@ -69,6 +69,8 @@ export interface TemplateEditorShellProps<TBlock extends BaseTemplateBlock> {
     disableRecordSelector?: boolean;
     /** Texto del botón de guardado. Default: "Guardar plantilla". */
     saveLabel?: string;
+    /** Controles extra en la toolbar (antes de Guardar) — ej. ajustes de página. */
+    toolbarExtra?: JSX.Element;
 }
 
 /**
@@ -101,6 +103,7 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
     emptySelectionPanel,
     disableRecordSelector = false,
     saveLabel,
+    toolbarExtra,
 }: TemplateEditorShellProps<TBlock>): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
@@ -539,6 +542,7 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
                             <Maximize2 className="imcrm-h-3.5 imcrm-w-3.5" />
                         )}
                     </Button>
+                    {toolbarExtra}
                     <Button
                         size="sm"
                         className="imcrm-gap-2"

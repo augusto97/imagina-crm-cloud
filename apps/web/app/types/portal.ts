@@ -37,7 +37,10 @@ export type PortalBlockType =
     // 0.57.27 — anidamiento de columnas (1 nivel)
     | 'nested_section'
     // v0.1.93 — bloque de imagen (upload propio o URL externa)
-    | 'image';
+    | 'image'
+    // v0.1.94 — espaciador y galería de imágenes
+    | 'spacer'
+    | 'gallery';
 
 export const PORTAL_BLOCK_TYPES: Array<{ value: PortalBlockType; label: string }> = [
     { value: 'heading', label: 'Título de sección' },
@@ -59,6 +62,8 @@ export const PORTAL_BLOCK_TYPES: Array<{ value: PortalBlockType; label: string }
     { value: 'contact_card', label: 'Tarjeta de contacto' },
     { value: 'nested_section', label: 'Sub-sección con columnas' },
     { value: 'image', label: 'Imagen' },
+    { value: 'spacer', label: 'Espaciador' },
+    { value: 'gallery', label: 'Galería de imágenes' },
 ];
 
 export interface PortalTemplateBlock {

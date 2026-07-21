@@ -1103,6 +1103,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         persistencia con style.bg, y la ficha real del registro renderiza
         la imagen con su fondo — WYSIWYG verificado).
 
+  - [x] **Page-builder completo (v0.1.94, "haslos todos")**: los 5
+        pendientes del análisis v0.1.93. (a) **Tipografía por bloque** —
+        `style.size` (12-28px) + `style.weight` en la capa de estilo,
+        segmentados A⁻…A³ y Fino…Bold en el panel Diseño; (b) **ajustes de
+        página del portal** — popover "Página" en la toolbar del editor
+        (fondo, ancho máximo, tipografía global con stacks de sistema),
+        persisten en `portal_template.page`, `portal.me` los expone como
+        `template_page` y el SPA los aplica (fondo del body, max-width del
+        contenido, font-family); (c) **presets de estilo de marca** —
+        `tenants.settings.style_presets` con GET/PATCH
+        `/workspaces/current/style-presets` (PATCH admin/manager, schema en
+        shared), fila "Presets" en el panel Diseño (5 built-ins + guardar
+        el estilo actual con nombre + borrar; chips pintados con su propio
+        estilo); (d) **bloques espaciador y galería** en AMBOS editores
+        (forms compartidos en el core; galería 2-4 columnas con
+        subir/URL por imagen; el portal firma cada imagen subida de la
+        galería igual que el bloque imagen); (e) **duplicar sección
+        completa** — botón en el header de sección del canvas (columnas +
+        bloques con ids nuevos, insertada debajo). Tests: 2 unit nuevos de
+        blockStyle (front 22), spec de presets + spec de galería/página en
+        portal (API 314 en verde). E2E navegador 11/11.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

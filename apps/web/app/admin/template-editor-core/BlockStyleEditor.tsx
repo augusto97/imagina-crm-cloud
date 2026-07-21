@@ -1,15 +1,29 @@
-import { AlignCenter, AlignLeft, AlignRight, ChevronRight, Paintbrush } from 'lucide-react';
+import { useState } from 'react';
+import { AlignCenter, AlignLeft, AlignRight, BookmarkPlus, ChevronRight, Paintbrush, X } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
+import { useSaveStylePresets, useStylePresets, type StylePreset } from '@/hooks/useStylePresets';
 import {
+    blockStyleCss,
     hasBlockStyle,
     type BlockStyle,
     type StyleAlign,
     type StyleScale,
     type StyleShadow,
+    type StyleSize,
+    type StyleWeight,
 } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+
+/** Presets built-in — siempre disponibles, no editables. */
+const BUILTIN_PRESETS: StylePreset[] = [
+    { name: __('Tarjeta clara'), style: { bg: '#ffffff', border: '#e2e8f0', radius: 'lg', shadow: 'sm' } },
+    { name: __('Banda oscura'), style: { bg: '#0f172a', text: '#f8fafc', radius: 'lg', pad: 'lg' } },
+    { name: __('Suave'), style: { bg: '#f8fafc', radius: 'md' } },
+    { name: __('Destacado'), style: { bg: '#eff6ff', border: '#dbeafe', radius: 'lg', pad: 'lg' } },
+    { name: __('Aviso cálido'), style: { bg: '#fefce8', border: '#fef3c7', radius: 'md' } },
+];
 
 /**
  * Sección "Diseño" del inspector — UNIVERSAL para todos los bloques de
@@ -59,6 +73,8 @@ export function BlockStyleEditor({ value, onChange }: Props): JSX.Element {
                 )}
             </summary>
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-3.5 imcrm-border-t imcrm-border-border imcrm-px-3 imcrm-py-3">
+                <PresetsRow current={value} onApply={onChange} />
+
                 <ColorRow
                     label={__('Fondo')}
                     value={value.bg}
@@ -109,6 +125,29 @@ export function BlockStyleEditor({ value, onChange }: Props): JSX.Element {
                         { v: 'lg', l: 'L' },
                     ]}
                     onChange={(shadow) => set({ shadow })}
+                />
+                <Segmented<StyleSize>
+                    label={__('Tamaño de texto')}
+                    value={value.size}
+                    options={[
+                        { v: 'sm', l: 'A⁻' },
+                        { v: 'md', l: 'A' },
+                        { v: 'lg', l: 'A⁺' },
+                        { v: 'xl', l: 'A²' },
+                        { v: '2xl', l: 'A³' },
+                    ]}
+                    onChange={(size) => set({ size })}
+                />
+                <Segmented<StyleWeight>
+                    label={__('Peso')}
+                    value={value.weight}
+                    options={[
+                        { v: 'normal', l: __('Fino') },
+                        { v: 'medium', l: __('Medio') },
+                        { v: 'semibold', l: __('Semi') },
+                        { v: 'bold', l: __('Bold') },
+                    ]}
+                    onChange={(weight) => set({ weight })}
                 />
 
                 <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
@@ -218,6 +257,116 @@ function ColorRow({
                         style={{ backgroundColor: hex }}
                     />
                 ))}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Presets: built-ins + los guardados del workspace. Click aplica el
+ * estilo completo; "Guardar actual" persiste el estilo del bloque
+ * seleccionado como preset de marca (compartido por todo el equipo).
+ */
+function PresetsRow({
+    current,
+    onApply,
+}: {
+    current: BlockStyle;
+    onApply: (style: BlockStyle) => void;
+}): JSX.Element {
+    const presets = useStylePresets();
+    const save = useSaveStylePresets();
+    const [naming, setNaming] = useState(false);
+    const [name, setName] = useState('');
+
+    const custom = presets.data ?? [];
+
+    const saveCurrent = (): void => {
+        const trimmed = name.trim();
+        if (trimmed === '' || !hasBlockStyle(current)) return;
+        const next = [
+            ...custom.filter((p) => p.name !== trimmed),
+            { name: trimmed, style: current },
+        ].slice(0, 24);
+        save.mutate(next);
+        setNaming(false);
+        setName('');
+    };
+
+    const removePreset = (presetName: string): void => {
+        save.mutate(custom.filter((p) => p.name !== presetName));
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
+                    {__('Presets')}
+                </span>
+                {hasBlockStyle(current) && !naming && (
+                    <button
+                        type="button"
+                        onClick={() => setNaming(true)}
+                        className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-[10px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                    >
+                        <BookmarkPlus className="imcrm-h-3 imcrm-w-3" />
+                        {__('Guardar actual')}
+                    </button>
+                )}
+            </div>
+            {naming && (
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    <Input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder={__('Nombre del preset')}
+                        className="imcrm-h-7 imcrm-flex-1 imcrm-text-[11px]"
+                        autoFocus
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                saveCurrent();
+                            }
+                            if (e.key === 'Escape') setNaming(false);
+                        }}
+                    />
+                    <button
+                        type="button"
+                        onClick={saveCurrent}
+                        disabled={name.trim() === '' || save.isPending}
+                        className="imcrm-text-[10px] imcrm-font-semibold imcrm-text-primary disabled:imcrm-opacity-50"
+                    >
+                        {__('Guardar')}
+                    </button>
+                </div>
+            )}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                {[...BUILTIN_PRESETS, ...custom].map((p, i) => {
+                    const isCustom = i >= BUILTIN_PRESETS.length;
+                    return (
+                        <span key={`${isCustom ? 'c' : 'b'}-${p.name}`} className="imcrm-group/preset imcrm-relative imcrm-inline-flex">
+                            <button
+                                type="button"
+                                onClick={() => onApply({ ...p.style })}
+                                title={__('Aplicar preset')}
+                                className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-1 imcrm-text-[10px] imcrm-font-medium imcrm-transition-transform hover:imcrm-scale-105"
+                                style={blockStyleCss({ ...p.style, pad: 'none', shadow: p.style.shadow ?? 'none' })}
+                            >
+                                {p.name}
+                            </button>
+                            {isCustom && (
+                                <button
+                                    type="button"
+                                    aria-label={`${__('Eliminar preset')} ${p.name}`}
+                                    onClick={() => removePreset(p.name)}
+                                    className="imcrm-absolute imcrm--right-1 imcrm--top-1 imcrm-hidden imcrm-h-3.5 imcrm-w-3.5 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-muted-foreground group-hover/preset:imcrm-flex hover:imcrm-text-destructive"
+                                >
+                                    <X className="imcrm-h-2 imcrm-w-2" />
+                                </button>
+                            )}
+                        </span>
+                    );
+                })}
             </div>
         </div>
     );

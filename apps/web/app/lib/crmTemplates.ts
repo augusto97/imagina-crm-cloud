@@ -1545,7 +1545,10 @@ export type V2BlockType =
     // 0.57.29 — sub-sección con N columnas anidadas (1 nivel)
     | 'nested_section'
     // v0.1.93 — imagen (upload propio o URL externa)
-    | 'image';
+    | 'image'
+    // v0.1.94 — espaciador y galería
+    | 'spacer'
+    | 'gallery';
 
 interface V2BlockBase {
     id: string;
@@ -1876,6 +1879,22 @@ export interface V2ImageBlock extends V2BlockBase {
     };
 }
 
+/** v0.1.94 — espacio vertical fijo. */
+export interface V2SpacerBlock extends V2BlockBase {
+    type: 'spacer';
+    config: { height?: number };
+}
+
+/** v0.1.94 — galería de imágenes en grilla (subidas o por URL). */
+export interface V2GalleryBlock extends V2BlockBase {
+    type: 'gallery';
+    config: {
+        images?: Array<{ url?: string; image_file_id?: number; alt?: string }>;
+        columns?: number;
+        height?: number;
+    };
+}
+
 export type V2Block =
     | V2HeaderBlock
     | V2PropertiesGroupBlock
@@ -1893,7 +1912,9 @@ export type V2Block =
     | V2HeadingBlock
     | V2CommentsThreadBlock
     | V2NestedSectionBlock
-    | V2ImageBlock;
+    | V2ImageBlock
+    | V2SpacerBlock
+    | V2GalleryBlock;
 
 export interface CustomTemplateConfigV2 {
     v: 2;
@@ -2220,6 +2241,15 @@ export type ResolvedV2Block =
             fit?: 'cover' | 'contain';
             linkUrl?: string;
         };
+    })
+    | (ResolvedBase & { type: 'spacer'; config: { height?: number } })
+    | (ResolvedBase & {
+        type: 'gallery';
+        config: {
+            images: Array<{ url?: string; image_file_id?: number; alt?: string }>;
+            columns?: number;
+            height?: number;
+        };
     });
 
 /**
@@ -2356,6 +2386,14 @@ function resolveNestedSubBlocks(
                 height: b.config.height,
                 fit: b.config.fit,
                 linkUrl: b.config.link_url,
+            } });
+        } else if (b.type === 'spacer') {
+            resolved.push({ ...base, type: 'spacer', config: { height: b.config.height } });
+        } else if (b.type === 'gallery') {
+            resolved.push({ ...base, type: 'gallery', config: {
+                images: Array.isArray(b.config.images) ? b.config.images : [],
+                columns: b.config.columns,
+                height: b.config.height,
             } });
         }
     }
@@ -2550,6 +2588,18 @@ export function resolveV2(
                     height: b.config.height,
                     fit: b.config.fit,
                     linkUrl: b.config.link_url,
+                },
+            });
+        } else if (b.type === 'spacer') {
+            blocks.push({ ...base, type: 'spacer', config: { height: b.config.height } });
+        } else if (b.type === 'gallery') {
+            blocks.push({
+                ...base,
+                type: 'gallery',
+                config: {
+                    images: Array.isArray(b.config.images) ? b.config.images : [],
+                    columns: b.config.columns,
+                    height: b.config.height,
                 },
             });
         } else if (b.type === 'nested_section') {

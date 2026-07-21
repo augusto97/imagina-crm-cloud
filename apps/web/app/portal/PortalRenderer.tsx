@@ -14,7 +14,9 @@ import { ExternalLinkBlock } from './blocks/ExternalLinkBlock';
 import { FaqBlock } from './blocks/FaqBlock';
 import { HeadingBlock } from './blocks/HeadingBlock';
 import { HeroBlock } from './blocks/HeroBlock';
+import { GalleryBlock } from './blocks/GalleryBlock';
 import { ImageBlock } from './blocks/ImageBlock';
+import { SpacerBlock } from './blocks/SpacerBlock';
 import { KpiWidgetBlock } from './blocks/KpiWidgetBlock';
 import { NoticeBlock } from './blocks/NoticeBlock';
 import { QuickActionsBlock } from './blocks/QuickActionsBlock';
@@ -232,6 +234,10 @@ function renderBlock(
             return <ContactCardBlock key={idx} config={block.config} />;
         case 'image':
             return <ImageBlock key={idx} config={block.config} />;
+        case 'spacer':
+            return <SpacerBlock key={idx} config={block.config} />;
+        case 'gallery':
+            return <GalleryBlock key={idx} config={block.config} />;
         case 'nested_section':
             return (
                 <div key={idx} className="imcrm-rows-layout">

@@ -6,7 +6,7 @@ import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
-import { adminImageSrc, ImageBlockView } from '@/admin/template-editor-core/ImageBlockForm';
+import { adminGallerySrc, adminImageSrc, GalleryBlockView, ImageBlockView, SpacerBlockView } from '@/admin/template-editor-core/ImageBlockForm';
 import type { ResolvedV2Block } from '@/lib/crmTemplates';
 import type { RecordEntity } from '@/types/record';
 
@@ -148,6 +148,12 @@ export function BlockRenderer({
             link_url: block.config.linkUrl,
         };
         return <ImageBlockView config={cfg} src={adminImageSrc(cfg)} />;
+    }
+    if (block.type === 'spacer') {
+        return <SpacerBlockView config={block.config} />;
+    }
+    if (block.type === 'gallery') {
+        return <GalleryBlockView config={block.config} resolveSrc={adminGallerySrc} />;
     }
     if (block.type === 'heading') {
         return <HeadingView text={block.config.text} level={block.config.level} />;

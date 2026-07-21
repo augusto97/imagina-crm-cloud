@@ -1,14 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, Monitor } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
 import { useList, useUpdateList } from '@/hooks/useLists';
+import { readPageSettings, type PortalPageSettings } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 
 import { TemplateEditorShell } from '@/admin/template-editor-core';
 
+import { PortalPageSettingsButton } from './PortalPageSettings';
 import {
     blocksToPortalTemplate,
     portalRegistry,
@@ -41,6 +43,16 @@ export function PortalTemplateEditorPage(): JSX.Element {
         return [];
     }, [list.data]);
 
+    // v0.1.94 — ajustes de PÁGINA del portal (fondo/ancho/tipografía),
+    // persistidos junto a los bloques en `portal_template.page`.
+    const [pageSettings, setPageSettings] = useState<PortalPageSettings | null>(null);
+    const effectivePage: PortalPageSettings =
+        pageSettings ??
+        readPageSettings(
+            (list.data?.settings as { portal_template?: { page?: unknown } } | undefined)
+                ?.portal_template?.page,
+        );
+
     if (list.isLoading || fields.isLoading || initialBlocks === null) {
         return (
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-12 imcrm-text-sm imcrm-text-muted-foreground">
@@ -65,7 +77,10 @@ export function PortalTemplateEditorPage(): JSX.Element {
     }
 
     const handleSave = async (blocks: PortalEditorBlock[]): Promise<void> => {
-        const template = blocksToPortalTemplate(blocks);
+        const template = {
+            ...blocksToPortalTemplate(blocks),
+            ...(Object.keys(effectivePage).length > 0 ? { page: effectivePage } : {}),
+        };
         await update.mutateAsync({
             settings: {
                 ...(list.data!.settings as Record<string, unknown>),
@@ -87,6 +102,9 @@ export function PortalTemplateEditorPage(): JSX.Element {
             headerIcon={Monitor}
             headerTitle={__('Editor del portal del cliente')}
             backTo={`/lists/${list.data.slug}/settings`}
+            toolbarExtra={
+                <PortalPageSettingsButton value={effectivePage} onChange={setPageSettings} />
+            }
         />
     );
 }

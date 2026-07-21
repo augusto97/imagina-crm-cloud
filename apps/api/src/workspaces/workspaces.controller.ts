@@ -3,6 +3,9 @@ import {
     customDomainInputSchema,
     smtpConfigSchema,
     updateBrandingSchema,
+    updateStylePresetsSchema,
+    type BlockStylePreset,
+    type UpdateStylePresetsInput,
     type CustomDomainInput,
     type DomainDnsReport,
     type SmtpConfig,
@@ -75,6 +78,34 @@ export class WorkspacesController {
     ): Promise<BrandingResponse> {
         this.assertAdmin(req);
         return this.branding.update(req.tenant!.tenantId, patch);
+    }
+
+    /**
+     * v0.1.94 — Presets de estilo de marca (panel "Diseño" de los editores
+     * de plantilla). Los lee cualquier miembro; guardarlos exige poder
+     * editar plantillas (manage_lists — admin y manager).
+     */
+    @Get('current/style-presets')
+    @UseGuards(TenantGuard)
+    async getStylePresets(@Req() req: FastifyRequest): Promise<{ presets: BlockStylePreset[] }> {
+        return { presets: await this.branding.getStylePresets(req.tenant!.tenantId) };
+    }
+
+    @Patch('current/style-presets')
+    @UseGuards(TenantGuard)
+    async updateStylePresets(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(updateStylePresetsSchema)) input: UpdateStylePresetsInput,
+    ): Promise<{ presets: BlockStylePreset[] }> {
+        const role = req.tenant!.role;
+        if (role !== 'admin' && role !== 'manager') {
+            throw new ForbiddenException({
+                code: 'forbidden',
+                message: 'Necesitas permisos de administración para editar los presets de estilo',
+                data: { status: 403 },
+            });
+        }
+        return { presets: await this.branding.setStylePresets(req.tenant!.tenantId, input.presets) };
     }
 
     /**

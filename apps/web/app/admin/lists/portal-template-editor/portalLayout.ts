@@ -85,6 +85,7 @@ export function defaultWidthFor(type: PortalBlockType): number {
         case 'external_link': return 4;
         case 'contact_card':  return 6;
         case 'image':         return 6;
+        case 'gallery':       return 12;
         default:              return 12;
     }
 }
@@ -103,6 +104,10 @@ export function defaultConfigFor(type: PortalBlockType): Record<string, unknown>
         case 'image':
             // Bundle: { url?, image_file_id?, alt?, height?, fit?, link_url? }
             return { url: '', alt: '', height: 0, fit: 'cover', link_url: '' };
+        case 'spacer':
+            return { height: 32 };
+        case 'gallery':
+            return { images: [], columns: 3, height: 140 };
         case 'static_text':
             // Bundle: { html?: string; title?: string }
             return { html: '', title: '', variant: 'card' };

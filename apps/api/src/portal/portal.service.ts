@@ -619,6 +619,9 @@ export class PortalService {
                 link.tenantId,
                 extractPortalBlocks(list.settings.portal_template),
             );
+            // v0.1.94 — ajustes de PÁGINA del portal (fondo/ancho/tipografía).
+            // Se pasan crudos; el SPA los valida tolerante (readPageSettings).
+            const templatePage = extractPortalPage(list.settings.portal_template);
 
             // White-label del workspace: el cliente ve el portal con la marca
             // de la empresa. El logo va por URL FIRMADA (el rol client no
@@ -673,6 +676,7 @@ export class PortalService {
                     position: f.position,
                 })),
                 template,
+                template_page: templatePage,
             };
         });
     }
@@ -707,6 +711,23 @@ export class PortalService {
                     };
                 }
                 return raw;
+            }
+            // v0.1.94 — la galería firma cada imagen subida de su lista.
+            if (raw.type === 'gallery' && config && Array.isArray(config.images)) {
+                return {
+                    ...raw,
+                    config: {
+                        ...config,
+                        images: (config.images as Array<Record<string, unknown>>).map((img) => {
+                            if (!img || typeof img !== 'object') return img;
+                            const id = img.image_file_id;
+                            if (typeof id === 'number' && id > 0) {
+                                return { ...img, url: this.files.signedUrl(tenantId, id, 86_400) };
+                            }
+                            return img;
+                        }),
+                    },
+                };
             }
             if (raw.type === 'nested_section' && config && Array.isArray(config.columns)) {
                 return {
@@ -744,6 +765,20 @@ function extractPortalBlocks(raw: unknown): Array<Record<string, unknown>> {
         return (raw as { blocks: Array<Record<string, unknown>> }).blocks;
     }
     return [];
+}
+
+/** v0.1.94 — extrae `portal_template.page` (objeto opaco) si existe. */
+function extractPortalPage(raw: unknown): Record<string, unknown> | null {
+    if (
+        raw &&
+        typeof raw === 'object' &&
+        !Array.isArray(raw) &&
+        typeof (raw as { page?: unknown }).page === 'object' &&
+        (raw as { page?: unknown }).page !== null
+    ) {
+        return (raw as { page: Record<string, unknown> }).page;
+    }
+    return null;
 }
 
 function portalGone(): NotFoundException {

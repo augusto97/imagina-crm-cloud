@@ -18,6 +18,8 @@ export const portalBootSchema = z.object({
     record: recordSchema,
     fields: z.array(fieldSchema),
     template: z.array(z.record(z.unknown())),
+    /** v0.1.94 — ajustes de página del portal (fondo/ancho/tipografía), crudos. */
+    template_page: z.record(z.unknown()).nullable().default(null),
     /** White-label del workspace (logo por URL firmada — rol client). */
     branding: publicBrandingSchema.default({ primary_color: null, app_name: null, logo_url: null }),
 });
