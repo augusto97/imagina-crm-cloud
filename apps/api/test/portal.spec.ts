@@ -188,12 +188,14 @@ describe('PortalService (Postgres + Redis reales)', () => {
         const session = await sessions.get(sessionToken);
         const boot = await portal.me(session!.userId);
 
-        const [uploaded, external, nested] = boot.template as Array<Record<string, any>>;
+        type RawBlock = { config: Record<string, unknown> };
+        const [uploaded, external, nested] = boot.template as unknown as RawBlock[];
         expect(String(uploaded!.config.url)).toContain('/files/77/signed?');
         expect(String(uploaded!.config.url)).toContain(`tenant=${tenantId}`);
         expect(uploaded!.config.style).toEqual({ bg: '#ffffff' });
         expect(external!.config.url).toBe('https://cdn.acme.test/banner.png');
-        const sub = nested!.config.columns[0].blocks[0];
+        const columns = nested!.config.columns as Array<{ blocks: RawBlock[] }>;
+        const sub = columns[0]!.blocks[0]!;
         expect(String(sub.config.url)).toContain('/files/88/signed?');
     });
 
