@@ -5,7 +5,7 @@ import { ArrowLeft, Loader2, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
 import { useList, useUpdateList } from '@/hooks/useLists';
-import { readPageSettings, type PortalPageSettings } from '@/lib/blockStyle';
+import { PAGE_FONT_STACKS, readPageSettings, type PortalPageSettings } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 
 import { TemplateEditorShell } from '@/admin/template-editor-core';
@@ -105,6 +105,14 @@ export function PortalTemplateEditorPage(): JSX.Element {
             toolbarExtra={
                 <PortalPageSettingsButton value={effectivePage} onChange={setPageSettings} />
             }
+            previewPage={{
+                bg: effectivePage.bg,
+                maxWidth: effectivePage.max_width,
+                fontFamily:
+                    effectivePage.font !== undefined
+                        ? PAGE_FONT_STACKS[effectivePage.font]
+                        : undefined,
+            }}
         />
     );
 }

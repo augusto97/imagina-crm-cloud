@@ -1142,6 +1142,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         3 tests unit nuevos (front 24) + E2E navegador (client_data azul
         sin tarjeta blanca, título blanco 26.4px).
 
+  - [x] **Preview del editor sin chrome de edición (v0.1.96, reporte del
+        usuario con captura)**: el modo Preview mostraba "líneas y bordes
+        que no aparecen en el panel real" — la tarjeta con borde de cada
+        sección, el borde PUNTEADO de cada columna, el ring hairline +
+        fondo de tarjeta de cada bloque, el label "Sub-sección" (visible
+        incluso en preview) y el tinte del lienzo eran chrome del EDITOR
+        que seguía dibujándose. Ahora en preview: sección y columna usan
+        el MISMO `wrapperStyleCss` que la ficha real y el portal (solo
+        fondo/spacing elegidos), los bloques se renderizan sin
+        ring/tarjeta, el nested_section pierde header y punteados, y el
+        lienzo aplica los AJUSTES DE PÁGINA del portal (fondo, ancho
+        máximo centrado, tipografía — prop `previewPage` del shell) que
+        antes solo se veían en el portal publicado. E2E navegador 6/6
+        (editor con chrome=control, preview cero dashed/labels/bordes,
+        fondo de página aplicado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

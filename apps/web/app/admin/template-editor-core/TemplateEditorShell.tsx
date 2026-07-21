@@ -71,6 +71,13 @@ export interface TemplateEditorShellProps<TBlock extends BaseTemplateBlock> {
     saveLabel?: string;
     /** Controles extra en la toolbar (antes de Guardar) — ej. ajustes de página. */
     toolbarExtra?: JSX.Element;
+    /**
+     * v0.1.96 — ajustes de PÁGINA a aplicar en modo Preview (fondo,
+     * ancho máximo del contenido, tipografía). El editor del portal
+     * los pasa desde `portal_template.page` para que el preview se
+     * vea como la página real del cliente.
+     */
+    previewPage?: { bg?: string; maxWidth?: number; fontFamily?: string };
 }
 
 /**
@@ -104,6 +111,7 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
     disableRecordSelector = false,
     saveLabel,
     toolbarExtra,
+    previewPage,
 }: TemplateEditorShellProps<TBlock>): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
@@ -659,23 +667,47 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
 
                 <main
                     className={cn(
-                        'imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3',
-                        preview ? 'imcrm-bg-card' : 'imcrm-bg-background',
+                        'imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border',
+                        preview ? 'imcrm-bg-card imcrm-p-4 md:imcrm-p-6' : 'imcrm-bg-background imcrm-p-3',
                     )}
+                    style={
+                        // v0.1.96 — el preview pinta la PÁGINA real: fondo y
+                        // tipografía de los ajustes de página del portal.
+                        preview && previewPage
+                            ? {
+                                ...(previewPage.bg !== undefined
+                                    ? { backgroundColor: previewPage.bg }
+                                    : {}),
+                                ...(previewPage.fontFamily !== undefined
+                                    ? { fontFamily: previewPage.fontFamily }
+                                    : {}),
+                            }
+                            : undefined
+                    }
                 >
-                    <GridCanvas
-                        listId={listId}
-                        fields={fields}
-                        blocks={blocks}
-                        record={effectiveRecord}
-                        registry={registry}
-                        selectedBlockIds={selectedBlockIds}
-                        preview={preview}
-                        onBlocksChange={setBlocks}
-                        onSelectBlock={handleSelectBlock}
-                        onDropFromPalette={handleDropFromPalette}
-                        onDropOnBlock={handleDropOnBlock}
-                    />
+                    <div
+                        style={
+                            // Ancho máximo del contenido, centrado — igual que
+                            // el SPA del portal.
+                            preview && previewPage?.maxWidth !== undefined
+                                ? { maxWidth: `${previewPage.maxWidth}px`, margin: '0 auto' }
+                                : undefined
+                        }
+                    >
+                        <GridCanvas
+                            listId={listId}
+                            fields={fields}
+                            blocks={blocks}
+                            record={effectiveRecord}
+                            registry={registry}
+                            selectedBlockIds={selectedBlockIds}
+                            preview={preview}
+                            onBlocksChange={setBlocks}
+                            onSelectBlock={handleSelectBlock}
+                            onDropFromPalette={handleDropFromPalette}
+                            onDropOnBlock={handleDropOnBlock}
+                        />
+                    </div>
                 </main>
 
                 {! preview && (

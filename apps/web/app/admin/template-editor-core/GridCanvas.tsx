@@ -17,7 +17,7 @@ import {
     X,
 } from 'lucide-react';
 
-import { blockStyleClass, blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
+import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns, WIDTH_PRESETS } from '@/lib/rowsLayout';
 import { cn } from '@/lib/utils';
@@ -518,7 +518,10 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
     return (
         <div
             className={cn(
-                'imcrm-relative imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-bg-muted/5 imcrm-p-3',
+                'imcrm-relative imcrm-flex imcrm-flex-col imcrm-gap-3',
+                // El tinte/padding del lienzo es chrome de EDICIÓN — en
+                // preview el fondo lo pone la página (WYSIWYG).
+                ! preview && 'imcrm-rounded-lg imcrm-bg-muted/5 imcrm-p-3',
                 isEmpty && 'imcrm-min-h-[280px]',
             )}
             onClick={(e) => {
@@ -718,14 +721,23 @@ function SectionCard({
     // refleje el resultado final (en edición movería el cursor y el
     // drag se sentiría raro). El FONDO sí se aplica siempre — no
     // afecta la geometría y ver el color mientras editás es clave.
-    const previewStyle: CSSProperties = preview
-        ? { padding, margin }
-        : {};
-    if (bg !== undefined && bg !== '') previewStyle.backgroundColor = bg;
+    //
+    // v0.1.96 — en preview NO hay tarjeta de sección (borde/fondo/
+    // sombra son chrome del editor): el wrapper es el MISMO
+    // `wrapperStyleCss` que aplican la ficha real y el portal.
+    if (preview) {
+        return (
+            <div style={wrapperStyleCss({ bg, padding, margin })}>
+                {children}
+            </div>
+        );
+    }
+    const editStyle: CSSProperties = {};
+    if (bg !== undefined && bg !== '') editStyle.backgroundColor = bg;
     return (
         <div
             className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3 imcrm-shadow-imcrm-xs"
-            style={previewStyle}
+            style={editStyle}
         >
             {! preview && (
                 <div className="imcrm-mb-2 imcrm-flex imcrm-items-center imcrm-justify-between">
@@ -813,6 +825,24 @@ function ColumnCard({
         minWidth: 0,
     };
     if (bg !== undefined && bg !== '') style.backgroundColor = bg;
+
+    // v0.1.96 — en preview la columna es una celda LIMPIA (sin borde
+    // punteado, tinte ni padding del editor), con el mismo wrapper de
+    // fondo/spacing que el front real.
+    if (preview) {
+        return (
+            <div
+                style={{
+                    flex: `${width} ${width} 0`,
+                    minWidth: 0,
+                    ...wrapperStyleCss({ bg, padding, margin }),
+                }}
+                className="imcrm-flex imcrm-flex-col imcrm-gap-3"
+            >
+                {children}
+            </div>
+        );
+    }
 
     return (
         <div
@@ -914,20 +944,24 @@ function BlockCard({
     onDelete,
     children,
 }: BlockCardProps): JSX.Element {
+    // v0.1.96 — en preview el bloque se renderiza SIN chrome (ring,
+    // fondo de tarjeta, cursor): igual que en la ficha/portal reales.
+    if (preview) {
+        return <div className="imcrm-overflow-x-auto">{children}</div>;
+    }
     return (
         <div
             onClick={onSelect}
-            onDragOver={preview ? undefined : onBlockDragOver}
-            onDragLeave={preview ? undefined : onBlockDragLeave}
-            onDrop={preview ? undefined : onBlockDrop}
+            onDragOver={onBlockDragOver}
+            onDragLeave={onBlockDragLeave}
+            onDrop={onBlockDrop}
             className={cn(
-                'imcrm-group imcrm-relative imcrm-overflow-hidden imcrm-rounded imcrm-bg-card imcrm-ring-1 imcrm-transition-all',
+                'imcrm-group imcrm-relative imcrm-overflow-hidden imcrm-rounded imcrm-bg-card imcrm-ring-1 imcrm-transition-all imcrm-cursor-pointer',
                 isDropTarget
                     ? 'imcrm-ring-2 imcrm-ring-primary imcrm-ring-offset-1'
                     : selected
                         ? 'imcrm-ring-2 imcrm-ring-primary'
                         : 'imcrm-ring-border hover:imcrm-ring-primary/40',
-                preview ? 'imcrm-cursor-default' : 'imcrm-cursor-pointer',
             )}
         >
             {/* Toolbar arriba con drag handle + reorder + delete. */}
@@ -1231,14 +1265,19 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
 
     return (
         <div
-            className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded imcrm-bg-muted/5 imcrm-p-2"
-            onClick={(e) => e.stopPropagation()}
+            className={cn(
+                'imcrm-flex imcrm-flex-col imcrm-gap-2',
+                // v0.1.96 — el tinte/padding y el header "Sub-sección"
+                // son chrome del editor; en preview no existen.
+                ! preview && 'imcrm-rounded imcrm-bg-muted/5 imcrm-p-2',
+            )}
+            onClick={preview ? undefined : (e) => e.stopPropagation()}
         >
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
-                <span className="imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                    {__('Sub-sección')}
-                </span>
-                {! preview && (
+            {! preview && (
+                <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
+                    <span className="imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                        {__('Sub-sección')}
+                    </span>
                     <button
                         type="button"
                         onClick={handleAddSubColumn}
@@ -1247,8 +1286,8 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                         <Plus className="imcrm-h-2.5 imcrm-w-2.5" />
                         {__('Sub-columna')}
                     </button>
-                )}
-            </div>
+                </div>
+            )}
 
             <div className="imcrm-flex imcrm-flex-row imcrm-gap-3">
                 {columns.map((col, subColIdx) => {
@@ -1266,11 +1305,15 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                             onDragLeave={preview ? undefined : handleSubColDragLeave}
                             onDrop={preview ? undefined : handleSubColDrop(subColIdx)}
                             className={cn(
-                                'imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded imcrm-border imcrm-border-dashed imcrm-p-1.5 imcrm-transition-all',
-                                isDropTarget
-                                    ? 'imcrm-border-primary imcrm-bg-primary/5'
-                                    : 'imcrm-border-border imcrm-bg-card/60',
-                                col.blocks.length === 0 && 'imcrm-min-h-[64px]',
+                                'imcrm-flex imcrm-flex-col imcrm-gap-3',
+                                // v0.1.96 — borde punteado/tinte solo en edición.
+                                ! preview && cn(
+                                    'imcrm-rounded imcrm-border imcrm-border-dashed imcrm-p-1.5 imcrm-transition-all',
+                                    isDropTarget
+                                        ? 'imcrm-border-primary imcrm-bg-primary/5'
+                                        : 'imcrm-border-border imcrm-bg-card/60',
+                                    col.blocks.length === 0 && 'imcrm-min-h-[64px]',
+                                ),
                             )}
                         >
                             {! preview && (
@@ -1321,11 +1364,13 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                                             onSelectBlock(subBlock.id, e.shiftKey);
                                         }}
                                         className={cn(
-                                            'imcrm-group imcrm-relative imcrm-overflow-hidden imcrm-rounded imcrm-bg-card imcrm-ring-1 imcrm-transition-all',
-                                            isSelected
-                                                ? 'imcrm-ring-2 imcrm-ring-primary'
-                                                : 'imcrm-ring-border hover:imcrm-ring-primary/40',
-                                            preview ? 'imcrm-cursor-default' : 'imcrm-cursor-pointer',
+                                            // v0.1.96 — ring/tarjeta solo en edición.
+                                            ! preview && cn(
+                                                'imcrm-group imcrm-relative imcrm-overflow-hidden imcrm-rounded imcrm-bg-card imcrm-ring-1 imcrm-transition-all imcrm-cursor-pointer',
+                                                isSelected
+                                                    ? 'imcrm-ring-2 imcrm-ring-primary'
+                                                    : 'imcrm-ring-border hover:imcrm-ring-primary/40',
+                                            ),
                                         )}
                                     >
                                         {! preview && (
