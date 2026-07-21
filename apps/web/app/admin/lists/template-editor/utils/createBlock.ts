@@ -56,6 +56,12 @@ export function createBlock(
     if (type === 'image') {
         return { ...base, w: 6, h: 4, type, config: { url: '', alt: '', height: 0, fit: 'cover', link_url: '' } };
     }
+    if (type === 'spacer') {
+        return { ...base, w: 12, h: 1, type, config: { height: 32 } };
+    }
+    if (type === 'gallery') {
+        return { ...base, w: 12, h: 5, type, config: { images: [], columns: 3, height: 140 } };
+    }
     if (type === 'notes') {
         return { ...base, w: 4, h: 3, type, config: { title: __('Nota'), content: '' } };
     }

@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
     brandingSchema,
+    stylePresetsSchema,
+    type BlockStylePreset,
     type Branding,
     type BrandingResponse,
     type UpdateBrandingInput,
@@ -69,6 +71,39 @@ export class BrandingService {
             return merged;
         });
         return this.withLogoUrl(tenantId, next);
+    }
+
+    /**
+     * v0.1.94 — Presets de estilo de marca del workspace (para el panel
+     * "Diseño" de los editores de plantilla). Viven en
+     * `tenants.settings.style_presets`; el PUT reemplaza la lista completa
+     * (la UI trabaja con el array entero: agregar/renombrar/borrar).
+     */
+    async getStylePresets(tenantId: number): Promise<BlockStylePreset[]> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
+        );
+        const parsed = stylePresetsSchema.safeParse(
+            (row?.settings as Record<string, unknown> | undefined)?.style_presets ?? [],
+        );
+        return parsed.success ? parsed.data : [];
+    }
+
+    async setStylePresets(tenantId: number, presets: BlockStylePreset[]): Promise<BlockStylePreset[]> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: tenants.settings })
+                .from(tenants)
+                .where(eq(tenants.id, tenantId))
+                .limit(1);
+            const settings = { ...(row?.settings ?? {}) };
+            settings.style_presets = presets;
+            await tx
+                .update(tenants)
+                .set({ settings, updatedAt: new Date() })
+                .where(eq(tenants.id, tenantId));
+            return presets;
+        });
     }
 
     private withLogoUrl(tenantId: number, branding: Branding): BrandingResponse {

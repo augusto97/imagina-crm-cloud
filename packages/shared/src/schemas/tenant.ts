@@ -68,3 +68,34 @@ export const publicBrandingSchema = z.object({
     logo_url: z.string().nullable().default(null),
 });
 export type PublicBranding = z.infer<typeof publicBrandingSchema>;
+
+/**
+ * v0.1.94 — Presets de estilo de marca por workspace: un `BlockStyle`
+ * del editor de plantillas (lib/blockStyle del front) con nombre, para
+ * aplicar la misma apariencia en un click en cualquier bloque. Viven en
+ * `tenants.settings.style_presets` (jsonb, sin migración).
+ */
+const styleScale = z.enum(['none', 'sm', 'md', 'lg', 'xl']);
+export const blockStylePresetSchema = z.object({
+    name: z.string().trim().min(1).max(40),
+    style: z
+        .object({
+            bg: hexColorSchema.optional(),
+            text: hexColorSchema.optional(),
+            border: hexColorSchema.optional(),
+            pad: styleScale.optional(),
+            radius: styleScale.optional(),
+            shadow: z.enum(['none', 'sm', 'md', 'lg']).optional(),
+            align: z.enum(['left', 'center', 'right']).optional(),
+            size: z.enum(['sm', 'md', 'lg', 'xl', '2xl']).optional(),
+            weight: z.enum(['normal', 'medium', 'semibold', 'bold']).optional(),
+        })
+        .strip(),
+});
+export type BlockStylePreset = z.infer<typeof blockStylePresetSchema>;
+
+export const stylePresetsSchema = z.array(blockStylePresetSchema).max(24).default([]);
+export const updateStylePresetsSchema = z.object({
+    presets: z.array(blockStylePresetSchema).max(24),
+});
+export type UpdateStylePresetsInput = z.infer<typeof updateStylePresetsSchema>;

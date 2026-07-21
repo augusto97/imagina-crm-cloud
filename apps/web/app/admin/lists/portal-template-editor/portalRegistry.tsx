@@ -10,6 +10,8 @@ import {
     Heading as HeadingIcon,
     HelpCircle,
     Image as ImageIcon,
+    Images as ImagesIcon,
+    StretchVertical,
     LayoutTemplate,
     MessageSquare,
     Minus,
@@ -161,6 +163,20 @@ const TYPES: BlockTypeDef[] = [
         category: 'content',
     },
     {
+        type: 'gallery',
+        label: __('Galería de imágenes'),
+        description: __('Varias imágenes en grilla de 2-4 columnas.'),
+        icon: ImagesIcon,
+        category: 'content',
+    },
+    {
+        type: 'spacer',
+        label: __('Espaciador'),
+        description: __('Espacio vertical fijo para respirar entre bloques.'),
+        icon: StretchVertical,
+        category: 'layout',
+    },
+    {
         type: 'external_link',
         label: __('Enlace externo'),
         description: __('CTA a URL externa (pagos, soporte, docs).'),
@@ -211,6 +227,8 @@ const LABEL_BY_TYPE: Record<PortalBlockType, string> = {
     contact_card:           __('Tarjeta de contacto'),
     nested_section:         __('Sub-sección con columnas'),
     image:                  __('Imagen'),
+    spacer:                 __('Espaciador'),
+    gallery:                __('Galería de imágenes'),
 };
 
 const DESC_BY_TYPE: Record<PortalBlockType, string> = {
@@ -233,6 +251,8 @@ const DESC_BY_TYPE: Record<PortalBlockType, string> = {
     contact_card:           __('Tarjeta del asesor con avatar, nombre y datos de contacto.'),
     nested_section:         __('Contenedor con N columnas anidadas dentro de otra columna. Permite layouts de columnas dentro de columnas.'),
     image:                  __('Imagen subida al módulo de archivos o por URL externa, con alto, ajuste y enlace opcional.'),
+    spacer:                 __('Espacio vertical fijo — separa secciones sin márgenes manuales.'),
+    gallery:                __('Varias imágenes (subidas o por URL) en una grilla de 2-4 columnas.'),
 };
 
 function makeId(type: string): string {

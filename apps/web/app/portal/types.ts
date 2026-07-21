@@ -291,6 +291,23 @@ export type PortalBlock = PortalBlockGridPosition & (
               link_url?: string;
           };
       }
+    | {
+          /** v0.1.94 — espacio vertical fijo. */
+          type: 'spacer';
+          config: { height?: number };
+      }
+    | {
+          /**
+           * v0.1.94 — Galería en grilla. Las imágenes con
+           * `image_file_id` llegan con `url` FIRMADA desde el backend.
+           */
+          type: 'gallery';
+          config: {
+              images?: Array<{ url?: string; image_file_id?: number; alt?: string }>;
+              columns?: number;
+              height?: number;
+          };
+      }
 );
 
 /**

@@ -110,6 +110,20 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         expect(updated.allowed_roles).toEqual(['manager']);
     });
 
+    it('style presets: vacíos por default, el set persiste y valida el shape', async () => {
+        // v0.1.94 — presets de estilo de marca del workspace.
+        expect(await branding.getStylePresets(tenantId)).toEqual([]);
+        const presets = [
+            { name: 'Banda oscura', style: { bg: '#0f172a', text: '#f8fafc', radius: 'lg' as const } },
+            { name: 'Suave', style: { bg: '#f8fafc' } },
+        ];
+        await branding.setStylePresets(tenantId, presets);
+        expect(await branding.getStylePresets(tenantId)).toEqual(presets);
+        // Reemplazo completo (borrar uno)
+        await branding.setStylePresets(tenantId, [presets[1]!]);
+        expect(await branding.getStylePresets(tenantId)).toHaveLength(1);
+    });
+
     it('branding: default vacío, PATCH persiste y el logo debe ser del tenant', async () => {
         const empty = await branding.get(tenantId);
         expect(empty).toMatchObject({ primary_color: null, logo_file_id: null, app_name: null, logo_url: null });

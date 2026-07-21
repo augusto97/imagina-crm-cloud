@@ -3,6 +3,7 @@ import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
+import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
@@ -122,10 +123,19 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
 
     const hasTemplate = rendererData.template.blocks.length > 0;
 
+    // v0.1.94 — ajustes de página del portal diseñados en el editor:
+    // fondo de página, ancho máximo del contenido y tipografía global.
+    const page = readPageSettings(boot.template_page ?? undefined);
+    const pageStyle: React.CSSProperties = {};
+    if (page.bg !== undefined) pageStyle.backgroundColor = page.bg;
+    if (page.font !== undefined) pageStyle.fontFamily = PAGE_FONT_STACKS[page.font];
+    const contentStyle: React.CSSProperties =
+        page.max_width !== undefined ? { maxWidth: `${page.max_width}px` } : {};
+
     return (
-        <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground">
+        <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground" style={pageStyle}>
             <header className="imcrm-border-b imcrm-border-border imcrm-px-6 imcrm-py-4">
-                <div className="imcrm-mx-auto imcrm-flex imcrm-max-w-4xl imcrm-items-center imcrm-gap-3">
+                <div className="imcrm-mx-auto imcrm-flex imcrm-max-w-4xl imcrm-items-center imcrm-gap-3" style={contentStyle}>
                     {branding.logo_url && (
                         <img
                             src={branding.logo_url}
@@ -142,7 +152,7 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                 </div>
             </header>
 
-            <main className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6">
+            <main className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6" style={contentStyle}>
                 {hasTemplate ? (
                     // Template diseñado en el editor: TODOS los tipos de bloque
                     // (estáticos + interactivos contra /portal/*).

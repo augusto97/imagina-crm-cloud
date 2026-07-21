@@ -13,6 +13,8 @@
 export type StyleScale = 'none' | 'sm' | 'md' | 'lg' | 'xl';
 export type StyleShadow = 'none' | 'sm' | 'md' | 'lg';
 export type StyleAlign = 'left' | 'center' | 'right';
+export type StyleSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+export type StyleWeight = 'normal' | 'medium' | 'semibold' | 'bold';
 
 export interface BlockStyle {
     /** Color de fondo (hex). Vacío/undefined = sin fondo propio. */
@@ -29,10 +31,16 @@ export interface BlockStyle {
     shadow?: StyleShadow;
     /** Alineación del texto. */
     align?: StyleAlign;
+    /** v0.1.94 — tamaño base de texto del bloque. */
+    size?: StyleSize;
+    /** v0.1.94 — peso de la tipografía del bloque. */
+    weight?: StyleWeight;
 }
 
 const PAD_PX: Record<StyleScale, number> = { none: 0, sm: 10, md: 16, lg: 24, xl: 40 };
 const RADIUS_PX: Record<StyleScale, number> = { none: 0, sm: 6, md: 10, lg: 16, xl: 24 };
+const SIZE_PX: Record<StyleSize, number> = { sm: 12, md: 14, lg: 17, xl: 22, '2xl': 28 };
+const WEIGHTS: Record<StyleWeight, number> = { normal: 400, medium: 500, semibold: 600, bold: 700 };
 const SHADOWS: Record<StyleShadow, string> = {
     none: 'none',
     sm: '0 1px 2px 0 rgb(0 0 0 / 0.06)',
@@ -68,6 +76,8 @@ export function readBlockStyle(config: Record<string, unknown> | undefined | nul
         out.shadow = s.shadow;
     }
     if (s.align === 'left' || s.align === 'center' || s.align === 'right') out.align = s.align;
+    if (typeof s.size === 'string' && s.size in SIZE_PX) out.size = s.size as StyleSize;
+    if (typeof s.weight === 'string' && s.weight in WEIGHTS) out.weight = s.weight as StyleWeight;
     return out;
 }
 
@@ -92,7 +102,45 @@ export function blockStyleCss(style: BlockStyle): React.CSSProperties {
     if (radius !== undefined && radius !== 'none') css.borderRadius = `${RADIUS_PX[radius]}px`;
     if (style.shadow !== undefined && style.shadow !== 'none') css.boxShadow = SHADOWS[style.shadow];
     if (style.align !== undefined) css.textAlign = style.align;
+    if (style.size !== undefined) css.fontSize = `${SIZE_PX[style.size]}px`;
+    if (style.weight !== undefined) css.fontWeight = WEIGHTS[style.weight];
     return css;
+}
+
+/* ── Ajustes de PÁGINA del portal (v0.1.94) ───────────────────────── */
+
+export type PageFont = 'sans' | 'serif' | 'rounded' | 'mono';
+
+/** Stacks de sistema — el portal no carga fuentes externas. */
+export const PAGE_FONT_STACKS: Record<PageFont, string> = {
+    sans: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    serif: "Georgia, 'Times New Roman', Times, serif",
+    rounded: "ui-rounded, 'SF Pro Rounded', 'Comic Neue', Verdana, sans-serif",
+    mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+};
+
+export interface PortalPageSettings {
+    /** Fondo de toda la página (hex). */
+    bg?: string;
+    /** Ancho máximo del contenido en px (0/undefined = default del portal). */
+    max_width?: number;
+    /** Familia tipográfica global. */
+    font?: PageFont;
+}
+
+/** Lee `portal_template.page` de forma tolerante (mismo criterio que style). */
+export function readPageSettings(raw: unknown): PortalPageSettings {
+    if (!raw || typeof raw !== 'object') return {};
+    const s = raw as Record<string, unknown>;
+    const out: PortalPageSettings = {};
+    if (isHex(s.bg)) out.bg = s.bg;
+    if (typeof s.max_width === 'number' && Number.isFinite(s.max_width) && s.max_width >= 480) {
+        out.max_width = Math.floor(s.max_width);
+    }
+    if (s.font === 'sans' || s.font === 'serif' || s.font === 'rounded' || s.font === 'mono') {
+        out.font = s.font;
+    }
+    return out;
 }
 
 /**
