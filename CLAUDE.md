@@ -1015,6 +1015,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         email de emisión; due_date_reached sobre fecha de emisión con
         offsets 20/45/70 días + filtro estado=pendiente → recordatorios.
 
+  - [x] **Rediseño premium del módulo de automatizaciones (v0.1.90, pedido
+        del usuario)**: se ELIMINÓ el modal `AutomationDialog` y el canvas
+        React Flow (`AutomationVisualBuilder`, dep `@xyflow/react` fuera del
+        bundle) — el usuario reportó doble scroll, selección obsoleta y que
+        el modo visual no aportaba si todo se editaba en el sidebar. Ahora:
+        (a) **editor a página completa** (`/lists/:slug/automations/new|:id`,
+        `AutomationEditorPage`) con nombre/descripción inline en el header,
+        toggle Activa/Pausada tipo switch, Historial (runs drawer) y Guardar
+        con detalle de errores Zod + aviso beforeunload si hay cambios; (b)
+        **flujo VERTICAL estilo Zapier**: tarjeta "Cuando" (trigger) →
+        conector con "+" para insertar en posición → una tarjeta por acción,
+        cada una editable EN EL LUGAR (colapsada = resumen en lenguaje humano,
+        expandida = su config), con subir/bajar/duplicar/eliminar y badge de
+        condiciones; menú de tipos de acción con icono+descripción; un solo
+        scroll (el de la página); (c) **lenguaje humano** (`automationMeta`):
+        resúmenes tipo "Cuando cambia «Próximo cobro»" / "Crea un registro en
+        «Facturas» · 5 valores" en editor e índice; (d) **índice premium**:
+        tarjetas con el flujo resumido (chips trigger → acciones), switch de
+        estado, historial y eliminar; crear/editar navega a la página. Los
+        editores de config se extrajeron a `config-editors.tsx` (mismos
+        merge tags, condición por acción, if_else anidado — round-trip
+        intacto). E2E navegador 19/19 (índice, editor sin modal, expansión
+        in-place, condición previa visible, scroll único, alta end-to-end
+        persistida por API).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

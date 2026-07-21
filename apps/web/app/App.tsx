@@ -26,6 +26,7 @@ const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPa
 const TemplateEditorPage = lazyWithReload(() => import('@/admin/lists/template-editor/TemplateEditorPage').then(m => ({ default: m.TemplateEditorPage })));
 const PortalTemplateEditorPage = lazyWithReload(() => import('@/admin/lists/portal-template-editor/PortalTemplateEditorPage').then(m => ({ default: m.PortalTemplateEditorPage })));
 const AutomationsPage = lazyWithReload(() => import('@/admin/automations/AutomationsPage').then(m => ({ default: m.AutomationsPage })));
+const AutomationEditorPage = lazyWithReload(() => import('@/admin/automations/AutomationEditorPage').then(m => ({ default: m.AutomationEditorPage })));
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
 const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
@@ -63,6 +64,12 @@ export function App(): JSX.Element {
                 <Route path="lists/:listSlug/records/:recordId" element={<RecordPage />} />
                 <Route path="lists/:listSlug/automations" element={
                     <Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense>
+                } />
+                <Route path="lists/:listSlug/automations/new" element={
+                    <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
+                } />
+                <Route path="lists/:listSlug/automations/:automationId" element={
+                    <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
                 } />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>

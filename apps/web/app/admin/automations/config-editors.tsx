@@ -1,31 +1,7 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import { ChevronRight, LayoutList, Loader2, Plus, Trash2, Workflow, X } from 'lucide-react';
+import { createContext, useContext, useState } from 'react';
+import { ChevronRight, Plus, Trash2 } from 'lucide-react';
 
-import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Badge } from '@/components/ui/badge';
-
-/**
- * Context para exponer el `listId` actual a componentes profundos
- * del editor (FilterRow, FieldValueInput, etc.) sin prop-drilling.
- * Lo setea `<AutomationDialog>` al montar y lo consume cualquier
- * `<AutocompleteInput>` que necesite resolver valores distintos
- * desde el endpoint del backend.
- */
-const AutomationEditorListContext = createContext<number | undefined>(undefined);
-
-export function useAutomationListId(): number | undefined {
-    return useContext(AutomationEditorListContext);
-}
-
-// Code-split: React Flow es ~60KB gzipped. La mayoría de usuarios edita
-// en la vista form; sólo cargamos el bundle del diagrama cuando lo piden.
-const AutomationVisualBuilder = lazy(() =>
-    import('@/admin/automations/AutomationVisualBuilder').then((m) => ({
-        default: m.AutomationVisualBuilder,
-    })),
-);
-
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,46 +11,38 @@ import { Textarea } from '@/components/ui/textarea';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { useEmailSignature } from '@/hooks/useEmailSignature';
-import {
-    useCreateAutomation,
-    useUpdateAutomation,
-} from '@/hooks/useAutomations';
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
-import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import type {
     ActionMeta,
     ActionSpec,
     AutomationEntity,
-    CreateAutomationInput,
     TriggerConfig,
-    TriggerMeta,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 
 /**
- * Dialog modal para crear o editar una automatización.
- *
- * El form-based builder cubre el 95% de los casos típicos del MVP:
- * - elegir trigger (record_created / record_updated)
- * - filtros simples por slug = valor
- * - lista ordenada de acciones (update_field / call_webhook)
- *
- * El builder visual con React Flow llega en commit posterior; para entonces
- * éste seguirá siendo útil como modo "form simple".
+ * Editores de configuración del módulo de automatizaciones, compartidos
+ * entre el editor de página completa (`AutomationEditorPage`) y los
+ * sub-editores anidados (ramas de `if_else`). Antes vivían dentro del
+ * modal `AutomationDialog` (eliminado en v0.1.90).
  */
-interface AutomationDialogProps {
-    listId: number;
-    triggers: TriggerMeta[];
-    actions: ActionMeta[];
-    automation: AutomationEntity | null;
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
+
+/**
+ * Context para exponer el `listId` actual a componentes profundos
+ * del editor (FilterRow, FieldValueInput, etc.) sin prop-drilling.
+ * Lo setea la página del editor al montar y lo consume cualquier
+ * `<AutocompleteInput>` que necesite resolver valores distintos
+ * desde el endpoint del backend.
+ */
+export const AutomationEditorListContext = createContext<number | undefined>(undefined);
+
+export function useAutomationListId(): number | undefined {
+    return useContext(AutomationEditorListContext);
 }
 
-interface FormState {
+export interface AutomationFormState {
     name: string;
     description: string;
     triggerType: string;
@@ -83,7 +51,7 @@ interface FormState {
     isActive: boolean;
 }
 
-const EMPTY_STATE: FormState = {
+export const EMPTY_AUTOMATION_STATE: AutomationFormState = {
     name: '',
     description: '',
     triggerType: 'record_created',
@@ -92,16 +60,16 @@ const EMPTY_STATE: FormState = {
     isActive: true,
 };
 
-function fromAutomation(a: AutomationEntity): FormState {
+export function fromAutomation(a: AutomationEntity): AutomationFormState {
     return {
         name: a.name,
         description: a.description ?? '',
         triggerType: a.trigger_type,
         triggerConfig: { ...a.trigger_config },
         // OJO: conservar `condition` — reconstruir la acción solo con
-        // {type, config} hacía que al REABRIR el diálogo la condición por
-        // acción desapareciera del editor (y un re-guardado la borraba de
-        // la DB en silencio).
+        // {type, config} hacía que al REABRIR el editor la condición por
+        // acción desapareciera (y un re-guardado la borraba de la DB en
+        // silencio).
         actions: a.actions.map((s) => ({
             type: s.type,
             config: { ...s.config },
@@ -111,369 +79,38 @@ function fromAutomation(a: AutomationEntity): FormState {
     };
 }
 
-export function AutomationDialog({
-    listId,
-    triggers,
-    actions,
-    automation,
-    open,
-    onOpenChange,
-}: AutomationDialogProps): JSX.Element {
-    const create = useCreateAutomation(listId);
-    const update = useUpdateAutomation(listId);
-    const fields = useFields(listId);
-
-    const [state, setState] = useState<FormState>(
-        automation ? fromAutomation(automation) : EMPTY_STATE,
-    );
-    const [error, setError] = useState<string | null>(null);
-    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-    const [view, setView] = useState<'form' | 'visual'>('form');
-    const actionsListRef = useRef<HTMLOListElement | null>(null);
-
-    // OJO: los hooks de TanStack Query (create, update) cambian de
-    // referencia en cada render. Si los incluimos en las deps, el
-    // efecto re-corre tras cada keystroke y resetea el state que el
-    // usuario está editando. Por eso dependemos sólo de `[open,
-    // automation?.id]` y disable la regla exhaustive-deps.
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-        setState(automation ? fromAutomation(automation) : EMPTY_STATE);
-        setError(null);
-        setFieldErrors({});
-        // Reset idempotente de errores previos del último submit.
-        create.reset();
-        update.reset();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, automation?.id]);
-
-    const triggerMeta = triggers.find((t) => t.slug === state.triggerType);
-
-    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
-        e.preventDefault();
-        setError(null);
-        setFieldErrors({});
-
-        const payload: CreateAutomationInput = {
-            name: state.name.trim(),
-            description: state.description.trim() === '' ? null : state.description.trim(),
-            trigger_type: state.triggerType,
-            trigger_config: cleanTriggerConfig(state.triggerConfig),
-            actions: state.actions,
-            is_active: state.isActive,
-        };
-
-        try {
-            if (automation) {
-                await update.mutateAsync({ id: automation.id, input: payload });
-            } else {
-                await create.mutateAsync(payload);
-            }
-            onOpenChange(false);
-        } catch (err) {
-            if (err instanceof ApiError) {
-                setFieldErrors(err.errors);
-                // "Datos inválidos" a secas no dice QUÉ está mal — el backend
-                // manda el detalle por path Zod (ej. "actions.0.condition.0:
-                // ...") pero los paths anidados no matchean ningún FieldGroup;
-                // se muestran en el banner.
-                const detail = Object.entries(err.errors)
-                    .map(([path, msg]) => `${path}: ${msg}`)
-                    .join(' · ');
-                setError(detail !== '' ? `${err.message} — ${detail}` : err.message);
-            } else if (err instanceof Error) {
-                setError(err.message);
-            }
-        }
-    };
-
-    const isPending = create.isPending || update.isPending;
-
-    return (
-        <AutomationEditorListContext.Provider value={listId}>
-        <Dialog.Root open={open} onOpenChange={onOpenChange}>
-            <Dialog.Portal>
-                <Dialog.Overlay
-                    className={cn(
-                        'imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm',
-                    )}
-                />
-                <Dialog.Content
-                    className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-[calc(100%-1.5rem)]',
-                        'imcrm--translate-x-1/2 imcrm--translate-y-1/2',
-                        'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-lg',
-                        'imcrm-overflow-y-auto imcrm-transition-[max-width,max-height] imcrm-duration-200',
-                        // En modo Diagrama el builder necesita lienzo: ocupa
-                        // ~95% del viewport. En Formulario mantenemos el
-                        // diálogo compacto.
-                        view === 'visual'
-                            ? 'imcrm-max-w-[1400px] imcrm-max-h-[95vh] imcrm-p-4 sm:imcrm-p-5'
-                            : 'imcrm-max-w-2xl imcrm-max-h-[90vh] imcrm-p-4 sm:imcrm-p-6',
-                    )}
-                >
-                    <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                        <div>
-                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
-                                {automation
-                                    ? __('Editar automatización')
-                                    : __('Nueva automatización')}
-                            </Dialog.Title>
-                            <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Define cuándo se dispara y qué acciones se ejecutan.')}
-                            </Dialog.Description>
-                        </div>
-                        <Dialog.Close asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label={__('Cerrar')}
-                            >
-                                <X className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
-                        </Dialog.Close>
-                    </div>
-
-                    {error && (
-                        <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                            {error}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="imcrm-mt-4 imcrm-flex imcrm-flex-col imcrm-gap-5">
-                        <ViewSwitcher view={view} onChange={setView} />
-
-                        {view === 'form' ? (
-                            <>
-                                <FieldGroup error={fieldErrors.name}>
-                                    <Label htmlFor="auto-name">{__('Nombre')}</Label>
-                                    <Input
-                                        id="auto-name"
-                                        required
-                                        value={state.name}
-                                        onChange={(e) => setState((s) => ({ ...s, name: e.target.value }))}
-                                    />
-                                </FieldGroup>
-
-                                <FieldGroup>
-                                    <Label htmlFor="auto-desc">{__('Descripción (opcional)')}</Label>
-                                    <Textarea
-                                        id="auto-desc"
-                                        rows={2}
-                                        value={state.description}
-                                        onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-                                    />
-                                </FieldGroup>
-
-                                <FieldGroup error={fieldErrors.trigger_type}>
-                                    <Label htmlFor="auto-trigger">{__('Trigger')}</Label>
-                                    <Select
-                                        id="auto-trigger"
-                                        value={state.triggerType}
-                                        onChange={(e) =>
-                                            setState((s) => ({
-                                                ...s,
-                                                triggerType: e.target.value,
-                                                triggerConfig: {},
-                                            }))
-                                        }
-                                    >
-                                        {triggers.map((t) => (
-                                            <option key={t.slug} value={t.slug}>
-                                                {t.label}
-                                            </option>
-                                        ))}
-                                    </Select>
-                                    {triggerMeta && (
-                                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                            <code className="imcrm-font-mono">{triggerMeta.event}</code>
-                                        </p>
-                                    )}
-                                </FieldGroup>
-
-                                <TriggerConfigEditor
-                                    triggerType={state.triggerType}
-                                    config={state.triggerConfig}
-                                    onChange={(triggerConfig) => setState((s) => ({ ...s, triggerConfig }))}
-                                    fields={fields.data ?? []}
-                                />
-
-                                <ActionsEditor
-                                    value={state.actions}
-                                    onChange={(next) => setState((s) => ({ ...s, actions: next }))}
-                                    actionsCatalog={actions}
-                                    fields={fields.data ?? []}
-                                    error={fieldErrors.actions}
-                                    listRef={actionsListRef}
-                                />
-                            </>
-                        ) : (
-                            // En modo Diagrama dedicamos TODO el espacio del modal
-                            // al canvas + side panel. Nombre/Descripción son
-                            // accesibles desde la vista Formulario; mostrar el
-                            // nombre actual como header sutil para contexto.
-                            <>
-                                <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-2">
-                                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
-                                        <span className="imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
-                                            {__('Editando')}
-                                        </span>
-                                        <span className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">
-                                            {state.name.trim() === '' ? __('(sin nombre)') : state.name}
-                                        </span>
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setView('form')}
-                                    >
-                                        {__('Editar metadatos')}
-                                    </Button>
-                                </div>
-
-                                <ErrorBoundary
-                                    label={__('No se pudo cargar el diagrama. Usa la vista Formulario por ahora.')}
-                                    onReset={() => setView('form')}
-                                >
-                                    <Suspense
-                                        fallback={
-                                            <div className="imcrm-flex imcrm-h-[480px] imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-text-sm imcrm-text-muted-foreground">
-                                                <Loader2 className="imcrm-mr-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
-                                                {__('Cargando diagrama…')}
-                                            </div>
-                                        }
-                                    >
-                                        <AutomationVisualBuilder
-                                            listId={listId}
-                                            triggerType={state.triggerType}
-                                            triggerConfig={state.triggerConfig}
-                                            onTriggerTypeChange={(next) =>
-                                                setState((s) => ({
-                                                    ...s,
-                                                    triggerType: next,
-                                                    triggerConfig: {},
-                                                }))
-                                            }
-                                            onTriggerConfigChange={(triggerConfig) =>
-                                                setState((s) => ({ ...s, triggerConfig }))
-                                            }
-                                            triggers={triggers}
-                                            actions={state.actions}
-                                            actionsCatalog={actions}
-                                            onActionsChange={(next) => setState((s) => ({ ...s, actions: next }))}
-                                        />
-                                    </Suspense>
-                                </ErrorBoundary>
-                            </>
-                        )}
-
-                        <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                            <input
-                                type="checkbox"
-                                checked={state.isActive}
-                                onChange={(e) => setState((s) => ({ ...s, isActive: e.target.checked }))}
-                            />
-                            {__('Activa al guardar')}
-                        </label>
-
-                        <footer className="imcrm-flex imcrm-justify-end imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-5">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => onOpenChange(false)}
-                                disabled={isPending}
-                            >
-                                {__('Cancelar')}
-                            </Button>
-                            <Button type="submit" disabled={isPending}>
-                                {isPending ? __('Guardando…') : __('Guardar')}
-                            </Button>
-                        </footer>
-                    </form>
-                </Dialog.Content>
-            </Dialog.Portal>
-        </Dialog.Root>
-        </AutomationEditorListContext.Provider>
-    );
-}
-
-function ViewSwitcher({
-    view,
-    onChange,
-}: {
-    view: 'form' | 'visual';
-    onChange: (next: 'form' | 'visual') => void;
-}): JSX.Element {
-    return (
-        <div
-            className="imcrm-inline-flex imcrm-self-start imcrm-gap-1 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-1"
-            role="tablist"
-            aria-label={__('Vista del editor')}
-        >
-            <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'form'}
-                onClick={() => onChange('form')}
-                className={cn(
-                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-3.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
-                    view === 'form'
-                        ? 'imcrm-bg-card imcrm-text-foreground imcrm-shadow-imcrm-sm'
-                        : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                )}
-            >
-                <LayoutList className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Formulario')}
-            </button>
-            <button
-                type="button"
-                role="tab"
-                aria-selected={view === 'visual'}
-                onClick={() => onChange('visual')}
-                className={cn(
-                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-3.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
-                    view === 'visual'
-                        ? 'imcrm-bg-card imcrm-text-foreground imcrm-shadow-imcrm-sm'
-                        : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                )}
-            >
-                <Workflow className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Diagrama')}
-            </button>
-        </div>
-    );
-}
-
-function FieldGroup({
-    children,
-    error,
-}: {
-    children: React.ReactNode;
-    error?: string;
-}): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            {children}
-            {error && <p className="imcrm-text-xs imcrm-text-destructive">{error}</p>}
-        </div>
-    );
-}
-
-export interface TriggerConfigEditorProps {
-    triggerType: string;
-    config: TriggerConfig;
-    onChange: (next: TriggerConfig) => void;
-    fields: FieldEntity[];
+export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
+    const out: TriggerConfig = {};
+    if (c.field_filters && typeof c.field_filters === 'object') {
+        const ff = c.field_filters as Record<string, unknown>;
+        if (Object.keys(ff).length > 0) out.field_filters = ff;
+    }
+    if (Array.isArray(c.changed_fields) && c.changed_fields.length > 0) {
+        out.changed_fields = c.changed_fields;
+    }
+    // field_changed
+    if (typeof c.field === 'string' && c.field !== '') out.field = c.field;
+    if (c.from_value !== undefined && c.from_value !== null && c.from_value !== '') {
+        out.from_value = c.from_value;
+    }
+    if (c.to_value !== undefined && c.to_value !== null && c.to_value !== '') {
+        out.to_value = c.to_value;
+    }
+    // scheduled
+    if (typeof c.frequency === 'string' && c.frequency !== '') out.frequency = c.frequency;
+    // due_date_reached
+    if (typeof c.due_field === 'string' && c.due_field !== '') out.due_field = c.due_field;
+    if (typeof c.offset_minutes === 'number') out.offset_minutes = c.offset_minutes;
+    if (typeof c.tolerance_minutes === 'number') out.tolerance_minutes = c.tolerance_minutes;
+    return out;
 }
 
 /**
- * Editor del trigger_config: filtros simples por slug=valor y, para
- * `record_updated`, lista de campos cuyo cambio dispara la regla.
+ * Explicación en lenguaje humano de cada trigger — visible en el
+ * editor para que un usuario con conocimientos básicos entienda qué
+ * hace cada uno sin leer documentación.
  */
-function helpForTrigger(triggerType: string): string {
+export function helpForTrigger(triggerType: string): string {
     switch (triggerType) {
         case 'record_created':
             return __('Se ejecuta cada vez que se crea un nuevo registro en esta lista. Útil para asignaciones automáticas, notificaciones de bienvenida, etc.');
@@ -484,12 +121,25 @@ function helpForTrigger(triggerType: string): string {
         case 'scheduled':
             return __('Se ejecuta de forma recurrente (cada hora, dos veces al día, diario o semanal). En cada tick recorre todos los registros activos de la lista — útil para reportes periódicos o limpieza programada.');
         case 'due_date_reached':
-            return __('Se ejecuta cuando un campo de fecha del registro entra en una ventana relativa al "ahora". Ejemplo: "1 día antes del vencimiento" → offset = -1440 minutos. Tolerancia define la ventana alrededor del target para no perder registros por jitter del cron.');
+            return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
         default:
             return '';
     }
 }
 
+export interface TriggerConfigEditorProps {
+    triggerType: string;
+    config: TriggerConfig;
+    onChange: (next: TriggerConfig) => void;
+    fields: FieldEntity[];
+}
+
+/**
+ * Editor del trigger_config: filtros por campo y, según el trigger,
+ * su configuración específica (campos observados, frecuencia, campo
+ * de fecha + offset…). Sin chrome propio — el contenedor lo pone la
+ * tarjeta del flujo.
+ */
 export function TriggerConfigEditor({
     triggerType,
     config,
@@ -502,20 +152,8 @@ export function TriggerConfigEditor({
         onChange({ ...config, changed_fields: next });
     };
 
-    const help = helpForTrigger(triggerType);
-
     return (
-        <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-shadow-imcrm-sm">
-            <legend className="imcrm-px-1.5 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
-                {__('Configuración del trigger')}
-            </legend>
-
-            {help !== '' && (
-                <p className="imcrm-rounded-lg imcrm-border imcrm-border-info/20 imcrm-bg-info/5 imcrm-p-3 imcrm-text-[12px] imcrm-leading-relaxed imcrm-text-foreground">
-                    {help}
-                </p>
-            )}
-
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <ConditionEditor
                 value={config.field_filters as ConditionRule[] | Record<string, unknown> | undefined}
                 onChange={(next) => onChange({ ...config, field_filters: next })}
@@ -570,7 +208,7 @@ export function TriggerConfigEditor({
             {triggerType === 'due_date_reached' && (
                 <DueDateConfig config={config} onChange={onChange} fields={fields} />
             )}
-        </fieldset>
+        </div>
     );
 }
 
@@ -664,7 +302,7 @@ function ScheduledConfig({
 /**
  * Presets para `offset_minutes` que cubren el 95% de los casos típicos.
  * Si el operador necesita algo distinto puede elegir "Personalizado" y
- * editar el valor manualmente.
+ * editar el valor manualmente (en días).
  */
 const DUE_DATE_PRESETS: Array<{ id: string; label: string; offsetMinutes: number }> = [
     { id: 'now',         label: 'Cuando llega la fecha (mismo día)',     offsetMinutes: 0 },
@@ -801,16 +439,19 @@ interface ActionsEditorProps {
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
     error?: string;
-    listRef?: React.RefObject<HTMLOListElement>;
 }
 
-function ActionsEditor({
+/**
+ * Lista compacta y numerada de acciones — usada para las sub-listas
+ * anidadas de `if_else` (then/else). El nivel superior del flujo usa
+ * las tarjetas de `AutomationEditorPage`.
+ */
+export function ActionsEditor({
     value,
     onChange,
     actionsCatalog,
     fields,
     error,
-    listRef,
 }: ActionsEditorProps): JSX.Element {
     const addAction = (): void => {
         const first = actionsCatalog[0];
@@ -819,11 +460,7 @@ function ActionsEditor({
     };
 
     return (
-        <fieldset className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <legend className="imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
-                {__('Acciones')}
-            </legend>
-
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {error && <p className="imcrm-text-xs imcrm-text-destructive">{error}</p>}
 
             {value.length === 0 ? (
@@ -831,7 +468,7 @@ function ActionsEditor({
                     {__('Aún no hay acciones. Añade al menos una.')}
                 </p>
             ) : (
-                <ol ref={listRef} className="imcrm-flex imcrm-flex-col imcrm-gap-2.5">
+                <ol className="imcrm-flex imcrm-flex-col imcrm-gap-2.5">
                     {value.map((spec, i) => (
                         <li
                             key={i}
@@ -895,7 +532,7 @@ function ActionsEditor({
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                 {__('Añadir acción')}
             </Button>
-        </fieldset>
+        </div>
     );
 }
 
@@ -905,11 +542,6 @@ export interface ActionConfigEditorProps {
     fields: FieldEntity[];
 }
 
-/**
- * Editor del config de una acción concreta. Conoce las dos acciones del
- * MVP (update_field, call_webhook); para tipos custom registrados por
- * terceros, fallback a editor JSON crudo.
- */
 export interface ActionConfigEditorPropsExtended extends ActionConfigEditorProps {
     /**
      * Catálogo de acciones disponibles. Solo se usa para `if_else` (que
@@ -920,6 +552,12 @@ export interface ActionConfigEditorPropsExtended extends ActionConfigEditorProps
     actionsCatalog?: ActionMeta[];
 }
 
+/**
+ * Editor del config de una acción concreta. Conoce las acciones del
+ * catálogo (update_field, create_record, call_webhook, send_email,
+ * if_else); para tipos custom registrados por terceros, fallback a
+ * editor JSON crudo.
+ */
 export function ActionConfigEditor({
     spec,
     onChange,
@@ -990,7 +628,7 @@ function IfElseConfig({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            {/* Condición que decide which branch ejecuta */}
+            {/* Condición que decide qué rama ejecuta */}
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-border-primary/20 imcrm-bg-primary/5 imcrm-p-3.5">
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                     <Badge variant="default" dot>
@@ -1282,9 +920,8 @@ function CreateRecordConfig({
                 </Select>
             </div>
             {/* Fila por campo: selector + eliminar arriba, valor a ancho
-                completo abajo — en columnas angostas (el panel del Diagrama)
-                el layout en línea hacía que inputs y chips se entremezclaran
-                sin estructura visible. */}
+                completo abajo — en columnas angostas el layout en línea
+                hacía que inputs y chips se entremezclaran sin estructura. */}
             {valueRows.map((v, i) => {
                 const selectedField = tf.find((f) => f.slug === v.slug);
                 return (
@@ -1353,10 +990,11 @@ function CreateRecordConfig({
 
 /**
  * Input contextual para el VALOR de un campo. Switchea según el tipo:
- * - select: dropdown con las options del campo (más merge-tag custom)
- * - checkbox: select true/false
- * - date / datetime: input nativo
- * - resto: input de texto (acepta merge tags `{{slug}}`)
+ * - select: dropdown con las options del campo
+ * - checkbox: select marcado/desmarcado
+ * - date / datetime / number / currency: MergeTagInput con placeholder
+ *   del formato (un input tipado no acepta ni muestra merge tags)
+ * - resto: MergeTagInput con chips
  *
  * `field` puede ser undefined si el campo aún no fue elegido — en ese
  * caso mostramos placeholder.
@@ -1377,9 +1015,6 @@ function FieldValueInput({
     value: string;
     onChange: (next: string) => void;
 }): JSX.Element {
-    const listId = useAutomationListId();
-    void listId; // listId queda como referencia para futuras integraciones (autocomplete por columna).
-
     if (!field) {
         return (
             <Input
@@ -1462,7 +1097,7 @@ function FieldValueInput({
         );
     }
 
-    // text / long_text / email / url / multi_select / relation / user / file:
+    // text / long_text / email / url / relation / user / file:
     // MergeTagInput con chips para insertar variables al cursor.
     return (
         <div className="imcrm-flex-1">
@@ -1675,30 +1310,4 @@ function JsonConfigFallback({
             {parseError && <p className="imcrm-text-xs imcrm-text-destructive">{parseError}</p>}
         </div>
     );
-}
-
-function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
-    const out: TriggerConfig = {};
-    if (c.field_filters && typeof c.field_filters === 'object') {
-        const ff = c.field_filters as Record<string, unknown>;
-        if (Object.keys(ff).length > 0) out.field_filters = ff;
-    }
-    if (Array.isArray(c.changed_fields) && c.changed_fields.length > 0) {
-        out.changed_fields = c.changed_fields;
-    }
-    // field_changed
-    if (typeof c.field === 'string' && c.field !== '') out.field = c.field;
-    if (c.from_value !== undefined && c.from_value !== null && c.from_value !== '') {
-        out.from_value = c.from_value;
-    }
-    if (c.to_value !== undefined && c.to_value !== null && c.to_value !== '') {
-        out.to_value = c.to_value;
-    }
-    // scheduled
-    if (typeof c.frequency === 'string' && c.frequency !== '') out.frequency = c.frequency;
-    // due_date_reached
-    if (typeof c.due_field === 'string' && c.due_field !== '') out.due_field = c.due_field;
-    if (typeof c.offset_minutes === 'number') out.offset_minutes = c.offset_minutes;
-    if (typeof c.tolerance_minutes === 'number') out.tolerance_minutes = c.tolerance_minutes;
-    return out;
 }
