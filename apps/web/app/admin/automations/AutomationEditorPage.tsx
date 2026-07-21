@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
     AlertCircle,
@@ -8,19 +8,15 @@ import {
     ChevronDown,
     Copy,
     History,
+    LayoutList,
     Loader2,
     Plus,
     Trash2,
+    Workflow,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -40,10 +36,12 @@ import type {
     ActionSpec,
     AutomationEntity,
     CreateAutomationInput,
+    TriggerMeta,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
+import { ActionTypeMenu } from './ActionTypeMenu';
 import { AutomationRunsDrawer } from './AutomationRunsDrawer';
 import {
     actionConditionCount,
@@ -63,6 +61,24 @@ import {
     TriggerConfigEditor,
     type AutomationFormState,
 } from './config-editors';
+
+// El lienzo visual (vista n8n/Make) se carga bajo demanda — la mayoría
+// de automatizaciones simples se editan en el flujo vertical.
+const AutomationCanvas = lazy(() =>
+    import('./AutomationCanvas').then((m) => ({ default: m.AutomationCanvas })),
+);
+
+type EditorMode = 'flow' | 'canvas';
+
+const MODE_STORAGE_KEY = 'imcrm-automation-editor-mode';
+
+function initialMode(): EditorMode {
+    try {
+        return window.localStorage.getItem(MODE_STORAGE_KEY) === 'canvas' ? 'canvas' : 'flow';
+    } catch {
+        return 'flow';
+    }
+}
 
 /**
  * Editor de automatizaciones a PÁGINA COMPLETA (v0.1.90) — reemplaza al
@@ -143,7 +159,7 @@ function EditorBody({
 }: {
     list: ListSummary;
     editing: AutomationEntity | null;
-    triggers: Array<{ slug: string; label: string; event: string }>;
+    triggers: TriggerMeta[];
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
     lists: ListSummary[];
@@ -158,6 +174,15 @@ function EditorBody({
     );
     const [error, setError] = useState<string | null>(null);
     const [runsOpen, setRunsOpen] = useState(false);
+    const [mode, setMode] = useState<EditorMode>(initialMode);
+    const switchMode = (next: EditorMode): void => {
+        setMode(next);
+        try {
+            window.localStorage.setItem(MODE_STORAGE_KEY, next);
+        } catch {
+            // Storage lleno/bloqueado: el modo simplemente no persiste.
+        }
+    };
     // Qué tarjetas están expandidas. Al editar, todas colapsadas (el
     // flujo se lee como frases); al crear, el trigger arranca abierto.
     const [expanded, setExpanded] = useState<Set<string>>(
@@ -342,6 +367,7 @@ function EditorBody({
                         </div>
 
                         <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
+                            <ModeSwitcher mode={mode} onChange={switchMode} />
                             <ActiveTogglePill
                                 active={state.isActive}
                                 onChange={(next) => setState((s) => ({ ...s, isActive: next }))}
@@ -378,7 +404,39 @@ function EditorBody({
                     </div>
                 )}
 
+                {/* ── Lienzo visual (vista n8n/Make) ─────────────────── */}
+                {mode === 'canvas' && (
+                    <div className="imcrm-h-[calc(100vh-240px)] imcrm-min-h-[460px]">
+                        <Suspense
+                            fallback={
+                                <div className="imcrm-flex imcrm-h-full imcrm-items-center imcrm-justify-center imcrm-rounded-2xl imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-text-sm imcrm-text-muted-foreground">
+                                    <Loader2 className="imcrm-mr-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
+                                    {__('Cargando lienzo…')}
+                                </div>
+                            }
+                        >
+                            <AutomationCanvas
+                                triggerType={state.triggerType}
+                                triggerConfig={state.triggerConfig}
+                                onTriggerTypeChange={(next) =>
+                                    setState((s) => ({ ...s, triggerType: next, triggerConfig: {} }))
+                                }
+                                onTriggerConfigChange={(triggerConfig) =>
+                                    setState((s) => ({ ...s, triggerConfig }))
+                                }
+                                actions={state.actions}
+                                onActionsChange={setActions}
+                                triggers={triggers}
+                                actionsCatalog={actionsCatalog}
+                                fields={fields}
+                                lists={lists}
+                            />
+                        </Suspense>
+                    </div>
+                )}
+
                 {/* ── Flujo vertical ─────────────────────────────────── */}
+                {mode === 'flow' && (
                 <div className="imcrm-flex imcrm-flex-col">
                     {/* Trigger */}
                     <FlowCard
@@ -533,6 +591,7 @@ function EditorBody({
                         isFirst={state.actions.length === 0}
                     />
                 </div>
+                )}
             </div>
 
             {editing && (
@@ -692,46 +751,54 @@ function FlowConnector({
 }
 
 /**
- * Menú de tipos de acción (icono + título + descripción). Elegir un
- * tipo inserta la acción directamente — sin paso intermedio.
+ * Toggle Flujo (lista vertical) / Lienzo (canvas n8n/Make). El modo se
+ * recuerda por navegador — quien arma flujos multi-rama vive en el
+ * lienzo; quien hace secuencias simples, en el flujo.
  */
-function ActionTypeMenu({
-    actionsCatalog,
-    onPick,
-    children,
+function ModeSwitcher({
+    mode,
+    onChange,
 }: {
-    actionsCatalog: ActionMeta[];
-    onPick: (type: string) => void;
-    children: React.ReactNode;
+    mode: EditorMode;
+    onChange: (next: EditorMode) => void;
 }): JSX.Element {
     return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="imcrm-w-[300px]">
-                {actionsCatalog.map((a) => {
-                    const meta = actionMetaFor(a.slug);
-                    return (
-                        <DropdownMenuItem
-                            key={a.slug}
-                            onSelect={() => onPick(a.slug)}
-                            className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2"
-                        >
-                            <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted imcrm-ring-1 imcrm-ring-border">
-                                <meta.icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-foreground/70" />
-                            </span>
-                            <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
-                                <span className="imcrm-text-[13px] imcrm-font-medium">{a.label}</span>
-                                {meta.description !== '' && (
-                                    <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                                        {__(meta.description)}
-                                    </span>
-                                )}
-                            </span>
-                        </DropdownMenuItem>
-                    );
-                })}
-            </DropdownMenuContent>
-        </DropdownMenu>
+        <div
+            className="imcrm-inline-flex imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-0.5"
+            role="tablist"
+            aria-label={__('Vista del editor')}
+        >
+            <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'flow'}
+                onClick={() => onChange('flow')}
+                className={cn(
+                    'imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-[12px] imcrm-font-medium imcrm-transition-colors',
+                    mode === 'flow'
+                        ? 'imcrm-bg-card imcrm-text-foreground imcrm-shadow-imcrm-sm'
+                        : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                )}
+            >
+                <LayoutList className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Flujo')}
+            </button>
+            <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'canvas'}
+                onClick={() => onChange('canvas')}
+                className={cn(
+                    'imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1 imcrm-text-[12px] imcrm-font-medium imcrm-transition-colors',
+                    mode === 'canvas'
+                        ? 'imcrm-bg-card imcrm-text-foreground imcrm-shadow-imcrm-sm'
+                        : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                )}
+            >
+                <Workflow className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Lienzo')}
+            </button>
+        </div>
     );
 }
 

@@ -1040,6 +1040,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         in-place, condición previa visible, scroll único, alta end-to-end
         persistida por API).
 
+  - [x] **Lienzo visual de automatizaciones estilo n8n/Make (v0.1.91,
+        feedback del usuario)**: el flujo vertical de v0.1.90 escondía las
+        ramas — segunda vista "Lienzo" del editor (toggle Flujo/Lienzo en el
+        header, persistido en localStorage, code-split). Canvas PROPIO sin
+        React Flow: **auto-layout de árbol** (`buildLayout` recursivo — un
+        `if_else` abre columnas Sí/No en PARALELO con etiquetas de rama,
+        anidable hasta 4 niveles, y las ramas CONVERGEN en el siguiente paso,
+        fiel al motor), sin nodos que arrastrar ni desalinear; **pan** (drag/
+        rueda) + **zoom** (Ctrl+rueda hacia el cursor, botones ±/fit, %
+        visible) — cero scroll anidado; **"+" sobre cada conexión** inserta
+        una acción en esa posición exacta (incluidas ramas; ghost "Añadir" en
+        ramas vacías y al final); click en un nodo → **Sheet lateral** con SU
+        config (trigger completo; if_else = solo la condición, las ramas se
+        editan en el lienzo; resto = ActionConfigEditor); toolbar hover
+        (duplicar/eliminar); la selección se limpia si el nodo desaparece
+        (fix del "selección obsoleta" del canvas viejo). `actionsTree.ts`:
+        helpers inmutables de paths anidados (`[2,'then',0]`) con 5 tests.
+        `ActionTypeMenu` extraído y compartido con el flujo vertical. E2E
+        navegador 18/18 (ramas en paralelo con Sí/No, añadir a rama vacía,
+        editar condición por panel, round-trip API intacto, modo persistido).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
