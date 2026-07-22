@@ -62,14 +62,38 @@ export function useGroupColorMap(
 
 /**
  * Resuelve el color de una categoría: color real de la opción si
- * existe, sino el i-ésimo de la paleta de fallback.
+ * existe, sino el i-ésimo de la paleta de fallback. Prueba también el
+ * label "bonito" (multi_select agrupado devuelve JSON crudo `["a"]` —
+ * la opción está registrada por su label plano).
  */
 export function categoryColor(
     map: Map<string, string>,
     label: string,
     index: number,
 ): string {
-    return map.get(label) ?? paletteColor(index);
+    return map.get(label) ?? map.get(prettyGroupLabel(label)) ?? paletteColor(index);
+}
+
+/**
+ * Label legible para el grupo de un chart (v0.1.101). Los campos
+ * multi_select agrupan por el JSON crudo de la columna (`["hosting_2gb"]`,
+ * `["a","b"]`) — para MOSTRAR lo convertimos a `hosting_2gb` / `a, b`.
+ * OJO: solo para display; el valor CRUDO sigue siendo la clave del dato
+ * (click-through filtra por el valor real).
+ */
+export function prettyGroupLabel(label: string): string {
+    if (label.startsWith('[') && label.endsWith(']')) {
+        try {
+            const arr: unknown = JSON.parse(label);
+            if (Array.isArray(arr)) {
+                const joined = arr.map((v) => String(v)).join(', ');
+                return joined === '' ? '(sin valor)' : joined;
+            }
+        } catch {
+            // no era JSON — se muestra tal cual
+        }
+    }
+    return label;
 }
 
 /**

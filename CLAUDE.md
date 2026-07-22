@@ -1243,6 +1243,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto F7 queda completa: motor honesto, look premium,
         widgets nuevos e interactividad.**
 
+  - [x] **Charts responsive en celular (v0.1.101, reporte del usuario con
+        captura móvil)**: los donuts se rompían en el teléfono — callouts
+        externos recortados en los bordes del card, leyenda lateral
+        aplastada (nombres truncados a una letra) y labels JSON crudo de
+        multi_select (`["hosting_2gb"]`). Fixes: (a) el grid del dashboard
+        APILA en una columna bajo 640px de contenedor (orden visual y→x,
+        alto equivalente al del grid, sin drag/resize y SIN persistir — el
+        layout desktop queda intacto); (b) el donut se reacomoda por el
+        ancho REAL de su card (`useContainerWidth`, ResizeObserver): bajo
+        420px → aro compacto arriba + leyenda debajo a lo ancho, callouts
+        apagados; (c) `prettyGroupLabel` (solo display) convierte los
+        grupos multi_select a texto legible (`vip, promo`) en leyenda/
+        labels/tooltips de pie/bar/funnel — el valor crudo sigue siendo la
+        clave del dato (click-through intacto) y el color matchea la
+        opción; (d) leyenda del donut ordenada por valor DESC (antes las
+        primeras 8 podían ser todas 0 y el segmento grande quedaba en
+        "+N más"). E2E navegador 10/10 en viewport 390×844 + desktop
+        (apilado, sin RGL, sin callouts, leyenda a lo ancho, sin overflow,
+        multi legible; desktop conserva grid y callouts).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

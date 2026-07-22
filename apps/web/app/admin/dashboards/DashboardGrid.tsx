@@ -10,6 +10,8 @@ import {
     type WidgetSpec,
 } from '@/types/dashboard';
 
+import { useContainerWidth } from './widgets/useContainerWidth';
+
 // `WidthProvider` mide el contenedor y le pasa `width` al grid.
 // Antes usábamos `Responsive` con breakpoints lg/md/sm/xs/xxs y
 // distintos `cols` por breakpoint — eso recompactaba los widgets al
@@ -35,6 +37,53 @@ interface DashboardGridProps {
  * el layout reorganizado por el responsive en breakpoints angostos.
  */
 export function DashboardGrid({
+    widgets,
+    onLayoutChange,
+    children,
+}: DashboardGridProps): JSX.Element {
+    // v0.1.101 — en contenedores ANGOSTOS (celular) el grid de 12
+    // columnas produce widgets-astilla ilegibles. Bajo 640px apilamos
+    // en UNA columna (orden visual y→x), sin drag/resize y SIN persistir
+    // — el layout canónico de desktop queda intacto.
+    const [wrapRef, width] = useContainerWidth<HTMLDivElement>();
+    const stacked = width > 0 && width < 640;
+
+    if (stacked) {
+        const ordered = [...widgets].sort((a, b) => {
+            const ay = a.layout?.y ?? 0;
+            const by = b.layout?.y ?? 0;
+            if (ay !== by) return ay - by;
+            return (a.layout?.x ?? 0) - (b.layout?.x ?? 0);
+        });
+        return (
+            <div ref={wrapRef} className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                {ordered.map((w) => {
+                    const h = typeof w.layout?.h === 'number' && w.layout.h > 0
+                        ? w.layout.h
+                        : defaultLayoutForType(w.type).h;
+                    // Alto equivalente al del grid (rowHeight 64 + margin 12),
+                    // con piso de 96px para que nada quede aplastado.
+                    const px = Math.max(96, h * 64 + (h - 1) * 12);
+                    return (
+                        <div key={w.id} style={{ height: `${px}px` }}>
+                            {children(w)}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    return (
+        <div ref={wrapRef}>
+            <DesktopGrid widgets={widgets} onLayoutChange={onLayoutChange}>
+                {children}
+            </DesktopGrid>
+        </div>
+    );
+}
+
+function DesktopGrid({
     widgets,
     onLayoutChange,
     children,

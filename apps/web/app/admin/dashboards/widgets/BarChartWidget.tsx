@@ -4,7 +4,7 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, useGroupColorMap } from './useChartColors';
+import { categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -122,12 +122,12 @@ function BarRows({
                             key={row.label}
                             className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
                             title={onSegment !== null
-                                ? `${row.label}: ${row.value.toLocaleString()} — ${__('click para ver los registros')}`
-                                : `${row.label}: ${row.value.toLocaleString()} (${sharePct.toFixed(1)}%)`}
+                                ? `${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} — ${__('click para ver los registros')}`
+                                : `${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${sharePct.toFixed(1)}%)`}
                             onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
-                                {row.label}
+                                {prettyGroupLabel(row.label)}
                             </span>
                             <div className="imcrm-relative imcrm-h-5 imcrm-flex-1 imcrm-overflow-hidden imcrm-rounded imcrm-bg-muted/40">
                                 <div
