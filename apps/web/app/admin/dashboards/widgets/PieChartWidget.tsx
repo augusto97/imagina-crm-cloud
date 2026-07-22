@@ -6,7 +6,8 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, useGroupColorMap } from './useChartColors';
+import { categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
+import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -31,7 +32,12 @@ interface PieChartWidgetProps {
  */
 export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);
-    const showLabels = widget.config.show_data_labels !== false;
+    // v0.1.101 — responsive por ancho del CARD: en angosto (celular o
+    // widget chico) los callouts externos se recortan en los bordes y la
+    // leyenda lateral aplasta los nombres → labels off + layout apilado.
+    const [measureRef, cardWidth] = useContainerWidth<HTMLDivElement>();
+    const narrow = cardWidth > 0 && cardWidth < 420;
+    const showLabels = widget.config.show_data_labels !== false && ! narrow;
     const showLegend = widget.config.show_legend !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
@@ -39,7 +45,7 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const onSegment = useSegmentNav(widget);
 
     return (
-        <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
+        <div ref={measureRef} className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
             <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-min-h-0">
@@ -58,6 +64,7 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                         rows={data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))}
                         showLabels={showLabels}
                         showLegend={showLegend}
+                        narrow={narrow}
                         colorMap={colorMap}
                         onSegment={onSegment}
                     />
@@ -73,11 +80,13 @@ interface DonutProps {
     rows: Array<{ label: string; value: number }>;
     showLabels: boolean;
     showLegend: boolean;
+    /** Card angosto: aro arriba (chico) + leyenda debajo a lo ancho. */
+    narrow: boolean;
     colorMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
 }
 
-function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps): JSX.Element {
+function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -107,10 +116,24 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
     let offset = 0;
     let cumulative = 0;
     return (
-        <div className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-gap-4 imcrm-min-h-0">
+        <div
+            className={cn(
+                'imcrm-h-full imcrm-w-full imcrm-min-h-0',
+                narrow
+                    // Apilado (celular / card chico): aro centrado arriba,
+                    // leyenda debajo ocupando TODO el ancho.
+                    ? 'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-overflow-y-auto'
+                    : 'imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-4',
+            )}
+        >
             {/* max-h evita que el donut crezca desproporcionado en
               * widgets anchos — queda centrado con aire equilibrado. */}
-            <div className="imcrm-relative imcrm-flex imcrm-aspect-square imcrm-h-full imcrm-max-h-[230px] imcrm-shrink-0 imcrm-items-center imcrm-justify-center">
+            <div
+                className={cn(
+                    'imcrm-relative imcrm-flex imcrm-aspect-square imcrm-shrink-0 imcrm-items-center imcrm-justify-center',
+                    narrow ? 'imcrm-h-[130px]' : 'imcrm-h-full imcrm-max-h-[230px]',
+                )}
+            >
                 <svg
                     viewBox={`0 0 ${viewSize} ${viewSize}`}
                     className="imcrm-h-full imcrm-w-full"
@@ -146,7 +169,7 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
                                 onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                                 style={onSegment !== null ? { cursor: 'pointer' } : undefined}
                             >
-                                <title>{`${row.label}: ${row.value.toLocaleString()} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
+                                <title>{`${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
                             </circle>
                         );
                         offset += len;
@@ -196,7 +219,7 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
                                     className="imcrm-fill-muted-foreground"
                                     style={{ fontSize: 9, fontWeight: 500 }}
                                 >
-                                    {row.label}{' '}
+                                    {prettyGroupLabel(row.label)}{' '}
                                     <tspan className="imcrm-fill-foreground" style={{ fontWeight: 600 }}>
                                         {(pct * 100).toFixed(1)}%
                                     </tspan>
@@ -228,9 +251,22 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
                 </svg>
             </div>
 
-            {showLegend && (
-                <ul className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5 imcrm-overflow-y-auto imcrm-text-xs">
-                    {rows.slice(0, 8).map((row, i) => {
+            {showLegend && (() => {
+                // v0.1.101 — leyenda ordenada por valor DESC: las categorías
+                // que importan primero (antes: orden alfabético del backend →
+                // en listas largas las primeras 8 podían ser todas 0 y el
+                // segmento grande quedaba escondido en "+N más").
+                const legendRows = [...rows].sort((a, b) => b.value - a.value);
+                return (
+                <ul
+                    className={cn(
+                        'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5 imcrm-text-xs',
+                        narrow ? 'imcrm-w-full imcrm-shrink-0' : 'imcrm-flex-1 imcrm-overflow-y-auto',
+                    )}
+                >
+                    {legendRows.slice(0, 8).map((row) => {
+                        // Color por índice ORIGINAL — consistente con el aro.
+                        const i = rows.findIndex((r) => r.label === row.label);
                         const isHidden = hidden.has(row.label);
                         const pct = isHidden ? 0 : (row.value / total) * 100;
                         return (
@@ -257,7 +293,7 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
                                             isHidden && 'imcrm-line-through',
                                         )}
                                     >
-                                        {row.label}
+                                        {prettyGroupLabel(row.label)}
                                     </span>
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
                                         {row.value.toLocaleString()}
@@ -275,7 +311,8 @@ function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps
                         </li>
                     )}
                 </ul>
-            )}
+                );
+            })()}
         </div>
     );
 }

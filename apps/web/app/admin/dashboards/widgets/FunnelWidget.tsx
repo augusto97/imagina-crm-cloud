@@ -4,7 +4,7 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
+import { categoryColor, prettyGroupLabel, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -123,11 +123,11 @@ function FunnelRows({
                     <div
                         key={row.label}
                         className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={`${row.label}: ${row.value.toLocaleString()} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
+                        title={`${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
                         onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
-                            {row.label}
+                            {prettyGroupLabel(row.label)}
                         </span>
                         <div className="imcrm-relative imcrm-flex imcrm-h-7 imcrm-flex-1 imcrm-items-center imcrm-justify-center">
                             {/* Barra centrada — la forma del embudo emerge del
