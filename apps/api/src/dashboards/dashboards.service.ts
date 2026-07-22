@@ -172,15 +172,28 @@ export class DashboardsService {
      * queries). Devuelve `{ [widgetId]: data }`. El front lo comparte entre los
      * widgets vía un único queryKey → una sola llamada HTTP para todo el tablero.
      */
-    async widgetsData(tenantId: number, dashboardId: number, viewer: DashboardViewer): Promise<Record<string, unknown>> {
+    async widgetsData(
+        tenantId: number,
+        dashboardId: number,
+        viewer: DashboardViewer,
+        periodPreset?: string,
+    ): Promise<Record<string, unknown>> {
         const dash = await this.get(tenantId, dashboardId, viewer);
+        // v0.1.100 — filtro global de período: preset válido o nada.
+        const parsed = dateRangePresetSchema.safeParse(periodPreset);
+        const override = parsed.success ? parsed.data : undefined;
         const entries = await Promise.all(
-            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, viewer, w)] as const),
+            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const),
         );
         return Object.fromEntries(entries);
     }
 
-    private async computeWidget(tenantId: number, viewer: DashboardViewer, widget: WidgetSpec): Promise<unknown> {
+    private async computeWidget(
+        tenantId: number,
+        viewer: DashboardViewer,
+        widget: WidgetSpec,
+        periodOverride?: string,
+    ): Promise<unknown> {
         // v0.1.98 — los widgets de CONTENIDO (título/texto/imagen/separador/
         // espaciador) no evalúan datos: el front renderiza desde su config.
         if (CONTENT_WIDGET_TYPES.includes(widget.type)) return {};
@@ -193,7 +206,7 @@ export class DashboardsService {
         // v0.1.97 — el "Período" del widget POR FIN filtra: se inyecta como
         // condición `between_relative` en AND con el filter_tree (se resuelve
         // contra now() en cada evaluación — "este mes" es siempre el actual).
-        const filterTree = withPeriod(cfg);
+        const filterTree = withPeriod(cfg, periodOverride);
 
         if (widget.type === 'kpi' || widget.type === 'gauge') {
             const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
@@ -331,11 +344,18 @@ export class DashboardsService {
  * Compone el filter_tree del widget con su período relativo (si tiene). Un
  * preset desconocido se ignora (no rompe el bundle completo del dashboard).
  */
-function withPeriod(cfg: Record<string, unknown>): AggregateRequest['filter_tree'] {
+function withPeriod(cfg: Record<string, unknown>, override?: string): AggregateRequest['filter_tree'] {
     const base = cfg.filter_tree as AggregateRequest['filter_tree'];
     const period = cfg.period as { field_id?: unknown; preset?: unknown } | null | undefined;
-    const fieldId = numOrUndef(period?.field_id);
-    const preset = dateRangePresetSchema.safeParse(period?.preset);
+    // v0.1.100 — el override GLOBAL pisa el preset del widget. Aplica sobre el
+    // campo del período del widget o, si no tiene, sobre su campo de fecha
+    // (date_field_id de tendencias/delta). Sin campo de fecha, no aplica.
+    const overrideParsed = dateRangePresetSchema.safeParse(override);
+    const fieldId = numOrUndef(period?.field_id)
+        ?? (overrideParsed.success ? numOrUndef(cfg.date_field_id) : undefined);
+    const preset = overrideParsed.success
+        ? overrideParsed
+        : dateRangePresetSchema.safeParse(period?.preset);
     if (fieldId === undefined || !preset.success) return base;
     const cond: FilterNode = { type: 'condition', field_id: fieldId, op: 'between_relative', value: preset.data };
     const children: FilterNode[] = base ? [base, cond] : [cond];

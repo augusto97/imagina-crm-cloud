@@ -253,6 +253,37 @@ describe('DashboardsService — evaluación de widgets (Postgres real)', () => {
         expect(k.spark!.reduce((s, v) => s + v, 0)).toBe(3);
     });
 
+    it('v0.1.100 — el período GLOBAL pisa el del widget y aplica a date_field_id', async () => {
+        await service.update(tenantId, dashId, admin, {
+            widgets: [
+                {
+                    id: 'w1',
+                    type: 'kpi',
+                    list_id: f.monto!.list_id,
+                    title: 'Todo',
+                    // Sin período propio pero SIN campo de fecha → el global no aplica.
+                    config: { metric: 'count' },
+                    layout: { x: 0, y: 0, w: 3, h: 2 },
+                },
+                {
+                    id: 'w2',
+                    type: 'kpi',
+                    list_id: f.monto!.list_id,
+                    title: 'Con período anual',
+                    // Período propio this_year → el global (last_30_days) lo pisa.
+                    config: { metric: 'count', period: { field_id: f.fecha!.id, preset: 'this_year' } },
+                    layout: { x: 3, y: 0, w: 3, h: 2 },
+                },
+            ],
+        } as never);
+        const data = await service.widgetsData(tenantId, dashId, admin, 'last_30_days');
+        expect((data.w1 as { value: number }).value).toBe(5); // sin campo fecha: intacto
+        expect((data.w2 as { value: number }).value).toBe(3); // pisado a last_30_days
+        // Preset global inválido → se ignora (el widget usa su propio período).
+        const data2 = await service.widgetsData(tenantId, dashId, admin, 'nope');
+        expect((data2.w2 as { value: number }).value).toBeGreaterThanOrEqual(3);
+    });
+
     it('bucketing temporal: chart_line agrupa por mes (YYYY-MM) y respeta year', async () => {
         const data = await withWidgets([
             {

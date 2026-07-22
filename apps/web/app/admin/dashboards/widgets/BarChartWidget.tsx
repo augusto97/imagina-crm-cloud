@@ -5,6 +5,7 @@ import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap } from './useChartColors';
+import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface BarChartWidgetProps {
@@ -36,6 +37,8 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const showAvg = widget.config.show_average_line !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
+    // v0.1.100 — click en una barra → lista filtrada a ese valor.
+    const onSegment = useSegmentNav(widget);
 
     const rows =
         data.data && 'data' in data.data
@@ -68,7 +71,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                         {__('Error')}
                     </div>
                 ) : rows.length > 0 ? (
-                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} />
+                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} onSegment={onSegment} />
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Sin datos.')}
@@ -95,10 +98,12 @@ function BarRows({
     rows,
     showAvg,
     colorMap,
+    onSegment,
 }: {
     rows: Array<{ label: string; value: number }>;
     showAvg: boolean;
     colorMap: Map<string, string>;
+    onSegment: ((label: string) => void) | null;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => r.value), 1);
     const total = rows.reduce((sum, r) => sum + r.value, 0) || 1;
@@ -115,8 +120,11 @@ function BarRows({
                     return (
                         <li
                             key={row.label}
-                            className="imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs"
-                            title={`${row.label}: ${row.value.toLocaleString()} (${sharePct.toFixed(1)}%)`}
+                            className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
+                            title={onSegment !== null
+                                ? `${row.label}: ${row.value.toLocaleString()} — ${__('click para ver los registros')}`
+                                : `${row.label}: ${row.value.toLocaleString()} (${sharePct.toFixed(1)}%)`}
+                            onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
                                 {row.label}

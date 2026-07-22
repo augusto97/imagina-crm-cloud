@@ -1221,6 +1221,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         nuevo (322 en verde) + E2E navegador 12/12 (prefijo, barra, ámbar,
         sparkline, gauge 100% 4/4, opciones del diálogo).
 
+  - [x] **Fase 4 — Interactividad (v0.1.100)**: (a) **período GLOBAL del
+        tablero** — selector en el header (presets de rango relativo,
+        persistido por dashboard en localStorage); viaja como
+        `period_preset` en el body del bundle y el backend lo aplica
+        pisando el período propio de cada widget (sobre `period.field_id`
+        o, si no tiene, `date_field_id`; widgets sin campo de fecha quedan
+        intactos; preset inválido se ignora). Contexto React
+        (`DashboardGlobalPeriodContext`) → el queryKey del bundle incluye
+        el preset. (b) **Click-through**: click en una barra / sector del
+        donut / etapa del embudo → abre la lista filtrada a ese valor
+        (`useSegmentNav` navega con `?gf=<field>&gv=<valor>`; no navegable
+        si el grupo es fecha bucketeada). `RecordsPage` traduce el
+        deep-link a un filtro eq (gv vacío → is_null) POR ENCIMA de la
+        vista default y limpia los params. (c) **Modo presentación** —
+        botón "Presentar": fullscreen del tablero + auto-refresh del
+        bundle cada 60 s mientras dura. 1 test API nuevo (323 en verde) +
+        E2E navegador 8/8 (override en el wire, KPI 3→0 con "Hoy",
+        persistencia, navegación con filter_tree eq).
+
+        **Con esto F7 queda completa: motor honesto, look premium,
+        widgets nuevos e interactividad.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

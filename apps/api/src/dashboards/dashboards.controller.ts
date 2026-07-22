@@ -62,15 +62,29 @@ export class DashboardsController {
         return this.dashboards.widgetData(tenantId(req), id, viewer(req), widgetId);
     }
 
-    /** Bundle: evalúa TODOS los widgets del dashboard en un request (PERF-03). */
+    /**
+     * Bundle: evalúa TODOS los widgets del dashboard en un request (PERF-03).
+     * v0.1.100 — el body acepta `period_preset` (filtro GLOBAL de período del
+     * tablero): se aplica a cada widget con campo de fecha configurado,
+     * pisando su período propio. Un preset inválido se ignora.
+     */
     @Post(':id/widgets/data')
     @HttpCode(200)
     @RequireCapability('access_admin')
     widgetsData(
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
+        @Body() body: unknown,
     ): Promise<Record<string, unknown>> {
-        return this.dashboards.widgetsData(tenantId(req), id, viewer(req));
+        const preset = typeof body === 'object' && body !== null
+            ? (body as { period_preset?: unknown }).period_preset
+            : undefined;
+        return this.dashboards.widgetsData(
+            tenantId(req),
+            id,
+            viewer(req),
+            typeof preset === 'string' ? preset : undefined,
+        );
     }
 
     @Post()

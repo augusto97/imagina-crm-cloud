@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
     ArrowLeft,
     Download,
@@ -298,6 +298,31 @@ const applyView = (view: SavedViewEntity | null): void => {
         }
         setViewApplied(true);
     }, [views.data, list.data?.id]);
+
+    // v0.1.100 — deep-link de filtro (click-through desde dashboards):
+    // `?gf=<field_id>&gv=<valor>` aplica un filtro eq (gv vacío → is_null)
+    // POR ENCIMA de la vista default, y limpia los params para no
+    // re-aplicarse al navegar dentro de la página.
+    const [searchParams, setSearchParams] = useSearchParams();
+    useEffect(() => {
+        if (! viewApplied || ! list.data) return;
+        const gf = Number(searchParams.get('gf'));
+        if (! Number.isInteger(gf) || gf <= 0) return;
+        const gv = searchParams.get('gv') ?? '';
+        const cond = gv === ''
+            ? { type: 'condition' as const, field_id: gf, op: 'is_null' as const, value: null }
+            : { type: 'condition' as const, field_id: gf, op: 'eq' as const, value: gv };
+        setState((s2) => ({
+            ...s2,
+            filterTree: { type: 'group', logic: 'and', children: [cond] },
+            page: 1,
+        }));
+        const next = new URLSearchParams(searchParams);
+        next.delete('gf');
+        next.delete('gv');
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewApplied, list.data?.id, searchParams]);
 
     const setFilterTree = (filterTree: import('@/types/record').FilterTree): void => {
         setState((s) => ({ ...s, filterTree, page: 1 }));
