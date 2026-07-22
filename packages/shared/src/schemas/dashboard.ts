@@ -17,6 +17,9 @@ export const widgetTypeSchema = z.enum([
     'stat_delta',
     'table',
     'funnel',
+    // v0.1.99 — medidor semicircular (progreso vs meta). Se evalúa igual
+    // que un KPI (la meta vive en config y la aplica el front).
+    'gauge',
     // v0.1.98 — bloques de CONTENIDO (no evalúan datos; el backend devuelve
     // {} y el front los renderiza desde su config): título, texto, imagen,
     // separador y espaciador. Convierten al dashboard en una página armable.

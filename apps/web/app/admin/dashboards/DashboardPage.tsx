@@ -11,6 +11,7 @@ import {
     TextWidget,
 } from '@/admin/dashboards/widgets/ContentWidgets';
 import { FunnelWidget } from '@/admin/dashboards/widgets/FunnelWidget';
+import { GaugeWidget } from '@/admin/dashboards/widgets/GaugeWidget';
 import { KpiWidget } from '@/admin/dashboards/widgets/KpiWidget';
 import { LineChartWidget } from '@/admin/dashboards/widgets/LineChartWidget';
 import { PieChartWidget } from '@/admin/dashboards/widgets/PieChartWidget';
@@ -401,6 +402,8 @@ function WidgetRenderer({
             return <SpacerWidget />;
         case 'kpi':
             return <KpiWidget dashboardId={dashboardId} widget={widget} />;
+        case 'gauge':
+            return <GaugeWidget dashboardId={dashboardId} widget={widget} />;
         case 'chart_bar':
             return <BarChartWidget dashboardId={dashboardId} widget={widget} />;
         case 'chart_pie':

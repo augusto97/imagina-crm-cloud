@@ -8,6 +8,8 @@ export type WidgetType =
     | 'table'
     /** Embudo de etapas — mismo evaluador que chart_bar, render funnel. */
     | 'funnel'
+    /** v0.1.99 — medidor semicircular vs meta (evalúa como KPI). */
+    | 'gauge'
     /** v0.1.98 — bloques de CONTENIDO (sin datos): el dashboard se arma como página. */
     | 'heading'
     | 'text'
@@ -74,6 +76,8 @@ export function defaultLayoutForType(type: WidgetType): WidgetLayout {
         case 'kpi':
         case 'stat_delta':
             return { x: 0, y: 9999, w: 3, h: 2 };
+        case 'gauge':
+            return { x: 0, y: 9999, w: 3, h: 3 };
         case 'chart_pie':
         case 'chart_bar':
         case 'funnel':
@@ -103,6 +107,7 @@ export function minLayoutForType(type: WidgetType): { minW: number; minH: number
     switch (type) {
         case 'kpi':
         case 'stat_delta':
+        case 'gauge':
             return { minW: 2, minH: 2 };
         case 'table':
             return { minW: 3, minH: 3 };
@@ -238,7 +243,7 @@ export interface UpdateDashboardInput {
 }
 
 export type WidgetData =
-    | { value: number | string; metric: KpiMetric }
+    | { value: number | string; metric: KpiMetric; spark?: number[] }
     | { data: Array<{ label: string; value: number | string }> }
     | {
           /** stat_delta — value/previous pueden ser string para min/max de fecha */

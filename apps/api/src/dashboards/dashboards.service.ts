@@ -195,8 +195,40 @@ export class DashboardsService {
         // contra now() en cada evaluación — "este mes" es siempre el actual).
         const filterTree = withPeriod(cfg);
 
-        if (widget.type === 'kpi') {
+        if (widget.type === 'kpi' || widget.type === 'gauge') {
             const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
+            // v0.1.99 — mini-tendencia del KPI: si el widget configura
+            // `spark_field_id` (campo fecha), se agrega la MISMA métrica
+            // agrupada por día sobre los últimos 30 días → spark[] (ordenado
+            // cronológicamente por el label del bucket).
+            const sparkFieldId = numOrUndef(cfg.spark_field_id);
+            if (widget.type === 'kpi' && sparkFieldId !== undefined) {
+                try {
+                    const sparkTree: AggregateRequest['filter_tree'] = {
+                        type: 'group',
+                        logic: 'and',
+                        children: [
+                            ...(filterTree ? [filterTree] : []),
+                            { type: 'condition', field_id: sparkFieldId, op: 'between_relative', value: 'last_30_days' },
+                        ],
+                    };
+                    const sp = await this.aggregate.run(tenantId, list, {
+                        metric,
+                        field_id: metricFieldId,
+                        group_by_field_id: sparkFieldId,
+                        filter_tree: sparkTree,
+                        time_bucket: 'day',
+                    });
+                    const spark = (sp.groups ?? [])
+                        .filter((g) => g.group !== null)
+                        .map((g) => (typeof g.value === 'number' ? g.value : 0));
+                    return { value: r.value ?? 0, metric, spark };
+                } catch {
+                    // Un spark inválido (campo borrado / tipo cambiado) no
+                    // rompe el KPI — se devuelve sin tendencia.
+                    return { value: r.value ?? 0, metric };
+                }
+            }
             return { value: r.value ?? 0, metric };
         }
 

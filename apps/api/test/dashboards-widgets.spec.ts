@@ -224,6 +224,35 @@ describe('DashboardsService — evaluación de widgets (Postgres real)', () => {
         await service.remove(tenantId, d2.id, admin);
     });
 
+    it('v0.1.99 — gauge evalúa como KPI y el spark trae la serie de 30 días', async () => {
+        const data = await withWidgets([
+            {
+                id: 'g1',
+                type: 'gauge',
+                list_id: f.monto!.list_id,
+                title: 'Meta ventas',
+                config: { metric: 'sum', metric_field_id: f.monto!.id, goal: 10000 },
+                layout: { x: 0, y: 0, w: 3, h: 3 },
+            },
+            {
+                id: 'k1',
+                type: 'kpi',
+                list_id: f.monto!.list_id,
+                title: 'Con tendencia',
+                config: { metric: 'count', spark_field_id: f.fecha!.id },
+                layout: { x: 3, y: 0, w: 3, h: 2 },
+            },
+        ]);
+        // gauge = suma total (la meta es del front)
+        expect((data.g1 as { value: number }).value).toBe(6600);
+        const k = data.k1 as { value: number; spark?: number[] };
+        expect(k.value).toBe(5);
+        // spark: solo los registros de los últimos 30 días (3), un bucket por día
+        expect(Array.isArray(k.spark)).toBe(true);
+        expect(k.spark!.length).toBe(3);
+        expect(k.spark!.reduce((s, v) => s + v, 0)).toBe(3);
+    });
+
     it('bucketing temporal: chart_line agrupa por mes (YYYY-MM) y respeta year', async () => {
         const data = await withWidgets([
             {
