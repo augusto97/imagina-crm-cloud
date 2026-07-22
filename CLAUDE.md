@@ -1185,6 +1185,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         fecha cruda). 5 tests de integración nuevos (324 en verde) +
         E2E API 8/8 contra datos reales.
 
+  - [x] **Fase 2 — Look premium de dashboards (v0.1.98)**: (a) **capa de
+        estilo por widget** — `config.style` (la MISMA de los editores de
+        plantillas: fondo/texto/borde/relleno/esquinas/sombra/tipografía +
+        presets de marca + re-tinte de tokens v0.1.95) aplicada al card por
+        `DashboardPage` y editable en la sección "Diseño" del
+        WidgetFormDialog (todos los tipos); sin estilo, la tarjeta default
+        no cambia; (b) **bloques de CONTENIDO** (heading con subtítulo,
+        texto multilínea, imagen — `ImageBlockForm` compartido con
+        upload/URL/fit/link —, separador, espaciador): `list_id: 0`, el
+        backend los salta (`CONTENT_WIDGET_TYPES`, bundle devuelve `{}`),
+        chromeless sin estilo propio, el diálogo oculta Lista/período/
+        filtros; (c) **ajustes de página del dashboard** — columna
+        `settings` jsonb (migración 0031), popover "Página" (mismo
+        componente del portal: fondo/ancho máximo/tipografía) y el
+        contenedor los aplica; (d) **duplicar** widget (botón hover, copia
+        al final) y dashboard completo (icono en la grilla del índice,
+        widgets con ids nuevos + settings). 2 tests API nuevos (321 en
+        verde) + E2E navegador 13/13 (heading tinta, KPI azul re-teñido,
+        default intacta, chromeless, fondo de página, duplicar, diálogo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

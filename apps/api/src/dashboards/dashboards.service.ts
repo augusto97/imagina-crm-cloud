@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+    CONTENT_WIDGET_TYPES,
     dateRangePresetSchema,
     timeBucketSchema,
     type AggregateMetric,
@@ -86,6 +87,7 @@ export class DashboardsService {
                     name: input.name,
                     description: input.description ?? null,
                     widgets: (input.widgets ?? []) as unknown[],
+                    settings: input.settings ?? {},
                     isDefault: input.is_default ?? false,
                     position: input.position ?? 0,
                     visibility: input.visibility ?? 'workspace',
@@ -107,6 +109,7 @@ export class DashboardsService {
                     ...(patch.name !== undefined ? { name: patch.name } : {}),
                     ...(patch.description !== undefined ? { description: patch.description } : {}),
                     ...(patch.widgets !== undefined ? { widgets: patch.widgets as unknown[] } : {}),
+                    ...(patch.settings !== undefined ? { settings: patch.settings } : {}),
                     ...(patch.is_default !== undefined ? { isDefault: patch.is_default } : {}),
                     ...(patch.position !== undefined ? { position: patch.position } : {}),
                     ...(patch.visibility !== undefined ? { visibility: patch.visibility } : {}),
@@ -178,6 +181,9 @@ export class DashboardsService {
     }
 
     private async computeWidget(tenantId: number, viewer: DashboardViewer, widget: WidgetSpec): Promise<unknown> {
+        // v0.1.98 — los widgets de CONTENIDO (título/texto/imagen/separador/
+        // espaciador) no evalúan datos: el front renderiza desde su config.
+        if (CONTENT_WIDGET_TYPES.includes(widget.type)) return {};
         const cfg = widget.config as Record<string, unknown>;
         const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);
@@ -311,6 +317,7 @@ function toDashboard(row: Row): Dashboard {
         name: row.name,
         description: row.description,
         widgets: (row.widgets as WidgetSpec[]) ?? [],
+        settings: (row.settings as Record<string, unknown>) ?? {},
         is_default: row.isDefault,
         position: row.position,
         visibility: (row.visibility ?? 'workspace') as Dashboard['visibility'],

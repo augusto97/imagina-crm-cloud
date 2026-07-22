@@ -25,6 +25,8 @@ export const dashboards = pgTable('dashboards', {
     name: text('name').notNull(),
     description: text('description'),
     widgets: jsonb('widgets').$type<unknown[]>().notNull().default([]),
+    // v0.1.98 — ajustes del dashboard (página: fondo/ancho/tipografía…).
+    settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
     isDefault: boolean('is_default').notNull().default(false),
     position: integer('position').notNull().default(0),
     // Permisos finos (migración 0028): workspace | private | roles.

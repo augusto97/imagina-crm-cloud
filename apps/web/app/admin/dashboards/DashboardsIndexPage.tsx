@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, BarChart3, Lock, Plus, Users } from 'lucide-react';
+import { AlertCircle, BarChart3, Copy, Lock, Plus, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,14 +12,42 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { useDashboards } from '@/hooks/useDashboards';
+import { useToast } from '@/components/ui/toast';
+import { useCreateDashboard, useDashboards } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
 
 import { DashboardCreateDialog } from './DashboardCreateDialog';
 
 export function DashboardsIndexPage(): JSX.Element {
     const dashboards = useDashboards();
+    const create = useCreateDashboard();
+    const toast = useToast();
     const [createOpen, setCreateOpen] = useState(false);
+
+    // v0.1.98 — duplicar dashboard completo (widgets con ids nuevos + settings).
+    const handleDuplicate = async (e: React.MouseEvent, id: number): Promise<void> => {
+        e.preventDefault();
+        e.stopPropagation();
+        const src = dashboards.data?.find((d) => d.id === id);
+        if (!src) return;
+        try {
+            await create.mutateAsync({
+                name: `${src.name} (${__('copia')})`,
+                description: src.description,
+                widgets: src.widgets.map((w) => ({
+                    ...w,
+                    id: `w-${Math.random().toString(36).slice(2, 10)}`,
+                    config: JSON.parse(JSON.stringify(w.config)) as typeof w.config,
+                })),
+                settings: src.settings,
+                visibility: src.visibility,
+                allowed_roles: src.allowed_roles,
+            });
+            toast.success(__('Dashboard duplicado'));
+        } catch (err) {
+            if (err instanceof Error) toast.error(__('No se pudo duplicar'), err.message);
+        }
+    };
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
@@ -62,6 +90,16 @@ export function DashboardsIndexPage(): JSX.Element {
                                             <BarChart3 className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                             {d.name}
                                         </span>
+                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => void handleDuplicate(e, d.id)}
+                                            className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                            aria-label={__('Duplicar dashboard')}
+                                            title={__('Duplicar dashboard')}
+                                        >
+                                            <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        </button>
                                         {d.visibility !== 'workspace' ? (
                                             <Badge variant="outline" className="imcrm-gap-1">
                                                 <Lock className="imcrm-h-3 imcrm-w-3" />
@@ -73,6 +111,7 @@ export function DashboardsIndexPage(): JSX.Element {
                                                 {__('Compartido')}
                                             </Badge>
                                         ) : null}
+                                        </span>
                                     </CardTitle>
                                     {d.description && <CardDescription>{d.description}</CardDescription>}
                                 </CardHeader>
