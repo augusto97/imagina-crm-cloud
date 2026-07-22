@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap } from './useChartColors';
+import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface PieChartWidgetProps {
@@ -34,6 +35,8 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const showLegend = widget.config.show_legend !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
+    // v0.1.100 — click en un sector → lista filtrada a ese valor.
+    const onSegment = useSegmentNav(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
@@ -56,6 +59,7 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                         showLabels={showLabels}
                         showLegend={showLegend}
                         colorMap={colorMap}
+                        onSegment={onSegment}
                     />
                 ) : (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
@@ -70,9 +74,10 @@ interface DonutProps {
     showLabels: boolean;
     showLegend: boolean;
     colorMap: Map<string, string>;
+    onSegment: ((label: string) => void) | null;
 }
 
-function Donut({ rows, showLabels, showLegend, colorMap }: DonutProps): JSX.Element {
+function Donut({ rows, showLabels, showLegend, colorMap, onSegment }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -138,8 +143,10 @@ function Donut({ rows, showLabels, showLegend, colorMap }: DonutProps): JSX.Elem
                                 strokeDasharray={dasharray}
                                 strokeDashoffset={-offset}
                                 transform={`rotate(-90 ${cx} ${cy})`}
+                                onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
+                                style={onSegment !== null ? { cursor: 'pointer' } : undefined}
                             >
-                                <title>{`${row.label}: ${row.value.toLocaleString()} (${(pct * 100).toFixed(1)}%)`}</title>
+                                <title>{`${row.label}: ${row.value.toLocaleString()} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
                             </circle>
                         );
                         offset += len;

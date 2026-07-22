@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
@@ -13,10 +14,21 @@ export const dashboardsKeys = {
     one: (id: string | number) => [...dashboardsKeys.all, 'one', String(id)] as const,
     widgetData: (dashboardId: string | number, widgetId: string) =>
         [...dashboardsKeys.all, 'widget-data', String(dashboardId), widgetId] as const,
-    /** PERF-03: key ÚNICA por dashboard para el bundle de todos los widgets. */
-    widgetsData: (dashboardId: string | number) =>
-        [...dashboardsKeys.all, 'widgets-data', String(dashboardId)] as const,
+    /**
+     * PERF-03: key ÚNICA por dashboard para el bundle de todos los widgets.
+     * v0.1.100 — incluye el período GLOBAL activo (cambiarlo refetchea el
+     * bundle completo con el override).
+     */
+    widgetsData: (dashboardId: string | number, period = '') =>
+        [...dashboardsKeys.all, 'widgets-data', String(dashboardId), period] as const,
 };
+
+/**
+ * Período GLOBAL del dashboard activo ('' = sin filtro). Lo provee
+ * DashboardPage; los widgets lo leen para armar el queryKey/body del
+ * bundle sin prop-drilling por cada tipo de widget.
+ */
+export const DashboardGlobalPeriodContext = createContext<string>('');
 
 export function useDashboards() {
     return useQuery({
@@ -87,12 +99,13 @@ export function useDeleteDashboard() {
  * es el mismo UseQueryResult<WidgetData> de antes (PERF-03).
  */
 export function useWidgetData(dashboardId: number | undefined, widgetId: string | undefined) {
+    const globalPeriod = useContext(DashboardGlobalPeriodContext);
     return useQuery({
-        queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0),
+        queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0, globalPeriod),
         queryFn: async () => {
             const res = await api.post<Record<string, WidgetData>>(
                 `/dashboards/${dashboardId}/widgets/data`,
-                {},
+                globalPeriod !== '' ? { period_preset: globalPeriod } : {},
             );
             return res.data;
         },

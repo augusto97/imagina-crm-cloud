@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarRange, Copy, Loader2, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { BarChartWidget } from '@/admin/dashboards/widgets/BarChartWidget';
 import {
@@ -30,7 +30,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { useQueryClient } from '@tanstack/react-query';
+
+import { Select } from '@/components/ui/select';
 import {
+    DashboardGlobalPeriodContext,
+    dashboardsKeys,
     useDashboard,
     useDeleteDashboard,
     useUpdateDashboard,
@@ -74,6 +79,43 @@ export function DashboardPage(): JSX.Element {
     const [widgetDialogOpen, setWidgetDialogOpen] = useState(false);
     const [editingWidget, setEditingWidget] = useState<WidgetSpec | null>(null);
     const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+    const qc = useQueryClient();
+
+    // v0.1.100 — período GLOBAL del tablero (persistido por dashboard).
+    const [globalPeriod, setGlobalPeriod] = useState<string>(() => {
+        try {
+            return localStorage.getItem(`imcrm-dash-period-${id}`) ?? '';
+        } catch {
+            return '';
+        }
+    });
+    const changeGlobalPeriod = (preset: string): void => {
+        setGlobalPeriod(preset);
+        try {
+            if (preset === '') localStorage.removeItem(`imcrm-dash-period-${id}`);
+            else localStorage.setItem(`imcrm-dash-period-${id}`, preset);
+        } catch { /* storage lleno/privado — solo pierde persistencia */ }
+    };
+
+    // v0.1.100 — modo PRESENTACIÓN (TV): fullscreen del tablero +
+    // auto-refresh del bundle cada 60s mientras dura.
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const [tvMode, setTvMode] = useState(false);
+    useEffect(() => {
+        const onChange = (): void => setTvMode(document.fullscreenElement === rootRef.current);
+        document.addEventListener('fullscreenchange', onChange);
+        return () => document.removeEventListener('fullscreenchange', onChange);
+    }, []);
+    useEffect(() => {
+        if (! tvMode) return;
+        const t = window.setInterval(() => {
+            void qc.invalidateQueries({ queryKey: dashboardsKeys.widgetsData(id, globalPeriod) });
+        }, 60_000);
+        return () => window.clearInterval(t);
+    }, [tvMode, id, globalPeriod, qc]);
+    const enterTv = (): void => {
+        void rootRef.current?.requestFullscreen?.().catch(() => undefined);
+    };
 
     const handleAddWidget = (): void => {
         setEditingWidget(null);
@@ -238,7 +280,17 @@ export function DashboardPage(): JSX.Element {
     };
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" style={pageStyle}>
+        <DashboardGlobalPeriodContext.Provider value={globalPeriod}>
+        <div
+            ref={rootRef}
+            className={cn(
+                'imcrm-flex imcrm-flex-col imcrm-gap-4',
+                // En fullscreen el elemento ES la pantalla: fondo del tema +
+                // scroll propio + aire.
+                tvMode && 'imcrm-overflow-y-auto imcrm-bg-background imcrm-p-6',
+            )}
+            style={pageStyle}
+        >
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Button
@@ -283,6 +335,29 @@ export function DashboardPage(): JSX.Element {
                     <Button variant="outline" className="imcrm-gap-2 imcrm-text-destructive" onClick={handleDeleteDashboard}>
                         <Trash2 className="imcrm-h-4 imcrm-w-4" />
                         {__('Eliminar')}
+                    </Button>
+                    {/* v0.1.100 — período global: pisa el período de los
+                      * widgets con campo de fecha. '' = cada widget el suyo. */}
+                    <Select
+                        value={globalPeriod}
+                        onChange={(e) => changeGlobalPeriod(e.target.value)}
+                        className="imcrm-h-9 imcrm-w-auto"
+                        aria-label={__('Período global')}
+                        title={__('Período global del tablero')}
+                    >
+                        <option value="">{__('Período: todos')}</option>
+                        {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                    </Select>
+                    <Button
+                        variant="outline"
+                        className="imcrm-gap-2"
+                        onClick={enterTv}
+                        title={__('Modo presentación (pantalla completa + refresco automático)')}
+                    >
+                        <MonitorPlay className="imcrm-h-4 imcrm-w-4" />
+                        {__('Presentar')}
                     </Button>
                     <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
                     <Button onClick={handleAddWidget} className="imcrm-gap-2">
@@ -379,6 +454,7 @@ export function DashboardPage(): JSX.Element {
                 onSave={(w) => void handleSaveWidget(w)}
             />
         </div>
+        </DashboardGlobalPeriodContext.Provider>
     );
 }
 

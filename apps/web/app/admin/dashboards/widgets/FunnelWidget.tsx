@@ -5,6 +5,7 @@ import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { categoryColor, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
+import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface FunnelWidgetProps {
@@ -32,6 +33,8 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const orderMap = useGroupOptionOrder(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
+    // v0.1.100 — click en una etapa → lista filtrada a ese valor.
+    const onSegment = useSegmentNav(widget);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
@@ -62,6 +65,7 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
                             orderMap,
                         )}
                         colorMap={colorMap}
+                        onSegment={onSegment}
                     />
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
@@ -98,9 +102,11 @@ function sortByPipeline(
 function FunnelRows({
     rows,
     colorMap,
+    onSegment,
 }: {
     rows: Array<{ label: string; value: number }>;
     colorMap: Map<string, string>;
+    onSegment: ((label: string) => void) | null;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => r.value), 1);
     const first = rows[0]?.value ?? 0;
@@ -116,8 +122,9 @@ function FunnelRows({
                 return (
                     <div
                         key={row.label}
-                        className="imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2"
-                        title={`${row.label}: ${row.value.toLocaleString()} (${convPct.toFixed(1)}% ${__('de la primera etapa')})`}
+                        className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
+                        title={`${row.label}: ${row.value.toLocaleString()} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
+                        onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
                             {row.label}
