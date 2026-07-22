@@ -218,6 +218,13 @@
       "when": 1784100000000,
       "tag": "0030_list_delete_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0031_dashboard_settings",
+      "breakpoints": true
     }
   ]
 }

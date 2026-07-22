@@ -187,6 +187,43 @@ describe('DashboardsService — evaluación de widgets (Postgres real)', () => {
         expect(t.rows[0]!.fields.nombre).toBe('e');
     });
 
+    it('v0.1.98 — widgets de contenido no evalúan datos (bundle devuelve {})', async () => {
+        const data = await withWidgets([
+            {
+                id: 'h1',
+                type: 'heading',
+                list_id: 0,
+                title: 'Sección ventas',
+                config: { subtitle: 'KPIs del mes', style: { bg: '#0f172a', text: '#f8fafc' } },
+                layout: { x: 0, y: 0, w: 12, h: 1 },
+            },
+            {
+                id: 'k1',
+                type: 'kpi',
+                list_id: f.monto!.list_id,
+                title: 'Total',
+                config: { metric: 'count' },
+                layout: { x: 0, y: 1, w: 3, h: 2 },
+            },
+        ]);
+        expect(data.h1).toEqual({});
+        expect((data.k1 as { value: number }).value).toBe(5);
+    });
+
+    it('v0.1.98 — settings del dashboard persisten (página: fondo/ancho/tipografía)', async () => {
+        const page = { bg: '#f1f5f9', max_width: 1100, font: 'serif' };
+        await service.update(tenantId, dashId, admin, { settings: { page } } as never);
+        const got = await service.get(tenantId, dashId, admin);
+        expect(got.settings).toEqual({ page });
+        // Round-trip por create también.
+        const d2 = await service.create(tenantId, 1, {
+            name: 'Con página', widgets: [], settings: { page },
+        } as never);
+        const got2 = await service.get(tenantId, d2.id, admin);
+        expect(got2.settings).toEqual({ page });
+        await service.remove(tenantId, d2.id, admin);
+    });
+
     it('bucketing temporal: chart_line agrupa por mes (YYYY-MM) y respeta year', async () => {
         const data = await withWidgets([
             {

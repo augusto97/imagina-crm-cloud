@@ -7,7 +7,22 @@ export type WidgetType =
     | 'stat_delta'
     | 'table'
     /** Embudo de etapas — mismo evaluador que chart_bar, render funnel. */
-    | 'funnel';
+    | 'funnel'
+    /** v0.1.98 — bloques de CONTENIDO (sin datos): el dashboard se arma como página. */
+    | 'heading'
+    | 'text'
+    | 'image'
+    | 'divider'
+    | 'spacer';
+
+/** Widgets que no consumen datos (list_id 0, sin evaluación en el backend). */
+export const CONTENT_WIDGET_TYPES: readonly WidgetType[] = [
+    'heading', 'text', 'image', 'divider', 'spacer',
+];
+
+export function isContentWidget(type: WidgetType): boolean {
+    return CONTENT_WIDGET_TYPES.includes(type);
+}
 
 /**
  * Agregaciones soportadas para widgets de dashboard. Mismo set que
@@ -68,6 +83,16 @@ export function defaultLayoutForType(type: WidgetType): WidgetLayout {
             return { x: 0, y: 9999, w: 6, h: 4 };
         case 'table':
             return { x: 0, y: 9999, w: 6, h: 5 };
+        case 'heading':
+            return { x: 0, y: 9999, w: 12, h: 1 };
+        case 'text':
+            return { x: 0, y: 9999, w: 6, h: 2 };
+        case 'image':
+            return { x: 0, y: 9999, w: 4, h: 3 };
+        case 'divider':
+            return { x: 0, y: 9999, w: 12, h: 1 };
+        case 'spacer':
+            return { x: 0, y: 9999, w: 12, h: 1 };
         default:
             return { x: 0, y: 9999, w: 4, h: 3 };
     }
@@ -81,6 +106,13 @@ export function minLayoutForType(type: WidgetType): { minW: number; minH: number
             return { minW: 2, minH: 2 };
         case 'table':
             return { minW: 3, minH: 3 };
+        case 'heading':
+        case 'text':
+        case 'divider':
+        case 'spacer':
+            return { minW: 2, minH: 1 };
+        case 'image':
+            return { minW: 2, minH: 2 };
         default:
             return { minW: 3, minH: 3 };
     }
@@ -172,6 +204,8 @@ export interface DashboardEntity {
     name: string;
     description: string | null;
     widgets: WidgetSpec[];
+    /** v0.1.98 — ajustes del dashboard (`page`: fondo/ancho/tipografía). */
+    settings: Record<string, unknown>;
     is_default: boolean;
     position: number;
     visibility: DashboardVisibility;
@@ -185,6 +219,7 @@ export interface CreateDashboardInput {
     name: string;
     description?: string | null;
     widgets?: WidgetSpec[];
+    settings?: Record<string, unknown>;
     is_default?: boolean;
     position?: number;
     visibility?: DashboardVisibility;
@@ -195,6 +230,7 @@ export interface UpdateDashboardInput {
     name?: string;
     description?: string | null;
     widgets?: WidgetSpec[];
+    settings?: Record<string, unknown>;
     is_default?: boolean;
     position?: number;
     visibility?: DashboardVisibility;

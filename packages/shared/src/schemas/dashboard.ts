@@ -17,8 +17,25 @@ export const widgetTypeSchema = z.enum([
     'stat_delta',
     'table',
     'funnel',
+    // v0.1.98 — bloques de CONTENIDO (no evalúan datos; el backend devuelve
+    // {} y el front los renderiza desde su config): título, texto, imagen,
+    // separador y espaciador. Convierten al dashboard en una página armable.
+    'heading',
+    'text',
+    'image',
+    'divider',
+    'spacer',
 ]);
 export type WidgetType = z.infer<typeof widgetTypeSchema>;
+
+/** Tipos de widget que NO consumen datos (list_id 0, sin evaluación). */
+export const CONTENT_WIDGET_TYPES: readonly WidgetType[] = [
+    'heading',
+    'text',
+    'image',
+    'divider',
+    'spacer',
+];
 
 export const widgetLayoutSchema = z.object({
     x: z.number(),
@@ -30,7 +47,8 @@ export const widgetLayoutSchema = z.object({
 export const widgetSpecSchema = z.object({
     id: z.string().min(1),
     type: widgetTypeSchema,
-    list_id: idSchema,
+    /** 0 = widget de contenido (sin lista). */
+    list_id: z.number().int().nonnegative(),
     title: z.string().default(''),
     config: z.record(z.unknown()).default({}),
     layout: widgetLayoutSchema,
@@ -47,12 +65,20 @@ export type WidgetSpec = z.infer<typeof widgetSpecSchema>;
 export const dashboardVisibilitySchema = z.enum(['workspace', 'private', 'roles']);
 export type DashboardVisibility = z.infer<typeof dashboardVisibilitySchema>;
 
+/**
+ * Ajustes del dashboard (v0.1.98). `page` es el mismo shape declarativo que
+ * los ajustes de página del portal ({bg, max_width, font}) — lo lee
+ * `readPageSettings` en el front. Permisivo para claves futuras.
+ */
+export const dashboardSettingsSchema = z.record(z.unknown());
+
 export const dashboardSchema = z.object({
     id: idSchema,
     user_id: idSchema.nullable(),
     name: z.string(),
     description: z.string().nullable(),
     widgets: z.array(widgetSpecSchema),
+    settings: dashboardSettingsSchema.default({}),
     is_default: z.boolean(),
     position: z.number().int(),
     visibility: dashboardVisibilitySchema.default('workspace'),
@@ -67,6 +93,7 @@ export const createDashboardSchema = z.object({
     name: z.string().trim().min(1).max(190),
     description: z.string().max(2000).nullable().optional(),
     widgets: z.array(widgetSpecSchema).default([]),
+    settings: dashboardSettingsSchema.optional(),
     is_default: z.boolean().optional(),
     position: z.number().int().nonnegative().optional(),
     visibility: dashboardVisibilitySchema.optional(),

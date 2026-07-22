@@ -8,10 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
+import { BlockStyleEditor } from '@/admin/template-editor-core/BlockStyleEditor';
+import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
+import { hasBlockStyle, readBlockStyle, type BlockStyle } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
     defaultLayoutForType,
+    isContentWidget,
     type ChartTimeBucket,
     type KpiMetric,
     type WidgetPeriod,
@@ -54,6 +58,10 @@ export function WidgetFormDialog({
 
     const [title, setTitle] = useState('');
     const [type, setType] = useState<WidgetType>('kpi');
+    // v0.1.98 — estilo del card (capa compartida del editor de plantillas)
+    // y config libre de los widgets de CONTENIDO (texto/imagen…).
+    const [style, setStyle] = useState<BlockStyle>({});
+    const [contentConfig, setContentConfig] = useState<Record<string, unknown>>({});
     const [listId, setListId] = useState<number>(0);
     const [metric, setMetric] = useState<KpiMetric>('count');
     const [metricFieldId, setMetricFieldId] = useState<number>(0);
@@ -120,6 +128,8 @@ export function WidgetFormDialog({
         if (initial) {
             setTitle(initial.title);
             setType(initial.type);
+            setStyle(readBlockStyle(initial.config));
+            setContentConfig({ ...initial.config });
             setListId(initial.list_id);
             setMetric((initial.config.metric as KpiMetric) ?? 'count');
             setMetricFieldId((initial.config.metric_field_id as number) ?? 0);
@@ -154,6 +164,8 @@ export function WidgetFormDialog({
         } else {
             setTitle('');
             setType('kpi');
+            setStyle({});
+            setContentConfig({});
             setListId(lists.data?.[0]?.id ?? 0);
             setMetric('count');
             setMetricFieldId(0);
@@ -177,12 +189,10 @@ export function WidgetFormDialog({
 
     const handleSubmit = (e: React.FormEvent): void => {
         e.preventDefault();
-        const widget: WidgetSpec = {
-            id: initial?.id ?? generateWidgetId(),
-            type,
-            list_id: listId,
-            title: title.trim(),
-            config: buildConfig(type, {
+        const isContent = isContentWidget(type);
+        const config: WidgetSpec['config'] = isContent
+            ? ({ ...contentConfig } as WidgetSpec['config'])
+            : buildConfig(type, {
                 metric,
                 metricFieldId,
                 groupByFieldId,
@@ -201,7 +211,16 @@ export function WidgetFormDialog({
                     periodFieldId > 0 && periodPreset !== ''
                         ? { field_id: periodFieldId, preset: periodPreset }
                         : null,
-            }),
+            });
+        // La capa de estilo viaja en config.style para TODOS los tipos.
+        delete config.style;
+        if (hasBlockStyle(style)) config.style = style;
+        const widget: WidgetSpec = {
+            id: initial?.id ?? generateWidgetId(),
+            type,
+            list_id: isContent ? 0 : listId,
+            title: title.trim(),
+            config,
             // 0.57.42 — tamaño inicial según el tipo (KPI compacto,
             // tabla ancha…) y posicionado al FINAL del dashboard.
             layout: initial?.layout ?? defaultLayoutForType(type),
@@ -219,6 +238,7 @@ export function WidgetFormDialog({
         : true;
 
     const canSubmit = useMemo(() => {
+        if (isContentWidget(type)) return true;
         if (listId <= 0) return false;
         if (type === 'kpi') {
             return metricNeedsField;
@@ -293,8 +313,14 @@ export function WidgetFormDialog({
                                     <option value="chart_line">{__('Línea (tendencia mensual)')}</option>
                                     <option value="chart_area">{__('Area (tendencia mensual)')}</option>
                                     <option value="table">{__('Tabla · Top N')}</option>
+                                    <option value="heading">{__('Contenido · Título de sección')}</option>
+                                    <option value="text">{__('Contenido · Texto')}</option>
+                                    <option value="image">{__('Contenido · Imagen')}</option>
+                                    <option value="divider">{__('Contenido · Separador')}</option>
+                                    <option value="spacer">{__('Contenido · Espaciador')}</option>
                                 </Select>
                             </div>
+                            {! isContentWidget(type) && (
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                                 <Label htmlFor="w-list">{__('Lista')}</Label>
                                 <Select
@@ -317,6 +343,7 @@ export function WidgetFormDialog({
                                     ))}
                                 </Select>
                             </div>
+                            )}
                         </div>
 
                         {/* 0.36.7: la config específica del tipo viene PRIMERO,
@@ -426,7 +453,37 @@ export function WidgetFormDialog({
                             />
                         )}
 
-                        {listId > 0 && dateFields.length > 0 && (
+                        {type === 'heading' && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                <Label htmlFor="w-sub">{__('Subtítulo (opcional)')}</Label>
+                                <Input
+                                    id="w-sub"
+                                    value={typeof contentConfig.subtitle === 'string' ? contentConfig.subtitle : ''}
+                                    onChange={(e) => setContentConfig((c) => ({ ...c, subtitle: e.target.value }))}
+                                    placeholder={__('Texto secundario bajo el título')}
+                                />
+                            </div>
+                        )}
+
+                        {type === 'text' && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                <Label htmlFor="w-text">{__('Texto')}</Label>
+                                <textarea
+                                    id="w-text"
+                                    value={typeof contentConfig.text === 'string' ? contentConfig.text : ''}
+                                    onChange={(e) => setContentConfig((c) => ({ ...c, text: e.target.value }))}
+                                    rows={5}
+                                    className="imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-3 imcrm-py-2 imcrm-text-sm focus:imcrm-outline-none focus:imcrm-ring-2 focus:imcrm-ring-primary"
+                                    placeholder={__('Notas, contexto del tablero, instrucciones…')}
+                                />
+                            </div>
+                        )}
+
+                        {type === 'image' && (
+                            <ImageBlockForm config={contentConfig} onConfigChange={setContentConfig} />
+                        )}
+
+                        {! isContentWidget(type) && listId > 0 && dateFields.length > 0 && (
                             <PeriodPicker
                                 fields={dateFields}
                                 fieldId={periodFieldId}
@@ -436,7 +493,7 @@ export function WidgetFormDialog({
                             />
                         )}
 
-                        {listId > 0 && fields.data && fields.data.length > 0 && (
+                        {! isContentWidget(type) && listId > 0 && fields.data && fields.data.length > 0 && (
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
                                 <FiltersPanel
                                     listId={listId}
@@ -450,6 +507,13 @@ export function WidgetFormDialog({
                                 </p>
                             </div>
                         )}
+
+                        {/* v0.1.98 — capa de estilo del card (misma del editor
+                            de plantillas: fondo/texto/borde/tipografía + presets
+                            de marca). Aplica a TODOS los tipos de widget. */}
+                        <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+                            <BlockStyleEditor value={style} onChange={setStyle} />
+                        </div>
 
                         <div className="imcrm-flex imcrm-justify-end imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-5">
                             <Dialog.Close asChild>

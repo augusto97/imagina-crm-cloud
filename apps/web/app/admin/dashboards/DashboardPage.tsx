@@ -1,8 +1,15 @@
 import { lazy, Suspense, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BarChart3, CalendarRange, Loader2, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, Loader2, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { BarChartWidget } from '@/admin/dashboards/widgets/BarChartWidget';
+import {
+    DividerWidget,
+    HeadingWidget,
+    ImageWidget,
+    SpacerWidget,
+    TextWidget,
+} from '@/admin/dashboards/widgets/ContentWidgets';
 import { FunnelWidget } from '@/admin/dashboards/widgets/FunnelWidget';
 import { KpiWidget } from '@/admin/dashboards/widgets/KpiWidget';
 import { LineChartWidget } from '@/admin/dashboards/widgets/LineChartWidget';
@@ -10,6 +17,7 @@ import { PieChartWidget } from '@/admin/dashboards/widgets/PieChartWidget';
 import { StatDeltaWidget } from '@/admin/dashboards/widgets/StatDeltaWidget';
 import { TableWidget } from '@/admin/dashboards/widgets/TableWidget';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
+import { PortalPageSettingsButton } from '@/admin/lists/portal-template-editor/PortalPageSettings';
 
 // react-grid-layout es ~50KB gzipped — solo lo necesitamos en la
 // vista de un dashboard concreto. Lazy-load para no inflar el main
@@ -27,9 +35,17 @@ import {
     useUpdateDashboard,
 } from '@/hooks/useDashboards';
 import { ApiError } from '@/lib/api';
+import {
+    blockStyleClass,
+    blockStyleCss,
+    PAGE_FONT_STACKS,
+    readBlockStyle,
+    readPageSettings,
+    type PortalPageSettings,
+} from '@/lib/blockStyle';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { WidgetSpec } from '@/types/dashboard';
+import { isContentWidget, type WidgetSpec } from '@/types/dashboard';
 
 import { DashboardSettingsDialog } from './DashboardSettingsDialog';
 import { WidgetFormDialog } from './WidgetFormDialog';
@@ -137,6 +153,38 @@ export function DashboardPage(): JSX.Element {
         }
     };
 
+    // v0.1.98 — duplicar un widget: copia con id nuevo, insertada al final.
+    const handleDuplicateWidget = async (widget: WidgetSpec): Promise<void> => {
+        if (!dashboard.data) return;
+        const copy: WidgetSpec = {
+            ...widget,
+            id: `w-${Math.random().toString(36).slice(2, 10)}`,
+            config: JSON.parse(JSON.stringify(widget.config)) as WidgetSpec['config'],
+            layout: { ...widget.layout, y: 9999 },
+        };
+        try {
+            await update.mutateAsync({ widgets: [...dashboard.data.widgets, copy] });
+            toast.success(__('Widget duplicado'));
+        } catch (err) {
+            if (err instanceof Error) toast.error(__('No se pudo duplicar'), err.message);
+        }
+    };
+
+    // v0.1.98 — ajustes de página del dashboard (fondo/ancho/tipografía).
+    const handlePageSettings = async (page: PortalPageSettings): Promise<void> => {
+        if (!dashboard.data) return;
+        try {
+            await update.mutateAsync({
+                settings: {
+                    ...dashboard.data.settings,
+                    ...(Object.keys(page).length > 0 ? { page } : { page: undefined }),
+                },
+            });
+        } catch (err) {
+            if (err instanceof Error) toast.error(__('No se pudo guardar'), err.message);
+        }
+    };
+
     const handleDeleteDashboard = async (): Promise<void> => {
         if (!dashboard.data) return;
         const ok = await confirm({
@@ -181,9 +229,15 @@ export function DashboardPage(): JSX.Element {
     }
 
     const d = dashboard.data;
+    const page = readPageSettings((d.settings as { page?: unknown } | undefined)?.page);
+    const pageStyle: React.CSSProperties = {
+        ...(page.bg !== undefined ? { backgroundColor: page.bg, borderRadius: 12, padding: 16 } : {}),
+        ...(page.font !== undefined ? { fontFamily: PAGE_FONT_STACKS[page.font] } : {}),
+        ...(page.max_width !== undefined ? { maxWidth: `${page.max_width}px`, marginLeft: 'auto', marginRight: 'auto', width: '100%' } : {}),
+    };
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" style={pageStyle}>
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Button
@@ -229,6 +283,7 @@ export function DashboardPage(): JSX.Element {
                         <Trash2 className="imcrm-h-4 imcrm-w-4" />
                         {__('Eliminar')}
                     </Button>
+                    <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
                     <Button onClick={handleAddWidget} className="imcrm-gap-2">
                         <Plus className="imcrm-h-4 imcrm-w-4" />
                         {__('Añadir widget')}
@@ -257,15 +312,29 @@ export function DashboardPage(): JSX.Element {
                         widgets={d.widgets}
                         onLayoutChange={(layouts) => void handleLayoutChange(layouts)}
                     >
-                        {(widget) => (
+                        {(widget) => {
+                            // v0.1.98 — capa de estilo por widget (config.style,
+                            // la misma del editor de plantillas): pinta el card
+                            // y re-tiñe sus tokens internos. Los bloques de
+                            // CONTENIDO sin estilo propio van SIN tarjeta.
+                            const style = readBlockStyle(widget.config);
+                            const styled = style.bg !== undefined || style.border !== undefined;
+                            const chromeless = isContentWidget(widget.type) && !styled;
+                            return (
                             <article
                                 className={cn(
-                                    'imcrm-group imcrm-relative imcrm-flex imcrm-h-full imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-shadow-imcrm-sm imcrm-transition-shadow imcrm-duration-200',
-                                    'hover:imcrm-shadow-imcrm-md hover:imcrm-border-primary/25',
+                                    'imcrm-group imcrm-relative imcrm-flex imcrm-h-full imcrm-flex-col imcrm-overflow-hidden imcrm-transition-shadow imcrm-duration-200',
+                                    chromeless
+                                        ? 'imcrm-rounded-xl imcrm-p-2'
+                                        : 'imcrm-rounded-xl imcrm-p-4',
+                                    !chromeless && !styled
+                                        && 'imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md hover:imcrm-border-primary/25',
+                                    blockStyleClass(style),
                                 )}
+                                style={blockStyleCss(style)}
                             >
                                 <PeriodBadge widget={widget} />
-                                <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
+                                <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
                                     <button
                                         type="button"
                                         onClick={() => handleEditWidget(widget)}
@@ -273,6 +342,15 @@ export function DashboardPage(): JSX.Element {
                                         aria-label={__('Editar widget')}
                                     >
                                         <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleDuplicateWidget(widget)}
+                                        className="imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                        aria-label={__('Duplicar widget')}
+                                        title={__('Duplicar widget')}
+                                    >
+                                        <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
                                     </button>
                                     <button
                                         type="button"
@@ -287,7 +365,8 @@ export function DashboardPage(): JSX.Element {
                                     <WidgetRenderer dashboardId={id} widget={widget} />
                                 </div>
                             </article>
-                        )}
+                            );
+                        }}
                     </DashboardGrid>
                 </Suspense>
             )}
@@ -310,6 +389,16 @@ function WidgetRenderer({
     widget: WidgetSpec;
 }): JSX.Element {
     switch (widget.type) {
+        case 'heading':
+            return <HeadingWidget widget={widget} />;
+        case 'text':
+            return <TextWidget widget={widget} />;
+        case 'image':
+            return <ImageWidget widget={widget} />;
+        case 'divider':
+            return <DividerWidget />;
+        case 'spacer':
+            return <SpacerWidget />;
         case 'kpi':
             return <KpiWidget dashboardId={dashboardId} widget={widget} />;
         case 'chart_bar':
