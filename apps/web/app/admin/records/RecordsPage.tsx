@@ -309,17 +309,38 @@ const applyView = (view: SavedViewEntity | null): void => {
         const gf = Number(searchParams.get('gf'));
         if (! Number.isInteger(gf) || gf <= 0) return;
         const gv = searchParams.get('gv') ?? '';
-        const cond = gv === ''
-            ? { type: 'condition' as const, field_id: gf, op: 'is_null' as const, value: null }
-            : { type: 'condition' as const, field_id: gf, op: 'eq' as const, value: gv };
+        const gvsRaw = searchParams.get('gvs');
+        // v0.1.103 — `gvs` (multi_select): AND de `contains` por valor —
+        // un eq con el JSON crudo del set jamás matchea.
+        let children: import('@/types/record').FilterTree['children'];
+        if (gvsRaw !== null) {
+            let vals: string[] = [];
+            try {
+                const parsed: unknown = JSON.parse(gvsRaw);
+                if (Array.isArray(parsed)) vals = parsed.map((v) => String(v));
+            } catch {
+                vals = [];
+            }
+            if (vals.length === 0) return;
+            children = vals.map((v) => ({
+                type: 'condition' as const, field_id: gf, op: 'contains' as const, value: v,
+            }));
+        } else {
+            children = [
+                gv === ''
+                    ? { type: 'condition' as const, field_id: gf, op: 'is_null' as const, value: null }
+                    : { type: 'condition' as const, field_id: gf, op: 'eq' as const, value: gv },
+            ];
+        }
         setState((s2) => ({
             ...s2,
-            filterTree: { type: 'group', logic: 'and', children: [cond] },
+            filterTree: { type: 'group', logic: 'and', children },
             page: 1,
         }));
         const next = new URLSearchParams(searchParams);
         next.delete('gf');
         next.delete('gv');
+        next.delete('gvs');
         setSearchParams(next, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [viewApplied, list.data?.id, searchParams]);

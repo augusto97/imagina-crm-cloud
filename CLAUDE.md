@@ -1284,6 +1284,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 8/8 (leyenda reducida, handle sur, h 4→6 persistido con
         x/y/w intactos, hex tipeado carácter a carácter → style.bg).
 
+  - [x] **Donut desktop sin callouts + click-through multi_select
+        (v0.1.103, reportes del usuario con captura)**: (a) los labels
+        externos con línea del donut se ELIMINARON — a cualquier tamaño
+        real de card terminaban superpuestos o cortados en los bordes;
+        ahora el % vive DENTRO del aro (slices ≥7%, blanco bold) y el
+        detalle completo en leyenda/tooltip; el aro llena el SVG (viewBox
+        único 100), max-h 260 y la leyenda desktop pasa de `flex-1` (un
+        océano entre nombre y valor) a ancho acotado 320px con el par
+        aro+leyenda centrado; (b) **click-through de multi_select daba "no
+        se encontraron registros"**: el grupo es el JSON crudo del set
+        (`["a","b"]`) y el filtro `eq` comparaba esa CADENA contra los
+        elementos → nunca matcheaba. `useSegmentNav` detecta multi_select
+        y navega con `gvs=[valores]`; RecordsPage arma un AND de
+        `contains` por valor. "(sin valor)" → is_null (cubre set vacío).
+        E2E navegador 8/8 (cero polylines, % en el aro, leyenda 297px de
+        un card de 574, sin overflow, click en combo `["vip","promo"]` →
+        contains vip AND contains promo → 1 registro; click en "(sin
+        valor)" → is_null → 66).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
