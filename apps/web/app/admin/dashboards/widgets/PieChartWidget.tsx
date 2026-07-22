@@ -106,14 +106,16 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
     const visible = rows.filter((r) => ! hidden.has(r.label));
 
     const total = visible.reduce((acc, r) => acc + r.value, 0) || 1;
-    // 0.57.40 — proporciones ajustadas: el aro ocupa más del viewBox
-    // (antes radius 40 de 220 → más de la mitad del SVG era espacio
-    // en blanco reservado para labels que rara vez lo necesitaban).
-    const viewSize = showLabels ? 190 : 100;
+    // v0.1.103 — se ELIMINARON los callouts externos con línea: a
+    // cualquier tamaño real de card terminaban superpuestos o cortados
+    // en los bordes (reporte del usuario). El % ahora vive DENTRO del
+    // aro (slices grandes) y el detalle completo en la leyenda/tooltip.
+    // ViewBox compacto único: el aro llena el SVG.
+    const viewSize = 100;
     const cx = viewSize / 2;
     const cy = viewSize / 2;
-    const radius = showLabels ? 48 : 40;
-    const stroke = showLabels ? 16 : 13;
+    const radius = 40;
+    const stroke = showLabels ? 15 : 13;
     const circumference = 2 * Math.PI * radius;
 
     let offset = 0;
@@ -126,7 +128,9 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                     // Apilado (celular / card chico): aro centrado arriba,
                     // leyenda debajo ocupando TODO el ancho.
                     ? 'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-overflow-y-auto'
-                    : 'imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-4',
+                    // Desktop: par aro+leyenda CENTRADO, leyenda de ancho
+                    // acotado (antes flex-1 → un océano entre nombre y valor).
+                    : 'imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-6',
             )}
         >
             {/* max-h evita que el donut crezca desproporcionado en
@@ -134,7 +138,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
             <div
                 className={cn(
                     'imcrm-relative imcrm-flex imcrm-aspect-square imcrm-shrink-0 imcrm-items-center imcrm-justify-center',
-                    narrow ? 'imcrm-h-[130px]' : 'imcrm-h-full imcrm-max-h-[230px]',
+                    narrow ? 'imcrm-h-[130px]' : 'imcrm-h-full imcrm-max-h-[260px]',
                 )}
             >
                 <svg
@@ -181,53 +185,28 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
 
                     {showLabels && visible.map((row) => {
                         const pct = row.value / total;
-                        if (pct < 0.03) {
+                        // % DENTRO del aro, solo en slices con lugar (≥7%).
+                        if (pct < 0.07) {
                             cumulative += pct;
                             return null;
                         }
-                        const i = rows.findIndex((r) => r.label === row.label);
                         const angleDeg = -90 + 360 * (cumulative + pct / 2);
                         const angle = (angleDeg * Math.PI) / 180;
                         cumulative += pct;
-
-                        const startR = radius + 10;
-                        const elbowR = radius + 18;
-                        const labelR = radius + 26;
-
-                        const x1 = cx + Math.cos(angle) * startR;
-                        const y1 = cy + Math.sin(angle) * startR;
-                        const x2 = cx + Math.cos(angle) * elbowR;
-                        const y2 = cy + Math.sin(angle) * elbowR;
-                        const onRight = Math.cos(angle) >= 0;
-                        const x3 = onRight ? x2 + 10 : x2 - 10;
-                        const xText = cx + Math.cos(angle) * labelR + (onRight ? 6 : -6);
-
-                        const color = categoryColor(colorMap, row.label, i);
+                        const x = cx + Math.cos(angle) * radius;
+                        const y = cy + Math.sin(angle) * radius;
                         return (
-                            <g key={`lbl-${row.label}`}>
-                                <polyline
-                                    points={`${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)} ${x3.toFixed(1)},${y2.toFixed(1)}`}
-                                    fill="none"
-                                    stroke={color}
-                                    strokeWidth="0.8"
-                                />
-                                {/* Callout externo estilo ClickUp: nombre muted
-                                  * + porcentaje en foreground. fontSize en
-                                  * unidades del viewBox (190) — a tamaño real
-                                  * del card queda ≈11px. */}
-                                <text
-                                    x={xText}
-                                    y={y2 + 3}
-                                    textAnchor={onRight ? 'start' : 'end'}
-                                    className="imcrm-fill-muted-foreground"
-                                    style={{ fontSize: 9, fontWeight: 500 }}
-                                >
-                                    {prettyGroupLabel(row.label)}{' '}
-                                    <tspan className="imcrm-fill-foreground" style={{ fontWeight: 600 }}>
-                                        {(pct * 100).toFixed(1)}%
-                                    </tspan>
-                                </text>
-                            </g>
+                            <text
+                                key={`pct-${row.label}`}
+                                x={x}
+                                y={y}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fill="#ffffff"
+                                style={{ fontSize: 6.5, fontWeight: 700, pointerEvents: 'none' }}
+                            >
+                                {(pct * 100).toFixed(0)}%
+                            </text>
                         );
                     })}
 
@@ -264,7 +243,10 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                 <ul
                     className={cn(
                         'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5 imcrm-text-xs',
-                        narrow ? 'imcrm-w-full imcrm-shrink-0' : 'imcrm-flex-1 imcrm-overflow-y-auto',
+                        narrow
+                            ? 'imcrm-w-full imcrm-shrink-0'
+                            // Ancho acotado: nombre, valor y % quedan juntos.
+                            : 'imcrm-w-[320px] imcrm-max-w-[55%] imcrm-shrink imcrm-overflow-y-auto',
                     )}
                 >
                     {legendRows.slice(0, 8).map((row) => {

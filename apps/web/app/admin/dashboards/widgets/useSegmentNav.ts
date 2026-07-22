@@ -28,8 +28,27 @@ export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | n
     const slug = lists.data?.find((l) => l.id === widget.list_id)?.slug;
     if (slug === undefined) return null;
 
+    const isMulti = field.type === 'multi_select';
+
     return (label: string): void => {
         const value = label === '(sin valor)' ? '' : label;
+        // v0.1.103 — multi_select: el grupo es el JSON crudo del set
+        // (`["a","b"]`). Un eq con esa CADENA jamás matchea (el operador
+        // compara elementos, no el JSON) → iba a "0 registros". Se navega
+        // con `gvs` (lista de valores) y RecordsPage arma un AND de
+        // `contains` por valor.
+        if (isMulti && value !== '') {
+            try {
+                const arr: unknown = JSON.parse(value);
+                if (Array.isArray(arr) && arr.length > 0) {
+                    const vals = arr.map((v) => String(v));
+                    navigate(`/lists/${slug}/records?gf=${groupFieldId}&gvs=${encodeURIComponent(JSON.stringify(vals))}`);
+                    return;
+                }
+            } catch {
+                // no era JSON — cae al eq normal
+            }
+        }
         navigate(`/lists/${slug}/records?gf=${groupFieldId}&gv=${encodeURIComponent(value)}`);
     };
 }
