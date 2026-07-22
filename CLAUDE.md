@@ -1205,6 +1205,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verde) + E2E navegador 13/13 (heading tinta, KPI azul re-teñido,
         default intacta, chromeless, fondo de página, duplicar, diálogo).
 
+  - [x] **Fase 3 — KPI premium + medidor (v0.1.99)**: (a) el KPI gana
+        **icono** (set curado de 12, `config.icon` por nombre, tolerante),
+        **prefijo/sufijo** ($/%), **meta** (`config.goal`) con barra de
+        progreso y COLOR CONDICIONAL (verde al alcanzarla / ámbar por
+        debajo; sin meta el color no cambia) y **mini-tendencia**
+        (`config.spark_field_id` → el backend agrega la MISMA métrica por
+        día sobre los últimos 30 días y devuelve `spark[]`; un spark
+        inválido no rompe el KPI); (b) widget nuevo **gauge** (medidor
+        semicircular vs meta): evalúa como KPI, arco con dasharray, color
+        por tramo (<50% rose / <100% amber / ≥100% emerald), % + valor/
+        meta; (c) diálogo: fila premium (icono/meta/prefijo/sufijo) para
+        kpi+gauge + selector de mini-tendencia. El pie NO necesitó donut
+        (ya lo era, con total al centro + leyenda clicable). 1 test API
+        nuevo (322 en verde) + E2E navegador 12/12 (prefijo, barra, ámbar,
+        sparkline, gauge 100% 4/4, opciones del diálogo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
+import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
 import { BlockStyleEditor } from '@/admin/template-editor-core/BlockStyleEditor';
 import { ImageBlockForm } from '@/admin/template-editor-core/ImageBlockForm';
 import { hasBlockStyle, readBlockStyle, type BlockStyle } from '@/lib/blockStyle';
@@ -62,6 +63,12 @@ export function WidgetFormDialog({
     // y config libre de los widgets de CONTENIDO (texto/imagen…).
     const [style, setStyle] = useState<BlockStyle>({});
     const [contentConfig, setContentConfig] = useState<Record<string, unknown>>({});
+    // v0.1.99 — KPI premium + gauge: icono, prefijo/sufijo, meta y sparkline.
+    const [kpiIcon, setKpiIcon] = useState('');
+    const [kpiPrefix, setKpiPrefix] = useState('');
+    const [kpiSuffix, setKpiSuffix] = useState('');
+    const [kpiGoal, setKpiGoal] = useState('');
+    const [sparkFieldId, setSparkFieldId] = useState<number>(0);
     const [listId, setListId] = useState<number>(0);
     const [metric, setMetric] = useState<KpiMetric>('count');
     const [metricFieldId, setMetricFieldId] = useState<number>(0);
@@ -130,6 +137,11 @@ export function WidgetFormDialog({
             setType(initial.type);
             setStyle(readBlockStyle(initial.config));
             setContentConfig({ ...initial.config });
+            setKpiIcon(typeof initial.config.icon === 'string' ? initial.config.icon : '');
+            setKpiPrefix(typeof initial.config.prefix === 'string' ? initial.config.prefix : '');
+            setKpiSuffix(typeof initial.config.suffix === 'string' ? initial.config.suffix : '');
+            setKpiGoal(typeof initial.config.goal === 'number' ? String(initial.config.goal) : '');
+            setSparkFieldId(typeof initial.config.spark_field_id === 'number' ? initial.config.spark_field_id : 0);
             setListId(initial.list_id);
             setMetric((initial.config.metric as KpiMetric) ?? 'count');
             setMetricFieldId((initial.config.metric_field_id as number) ?? 0);
@@ -166,6 +178,11 @@ export function WidgetFormDialog({
             setType('kpi');
             setStyle({});
             setContentConfig({});
+            setKpiIcon('');
+            setKpiPrefix('');
+            setKpiSuffix('');
+            setKpiGoal('');
+            setSparkFieldId(0);
             setListId(lists.data?.[0]?.id ?? 0);
             setMetric('count');
             setMetricFieldId(0);
@@ -215,6 +232,15 @@ export function WidgetFormDialog({
         // La capa de estilo viaja en config.style para TODOS los tipos.
         delete config.style;
         if (hasBlockStyle(style)) config.style = style;
+        // v0.1.99 — extras del KPI/gauge (icono, prefijo/sufijo, meta, spark).
+        if (type === 'kpi' || type === 'gauge') {
+            if (kpiIcon !== '') config.icon = kpiIcon;
+            if (kpiPrefix !== '') config.prefix = kpiPrefix;
+            if (kpiSuffix !== '') config.suffix = kpiSuffix;
+            const g = Number(kpiGoal);
+            if (kpiGoal.trim() !== '' && Number.isFinite(g) && g > 0) config.goal = g;
+            if (type === 'kpi' && sparkFieldId > 0) config.spark_field_id = sparkFieldId;
+        }
         const widget: WidgetSpec = {
             id: initial?.id ?? generateWidgetId(),
             type,
@@ -240,7 +266,7 @@ export function WidgetFormDialog({
     const canSubmit = useMemo(() => {
         if (isContentWidget(type)) return true;
         if (listId <= 0) return false;
-        if (type === 'kpi') {
+        if (type === 'kpi' || type === 'gauge') {
             return metricNeedsField;
         }
         if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') {
@@ -307,6 +333,7 @@ export function WidgetFormDialog({
                                 >
                                     <option value="kpi">{__('KPI · Número')}</option>
                                     <option value="stat_delta">{__('KPI · Delta vs período')}</option>
+                                    <option value="gauge">{__('Medidor · Progreso vs meta')}</option>
                                     <option value="chart_bar">{__('Gráfico de barras')}</option>
                                     <option value="chart_pie">{__('Gráfico de torta')}</option>
                                     <option value="funnel">{__('Embudo (etapas de pipeline)')}</option>
@@ -353,14 +380,67 @@ export function WidgetFormDialog({
                             sin tener que scrollear pasando el panel de filtros que
                             ocupa mucho espacio cuando se expande. */}
 
-                        {type === 'kpi' && (
-                            <KpiConfig
-                                metric={metric}
-                                metricFieldId={metricFieldId}
-                                aggregatableFields={aggregatableFields}
-                                onMetricChange={setMetric}
-                                onMetricFieldChange={setMetricFieldId}
-                            />
+                        {(type === 'kpi' || type === 'gauge') && (
+                            <>
+                                <KpiConfig
+                                    metric={metric}
+                                    metricFieldId={metricFieldId}
+                                    aggregatableFields={aggregatableFields}
+                                    onMetricChange={setMetric}
+                                    onMetricFieldChange={setMetricFieldId}
+                                />
+                                {/* v0.1.99 — extras premium del KPI/medidor. */}
+                                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3">
+                                    {type === 'kpi' && (
+                                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                            <Label htmlFor="w-icon">{__('Icono')}</Label>
+                                            <Select id="w-icon" value={kpiIcon} onChange={(e) => setKpiIcon(e.target.value)}>
+                                                {KPI_ICON_OPTIONS.map((o) => (
+                                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                                ))}
+                                            </Select>
+                                        </div>
+                                    )}
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="w-goal">{type === 'gauge' ? __('Meta (requerida)') : __('Meta (opcional)')}</Label>
+                                        <Input
+                                            id="w-goal"
+                                            type="number"
+                                            min={0}
+                                            step="any"
+                                            value={kpiGoal}
+                                            onChange={(e) => setKpiGoal(e.target.value)}
+                                            placeholder={__('Ej. 100000')}
+                                        />
+                                    </div>
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="w-prefix">{__('Prefijo')}</Label>
+                                        <Input id="w-prefix" value={kpiPrefix} onChange={(e) => setKpiPrefix(e.target.value)} placeholder="$" />
+                                    </div>
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="w-suffix">{__('Sufijo')}</Label>
+                                        <Input id="w-suffix" value={kpiSuffix} onChange={(e) => setKpiSuffix(e.target.value)} placeholder="%" />
+                                    </div>
+                                </div>
+                                {type === 'kpi' && dateFields.length > 0 && (
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="w-spark">{__('Mini-tendencia (campo de fecha)')}</Label>
+                                        <Select
+                                            id="w-spark"
+                                            value={sparkFieldId}
+                                            onChange={(e) => setSparkFieldId(Number(e.target.value))}
+                                        >
+                                            <option value={0}>{__('— Sin tendencia —')}</option>
+                                            {dateFields.map((f) => (
+                                                <option key={f.id} value={f.id}>{f.label}</option>
+                                            ))}
+                                        </Select>
+                                        <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
+                                            {__('Dibuja la misma métrica día a día (últimos 30 días) bajo el número.')}
+                                        </p>
+                                    </div>
+                                )}
+                            </>
                         )}
 
                         {(type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') && (
@@ -1181,7 +1261,7 @@ function buildConfig(
         return c;
     };
 
-    if (type === 'kpi') {
+    if (type === 'kpi' || type === 'gauge') {
         const c = base();
         c.metric = state.metric;
         if (state.metricFieldId > 0) {
