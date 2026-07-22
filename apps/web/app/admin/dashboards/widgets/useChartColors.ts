@@ -129,3 +129,18 @@ export function useGroupOptionOrder(
         return map;
     }, [fields.data, groupByFieldId]);
 }
+
+/**
+ * v0.1.102 — "Ocultar grupos en cero" (`config.hide_zero_groups`):
+ * condición sobre el RESULTADO del chart. Los grupos cuya métrica dio 0
+ * no se dibujan ni aparecen en la leyenda.
+ */
+export function applyHideZero(
+    rows: Array<{ label: string; value: number }>,
+    enabled: boolean,
+): Array<{ label: string; value: number }> {
+    if (! enabled) return rows;
+    const filtered = rows.filter((r) => r.value !== 0);
+    // Si TODO es 0, mejor mostrar los datos que un chart vacío confuso.
+    return filtered.length > 0 ? filtered : rows;
+}

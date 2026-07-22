@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, BookmarkPlus, ChevronRight, Paintbrush, X } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
@@ -196,6 +196,51 @@ export function BlockStyleEditor({ value, onChange }: Props): JSX.Element {
     );
 }
 
+/**
+ * Input de hex TIPEABLE (v0.1.102). El input anterior era controlado por
+ * el valor ya validado: tipear "#25" no pasaba la validación → el value
+ * nunca cambiaba → parecía bloqueado. Ahora el texto vive en un borrador
+ * local y el estilo se commitea recién cuando el hex es válido (o vacío).
+ */
+export function HexInput({
+    value,
+    onCommit,
+    placeholder = '#hex',
+    className,
+    ariaLabel,
+}: {
+    value: string | undefined;
+    onCommit: (next: string | undefined) => void;
+    placeholder?: string;
+    className?: string;
+    ariaLabel: string;
+}): JSX.Element {
+    const [draft, setDraft] = useState(value ?? '');
+    // Sync externo (swatch clickeado, preset aplicado, Quitar).
+    useEffect(() => {
+        setDraft(value ?? '');
+    }, [value]);
+    return (
+        <Input
+            value={draft}
+            onChange={(e) => {
+                const raw = e.target.value;
+                setDraft(raw);
+                const t = raw.trim();
+                if (t === '') {
+                    onCommit(undefined);
+                    return;
+                }
+                const hex = t.startsWith('#') ? t : `#${t}`;
+                if (HEX_RE.test(hex)) onCommit(hex.toLowerCase());
+            }}
+            placeholder={placeholder}
+            className={className}
+            aria-label={ariaLabel}
+        />
+    );
+}
+
 /** Fila de color: swatches curados + hex libre + limpiar. */
 function ColorRow({
     label,
@@ -213,20 +258,11 @@ function ColorRow({
                     {label}
                 </span>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                    <Input
-                        value={value ?? ''}
-                        onChange={(e) => {
-                            const raw = e.target.value.trim();
-                            if (raw === '') {
-                                onChange(undefined);
-                                return;
-                            }
-                            const hex = raw.startsWith('#') ? raw : `#${raw}`;
-                            if (HEX_RE.test(hex)) onChange(hex.toLowerCase());
-                        }}
-                        placeholder="#hex"
+                    <HexInput
+                        value={value}
+                        onCommit={onChange}
                         className="imcrm-h-7 imcrm-w-20 imcrm-font-mono imcrm-text-[11px]"
-                        aria-label={`${label} hex`}
+                        ariaLabel={`${label} hex`}
                     />
                     {value !== undefined && (
                         <button

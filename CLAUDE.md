@@ -1263,6 +1263,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (apilado, sin RGL, sin callouts, leyenda a lo ancho, sin overflow,
         multi legible; desktop conserva grid y callouts).
 
+  - [x] **Lote móvil + reportes de dashboards (v0.1.102, reportes del
+        usuario)**: (a) el apilado móvil de v0.1.101 recupera el RESIZE de
+        ALTO — grid RGL de 1 columna con handle inferior táctil que al
+        soltar persiste SOLO `h` (x/y/w del layout desktop intactos, jamás
+        se persiste el acomodo mobile); (b) **"Ocultar grupos en cero"**
+        (`config.hide_zero_groups`, toggle en Mostrar para pie/bar/funnel):
+        condición sobre el RESULTADO del chart — los grupos cuya métrica da
+        0 no se dibujan ni aparecen en la leyenda (si TODO es 0 se muestran
+        igual). El reporte "el filtro > 0 no filtra" se investigó a fondo:
+        el motor de filtros por registro FUNCIONA end-to-end (repro por UI:
+        crear con filtro gt → persiste filter_tree → data 65→11; editar →
+        reaparece → re-guardar conserva) — lo que el usuario esperaba era
+        esta condición sobre el resultado; (c) **hex tipeable** en el panel
+        Diseño y en "Página": los inputs eran controlados por el valor YA
+        validado (tipear "#25" no pasaba la regex → el value nunca cambiaba
+        → parecían bloqueados) — `HexInput` nuevo con borrador local que
+        commitea al hex válido (o vacío), montado en ColorRow y
+        PortalPageSettings. 2 tests unit front (26 en verde) + E2E
+        navegador 8/8 (leyenda reducida, handle sur, h 4→6 persistido con
+        x/y/w intactos, hex tipeado carácter a carácter → style.bg).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

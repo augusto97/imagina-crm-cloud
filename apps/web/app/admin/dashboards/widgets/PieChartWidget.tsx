@@ -6,7 +6,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
+import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -61,7 +61,10 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                     </span>
                 ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
                     <Donut
-                        rows={data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))}
+                        rows={applyHideZero(
+                            data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 })),
+                            widget.config.hide_zero_groups === true,
+                        )}
                         showLabels={showLabels}
                         showLegend={showLegend}
                         narrow={narrow}

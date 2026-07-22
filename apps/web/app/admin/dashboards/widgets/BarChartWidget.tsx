@@ -4,7 +4,7 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
+import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -40,10 +40,12 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     // v0.1.100 — click en una barra → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
 
-    const rows =
+    const rows = applyHideZero(
         data.data && 'data' in data.data
             ? data.data.data.map((r) => ({ label: r.label, value: toNumber(r.value) }))
-            : [];
+            : [],
+        widget.config.hide_zero_groups === true,
+    );
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
 
     return (
