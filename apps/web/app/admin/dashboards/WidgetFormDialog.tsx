@@ -69,6 +69,8 @@ export function WidgetFormDialog({
     const [kpiSuffix, setKpiSuffix] = useState('');
     const [kpiGoal, setKpiGoal] = useState('');
     const [sparkFieldId, setSparkFieldId] = useState<number>(0);
+    // v0.1.102 — ocultar grupos con valor 0/vacío en los charts agrupados.
+    const [hideZeroGroups, setHideZeroGroups] = useState(false);
     const [listId, setListId] = useState<number>(0);
     const [metric, setMetric] = useState<KpiMetric>('count');
     const [metricFieldId, setMetricFieldId] = useState<number>(0);
@@ -156,6 +158,7 @@ export function WidgetFormDialog({
                     ? (initial.config.visible_field_ids as number[])
                     : [],
             );
+            setHideZeroGroups(Boolean(initial.config.hide_zero_groups));
             setShowAverageLine(Boolean(initial.config.show_average_line));
             setShowDataLabels(Boolean(initial.config.show_data_labels));
             setShowLegend(Boolean(initial.config.show_legend));
@@ -193,6 +196,7 @@ export function WidgetFormDialog({
             setSortDir('desc');
             setTableLimit(10);
             setVisibleFieldIds([]);
+            setHideZeroGroups(false);
             setShowAverageLine(false);
             setShowDataLabels(false);
             setShowLegend(false);
@@ -232,6 +236,10 @@ export function WidgetFormDialog({
         // La capa de estilo viaja en config.style para TODOS los tipos.
         delete config.style;
         if (hasBlockStyle(style)) config.style = style;
+        if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') {
+            delete config.hide_zero_groups;
+            if (hideZeroGroups) config.hide_zero_groups = true;
+        }
         // v0.1.99 — extras del KPI/gauge (icono, prefijo/sufijo, meta, spark).
         if (type === 'kpi' || type === 'gauge') {
             if (kpiIcon !== '') config.icon = kpiIcon;
@@ -498,9 +506,11 @@ export function WidgetFormDialog({
                                 showAverageLine={showAverageLine}
                                 showDataLabels={showDataLabels}
                                 showLegend={showLegend}
+                                hideZeroGroups={hideZeroGroups}
                                 onShowAverageLineChange={setShowAverageLine}
                                 onShowDataLabelsChange={setShowDataLabels}
                                 onShowLegendChange={setShowLegend}
+                                onHideZeroGroupsChange={setHideZeroGroups}
                             />
                         )}
 
@@ -1113,9 +1123,11 @@ interface PresentationTogglesProps {
     showAverageLine: boolean;
     showDataLabels: boolean;
     showLegend: boolean;
+    hideZeroGroups: boolean;
     onShowAverageLineChange: (next: boolean) => void;
     onShowDataLabelsChange: (next: boolean) => void;
     onShowLegendChange: (next: boolean) => void;
+    onHideZeroGroupsChange: (next: boolean) => void;
 }
 
 function PresentationToggles({
@@ -1123,9 +1135,11 @@ function PresentationToggles({
     showAverageLine,
     showDataLabels,
     showLegend,
+    hideZeroGroups,
     onShowAverageLineChange,
     onShowDataLabelsChange,
     onShowLegendChange,
+    onHideZeroGroupsChange,
 }: PresentationTogglesProps): JSX.Element {
     // La línea de promedio sólo aplica a charts numéricos con eje
     // ordenado (bar/line/area). En pie no hay un "eje Y" donde
@@ -1153,6 +1167,16 @@ function PresentationToggles({
                 checked={showLegend}
                 onChange={onShowLegendChange}
             />
+            {(type === 'chart_pie' || type === 'chart_bar' || type === 'funnel') && (
+                // v0.1.102 — condición sobre el RESULTADO del gráfico (no
+                // sobre los registros): los grupos cuya métrica da 0 o vacío
+                // no se dibujan ni aparecen en la leyenda.
+                <ToggleRow
+                    label={__('Ocultar grupos en cero')}
+                    checked={hideZeroGroups}
+                    onChange={onHideZeroGroupsChange}
+                />
+            )}
         </div>
     );
 }

@@ -55,21 +55,52 @@ export function DashboardGrid({
             if (ay !== by) return ay - by;
             return (a.layout?.x ?? 0) - (b.layout?.x ?? 0);
         });
+        // v0.1.102 — el apilado conserva el RESIZE de ALTO (handle
+        // inferior, táctil): grid RGL de UNA columna, sin drag, y al
+        // soltar se persiste SOLO `h` — x/y/w del layout desktop quedan
+        // intactos (nunca se persiste el acomodo mobile).
+        const layout: LayoutItem[] = ordered.map((w, idx) => {
+            const def = defaultLayoutForType(w.type);
+            const min = minLayoutForType(w.type);
+            return {
+                i: w.id,
+                x: 0,
+                y: idx,
+                w: 1,
+                h: typeof w.layout?.h === 'number' && w.layout.h > 0 ? w.layout.h : def.h,
+                minW: 1,
+                maxW: 1,
+                minH: min.minH,
+            };
+        });
+        const handleMobileResize = (next: Layout): void => {
+            onLayoutChange(
+                widgets.map((w) => {
+                    const l = next.find((n) => n.i === w.id);
+                    const cur = w.layout ?? defaultLayoutForType(w.type);
+                    return { id: w.id, x: cur.x, y: cur.y, w: cur.w, h: l !== undefined ? l.h : cur.h };
+                }),
+            );
+        };
         return (
-            <div ref={wrapRef} className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                {ordered.map((w) => {
-                    const h = typeof w.layout?.h === 'number' && w.layout.h > 0
-                        ? w.layout.h
-                        : defaultLayoutForType(w.type).h;
-                    // Alto equivalente al del grid (rowHeight 64 + margin 12),
-                    // con piso de 96px para que nada quede aplastado.
-                    const px = Math.max(96, h * 64 + (h - 1) * 12);
-                    return (
-                        <div key={w.id} style={{ height: `${px}px` }}>
-                            {children(w)}
-                        </div>
-                    );
-                })}
+            <div ref={wrapRef}>
+                <SizedGrid
+                    className="imcrm-layout"
+                    cols={1}
+                    layout={layout}
+                    rowHeight={64}
+                    margin={[12, 12]}
+                    containerPadding={[0, 0]}
+                    isDraggable={false}
+                    isResizable
+                    resizeHandles={['s']}
+                    compactType="vertical"
+                    onResizeStop={handleMobileResize}
+                >
+                    {ordered.map((w) => (
+                        <div key={w.id}>{children(w)}</div>
+                    ))}
+                </SizedGrid>
             </div>
         );
     }

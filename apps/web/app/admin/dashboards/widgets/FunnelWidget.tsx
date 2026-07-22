@@ -4,7 +4,7 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { categoryColor, prettyGroupLabel, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
+import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -58,10 +58,13 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
                 ) : data.data && 'data' in data.data && data.data.data.length > 0 ? (
                     <FunnelRows
                         rows={sortByPipeline(
-                            data.data.data.map((r) => ({
-                                label: r.label,
-                                value: typeof r.value === 'number' ? r.value : 0,
-                            })),
+                            applyHideZero(
+                                data.data.data.map((r) => ({
+                                    label: r.label,
+                                    value: typeof r.value === 'number' ? r.value : 0,
+                                })),
+                                widget.config.hide_zero_groups === true,
+                            ),
                             orderMap,
                         )}
                         colorMap={colorMap}

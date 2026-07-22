@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { PanelTop } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { HexInput } from '@/admin/template-editor-core/BlockStyleEditor';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { PAGE_FONT_STACKS, type PageFont, type PortalPageSettings } from '@/lib/blockStyle';
@@ -13,7 +14,6 @@ const PAGE_BG_SWATCHES = [
     '#fefce8', '#fdf2f8', '#0f172a', '#1e293b', '#115e59',
 ];
 
-const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 /**
  * v0.1.94 — Popover "Página" de la toolbar del editor del portal:
@@ -91,20 +91,11 @@ export function PortalPageSettingsButton({
                                     </button>
                                 )}
                             </div>
-                            <Input
-                                value={value.bg ?? ''}
-                                onChange={(e) => {
-                                    const raw = e.target.value.trim();
-                                    if (raw === '') {
-                                        set({ bg: undefined });
-                                        return;
-                                    }
-                                    const hex = raw.startsWith('#') ? raw : `#${raw}`;
-                                    if (HEX_RE.test(hex)) set({ bg: hex.toLowerCase() });
-                                }}
-                                placeholder="#hex"
+                            <HexInput
+                                value={value.bg}
+                                onCommit={(bg) => set({ bg })}
                                 className="imcrm-h-7 imcrm-w-24 imcrm-font-mono imcrm-text-[11px]"
-                                aria-label={__('Fondo de página hex')}
+                                ariaLabel={__('Fondo de página hex')}
                             />
                         </div>
 
