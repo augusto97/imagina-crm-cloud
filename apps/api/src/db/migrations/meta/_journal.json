@@ -225,6 +225,13 @@
       "when": 1784200000000,
       "tag": "0031_dashboard_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784200000001,
+      "tag": "0032_membership_settings",
+      "breakpoints": true
     }
   ]
 }

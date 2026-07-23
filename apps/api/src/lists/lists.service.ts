@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     listSlugSchema,
     slugify,
@@ -103,6 +103,31 @@ export class ListsService {
         });
         this.realtime.lists(tenantId);
         return toList(row);
+    }
+
+    /**
+     * v0.1.107 — Reordena el menú de listas: ids únicos y COMPLETOS del
+     * tenant en el orden deseado → position = índice. Compartido por todo
+     * el workspace (manage_lists), igual que el orden de campos.
+     */
+    async reorder(tenantId: number, listIds: number[]): Promise<List[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const existing = await this.repo.listAll(tx, tenantId);
+            const validIds = new Set(existing.map((l) => l.id));
+            if (new Set(listIds).size !== listIds.length || listIds.some((id) => !validIds.has(id))) {
+                throw new BadRequestException({
+                    code: 'invalid_reorder',
+                    message: 'list_ids debe contener ids únicos que pertenezcan al workspace',
+                    data: { status: 400 },
+                });
+            }
+            for (let i = 0; i < listIds.length; i++) {
+                await this.repo.update(tx, tenantId, listIds[i]!, { position: i });
+            }
+            return this.repo.listAll(tx, tenantId);
+        });
+        this.realtime.lists(tenantId);
+        return rows.map(toList);
     }
 
     async update(tenantId: number, idOrSlug: string, patch: UpdateListInput): Promise<List> {

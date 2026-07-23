@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import {
     BarChart3,
     ChevronsLeft,
     ChevronsRight,
-    Home,
     LayoutGrid,
+    List as ListIcon,
     Loader2,
     Settings,
     ShieldAlert,
     Sparkles,
+    Star,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -17,7 +18,8 @@ import { useSession } from '@/cloud/session';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useDashboards } from '@/hooks/useDashboards';
-import { useLists } from '@/hooks/useLists';
+import { toggledFavorites, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
+import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
@@ -73,6 +75,27 @@ export function Sidebar({
     const lists = useLists();
     const dashboards = useDashboards();
     const [collapsed, setCollapsed] = useState<boolean>(readCollapsedPref);
+    // v0.1.107 — favoritos anclados + reorden del menú de listas.
+    const favorites = useFavorites();
+    const updateFavorites = useUpdateFavorites();
+    const reorderLists = useReorderLists();
+    const favs: Favorites = favorites.data ?? { lists: [], dashboards: [] };
+    const toggleFav = (kind: keyof Favorites, id: number): void => {
+        updateFavorites.mutate(toggledFavorites(favs, kind, id));
+    };
+    // Drag & drop del árbol de listas (HTML5). El índice arrastrado vive en
+    // un ref (no re-renderiza); al soltar se manda el orden completo.
+    const dragIndexRef = useRef<number | null>(null);
+    const handleListDrop = (targetIndex: number): void => {
+        const from = dragIndexRef.current;
+        dragIndexRef.current = null;
+        if (from === null || !lists.data || from === targetIndex) return;
+        const next = [...lists.data];
+        const [moved] = next.splice(from, 1);
+        if (!moved) return;
+        next.splice(targetIndex, 0, moved);
+        reorderLists.mutate(next.map((l) => l.id));
+    };
 
     const { pathname } = useLocation();
     const [params] = useSearchParams();
@@ -161,7 +184,7 @@ export function Sidebar({
                     )}
                 </div>
 
-                <RailItem to="/lists" active={section === 'home'} icon={Home} label={__('Listas')} />
+                <RailItem to="/lists" active={section === 'home'} icon={ListIcon} label={__('Listas')} />
                 {canSeeDashboards && (
                     <RailItem
                         to="/dashboards"
@@ -231,14 +254,28 @@ export function Sidebar({
                 >
                     {section === 'home' && (
                         <>
+                            <FavoritesSection
+                                favs={favs}
+                                lists={lists.data ?? []}
+                                dashboards={dashboards.data ?? []}
+                                onToggle={toggleFav}
+                            />
                             {lists.data && lists.data.length > 0 && (
                                 <PanelSection label={__('Espacio de trabajo')}>
                                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                                        {lists.data.map((list) => (
-                                            <li key={list.id}>
-                                                <PanelLink
+                                        {lists.data.map((list, i) => (
+                                            <li
+                                                key={list.id}
+                                                draggable={canManageLists}
+                                                onDragStart={() => { dragIndexRef.current = i; }}
+                                                onDragOver={(e) => { if (canManageLists) e.preventDefault(); }}
+                                                onDrop={(e) => { e.preventDefault(); handleListDrop(i); }}
+                                            >
+                                                <StarrableLink
                                                     to={`/lists/${list.slug}/records`}
                                                     name={list.name}
+                                                    starred={favs.lists.includes(list.id)}
+                                                    onToggleStar={() => toggleFav('lists', list.id)}
                                                 />
                                             </li>
                                         ))}
@@ -257,12 +294,23 @@ export function Sidebar({
                                 label={__('Todos los dashboards')}
                                 active={pathname === '/dashboards'}
                             />
+                            <FavoritesSection
+                                favs={favs}
+                                lists={lists.data ?? []}
+                                dashboards={dashboards.data ?? []}
+                                onToggle={toggleFav}
+                            />
                             {dashboards.data && dashboards.data.length > 0 && (
                                 <PanelSection label={__('Tus dashboards')}>
                                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                                         {dashboards.data.map((d) => (
                                             <li key={d.id}>
-                                                <PanelLink to={`/dashboards/${d.id}`} name={d.name} />
+                                                <StarrableLink
+                                                    to={`/dashboards/${d.id}`}
+                                                    name={d.name}
+                                                    starred={favs.dashboards.includes(d.id)}
+                                                    onToggleStar={() => toggleFav('dashboards', d.id)}
+                                                />
                                             </li>
                                         ))}
                                     </ul>
@@ -391,28 +439,117 @@ function PanelSection({
     );
 }
 
-/** Link del árbol del panel: dot + nombre (tema claro, NO el del riel). */
-function PanelLink({ to, name }: { to: string; name: string }): JSX.Element {
+/**
+ * v0.1.107 — Sección "Favoritos": listas y dashboards ANCLADOS por el
+ * usuario (estrella al hover de cada item). Mezcla ambos tipos, en el
+ * orden en que se anclaron; se oculta si no hay ninguno.
+ */
+function FavoritesSection({
+    favs,
+    lists,
+    dashboards,
+    onToggle,
+}: {
+    favs: Favorites;
+    lists: Array<{ id: number; slug: string; name: string }>;
+    dashboards: Array<{ id: number; name: string }>;
+    onToggle: (kind: keyof Favorites, id: number) => void;
+}): JSX.Element | null {
+    const listById = new Map(lists.map((l) => [l.id, l]));
+    const dashById = new Map(dashboards.map((d) => [d.id, d]));
+    const items = [
+        ...favs.lists
+            .map((id) => listById.get(id))
+            .filter((l): l is (typeof lists)[number] => l !== undefined)
+            .map((l) => ({ key: `l-${l.id}`, to: `/lists/${l.slug}/records`, name: l.name, kind: 'lists' as const, id: l.id })),
+        ...favs.dashboards
+            .map((id) => dashById.get(id))
+            .filter((d): d is (typeof dashboards)[number] => d !== undefined)
+            .map((d) => ({ key: `d-${d.id}`, to: `/dashboards/${d.id}`, name: d.name, kind: 'dashboards' as const, id: d.id })),
+    ];
+    if (items.length === 0) return null;
     return (
-        <NavLink
-            to={to}
-            className={({ isActive }) =>
-                cn(
-                    'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
-                    isActive
-                        ? 'imcrm-bg-background imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
-                        : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
-                )
-            }
-        >
-            <span
-                aria-hidden
-                className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-current imcrm-opacity-50"
-            />
-            <span className="imcrm-truncate">{name}</span>
-        </NavLink>
+        <PanelSection label={__('Favoritos')}>
+            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                {items.map((it) => (
+                    <li key={it.key}>
+                        <StarrableLink
+                            to={it.to}
+                            name={it.name}
+                            starred
+                            icon={it.kind === 'dashboards' ? BarChart3 : undefined}
+                            onToggleStar={() => onToggle(it.kind, it.id)}
+                        />
+                    </li>
+                ))}
+            </ul>
+        </PanelSection>
     );
 }
+
+/**
+ * PanelLink + estrella al hover (anclar/desanclar). La estrella NO navega
+ * (preventDefault + stopPropagation) y queda visible fija si ya es favorito.
+ */
+function StarrableLink({
+    to,
+    name,
+    starred,
+    icon: Icon,
+    onToggleStar,
+}: {
+    to: string;
+    name: string;
+    starred: boolean;
+    icon?: LucideIcon;
+    onToggleStar: () => void;
+}): JSX.Element {
+    return (
+        <div className="imcrm-group/fav imcrm-relative">
+            <NavLink
+                to={to}
+                className={({ isActive }) =>
+                    cn(
+                        'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-pr-8 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
+                        isActive
+                            ? 'imcrm-bg-background imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
+                            : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
+                    )
+                }
+            >
+                {Icon !== undefined ? (
+                    <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-opacity-60" aria-hidden />
+                ) : (
+                    <span
+                        aria-hidden
+                        className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-current imcrm-opacity-50"
+                    />
+                )}
+                <span className="imcrm-truncate">{name}</span>
+            </NavLink>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleStar();
+                }}
+                aria-label={starred ? __('Quitar de favoritos') : __('Anclar a favoritos')}
+                title={starred ? __('Quitar de favoritos') : __('Anclar a favoritos')}
+                aria-pressed={starred}
+                className={cn(
+                    'imcrm-absolute imcrm-right-1.5 imcrm-top-1/2 -imcrm-translate-y-1/2 imcrm-rounded imcrm-p-1 imcrm-transition-opacity',
+                    starred
+                        ? 'imcrm-text-amber-500 imcrm-opacity-100'
+                        : 'imcrm-text-muted-foreground imcrm-opacity-0 hover:imcrm-text-amber-500 group-hover/fav:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                )}
+            >
+                <Star className={cn('imcrm-h-3.5 imcrm-w-3.5', starred && 'imcrm-fill-current')} />
+            </button>
+        </div>
+    );
+}
+
 
 /** Link del panel con icono y activo EXPLÍCITO (para rutas con query param,
  *  donde NavLink.isActive no distingue `?s=`/`?tab=`). */

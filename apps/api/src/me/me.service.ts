@@ -1,8 +1,13 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { MeUserSummary } from '@imagina-base/shared';
+import {
+    favoritesSchema,
+    type Favorites,
+    type MeUserSummary,
+    type UpdateFavoritesInput,
+} from '@imagina-base/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { mentions } from '../db/schema';
+import { memberships, mentions } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MeRepository, type MeUserRow } from './me.repository';
 
@@ -83,6 +88,45 @@ export class MeService {
         await this.repo.setSignature(this.db, userId, signature);
         return signature;
     }
+
+    /**
+     * v0.1.107 — Favoritos del usuario en el workspace activo (listas y
+     * dashboards anclados en el menú). Viven en `memberships.settings`
+     * (por usuario+tenant); un PATCH parcial reemplaza cada array presente.
+     */
+    async getFavorites(tenantId: number, userId: number): Promise<Favorites> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1),
+        );
+        return parseFavorites(row?.settings);
+    }
+
+    async setFavorites(tenantId: number, userId: number, patch: UpdateFavoritesInput): Promise<Favorites> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1);
+            const settings = { ...(row?.settings ?? {}) };
+            const merged: Favorites = { ...parseFavorites(settings), ...patch };
+            settings.favorites = merged;
+            await tx
+                .update(memberships)
+                .set({ settings, updatedAt: new Date() })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+            return merged;
+        });
+    }
+}
+
+function parseFavorites(settings: Record<string, unknown> | undefined | null): Favorites {
+    const parsed = favoritesSchema.safeParse((settings as Record<string, unknown> | undefined)?.favorites ?? {});
+    return parsed.success ? parsed.data : favoritesSchema.parse({});
 }
 
 /** login = email y display_name = name (shape del picker heredado del plugin). */

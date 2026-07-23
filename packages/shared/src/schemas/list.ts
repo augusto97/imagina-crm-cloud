@@ -42,3 +42,9 @@ export const updateListSchema = z
         message: 'El patch no puede estar vacío',
     });
 export type UpdateListInput = z.infer<typeof updateListSchema>;
+
+/** v0.1.107 — Reordenamiento del menú de listas: ids en el orden deseado. */
+export const reorderListsSchema = z.object({
+    list_ids: z.array(idSchema).min(1),
+});
+export type ReorderListsInput = z.infer<typeof reorderListsSchema>;
