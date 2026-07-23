@@ -39,9 +39,10 @@ function readCollapsedPref(): boolean {
 }
 
 /** Sección del riel activa — derivada de la RUTA (no estado aparte). */
-type RailSection = 'home' | 'dashboards' | 'settings' | 'platform';
+type RailSection = 'home' | 'favorites' | 'dashboards' | 'settings' | 'platform';
 
 function railSectionFromPath(pathname: string): RailSection {
+    if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
     if (pathname.startsWith('/settings')) return 'settings';
     if (pathname.startsWith('/platform')) return 'platform';
@@ -137,7 +138,9 @@ export function Sidebar({
             ? __('Ajustes')
             : section === 'platform'
               ? __('Plataforma')
-              : workspaceTitle;
+              : section === 'favorites'
+                ? __('Favoritos')
+                : workspaceTitle;
 
     const toggleCollapsed = (): void => {
         setCollapsed((c) => {
@@ -185,6 +188,12 @@ export function Sidebar({
                 </div>
 
                 <RailItem to="/lists" active={section === 'home'} icon={ListIcon} label={__('Listas')} />
+                <RailItem
+                    to="/favorites"
+                    active={section === 'favorites'}
+                    icon={Star}
+                    label={__('Favoritos')}
+                />
                 {canSeeDashboards && (
                     <RailItem
                         to="/dashboards"
@@ -254,12 +263,6 @@ export function Sidebar({
                 >
                     {section === 'home' && (
                         <>
-                            <FavoritesSection
-                                favs={favs}
-                                lists={lists.data ?? []}
-                                dashboards={dashboards.data ?? []}
-                                onToggle={toggleFav}
-                            />
                             {lists.data && lists.data.length > 0 && (
                                 <PanelSection label={__('Espacio de trabajo')}>
                                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -294,12 +297,6 @@ export function Sidebar({
                                 label={__('Todos los dashboards')}
                                 active={pathname === '/dashboards'}
                             />
-                            <FavoritesSection
-                                favs={favs}
-                                lists={lists.data ?? []}
-                                dashboards={dashboards.data ?? []}
-                                onToggle={toggleFav}
-                            />
                             {dashboards.data && dashboards.data.length > 0 && (
                                 <PanelSection label={__('Tus dashboards')}>
                                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -318,6 +315,15 @@ export function Sidebar({
                             )}
                             {dashboards.isLoading && <PanelLoading />}
                         </>
+                    )}
+
+                    {section === 'favorites' && (
+                        <FavoritesSection
+                            favs={favs}
+                            lists={lists.data ?? []}
+                            dashboards={dashboards.data ?? []}
+                            onToggle={toggleFav}
+                        />
                     )}
 
                     {section === 'settings' && (
@@ -467,9 +473,15 @@ function FavoritesSection({
             .filter((d): d is (typeof dashboards)[number] => d !== undefined)
             .map((d) => ({ key: `d-${d.id}`, to: `/dashboards/${d.id}`, name: d.name, kind: 'dashboards' as const, id: d.id })),
     ];
-    if (items.length === 0) return null;
+    if (items.length === 0) {
+        return (
+            <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
+                {__('Tocá la estrella de una lista o un dashboard en su menú para anclarlo acá.')}
+            </p>
+        );
+    }
     return (
-        <PanelSection label={__('Favoritos')}>
+        <PanelSection label={__('Anclados')}>
             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                 {items.map((it) => (
                     <li key={it.key}>

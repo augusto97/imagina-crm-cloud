@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
 import { SettingsPage as CloudSettingsPage } from '@/cloud/pages/SettingsPage';
+import { FavoritesPage } from '@/admin/favorites/FavoritesPage';
 // Records views se cargan eagerly — son la pantalla home del SPA
 // y casi cualquier flujo aterriza ahí. Lazy-load las pantallas
 // secundarias (dashboards, automations, builder, settings) para que
@@ -71,6 +72,7 @@ export function App(): JSX.Element {
                 <Route path="lists/:listSlug/automations/:automationId" element={
                     <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
                 } />
+                <Route path="favorites" element={<FavoritesPage />} />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>
                 } />

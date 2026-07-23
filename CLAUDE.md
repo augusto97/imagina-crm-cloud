@@ -1389,6 +1389,17 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         anclar lista y dashboard persistidos, drag "Clientes" → posición 3
         con reload, meses reordenados enero/febrero/marzo persistidos).
 
+  - [x] **Favoritos como menú propio del riel (v0.1.108, feedback del
+        usuario)**: los favoritos dejan de ser secciones embebidas en los
+        paneles de Listas/Dashboards — ahora hay un item **"Favoritos"**
+        (estrella) en el riel con su ruta `/favorites`: panel lateral
+        dedicado con SOLO los anclados (mixto, con icono por tipo y
+        desanclar) y página de tarjetas navegables con estado vacío que
+        explica el anclaje. Las estrellas de anclar siguen al hover en los
+        árboles de Listas y Dashboards. E2E navegador 6/6 (item del riel,
+        paneles sin sección embebida, anclado visible en panel+página,
+        desanclar → vacío con hint).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
