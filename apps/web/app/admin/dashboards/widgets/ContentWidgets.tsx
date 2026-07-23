@@ -14,11 +14,14 @@ export function HeadingWidget({ widget }: { widget: WidgetSpec }): JSX.Element {
     const sub = typeof widget.config.subtitle === 'string' ? widget.config.subtitle : '';
     return (
         <div className="imcrm-drag-handle imcrm-flex imcrm-h-full imcrm-cursor-grab imcrm-select-none imcrm-flex-col imcrm-justify-center active:imcrm-cursor-grabbing">
-            <h2 className="imcrm-truncate imcrm-text-lg imcrm-font-semibold imcrm-leading-tight">
+            <h2 className="imcrm-truncate imcrm-text-lg imcrm-font-semibold imcrm-leading-none">
                 {widget.title || __('Sección')}
             </h2>
             {sub !== '' && (
-                <p className="imcrm-mt-0.5 imcrm-truncate imcrm-text-[12px] imcrm-text-muted-foreground">{sub}</p>
+                // <small> queda FUERA del selector de herencia tipográfica
+                // (.imcrm-style-fs :where(p, div, …)) — con letra grande del
+                // panel Diseño el subtítulo heredaba los 28px y desbordaba.
+                <small className="imcrm-mt-0.5 imcrm-block imcrm-truncate imcrm-text-[12px] imcrm-font-normal imcrm-text-muted-foreground">{sub}</small>
             )}
         </div>
     );

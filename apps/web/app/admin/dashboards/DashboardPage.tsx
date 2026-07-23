@@ -467,6 +467,18 @@ export function DashboardPage(): JSX.Element {
                             const style = readBlockStyle(widget.config);
                             const styled = style.bg !== undefined || style.border !== undefined;
                             const chromeless = isContentWidget(widget.type) && !styled;
+                            // v0.1.106 — el default de la capa de estilo
+                            // (fondo → padding md 16px INLINE) recortaba los
+                            // títulos con tipografía grande en cards de 1
+                            // fila: sin un pad ELEGIDO, los bloques de
+                            // contenido capan el padding VERTICAL a 6px (el
+                            // horizontal se conserva). Un pad explícito del
+                            // panel Diseño sigue mandando.
+                            const styleCss = blockStyleCss(style);
+                            if (isContentWidget(widget.type) && style.pad === undefined && styleCss.padding !== undefined) {
+                                styleCss.paddingTop = 6;
+                                styleCss.paddingBottom = 6;
+                            }
                             return (
                             <article
                                 className={cn(
@@ -484,7 +496,7 @@ export function DashboardPage(): JSX.Element {
                                         && 'imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md hover:imcrm-border-primary/25',
                                     blockStyleClass(style),
                                 )}
-                                style={blockStyleCss(style)}
+                                style={styleCss}
                             >
                                 <PeriodBadge widget={widget} />
                                 {! tvMode && (

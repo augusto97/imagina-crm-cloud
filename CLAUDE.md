@@ -1356,6 +1356,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `custom:from:to` + KPI 10→3, Presentar sin chrome + Salir, campo
         renombrado en pestaña B aparece en A sin recargar).
 
+  - [x] **Fix: título del dashboard con letra grande recortado (v0.1.106,
+        reporte del usuario con captura)**: el fix de v0.1.105 (py-1.5) no
+        alcanzaba porque al elegir FONDO la capa de estilo mete
+        `padding: 16px` INLINE (default md) que pisa la clase, y con
+        tipografía 2xl (28px → h2 a 33.6px) el texto no entra en 64−32 px.
+        Ahora los bloques de CONTENIDO sin pad ELEGIDO capan el padding
+        vertical inline a 6px (el horizontal se conserva; un pad explícito
+        del panel Diseño sigue mandando), el h2 usa leading-none y el
+        subtítulo pasa a `<small>` — queda FUERA del selector de herencia
+        tipográfica (`.imcrm-style-fs :where(p, div, …)`) que lo inflaba a
+        28px y lo desbordaba. Verificado en navegador con la config exacta
+        de la captura (2xl+bold+fondo oscuro, con subtítulo, y pad lg
+        explícito respetado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
