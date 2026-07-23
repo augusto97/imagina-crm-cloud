@@ -10,7 +10,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
-import { recordsKeys } from '@/hooks/useRecords';
+import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { viewsKeys } from '@/hooks/useSavedViews';
 
 /**
@@ -45,24 +45,26 @@ export function useRealtime(): void {
         });
 
         function invalidate(ev: RtInvalidate): void {
+            // v0.1.105 — invalidar por ID *y* SLUG (`invalidateForList`): los
+            // eventos traen el id numérico pero RecordsPage registra sus
+            // queries bajo el slug → con la key directa los cambios de
+            // ajustes/campos hechos en otra pestaña (u otro usuario) jamás
+            // refrescaban la lista abierta hasta recargar.
             switch (ev.topic) {
                 case 'lists':
                     void qc.invalidateQueries({ queryKey: listsKeys.all });
                     break;
                 case 'fields':
-                    void qc.invalidateQueries({
-                        queryKey: ev.listId !== undefined ? fieldsKeys.forList(ev.listId) : fieldsKeys.all,
-                    });
+                    if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
+                    else void qc.invalidateQueries({ queryKey: fieldsKeys.all });
                     break;
                 case 'records':
-                    void qc.invalidateQueries({
-                        queryKey: ev.listId !== undefined ? recordsKeys.forList(ev.listId) : recordsKeys.all,
-                    });
+                    if (ev.listId !== undefined) invalidateForList(qc, recordsKeys.all, ev.listId);
+                    else void qc.invalidateQueries({ queryKey: recordsKeys.all });
                     break;
                 case 'views':
-                    void qc.invalidateQueries({
-                        queryKey: ev.listId !== undefined ? viewsKeys.forList(ev.listId) : viewsKeys.all,
-                    });
+                    if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);
+                    else void qc.invalidateQueries({ queryKey: viewsKeys.all });
                     break;
             }
         }

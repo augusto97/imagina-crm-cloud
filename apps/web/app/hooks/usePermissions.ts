@@ -6,6 +6,8 @@ import type {
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
+import { fieldsKeys } from '@/hooks/useFields';
+import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 
 /**
  * ACL por lista (permisos por rol). Endpoints cloud:
@@ -37,6 +39,10 @@ export function useUpdateListPermissions(idOrSlug: string | number) {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: permissionsKeys.forList(idOrSlug) });
+            // v0.1.105 — el ACL cambia qué devuelven records y fields (scope
+            // + campos ocultos): refrescarlos para ver el efecto sin recargar.
+            invalidateForList(qc, recordsKeys.all, idOrSlug);
+            invalidateForList(qc, fieldsKeys.all, idOrSlug);
         },
     });
 }

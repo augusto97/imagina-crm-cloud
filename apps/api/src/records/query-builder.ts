@@ -104,8 +104,18 @@ function compileCondition(
             return op === 'in' ? membership : sql`(${asText} IS NULL OR NOT (${membership}))`;
         }
         case 'between_relative': {
-            const range = computePresetRange(asPreset(cond.value), field.type, now);
             const expr = typedExpr(key, field.type);
+            // v0.1.105 — además del preset relativo, el value acepta un rango
+            // FIJO `{from, to}` (YYYY-MM-DD) para el período personalizado de
+            // dashboards. Para datetime el día "to" incluye hasta las
+            // 23:59:59 (mismo criterio que computePresetRange).
+            const custom = asCustomRange(cond.value);
+            if (custom !== null) {
+                const from = field.type === 'datetime' ? `${custom.from} 00:00:00` : custom.from;
+                const to = field.type === 'datetime' ? `${custom.to} 23:59:59` : custom.to;
+                return sql`(${expr} >= ${from} AND ${expr} <= ${to})`;
+            }
+            const range = computePresetRange(asPreset(cond.value), field.type, now);
             return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
         }
         case 'eq':
@@ -309,6 +319,21 @@ function toArray(value: unknown): unknown[] {
     if (Array.isArray(value)) return value;
     if (value === null || value === undefined) return [];
     return [value];
+}
+
+const CUSTOM_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Rango fijo `{from, to}` (YYYY-MM-DD) del período personalizado, o null. */
+function asCustomRange(value: unknown): { from: string; to: string } | null {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+    const from = (value as { from?: unknown }).from;
+    const to = (value as { to?: unknown }).to;
+    if (typeof from !== 'string' || typeof to !== 'string') return null;
+    if (!CUSTOM_DATE_RE.test(from) || !CUSTOM_DATE_RE.test(to)) {
+        throw new BadRequestException('Rango personalizado inválido (se espera YYYY-MM-DD)');
+    }
+    // Extremos invertidos → se corrigen en vez de devolver 0 filas confusas.
+    return from <= to ? { from, to } : { from: to, to: from };
 }
 
 function asPreset(value: unknown): DateRangePreset {

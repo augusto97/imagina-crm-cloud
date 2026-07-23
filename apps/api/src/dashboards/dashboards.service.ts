@@ -179,9 +179,11 @@ export class DashboardsService {
         periodPreset?: string,
     ): Promise<Record<string, unknown>> {
         const dash = await this.get(tenantId, dashboardId, viewer);
-        // v0.1.100 — filtro global de período: preset válido o nada.
-        const parsed = dateRangePresetSchema.safeParse(periodPreset);
-        const override = parsed.success ? parsed.data : undefined;
+        // v0.1.100 — filtro global de período: preset válido, rango custom
+        // (`custom:from:to`, v0.1.105) o nada.
+        const override = parsePeriodOverride(typeof periodPreset === 'string' ? periodPreset : undefined) !== undefined
+            ? periodPreset
+            : undefined;
         const entries = await Promise.all(
             dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const),
         );
@@ -344,20 +346,50 @@ export class DashboardsService {
  * Compone el filter_tree del widget con su período relativo (si tiene). Un
  * preset desconocido se ignora (no rompe el bundle completo del dashboard).
  */
+const CUSTOM_PERIOD_RE = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/;
+const CUSTOM_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * v0.1.105 — un período puede ser un preset relativo ("this_month") o un
+ * rango FIJO personalizado. El override global viaja como string
+ * `custom:YYYY-MM-DD:YYYY-MM-DD`; el del widget como `{preset:'custom',
+ * from, to}` en su config. Ambos terminan como value del between_relative.
+ */
+function parsePeriodOverride(raw: string | undefined): string | { from: string; to: string } | undefined {
+    if (raw === undefined) return undefined;
+    const m = CUSTOM_PERIOD_RE.exec(raw);
+    if (m) return { from: m[1]!, to: m[2]! };
+    const parsed = dateRangePresetSchema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
+}
+
+function widgetPeriodValue(
+    period: { preset?: unknown; from?: unknown; to?: unknown } | null | undefined,
+): string | { from: string; to: string } | undefined {
+    if (!period) return undefined;
+    if (period.preset === 'custom') {
+        const { from, to } = period;
+        if (typeof from === 'string' && typeof to === 'string' && CUSTOM_DATE_RE.test(from) && CUSTOM_DATE_RE.test(to)) {
+            return { from, to };
+        }
+        return undefined;
+    }
+    const parsed = dateRangePresetSchema.safeParse(period.preset);
+    return parsed.success ? parsed.data : undefined;
+}
+
 function withPeriod(cfg: Record<string, unknown>, override?: string): AggregateRequest['filter_tree'] {
     const base = cfg.filter_tree as AggregateRequest['filter_tree'];
-    const period = cfg.period as { field_id?: unknown; preset?: unknown } | null | undefined;
+    const period = cfg.period as { field_id?: unknown; preset?: unknown; from?: unknown; to?: unknown } | null | undefined;
     // v0.1.100 — el override GLOBAL pisa el preset del widget. Aplica sobre el
     // campo del período del widget o, si no tiene, sobre su campo de fecha
     // (date_field_id de tendencias/delta). Sin campo de fecha, no aplica.
-    const overrideParsed = dateRangePresetSchema.safeParse(override);
+    const overrideValue = parsePeriodOverride(override);
     const fieldId = numOrUndef(period?.field_id)
-        ?? (overrideParsed.success ? numOrUndef(cfg.date_field_id) : undefined);
-    const preset = overrideParsed.success
-        ? overrideParsed
-        : dateRangePresetSchema.safeParse(period?.preset);
-    if (fieldId === undefined || !preset.success) return base;
-    const cond: FilterNode = { type: 'condition', field_id: fieldId, op: 'between_relative', value: preset.data };
+        ?? (overrideValue !== undefined ? numOrUndef(cfg.date_field_id) : undefined);
+    const value = overrideValue ?? widgetPeriodValue(period);
+    if (fieldId === undefined || value === undefined) return base;
+    const cond: FilterNode = { type: 'condition', field_id: fieldId, op: 'between_relative', value };
     const children: FilterNode[] = base ? [base, cond] : [cond];
     return { type: 'group', logic: 'and', children };
 }

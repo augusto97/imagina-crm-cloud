@@ -87,6 +87,11 @@ export function WidgetFormDialog({
     const [timeBucket, setTimeBucket] = useState<ChartTimeBucket>('month');
     const [periodFieldId, setPeriodFieldId] = useState<number>(0);
     const [periodPreset, setPeriodPreset] = useState<DateRangePresetId | ''>('');
+    // v0.1.105 — extremos del período personalizado (preset 'custom').
+    const [periodFrom, setPeriodFrom] = useState<string>('');
+    const [periodTo, setPeriodTo] = useState<string>('');
+    // v0.1.105 — etiqueta del centro del donut (default "Total").
+    const [centerLabel, setCenterLabel] = useState<string>('');
     const [filterTree, setFilterTree] = useState<FilterTree>({
         type: 'group',
         logic: 'and',
@@ -171,10 +176,19 @@ export function WidgetFormDialog({
             if (period && typeof period === 'object' && period.field_id > 0) {
                 setPeriodFieldId(period.field_id);
                 setPeriodPreset(period.preset as DateRangePresetId);
+                setPeriodFrom(period.from ?? '');
+                setPeriodTo(period.to ?? '');
             } else {
                 setPeriodFieldId(0);
                 setPeriodPreset('');
+                setPeriodFrom('');
+                setPeriodTo('');
             }
+            setCenterLabel(
+                typeof (initial.config as { center_label?: unknown }).center_label === 'string'
+                    ? ((initial.config as { center_label?: string }).center_label as string)
+                    : '',
+            );
             setFilterTree(decodeWidgetFilters(initial.config));
         } else {
             setTitle('');
@@ -203,6 +217,9 @@ export function WidgetFormDialog({
             setTimeBucket('month');
             setPeriodFieldId(0);
             setPeriodPreset('');
+            setPeriodFrom('');
+            setPeriodTo('');
+            setCenterLabel('');
             setFilterTree({ type: 'group', logic: 'and', children: [] });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,7 +247,11 @@ export function WidgetFormDialog({
                 timeBucket,
                 period:
                     periodFieldId > 0 && periodPreset !== ''
-                        ? { field_id: periodFieldId, preset: periodPreset }
+                        ? periodPreset === 'custom'
+                            ? (periodFrom !== '' && periodTo !== ''
+                                ? { field_id: periodFieldId, preset: 'custom', from: periodFrom, to: periodTo }
+                                : null)
+                            : { field_id: periodFieldId, preset: periodPreset }
                         : null,
             });
         // La capa de estilo viaja en config.style para TODOS los tipos.
@@ -239,6 +260,11 @@ export function WidgetFormDialog({
         if (type === 'chart_bar' || type === 'chart_pie' || type === 'funnel') {
             delete config.hide_zero_groups;
             if (hideZeroGroups) config.hide_zero_groups = true;
+        }
+        // v0.1.105 — etiqueta del centro del donut (vacía = "Total").
+        if (type === 'chart_pie') {
+            delete (config as { center_label?: string }).center_label;
+            if (centerLabel.trim() !== '') (config as { center_label?: string }).center_label = centerLabel.trim();
         }
         // v0.1.99 — extras del KPI/gauge (icono, prefijo/sufijo, meta, spark).
         if (type === 'kpi' || type === 'gauge') {
@@ -514,6 +540,21 @@ export function WidgetFormDialog({
                             />
                         )}
 
+                        {type === 'chart_pie' && (
+                            <div className="imcrm-grid imcrm-gap-1.5">
+                                <Label htmlFor="pie-center-label" className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {__('Etiqueta del centro')}
+                                </Label>
+                                <Input
+                                    id="pie-center-label"
+                                    value={centerLabel}
+                                    onChange={(e) => setCenterLabel(e.target.value)}
+                                    placeholder={__('Total')}
+                                    maxLength={24}
+                                />
+                            </div>
+                        )}
+
                         {type === 'stat_delta' && (
                             <StatDeltaConfig
                                 metric={metric}
@@ -578,8 +619,12 @@ export function WidgetFormDialog({
                                 fields={dateFields}
                                 fieldId={periodFieldId}
                                 preset={periodPreset}
+                                from={periodFrom}
+                                to={periodTo}
                                 onFieldChange={setPeriodFieldId}
                                 onPresetChange={setPeriodPreset}
+                                onFromChange={setPeriodFrom}
+                                onToChange={setPeriodTo}
                             />
                         )}
 
@@ -1020,8 +1065,12 @@ interface PeriodPickerProps {
     fields: Array<{ id: number; label: string }>;
     fieldId: number;
     preset: DateRangePresetId | '';
+    from: string;
+    to: string;
     onFieldChange: (id: number) => void;
     onPresetChange: (id: DateRangePresetId | '') => void;
+    onFromChange: (v: string) => void;
+    onToChange: (v: string) => void;
 }
 
 /**
@@ -1039,10 +1088,16 @@ function PeriodPicker({
     fields,
     fieldId,
     preset,
+    from,
+    to,
     onFieldChange,
     onPresetChange,
+    onFromChange,
+    onToChange,
 }: PeriodPickerProps): JSX.Element {
-    const presets = DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom');
+    // v0.1.105 — 'Personalizado' habilitado: rango fijo con fecha
+    // inicio/fin (antes se filtraba de la lista).
+    const presets = DATE_RANGE_PRESETS;
     const enabled = fieldId > 0 && preset !== '';
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-p-3">
@@ -1087,8 +1142,29 @@ function PeriodPicker({
                     ))}
                 </Select>
             </div>
+            {preset === 'custom' && (
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <input
+                        type="date"
+                        value={from}
+                        onChange={(e) => onFromChange(e.target.value)}
+                        aria-label={__('Desde')}
+                        className="imcrm-h-8 imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                    />
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">→</span>
+                    <input
+                        type="date"
+                        value={to}
+                        onChange={(e) => onToChange(e.target.value)}
+                        aria-label={__('Hasta')}
+                        className="imcrm-h-8 imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                    />
+                </div>
+            )}
             <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                {__('Limita el widget a un rango relativo. Se recalcula en cada carga del dashboard — "este mes" será siempre el mes actual.')}
+                {preset === 'custom'
+                    ? __('Rango fijo: el widget muestra solo los registros entre esas dos fechas (inclusive).')
+                    : __('Limita el widget a un rango relativo. Se recalcula en cada carga del dashboard — "este mes" será siempre el mes actual.')}
             </p>
         </div>
     );
