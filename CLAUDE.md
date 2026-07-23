@@ -1400,6 +1400,16 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         paneles sin sección embebida, anclado visible en panel+página,
         desanclar → vacío con hint).
 
+  - [x] **Pin neutro en favoritos (v0.1.109, feedback del usuario: "esa
+        estrellita amarilla resalta demasiado")**: la estrella ámbar con
+        relleno se reemplaza por un **pin outline neutro** (lucide `Pin`,
+        sin fill) en TODAS las superficies — riel, botones de anclar al
+        hover de los árboles (anclado = visible fijo en tinta suave, sin
+        anclar = aparece al hover en muted), tarjetas de la página
+        Favoritos y estado vacío; los textos dicen "pin" en vez de
+        "estrella". E2E navegador 5/5 (icono pin en riel/botones/tarjeta,
+        cero clases ámbar/fill, round-trip anclar-desanclar intacto).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

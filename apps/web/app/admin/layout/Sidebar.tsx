@@ -9,8 +9,8 @@ import {
     Loader2,
     Settings,
     ShieldAlert,
+    Pin,
     Sparkles,
-    Star,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -191,7 +191,7 @@ export function Sidebar({
                 <RailItem
                     to="/favorites"
                     active={section === 'favorites'}
-                    icon={Star}
+                    icon={Pin}
                     label={__('Favoritos')}
                 />
                 {canSeeDashboards && (
@@ -476,7 +476,7 @@ function FavoritesSection({
     if (items.length === 0) {
         return (
             <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Tocá la estrella de una lista o un dashboard en su menú para anclarlo acá.')}
+                {__('Tocá el pin de una lista o un dashboard en su menú para anclarlo acá.')}
             </p>
         );
     }
@@ -551,12 +551,15 @@ function StarrableLink({
                 aria-pressed={starred}
                 className={cn(
                     'imcrm-absolute imcrm-right-1.5 imcrm-top-1/2 -imcrm-translate-y-1/2 imcrm-rounded imcrm-p-1 imcrm-transition-opacity',
+                    // v0.1.109 — pin NEUTRO sin relleno (la estrella ámbar
+                    // resaltaba demasiado): anclado = visible fijo en tinta
+                    // suave; sin anclar = aparece al hover en muted.
                     starred
-                        ? 'imcrm-text-amber-500 imcrm-opacity-100'
-                        : 'imcrm-text-muted-foreground imcrm-opacity-0 hover:imcrm-text-amber-500 group-hover/fav:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                        ? 'imcrm-text-foreground/70 imcrm-opacity-100 hover:imcrm-text-foreground'
+                        : 'imcrm-text-muted-foreground imcrm-opacity-0 hover:imcrm-text-foreground group-hover/fav:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
                 )}
             >
-                <Star className={cn('imcrm-h-3.5 imcrm-w-3.5', starred && 'imcrm-fill-current')} />
+                <Pin className="imcrm-h-3.5 imcrm-w-3.5" />
             </button>
         </div>
     );

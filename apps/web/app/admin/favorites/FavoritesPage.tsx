@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { BarChart3, List as ListIcon, Star } from 'lucide-react';
+import { BarChart3, List as ListIcon, Pin } from 'lucide-react';
 
 import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { useDashboards } from '@/hooks/useDashboards';
@@ -8,9 +8,10 @@ import { __ } from '@/lib/i18n';
 
 /**
  * v0.1.108 — Página del menú "Favoritos" del riel: SOLO los elementos que el
- * usuario ancló (listas y dashboards), como tarjetas navegables. La estrella
- * de cada tarjeta desancla. El anclaje se hace desde los árboles de Listas /
- * Dashboards (estrella al hover) — acá se explica en el estado vacío.
+ * usuario ancló (listas y dashboards), como tarjetas navegables. El pin de
+ * cada tarjeta desancla. El anclaje se hace desde los árboles de Listas /
+ * Dashboards (pin al hover, neutro sin relleno — v0.1.109) — acá se explica
+ * en el estado vacío.
  */
 export function FavoritesPage(): JSX.Element {
     const favorites = useFavorites();
@@ -56,11 +57,11 @@ export function FavoritesPage(): JSX.Element {
             {items.length === 0 ? (
                 <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-12 imcrm-text-center">
                     <span className="imcrm-flex imcrm-h-12 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
-                        <Star className="imcrm-h-6 imcrm-w-6" />
+                        <Pin className="imcrm-h-6 imcrm-w-6" />
                     </span>
                     <h2 className="imcrm-text-base imcrm-font-medium">{__('Todavía no anclaste nada')}</h2>
                     <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Pasá el mouse sobre una lista o un dashboard en el menú lateral y tocá la estrella para anclarlo acá.')}
+                        {__('Pasá el mouse sobre una lista o un dashboard en el menú lateral y tocá el pin para anclarlo acá.')}
                     </p>
                 </div>
             ) : (
@@ -86,9 +87,9 @@ export function FavoritesPage(): JSX.Element {
                                 onClick={it.unpin}
                                 aria-label={__('Quitar de favoritos')}
                                 title={__('Quitar de favoritos')}
-                                className="imcrm-absolute imcrm-right-3 imcrm-top-3 imcrm-rounded imcrm-p-1 imcrm-text-amber-500 hover:imcrm-bg-accent"
+                                className="imcrm-absolute imcrm-right-3 imcrm-top-3 imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
                             >
-                                <Star className="imcrm-h-4 imcrm-w-4 imcrm-fill-current" />
+                                <Pin className="imcrm-h-4 imcrm-w-4" />
                             </button>
                         </div>
                     ))}
