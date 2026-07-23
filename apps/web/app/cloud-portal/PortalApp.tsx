@@ -8,6 +8,7 @@ import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
 import { PortalRenderer, type PortalRendererData } from '@/portal/PortalRenderer';
+import { setTenantFormat } from '@/lib/tenantFormat';
 import type { PortalBlock, PortalBootData } from '@/portal/types';
 
 /**
@@ -73,6 +74,11 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
     // que el admin — re-pintamos los tokens del tema con el color del tenant).
     // Defensivo ante un boot sin branding (respuesta cacheada de una versión previa).
     const branding = boot.branding ?? { primary_color: null, app_name: null, logo_url: null };
+    // v0.1.104 — el cliente ve montos/fechas con el formato regional de la
+    // empresa (misma capa que el admin; tolerante a boots viejos sin format).
+    useEffect(() => {
+        setTenantFormat(boot.format ?? null);
+    }, [boot.format]);
     useEffect(() => {
         const root = document.documentElement;
         const hsl = branding.primary_color ? hexToHslTriplet(branding.primary_color) : null;

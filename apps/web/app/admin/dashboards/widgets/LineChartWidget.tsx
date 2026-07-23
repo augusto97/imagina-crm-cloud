@@ -3,6 +3,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -206,7 +207,7 @@ function SparkLine({
                             className="imcrm-fill-muted-foreground"
                             style={{ fontSize: 9 }}
                         >
-                            {max.toLocaleString()}
+                            {formatNumber(max)}
                         </text>
 
                         {area && areaPath !== '' && <path d={areaPath} fill={`url(#imcrm-area-${gradId})`} />}
@@ -243,7 +244,7 @@ function SparkLine({
                                 stroke="hsl(var(--imcrm-card))"
                                 strokeWidth="1.5"
                             >
-                                <title>{`${p.label}: ${p.value.toLocaleString()}`}</title>
+                                <title>{`${p.label}: ${formatNumber(p.value)}`}</title>
                             </circle>
                         ))}
                         {showLabels && points.map((p) => (
@@ -255,7 +256,7 @@ function SparkLine({
                                 className="imcrm-fill-foreground"
                                 style={{ fontSize: 10, fontWeight: 600 }}
                             >
-                                {p.value.toLocaleString()}
+                                {formatNumber(p.value)}
                             </text>
                         ))}
                     </svg>

@@ -26,29 +26,19 @@ describe('fieldPrecision', () => {
 
 describe('formatFieldNumber', () => {
     it('currency con precision 0 → sin decimales (el reporte del usuario)', () => {
-        expect(formatFieldNumber(currency({ precision: 0 }), 1032000)).toBe(
-            (1032000).toLocaleString(undefined, { maximumFractionDigits: 0 }),
-        );
+        expect(formatFieldNumber(currency({ precision: 0 }), 1032000)).toBe('1,032,000');
         // Y no contiene separador decimal con dígitos tras él.
         expect(formatFieldNumber(currency({ precision: 0 }), 450000)).not.toMatch(/[.,]00$/);
     });
 
     it('currency sin precision configurada conserva 2 decimales fijos', () => {
-        expect(formatFieldNumber(currency({}), 50)).toBe(
-            (50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        );
+        expect(formatFieldNumber(currency({}), 50)).toBe('50.00');
     });
 
     it('number no rellena ceros: hasta precision decimales', () => {
-        expect(formatFieldNumber(number({ precision: 2 }), 10)).toBe(
-            (10).toLocaleString(undefined, { maximumFractionDigits: 0 }),
-        );
-        expect(formatFieldNumber(number({ precision: 2 }), 10.5)).toBe(
-            (10.5).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-        );
+        expect(formatFieldNumber(number({ precision: 2 }), 10)).toBe('10');
+        expect(formatFieldNumber(number({ precision: 2 }), 10.5)).toBe('10.5');
         // precision 0 redondea la fracción.
-        expect(formatFieldNumber(number({ precision: 0 }), 10.6)).toBe(
-            (11).toLocaleString(undefined, { maximumFractionDigits: 0 }),
-        );
+        expect(formatFieldNumber(number({ precision: 0 }), 10.6)).toBe('11');
     });
 });

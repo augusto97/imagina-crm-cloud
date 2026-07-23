@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -202,10 +203,9 @@ export function TableView({
                 cell: (ctx) => {
                     const v = String(ctx.getValue() ?? '');
                     if (!v) return null;
-                    const d = new Date(v + 'Z');
                     return (
                         <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {d.toLocaleString()}
+                            {formatDateTimeStr(v)}
                         </span>
                     );
                 },

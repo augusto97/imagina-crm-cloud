@@ -2,10 +2,13 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import {
     brandingSchema,
     stylePresetsSchema,
+    tenantFormatSchema,
     type BlockStylePreset,
     type Branding,
     type BrandingResponse,
+    type TenantFormat,
     type UpdateBrandingInput,
+    type UpdateTenantFormatInput,
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { attachments, tenants } from '../db/schema';
@@ -32,7 +35,7 @@ export class BrandingService {
             tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
         );
         const branding = parseBranding(row?.settings);
-        return this.withLogoUrl(tenantId, branding);
+        return this.withLogoUrl(tenantId, branding, parseFormat(row?.settings));
     }
 
     async update(tenantId: number, patch: UpdateBrandingInput): Promise<BrandingResponse> {
@@ -68,9 +71,40 @@ export class BrandingService {
                 .update(tenants)
                 .set({ settings, updatedAt: new Date() })
                 .where(eq(tenants.id, tenantId));
+            return { merged, format: parseFormat(settings) };
+        });
+        return this.withLogoUrl(tenantId, next.merged, next.format);
+    }
+
+    /**
+     * v0.1.104 — Formato regional del workspace (separadores de número,
+     * orden de fecha y reloj 12/24 h). Vive en `tenants.settings.format`;
+     * viaja dentro del branding (que TODO miembro ya trae al bootear) para
+     * no sumar un request al arranque.
+     */
+    async getFormat(tenantId: number): Promise<TenantFormat> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1),
+        );
+        return parseFormat(row?.settings);
+    }
+
+    async setFormat(tenantId: number, patch: UpdateTenantFormatInput): Promise<TenantFormat> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: tenants.settings })
+                .from(tenants)
+                .where(eq(tenants.id, tenantId))
+                .limit(1);
+            const settings = { ...(row?.settings ?? {}) };
+            const merged: TenantFormat = { ...parseFormat(settings), ...patch };
+            settings.format = merged;
+            await tx
+                .update(tenants)
+                .set({ settings, updatedAt: new Date() })
+                .where(eq(tenants.id, tenantId));
             return merged;
         });
-        return this.withLogoUrl(tenantId, next);
     }
 
     /**
@@ -106,7 +140,7 @@ export class BrandingService {
         });
     }
 
-    private withLogoUrl(tenantId: number, branding: Branding): BrandingResponse {
+    private withLogoUrl(tenantId: number, branding: Branding, format: TenantFormat): BrandingResponse {
         return {
             ...branding,
             // TTL 24h: el boot refetchea el branding en cada recarga, así
@@ -115,6 +149,7 @@ export class BrandingService {
                 branding.logo_file_id !== null
                     ? this.files.signedUrl(tenantId, branding.logo_file_id, 86_400)
                     : null,
+            format,
         };
     }
 }
@@ -122,5 +157,10 @@ export class BrandingService {
 function parseBranding(settings: Record<string, unknown> | undefined | null): Branding {
     const parsed = brandingSchema.safeParse((settings as Record<string, unknown> | undefined)?.branding ?? {});
     return parsed.success ? parsed.data : brandingSchema.parse({});
+}
+
+function parseFormat(settings: Record<string, unknown> | undefined | null): TenantFormat {
+    const parsed = tenantFormatSchema.safeParse((settings as Record<string, unknown> | undefined)?.format ?? {});
+    return parsed.success ? parsed.data : tenantFormatSchema.parse({});
 }
 

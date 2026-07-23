@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { idSchema } from './common';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
-import { publicBrandingSchema } from './tenant';
+import { publicBrandingSchema, tenantFormatSchema } from './tenant';
 
 /**
  * Portal del cliente (CONTRACT.md §9): un usuario rol `client` vinculado a UN
@@ -22,6 +22,8 @@ export const portalBootSchema = z.object({
     template_page: z.record(z.unknown()).nullable().default(null),
     /** White-label del workspace (logo por URL firmada — rol client). */
     branding: publicBrandingSchema.default({ primary_color: null, app_name: null, logo_url: null }),
+    /** v0.1.104 — formato regional del workspace (números/fecha/hora). */
+    format: tenantFormatSchema.default({}),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 

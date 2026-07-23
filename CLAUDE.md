@@ -1303,6 +1303,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contains vip AND contains promo → 1 registro; click en "(sin
         valor)" → is_null → 66).
 
+  - [x] **Formato regional por empresa (v0.1.104, pedido del usuario: "en
+        Latinoamérica usamos punto para miles y no coma")**: cada workspace
+        configura cómo se muestran números, fechas y horas. Shared:
+        `tenantFormatSchema` (`number_format` comma_dot/dot_comma/space_comma,
+        `date_format` ymd/dmy/mdy, `time_format` h24/h12; defaults = el
+        comportamiento histórico). Vive en `tenants.settings.format` (sin
+        migración) y VIAJA dentro del branding (que todo miembro ya trae al
+        bootear — cero requests extra); endpoints GET/PATCH
+        `/workspaces/current/format` (PATCH admin) y el portal lo recibe en
+        `portal.me` (el cliente ve los montos igual que la empresa). Front:
+        `lib/tenantFormat.ts` — estado de módulo (los helpers son funciones
+        puras llamadas en render) con `formatNumber` (base en-US + mapeo de
+        separadores → no depende del locale del navegador), `formatDateStr`
+        (sin parsear Date: cero shift de zona), `formatDateTimeStr` (naive-UTC
+        → local) y `numberFormatLocale` (para Intl con símbolo de moneda);
+        aplicado en TODAS las superficies: tabla (celdas, updated_at, labels
+        de grupo, footer de agregados), ficha/modal (FieldValueDisplay,
+        RightRail), dashboards (KPI/gauge/delta/charts/tabla) y portal
+        (ClientDataBlock). Card "Formato regional" en Ajustes (solo admin,
+        3 selects + vista previa en vivo, con guard anti-race: la
+        hidratación del query no pisa una selección ya tocada). 9 tests
+        front (35 en verde) + 1 test API (325) + E2E navegador 8/8 (cambiar
+        a punto-miles + DD/MM → preview en vivo, guardado, la tabla muestra
+        "1.032.000" y "31/12/2026" — también el updated_at "23/07/2026
+        14:45" —, reset vuelve al histórico).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

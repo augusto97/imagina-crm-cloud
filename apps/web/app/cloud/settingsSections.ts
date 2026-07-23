@@ -1,6 +1,7 @@
 import {
     CreditCard,
     Gauge,
+    Globe,
     Mail,
     Palette,
     PenLine,
@@ -21,6 +22,7 @@ export type SettingsSectionId =
     | 'suscripcion'
     | 'miembros'
     | 'marca'
+    | 'formato'
     | 'correo'
     | 'firma';
 
@@ -38,6 +40,7 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
                           { id: 'suscripcion', label: 'Suscripción', icon: CreditCard },
                           { id: 'miembros', label: 'Miembros', icon: Users },
                           { id: 'marca', label: 'Marca', icon: Palette },
+                          { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
                       ] satisfies SettingsSectionItem[])
                     : []),

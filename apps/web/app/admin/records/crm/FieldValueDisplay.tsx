@@ -4,6 +4,7 @@ import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
+import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
@@ -107,7 +108,8 @@ function DateDisplay({ value, kind }: { value: unknown; kind: 'date' | 'datetime
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return <span>{value}</span>;
 
-    const absolute = kind === 'date' ? d.toLocaleDateString() : d.toLocaleString();
+    // v0.1.104 — orden de fecha y reloj según el formato del workspace.
+    const absolute = kind === 'date' ? formatDateStr(value) : formatDateTimeStr(value);
     const rel = relativeTimeFrom(d);
 
     return (
@@ -253,10 +255,7 @@ function ComputedDisplay({ field, value }: { field: FieldEntity; value: unknown 
         const decimals = cfg.decimals ?? 2;
         return (
             <span className="imcrm-tabular-nums">
-                {value.toLocaleString(undefined, {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: decimals,
-                })}
+                {formatNumber(value, { maxFrac: decimals })}
             </span>
         );
     }

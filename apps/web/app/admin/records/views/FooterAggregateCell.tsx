@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { AggregateBag } from '@/hooks/useAggregates';
 import { fieldPrecision } from '@/lib/fieldNumberFormat';
+import { formatNumber } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -219,13 +220,13 @@ function formatAggregate(
     // configurados del campo (`config.precision`) — avg permite hasta 2
     // extra para no perder la fracción de un promedio de enteros.
     const int = (n: number | null | undefined): string =>
-        n === null || n === undefined ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+        n === null || n === undefined ? '—' : formatNumber(n, { maxFrac: 0 });
     const num = (n: number | null | undefined, extra = 0): string => {
         if (n === null || n === undefined) return '—';
         const p = fieldPrecision(field);
-        return n.toLocaleString(undefined, {
-            minimumFractionDigits: field.type === 'currency' ? p : 0,
-            maximumFractionDigits: Math.max(p, extra),
+        return formatNumber(n, {
+            minFrac: field.type === 'currency' ? p : 0,
+            maxFrac: Math.max(p, extra),
         });
     };
     const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;

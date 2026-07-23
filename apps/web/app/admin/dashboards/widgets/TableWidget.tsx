@@ -3,6 +3,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
+import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 import { useWidgetData } from '@/hooks/useDashboards';
 import type { FieldEntity } from '@/types/field';
@@ -118,20 +119,16 @@ function formatCell(type: string, value: unknown, field?: FieldEntity): React.Re
         return value === '1' || value === 1 || value === true ? '✓' : '—';
     }
     if (type === 'datetime' && typeof value === 'string') {
-        try {
-            return new Date(value + 'Z').toLocaleString();
-        } catch {
-            return value;
-        }
+        return formatDateTimeStr(value);
     }
     if (type === 'date' && typeof value === 'string') {
-        return value;
+        return formatDateStr(value);
     }
     if ((type === 'currency' || type === 'number') && typeof value === 'number') {
         // Respeta los decimales configurados del campo si lo tenemos a mano
         // (`config.precision`); sin field cae a entero con separador de miles.
         if (field !== undefined) return formatFieldNumber(field, value);
-        return value.toLocaleString();
+        return formatNumber(value);
     }
     if (type === 'select' && typeof value === 'string') {
         // Chip con el color real de la opción — coherente con la tabla

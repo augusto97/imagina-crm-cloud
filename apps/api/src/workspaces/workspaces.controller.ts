@@ -4,6 +4,7 @@ import {
     smtpConfigSchema,
     updateBrandingSchema,
     updateStylePresetsSchema,
+    updateTenantFormatSchema,
     type BlockStylePreset,
     type UpdateStylePresetsInput,
     type CustomDomainInput,
@@ -13,7 +14,9 @@ import {
     type BrandingResponse,
     type MembershipSummary,
     type TenantDomain,
+    type TenantFormat,
     type UpdateBrandingInput,
+    type UpdateTenantFormatInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from '../auth/auth.service';
@@ -78,6 +81,26 @@ export class WorkspacesController {
     ): Promise<BrandingResponse> {
         this.assertAdmin(req);
         return this.branding.update(req.tenant!.tenantId, patch);
+    }
+
+    /**
+     * v0.1.104 — Formato regional del workspace (números/fecha/hora).
+     * GET lo lee cualquier miembro; editar es solo admin.
+     */
+    @Get('current/format')
+    @UseGuards(TenantGuard)
+    getFormat(@Req() req: FastifyRequest): Promise<TenantFormat> {
+        return this.branding.getFormat(req.tenant!.tenantId);
+    }
+
+    @Patch('current/format')
+    @UseGuards(TenantGuard)
+    updateFormat(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(updateTenantFormatSchema)) patch: UpdateTenantFormatInput,
+    ): Promise<TenantFormat> {
+        this.assertAdmin(req);
+        return this.branding.setFormat(req.tenant!.tenantId, patch);
     }
 
     /**
