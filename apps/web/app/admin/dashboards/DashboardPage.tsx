@@ -89,6 +89,21 @@ export function DashboardPage(): JSX.Element {
             return '';
         }
     });
+    // v0.1.105 — período PERSONALIZADO (rango fijo): el valor viaja como
+    // `custom:YYYY-MM-DD:YYYY-MM-DD` en el mismo string del período global.
+    const customInit = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/.exec(
+        (() => { try { return localStorage.getItem(`imcrm-dash-period-${id}`) ?? ''; } catch { return ''; } })(),
+    );
+    const [customOpen, setCustomOpen] = useState<boolean>(customInit !== null);
+    const [customFrom, setCustomFrom] = useState<string>(customInit?.[1] ?? '');
+    const [customTo, setCustomTo] = useState<string>(customInit?.[2] ?? '');
+    const applyCustom = (from: string, to: string): void => {
+        setCustomFrom(from);
+        setCustomTo(to);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
+            changeGlobalPeriod(`custom:${from}:${to}`);
+        }
+    };
     const changeGlobalPeriod = (preset: string): void => {
         setGlobalPeriod(preset);
         try {
@@ -115,6 +130,9 @@ export function DashboardPage(): JSX.Element {
     }, [tvMode, id, globalPeriod, qc]);
     const enterTv = (): void => {
         void rootRef.current?.requestFullscreen?.().catch(() => undefined);
+    };
+    const exitTv = (): void => {
+        void document.exitFullscreen?.().catch(() => undefined);
     };
 
     const handleAddWidget = (): void => {
@@ -309,6 +327,7 @@ export function DashboardPage(): JSX.Element {
                         {d.user_id === null && (
                             <Badge variant="outline">{__('Compartido')}</Badge>
                         )}
+                        {! tvMode && (
                         <button
                             type="button"
                             onClick={() => setSettingsDialogOpen(true)}
@@ -318,29 +337,45 @@ export function DashboardPage(): JSX.Element {
                         >
                             <Pencil className="imcrm-h-4 imcrm-w-4" />
                         </button>
+                        )}
                     </h1>
                     {d.description && (
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">{d.description}</p>
                     )}
                 </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    <Button
-                        variant="outline"
-                        className="imcrm-gap-2"
-                        onClick={() => setSettingsDialogOpen(true)}
-                    >
-                        <Settings className="imcrm-h-4 imcrm-w-4" />
-                        {__('Editar')}
-                    </Button>
-                    <Button variant="outline" className="imcrm-gap-2 imcrm-text-destructive" onClick={handleDeleteDashboard}>
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        {__('Eliminar')}
-                    </Button>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                    {/* v0.1.105 — en modo presentación se OCULTA el chrome de
+                      * edición: queda el período y un botón para SALIR. */}
+                    {! tvMode && (
+                        <>
+                            <Button
+                                variant="outline"
+                                className="imcrm-gap-2"
+                                onClick={() => setSettingsDialogOpen(true)}
+                            >
+                                <Settings className="imcrm-h-4 imcrm-w-4" />
+                                {__('Editar')}
+                            </Button>
+                            <Button variant="outline" className="imcrm-gap-2 imcrm-text-destructive" onClick={handleDeleteDashboard}>
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                {__('Eliminar')}
+                            </Button>
+                        </>
+                    )}
                     {/* v0.1.100 — período global: pisa el período de los
                       * widgets con campo de fecha. '' = cada widget el suyo. */}
                     <Select
-                        value={globalPeriod}
-                        onChange={(e) => changeGlobalPeriod(e.target.value)}
+                        value={customOpen ? 'custom' : globalPeriod}
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === 'custom') {
+                                setCustomOpen(true);
+                                if (customFrom !== '' && customTo !== '') applyCustom(customFrom, customTo);
+                            } else {
+                                setCustomOpen(false);
+                                changeGlobalPeriod(v);
+                            }
+                        }}
                         className="imcrm-h-9 imcrm-w-auto"
                         aria-label={__('Período global')}
                         title={__('Período global del tablero')}
@@ -349,21 +384,57 @@ export function DashboardPage(): JSX.Element {
                         {DATE_RANGE_PRESETS.filter((p) => p.id !== 'custom').map((p) => (
                             <option key={p.id} value={p.id}>{p.label}</option>
                         ))}
+                        <option value="custom">{__('Personalizado…')}</option>
                     </Select>
-                    <Button
-                        variant="outline"
-                        className="imcrm-gap-2"
-                        onClick={enterTv}
-                        title={__('Modo presentación (pantalla completa + refresco automático)')}
-                    >
-                        <MonitorPlay className="imcrm-h-4 imcrm-w-4" />
-                        {__('Presentar')}
-                    </Button>
-                    <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
-                    <Button onClick={handleAddWidget} className="imcrm-gap-2">
-                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                        {__('Añadir widget')}
-                    </Button>
+                    {customOpen && (
+                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                            <input
+                                type="date"
+                                value={customFrom}
+                                onChange={(e) => applyCustom(e.target.value, customTo)}
+                                aria-label={__('Desde')}
+                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                            />
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">→</span>
+                            <input
+                                type="date"
+                                value={customTo}
+                                onChange={(e) => applyCustom(customFrom, e.target.value)}
+                                aria-label={__('Hasta')}
+                                className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
+                            />
+                        </span>
+                    )}
+                    {tvMode ? (
+                        <Button
+                            variant="outline"
+                            className="imcrm-gap-2"
+                            onClick={exitTv}
+                            title={__('Salir del modo presentación')}
+                        >
+                            <MonitorPlay className="imcrm-h-4 imcrm-w-4" />
+                            {__('Salir')}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            className="imcrm-gap-2"
+                            onClick={enterTv}
+                            title={__('Modo presentación (pantalla completa + refresco automático)')}
+                        >
+                            <MonitorPlay className="imcrm-h-4 imcrm-w-4" />
+                            {__('Presentar')}
+                        </Button>
+                    )}
+                    {! tvMode && (
+                        <>
+                            <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
+                            <Button onClick={handleAddWidget} className="imcrm-gap-2">
+                                <Plus className="imcrm-h-4 imcrm-w-4" />
+                                {__('Añadir widget')}
+                            </Button>
+                        </>
+                    )}
                 </div>
             </header>
 
@@ -401,8 +472,14 @@ export function DashboardPage(): JSX.Element {
                                 className={cn(
                                     'imcrm-group imcrm-relative imcrm-flex imcrm-h-full imcrm-flex-col imcrm-overflow-hidden imcrm-transition-shadow imcrm-duration-200',
                                     chromeless
-                                        ? 'imcrm-rounded-xl imcrm-p-2'
-                                        : 'imcrm-rounded-xl imcrm-p-4',
+                                        ? 'imcrm-rounded-xl imcrm-px-2 imcrm-py-1'
+                                        // v0.1.105 — los bloques de CONTENIDO con estilo
+                                        // (título de sección pintado) usan menos padding
+                                        // vertical: con p-4 el texto quedaba CORTADO en
+                                        // alturas de 1 fila.
+                                        : isContentWidget(widget.type)
+                                          ? 'imcrm-rounded-xl imcrm-px-4 imcrm-py-1.5'
+                                          : 'imcrm-rounded-xl imcrm-p-4',
                                     !chromeless && !styled
                                         && 'imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md hover:imcrm-border-primary/25',
                                     blockStyleClass(style),
@@ -410,6 +487,7 @@ export function DashboardPage(): JSX.Element {
                                 style={blockStyleCss(style)}
                             >
                                 <PeriodBadge widget={widget} />
+                                {! tvMode && (
                                 <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100">
                                     <button
                                         type="button"
@@ -437,6 +515,7 @@ export function DashboardPage(): JSX.Element {
                                         <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                     </button>
                                 </div>
+                                )}
                                 <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
                                     <WidgetRenderer dashboardId={id} widget={widget} />
                                 </div>
@@ -504,9 +583,12 @@ function WidgetRenderer({
  * lugar a los botones de editar/eliminar.
  */
 function PeriodBadge({ widget }: { widget: WidgetSpec }): JSX.Element | null {
-    const preset = widget.config.period?.preset;
+    const period = widget.config.period;
+    const preset = period?.preset;
     if (! preset) return null;
-    const label = DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
+    const label = preset === 'custom' && period?.from !== undefined && period?.to !== undefined
+        ? `${period.from} → ${period.to}`
+        : DATE_RANGE_PRESETS.find((p) => p.id === preset)?.label ?? preset;
     return (
         <span className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-bg-muted/60 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-opacity group-hover:imcrm-opacity-0">
             <CalendarRange className="imcrm-h-3 imcrm-w-3" />

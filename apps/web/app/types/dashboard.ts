@@ -148,9 +148,12 @@ export interface WidgetPeriod {
     field_id: number;
     /**
      * Slug del preset relativo (`this_month`, `last_7_days`, …, ver
-     * `app/admin/records/dateRangePresets.ts`).
+     * `app/admin/records/dateRangePresets.ts`) o `custom` (rango fijo).
      */
     preset: string;
+    /** v0.1.105 — extremos del rango fijo cuando preset === 'custom'. */
+    from?: string;
+    to?: string;
 }
 
 export interface WidgetSpec {

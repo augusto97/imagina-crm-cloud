@@ -284,6 +284,43 @@ describe('DashboardsService — evaluación de widgets (Postgres real)', () => {
         expect((data2.w2 as { value: number }).value).toBeGreaterThanOrEqual(3);
     });
 
+    it('v0.1.105 — período PERSONALIZADO: rango fijo por widget y override global custom:from:to', async () => {
+        // Ventana fija que cubre SOLO los registros de hace 1-20 días (a, b, c).
+        const from = daysAgo(25);
+        const to = daysAgo(0);
+        const data = await withWidgets([
+            {
+                id: 'w1',
+                type: 'kpi',
+                list_id: f.monto!.list_id,
+                title: 'Rango fijo',
+                config: { metric: 'count', period: { field_id: f.fecha!.id, preset: 'custom', from, to } },
+                layout: { x: 0, y: 0, w: 3, h: 2 },
+            },
+            {
+                id: 'w2',
+                type: 'kpi',
+                list_id: f.monto!.list_id,
+                title: 'Anual',
+                config: { metric: 'count', period: { field_id: f.fecha!.id, preset: 'this_year' } },
+                layout: { x: 3, y: 0, w: 3, h: 2 },
+            },
+        ]);
+        expect((data.w1 as { value: number }).value).toBe(3);
+
+        // Override GLOBAL con rango fijo: pisa el período de ambos widgets.
+        // Ventana de hace 45→35 días → solo el registro d (hace ~40 días).
+        const custom = `custom:${daysAgo(45)}:${daysAgo(35)}`;
+        const g = await service.widgetsData(tenantId, dashId, admin, custom);
+        expect((g.w1 as { value: number }).value).toBe(1);
+        expect((g.w2 as { value: number }).value).toBe(1);
+
+        // Extremos invertidos → se corrigen (mismo resultado, no 0 filas).
+        const swapped = `custom:${daysAgo(35)}:${daysAgo(45)}`;
+        const g2 = await service.widgetsData(tenantId, dashId, admin, swapped);
+        expect((g2.w1 as { value: number }).value).toBe(1);
+    });
+
     it('bucketing temporal: chart_line agrupa por mes (YYYY-MM) y respeta year', async () => {
         const data = await withWidgets([
             {

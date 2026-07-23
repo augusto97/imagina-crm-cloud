@@ -71,6 +71,12 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                         narrow={narrow}
                         colorMap={colorMap}
                         onSegment={onSegment}
+                        centerLabel={
+                            typeof (widget.config as { center_label?: unknown }).center_label === 'string'
+                                && ((widget.config as { center_label?: string }).center_label ?? '').trim() !== ''
+                                ? ((widget.config as { center_label?: string }).center_label as string)
+                                : __('Total')
+                        }
                     />
                 ) : (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
@@ -88,12 +94,16 @@ interface DonutProps {
     narrow: boolean;
     colorMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
+    /** v0.1.105 — texto bajo la cifra del centro (config.center_label). */
+    centerLabel: string;
 }
 
-function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: DonutProps): JSX.Element {
+function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, centerLabel }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
+    // v0.1.105 — "+N más" ahora EXPANDE la leyenda completa (con scroll).
+    const [legendExpanded, setLegendExpanded] = useState(false);
     const toggleLabel = (label: string): void => {
         setHidden((prev) => {
             const next = new Set(prev);
@@ -211,16 +221,28 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                         );
                     })}
 
-                    <text
-                        x={cx}
-                        y={cy - (showLabels ? 3 : 4)}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        className="imcrm-fill-foreground"
-                        style={{ fontSize: showLabels ? 13 : 15, fontWeight: 700 }}
-                    >
-                        {formatNumber(total)}
-                    </text>
+                    {(() => {
+                        // v0.1.105 — la cifra del centro se AUTOESCALA al
+                        // agujero del donut: con 6+ dígitos ("9.510.000") el
+                        // tamaño fijo se montaba sobre el aro. Ancho útil del
+                        // agujero ≈ 2*(radius - stroke/2) - aire.
+                        const totalText = formatNumber(total);
+                        const hole = 2 * (radius - stroke / 2) - 8;
+                        const base = showLabels ? 13 : 15;
+                        const fitted = Math.min(base, hole / (0.62 * Math.max(totalText.length, 1)));
+                        return (
+                            <text
+                                x={cx}
+                                y={cy - (showLabels ? 3 : 4)}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                className="imcrm-fill-foreground"
+                                style={{ fontSize: fitted, fontWeight: 700 }}
+                            >
+                                {totalText}
+                            </text>
+                        );
+                    })()}
                     <text
                         x={cx}
                         y={cy + (showLabels ? 8 : 9)}
@@ -229,7 +251,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                         className="imcrm-fill-muted-foreground"
                         style={{ fontSize: showLabels ? 6 : 7, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}
                     >
-                        {__('Total')}
+                        {centerLabel}
                     </text>
                 </svg>
             </div>
@@ -247,10 +269,10 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                         narrow
                             ? 'imcrm-w-full imcrm-shrink-0'
                             // Ancho acotado: nombre, valor y % quedan juntos.
-                            : 'imcrm-w-[320px] imcrm-max-w-[55%] imcrm-shrink imcrm-overflow-y-auto',
+                            : 'imcrm-w-[320px] imcrm-max-w-[55%] imcrm-shrink imcrm-max-h-full imcrm-overflow-y-auto',
                     )}
                 >
-                    {legendRows.slice(0, 8).map((row) => {
+                    {(legendExpanded ? legendRows : legendRows.slice(0, 8)).map((row) => {
                         // Color por índice ORIGINAL — consistente con el aro.
                         const i = rows.findIndex((r) => r.label === row.label);
                         const isHidden = hidden.has(row.label);
@@ -292,8 +314,14 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                         );
                     })}
                     {rows.length > 8 && (
-                        <li className="imcrm-px-1 imcrm-text-[10px] imcrm-text-muted-foreground/70">
-                            +{rows.length - 8} {__('más')}
+                        <li>
+                            <button
+                                type="button"
+                                onClick={() => setLegendExpanded((v) => !v)}
+                                className="imcrm-px-1 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                            >
+                                {legendExpanded ? __('Ver menos') : `+${rows.length - 8} ${__('más')}`}
+                            </button>
                         </li>
                     )}
                 </ul>

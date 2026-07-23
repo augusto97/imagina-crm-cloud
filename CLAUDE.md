@@ -1329,6 +1329,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         "1.032.000" y "31/12/2026" — también el updated_at "23/07/2026
         14:45" —, reset vuelve al histórico).
 
+  - [x] **Lote de reportes de dashboards + realtime (v0.1.105)**: (1)
+        **widget de título sin recorte** — los bloques de contenido con
+        estilo usaban p-4 y en alturas de 1 fila el texto quedaba cortado
+        (ahora py-1.5 + centrado); (2) **donut**: la cifra del centro se
+        AUTOESCALA al agujero (con 6+ dígitos se montaba sobre el aro), el
+        "+N más" de la leyenda ahora EXPANDE la lista completa (y "Ver
+        menos" la contrae), y la etiqueta "Total" es editable por widget
+        (`config.center_label`, input en el diálogo); (3) **período
+        personalizado** con fecha inicio/fin: el `between_relative` acepta
+        un rango fijo `{from,to}` (query-builder, con clamp de extremos
+        invertidos y 23:59:59 para datetime), el override global viaja como
+        `custom:from:to`, el selector del tablero gana "Personalizado…"
+        (dos date inputs, persistido) y el PeriodPicker del widget también
+        (preset `custom` + from/to en config); (4) **modo Presentar
+        limpio**: en fullscreen se oculta TODO el chrome de edición
+        (Editar/Eliminar/Añadir/Página/lápiz/botones de widget) y queda el
+        período + botón "Salir" que restaura el modo normal; (5) **realtime
+        id↔slug**: `useRealtime` invalidaba por id numérico pero
+        RecordsPage registra sus queries por SLUG → los cambios de
+        ajustes/campos hechos en otra pestaña (u otro usuario) jamás
+        refrescaban la lista abierta; ahora usa `invalidateForList` (id+
+        slug) y el PATCH de permisos también refresca records/fields (el
+        ACL cambia qué devuelven). 1 test API nuevo (326) + E2E navegador
+        14/14 (heading, autoescala+Cartera, leyenda expandible, wire
+        `custom:from:to` + KPI 10→3, Presentar sin chrome + Salir, campo
+        renombrado en pestaña B aparece en A sin recargar).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
