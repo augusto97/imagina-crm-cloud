@@ -11,8 +11,11 @@ import {
 } from '@nestjs/common';
 import {
     updateEmailSignatureSchema,
+    updateFavoritesSchema,
+    type Favorites,
     type MeUserSummary,
     type UpdateEmailSignatureInput,
+    type UpdateFavoritesInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -63,6 +66,22 @@ export class MeController {
         @Param('id', ParseIntPipe) id: number,
     ): Promise<MeUserSummary> {
         return this.me.getUser(tenantId(req), id);
+    }
+
+    /** v0.1.107 — favoritos del menú (listas + dashboards) del usuario en el tenant activo. */
+    @Get('favorites')
+    @UseGuards(SessionGuard, TenantGuard)
+    getFavorites(@Req() req: FastifyRequest): Promise<Favorites> {
+        return this.me.getFavorites(tenantId(req), req.authUserId!);
+    }
+
+    @Patch('favorites')
+    @UseGuards(SessionGuard, TenantGuard)
+    updateFavorites(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(updateFavoritesSchema)) patch: UpdateFavoritesInput,
+    ): Promise<Favorites> {
+        return this.me.setFavorites(tenantId(req), req.authUserId!, patch);
     }
 
     @Get('email-signature')

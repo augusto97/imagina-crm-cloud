@@ -1370,6 +1370,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de la captura (2xl+bold+fondo oscuro, con subtítulo, y pad lg
         explícito respetado).
 
+  - [x] **Favoritos + reorden del menú y de opciones (v0.1.107, pedidos del
+        usuario)**: (a) el icono del riel "Listas" deja de ser una casa
+        (Home → List de lucide); (b) **Favoritos**: el usuario ancla listas
+        y dashboards con una estrella al hover de cada item del panel — la
+        sección "Favoritos" (mixta) aparece arriba en los paneles de Listas
+        y Dashboards. Per-usuario+workspace: migración 0032
+        (`memberships.settings` jsonb), GET/PATCH `/me/favorites`
+        (SessionGuard+TenantGuard, PATCH parcial), hook `useFavorites` con
+        toggle optimista; (c) **reordenar las listas del menú** por drag &
+        drop (HTML5, gate manage_lists, orden compartido del workspace):
+        `PATCH /lists/reorder` valida ids únicos y propios → `position` por
+        índice (el listado ya ordenaba por position), mutación optimista;
+        (d) **reordenar opciones de select/multi_select**: flechas
+        subir/bajar por fila en el editor de opciones (el orden del array ES
+        el orden en popovers, chips y kanban — solo faltaba la UI).
+        2 tests API nuevos (327 en verde) + E2E navegador 11/11 (icono,
+        anclar lista y dashboard persistidos, drag "Clientes" → posición 3
+        con reload, meses reordenados enero/febrero/marzo persistidos).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

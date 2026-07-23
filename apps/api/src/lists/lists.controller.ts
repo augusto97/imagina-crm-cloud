@@ -19,6 +19,8 @@ import {
     type ListPermissionsDoc,
     type UpdateListInput,
     type UpdateListPermissionsInput,
+    reorderListsSchema,
+    type ReorderListsInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -41,6 +43,17 @@ export class ListsController {
     @Get()
     all(@Req() req: FastifyRequest): Promise<{ data: List[] }> {
         return this.lists.list(tenantId(req)).then((data) => ({ data }));
+    }
+
+    /** v0.1.107 — reordenar el menú de listas (orden compartido del workspace).
+     *  Declarado ANTES de :idOrSlug para que la ruta estática gane. */
+    @Patch('reorder')
+    @RequireCapability('manage_lists')
+    reorder(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(reorderListsSchema)) input: ReorderListsInput,
+    ): Promise<{ data: List[] }> {
+        return this.lists.reorder(tenantId(req), input.list_ids).then((data) => ({ data }));
     }
 
     @Get(':idOrSlug')

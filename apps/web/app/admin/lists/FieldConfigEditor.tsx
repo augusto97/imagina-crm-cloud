@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -145,7 +145,7 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                 </div>
             ) : (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                    <li className="imcrm-grid imcrm-grid-cols-[2.25rem_1fr_1fr_2.25rem] imcrm-gap-2 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
+                    <li className="imcrm-grid imcrm-grid-cols-[2.25rem_1fr_1fr_auto] imcrm-gap-2 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
                         <span>{__('Color')}</span>
                         <span>{__('Valor')}</span>
                         <span>{__('Label')}</span>
@@ -154,7 +154,7 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                     {options.map((opt, i) => (
                         <li
                             key={i}
-                            className="imcrm-grid imcrm-grid-cols-[2.25rem_1fr_1fr_2.25rem] imcrm-items-center imcrm-gap-2"
+                            className="imcrm-grid imcrm-grid-cols-[2.25rem_1fr_1fr_auto] imcrm-items-center imcrm-gap-2"
                         >
                             <ColorPicker
                                 value={opt.color}
@@ -182,15 +182,51 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                                 }}
                                 placeholder={__('Activo')}
                             />
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setOptions(options.filter((_, j) => j !== i))}
-                                aria-label={__('Eliminar opción')}
-                            >
-                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
+                            <span className="imcrm-flex imcrm-items-center">
+                                {/* v0.1.107 — reordenar opciones: el orden del
+                                  * array ES el orden en popovers, chips y kanban. */}
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={i === 0}
+                                    onClick={() => {
+                                        const next = [...options];
+                                        const [row] = next.splice(i, 1);
+                                        next.splice(i - 1, 0, row!);
+                                        setOptions(next);
+                                    }}
+                                    aria-label={__('Subir opción')}
+                                    title={__('Subir')}
+                                >
+                                    <ChevronUp className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={i === options.length - 1}
+                                    onClick={() => {
+                                        const next = [...options];
+                                        const [row] = next.splice(i, 1);
+                                        next.splice(i + 1, 0, row!);
+                                        setOptions(next);
+                                    }}
+                                    aria-label={__('Bajar opción')}
+                                    title={__('Bajar')}
+                                >
+                                    <ChevronDown className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                                    aria-label={__('Eliminar opción')}
+                                >
+                                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                            </span>
                         </li>
                     ))}
                 </ul>

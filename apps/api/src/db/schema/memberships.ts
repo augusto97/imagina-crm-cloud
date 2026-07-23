@@ -1,4 +1,4 @@
-import { bigint, index, pgEnum, pgTable, primaryKey, timestamp } from 'drizzle-orm/pg-core';
+import { jsonb, bigint, index, pgEnum, pgTable, primaryKey, timestamp } from 'drizzle-orm/pg-core';
 import { ROLES } from '@imagina-base/shared';
 import { tenants } from './tenants';
 import { users } from './users';
@@ -16,6 +16,8 @@ export const memberships = pgTable(
             .notNull()
             .references(() => tenants.id, { onDelete: 'cascade' }),
         role: membershipRole('role').notNull(),
+        // v0.1.107 — preferencias del usuario EN este workspace (favoritos).
+        settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

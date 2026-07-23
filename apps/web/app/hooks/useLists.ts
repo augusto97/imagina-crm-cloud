@@ -69,6 +69,37 @@ export function useUpdateList(idOrSlug: string | number) {
     });
 }
 
+/**
+ * v0.1.107 — Reordenar el menú de listas (orden compartido del workspace,
+ * `lists.position`). Recibe TODOS los ids en el orden deseado.
+ */
+export function useReorderLists() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (listIds: number[]) => {
+            const res = await api.patch<ListSummary[]>('/lists/reorder', { list_ids: listIds });
+            return res.data;
+        },
+        // Optimista: el drop se refleja al instante en el árbol.
+        onMutate: async (listIds) => {
+            await qc.cancelQueries({ queryKey: listsKeys.list() });
+            const prev = qc.getQueryData<ListSummary[]>(listsKeys.list());
+            if (prev) {
+                const byId = new Map(prev.map((l) => [l.id, l]));
+                const next = listIds.map((id) => byId.get(id)).filter((l): l is ListSummary => l !== undefined);
+                if (next.length === prev.length) qc.setQueryData(listsKeys.list(), next);
+            }
+            return { prev };
+        },
+        onError: (_e, _ids, ctx) => {
+            if (ctx?.prev) qc.setQueryData(listsKeys.list(), ctx.prev);
+        },
+        onSettled: () => {
+            void qc.invalidateQueries({ queryKey: listsKeys.list() });
+        },
+    });
+}
+
 export function useDeleteList() {
     const qc = useQueryClient();
     return useMutation({
