@@ -12,6 +12,7 @@ import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
+import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
 import { Badge } from '@/components/ui/badge';
@@ -142,6 +143,8 @@ export function SettingsPage(): JSX.Element {
                     </>
                 )}
                 {/* SMTP propio del workspace (white-label de correo). */}
+                {active === 'formato' && isAdmin && <RegionalFormatPanel />}
+
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}

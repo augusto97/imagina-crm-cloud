@@ -1,6 +1,7 @@
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
+import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
 
 import { extractFieldOptions, type FieldOption } from './fieldOptions';
@@ -61,17 +62,12 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     }
 
     if (field.type === 'datetime' && typeof value === 'string') {
-        let text: string = value;
-        try {
-            text = new Date(value + 'Z').toLocaleString();
-        } catch {
-            // keep raw value
-        }
-        return withOverdueHighlight(field, value, text);
+        // v0.1.104 — orden de fecha y reloj según el formato del workspace.
+        return withOverdueHighlight(field, value, formatDateTimeStr(value));
     }
 
     if (field.type === 'date' && typeof value === 'string') {
-        return withOverdueHighlight(field, value, value);
+        return withOverdueHighlight(field, value, formatDateStr(value));
     }
 
     if ((field.type === 'currency' || field.type === 'number') && typeof value === 'number') {
@@ -91,10 +87,7 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
                 return Number.isInteger(value) ? String(value) : value.toFixed(0);
             }
             const decimals = (field.config as { decimals?: number }).decimals ?? 2;
-            return value.toLocaleString(undefined, {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: decimals,
-            });
+            return formatNumber(value, { maxFrac: decimals });
         }
         return String(value);
     }

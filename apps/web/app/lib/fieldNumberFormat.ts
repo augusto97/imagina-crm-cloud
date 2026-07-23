@@ -1,5 +1,7 @@
 import type { FieldEntity } from '@/types/field';
 
+import { formatNumber } from './tenantFormat';
+
 /**
  * Decimales CONFIGURADOS de un campo numérico. La clave canónica es
  * `config.precision` (la que escribe el FieldConfigEditor y valida el
@@ -25,8 +27,9 @@ export function formatFieldNumber(
     num: number,
 ): string {
     const p = fieldPrecision(field);
-    return num.toLocaleString(undefined, {
-        minimumFractionDigits: field.type === 'currency' ? p : 0,
-        maximumFractionDigits: p,
+    // v0.1.104 — separadores según el formato regional del workspace.
+    return formatNumber(num, {
+        minFrac: field.type === 'currency' ? p : 0,
+        maxFrac: p,
     });
 }

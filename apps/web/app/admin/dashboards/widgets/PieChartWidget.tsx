@@ -3,6 +3,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
@@ -176,7 +177,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                                 onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                                 style={onSegment !== null ? { cursor: 'pointer' } : undefined}
                             >
-                                <title>{`${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
+                                <title>{`${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
                             </circle>
                         );
                         offset += len;
@@ -218,7 +219,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                         className="imcrm-fill-foreground"
                         style={{ fontSize: showLabels ? 13 : 15, fontWeight: 700 }}
                     >
-                        {total.toLocaleString()}
+                        {formatNumber(total)}
                     </text>
                     <text
                         x={cx}
@@ -281,7 +282,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment }: Do
                                         {prettyGroupLabel(row.label)}
                                     </span>
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
-                                        {row.value.toLocaleString()}
+                                        {formatNumber(row.value)}
                                     </span>
                                     <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground/80">
                                         {isHidden ? '—' : `${pct.toFixed(0)}%`}

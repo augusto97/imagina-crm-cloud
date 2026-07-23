@@ -1,4 +1,10 @@
 import { sanitizeHref } from '@/lib/sanitize';
+import {
+    formatDateStr,
+    formatDateTimeStr,
+    formatNumber as formatNumberTF,
+    numberFormatLocale,
+} from '@/lib/tenantFormat';
 import type { PortalFieldMeta, PortalRecord } from '../types';
 
 interface Props {
@@ -201,38 +207,13 @@ function resolveOptionLabel(value: unknown, config: Record<string, unknown>): st
 }
 
 function formatDate(value: unknown): string {
-    const str = String(value);
-    try {
-        // Las fechas vienen como `YYYY-MM-DD`. Anclamos a mediodía
-        // UTC para evitar shift de zona que mueva el día.
-        const d = new Date(`${str}T12:00:00Z`);
-        if (Number.isNaN(d.getTime())) return str;
-        return d.toLocaleDateString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-        });
-    } catch {
-        return str;
-    }
+    // v0.1.104 — orden de fecha según el formato regional del workspace
+    // (llega en el boot del portal). Sin parsear Date: cero shift de zona.
+    return formatDateStr(String(value));
 }
 
 function formatDateTime(value: unknown): string {
-    const str = String(value);
-    try {
-        const iso = str.includes('T') ? str : str.replace(' ', 'T');
-        const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
-        if (Number.isNaN(d.getTime())) return str;
-        return d.toLocaleString(undefined, {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    } catch {
-        return str;
-    }
+    return formatDateTimeStr(String(value));
 }
 
 /** Decimales configurados del campo (`config.precision`) con fallback por tipo. */
@@ -250,7 +231,9 @@ function formatCurrency(value: unknown, config: Record<string, unknown>): string
     const currency = typeof config.currency === 'string' ? config.currency : 'USD';
     const decimals = configPrecision(config, 2);
     try {
-        return new Intl.NumberFormat(undefined, {
+        // Locale derivado del formato regional del workspace (v0.1.104) —
+        // separadores coherentes con el admin, símbolo por Intl.
+        return new Intl.NumberFormat(numberFormatLocale(), {
             style: 'currency',
             currency,
             minimumFractionDigits: decimals,
@@ -258,14 +241,12 @@ function formatCurrency(value: unknown, config: Record<string, unknown>): string
         }).format(num);
     } catch {
         // Currency code inválido — fallback a formato decimal sin símbolo.
-        return new Intl.NumberFormat(undefined, { maximumFractionDigits: decimals }).format(num);
+        return formatNumberTF(num, { minFrac: decimals, maxFrac: decimals });
     }
 }
 
 function formatNumber(value: unknown, config: Record<string, unknown>): string {
     const num = typeof value === 'number' ? value : parseFloat(String(value));
     if (! Number.isFinite(num)) return String(value);
-    return new Intl.NumberFormat(undefined, {
-        maximumFractionDigits: configPrecision(config, 0),
-    }).format(num);
+    return formatNumberTF(num, { maxFrac: configPrecision(config, 0) });
 }

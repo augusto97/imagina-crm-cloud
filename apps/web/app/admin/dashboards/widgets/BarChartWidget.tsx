@@ -2,6 +2,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
@@ -124,8 +125,8 @@ function BarRows({
                             key={row.label}
                             className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
                             title={onSegment !== null
-                                ? `${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} — ${__('click para ver los registros')}`
-                                : `${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${sharePct.toFixed(1)}%)`}
+                                ? `${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} — ${__('click para ver los registros')}`
+                                : `${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${sharePct.toFixed(1)}%)`}
                             onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
@@ -154,7 +155,7 @@ function BarRows({
                             </div>
                             <span className="imcrm-w-16 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums">
                                 <span className="imcrm-font-semibold imcrm-text-foreground">
-                                    {row.value.toLocaleString()}
+                                    {formatNumber(row.value)}
                                 </span>
                                 <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-text-muted-foreground/80">
                                     {sharePct.toFixed(0)}%

@@ -50,9 +50,43 @@ export const updateBrandingSchema = z
     .partial();
 export type UpdateBrandingInput = z.infer<typeof updateBrandingSchema>;
 
-/** Respuesta del GET: agrega la URL resuelta del logo (descarga con sesión). */
+/**
+ * Formato regional del workspace (v0.1.104 — vive en `tenants.settings.
+ * format`). En LatAm el punto separa MILES y la coma decimales; cada
+ * empresa elige. Los defaults preservan el comportamiento previo de la
+ * app (1,234.56 / AAAA-MM-DD / 24 h).
+ */
+export const NUMBER_FORMATS = ['comma_dot', 'dot_comma', 'space_comma'] as const;
+export const DATE_FORMATS = ['ymd', 'dmy', 'mdy'] as const;
+export const TIME_FORMATS = ['h24', 'h12'] as const;
+
+export const tenantFormatSchema = z.object({
+    /** comma_dot → 1,234.56 · dot_comma → 1.234,56 · space_comma → 1 234,56 */
+    number_format: z.enum(NUMBER_FORMATS).default('comma_dot'),
+    /** ymd → 2026-12-31 · dmy → 31/12/2026 · mdy → 12/31/2026 */
+    date_format: z.enum(DATE_FORMATS).default('ymd'),
+    /** h24 → 14:30 · h12 → 2:30 p. m. */
+    time_format: z.enum(TIME_FORMATS).default('h24'),
+});
+export type TenantFormat = z.infer<typeof tenantFormatSchema>;
+
+export const updateTenantFormatSchema = z
+    .object({
+        number_format: z.enum(NUMBER_FORMATS),
+        date_format: z.enum(DATE_FORMATS),
+        time_format: z.enum(TIME_FORMATS),
+    })
+    .partial();
+export type UpdateTenantFormatInput = z.infer<typeof updateTenantFormatSchema>;
+
+/**
+ * Respuesta del GET: agrega la URL resuelta del logo (descarga con sesión)
+ * y el formato regional (viaja acá porque el branding ya se fetchea en el
+ * boot de todo miembro — sin request extra).
+ */
 export const brandingResponseSchema = brandingSchema.extend({
     logo_url: z.string().nullable().default(null),
+    format: tenantFormatSchema.default({}),
 });
 export type BrandingResponse = z.infer<typeof brandingResponseSchema>;
 

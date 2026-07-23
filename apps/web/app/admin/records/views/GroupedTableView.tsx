@@ -6,6 +6,7 @@ import { useAggregates, type AggregatesResponse } from '@/hooks/useAggregates';
 import { useRecords, useRecordsGroupedBundle } from '@/hooks/useRecords';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
+import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type {
@@ -997,10 +998,9 @@ function renderColumnCell(
     }
     if (column.id === 'updated_at') {
         if (!record.updated_at) return null;
-        const d = new Date(record.updated_at + 'Z');
         return (
             <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                {d.toLocaleString()}
+                {formatDateTimeStr(record.updated_at)}
             </span>
         );
     }
@@ -1073,9 +1073,8 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
         return value;
     }
     if (field.type === 'date' || field.type === 'datetime') {
-        const d = new Date(field.type === 'date' ? value : value + 'Z');
-        if (!Number.isNaN(d.getTime())) return d.toLocaleDateString();
-        return value;
+        // Etiqueta del grupo: solo la fecha, en el orden del workspace.
+        return formatDateStr(value);
     }
     return value;
 }

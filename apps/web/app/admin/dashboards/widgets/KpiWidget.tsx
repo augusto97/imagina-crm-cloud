@@ -18,6 +18,7 @@ import {
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
@@ -172,7 +173,7 @@ function Body({
                         />
                     </div>
                     <span className="imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">
-                        {pct.toFixed(0)}% {__('de la meta')} ({prefix}{goal.toLocaleString()}{suffix})
+                        {pct.toFixed(0)}% {__('de la meta')} ({prefix}{formatNumber(goal)}{suffix})
                     </span>
                 </div>
             )}
@@ -216,10 +217,10 @@ function formatValue(value: number | string, metric: string): string {
     // 0.36.9: min/max sobre fechas devuelve string ISO; el resto numérico.
     if (typeof value === 'string') return value;
     if (metric === 'avg') {
-        return value.toFixed(2);
+        return formatNumber(value, { minFrac: 2, maxFrac: 2 });
     }
     if (Number.isInteger(value)) {
-        return value.toLocaleString();
+        return formatNumber(value, { maxFrac: 0 });
     }
-    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return formatNumber(value, { maxFrac: 2 });
 }

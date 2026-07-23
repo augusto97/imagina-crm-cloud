@@ -1,5 +1,6 @@
 import { useLists } from '@/hooks/useLists';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 /**
@@ -50,7 +51,7 @@ export function AverageBadge({ value }: { value: number }): JSX.Element {
         <span className="imcrm-whitespace-nowrap imcrm-text-[12px] imcrm-text-muted-foreground">
             {__('Promedio')}:{' '}
             <span className="imcrm-font-bold imcrm-tabular-nums imcrm-text-foreground">
-                {value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                {formatNumber(value, { maxFrac: 2 })}
             </span>
         </span>
     );

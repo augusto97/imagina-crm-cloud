@@ -15,6 +15,7 @@ import { useComments } from '@/hooks/useComments';
 import { useList } from '@/hooks/useLists';
 import { useRecords } from '@/hooks/useRecords';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
+import { formatDateStr } from '@/lib/tenantFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ResolvedLayout, RightRailBlock } from '@/lib/crmTemplates';
@@ -197,8 +198,8 @@ function formatFieldStatValue(field: FieldEntity, value: unknown): string {
         return formatFieldNumber(field, num);
     }
     if (field.type === 'date' && typeof value === 'string') {
-        const d = new Date(value);
-        return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString();
+        // v0.1.104 — orden de fecha según el formato del workspace.
+        return formatDateStr(value);
     }
     return String(value);
 }

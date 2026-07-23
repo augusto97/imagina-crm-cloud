@@ -2,6 +2,7 @@ import { Loader2, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
@@ -103,6 +104,6 @@ function Body({
 
 function format(v: number | string): string {
     if (typeof v === 'string') return v;
-    if (Number.isInteger(v)) return v.toLocaleString();
-    return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (Number.isInteger(v)) return formatNumber(v, { maxFrac: 0 });
+    return formatNumber(v, { maxFrac: 2 });
 }

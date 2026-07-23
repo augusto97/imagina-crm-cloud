@@ -45,6 +45,8 @@ import {
     smtpDnsReportSchema,
     updateAutomationSchema,
     updateBrandingSchema,
+    tenantFormatSchema,
+    updateTenantFormatSchema,
     updateCommentSchema,
     updateFieldSchema,
     updateListSchema,
@@ -60,6 +62,8 @@ import {
     type BillingSummary,
     type Bootstrap,
     type BrandingResponse,
+    type TenantFormat,
+    type UpdateTenantFormatInput,
     type CommentDto,
     type CreateAutomationInput,
     type CreateCommentInput,
@@ -382,6 +386,17 @@ export class CloudClient {
         return this.request('PATCH', '/workspaces/current/branding', {
             body: updateBrandingSchema.parse(patch),
             schema: brandingResponseSchema,
+        });
+    }
+
+    // --- formato regional del workspace (v0.1.104) ---
+    getTenantFormat(): Promise<TenantFormat> {
+        return this.request('GET', '/workspaces/current/format', { schema: tenantFormatSchema });
+    }
+    updateTenantFormat(patch: UpdateTenantFormatInput): Promise<TenantFormat> {
+        return this.request('PATCH', '/workspaces/current/format', {
+            body: updateTenantFormatSchema.parse(patch),
+            schema: tenantFormatSchema,
         });
     }
 

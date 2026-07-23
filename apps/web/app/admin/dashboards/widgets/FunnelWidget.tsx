@@ -2,6 +2,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
@@ -126,7 +127,7 @@ function FunnelRows({
                     <div
                         key={row.label}
                         className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={`${prettyGroupLabel(row.label)}: ${row.value.toLocaleString()} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
+                        title={`${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
                         onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
@@ -139,7 +140,7 @@ function FunnelRows({
                                 className="imcrm-flex imcrm-h-full imcrm-min-w-[2.25rem] imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-[11px] imcrm-font-semibold imcrm-text-white imcrm-opacity-85 imcrm-transition-opacity group-hover/stage:imcrm-opacity-100"
                                 style={{ width: `${widthPct}%`, backgroundColor: color }}
                             >
-                                {row.value.toLocaleString()}
+                                {formatNumber(row.value)}
                             </div>
                         </div>
                         <span className="imcrm-w-10 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">

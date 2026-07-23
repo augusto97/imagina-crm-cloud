@@ -157,4 +157,31 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         expect(cleared.logo_file_id).toBeNull();
         expect(cleared.primary_color).toBeNull();
     });
+
+    it('formato regional (v0.1.104): defaults, PATCH parcial persiste y viaja en el branding', async () => {
+        // Defaults = comportamiento histórico de la app.
+        expect(await branding.getFormat(tenantId)).toEqual({
+            number_format: 'comma_dot',
+            date_format: 'ymd',
+            time_format: 'h24',
+        });
+        // El branding (que todo miembro trae al bootear) lo incluye.
+        expect((await branding.get(tenantId)).format.number_format).toBe('comma_dot');
+
+        // PATCH parcial: sólo números → fecha/hora conservan su valor.
+        const set = await branding.setFormat(tenantId, { number_format: 'dot_comma' });
+        expect(set).toEqual({ number_format: 'dot_comma', date_format: 'ymd', time_format: 'h24' });
+
+        const set2 = await branding.setFormat(tenantId, { date_format: 'dmy', time_format: 'h12' });
+        expect(set2).toEqual({ number_format: 'dot_comma', date_format: 'dmy', time_format: 'h12' });
+
+        // Persistido de verdad + presente en el branding completo.
+        expect(await branding.getFormat(tenantId)).toEqual(set2);
+        expect((await branding.get(tenantId)).format).toEqual(set2);
+
+        // El formato NO pisa el branding visual (viven en claves separadas
+        // del mismo settings jsonb).
+        await branding.update(tenantId, { app_name: 'Acme CRM' });
+        expect(await branding.getFormat(tenantId)).toEqual(set2);
+    });
 });

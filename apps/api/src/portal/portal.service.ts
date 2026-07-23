@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
     brandingSchema,
+    tenantFormatSchema,
     isDataField,
     jsonbKeyForField,
     validateFieldValue,
@@ -643,9 +644,16 @@ export class PortalService {
                         ? this.files.signedUrl(link.tenantId, b.logo_file_id, 3600)
                         : null,
             };
+            // v0.1.104 — el portal muestra montos y fechas del record: usa el
+            // mismo formato regional configurado por la empresa.
+            const parsedFormat = tenantFormatSchema.safeParse(
+                (tenantRow?.settings as Record<string, unknown> | undefined)?.format ?? {},
+            );
+            const format = parsedFormat.success ? parsedFormat.data : tenantFormatSchema.parse({});
 
             return {
                 branding,
+                format,
                 list_id: list.id,
                 list_slug: list.slug,
                 list_name: list.name,

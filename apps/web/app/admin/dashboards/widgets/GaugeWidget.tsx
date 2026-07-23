@@ -2,6 +2,7 @@ import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -111,9 +112,9 @@ function Gauge({
                     className="imcrm-fill-muted-foreground"
                     style={{ fontSize: 6.5, fontWeight: 500 }}
                 >
-                    {prefix}{value.toLocaleString(undefined, { maximumFractionDigits: 2 })}{suffix}
+                    {prefix}{formatNumber(value, { maxFrac: 2 })}{suffix}
                     {' / '}
-                    {prefix}{goal.toLocaleString()}{suffix}
+                    {prefix}{formatNumber(goal)}{suffix}
                 </text>
             </svg>
         </div>

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
+import { setTenantFormat } from '@/lib/tenantFormat';
 
 /**
  * Branding white-label por workspace: `GET /workspaces/current/branding`.
@@ -62,13 +63,22 @@ export function useBrandingData() {
     // `activeTenantId` se persiste en localStorage: sin gate por usuario el
     // query dispararía ANTES de hidratar la sesión (401 + queda en error).
     const hasUser = useSession((s) => s.user !== null);
-    return useQuery<BrandingResponse>({
+    const query = useQuery<BrandingResponse>({
         queryKey: brandingQueryKey(tenantId),
         queryFn: () => api.getBranding(),
         enabled: hasUser && tenantId !== null,
         staleTime: 60_000,
         retry: false,
     });
+    // v0.1.104 — el formato regional viaja dentro del branding (todo miembro
+    // lo trae al bootear). Se publica como estado de módulo: los helpers de
+    // formateo (formatNumber/formatDateStr…) son funciones puras llamadas en
+    // render sin acceso a hooks. Tolerante a respuestas cacheadas sin format.
+    const format = query.data?.format;
+    useEffect(() => {
+        setTenantFormat(format ?? null);
+    }, [format]);
+    return query;
 }
 
 /**
