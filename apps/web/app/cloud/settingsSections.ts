@@ -5,6 +5,7 @@ import {
     Mail,
     Palette,
     PenLine,
+    SunMoon,
     Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -24,7 +25,8 @@ export type SettingsSectionId =
     | 'marca'
     | 'formato'
     | 'correo'
-    | 'firma';
+    | 'firma'
+    | 'apariencia';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
@@ -48,7 +50,11 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
         },
         {
             label: 'Cuenta',
-            items: [{ id: 'firma', label: 'Firma de email', icon: PenLine }],
+            items: [
+                { id: 'firma', label: 'Firma de email', icon: PenLine },
+                // v0.1.112 — per-usuario y por dispositivo (no viaja al backend).
+                { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
+            ],
         },
     ];
 }

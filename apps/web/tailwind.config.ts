@@ -116,15 +116,19 @@ const config: Config = {
             boxShadow: {
                 // Sombras en capas (estilo Linear / Vercel) — un blur
                 // suave amplio + un edge nítido cerca del elemento dan
-                // depth sin "halo gris". Aumentamos la opacidad
-                // ligeramente respecto a la versión anterior porque
-                // 0.04 era demasiado plano sobre fondos claros.
-                'imcrm-sm': '0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 1px 0 rgb(15 23 42 / 0.02)',
-                'imcrm-md': '0 4px 6px -2px rgb(15 23 42 / 0.05), 0 2px 4px -2px rgb(15 23 42 / 0.04)',
-                'imcrm-lg': '0 12px 24px -8px rgb(15 23 42 / 0.10), 0 6px 12px -4px rgb(15 23 42 / 0.06)',
-                'imcrm-xl': '0 24px 48px -12px rgb(15 23 42 / 0.18), 0 12px 24px -6px rgb(15 23 42 / 0.10)',
+                // depth sin "halo gris".
+                //
+                // v0.1.112: los valores viven en variables del tema
+                // (globals.css) en vez de estar cableados acá. Una sombra
+                // calibrada para fondo claro (navy al 4%) es INVISIBLE en
+                // modo oscuro — el dark las sube a negro con más opacidad,
+                // que es lo que da elevación sobre superficies oscuras.
+                'imcrm-sm': 'var(--imcrm-shadow-sm)',
+                'imcrm-md': 'var(--imcrm-shadow-md)',
+                'imcrm-lg': 'var(--imcrm-shadow-lg)',
+                'imcrm-xl': 'var(--imcrm-shadow-xl)',
                 // Inner shadow para inputs / wells.
-                'imcrm-inset': 'inset 0 1px 2px 0 rgb(15 23 42 / 0.05)',
+                'imcrm-inset': 'var(--imcrm-shadow-inset)',
             },
             transitionDuration: {
                 '150': '150ms',

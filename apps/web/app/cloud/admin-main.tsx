@@ -8,7 +8,13 @@ import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPag
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
+import { initTheme } from '@/lib/theme';
 import '@/styles/globals.css';
+
+// Tema claro/oscuro (v0.1.112): el script inline de index.html ya pintó el
+// atributo antes del primer frame; acá se re-afirma y se engancha el listener
+// del SO para el modo "seguir al sistema".
+initTheme();
 
 // Tras una auto-actualización del servidor, una pestaña abierta sigue siendo
 // la app VIEJA y pide sus chunks con hash viejo → 404 ("Failed to fetch

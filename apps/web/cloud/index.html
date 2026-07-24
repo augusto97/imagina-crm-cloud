@@ -4,6 +4,23 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Imagina Base</title>
+        <script>
+            /* Tema (v0.1.112): se pinta ANTES de que monte React para que una
+             * sesión en oscuro no arranque con un flash blanco. Misma clave y
+             * mismo atributo que `app/lib/theme.ts`. */
+            (function () {
+                try {
+                    var mode = localStorage.getItem('imcrm:theme') || 'system';
+                    var dark =
+                        mode === 'dark' ||
+                        (mode === 'system' &&
+                            window.matchMedia('(prefers-color-scheme: dark)').matches);
+                    if (dark) document.documentElement.setAttribute('data-imcrm-theme', 'dark');
+                } catch (e) {
+                    /* storage bloqueado: arranca en claro */
+                }
+            })();
+        </script>
     </head>
     <body>
         <div id="root"></div>
