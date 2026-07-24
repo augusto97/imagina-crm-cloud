@@ -18,6 +18,7 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'field_changed', label: 'Cuando cambia un campo', event: 'imagina_crm/record_updated', config_schema: {} },
     { slug: 'due_date_reached', label: 'Cuando se alcanza una fecha', event: 'imagina_crm/scheduled_tick', config_schema: {} },
     { slug: 'scheduled', label: 'En un horario (cron)', event: 'imagina_crm/scheduled_tick', config_schema: {} },
+    { slug: 'incoming_webhook', label: 'Webhook entrante (URL pública)', event: 'imagina_crm/incoming_webhook', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [

@@ -1,4 +1,4 @@
-import { bigint, boolean, jsonb, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import type { ActionLogEntry, ActionSpec, TriggerConfig } from '@imagina-base/shared';
 import { lists } from './lists';
 import { tenants } from './tenants';
@@ -43,3 +43,23 @@ export const automationRuns = pgTable('automation_runs', {
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * v0.1.110 — Webhook entrante: mapeo público token → automatización. SIN RLS
+ * (mismo patrón que public_lists): el token opaco ES la credencial; el run se
+ * ejecuta luego dentro del scope del tenant resuelto.
+ */
+export const automationHooks = pgTable(
+    'automation_hooks',
+    {
+        token: varchar('token', { length: 64 }).primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id),
+        automationId: bigint('automation_id', { mode: 'number' })
+            .notNull()
+            .references(() => automations.id, { onDelete: 'cascade' }),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [uniqueIndex('automation_hooks_automation_ux').on(t.automationId)],
+);

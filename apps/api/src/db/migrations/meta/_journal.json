@@ -232,6 +232,13 @@
       "when": 1784200000001,
       "tag": "0032_membership_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784200000002,
+      "tag": "0033_automation_hooks",
+      "breakpoints": true
     }
   ]
 }

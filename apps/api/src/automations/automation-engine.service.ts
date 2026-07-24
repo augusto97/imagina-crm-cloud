@@ -41,6 +41,8 @@ interface RunContext {
     before?: Record<string, unknown>;
     /** slug → f{id} */
     slugToKey: Map<string, string>;
+    /** v0.1.110 — payload crudo del webhook entrante ({{payload.x}}). */
+    payload?: Record<string, unknown>;
 }
 
 /**
@@ -95,6 +97,35 @@ export class AutomationEngine {
             if (!auto || !auto.isActive) return;
             const slugToKey = await this.slugMap(tx, tenantId, auto.listId);
             await this.runOne(tx, { tenantId, listId: auto.listId, recordId: null, data: {}, slugToKey }, auto);
+        });
+    }
+
+    /**
+     * v0.1.110 — Trigger `incoming_webhook`: dispara con el PAYLOAD del POST
+     * público como contexto. Las claves del payload que coinciden con slugs
+     * de la lista se mapean a `data` (así `{{slug}}`, las condiciones del
+     * trigger y las de las acciones funcionan igual que siempre); el objeto
+     * completo queda accesible como `{{payload.clave}}` (con paths anidados).
+     */
+    async runWebhook(
+        tenantId: number,
+        automationId: number,
+        payload: Record<string, unknown>,
+    ): Promise<void> {
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const auto = await this.automations.findById(tx, tenantId, automationId);
+            if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return;
+            const slugToKey = await this.slugMap(tx, tenantId, auto.listId);
+            const data: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(payload)) {
+                const key = slugToKey.get(k);
+                if (key !== undefined) data[key] = v;
+            }
+            const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, slugToKey, payload };
+            if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
+                return;
+            }
+            await this.runOne(tx, ctx, auto);
         });
     }
 
@@ -197,8 +228,18 @@ export class AutomationEngine {
                 const key = ctx.slugToKey.get(token.slice('before.'.length));
                 return key !== undefined && ctx.before ? ctx.before[key] : undefined;
             }
+            // v0.1.110 — {{payload.clave}} (paths anidados por punto) del
+            // webhook entrante.
+            if (token.startsWith('payload.')) {
+                return getPath(ctx.payload, token.slice('payload.'.length));
+            }
             const key = ctx.slugToKey.get(token);
-            return key ? ctx.data[key] : undefined;
+            if (key !== undefined) {
+                const v = ctx.data[key];
+                // En runs de webhook, un slug sin valor mapeado cae al payload.
+                return v !== undefined ? v : ctx.payload?.[token];
+            }
+            return ctx.payload?.[token];
         };
     }
 
@@ -506,6 +547,17 @@ function parseRelationIds(raw: unknown): number[] {
  * este alias, una automatización configurada desde la interfaz jamás
  * resolvía el campo y el trigger no disparaba nunca.
  */
+/** Path anidado por punto sobre un objeto (`payload.cliente.email`). */
+function getPath(obj: Record<string, unknown> | undefined, path: string): unknown {
+    if (!obj) return undefined;
+    let cur: unknown = obj;
+    for (const part of path.split('.')) {
+        if (cur === null || typeof cur !== 'object') return undefined;
+        cur = (cur as Record<string, unknown>)[part];
+    }
+    return cur;
+}
+
 function resolveDateFieldId(
     cfg: Record<string, unknown>,
     fieldRows: Array<{ id: number; slug: string }>,

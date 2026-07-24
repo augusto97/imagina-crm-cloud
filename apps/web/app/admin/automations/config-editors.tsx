@@ -102,6 +102,10 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.due_field === 'string' && c.due_field !== '') out.due_field = c.due_field;
     if (typeof c.offset_minutes === 'number') out.offset_minutes = c.offset_minutes;
     if (typeof c.tolerance_minutes === 'number') out.tolerance_minutes = c.tolerance_minutes;
+    // incoming_webhook: CONSERVAR el token — si se pierde en un guardado, el
+    // backend rota la URL y los sistemas externos quedan apuntando a un 404.
+    // (Regenerar = mandar el config SIN token a propósito.)
+    if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     return out;
 }
 
@@ -208,6 +212,71 @@ export function TriggerConfigEditor({
             {triggerType === 'due_date_reached' && (
                 <DueDateConfig config={config} onChange={onChange} fields={fields} />
             )}
+
+            {triggerType === 'incoming_webhook' && (
+                <IncomingWebhookConfig config={config} onChange={onChange} fields={fields} />
+            )}
+        </div>
+    );
+}
+
+/**
+ * v0.1.110 — Webhook ENTRANTE: muestra la URL pública única (token opaco
+ * generado por el backend al guardar) + copiar + regenerar, y explica cómo
+ * viaja el payload a condiciones y merge tags.
+ */
+function IncomingWebhookConfig({
+    config,
+    onChange,
+    fields,
+}: {
+    config: TriggerConfig;
+    onChange: (next: TriggerConfig) => void;
+    fields: FieldEntity[];
+}): JSX.Element {
+    const token = typeof config.webhook_token === 'string' ? config.webhook_token : '';
+    const url = token !== '' ? `${window.location.origin}/api/v1/public/hooks/${token}` : '';
+    const [copied, setCopied] = useState(false);
+    const slugs = fields.slice(0, 4).map((f) => `"${f.slug}"`).join(', ');
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
+            <Label>{__('URL pública del webhook')}</Label>
+            {url !== '' ? (
+                <>
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Input readOnly value={url} className="imcrm-flex-1 imcrm-font-mono imcrm-text-xs" aria-label={__('URL del webhook')} />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                void navigator.clipboard?.writeText(url).then(() => {
+                                    setCopied(true);
+                                    window.setTimeout(() => setCopied(false), 1500);
+                                });
+                            }}
+                        >
+                            {copied ? __('¡Copiada!') : __('Copiar')}
+                        </Button>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onChange({ ...config, webhook_token: '' })}
+                        className="imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-destructive"
+                    >
+                        {__('Regenerar URL (la actual deja de funcionar al guardar)')}
+                    </button>
+                </>
+            ) : (
+                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Guardá la automatización para generar la URL pública única.')}
+                </p>
+            )}
+            <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
+                {__('Hacé un POST con JSON a esa URL desde un formulario u otra plataforma. Las claves del payload que coincidan con slugs de esta lista')}
+                {slugs !== '' ? ` (${slugs}…)` : ''}
+                {__(' se usan en las condiciones y en los merge tags como {{slug}}; el resto queda disponible como {{payload.clave}}.')}
+            </p>
         </div>
     );
 }

@@ -303,8 +303,16 @@ function EditorBody({
 
         try {
             if (editing) {
-                await update.mutateAsync({ id: editing.id, input: payload });
-                initialJson.current = JSON.stringify(state);
+                const updated = await update.mutateAsync({ id: editing.id, input: payload });
+                // v0.1.110 — el backend puede generar/rotar el token del
+                // webhook entrante al guardar: reflejarlo sin recargar.
+                const serverToken = updated?.trigger_config?.webhook_token;
+                const nextState =
+                    typeof serverToken === 'string' && serverToken !== state.triggerConfig.webhook_token
+                        ? { ...state, triggerConfig: { ...state.triggerConfig, webhook_token: serverToken } }
+                        : state;
+                setState(nextState);
+                initialJson.current = JSON.stringify(nextState);
                 toast.success(__('Automatización guardada'));
             } else {
                 const created = await create.mutateAsync(payload);

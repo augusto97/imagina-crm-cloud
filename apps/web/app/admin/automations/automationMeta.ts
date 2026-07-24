@@ -58,6 +58,11 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Llega una fecha',
         description: 'Dispara cuando la fecha de un campo llega, se acerca o ya pasó.',
     },
+    incoming_webhook: {
+        icon: Webhook,
+        title: 'Llega un webhook',
+        description: 'Dispara cuando otro sistema (un formulario, Zapier, etc.) llama una URL pública única.',
+    },
 };
 
 export const ACTION_META: Record<string, StepMeta> = {
@@ -177,6 +182,8 @@ export function summarizeTrigger(
                 offsetHuman(offset),
             );
         }
+        case 'incoming_webhook':
+            return __('Cuando llega un webhook entrante');
         default:
             return triggerType;
     }
