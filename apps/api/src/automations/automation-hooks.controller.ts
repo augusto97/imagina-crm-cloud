@@ -38,6 +38,12 @@ export class AutomationHooksController {
             throw new NotFoundException({ code: 'not_found', message: 'Not found', data: { status: 404 } });
         }
         const payload = normalizePayload(body);
+        // v0.1.111 — captura de prueba para el panel "Probar" del editor.
+        // Best-effort: si Redis falla acá, el dispatch de abajo va a fallar
+        // igual; no rompemos la respuesta por la captura.
+        await this.automations
+            .captureHookPayload(hook.tenantId, hook.automationId, payload)
+            .catch(() => undefined);
         this.dispatcher.dispatchWebhook({
             tenantId: hook.tenantId,
             automationId: hook.automationId,

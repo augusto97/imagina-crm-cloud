@@ -107,6 +107,31 @@ export function useActionCatalog() {
     });
 }
 
+export interface HookCaptureEntity {
+    payload: Record<string, unknown>;
+    received_at: string;
+}
+
+/**
+ * v0.1.111 — capturas de prueba del webhook entrante (últimos POST a la URL
+ * pública). Con `listening` activo, el panel "Probar" del editor sondea cada
+ * 3.5 s para mostrar el payload apenas llega (estilo Zapier).
+ */
+export function useHookCaptures(automationId: number | undefined, listening: boolean) {
+    return useQuery({
+        queryKey: [...automationsKeys.all, 'hook-captures', String(automationId ?? 0)] as const,
+        queryFn: async () => {
+            const res = await api.get<HookCaptureEntity[]>(
+                `/automations/${automationId}/hook-captures`,
+            );
+            return res.data;
+        },
+        enabled: automationId !== undefined && automationId > 0,
+        refetchInterval: listening ? 3500 : false,
+        staleTime: 0,
+    });
+}
+
 export function useAutomationRuns(automationId: number | undefined) {
     return useQuery({
         queryKey: automationsKeys.runs(automationId ?? 0),

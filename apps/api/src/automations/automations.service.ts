@@ -5,12 +5,14 @@ import type {
     AutomationRun,
     AutomationRunStatus,
     CreateAutomationInput,
+    HookCapture,
     UpdateAutomationInput,
 } from '@imagina-base/shared';
 import { and, eq, ne } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { automationHooks } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
+import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import {
@@ -18,6 +20,21 @@ import {
     type AutomationRow,
     type AutomationRunRow,
 } from './automations.repository';
+
+/**
+ * Subconjunto de ioredis que usan las capturas de webhook — tipado angosto
+ * para poder pasar un fake en memoria en los tests sin levantar Redis.
+ */
+export interface HookCaptureStore {
+    lpush(key: string, value: string): Promise<number>;
+    ltrim(key: string, start: number, stop: number): Promise<unknown>;
+    expire(key: string, seconds: number): Promise<unknown>;
+    lrange(key: string, start: number, stop: number): Promise<string[]>;
+}
+
+/** Cuántas capturas de prueba se conservan por webhook y por cuánto tiempo. */
+const HOOK_CAPTURES_MAX = 5;
+const HOOK_CAPTURES_TTL_S = 24 * 60 * 60;
 
 @Injectable()
 export class AutomationsService {
@@ -27,6 +44,7 @@ export class AutomationsService {
         private readonly repo: AutomationsRepository,
         private readonly lists: ListsService,
         private readonly scheduler: AutomationScheduler,
+        @Inject(REDIS) private readonly captures: HookCaptureStore,
     ) {}
 
     /**
@@ -151,6 +169,52 @@ export class AutomationsService {
         return row ?? null;
     }
 
+    /**
+     * v0.1.111 — guarda una captura de prueba del webhook entrante (los
+     * últimos N payloads recibidos, TTL 24h) para que el editor muestre
+     * qué llega y ayude a mapear claves → campos. Best-effort: un fallo de
+     * Redis no debe romper la recepción del hook (el caller ya la ignora).
+     */
+    async captureHookPayload(
+        tenantId: number,
+        automationId: number,
+        payload: Record<string, unknown>,
+    ): Promise<void> {
+        const key = hookCapturesKey(tenantId, automationId);
+        const entry = JSON.stringify({ payload, received_at: new Date().toISOString() });
+        await this.captures.lpush(key, entry);
+        await this.captures.ltrim(key, 0, HOOK_CAPTURES_MAX - 1);
+        await this.captures.expire(key, HOOK_CAPTURES_TTL_S);
+    }
+
+    /**
+     * v0.1.111 — capturas de prueba del webhook de una automatización
+     * (más reciente primero). 404 si la automatización no es del tenant.
+     */
+    async hookCaptures(tenantId: number, automationId: number): Promise<HookCapture[]> {
+        const auto = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.repo.findById(tx, tenantId, automationId),
+        );
+        if (!auto) throw notFound(automationId);
+        const raw = await this.captures.lrange(
+            hookCapturesKey(tenantId, automationId),
+            0,
+            HOOK_CAPTURES_MAX - 1,
+        );
+        const out: HookCapture[] = [];
+        for (const item of raw) {
+            try {
+                const parsed = JSON.parse(item) as HookCapture;
+                if (parsed && typeof parsed === 'object' && parsed.payload && typeof parsed.received_at === 'string') {
+                    out.push({ payload: parsed.payload, received_at: parsed.received_at });
+                }
+            } catch {
+                // entrada corrupta: se ignora
+            }
+        }
+        return out;
+    }
+
     /** Runs de una automatización por id (sin contexto de lista — la ruta del fork). */
     async runsById(
         tenantId: number,
@@ -200,6 +264,10 @@ function toRun(row: AutomationRunRow, listId: number): AutomationRun {
         finished_at: row.finishedAt ? row.finishedAt.toISOString() : null,
         created_at: row.createdAt.toISOString(),
     };
+}
+
+function hookCapturesKey(tenantId: number, automationId: number): string {
+    return `hookcap:${tenantId}:${automationId}`;
 }
 
 function notFound(id: number): NotFoundException {

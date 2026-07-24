@@ -173,3 +173,12 @@ export const actionMetaSchema = z.object({
     config_schema: z.record(z.record(z.unknown())),
 });
 export type ActionMeta = z.infer<typeof actionMetaSchema>;
+
+// --- v0.1.111: capturas de prueba del webhook entrante ---
+// Los últimos payloads recibidos en `POST /public/hooks/:token`, para que el
+// editor muestre qué llega y ayude a mapear claves → campos/merge tags.
+export const hookCaptureSchema = z.object({
+    payload: z.record(z.unknown()),
+    received_at: z.string(),
+});
+export type HookCapture = z.infer<typeof hookCaptureSchema>;

@@ -53,6 +53,7 @@ import {
 } from './automationMeta';
 import {
     ActionConfigEditor,
+    AutomationEditorAutomationContext,
     AutomationEditorListContext,
     cleanTriggerConfig,
     EMPTY_AUTOMATION_STATE,
@@ -338,6 +339,7 @@ function EditorBody({
 
     return (
         <AutomationEditorListContext.Provider value={list.id}>
+        <AutomationEditorAutomationContext.Provider value={editing?.id}>
             <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[880px] imcrm-flex-col imcrm-gap-5 imcrm-pb-24">
                 {/* ── Header ─────────────────────────────────────────── */}
                 <header className="imcrm-flex imcrm-flex-col imcrm-gap-3">
@@ -609,6 +611,7 @@ function EditorBody({
                     onOpenChange={setRunsOpen}
                 />
             )}
+        </AutomationEditorAutomationContext.Provider>
         </AutomationEditorListContext.Provider>
     );
 }
