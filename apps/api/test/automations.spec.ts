@@ -33,7 +33,31 @@ class CapturingMailTransport implements MailTransport {
     }
 }
 import { startPostgres, type TestPg } from './helpers/containers';
+import type { HookCaptureStore } from '../src/automations/automations.service';
 
+/** Fake en memoria del subconjunto de Redis que usan las capturas de webhook. */
+class FakeHookStore implements HookCaptureStore {
+    private readonly lists = new Map<string, string[]>();
+    lpush(key: string, value: string): Promise<number> {
+        const list = this.lists.get(key) ?? [];
+        list.unshift(value);
+        this.lists.set(key, list);
+        return Promise.resolve(list.length);
+    }
+    ltrim(key: string, start: number, stop: number): Promise<unknown> {
+        const list = this.lists.get(key) ?? [];
+        this.lists.set(key, list.slice(start, stop + 1));
+        return Promise.resolve('OK');
+    }
+    expire(): Promise<unknown> {
+        return Promise.resolve(1);
+    }
+    lrange(key: string, start: number, stop: number): Promise<string[]> {
+        return Promise.resolve((this.lists.get(key) ?? []).slice(start, stop + 1));
+    }
+}
+
+const hookStore = new FakeHookStore();
 const rt = new RealtimeService();
 const admin: Actor = { userId: 1, role: 'admin' };
 
@@ -66,7 +90,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
+        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore);
         mailbox = new CapturingMailTransport();
         const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
@@ -364,6 +388,18 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const runs = await automationsService.runsById(tenantId, auto.id, {});
         expect(runs.data).toHaveLength(1);
         expect(runs.data[0]!.status).toBe('success');
+
+        // v0.1.111 — capturas de prueba: lo que llega al hook queda visible
+        // para el panel "Probar" del editor (más reciente primero, cap 5).
+        for (let i = 0; i < 7; i++) {
+            await automationsService.captureHookPayload(tenantId, auto.id, { n: i, anidado: { email: `a${i}@x.com` } });
+        }
+        const caps = await automationsService.hookCaptures(tenantId, auto.id);
+        expect(caps).toHaveLength(5); // recorte a las últimas 5
+        expect(caps[0]!.payload).toMatchObject({ n: 6, anidado: { email: 'a6@x.com' } });
+        expect(typeof caps[0]!.received_at).toBe('string');
+        // Automatización ajena/inexistente → 404 (no filtra capturas de otros).
+        await expect(automationsService.hookCaptures(tenantId, 999999)).rejects.toThrow();
 
         // Guardar de nuevo CONSERVANDO el token no rota la URL…
         const updated = await automationsService.update(tenantId, 'deals', auto.id, {

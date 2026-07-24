@@ -12,6 +12,7 @@ import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { useEmailSignature } from '@/hooks/useEmailSignature';
 import { useFields } from '@/hooks/useFields';
+import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { __ } from '@/lib/i18n';
 import type {
@@ -41,6 +42,13 @@ export const AutomationEditorListContext = createContext<number | undefined>(und
 export function useAutomationListId(): number | undefined {
     return useContext(AutomationEditorListContext);
 }
+
+/**
+ * v0.1.111 — id de la automatización que se está editando (undefined en un
+ * alta sin guardar). Lo setea `AutomationEditorPage`; lo consume el panel
+ * "Probar el webhook" para leer las capturas de prueba del backend.
+ */
+export const AutomationEditorAutomationContext = createContext<number | undefined>(undefined);
 
 export interface AutomationFormState {
     name: string;
@@ -277,6 +285,140 @@ function IncomingWebhookConfig({
                 {slugs !== '' ? ` (${slugs}…)` : ''}
                 {__(' se usan en las condiciones y en los merge tags como {{slug}}; el resto queda disponible como {{payload.clave}}.')}
             </p>
+            {token !== '' && <WebhookTestPanel fields={fields} />}
+        </div>
+    );
+}
+
+/** Fila aplanada de un payload capturado: path con puntos + preview del valor. */
+interface FlatEntry {
+    path: string;
+    value: string;
+}
+
+function flattenPayload(value: unknown, prefix: string, out: FlatEntry[]): void {
+    if (out.length >= 40) return;
+    if (value !== null && typeof value === 'object') {
+        const entries = Array.isArray(value)
+            ? value.map((v, i) => [String(i), v] as const)
+            : Object.entries(value as Record<string, unknown>);
+        if (entries.length === 0) {
+            out.push({ path: prefix, value: Array.isArray(value) ? '[]' : '{}' });
+            return;
+        }
+        for (const [k, v] of entries) {
+            flattenPayload(v, prefix === '' ? k : `${prefix}.${k}`, out);
+        }
+        return;
+    }
+    const s = value === null ? 'null' : String(value);
+    out.push({ path: prefix, value: s.length > 60 ? `${s.slice(0, 60)}…` : s });
+}
+
+function relativeTime(iso: string): string {
+    const diffS = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (diffS < 60) return __('hace segundos');
+    if (diffS < 3600) return `${__('hace')} ${Math.round(diffS / 60)} min`;
+    return `${__('hace')} ${Math.round(diffS / 3600)} h`;
+}
+
+/**
+ * v0.1.111 — "Probar el webhook": muestra el ÚLTIMO payload recibido en la
+ * URL pública (capturas de 24h en el backend) aplanado clave por clave, con
+ * el merge tag copiable de cada una y el match contra los campos de la lista
+ * (estilo "test trigger" de Zapier). "Escuchar" sondea cada 3.5 s para que el
+ * dato aparezca apenas el sistema externo hace el POST de prueba.
+ */
+function WebhookTestPanel({ fields }: { fields: FieldEntity[] }): JSX.Element | null {
+    const automationId = useContext(AutomationEditorAutomationContext);
+    const [listening, setListening] = useState(false);
+    const [copiedTag, setCopiedTag] = useState('');
+    const captures = useHookCaptures(automationId, listening);
+
+    if (automationId === undefined) return null;
+
+    const latest = captures.data?.[0];
+    const rows: FlatEntry[] = [];
+    if (latest) flattenPayload(latest.payload, '', rows);
+    const bySlug = new Map(fields.map((f) => [f.slug, f]));
+
+    const copyTag = (tag: string): void => {
+        void navigator.clipboard?.writeText(tag).then(() => {
+            setCopiedTag(tag);
+            window.setTimeout(() => setCopiedTag(''), 1500);
+        });
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-p-3" data-testid="webhook-test-panel">
+            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <span className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                    {__('Probar el webhook')}
+                </span>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    {listening && (
+                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                            <span className="imcrm-h-2 imcrm-w-2 imcrm-animate-pulse imcrm-rounded-full imcrm-bg-primary" />
+                            {__('Escuchando…')}
+                        </span>
+                    )}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            if (!listening) void captures.refetch();
+                            setListening((v) => !v);
+                        }}
+                    >
+                        {listening ? __('Detener') : __('Escuchar datos de prueba')}
+                    </Button>
+                </div>
+            </div>
+            {latest === undefined ? (
+                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Todavía no llegó ningún dato. Tocá "Escuchar datos de prueba" y enviá un POST a la URL de arriba desde tu formulario u otra plataforma — el payload va a aparecer acá para que veas qué llega y cómo mapearlo.')}
+                </p>
+            ) : (
+                <>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Último dato recibido')} {relativeTime(latest.received_at)}
+                        {(captures.data?.length ?? 0) > 1 ? ` · ${captures.data!.length} ${__('capturas en 24 h')}` : ''}
+                        {' — '}
+                        {__('tocá un tag para copiarlo y usarlo en las acciones.')}
+                    </p>
+                    <div className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card">
+                        {rows.map((row) => {
+                            const field = row.path.includes('.') ? undefined : bySlug.get(row.path);
+                            const tag = field !== undefined ? `{{${row.path}}}` : `{{payload.${row.path}}}`;
+                            return (
+                                <div key={row.path} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-2.5 imcrm-py-1.5">
+                                    <div className="imcrm-min-w-0 imcrm-flex-1">
+                                        <span className="imcrm-block imcrm-truncate imcrm-font-mono imcrm-text-xs imcrm-text-foreground">{row.path}</span>
+                                        <span className="imcrm-block imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{row.value}</span>
+                                    </div>
+                                    {field !== undefined && (
+                                        <Badge variant="secondary" className="imcrm-shrink-0 imcrm-text-[10px]">
+                                            {__('campo')} «{field.label}»
+                                        </Badge>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => copyTag(tag)}
+                                        title={__('Copiar merge tag')}
+                                        className="imcrm-shrink-0 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                    >
+                                        {copiedTag === tag ? __('¡Copiado!') : tag}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                        {rows.length === 0 && (
+                            <p className="imcrm-px-2.5 imcrm-py-1.5 imcrm-text-xs imcrm-text-muted-foreground">{__('El payload llegó vacío.')}</p>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }

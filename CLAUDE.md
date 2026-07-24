@@ -1433,6 +1433,29 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         registro creado con `{{nombre}}` y `{{payload.contacto.email}}`, run
         success, token inválido → 404).
 
+  - [x] **Probar el webhook entrante (v0.1.111, pedido del usuario: "botón de
+        test o preview para ver qué llega y mapearlo a los campos")**: panel
+        "Probar el webhook" en la tarjeta del trigger `incoming_webhook`
+        (estilo test-trigger de Zapier). Backend: cada POST a
+        `/public/hooks/:token` guarda una **captura** en Redis
+        (`hookcap:{tenant}:{automation}`, últimas 5, TTL 24h, best-effort —
+        no rompe la recepción) y `GET /automations/:id/hook-captures`
+        (`manage_automations`, 404 si la automatización no es del tenant) las
+        devuelve; `HookCaptureStore` es un subconjunto tipado de ioredis para
+        poder testear con un fake en memoria. Front: botón **"Escuchar datos
+        de prueba"** (sondeo cada 3.5 s → el payload aparece apenas llega,
+        sin recargar), payload APLANADO clave por clave (paths anidados
+        `contacto.email`, cap 40 filas) con preview del valor, badge
+        `campo «Label»` cuando la clave top-level coincide con un slug de la
+        lista, y **merge tag copiable por fila** (`{{slug}}` /
+        `{{payload.path}}` → click = clipboard + "¡Copiado!"). Contexto nuevo
+        `AutomationEditorAutomationContext` (id de la automatización) — el
+        panel también funciona en el Sheet del Lienzo. Schema compartido
+        `hookCaptureSchema`. Asserts nuevos en el spec (cap 5 + guard de
+        tenant; 13/13, 328 API en verde) + E2E navegador 12/12 (vacío →
+        Escuchar → POST externo → filas sin recargar, match de campo, tag
+        anidado copiado al portapapeles, endpoint directo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

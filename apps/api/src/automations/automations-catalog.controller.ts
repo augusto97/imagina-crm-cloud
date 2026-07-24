@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseIntPipe, Query, Req, UseGuards } from '@nestjs/common';
-import type { ActionMeta, AutomationRun, TriggerMeta } from '@imagina-base/shared';
+import type { ActionMeta, AutomationRun, HookCapture, TriggerMeta } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -57,5 +57,18 @@ export class AutomationsCatalogController {
         return this.automations.runsById(req.tenant!.tenantId, id, {
             cursor: cursor ? Number(cursor) : undefined,
         });
+    }
+
+    /**
+     * v0.1.111 — capturas de prueba del webhook entrante (últimos POST
+     * recibidos en la URL pública), para el panel "Probar" del editor.
+     */
+    @Get('automations/:id/hook-captures')
+    @RequireCapability('manage_automations')
+    hookCaptures(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ data: HookCapture[] }> {
+        return this.automations.hookCaptures(req.tenant!.tenantId, id).then((data) => ({ data }));
     }
 }
