@@ -1410,6 +1410,29 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         "estrella". E2E navegador 5/5 (icono pin en riel/botones/tarjeta,
         cero clases ámbar/fill, round-trip anclar-desanclar intacto).
 
+  - [x] **Trigger de webhook entrante (v0.1.110, pedido del usuario: disparar
+        automatizaciones desde un formulario u otra plataforma)**: trigger
+        nuevo `incoming_webhook` — cada automatización que lo usa recibe una
+        **URL pública única** `POST /public/hooks/:token` (sin sesión: el
+        token opaco ES la credencial, mismo criterio que las listas públicas
+        ADR-S14; token desconocido → 404 opaco; body JSON cap 64KB, arrays/
+        escalares se envuelven; responde 202 y el run se ENCOLA en BullMQ).
+        Tabla `automation_hooks` sin RLS (migración 0033, token→tenant+
+        automation, UNIQUE por automation). `syncHook` en el save: genera el
+        token (base64url 24 bytes) si no hay uno válido y lo persiste en
+        `trigger_config.webhook_token`; guardar SIN token (Regenerar) rota la
+        URL revocando la anterior (delete-first por el unique). Motor:
+        `runWebhook` mapea las claves del payload que coinciden con SLUGS de
+        la lista a `data` (condiciones `field_filters` y `{{slug}}` funcionan
+        directo) y el accessor resuelve `{{payload.x.y}}` (paths anidados) +
+        fallback slug→payload. Editor: tarjeta del trigger muestra la URL
+        copiable + "Regenerar URL" + hint de merge tags; `cleanTriggerConfig`
+        conserva `webhook_token`; el guardado refresca el token en caliente.
+        1 test de integración (13/13 del spec, 328 API en verde) + E2E
+        navegador 9/9 (URL en el editor, POST externo sin sesión → 202 →
+        registro creado con `{{nombre}}` y `{{payload.contacto.email}}`, run
+        success, token inválido → 404).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

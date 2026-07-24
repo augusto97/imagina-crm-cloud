@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -6,6 +7,9 @@ import type {
     CreateAutomationInput,
     UpdateAutomationInput,
 } from '@imagina-base/shared';
+import { and, eq, ne } from 'drizzle-orm';
+import { DRIZZLE, type Db } from '../db/client';
+import { automationHooks } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
@@ -18,11 +22,47 @@ import {
 @Injectable()
 export class AutomationsService {
     constructor(
+        @Inject(DRIZZLE) private readonly db: Db,
         private readonly tenantDb: TenantDb,
         private readonly repo: AutomationsRepository,
         private readonly lists: ListsService,
         private readonly scheduler: AutomationScheduler,
     ) {}
+
+    /**
+     * v0.1.110 — Webhook entrante: asegura el token público del trigger
+     * `incoming_webhook`. Si el trigger_config no trae `webhook_token`
+     * (alta nueva o "regenerar URL"), se genera uno opaco y se persiste en
+     * el config; el mapeo token → automatización vive en `automation_hooks`
+     * (sin RLS, patrón public_lists) y cualquier token viejo se revoca.
+     * Con otro trigger, se elimina el mapeo (la URL deja de existir).
+     */
+    private async syncHook(tenantId: number, row: AutomationRow): Promise<AutomationRow> {
+        if (row.triggerType !== 'incoming_webhook') {
+            await this.db.delete(automationHooks).where(eq(automationHooks.automationId, row.id));
+            return row;
+        }
+        const cfg = { ...(row.triggerConfig ?? {}) } as Record<string, unknown>;
+        let token = typeof cfg.webhook_token === 'string' ? cfg.webhook_token : '';
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) {
+            token = randomBytes(24).toString('base64url');
+            cfg.webhook_token = token;
+            const updated = await this.tenantDb.withTenant(tenantId, (tx) =>
+                this.repo.update(tx, tenantId, row.id, { triggerConfig: cfg as AutomationRow['triggerConfig'] }),
+            );
+            if (updated) row = updated;
+        }
+        // Primero revocar tokens viejos: el índice único por automation_id
+        // haría que el insert del token NUEVO se descartara en silencio.
+        await this.db
+            .delete(automationHooks)
+            .where(and(eq(automationHooks.automationId, row.id), ne(automationHooks.token, token)));
+        await this.db
+            .insert(automationHooks)
+            .values({ token, tenantId, automationId: row.id })
+            .onConflictDoNothing();
+        return row;
+    }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Automation[]> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -60,7 +100,7 @@ export class AutomationsService {
             }),
         );
         await this.scheduler.sync(tenantId, row);
-        return toAutomation(row);
+        return toAutomation(await this.syncHook(tenantId, row));
     }
 
     async update(
@@ -85,7 +125,7 @@ export class AutomationsService {
             return updated;
         });
         await this.scheduler.sync(tenantId, row);
-        return toAutomation(row);
+        return toAutomation(await this.syncHook(tenantId, row));
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<void> {
@@ -95,6 +135,20 @@ export class AutomationsService {
         );
         if (!deleted) throw notFound(id);
         await this.scheduler.remove(id);
+    }
+
+    /**
+     * v0.1.110 — resuelve un token de webhook entrante (endpoint público).
+     * Devuelve tenant/automation o null (el caller responde 404 opaco).
+     */
+    async resolveHookToken(token: string): Promise<{ tenantId: number; automationId: number } | null> {
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+        const [row] = await this.db
+            .select({ tenantId: automationHooks.tenantId, automationId: automationHooks.automationId })
+            .from(automationHooks)
+            .where(eq(automationHooks.token, token))
+            .limit(1);
+        return row ?? null;
     }
 
     /** Runs de una automatización por id (sin contexto de lista — la ruta del fork). */

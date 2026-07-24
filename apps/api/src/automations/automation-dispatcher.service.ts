@@ -28,6 +28,14 @@ export class AutomationDispatcher {
         this.queue = queue;
     }
 
+    /** v0.1.110 — encola un disparo de webhook entrante (job 'webhook'). */
+    dispatchWebhook(data: { tenantId: number; automationId: number; payload: Record<string, unknown> }): void {
+        if (!this.queue) return;
+        this.queue.add('webhook', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+            this.logger.error(`No se pudo encolar el webhook entrante: ${String(err)}`);
+        });
+    }
+
     dispatch(event: TriggerEvent): void {
         if (!this.queue) return;
         this.queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {

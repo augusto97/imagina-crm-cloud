@@ -8,6 +8,7 @@ import { RecurrencesModule } from '../recurrences/recurrences.module';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { AutomationHooksController } from './automation-hooks.controller';
 import { AutomationsCatalogController } from './automations-catalog.controller';
 import { AutomationsController } from './automations.controller';
 import { AutomationsQueueBootstrap } from './automations-queue';
@@ -24,7 +25,7 @@ import { AutomationsService } from './automations.service';
     // recurrencias (job 'recurrences-tick'). Sin ciclo: recurrences NO importa
     // automations (el dispatcher le llega porque este módulo es @Global).
     imports: [AuthModule, ListsModule, RecurrencesModule],
-    controllers: [AutomationsController, AutomationsCatalogController],
+    controllers: [AutomationsController, AutomationsCatalogController, AutomationHooksController],
     providers: [
         AutomationsService,
         AutomationsRepository,

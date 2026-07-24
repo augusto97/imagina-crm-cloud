@@ -62,6 +62,9 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     } else if (job.name === 'due') {
                         const d = job.data as SchedulerJobData;
                         await this.engine.runDueDate(d.tenantId, d.automationId);
+                    } else if (job.name === 'webhook') {
+                        const d = job.data as SchedulerJobData & { payload: Record<string, unknown> };
+                        await this.engine.runWebhook(d.tenantId, d.automationId, d.payload);
                     } else if (job.name === RECURRENCES_TICK_JOB) {
                         await this.recurrences.tick();
                     } else {

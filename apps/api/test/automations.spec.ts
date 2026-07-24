@@ -66,7 +66,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        automationsService = new AutomationsService(tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
+        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler());
         mailbox = new CapturingMailTransport();
         const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
@@ -319,6 +319,66 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const tareasRecords = await recordsService.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
         expect(tareasRecords.data).toHaveLength(1);
         expect(tareasRecords.data[0]!.data[`f${titulo.id}`]).toBe('Follow-up');
+    });
+
+    it('v0.1.110 — incoming_webhook: token al guardar, payload en condiciones/merge tags y create_record', async () => {
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Alta por formulario externo',
+            trigger_type: 'incoming_webhook',
+            trigger_config: { field_filters: [{ field: 'monto', op: 'gte', value: 1000 }] },
+            actions: [
+                {
+                    type: 'create_record',
+                    config: {
+                        target_list: listId,
+                        // monto: slug del payload; nota: mezcla payload.* y slug
+                        values: { monto: '{{monto}}', estado: 'nueva' },
+                    },
+                },
+                {
+                    type: 'call_webhook',
+                    // Sin URL → skipped (no importa acá; probamos que el run corre).
+                    config: {},
+                },
+            ],
+        });
+
+        // El token se genera al crear y queda en el trigger_config + el mapeo.
+        const token = (auto.trigger_config as { webhook_token?: string }).webhook_token;
+        expect(typeof token).toBe('string');
+        expect((token ?? '').length).toBeGreaterThanOrEqual(16);
+        const hook = await automationsService.resolveHookToken(token!);
+        expect(hook).toMatchObject({ tenantId, automationId: auto.id });
+        expect(await automationsService.resolveHookToken('tok_inexistente_123456')).toBeNull();
+
+        // Payload que CUMPLE el filtro → crea el registro con el monto.
+        await engine.runWebhook(tenantId, auto.id, { monto: 2500, extra: { origen: 'landing' } });
+        // Payload que NO cumple → ni run ni registro.
+        await engine.runWebhook(tenantId, auto.id, { monto: 10 });
+
+        const recs = await recordsService.list(tenantId, admin, 'deals', { limit: 50, sort_dir: 'asc' });
+        expect(recs.data).toHaveLength(1);
+        expect(recs.data[0]!.data[key('monto')]).toBe(2500);
+        expect(recs.data[0]!.data[key('estado')]).toBe('nueva');
+
+        const runs = await automationsService.runsById(tenantId, auto.id, {});
+        expect(runs.data).toHaveLength(1);
+        expect(runs.data[0]!.status).toBe('success');
+
+        // Guardar de nuevo CONSERVANDO el token no rota la URL…
+        const updated = await automationsService.update(tenantId, 'deals', auto.id, {
+            trigger_config: { webhook_token: token },
+        });
+        expect((updated.trigger_config as { webhook_token?: string }).webhook_token).toBe(token);
+        // …y guardar SIN token (regenerar) crea uno nuevo y revoca el viejo.
+        const rotated = await automationsService.update(tenantId, 'deals', auto.id, {
+            trigger_config: {},
+        });
+        const newToken = (rotated.trigger_config as { webhook_token?: string }).webhook_token;
+        expect(newToken).toBeDefined();
+        expect(newToken).not.toBe(token);
+        expect(await automationsService.resolveHookToken(token!)).toBeNull();
+        expect(await automationsService.resolveHookToken(newToken!)).toMatchObject({ automationId: auto.id });
     });
 
     it('condición por acción en shape {slug,op,value} (lo que emite el ConditionEditor): guarda y filtra', async () => {
