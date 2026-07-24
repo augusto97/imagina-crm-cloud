@@ -146,6 +146,14 @@
          * Un gris muy suave (slate-50ish) para que las cards en blanco
          * tengan contraste sin ser "white-on-white". */
         --imcrm-canvas: 220 17% 97%;
+
+        /* Sombras del tema (las consume tailwind.config vía `shadow-imcrm-*`).
+         * Navy translúcido, calibradas para superficies claras. */
+        --imcrm-shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 1px 0 rgb(15 23 42 / 0.02);
+        --imcrm-shadow-md: 0 4px 6px -2px rgb(15 23 42 / 0.05), 0 2px 4px -2px rgb(15 23 42 / 0.04);
+        --imcrm-shadow-lg: 0 12px 24px -8px rgb(15 23 42 / 0.10), 0 6px 12px -4px rgb(15 23 42 / 0.06);
+        --imcrm-shadow-xl: 0 24px 48px -12px rgb(15 23 42 / 0.18), 0 12px 24px -6px rgb(15 23 42 / 0.10);
+        --imcrm-shadow-inset: inset 0 1px 2px 0 rgb(15 23 42 / 0.05);
     }
 
     #imcrm-root[data-imcrm-theme='dark'],
@@ -183,6 +191,42 @@
         --imcrm-sidebar-border: 224 14% 16%;
         --imcrm-sidebar-accent: 224 14% 14%;
         --imcrm-sidebar-accent-foreground: 190 80% 60%;
+
+        /* v0.1.112 — faltaban en el bloque dark heredado del plugin (el canvas
+         * es el más grave: el ÁREA DE TRABAJO entera quedaba gris claro sobre
+         * texto claro). En claro el canvas es más oscuro que el fondo (panel
+         * gris / trabajo blanco); en oscuro se invierte la relación pero se
+         * mantiene el orden: panel más hundido que el área de trabajo. */
+        --imcrm-canvas: 224 16% 6%;
+
+        /* Semánticos: los del tema claro son sólidos con texto blanco; sobre
+         * un fondo oscuro hay que subir lightness y poner tinta encima. */
+        --imcrm-success: 152 55% 45%;
+        --imcrm-success-foreground: 224 16% 8%;
+
+        --imcrm-warning: 38 92% 55%;
+        --imcrm-warning-foreground: 224 16% 8%;
+
+        --imcrm-info: 217 91% 62%;
+        --imcrm-info-foreground: 224 16% 8%;
+
+        /* Tones de los StatTiles: mismos hues, un punto más claros para que
+         * no se hundan contra las superficies oscuras. */
+        --imcrm-tone-cyan: 186 90% 55%;
+        --imcrm-tone-mint: 158 60% 52%;
+        --imcrm-tone-rose: 0 84% 68%;
+        --imcrm-tone-blue: 217 91% 65%;
+        --imcrm-tone-violet: 262 83% 70%;
+        --imcrm-tone-amber: 38 92% 60%;
+        --imcrm-tone-slate: 215 16% 62%;
+
+        /* Sombras: sobre superficies oscuras el navy translúcido no se ve —
+         * negro con más opacidad y un halo más amplio es lo que da elevación. */
+        --imcrm-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.40), 0 1px 1px 0 rgb(0 0 0 / 0.24);
+        --imcrm-shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.45), 0 2px 4px -2px rgb(0 0 0 / 0.30);
+        --imcrm-shadow-lg: 0 12px 28px -8px rgb(0 0 0 / 0.60), 0 6px 12px -4px rgb(0 0 0 / 0.40);
+        --imcrm-shadow-xl: 0 24px 52px -12px rgb(0 0 0 / 0.72), 0 12px 24px -6px rgb(0 0 0 / 0.48);
+        --imcrm-shadow-inset: inset 0 1px 2px 0 rgb(0 0 0 / 0.40);
 
         /* Override de las variantes "-text" para dark mode: en lugar
          * de oscurecer (chip sobre fondo claro), aclaramos para que

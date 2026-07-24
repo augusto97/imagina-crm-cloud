@@ -1456,6 +1456,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Escuchar → POST externo → filas sin recargar, match de campo, tag
         anidado copiado al portapapeles, endpoint directo).
 
+  - [x] **Modo oscuro en toda la app (v0.1.112, pedido del usuario)**: los
+        tokens dark existían desde el plugin (`[data-imcrm-theme="dark"]`, el
+        mismo selector del `darkMode` de Tailwind) pero NADIE los activaba —
+        faltaba el conmutador y el bloque estaba incompleto. Ahora:
+        (a) `lib/theme.ts` — modo `light|dark|system` persistido en
+        localStorage (`imcrm:theme`; `system` BORRA la clave), resuelto contra
+        `prefers-color-scheme` con listener en vivo, pintado como atributo en
+        `<html>` (no en `#root`: así el tema alcanza los flotantes de Radix,
+        que portalean a `<body>`), expuesto con `useSyncExternalStore`;
+        (b) **pre-paint** inline en `cloud/index.html` — el atributo se pinta
+        ANTES de montar React (cero flash blanco; verificado en el build de
+        producción, que emite el HTML desde `dist-cloud/cloud/`);
+        (c) **tokens dark completados** — faltaban 32, el grave era
+        `--imcrm-canvas` (el ÁREA DE TRABAJO entera quedaba gris claro):
+        canvas hundido, semánticos success/warning/info re-lightados con tinta
+        encima, tones de los StatTiles un punto más claros; las **sombras**
+        pasaron de literales en `tailwind.config` a variables del tema
+        (`--imcrm-shadow-*`) porque un navy al 4% es INVISIBLE sobre oscuro →
+        en dark son negras y más opacas;
+        (d) **branding white-label consciente del tema** (`brandVars`): en
+        claro el color del tenant va tal cual; en oscuro se sube a la banda
+        52-70% de lightness (el `primary-foreground` dark es TINTA — un teal
+        hondo daría texto negro sobre casi-negro) y el riel se HUNDE (13%) en
+        vez de encenderse (30%);
+        (e) **botón sol/luna en el topbar** (toggle claro⇄oscuro) + sección
+        **Ajustes → Cuenta → Apariencia** con el tri-estado (Claro / Oscuro /
+        Seguir al sistema — el único lugar donde se vuelve a "sistema"). Es
+        preferencia POR DISPOSITIVO: no viaja al backend a propósito.
+        El portal del cliente y las listas públicas quedan en claro: son
+        superficies DISEÑADAS por el tenant (fondo de página y estilos por
+        bloque del page-builder) — forzarles un tema rompería el WYSIWYG del
+        editor. 6 tests unitarios nuevos (front 41 en verde) + E2E navegador
+        16/16 con auditoría de luminancia (cero superficies grandes claras en
+        listas/records/dashboards/ajustes, modal portaleado oscuro,
+        persistencia tras reload, vuelta a claro) y revisión visual de
+        dashboards con charts, editor de automatizaciones, ficha de registro
+        y login.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

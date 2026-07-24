@@ -8,6 +8,7 @@ import {
     settingsSectionGroups,
     type SettingsSectionId,
 } from '@/cloud/settingsSections';
+import { AppearanceCard } from '@/admin/settings/AppearanceCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
@@ -148,6 +149,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
+                {/* Per-usuario y por dispositivo: tema claro/oscuro/sistema. */}
+                {active === 'apariencia' && <AppearanceCard />}
             </section>
         </div>
     );

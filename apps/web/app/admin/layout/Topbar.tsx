@@ -1,9 +1,10 @@
-import { LogOut, Menu, Settings } from 'lucide-react';
+import { LogOut, Menu, Moon, Settings, Sun } from 'lucide-react';
 
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { Button } from '@/components/ui/button';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
+import { useTheme } from '@/lib/theme';
 
 /**
  * Topbar:
@@ -15,6 +16,8 @@ import { __ } from '@/lib/i18n';
  * local y recarga. La campana sólo aparece si su módulo está cableado.
  */
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.Element {
+    const theme = useTheme();
+    const isDark = theme.resolved === 'dark';
     const logout = async (e: React.MouseEvent): Promise<void> => {
         e.preventDefault();
         const { api, useSession } = await import('@/cloud/session');
@@ -43,6 +46,20 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
 
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                 {moduleEnabled('mentions') && <NotificationBell />}
+
+                {/* v0.1.112 — claro ⇄ oscuro. La preferencia se guarda por
+                 * navegador; el tri-estado (incluido "Seguir al sistema")
+                 * vive en Ajustes → Apariencia. */}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={isDark ? __('Cambiar a modo claro') : __('Cambiar a modo oscuro')}
+                    title={isDark ? __('Modo claro') : __('Modo oscuro')}
+                    data-theme-toggle={theme.resolved}
+                    onClick={theme.toggle}
+                >
+                    {isDark ? <Sun className="imcrm-h-4 imcrm-w-4" /> : <Moon className="imcrm-h-4 imcrm-w-4" />}
+                </Button>
 
                 <Button
                     variant="ghost"

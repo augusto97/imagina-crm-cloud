@@ -4,6 +4,7 @@ import type { BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
 import { setTenantFormat } from '@/lib/tenantFormat';
+import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
 /**
  * Branding white-label por workspace: `GET /workspaces/current/branding`.
@@ -57,6 +58,54 @@ export function hexToHslTriplet(hex: string): string | null {
     return `${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+/** Parte una tripleta `"H S% L%"` en números (o null si no matchea). */
+function parseTriplet(triplet: string): { h: number; s: number; l: number } | null {
+    const m = /^(\d+)\s+(\d+)%\s+(\d+)%$/.exec(triplet);
+    if (!m) return null;
+    return { h: Number(m[1]), s: Number(m[2]), l: Number(m[3]) };
+}
+
+/**
+ * v0.1.112 — Tokens de marca ADAPTADOS al tema activo.
+ *
+ * En claro el color del tenant se usa tal cual. En oscuro NO se puede: el
+ * `--imcrm-primary-foreground` del tema oscuro es tinta (texto oscuro sobre
+ * el acento), así que un primary hondo (ej. un teal al 22% de lightness)
+ * daría texto negro sobre fondo casi negro — ilegible. Se sube la lightness
+ * a una banda legible conservando hue y saturación (la marca se reconoce
+ * igual), y el riel se hunde en vez de encenderse.
+ */
+export function brandVars(triplet: string, theme: ResolvedTheme): Record<string, string> {
+    const hsl = parseTriplet(triplet);
+    if (!hsl) return {};
+    const { h, s } = hsl;
+    const sat = Math.min(s, 70);
+    if (theme === 'dark') {
+        // Banda 52-70%: contrasta con las superficies oscuras y deja que la
+        // tinta del `primary-foreground` se lea encima.
+        const l = Math.min(Math.max(hsl.l, 52), 70);
+        return {
+            '--imcrm-primary': `${h} ${Math.min(s, 85)}% ${l}%`,
+            '--imcrm-ring': `${h} ${Math.min(s, 85)}% ${l}%`,
+            // Riel: teñido pero HUNDIDO (en oscuro un riel a 30% sería el
+            // elemento más brillante de la pantalla).
+            '--imcrm-sidebar': `${h} ${sat}% 13%`,
+            '--imcrm-sidebar-border': `${h} ${sat}% 19%`,
+            '--imcrm-sidebar-accent': `${h} ${sat}% 21%`,
+        };
+    }
+    return {
+        '--imcrm-primary': triplet,
+        '--imcrm-ring': triplet,
+        // El riel toma el color de marca VIVO (estilo ClickUp: el riel ES el
+        // color del tema, no una tinta imperceptible). Lightness fija ~30% →
+        // texto blanco siempre contrasta, con cualquier hue.
+        '--imcrm-sidebar': `${h} ${sat}% 30%`,
+        '--imcrm-sidebar-border': `${h} ${sat}% 37%`,
+        '--imcrm-sidebar-accent': `${h} ${sat}% 38%`,
+    };
+}
+
 /** Query del branding del tenant activo (comparte cache con `useBranding`). */
 export function useBrandingData() {
     const tenantId = useSession((s) => s.activeTenantId);
@@ -97,6 +146,9 @@ export function useBranding() {
     const query = useBrandingData();
     const domainColor = useSession((s) => s.domainTenant?.primary_color ?? null);
     const primaryColor = query.data !== undefined ? (query.data.primary_color ?? null) : domainColor;
+    // v0.1.112 — al cambiar de tema hay que RE-derivar los tokens de marca
+    // (la fórmula es distinta en claro y en oscuro).
+    const { resolved } = useTheme();
 
     useEffect(() => {
         const style = document.documentElement.style;
@@ -106,20 +158,14 @@ export function useBranding() {
             for (const name of SIDEBAR_VARS) style.removeProperty(name);
         };
         if (triplet !== null) {
-            for (const name of BRANDED_VARS) style.setProperty(name, triplet);
-            // El riel toma el color de marca VIVO (estilo ClickUp: el riel ES
-            // el color del tema, no una tinta imperceptible). Lightness fija
-            // ~30% → texto blanco siempre contrasta, con cualquier hue.
-            const [h, sRaw] = triplet.split(' ');
-            const sat = Math.min(parseInt(sRaw ?? '60', 10) || 60, 70);
-            style.setProperty('--imcrm-sidebar', `${h} ${sat}% 30%`);
-            style.setProperty('--imcrm-sidebar-border', `${h} ${sat}% 37%`);
-            style.setProperty('--imcrm-sidebar-accent', `${h} ${sat}% 38%`);
+            for (const [name, value] of Object.entries(brandVars(triplet, resolved))) {
+                style.setProperty(name, value);
+            }
         } else {
             clear();
         }
         return clear;
-    }, [primaryColor]);
+    }, [primaryColor, resolved]);
 
     return query;
 }
