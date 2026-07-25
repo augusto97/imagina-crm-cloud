@@ -19,6 +19,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BillingService } from '../billing/billing.service';
 import { FilesService, type AttachmentDto } from './files.service';
+import { contentDispositionHeader, safeDisposition } from './safe-content-type';
 
 /**
  * Archivos propios (ADR-S16). Upload multipart, resolución batch para la UI
@@ -60,11 +61,18 @@ async function streamFile(
     file: { stream: NodeJS.ReadableStream; filename: string; mime: string; size: number },
     reply: FastifyReply,
 ): Promise<void> {
+    // SEC-21 (v0.1.113): el mime lo eligió quien subió el archivo. Sólo los
+    // tipos de la whitelist se sirven inline; el resto baja como binario
+    // (`attachment`) para que un `.html`/`.svg` no ejecute script en nuestro
+    // origen. El CSP `sandbox` es la segunda barrera: aunque un tipo se
+    // colara, el documento queda sin origen, sin scripts y sin formularios.
+    const { contentType, disposition } = safeDisposition(file.mime);
     reply.raw.writeHead(200, {
-        'content-type': file.mime,
+        'content-type': contentType,
         'content-length': String(file.size),
-        'content-disposition': `inline; filename="${file.filename.replace(/"/g, '')}"`,
+        'content-disposition': contentDispositionHeader(disposition, file.filename),
         'x-content-type-options': 'nosniff',
+        'content-security-policy': "sandbox; default-src 'none'",
     });
     file.stream.pipe(reply.raw);
     await new Promise<void>((resolve) => {

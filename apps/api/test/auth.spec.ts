@@ -97,6 +97,37 @@ describe('AuthService (Postgres + Redis reales)', () => {
         expect(await sessions.get(token)).toBeNull();
     });
 
+    // SEC-22 (v0.1.113): resetear la contraseña tiene que CERRAR todas las
+    // sesiones abiertas. Sin esto, quien hubiera robado una sesión seguía
+    // adentro después de que la víctima "recuperaba" la cuenta (el TTL de
+    // sesión es de 30 días deslizantes).
+    it('resetear la contraseña revoca TODAS las sesiones abiertas', async () => {
+        const a = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const b = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const tokenA = a.token as string;
+        const tokenB = b.token as string;
+        expect(await sessions.get(tokenA)).not.toBeNull();
+        expect(await sessions.get(tokenB)).not.toBeNull();
+
+        // Simula el flujo real: se emite el token de reset y se consume.
+        await auth.requestPasswordReset('ana@acme.test');
+        const key = (await redis.keys('pwreset:*'))[0];
+        expect(key).toBeDefined();
+        const resetToken = key!.split(':')[1]!;
+        await auth.resetPassword(resetToken, 'nueva-clave-456');
+
+        // Las dos sesiones previas quedaron muertas...
+        expect(await sessions.get(tokenA)).toBeNull();
+        expect(await sessions.get(tokenB)).toBeNull();
+        // ...y la contraseña nueva es la que vale.
+        const fresh = await auth.login({ email: 'ana@acme.test', password: 'nueva-clave-456' });
+        expect(fresh.token).toBeTruthy();
+        // Restauramos la contraseña original para no romper los tests siguientes.
+        await auth.requestPasswordReset('ana@acme.test');
+        const key2 = (await redis.keys('pwreset:*'))[0]!;
+        await auth.resetPassword(key2.split(':')[1]!, 'secreto-123');
+    });
+
     it('me devuelve usuario + memberships', async () => {
         const login = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
         const me = await auth.me(login.user.id);

@@ -35,7 +35,12 @@
         ],
         "overrides": {
             "ioredis": "5.11.1",
-            "@babel/runtime": ">=7.26.10"
+            "@babel/runtime": ">=7.26.10",
+            "fast-uri": ">=3.1.4",
+            "dompurify": ">=3.4.12",
+            "brace-expansion": ">=2.1.2",
+            "find-my-way": ">=9.7.0",
+            "postcss": ">=8.5.23"
         }
     }
 }

@@ -127,6 +127,38 @@ export type Env = z.infer<typeof envSchema>;
 
 export const ENV = Symbol('ENV');
 
+/**
+ * v0.1.113 — Secretos que, si faltan, degradan la seguridad EN SILENCIO:
+ *
+ *  - `SECRETS_KEY`: sin ella, `encryptSecret` devuelve el texto plano → las
+ *    contraseñas SMTP de cada empresa se guardan SIN CIFRAR en la DB.
+ *  - `FILES_SIGNING_SECRET`: sin ella se usa un secreto aleatorio POR PROCESO
+ *    → las URLs firmadas (logo del branding, archivos del portal, imágenes de
+ *    plantillas) se invalidan en cada reinicio y no coinciden entre nodos.
+ *
+ * En producción son obligatorias: el arranque falla con un mensaje claro en
+ * vez de correr degradado. En desarrollo sólo se avisa por consola.
+ */
+const REQUIRED_IN_PRODUCTION = [
+    ['SECRETS_KEY', 'cifrado en reposo de las credenciales SMTP por empresa'],
+    ['FILES_SIGNING_SECRET', 'firma de las URLs de archivos (portal y branding)'],
+] as const;
+
+function assertProductionSecrets(env: Env): void {
+    const missing = REQUIRED_IN_PRODUCTION.filter(([name]) => env[name].trim() === '');
+    if (missing.length === 0) return;
+    const detail = missing.map(([name, why]) => `  - ${name}: ${why}`).join('\n');
+    if (env.NODE_ENV === 'production') {
+        throw new Error(
+            `Faltan secretos obligatorios en producción:\n${detail}\n` +
+                'Generá uno con `openssl rand -hex 32` y agregalos al .env del servicio antes de arrancar.',
+        );
+    }
+    console.warn(
+        `[env] Faltan secretos (OK en desarrollo, OBLIGATORIOS en producción):\n${detail}`,
+    );
+}
+
 export function loadEnv(overrides: Partial<Record<string, string>> = {}): Env {
     if (process.env.NODE_ENV !== 'production') {
         try {
@@ -135,5 +167,7 @@ export function loadEnv(overrides: Partial<Record<string, string>> = {}): Env {
             // sin .env — se usan defaults de desarrollo
         }
     }
-    return envSchema.parse({ ...process.env, ...overrides });
+    const env = envSchema.parse({ ...process.env, ...overrides });
+    assertProductionSecrets(env);
+    return env;
 }

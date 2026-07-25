@@ -129,7 +129,12 @@ export class AuthService implements OnModuleInit {
         const passwordHash = await argon2.hash(password);
         await this.db.update(users).set({ passwordHash }).where(eq(users.id, Number(userId)));
         await this.redis.del(resetKey(token));
-        this.logger.log(`Contraseña restablecida para userId=${userId}`);
+        // SEC-22 (v0.1.113): cambiar la contraseña REVOCA todas las sesiones
+        // abiertas. Sin esto, quien hubiera robado una sesión seguía dentro
+        // después de que la víctima "recuperaba" la cuenta (el TTL de sesión
+        // es de 30 días deslizantes → acceso persistente).
+        await this.sessions.destroyAllForUser(Number(userId));
+        this.logger.log(`Contraseña restablecida para userId=${userId} (sesiones revocadas)`);
     }
 
     // ─────────── Gestión de usuarios por el operador (ADR-S15 F2) ───────────
