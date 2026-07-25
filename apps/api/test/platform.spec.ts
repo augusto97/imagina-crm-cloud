@@ -119,7 +119,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         const a = await seedTenant({ name: 'Acme', plan: 'pro', status: 'active', ownerEmail: 'ana@acme.test', records: 3, automations: 2 });
         await seedTenant({ name: 'Beta', plan: 'trial', status: 'trialing', ownerEmail: 'beto@beta.test', records: 1 });
 
-        const all = await platform.listTenants();
+        const { data: all } = await platform.listTenants();
         expect(all).toHaveLength(2);
         const acme = all.find((t) => t.id === a)!;
         expect(acme).toMatchObject({ name: 'Acme', plan: 'pro', status: 'active', read_only: false });
@@ -127,9 +127,45 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(acme.usage).toMatchObject({ records: 3, users: 1, automations: 2 });
     });
 
+    // v0.1.115 — la grilla del operador pagina: antes traía TODAS las empresas
+    // y corría cuatro GROUP BY de tabla completa en cada carga.
+    it('listTenants: pagina, cuenta el total y busca por nombre/slug', async () => {
+        for (const name of ['Alfa', 'Beta', 'Gama']) {
+            await seedTenant({ name, ownerEmail: `${name.toLowerCase()}@x.test` });
+        }
+
+        const page1 = await platform.listTenants({ limit: 2 });
+        expect(page1.data).toHaveLength(2);
+        expect(page1.meta).toMatchObject({ total: 3, limit: 2, offset: 0 });
+
+        const page2 = await platform.listTenants({ limit: 2, offset: 2 });
+        expect(page2.data).toHaveLength(1);
+        expect(page2.meta.total).toBe(3);
+        // Sin solapamiento entre páginas.
+        const ids = new Set([...page1.data, ...page2.data].map((t) => t.id));
+        expect(ids.size).toBe(3);
+
+        // Búsqueda server-side por nombre (y el total refleja el filtro).
+        const found = await platform.listTenants({ search: 'Bet' });
+        expect(found.data).toHaveLength(1);
+        expect(found.data[0]!.name).toBe('Beta');
+        expect(found.meta.total).toBe(1);
+    });
+
+    it('listTenants: el uso se calcula sólo para la página pedida', async () => {
+        const a = await seedTenant({ name: 'ConUso', ownerEmail: 'u@x.test', records: 2, automations: 1 });
+        await seedTenant({ name: 'Otra' });
+
+        const page = await platform.listTenants({ limit: 1, search: 'ConUso' });
+        expect(page.data).toHaveLength(1);
+        expect(page.data[0]!.id).toBe(a);
+        // Los agregados siguen siendo correctos aunque se acoten por ids.
+        expect(page.data[0]!.usage).toMatchObject({ records: 2, users: 1, automations: 1 });
+    });
+
     it('listTenants: tenant sin admin → owner null', async () => {
         await seedTenant({ name: 'Sinowner' });
-        const [t] = await platform.listTenants();
+        const [t] = (await platform.listTenants()).data;
         expect(t!.owner).toBeNull();
         expect(t!.usage).toMatchObject({ records: 0, users: 0, automations: 0 });
     });
@@ -197,12 +233,12 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(t.archived).toBe(true);
         expect(t.read_only).toBe(true);
 
-        expect((await platform.listTenants()).some((x) => x.id === id)).toBe(false);
-        expect((await platform.listTenants(true)).some((x) => x.id === id)).toBe(true);
+        expect((await platform.listTenants()).data.some((x) => x.id === id)).toBe(false);
+        expect((await platform.listTenants({ includeArchived: true })).data.some((x) => x.id === id)).toBe(true);
 
         const back = await platform.updateTenant(id, { archived: false });
         expect(back.archived).toBe(false);
-        expect((await platform.listTenants()).some((x) => x.id === id)).toBe(true);
+        expect((await platform.listTenants()).data.some((x) => x.id === id)).toBe(true);
     });
 
     it('deleteTenant: borra la empresa y sus datos (records → lists en orden FK-safe)', async () => {

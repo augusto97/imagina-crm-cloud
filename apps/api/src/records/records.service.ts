@@ -236,6 +236,13 @@ export class RecordsService {
         listIdOrSlug: string,
         id: number,
         input: UpdateRecordInput,
+        /**
+         * v0.1.115 — `silent` suprime el evento de realtime de ESTA fila. Lo
+         * usa `bulk`, que antes emitía uno POR REGISTRO: una acción masiva de
+         * 500 filas mandaba 500 broadcasts al workspace entero y cada pestaña
+         * abierta refetcheaba 500 veces. Ahora emite UNA sola vez al final.
+         */
+        opts: { silent?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -271,7 +278,7 @@ export class RecordsService {
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
-        this.realtime.records(tenantId, listId);
+        if (!opts.silent) this.realtime.records(tenantId, listId);
         this.automations.dispatch({
             tenantId,
             listId,
@@ -296,7 +303,13 @@ export class RecordsService {
         );
     }
 
-    async remove(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<void> {
+    async remove(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+        opts: { silent?: boolean } = {},
+    ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -318,7 +331,7 @@ export class RecordsService {
             return ok;
         });
         if (!deleted) throw recordNotFound(id);
-        this.realtime.records(tenantId, listId);
+        if (!opts.silent) this.realtime.records(tenantId, listId);
     }
 
     /**
@@ -350,14 +363,20 @@ export class RecordsService {
         for (const id of ids) {
             try {
                 if (action === 'delete') {
-                    await this.remove(tenantId, actor, listIdOrSlug, id);
+                    await this.remove(tenantId, actor, listIdOrSlug, id, { silent: true });
                 } else {
-                    await this.update(tenantId, actor, listIdOrSlug, id, { data });
+                    await this.update(tenantId, actor, listIdOrSlug, id, { data }, { silent: true });
                 }
                 succeeded.push(id);
             } catch (err) {
                 failed.push({ id, message: err instanceof Error ? err.message : 'Error' });
             }
+        }
+        // UN solo evento para toda la acción masiva (v0.1.115): antes se emitía
+        // por fila y cada pestaña del workspace refetcheaba N veces.
+        if (succeeded.length > 0) {
+            const list = await this.lists.get(tenantId, listIdOrSlug);
+            this.realtime.records(tenantId, list.id);
         }
         return { succeeded, failed };
     }

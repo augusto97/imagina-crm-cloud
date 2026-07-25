@@ -67,11 +67,26 @@ export class PlatformController {
         return this.platform.getStats();
     }
 
-    /** Todas las empresas (tenants) con plan/estado/uso/owner. `?include_archived=1` suma las archivadas. */
+    /**
+     * Empresas (tenants) con plan/estado/uso/owner. PAGINADA (v0.1.115):
+     * `?limit` (máx 200, default 50), `?offset`, `?q` (nombre o slug).
+     * `?include_archived=1` suma las archivadas. La respuesta trae `meta.total`
+     * para que la consola pueda mostrar el total y paginar.
+     */
     @Get('tenants')
-    tenants(@Query('include_archived') includeArchived?: string): Promise<PlatformTenantsResponse> {
+    tenants(
+        @Query('include_archived') includeArchived?: string,
+        @Query('limit') limit?: string,
+        @Query('offset') offset?: string,
+        @Query('q') q?: string,
+    ): Promise<PlatformTenantsResponse> {
         const withArchived = includeArchived === '1' || includeArchived === 'true';
-        return this.platform.listTenants(withArchived).then((data) => ({ data }));
+        return this.platform.listTenants({
+            includeArchived: withArchived,
+            limit: limit ? Number(limit) : undefined,
+            offset: offset ? Number(offset) : undefined,
+            search: q,
+        });
     }
 
     /** Alta de una empresa nueva + su admin en un paso. */

@@ -19,7 +19,7 @@ import {
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
-import { desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { ENV, type Env } from '../config/env';
@@ -63,27 +63,66 @@ export class PlatformService {
         private readonly plans: PlansService,
     ) {}
 
-    /** Todas las empresas con plan/estado/uso/owner (para la grilla del operador). */
-    async listTenants(includeArchived = false): Promise<PlatformTenant[]> {
-        const rows = await this.db.select().from(tenants).orderBy(desc(tenants.createdAt));
+    /**
+     * Empresas con plan/estado/uso/owner (grilla del operador), PAGINADA.
+     *
+     * v0.1.115: antes traía TODAS las empresas y encima corría cuatro
+     * `GROUP BY` de tabla completa (records, memberships, automations,
+     * attachments) en cada carga — con 54 empresas andaba, pero a escala cada
+     * visita a la consola escaneaba la tabla de records entera. Ahora se
+     * pagina PRIMERO y los agregados se calculan sólo para los ids de la
+     * página (`WHERE tenant_id IN (...)`), que es un lookup por índice.
+     */
+    async listTenants(
+        opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string } = {},
+    ): Promise<{ data: PlatformTenant[]; meta: { total: number; limit: number; offset: number } }> {
+        const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+        const offset = Math.max(opts.offset ?? 0, 0);
+        const search = (opts.search ?? '').trim();
+
+        const filters: SQL[] = [];
+        if (!opts.includeArchived) filters.push(isNull(tenants.archivedAt));
+        if (search !== '') {
+            const term = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+            filters.push(sql`(${tenants.name} ILIKE ${term} OR ${tenants.slug} ILIKE ${term})`);
+        }
+        const where = filters.length > 0 ? and(...filters) : undefined;
+
+        const [rows, totalRow] = await Promise.all([
+            this.db
+                .select()
+                .from(tenants)
+                .where(where)
+                .orderBy(desc(tenants.createdAt))
+                .limit(limit)
+                .offset(offset),
+            this.db.select({ n: intCount() }).from(tenants).where(where),
+        ]);
+
+        const ids = rows.map((t) => t.id);
+        if (ids.length === 0) {
+            return { data: [], meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset } };
+        }
+
         const [recMap, userMap, autoMap, storageMap, ownerMap] = await Promise.all([
-            this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(isNull(records.deletedAt)).groupBy(records.tenantId)),
-            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).groupBy(memberships.tenantId)),
-            this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).groupBy(automations.tenantId)),
-            this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).groupBy(attachments.tenantId)),
+            this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
+            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(inArray(memberships.tenantId, ids)).groupBy(memberships.tenantId)),
+            this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
+            this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(inArray(attachments.tenantId, ids)).groupBy(attachments.tenantId)),
             this.ownersByTenant(),
         ]);
 
-        return rows
-            .filter((t) => includeArchived || t.archivedAt == null)
-            .map((t) =>
+        return {
+            data: rows.map((t) =>
                 this.toPlatformTenant(t, ownerMap.get(t.id) ?? null, {
                     records: recMap.get(t.id) ?? 0,
                     users: userMap.get(t.id) ?? 0,
                     automations: autoMap.get(t.id) ?? 0,
                     storage_bytes: Number(storageMap.get(t.id) ?? 0),
                 }),
-            );
+            ),
+            meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset },
+        };
     }
 
     /** Fila de tenant → DTO del operador (con solo-lectura efectivo). */
