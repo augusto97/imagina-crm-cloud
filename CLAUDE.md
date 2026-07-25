@@ -1494,6 +1494,54 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dashboards con charts, editor de automatizaciones, ficha de registro
         y login.
 
+- [ ] **F8 — Auditoría integral post-v0.1.112** (hallazgos de la revisión
+      completa pedida por el usuario; orden acordado: seguridad → robustez →
+      escala):
+  - [x] **Release de seguridad (v0.1.113)**:
+        (a) **SEC-21 — XSS almacenado en el módulo de archivos** (verificado
+        con PoC antes y después): la descarga devolvía el `content-type` que
+        eligió QUIEN SUBIÓ el archivo (`part.mimetype`) con
+        `content-disposition: inline` → cualquier miembro con permiso de
+        editar registros subía un `.html`/`.svg` y obtenía una URL en el
+        MISMO origen que ejecutaba su JavaScript (peor por `/files/:id/signed`,
+        que no pide sesión y sirve para pasarle el link a cualquiera, incluido
+        el cliente del portal). `nosniff` no alcanza: sólo impide ADIVINAR el
+        tipo, no respetar un `text/html` explícito. Fix: `safe-content-type.ts`
+        — whitelist de tipos que se sirven inline (png/jpeg/gif/webp/avif/bmp/
+        ico/pdf; SVG queda FUERA a propósito), todo lo demás baja como
+        `application/octet-stream` + `attachment`, más
+        `Content-Security-Policy: sandbox` en la respuesta y un
+        `content-disposition` a prueba de inyección de cabeceras (con
+        `filename*` RFC 5987 para conservar acentos). Aplicado a los DOS
+        caminos (sesión y firmado). 5 tests unitarios.
+        (b) **SEC-22 — el reset de contraseña no cerraba las sesiones**:
+        `resetPassword` cambiaba el hash y nada más, así que con TTL de 30 días
+        deslizantes quien hubiera robado una sesión seguía dentro después de
+        que la víctima "recuperaba" la cuenta. Ahora llama a
+        `destroyAllForUser`. Test de integración (dos sesiones vivas → reset →
+        ambas muertas → la contraseña nueva es la que vale).
+        (c) **Secretos que degradaban en SILENCIO**: `SECRETS_KEY` vacío hacía
+        que `encryptSecret` devolviera texto plano (contraseñas SMTP de cada
+        empresa SIN CIFRAR en la DB) y `FILES_SIGNING_SECRET` vacío caía a un
+        secreto aleatorio por proceso (URLs firmadas rotas en cada reinicio y
+        distintas entre nodos). Ahora `loadEnv` FALLA el arranque en producción
+        con un mensaje accionable (y avisa por consola en desarrollo), y ambas
+        variables están documentadas en `.env.example`.
+        (d) **CSP** en los dos proxies (Caddy + nginx). OJO: acotado al SPA,
+        NUNCA a `/api/*` — la lista pública embebible (ADR-S14) manda su propio
+        `frame-ancestors` por dominio y un segundo CSP con `frame-ancestors
+        'self'` lo bloquearía (el navegador aplica la INTERSECCIÓN de ambas
+        políticas). Por el mismo motivo `X-Frame-Options` también se movió a
+        los `location`/matcher del SPA.
+        (e) **Dependencias con CVE de runtime** cerradas por override:
+        `fast-uri` ≥3.1.4 (high, vía Fastify), `find-my-way` ≥9.7.0 (high, DoS
+        HTTP/2 del router), `dompurify` ≥3.4.12 (bypass del sanitizador),
+        `postcss` ≥8.5.23, `brace-expansion` ≥2.1.2. Quedan pendientes y
+        DOCUMENTADAS: `react-router` (el arreglo sólo existe en la major v7 —
+        migración aparte, riesgo real sobre 62k líneas de front) y las de
+        `vite`/`vitest`/`esbuild`, que son del servidor de desarrollo y no
+        llegan al bundle de producción. 334 tests API en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
