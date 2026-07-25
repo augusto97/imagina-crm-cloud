@@ -38,9 +38,10 @@
             "@babel/runtime": ">=7.26.10",
             "fast-uri": ">=3.1.4",
             "dompurify": ">=3.4.12",
-            "brace-expansion": ">=2.1.2",
             "find-my-way": ">=9.7.0",
-            "postcss": ">=8.5.23"
+            "postcss": ">=8.5.23",
+            "brace-expansion@1": "1.1.16",
+            "brace-expansion@2": "2.1.2"
         }
     }
 }

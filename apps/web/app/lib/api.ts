@@ -88,7 +88,7 @@ function appendParam(params: URLSearchParams, key: string, value: unknown): void
     params.append(key, serializeParam(value));
 }
 
-function parseSlugRename(header: string | null): SlugRenamedHint | undefined {
+export function parseSlugRename(header: string | null): SlugRenamedHint | undefined {
     if (!header) return undefined;
     const out: Partial<SlugRenamedHint> = {};
     for (const part of header.split(',')) {
@@ -109,14 +109,14 @@ function parseSlugRename(header: string | null): SlugRenamedHint | undefined {
 // record `data`↔`fields`, paginación cursor→página y body `{fields}`→`{data}`.
 
 /** ¿El path apunta al recurso records (listado o item), no bulk/groups? */
-function recordsPathKind(path: string): 'list' | 'item' | null {
+export function recordsPathKind(path: string): 'list' | 'item' | null {
     if (/\/lists\/[^/]+\/records\/\d+$/.test(path)) return 'item';
     if (/\/lists\/[^/]+\/records$/.test(path)) return 'list';
     return null;
 }
 
 /** Segmento `:listIdOrSlug` de un path `/lists/<key>/...`. */
-function listKeyFromPath(path: string): string | null {
+export function listKeyFromPath(path: string): string | null {
     const m = path.match(/\/lists\/([^/]+)/);
     return m?.[1] ?? null;
 }
@@ -129,7 +129,7 @@ const CLOUD_RECORDS_MAX_LIMIT = 200; // espejo de MAX_RECORDS_LIMIT del backend.
  * query (filter_tree, sort, search…). `page` se descarta: la paginación es por
  * cursor keyset, no por offset.
  */
-function cloudRecordsQuery(query?: Record<string, unknown>): Record<string, unknown> | undefined {
+export function cloudRecordsQuery(query?: Record<string, unknown>): Record<string, unknown> | undefined {
     if (!query) return query;
     const { per_page, page, limit, ...rest } = query;
     const desired = Number(per_page ?? limit ?? 0);
@@ -146,7 +146,7 @@ function cloudRecordsQuery(query?: Record<string, unknown>): Record<string, unkn
  * los valores por `f{field_id}` (ADR-S02, verdad interna); la UI del fork los
  * consume por SLUG (`row.fields[field.slug]`). Guardamos ambos sentidos.
  */
-interface FieldKeyMap {
+export interface FieldKeyMap {
     toSlug: Record<string, string>; // f{id} → slug
     toFid: Record<string, string>; // slug → f{id}
 }
@@ -156,12 +156,15 @@ interface FieldKeyMap {
 // con un fetch on-demand. Se refresca en cada GET de fields → nunca queda stale.
 const fieldMaps = new Map<string, FieldKeyMap>();
 
-function buildFieldMap(fields: unknown): FieldKeyMap {
+export function buildFieldMap(fields: unknown): FieldKeyMap {
     const toSlug: Record<string, string> = {};
     const toFid: Record<string, string> = {};
     if (Array.isArray(fields)) {
-        for (const f of fields as Array<{ id?: number; slug?: string }>) {
-            if (typeof f.id === 'number' && typeof f.slug === 'string') {
+        for (const f of fields as Array<{ id?: number; slug?: string } | null>) {
+            // Guard de entrada malformada (v0.1.114): una entrada nula rompía
+            // el mapa entero → la lista quedaba sin traducción de claves y la
+            // tabla se veía vacía. Mejor saltear la fila mala.
+            if (f && typeof f.id === 'number' && typeof f.slug === 'string') {
                 toSlug[`f${f.id}`] = f.slug;
                 toFid[f.slug] = `f${f.id}`;
             }
@@ -192,7 +195,7 @@ async function ensureFieldMap(listKey: string): Promise<FieldKeyMap> {
 }
 
 /** RecordDto backend (`data` con claves f{id}) → RecordEntity UI (`fields` por slug). */
-function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
+export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
     if (!raw || typeof raw !== 'object') return raw;
     const r = raw as Record<string, unknown>;
     const source = (r.data as Record<string, unknown> | undefined) ?? {};
@@ -225,7 +228,7 @@ function stripZ(value: unknown): unknown {
 }
 
 /** Body de create/update: `{fields:{slug:v}}` UI → `{data:{f{id}:v}}` backend. */
-function mapRecordBody(body: unknown, map: FieldKeyMap): unknown {
+export function mapRecordBody(body: unknown, map: FieldKeyMap): unknown {
     if (!body || typeof body !== 'object') return body;
     const b = body as Record<string, unknown>;
     const src = (b.fields as Record<string, unknown> | undefined) ?? (b.data as Record<string, unknown> | undefined);
@@ -301,7 +304,7 @@ async function normalizeCloudResponse<T>(path: string, payload: unknown): Promis
  * de nivel superior o arrays de objetos (listas, fields, views…). El fork les
  * concatena 'Z' al formatear; sin esto verían '...ZZ' → Invalid Date.
  */
-function normalizeDates(value: unknown): unknown {
+export function normalizeDates(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(normalizeDates);
     if (value && typeof value === 'object') {
         const obj = value as Record<string, unknown>;

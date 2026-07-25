@@ -1541,6 +1541,43 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         migración aparte, riesgo real sobre 62k líneas de front) y las de
         `vite`/`vitest`/`esbuild`, que son del servidor de desarrollo y no
         llegan al bundle de producción. 334 tests API en verde.
+  - [x] **Robustez (v0.1.114)**:
+        (a) **Tests reales del front donde más duele** — el adaptador
+        `lib/api.ts` y las queryKeys no tenían NI UN test, y son justo la capa
+        que produjo la clase de bug más cara del proyecto (v0.1.68 filtros,
+        v0.1.81 import, v0.1.83 recurrencias, v0.1.85 automatizaciones,
+        v0.1.105 realtime: todas invalidaciones que no matcheaban por el par
+        id↔slug). Se exportaron los helpers PUROS del adaptador (sin cambiar
+        comportamiento) y se cubrieron: traducción `f{id}`↔slug de data y
+        relations, `Z` de los timestamps naive-UTC, claves huérfanas que no se
+        pierden, body de create/update, `per_page`→`limit` con cap 200,
+        reconocimiento de paths. Más un spec del CONTRATO de las queryKeys:
+        todas las familias ponen el identificador en el índice 1, y
+        `invalidateForList` matchea la query registrada por slug cuando el
+        evento trae el id (y viceversa) sin cruzar listas ni namespaces.
+        26 tests nuevos (front 41 → 67). El primero encontró un bug latente:
+        `buildFieldMap` reventaba con una entrada nula en la respuesta y
+        dejaba la lista SIN traducción de claves (tabla vacía) — endurecido.
+        (b) **Bitácora de acciones administrativas** (migración 0034,
+        `audit_log` con RLS): `activity` sólo registra cambios de REGISTROS y
+        cuelga de una lista con cascada — o sea que borrar una lista borraba
+        justo la evidencia de quién la borró, y las acciones de workspace
+        (miembros, plan, SMTP, dominio) no dejaban rastro alguno. Tabla propia
+        append-only + `AuditService` (@Global, best-effort: si la bitácora
+        falla, la operación del usuario sigue). Registra: crear/borrar lista,
+        cambiar permisos por rol, publicar/despublicar al mundo, borrar campo,
+        convertir tipo de campo, alta/cambio de rol/baja de miembros, y cambios
+        de SMTP y dominio. El `target_label` guarda el NOMBRE al momento de la
+        acción, así la entrada sigue siendo legible cuando el objeto ya no
+        existe. `GET /workspaces/current/audit` (admin, cursor) + sección
+        "Registro de actividad" en Ajustes → Workspace, con las acciones
+        destructivas marcadas. Nunca se guardan contraseñas en el meta.
+        5 tests (aislamiento por empresa, orden, cursor, resistencia a fallos)
+        — 339 API en verde.
+        (c) De paso: el override de `brace-expansion` de v0.1.113 tuvo que
+        acotarse POR LÍNEA de versión (`@1` y `@2`) — el `>=2.1.2` global
+        empujaba a los consumidores de la v1 (minimatch@3 → ESLint) a la 5.x,
+        cuya API cambió, y ESLint no arrancaba ("expand is not a function").
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

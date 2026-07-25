@@ -31,3 +31,26 @@ export const activitySchema = z.object({
     created_at: isoDateTimeSchema,
 });
 export type ActivityDto = z.infer<typeof activitySchema>;
+
+// --- v0.1.114: bitácora de acciones ADMINISTRATIVAS del workspace ---
+// Distinta de `activity` (cambios de registros): acá van las acciones que
+// cambian la configuración o destruyen datos, incluidas las que no cuelgan
+// de ninguna lista (miembros, plan, SMTP, dominio).
+export const auditEntrySchema = z.object({
+    id: z.number(),
+    action: z.string(),
+    target_type: z.string(),
+    target_id: z.number().nullable(),
+    target_label: z.string(),
+    meta: z.record(z.unknown()),
+    user_id: z.number().nullable(),
+    user_name: z.string().nullable(),
+    created_at: z.string(),
+});
+export type AuditEntry = z.infer<typeof auditEntrySchema>;
+
+export const auditFeedSchema = z.object({
+    data: z.array(auditEntrySchema),
+    meta: z.object({ next_cursor: z.string().nullable() }),
+});
+export type AuditFeed = z.infer<typeof auditFeedSchema>;

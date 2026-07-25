@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import {
     customDomainInputSchema,
     smtpConfigSchema,
@@ -27,6 +27,7 @@ import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
 import { MailService } from '../mail/mail.service';
 import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
+import { AuditService, type AuditEntryDto } from '../audit/audit.service';
 import { BrandingService } from './branding.service';
 
 @Controller('workspaces')
@@ -39,6 +40,7 @@ export class WorkspacesController {
         private readonly mail: MailService,
         private readonly smtpDns: SmtpDnsService,
         private readonly domains: DomainsService,
+        private readonly audit: AuditService,
     ) {}
 
     /** Gate compartido: mutaciones de configuración = solo admin del workspace. */
@@ -50,6 +52,25 @@ export class WorkspacesController {
                 data: { status: 403 },
             });
         }
+    }
+
+    /**
+     * v0.1.114 — Bitácora de acciones administrativas del workspace (admin).
+     * Feed append-only: quién borró qué, quién tocó permisos, quién movió
+     * miembros o cambió plan/SMTP/dominio.
+     */
+    @Get('current/audit')
+    @UseGuards(TenantGuard)
+    async auditFeed(
+        @Req() req: FastifyRequest,
+        @Query('cursor') cursor?: string,
+        @Query('limit') limit?: string,
+    ): Promise<{ data: AuditEntryDto[]; meta: { next_cursor: string | null } }> {
+        this.assertAdmin(req);
+        return this.audit.list(req.tenant!.tenantId, {
+            cursor: cursor ? Number(cursor) : undefined,
+            limit: limit ? Number(limit) : undefined,
+        });
     }
 
     /** Workspaces del usuario autenticado (plano auth, sin tenant activo). */
@@ -144,12 +165,22 @@ export class WorkspacesController {
 
     @Patch('current/smtp')
     @UseGuards(TenantGuard)
-    updateSmtp(
+    async updateSmtp(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(smtpConfigSchema)) input: SmtpConfig,
     ): Promise<SmtpConfigPublic> {
         this.assertAdmin(req);
-        return this.smtp.update(req.tenant!.tenantId, input);
+        const cfg = await this.smtp.update(req.tenant!.tenantId, input);
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.smtp_change',
+            targetType: 'workspace',
+            targetLabel: input.host ?? '',
+            // NUNCA la contraseña: la bitácora la lee cualquier admin.
+            meta: { host: input.host, port: input.port, from: input.from },
+        });
+        return cfg;
     }
 
     /** Volver al correo de la plataforma (borra la config propia). */
@@ -159,6 +190,13 @@ export class WorkspacesController {
     async clearSmtp(@Req() req: FastifyRequest): Promise<void> {
         this.assertAdmin(req);
         await this.smtp.clear(req.tenant!.tenantId);
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.smtp_change',
+            targetType: 'workspace',
+            targetLabel: '(vuelve al correo de la plataforma)',
+        });
     }
 
     /**
@@ -194,19 +232,35 @@ export class WorkspacesController {
 
     @Patch('current/domain')
     @UseGuards(TenantGuard)
-    setDomain(
+    async setDomain(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(customDomainInputSchema)) input: CustomDomainInput,
     ): Promise<TenantDomain> {
         this.assertAdmin(req);
-        return this.domains.set(req.tenant!.tenantId, input.domain);
+        const domain = await this.domains.set(req.tenant!.tenantId, input.domain);
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.domain_change',
+            targetType: 'workspace',
+            targetLabel: input.domain,
+        });
+        return domain;
     }
 
     @Delete('current/domain')
     @UseGuards(TenantGuard)
-    clearDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
+    async clearDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
         this.assertAdmin(req);
-        return this.domains.clear(req.tenant!.tenantId);
+        const domain = await this.domains.clear(req.tenant!.tenantId);
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.domain_change',
+            targetType: 'workspace',
+            targetLabel: '(sin dominio propio)',
+        });
+        return domain;
     }
 
     /** Verificación en vivo del CNAME/A del dominio propio. 404 sin dominio. */

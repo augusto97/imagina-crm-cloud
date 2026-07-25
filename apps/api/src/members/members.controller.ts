@@ -21,6 +21,7 @@ import {
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
+import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { MembersService } from './members.service';
@@ -34,7 +35,10 @@ import { MembersService } from './members.service';
 @Controller('workspaces/current/members')
 @UseGuards(SessionGuard, TenantGuard)
 export class MembersController {
-    constructor(private readonly members: MembersService) {}
+    constructor(
+        private readonly members: MembersService,
+        private readonly audit: AuditService,
+    ) {}
 
     @Get()
     async all(@Req() req: FastifyRequest): Promise<{ data: WorkspaceMember[] }> {
@@ -44,22 +48,42 @@ export class MembersController {
 
     @Post()
     @HttpCode(201)
-    add(
+    async add(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(addMemberSchema)) input: AddMemberInput,
     ): Promise<WorkspaceMember> {
         assertAdmin(req);
-        return this.members.add(tenantId(req), input);
+        const member = await this.members.add(tenantId(req), input);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'member.add',
+            targetType: 'user',
+            targetId: member.user_id,
+            targetLabel: member.email,
+            meta: { role: member.role },
+        });
+        return member;
     }
 
     @Patch(':userId')
-    updateRole(
+    async updateRole(
         @Req() req: FastifyRequest,
         @Param('userId', ParseIntPipe) userId: number,
         @Body(new ZodValidationPipe(updateMemberRoleSchema)) input: UpdateMemberRoleInput,
     ): Promise<WorkspaceMember> {
         assertAdmin(req);
-        return this.members.updateRole(tenantId(req), userId, input);
+        const member = await this.members.updateRole(tenantId(req), userId, input);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'member.role_change',
+            targetType: 'user',
+            targetId: userId,
+            targetLabel: member.email,
+            meta: { role: member.role },
+        });
+        return member;
     }
 
     @Delete(':userId')
@@ -69,7 +93,18 @@ export class MembersController {
         @Param('userId', ParseIntPipe) userId: number,
     ): Promise<void> {
         assertAdmin(req);
+        const all = await this.members.list(tenantId(req)).catch(() => []);
+        const gone = all.find((m) => m.user_id === userId);
         await this.members.remove(tenantId(req), req.authUserId!, userId);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'member.remove',
+            targetType: 'user',
+            targetId: userId,
+            targetLabel: gone?.email ?? String(userId),
+            meta: { role: gone?.role },
+        });
     }
 }
 
