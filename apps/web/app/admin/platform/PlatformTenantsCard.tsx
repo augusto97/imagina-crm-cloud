@@ -144,24 +144,35 @@ function QuietSelect({
 /** Grilla de empresas + alta en un paso + detalle en panel lateral (ADR-S15). */
 export function PlatformTenantsCard(): JSX.Element {
     const [showArchived, setShowArchived] = useState(false);
-    const tenants = usePlatformTenants(showArchived);
+    const [search, setSearchState] = useState('');
+    // v0.1.115 — la búsqueda y el paginado son SERVER-SIDE: el endpoint ya no
+    // trae todas las empresas. El debounce evita una query por tecla.
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    useEffect(() => {
+        const t = window.setTimeout(() => setDebouncedSearch(search), 300);
+        return () => window.clearTimeout(t);
+    }, [search]);
+    const [page, setPage] = useState(0);
+    const PAGE_SIZE = 50;
+    const tenants = usePlatformTenants({
+        includeArchived: showArchived,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        search: debouncedSearch,
+    });
     const plans = usePlatformPlans();
     const update = useUpdateTenant();
     const del = useDeleteTenant();
     const [sheetId, setSheetId] = useState<number | null>(null);
     const [showNew, setShowNew] = useState(false);
-    const [search, setSearch] = useState('');
     const [rowError, setRowError] = useState<string | null>(null);
+    const setSearch = (v: string): void => {
+        setSearchState(v);
+        setPage(0); // una búsqueda nueva arranca en la primera página
+    };
 
-    const filtered = (tenants.data ?? []).filter((t) => {
-        const q = search.trim().toLowerCase();
-        if (q === '') return true;
-        return (
-            t.name.toLowerCase().includes(q) ||
-            t.slug.toLowerCase().includes(q) ||
-            (t.owner?.email.toLowerCase().includes(q) ?? false)
-        );
-    });
+    const filtered = tenants.data?.data ?? [];
+    const total = tenants.data?.total ?? 0;
 
     const setPlan = (t: PlatformTenant, plan: Plan): void => {
         if (plan !== t.plan) update.mutate({ id: t.id, input: { plan } });
@@ -228,7 +239,7 @@ export function PlatformTenantsCard(): JSX.Element {
                             />
                         </div>
                         <span className="imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
-                            {filtered.length} / {(tenants.data ?? []).length}
+                            {filtered.length} / {total}
                         </span>
                     </div>
                 )}
@@ -378,6 +389,32 @@ export function PlatformTenantsCard(): JSX.Element {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                )}
+                {/* Paginación server-side (v0.1.115). */}
+                {total > PAGE_SIZE && (
+                    <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-pt-1">
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
+                            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} {__('de')} {total}
+                        </span>
+                        <div className="imcrm-flex imcrm-gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={page === 0 || tenants.isFetching}
+                                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                            >
+                                {__('Anterior')}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={(page + 1) * PAGE_SIZE >= total || tenants.isFetching}
+                                onClick={() => setPage((p) => p + 1)}
+                            >
+                                {__('Siguiente')}
+                            </Button>
+                        </div>
                     </div>
                 )}
                 {update.isError && (

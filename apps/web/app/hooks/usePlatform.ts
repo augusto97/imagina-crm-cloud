@@ -59,11 +59,26 @@ export function usePlatformStats() {
     });
 }
 
-export function usePlatformTenants(includeArchived = false) {
+/**
+ * Empresas del operador. v0.1.115: el endpoint PAGINA (antes traía todas y
+ * corría cuatro GROUP BY de tabla completa por carga). `total` viene en la
+ * respuesta para mostrar el conteo y avanzar de página.
+ */
+export function usePlatformTenants(
+    opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string } = {},
+) {
+    const { includeArchived = false, limit = 50, offset = 0, search = '' } = opts;
     return useQuery({
-        queryKey: [...platformKeys.tenants(), { includeArchived }],
-        queryFn: async () =>
-            (await api.get<PlatformTenant[]>(`/platform/tenants${includeArchived ? '?include_archived=1' : ''}`)).data,
+        queryKey: [...platformKeys.tenants(), { includeArchived, limit, offset, search }],
+        queryFn: async () => {
+            const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+            if (includeArchived) params.set('include_archived', '1');
+            if (search.trim() !== '') params.set('q', search.trim());
+            const res = await api.get<PlatformTenant[]>(`/platform/tenants?${params.toString()}`);
+            const meta = (res as { meta?: { total: number } }).meta;
+            return { data: res.data, total: meta?.total ?? res.data.length };
+        },
+        placeholderData: (prev) => prev,
     });
 }
 

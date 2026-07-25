@@ -267,4 +267,59 @@ describe('FieldsService (Postgres real + RLS)', () => {
             NotFoundException,
         );
     });
+
+    describe('techo de campos indexados por lista (v0.1.115)', () => {
+        // Cada campo indexado crea 1-2 índices de expresión sobre la tabla
+        // COMPARTIDA `records`. Sin tope, N empresas × M campos = miles de
+        // índices en una sola tabla y cada escritura los actualiza todos.
+        it('rechaza el noveno campo indexado de la lista', async () => {
+            const list = await listsService.create(tenantA, { name: 'Indexada' });
+            for (let i = 0; i < 8; i++) {
+                await service.create(tenantA, String(list.id), {
+                    label: `Campo ${i}`,
+                    type: 'text',
+                    is_indexed: true,
+                });
+            }
+            await expect(
+                service.create(tenantA, String(list.id), {
+                    label: 'Uno de más',
+                    type: 'text',
+                    is_indexed: true,
+                }),
+            ).rejects.toThrow(/máximo/i);
+
+            // Sin índice entra sin problema (el tope es sólo de índices).
+            const plain = await service.create(tenantA, String(list.id), {
+                label: 'Sin índice',
+                type: 'text',
+            });
+            expect(plain.is_indexed).toBe(false);
+
+            // Y encenderlo por update también rebota.
+            await expect(
+                service.update(tenantA, String(list.id), String(plain.id), { is_indexed: true }),
+            ).rejects.toThrow(/máximo/i);
+        });
+
+        it('re-guardar un campo YA indexado no rebota (no se cuenta a sí mismo)', async () => {
+            const list = await listsService.create(tenantA, { name: 'Indexada2' });
+            const fields = [];
+            for (let i = 0; i < 8; i++) {
+                fields.push(
+                    await service.create(tenantA, String(list.id), {
+                        label: `C${i}`,
+                        type: 'text',
+                        is_indexed: true,
+                    }),
+                );
+            }
+            const again = await service.update(tenantA, String(list.id), String(fields[0]!.id), {
+                is_indexed: true,
+                label: 'C0 renombrado',
+            });
+            expect(again.is_indexed).toBe(true);
+            expect(again.label).toBe('C0 renombrado');
+        });
+    });
 });

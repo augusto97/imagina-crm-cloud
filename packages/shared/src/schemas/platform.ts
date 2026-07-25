@@ -39,6 +39,8 @@ export type PlatformTenant = z.infer<typeof platformTenantSchema>;
 
 export interface PlatformTenantsResponse {
     data: PlatformTenant[];
+    /** v0.1.115 — la grilla del operador pagina (antes traía TODAS). */
+    meta: { total: number; limit: number; offset: number };
 }
 
 /** Alta de una empresa nueva + su admin, en un paso (onboarding por el operador). */

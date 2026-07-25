@@ -1578,6 +1578,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         acotarse POR LÍNEA de versión (`@1` y `@2`) — el `>=2.1.2` global
         empujaba a los consumidores de la v1 (minimatch@3 → ESLint) a la 5.x,
         cuya API cambió, y ESLint no arrancaba ("expand is not a function").
+  - [x] **Escala (v0.1.115)**:
+        (a) **Consola de plataforma paginada**: `/platform/tenants` traía TODAS
+        las empresas y encima corría CUATRO `GROUP BY` de tabla completa
+        (records, memberships, automations, attachments) en cada carga — con 54
+        empresas andaba, pero a escala cada visita escaneaba la tabla de
+        records entera. Ahora pagina primero (`limit` máx 200 / `offset` / `q`
+        por nombre o slug, con `meta.total`) y los agregados se acotan a los
+        ids de la página (`WHERE tenant_id IN (...)`, lookup por índice). El
+        front pasa a búsqueda server-side con debounce + controles
+        Anterior/Siguiente.
+        (b) **Techo de campos indexados por lista** (8): cada campo con
+        `is_indexed` crea 1-2 índices de expresión sobre la tabla COMPARTIDA
+        `records`; sin tope, N empresas × M campos terminan en miles de índices
+        en una sola tabla y cada INSERT/UPDATE los actualiza todos. Se valida
+        al crear y al encender el flag (re-guardar uno ya indexado no rebota).
+        (c) **Realtime en acciones masivas**: `bulk` emitía un evento POR FILA
+        → 500 registros = 500 broadcasts al workspace y cada pestaña abierta
+        refetcheando 500 veces. `update`/`remove` aceptan `{silent}` y `bulk`
+        emite UNA sola vez al final. (El import ya lo hacía bien.)
+        (d) **Vendor chunks estables** en el build cloud: React, TanStack y
+        Radix viajaban DENTRO del bundle de la app, así que cada
+        auto-actualización invalidaba ~330 KB gzip de cache aunque las
+        dependencias no cambiaran. Separados: el chunk de la app baja de 210 a
+        161 KB gz y 104 KB pasan a chunks que sobreviven a los deploys.
+        4 tests nuevos (343 API en verde).
+
+        **Pendientes conocidos de la auditoría** (no entraron en estos tres
+        releases, por orden de valor): migrar `react-router` a la v7 (única
+        versión con el arreglo del open-redirect), 2FA + gestión de sesiones
+        activas por usuario, verificación de email en el alta pública,
+        rate-limit por cuenta además de por IP (hoy es en memoria por nodo),
+        `slug_history` para que renombrar una lista no rompa los enlaces
+        viejos, y export/borrado de datos por usuario (GDPR).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

@@ -86,6 +86,27 @@ export default defineConfig({
                 cloud: path.resolve(__dirname, 'cloud/index.html'),
                 portal: path.resolve(__dirname, 'cloud-portal/index.html'),
             },
+            output: {
+                /**
+                 * v0.1.115 — Vendor chunks estables.
+                 *
+                 * Sin esto, React + TanStack + Radix viajan DENTRO del bundle
+                 * de la app: cada auto-actualización cambia el hash de todo y
+                 * el navegador se re-descarga ~330 KB gzip aunque las
+                 * dependencias no hayan cambiado. Separadas, sólo se invalida
+                 * el chunk de la app y el resto sale del cache del navegador.
+                 */
+                manualChunks: (id: string) => {
+                    if (!id.includes('node_modules')) return undefined;
+                    if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+                        return 'vendor-react';
+                    }
+                    if (id.includes('@tanstack')) return 'vendor-query';
+                    if (id.includes('@radix-ui')) return 'vendor-radix';
+                    if (id.includes('recharts') || id.includes('d3-')) return 'vendor-charts';
+                    return undefined;
+                },
+            },
         },
     },
     server: {

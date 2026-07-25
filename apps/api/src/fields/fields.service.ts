@@ -66,6 +66,35 @@ export class FieldsService {
         }
     }
 
+    /**
+     * v0.1.115 — Techo de campos indexados POR LISTA.
+     *
+     * Cada campo con `is_indexed` crea 1-2 índices de expresión sobre la tabla
+     * COMPARTIDA `records`. Sin tope, N empresas × M campos terminan en miles
+     * de índices sobre una sola tabla: cada INSERT/UPDATE los actualiza todos
+     * y el bloat se come el disco. El tope es por lista (no global) para que
+     * una empresa no consuma el presupuesto de las demás.
+     */
+    private static readonly MAX_INDEXED_FIELDS_PER_LIST = 8;
+
+    private async assertIndexBudget(
+        tenantId: number,
+        listId: number,
+        excludeFieldId?: number,
+    ): Promise<void> {
+        const all = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.repo.listByList(tx, tenantId, listId),
+        );
+        const used = all.filter((f) => f.isIndexed && f.id !== excludeFieldId).length;
+        if (used >= FieldsService.MAX_INDEXED_FIELDS_PER_LIST) {
+            throw new BadRequestException({
+                code: 'index_budget_exceeded',
+                message: `Ya hay ${used} campos indexados en esta lista (máximo ${FieldsService.MAX_INDEXED_FIELDS_PER_LIST}). Quitá el índice de alguno antes de agregar otro.`,
+                data: { status: 400, errors: { is_indexed: 'Máximo alcanzado' } },
+            });
+        }
+    }
+
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         return this.listByListId(tenantId, listId);
@@ -150,6 +179,9 @@ export class FieldsService {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const config = safeConfig(input.type, input.config);
 
+        // Techo de índices (v0.1.115): se valida ANTES de insertar.
+        if (input.is_indexed === true) await this.assertIndexBudget(tenantId, listId);
+
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
@@ -177,6 +209,15 @@ export class FieldsService {
         patch: UpdateFieldInput,
     ): Promise<Field> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
+
+        // Techo de índices (v0.1.115): sólo al ENCENDERLO. El campo actual se
+        // excluye del conteo para que re-guardar uno ya indexado no rebote.
+        if (patch.is_indexed === true) {
+            const target = await this.tenantDb.withTenant(tenantId, (tx) =>
+                this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
+            );
+            await this.assertIndexBudget(tenantId, listId, target.id);
+        }
 
         let typeChanged = false;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
