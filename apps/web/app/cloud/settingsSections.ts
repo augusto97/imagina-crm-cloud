@@ -3,6 +3,7 @@ import {
     Gauge,
     Globe,
     Mail,
+    History,
     Palette,
     PenLine,
     SunMoon,
@@ -26,7 +27,8 @@ export type SettingsSectionId =
     | 'formato'
     | 'correo'
     | 'firma'
-    | 'apariencia';
+    | 'apariencia'
+    | 'auditoria';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
@@ -44,6 +46,8 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
+                          // v0.1.114 — quién cambió qué en el workspace.
+                          { id: 'auditoria', label: 'Registro de actividad', icon: History },
                       ] satisfies SettingsSectionItem[])
                     : []),
             ],

@@ -15,6 +15,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { frameAncestors, renderPublicListPage } from './public-page';
+import { AuditService } from '../audit/audit.service';
 import { PublicListsService } from './public-lists.service';
 
 /**
@@ -72,7 +73,10 @@ export class PublicPageController {
 @Controller('lists')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class PublicAdminController {
-    constructor(private readonly publicLists: PublicListsService) {}
+    constructor(
+        private readonly publicLists: PublicListsService,
+        private readonly audit: AuditService,
+    ) {}
 
     @Get(':idOrSlug/public')
     @RequireCapability('manage_lists')
@@ -82,11 +86,27 @@ export class PublicAdminController {
 
     @Patch(':idOrSlug/public')
     @RequireCapability('manage_lists')
-    update(
+    async update(
         @Req() req: FastifyRequest,
         @Param('idOrSlug') idOrSlug: string,
         @Body(new ZodValidationPipe(updatePublicListSchema)) input: UpdatePublicListInput,
     ): Promise<PublicListAdmin> {
-        return this.publicLists.updateAdmin(req.tenant!.tenantId, idOrSlug, input);
+        const before = await this.publicLists
+            .getAdmin(req.tenant!.tenantId, idOrSlug)
+            .catch(() => null);
+        const doc = await this.publicLists.updateAdmin(req.tenant!.tenantId, idOrSlug, input);
+        // v0.1.114 — publicar una lista la expone SIN sesión a internet: es de
+        // las acciones que más importa poder auditar después.
+        if (before?.enabled !== doc.enabled) {
+            await this.audit.log({
+                tenantId: req.tenant!.tenantId,
+                userId: req.authUserId ?? null,
+                action: doc.enabled ? 'list.public_enable' : 'list.public_disable',
+                targetType: 'list',
+                targetLabel: idOrSlug,
+                meta: { domains: doc.allowed_domains },
+            });
+        }
+        return doc;
     }
 }

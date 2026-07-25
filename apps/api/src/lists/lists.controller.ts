@@ -26,6 +26,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ListsService } from './lists.service';
@@ -38,7 +39,10 @@ import { ListsService } from './lists.service';
 @Controller('lists')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class ListsController {
-    constructor(private readonly lists: ListsService) {}
+    constructor(
+        private readonly lists: ListsService,
+        private readonly audit: AuditService,
+    ) {}
 
     @Get()
     all(@Req() req: FastifyRequest): Promise<{ data: List[] }> {
@@ -73,22 +77,42 @@ export class ListsController {
 
     @Patch(':idOrSlug/permissions')
     @RequireCapability('manage_lists')
-    updatePermissions(
+    async updatePermissions(
         @Req() req: FastifyRequest,
         @Param('idOrSlug') idOrSlug: string,
         @Body(new ZodValidationPipe(updateListPermissionsSchema)) input: UpdateListPermissionsInput,
     ): Promise<ListPermissionsDoc> {
-        return this.lists.updatePermissions(tenantId(req), idOrSlug, input);
+        const doc = await this.lists.updatePermissions(tenantId(req), idOrSlug, input);
+        const list = await this.lists.get(tenantId(req), idOrSlug).catch(() => null);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'list.permissions',
+            targetType: 'list',
+            targetId: list?.id ?? null,
+            targetLabel: list?.name ?? idOrSlug,
+            meta: { roles: Object.keys(input.permissions ?? {}) },
+        });
+        return doc;
     }
 
     @Post()
     @HttpCode(201)
     @RequireCapability('manage_lists')
-    create(
+    async create(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(createListSchema)) input: CreateListInput,
     ): Promise<List> {
-        return this.lists.create(tenantId(req), input);
+        const list = await this.lists.create(tenantId(req), input);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'list.create',
+            targetType: 'list',
+            targetId: list.id,
+            targetLabel: list.name,
+        });
+        return list;
     }
 
     @Patch(':idOrSlug')
@@ -105,7 +129,18 @@ export class ListsController {
     @HttpCode(204)
     @RequireCapability('manage_lists')
     async remove(@Req() req: FastifyRequest, @Param('idOrSlug') idOrSlug: string): Promise<void> {
+        // Se resuelve ANTES de borrar: después el nombre ya no existe y la
+        // bitácora quedaría con un id suelto imposible de interpretar.
+        const list = await this.lists.get(tenantId(req), idOrSlug).catch(() => null);
         await this.lists.remove(tenantId(req), idOrSlug);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'list.delete',
+            targetType: 'list',
+            targetId: list?.id ?? null,
+            targetLabel: list?.name ?? idOrSlug,
+        });
     }
 }
 

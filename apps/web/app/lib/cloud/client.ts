@@ -1,4 +1,6 @@
 import {
+    auditFeedSchema,
+    type AuditFeed,
     activitySchema,
     aggregateResultSchema,
     apiErrorSchema,
@@ -376,6 +378,14 @@ export class CloudClient {
     }
     removeMember(userId: number): Promise<void> {
         return this.request('DELETE', `/workspaces/current/members/${userId}`, {});
+    }
+
+    // --- bitácora de acciones administrativas (v0.1.114) ---
+    getAuditLog(limit = 50): Promise<AuditFeed> {
+        return this.request('GET', '/workspaces/current/audit', {
+            query: { limit },
+            schema: auditFeedSchema,
+        });
     }
 
     // --- branding white-label del workspace ---

@@ -24,6 +24,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { FieldsService } from './fields.service';
@@ -35,7 +36,10 @@ import { FieldsService } from './fields.service';
 @Controller('lists/:list/fields')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class FieldsController {
-    constructor(private readonly fields: FieldsService) {}
+    constructor(
+        private readonly fields: FieldsService,
+        private readonly audit: AuditService,
+    ) {}
 
     @Get()
     all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Field[] }> {
@@ -95,13 +99,30 @@ export class FieldsController {
 
     @Patch(':field')
     @RequireCapability('manage_fields')
-    update(
+    async update(
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Param('field') field: string,
         @Body(new ZodValidationPipe(updateFieldSchema)) patch: UpdateFieldInput,
     ): Promise<Field> {
-        return this.fields.update(tenantId(req), list, field, patch);
+        const before = patch.type !== undefined
+            ? await this.fields.get(tenantId(req), list, field).catch(() => null)
+            : null;
+        const updated = await this.fields.update(tenantId(req), list, field, patch);
+        // Sólo se registra la CONVERSIÓN DE TIPO: migra los valores de todos
+        // los registros y puede limpiar los que no se puedan convertir.
+        if (before && before.type !== updated.type) {
+            await this.audit.log({
+                tenantId: tenantId(req),
+                userId: req.authUserId ?? null,
+                action: 'field.type_change',
+                targetType: 'field',
+                targetId: updated.id,
+                targetLabel: updated.label,
+                meta: { list, from: before.type, to: updated.type },
+            });
+        }
+        return updated;
     }
 
     @Delete(':field')
@@ -112,7 +133,19 @@ export class FieldsController {
         @Param('list') list: string,
         @Param('field') field: string,
     ): Promise<void> {
+        // Resolver ANTES: borrar el campo destruye su valor en todos los
+        // registros, y después ya no hay nombre que registrar.
+        const doomed = await this.fields.get(tenantId(req), list, field).catch(() => null);
         await this.fields.remove(tenantId(req), list, field);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'field.delete',
+            targetType: 'field',
+            targetId: doomed?.id ?? null,
+            targetLabel: doomed?.label ?? field,
+            meta: { list, type: doomed?.type },
+        });
     }
 }
 
