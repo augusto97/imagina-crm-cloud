@@ -1,81 +1,59 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Loader2, Save, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { ArrowLeft, Loader2, Table2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useDeleteList, useList, useUpdateList } from '@/hooks/useLists';
-import { ApiError } from '@/lib/api';
+import { Card, CardContent } from '@/components/ui/card';
+import { useFields } from '@/hooks/useFields';
+import { useList } from '@/hooks/useLists';
+import { usePublicList } from '@/hooks/usePublicList';
 import { __, sprintf } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 
 import { AppearancePanel } from './AppearancePanel';
+import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
 import { FieldBuilder } from './FieldBuilder';
 import { PermissionsPanel } from './PermissionsPanel';
 import { PortalConfigPanel } from './PortalConfigPanel';
 import { PublicVisibilityPanel } from './PublicVisibilityPanel';
-import { SlugEditor } from './SlugEditor';
+import {
+    LIST_SETTINGS_SECTIONS,
+    listSettingsSection,
+    resolveListSettingsSection,
+    type ListSettingsSectionId,
+} from './listSettingsSections';
 
+/**
+ * Configuración de una lista (v0.1.126).
+ *
+ * Antes esta página era UN scroll con seis tarjetas abiertas a la vez:
+ * datos generales, campos, apariencia, portal, permisos y lista pública,
+ * cada una con su propio botón de guardar y su propia jerga. Encontrar
+ * algo era imposible y el botón de ELIMINAR la lista vivía arriba a la
+ * derecha, junto a "Ver registros".
+ *
+ * Ahora hay una tira de pestañas (el mismo patrón que las vistas
+ * guardadas de la página de registros) y se muestra UNA sección por vez,
+ * con su título y una línea que explica en criollo qué se hace ahí. La
+ * sección activa viaja en `?s=` para poder linkearla.
+ */
 export function ListBuilderPage(): JSX.Element {
     const { listSlug } = useParams<{ listSlug: string }>();
     const navigate = useNavigate();
+    const [params, setParams] = useSearchParams();
     const list = useList(listSlug);
-    const update = useUpdateList(list.data?.id ?? listSlug ?? '');
-    const remove = useDeleteList();
 
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-    const [slug, setSlug] = useState('');
-    const [slugDirty, setSlugDirty] = useState(false);
-    const [submitError, setSubmitError] = useState<string | null>(null);
+    const active = resolveListSettingsSection(params.get('s'));
+    const activeSection = listSettingsSection(active);
 
-    useEffect(() => {
-        if (list.data) {
-            setName(list.data.name);
-            setDescription(list.data.description ?? '');
-            setSlug(list.data.slug);
-            setSlugDirty(false);
-        }
-    }, [list.data]);
-
-    const handleSave = async (): Promise<void> => {
-        if (!list.data) return;
-        setSubmitError(null);
-        try {
-            const updated = await update.mutateAsync({
-                name: name.trim(),
-                description: description.trim() || null,
-                slug: slug !== list.data.slug ? slug : undefined,
-            });
-            // Si el slug cambió, navegamos a la URL nueva (queda más limpio).
-            if (updated.slug !== list.data.slug) {
-                navigate(`/lists/${updated.slug}/edit`, { replace: true });
-            }
-        } catch (err) {
-            setSubmitError(err instanceof ApiError || err instanceof Error ? err.message : 'Error');
-        }
-    };
-
-    const handleDelete = async (): Promise<void> => {
-        if (!list.data) return;
-        const message = sprintf(
-            /* translators: %s: list name */
-            __('¿Eliminar la lista "%s"? Los datos se preservan a menos que pidas purgarlos.'),
-            list.data.name,
+    const select = (id: ListSettingsSectionId): void => {
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('s', id);
+                return next;
+            },
+            { replace: true },
         );
-        if (!confirm(message)) {
-            return;
-        }
-        await remove.mutateAsync({ idOrSlug: list.data.id });
-        navigate('/lists');
     };
 
     if (list.isLoading) {
@@ -107,115 +85,168 @@ export function ListBuilderPage(): JSX.Element {
         );
     }
 
+    const data = list.data;
+
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
-            <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => navigate('/lists')}
-                        className="imcrm-gap-2 imcrm-self-start imcrm-text-muted-foreground"
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            {/* Fila 1 — breadcrumb compacto, igual que la página de registros. */}
+            <header className="imcrm-flex imcrm-min-h-[36px] imcrm-items-center imcrm-justify-between imcrm-gap-3">
+                <nav
+                    aria-label={__('Ruta de navegación')}
+                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[13px]"
+                >
+                    <Link
+                        to="/lists"
+                        className="imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                     >
-                        <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
                         {__('Listas')}
-                    </Button>
-                    <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                        {list.data.name}
+                    </Link>
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                        /
+                    </span>
+                    <Link
+                        to={`/lists/${data.slug}/records`}
+                        className="imcrm-truncate imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
+                    >
+                        {data.name}
+                    </Link>
+                    <span aria-hidden className="imcrm-shrink-0 imcrm-text-muted-foreground/60">
+                        /
+                    </span>
+                    <h1 className="imcrm-shrink-0 imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight">
+                        {__('Configuración')}
                     </h1>
-                </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={() => navigate(`/lists/${list.data.slug}/records`)}
-                    >
+                </nav>
+
+                <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-h-7 imcrm-shrink-0 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
+                >
+                    <Link to={`/lists/${data.slug}/records`}>
+                        <Table2 className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Ver registros')}
-                    </Button>
-                    <Button
-                        variant="outline"
-                        className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                        onClick={handleDelete}
-                    >
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        {__('Eliminar')}
-                    </Button>
-                </div>
+                    </Link>
+                </Button>
             </header>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>{__('General')}</CardTitle>
-                    <CardDescription>{__('Datos básicos y slug de la lista.')}</CardDescription>
-                </CardHeader>
-                <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-                    <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-4 md:imcrm-grid-cols-2">
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label htmlFor="list-name">{__('Nombre')}</Label>
-                            <Input
-                                id="list-name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                            />
-                        </div>
-                        <SlugEditor
-                            type="list"
-                            value={slug}
-                            onChange={setSlug}
-                            isDirty={slugDirty}
-                            onDirty={() => setSlugDirty(true)}
-                            currentSlug={list.data.slug}
-                        />
-                    </div>
+            {/* Fila 2 — pestañas de sección. Sólo scrollea en horizontal
+                (ver v0.1.124: `overflow-x-auto` a secas convierte el eje Y
+                a `auto` y dibuja una barra vertical fantasma). */}
+            <div
+                role="tablist"
+                aria-label={__('Secciones de configuración')}
+                className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border"
+            >
+                {LIST_SETTINGS_SECTIONS.map((section) => {
+                    const Icon = section.icon;
+                    const isActive = section.id === active;
+                    return (
+                        <button
+                            key={section.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isActive}
+                            onClick={() => select(section.id)}
+                            className={cn(
+                                'imcrm--mb-px imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
+                                isActive
+                                    ? 'imcrm-border-primary imcrm-text-foreground'
+                                    : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground',
+                            )}
+                        >
+                            <Icon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {section.label}
+                            {section.id === 'campos' && <FieldsCountHint listId={data.id} />}
+                            {section.id === 'compartir' && <SharedDotHint listId={data.id} />}
+                        </button>
+                    );
+                })}
+            </div>
 
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                        <Label htmlFor="list-description">{__('Descripción')}</Label>
-                        <Textarea
-                            id="list-description"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            rows={3}
-                        />
-                    </div>
+            {/* Fila 3 — la sección activa. Ancho contenido: son formularios,
+                no una tabla; a 1400px de ancho serían ilegibles. */}
+            <div className="imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-4">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                    <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
+                        {activeSection.title}
+                    </h2>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        {activeSection.description}
+                    </p>
+                </div>
 
-                    {submitError !== null && (
-                        <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                            {submitError}
-                        </div>
-                    )}
+                {active === 'campos' && (
+                    <Card>
+                        <CardContent className="imcrm-pt-5">
+                            <FieldBuilder listId={data.id} />
+                        </CardContent>
+                    </Card>
+                )}
 
-                    {list.data.table_suffix && (
-                        <details className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                            <summary className="imcrm-cursor-pointer imcrm-font-medium">
-                                {__('Configuración avanzada')}
-                            </summary>
-                            <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1">
-                                <span>
-                                    {__('Sufijo de tabla (read-only):')}{' '}
-                                    <code className="imcrm-font-mono">{list.data.table_suffix}</code>
-                                </span>
-                            </div>
-                        </details>
-                    )}
+                {active === 'general' && (
+                    <>
+                        <Card>
+                            <CardContent className="imcrm-pt-5">
+                                <GeneralPanel list={data} />
+                            </CardContent>
+                        </Card>
+                        <DangerZonePanel list={data} />
+                    </>
+                )}
 
-                    <div className="imcrm-flex imcrm-justify-end">
-                        <Button onClick={handleSave} disabled={update.isPending} className="imcrm-gap-2">
-                            <Save className="imcrm-h-4 imcrm-w-4" />
-                            {update.isPending ? __('Guardando…') : __('Guardar cambios')}
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
+                {active === 'apariencia' && (
+                    <Card>
+                        <CardContent className="imcrm-pt-5">
+                            <AppearancePanel list={data} />
+                        </CardContent>
+                    </Card>
+                )}
 
-            <Card>
-                <CardContent className="imcrm-pt-5">
-                    <FieldBuilder listId={list.data.id} />
-                </CardContent>
-            </Card>
+                {active === 'permisos' && (
+                    <Card>
+                        <CardContent className="imcrm-pt-5">
+                            <PermissionsPanel listId={data.id} />
+                        </CardContent>
+                    </Card>
+                )}
 
-            <AppearancePanel list={list.data} />
-            <PortalConfigPanel list={list.data} />
-            <PermissionsPanel listId={list.data.id} />
-            <PublicVisibilityPanel listId={list.data.id} />
+                {active === 'compartir' && (
+                    <>
+                        <PortalConfigPanel list={data} />
+                        <PublicVisibilityPanel listId={data.id} />
+                    </>
+                )}
+            </div>
         </div>
+    );
+}
+
+/** Cuántos campos tiene la lista, junto a la pestaña "Campos". */
+function FieldsCountHint({ listId }: { listId: number }): JSX.Element | null {
+    const fields = useFields(listId);
+    const n = fields.data?.length ?? 0;
+    if (n === 0) return null;
+    return (
+        <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground">
+            {n}
+        </span>
+    );
+}
+
+/**
+ * Punto verde cuando la lista tiene página pública: responde "¿esto está
+ * publicado?" sin tener que entrar a la sección.
+ */
+function SharedDotHint({ listId }: { listId: number }): JSX.Element | null {
+    const publicList = usePublicList(listId);
+    if (publicList.data?.enabled !== true) return null;
+    return (
+        <span
+            aria-label={__('Compartida hacia afuera')}
+            title={__('Esta lista tiene una página pública')}
+            className="imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-success"
+        />
     );
 }

@@ -141,7 +141,7 @@ export function SlugEditor({
             {isRenaming && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground imcrm-leading-relaxed">
                     {__(
-                        'Cambiar el slug no afectará tus datos ni filtros guardados. URLs externas, webhooks o integraciones que usen el slug actual deberán actualizarse. Imagina CRM mantendrá redirects automáticos del anterior.',
+                        'Cambiarlo no toca tus datos ni tus vistas guardadas, y los enlaces viejos siguen funcionando. Sólo tendrías que actualizar integraciones externas que usen el nombre anterior:',
                     )}{' '}
                     <code className="imcrm-font-mono">{currentSlug}</code>
                 </p>

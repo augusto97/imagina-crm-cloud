@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { KeyRound, LayoutGrid, UserRound } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -62,19 +63,24 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                    <UserRound className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
-                    <div>
-                        <CardTitle>{__('Portal del cliente')}</CardTitle>
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
+                        <UserRound className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
+                        <CardTitle className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base">
+                            {__('Portal del cliente')}
+                            {portal.enabled && <Badge variant="success">{__('Activo')}</Badge>}
+                        </CardTitle>
                         <CardDescription>
                             {__(
-                                'Da a cada registro de esta lista un portal privado. El cliente accede con un enlace de acceso (magic link) que le emitís desde la ficha del registro; no necesita usuario ni contraseña.',
+                                'Cada registro puede tener su propia página privada. Le mandás un enlace de acceso al cliente y entra sin usuario ni contraseña.',
                             )}
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-                <label className="imcrm-inline-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                     <input
                         type="checkbox"
                         checked={portal.enabled}
@@ -82,7 +88,14 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                         onChange={(e) => void handleToggle(e.target.checked)}
                         className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                     />
-                    {__('Habilitar portal para esta lista')}
+                    <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        <span className="imcrm-text-sm imcrm-font-medium">
+                            {__('Activar el portal en esta lista')}
+                        </span>
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Después vas a poder diseñar qué ve el cliente.')}
+                        </span>
+                    </span>
                 </label>
 
                 {portal.enabled ? (
@@ -98,7 +111,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                                             : `${template.blocks.length} ${template.blocks.length === 1 ? __('bloque') : __('bloques')} ${__('en la plantilla')}`}
                                     </p>
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Diseñá qué ve el cliente: datos del registro, archivos, comentarios, KPIs, etc., con grid drag-and-drop.')}
+                                        {__('Armá la página del cliente arrastrando bloques: sus datos, archivos, comentarios, indicadores…')}
                                     </p>
                                 </div>
                                 <Button asChild size="sm" variant="outline" className="imcrm-shrink-0 imcrm-gap-1.5">

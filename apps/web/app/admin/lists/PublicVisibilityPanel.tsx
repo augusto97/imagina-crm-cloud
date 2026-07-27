@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Globe, Loader2 } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -11,11 +12,13 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useFields } from '@/hooks/useFields';
 import { usePublicList, useUpdatePublicList, publicListUrl } from '@/hooks/usePublicList';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import type { UpdatePublicListInput } from '@imagina-base/shared';
 
 interface Props {
@@ -23,12 +26,17 @@ interface Props {
 }
 
 /**
- * Panel de "Lista pública" del List Builder. Permite exponer la lista de
- * solo-lectura en una URL propia y embeberla por iframe en otros sitios, con:
+ * Panel "Lista pública" (sección Compartir). Publica la lista de
+ * solo-lectura en una URL propia y permite embeberla por iframe, con:
  *  - selección de campos visibles (nunca se filtra un campo no marcado),
  *  - orden permitido + búsqueda,
  *  - restricción por dominio (CSP `frame-ancestors`) para el embed,
- *  - snippet de iframe listo para copiar.
+ *  - enlace + snippet listos para copiar.
+ *
+ * v0.1.126: el enlace público (el premio) pasó ARRIBA de la
+ * configuración, la tabla de checkboxes se volvió una lista de campos
+ * con atajos "Todos / Ninguno", y la copia dejó la jerga de CSP para
+ * hablar de "sitios donde puede mostrarse".
  */
 export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
     const query = usePublicList(listId);
@@ -61,7 +69,10 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
     }, [query.data]);
 
     const allFields = fields.data ?? [];
-    const publicUrl = useMemo(() => publicListUrl(query.data?.public_path ?? null), [query.data?.public_path]);
+    const publicUrl = useMemo(
+        () => publicListUrl(query.data?.public_path ?? null),
+        [query.data?.public_path],
+    );
     const embedSnippet = publicUrl
         ? `<iframe src="${publicUrl}" width="100%" height="600" frameborder="0" style="border:1px solid #e5e7eb;border-radius:8px"></iframe>`
         : '';
@@ -76,6 +87,12 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
 
     const toggleSort = (slug: string, on: boolean): void => {
         setSortAllowed((prev) => (on ? [...prev, slug] : prev.filter((s) => s !== slug)));
+        touch();
+    };
+
+    const setAllVisible = (on: boolean): void => {
+        setVisible(on ? allFields.map((f) => f.slug) : []);
+        if (!on) setSortAllowed([]);
         touch();
     };
 
@@ -119,7 +136,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
             <Card>
                 <CardContent className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
                     <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
-                    {__('Cargando configuración pública…')}
+                    {__('Cargando…')}
                 </CardContent>
             </Card>
         );
@@ -129,19 +146,24 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
         <Card>
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                    <Globe className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
-                    <div>
-                        <CardTitle>{__('Lista pública')}</CardTitle>
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
+                        <Globe className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
+                        <CardTitle className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base">
+                            {__('Página pública')}
+                            {query.data?.enabled && <Badge variant="success">{__('Publicada')}</Badge>}
+                        </CardTitle>
                         <CardDescription>
                             {__(
-                                'Publica esta lista en una URL de solo-lectura y embébela por iframe en otros sitios. Solo se exponen los campos que marques.',
+                                'Publicá la lista en una dirección que cualquiera puede abrir, sin entrar a la app. Solo se muestran los campos que marques.',
                             )}
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-5">
-                <label className="imcrm-inline-flex imcrm-items-center imcrm-gap-2">
+                <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                     <input
                         type="checkbox"
                         checked={enabled}
@@ -151,81 +173,156 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                         }}
                         className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                     />
-                    <span className="imcrm-text-sm imcrm-font-medium">
-                        {__('Publicar esta lista')}
+                    <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        <span className="imcrm-text-sm imcrm-font-medium">
+                            {__('Publicar esta lista')}
+                        </span>
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Solo lectura: nadie puede editar nada desde la página pública.')}
+                        </span>
                     </span>
                 </label>
 
                 {enabled && (
                     <>
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                            <span className="imcrm-text-sm imcrm-font-medium">{__('Campos visibles')}</span>
-                            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Marca "Visible" para exponer el campo; "Orden" para permitir ordenar por él.')}
-                            </p>
-                            <div className="imcrm-overflow-x-auto">
-                                <table className="imcrm-w-full imcrm-border-collapse imcrm-text-sm">
-                                    <thead>
-                                        <tr className="imcrm-border-b imcrm-border-border imcrm-text-left imcrm-text-xs imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
-                                            <th className="imcrm-py-2 imcrm-pr-3 imcrm-font-medium">{__('Campo')}</th>
-                                            <th className="imcrm-px-2 imcrm-py-2 imcrm-text-center imcrm-font-medium">{__('Visible')}</th>
-                                            <th className="imcrm-px-2 imcrm-py-2 imcrm-text-center imcrm-font-medium">{__('Orden')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {allFields.map((field) => {
-                                            const isVisible = visible.includes(field.slug);
-                                            return (
-                                                <tr
-                                                    key={field.id}
-                                                    className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0"
-                                                >
-                                                    <td className="imcrm-py-2 imcrm-pr-3">
-                                                        <span className="imcrm-font-medium">{field.label}</span>
-                                                        <span className="imcrm-ml-1 imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">
-                                                            ({field.slug})
-                                                        </span>
-                                                    </td>
-                                                    <td className="imcrm-px-2 imcrm-py-2 imcrm-text-center">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isVisible}
-                                                            onChange={(e) => toggleVisible(field.slug, e.target.checked)}
-                                                            className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
-                                                            aria-label={`${__('Visible')} ${field.label}`}
-                                                        />
-                                                    </td>
-                                                    <td className="imcrm-px-2 imcrm-py-2 imcrm-text-center">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={sortAllowed.includes(field.slug)}
-                                                            disabled={!isVisible}
-                                                            onChange={(e) => toggleSort(field.slug, e.target.checked)}
-                                                            className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input disabled:imcrm-opacity-40"
-                                                            aria-label={`${__('Ordenar por')} ${field.label}`}
-                                                        />
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                        {publicUrl && !dirty && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <span className="imcrm-text-sm imcrm-font-medium">
+                                        {__('Enlace para compartir')}
+                                    </span>
+                                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                                        <Input readOnly value={publicUrl} className="imcrm-font-mono imcrm-text-xs" />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="imcrm-shrink-0 imcrm-gap-1.5"
+                                            onClick={() => void handleCopy(publicUrl, 'url')}
+                                        >
+                                            {copied === 'url' ? (
+                                                <Check className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            ) : (
+                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            )}
+                                            {__('Copiar')}
+                                        </Button>
+                                    </div>
+                                </div>
+                                <details className="imcrm-text-xs">
+                                    <summary className="imcrm-cursor-pointer imcrm-font-medium imcrm-text-muted-foreground">
+                                        {__('Insertar dentro de otra web')}
+                                    </summary>
+                                    <div className="imcrm-mt-2 imcrm-flex imcrm-items-start imcrm-gap-2">
+                                        <Textarea
+                                            readOnly
+                                            value={embedSnippet}
+                                            rows={2}
+                                            className="imcrm-font-mono imcrm-text-xs"
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="imcrm-shrink-0 imcrm-gap-1.5"
+                                            onClick={() => void handleCopy(embedSnippet, 'embed')}
+                                        >
+                                            {copied === 'embed' ? (
+                                                <Check className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            ) : (
+                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            )}
+                                            {__('Copiar')}
+                                        </Button>
+                                    </div>
+                                </details>
                             </div>
+                        )}
+
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                                <div className="imcrm-flex imcrm-flex-col">
+                                    <span className="imcrm-text-sm imcrm-font-medium">
+                                        {__('Qué campos se muestran')}
+                                    </span>
+                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        {__('Lo que no marques acá nunca sale de la app.')}
+                                    </span>
+                                </div>
+                                <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="imcrm-h-7 imcrm-px-2 imcrm-text-xs"
+                                        onClick={() => setAllVisible(true)}
+                                    >
+                                        {__('Todos')}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="imcrm-h-7 imcrm-px-2 imcrm-text-xs"
+                                        onClick={() => setAllVisible(false)}
+                                    >
+                                        {__('Ninguno')}
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border">
+                                {allFields.map((field) => {
+                                    const isVisible = visible.includes(field.slug);
+                                    return (
+                                        <li
+                                            key={field.id}
+                                            className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-px-3 imcrm-py-2"
+                                        >
+                                            <label className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-cursor-pointer imcrm-items-center imcrm-gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isVisible}
+                                                    onChange={(e) => toggleVisible(field.slug, e.target.checked)}
+                                                    className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
+                                                />
+                                                <span className="imcrm-truncate imcrm-text-sm">{field.label}</span>
+                                            </label>
+                                            <label
+                                                className={cn(
+                                                    'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs',
+                                                    isVisible
+                                                        ? 'imcrm-cursor-pointer imcrm-text-muted-foreground'
+                                                        : 'imcrm-opacity-40',
+                                                )}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={sortAllowed.includes(field.slug)}
+                                                    disabled={!isVisible}
+                                                    onChange={(e) => toggleSort(field.slug, e.target.checked)}
+                                                    className="imcrm-h-3.5 imcrm-w-3.5 imcrm-rounded imcrm-border-input"
+                                                />
+                                                {__('se puede ordenar')}
+                                            </label>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         </div>
 
                         <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-4 md:imcrm-grid-cols-3">
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                <Label htmlFor="pub-default-sort">{__('Orden por defecto')}</Label>
-                                <select
+                                <Label htmlFor="pub-default-sort">{__('Orden inicial')}</Label>
+                                <Select
                                     id="pub-default-sort"
-                                    className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
                                     value={defaultSort}
                                     onChange={(e) => {
                                         setDefaultSort(e.target.value);
                                         touch();
                                     }}
                                 >
-                                    <option value="">{__('— Por id —')}</option>
+                                    <option value="">{__('— El de la lista —')}</option>
                                     {sortAllowed.map((slug) => [
                                         <option key={`${slug}:asc`} value={`${slug}:asc`}>
                                             {slug} ↑
@@ -234,7 +331,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                                             {slug} ↓
                                         </option>,
                                     ])}
-                                </select>
+                                </Select>
                             </div>
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                                 <Label htmlFor="pub-per-page">{__('Filas por página')}</Label>
@@ -251,8 +348,8 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                                 />
                             </div>
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                <Label htmlFor="pub-search">{__('Búsqueda')}</Label>
-                                <label className="imcrm-inline-flex imcrm-h-9 imcrm-items-center imcrm-gap-2">
+                                <Label htmlFor="pub-search">{__('Buscador')}</Label>
+                                <label className="imcrm-inline-flex imcrm-h-9 imcrm-cursor-pointer imcrm-items-center imcrm-gap-2">
                                     <input
                                         id="pub-search"
                                         type="checkbox"
@@ -264,14 +361,14 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                                         className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
                                     />
                                     <span className="imcrm-text-sm imcrm-text-muted-foreground">
-                                        {searchEnabled ? __('Habilitada') : __('Deshabilitada')}
+                                        {searchEnabled ? __('Visible') : __('Oculto')}
                                     </span>
                                 </label>
                             </div>
                         </div>
 
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label htmlFor="pub-domains">{__('Dominios permitidos para embeber')}</Label>
+                            <Label htmlFor="pub-domains">{__('Sitios donde se puede insertar')}</Label>
                             <Textarea
                                 id="pub-domains"
                                 value={domains}
@@ -284,60 +381,10 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                             />
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    'Uno por línea. Si dejas esto vacío, cualquier sitio puede embeber la lista. Con dominios, solo esos podrán mostrarla en un iframe.',
+                                    'Un dominio por línea. Si lo dejás vacío, cualquier web puede insertar la lista. El enlace directo funciona igual en los dos casos.',
                                 )}
                             </p>
                         </div>
-
-                        {publicUrl && !dirty && (
-                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                    <span className="imcrm-text-sm imcrm-font-medium">{__('Enlace público')}</span>
-                                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                        <Input readOnly value={publicUrl} className="imcrm-font-mono imcrm-text-xs" />
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="imcrm-gap-1.5 imcrm-shrink-0"
-                                            onClick={() => handleCopy(publicUrl, 'url')}
-                                        >
-                                            {copied === 'url' ? (
-                                                <Check className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            ) : (
-                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            )}
-                                            {__('Copiar')}
-                                        </Button>
-                                    </div>
-                                </div>
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                    <span className="imcrm-text-sm imcrm-font-medium">{__('Código para embeber (iframe)')}</span>
-                                    <div className="imcrm-flex imcrm-items-start imcrm-gap-2">
-                                        <Textarea
-                                            readOnly
-                                            value={embedSnippet}
-                                            rows={2}
-                                            className="imcrm-font-mono imcrm-text-xs"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="imcrm-gap-1.5 imcrm-shrink-0"
-                                            onClick={() => handleCopy(embedSnippet, 'embed')}
-                                        >
-                                            {copied === 'embed' ? (
-                                                <Check className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            ) : (
-                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            )}
-                                            {__('Copiar')}
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </>
                 )}
 
@@ -347,13 +394,13 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                     </div>
                 )}
 
-                <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {enabled
-                            ? __('Guarda para generar/actualizar el enlace público.')
-                            : __('La lista no es pública.')}
-                    </p>
-                    <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
+                <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-3">
+                    {enabled && dirty && (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Guardá para generar o actualizar el enlace.')}
+                        </p>
+                    )}
+                    <Button onClick={() => void handleSave()} disabled={!dirty || update.isPending}>
                         {update.isPending ? __('Guardando…') : __('Guardar')}
                     </Button>
                 </div>
