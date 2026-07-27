@@ -385,6 +385,12 @@
         letter-spacing: inherit;
         color: inherit;
         margin: 0;
+        /* v0.1.125 — sin esto los botones conservan el padding NATIVO del
+           navegador (1px 6px en Chromium): cualquier botón que sea una caja
+           (la tarjeta de la vista Tarjetas) mostraba su contenido "flotando"
+           con aire a los lados en vez de a sangre. Los componentes ponen su
+           propio padding con utilities. */
+        padding: 0;
     }
     button,
     select {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
+import { colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { Button } from '@/components/ui/button';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,13 @@ interface CalendarCell {
 }
 
 const MAX_VISIBLE_PER_DAY = 3;
+/** Nombres de mes y día en el idioma de la interfaz. */
+const CALENDAR_LOCALE = 'es';
+
+/** "julio de 2026" → "Julio de 2026" (el `capitalize` de CSS daba "Julio De"). */
+function capitalizeFirst(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 export function CalendarView({
     fields,
@@ -52,6 +60,8 @@ export function CalendarView({
     });
 
     const cells = useMemo<CalendarCell[]>(() => buildMonthCells(cursor), [cursor]);
+    // Día con la lista completa desplegada ("+N más").
+    const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
     // Indexa records por día local (YYYY-MM-DD).
     const recordsByDay = useMemo(() => {
@@ -69,7 +79,11 @@ export function CalendarView({
 
     const titleField = useMemo(() => pickTitleField(fields, dateField.id), [fields, dateField.id]);
 
-    const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    // La interfaz es en español: el locale del NAVEGADOR mostraba "July 2026"
+    // y MON/TUE en un calendario que dice "Hoy" y "Ver menos" (v0.1.125).
+    const monthLabel = capitalizeFirst(
+        cursor.toLocaleDateString(CALENDAR_LOCALE, { month: 'long', year: 'numeric' }),
+    );
 
     const handlePrev = (): void =>
         setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1));
@@ -86,95 +100,198 @@ export function CalendarView({
         return Array.from({ length: 7 }, (_, i) => {
             const d = new Date(monday);
             d.setDate(monday.getDate() + i);
-            return d.toLocaleDateString(undefined, { weekday: 'short' });
+            return d.toLocaleDateString(CALENDAR_LOCALE, { weekday: 'short' });
         });
     }, []);
 
+    // v0.1.125 — los eventos toman el color del primer campo select del
+    // registro (el mismo de los chips de la tabla y las columnas del Kanban):
+    // un calendario en un solo tono no deja distinguir nada de un vistazo.
+    const colorField = useMemo(
+        () => fields.find((f) => f.type === 'select' && f.id !== dateField.id),
+        [fields, dateField.id],
+    );
+    const optionColor = (record: RecordEntity): OptionColor | undefined => {
+        if (!colorField) return undefined;
+        const value = record.fields[colorField.slug];
+        if (typeof value !== 'string' || value === '') return undefined;
+        const options = (colorField.config as { options?: Array<{ value: string; color?: string }> })
+            .options;
+        const opt = Array.isArray(options) ? options.find((o) => o.value === value) : undefined;
+        return (opt?.color as OptionColor | undefined) ?? undefined;
+    };
+
+    const monthCount = cells.reduce(
+        (n, c) => n + (c.inCurrentMonth ? (recordsByDay.get(c.iso)?.length ?? 0) : 0),
+        0,
+    );
+
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                <h2 className="imcrm-text-base imcrm-font-medium imcrm-capitalize">{monthLabel}</h2>
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                    <Button variant="outline" size="sm" onClick={handleToday}>
+            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3">
+                <div className="imcrm-flex imcrm-items-baseline imcrm-gap-2">
+                    <h2 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
+                        {monthLabel}
+                    </h2>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {sprintf(
+                            /* translators: %d: records in the visible month */
+                            __('%d registros'),
+                            monthCount,
+                        )}
+                    </span>
+                </div>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    <Button variant="outline" size="sm" onClick={handleToday} className="imcrm-h-8">
                         {__('Hoy')}
                     </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handlePrev}
-                        aria-label={__('Mes anterior')}
-                    >
-                        <ChevronLeft className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={handleNext}
-                        aria-label={__('Mes siguiente')}
-                    >
-                        <ChevronRight className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
+                    {/* Navegación agrupada: dos flechas pegadas leen como un
+                        control único (antes eran dos botones sueltos). */}
+                    <div className="imcrm-flex imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border">
+                        <button
+                            type="button"
+                            onClick={handlePrev}
+                            aria-label={__('Mes anterior')}
+                            className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        >
+                            <ChevronLeft className="imcrm-h-4 imcrm-w-4" />
+                        </button>
+                        <span className="imcrm-w-px imcrm-bg-border" aria-hidden />
+                        <button
+                            type="button"
+                            onClick={handleNext}
+                            aria-label={__('Mes siguiente')}
+                            className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        >
+                            <ChevronRight className="imcrm-h-4 imcrm-w-4" />
+                        </button>
+                    </div>
                 </div>
             </header>
 
-            <div className="imcrm-grid imcrm-grid-cols-7 imcrm-gap-px imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-border imcrm-overflow-hidden">
-                {weekdayLabels.map((d) => (
-                    <div
-                        key={d}
-                        className="imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1 imcrm-text-center imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground"
-                    >
-                        {d}
-                    </div>
-                ))}
-                {cells.map((cell) => {
-                    const dayRecords = recordsByDay.get(cell.iso) ?? [];
-                    return (
+            <div className="imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-sm">
+                <div className="imcrm-grid imcrm-grid-cols-7 imcrm-border-b imcrm-border-border imcrm-bg-muted/40">
+                    {weekdayLabels.map((d, i) => (
                         <div
-                            key={cell.iso}
+                            key={d}
                             className={cn(
-                                'imcrm-min-h-[110px] imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-bg-card imcrm-p-1.5 imcrm-text-xs',
-                                !cell.inCurrentMonth && 'imcrm-bg-muted/20 imcrm-text-muted-foreground',
+                                'imcrm-px-2 imcrm-py-2 imcrm-text-center imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground',
+                                i >= 5 && 'imcrm-text-muted-foreground/70',
                             )}
                         >
+                            {d}
+                        </div>
+                    ))}
+                </div>
+                <div className="imcrm-grid imcrm-grid-cols-7">
+                    {cells.map((cell, idx) => {
+                        const dayRecords = recordsByDay.get(cell.iso) ?? [];
+                        const expanded = expandedDay === cell.iso;
+                        const visible = expanded ? dayRecords : dayRecords.slice(0, MAX_VISIBLE_PER_DAY);
+                        const isWeekend = idx % 7 >= 5;
+                        return (
                             <div
+                                key={cell.iso}
                                 className={cn(
-                                    'imcrm-flex imcrm-items-center imcrm-justify-between',
-                                    cell.isToday && 'imcrm-text-primary imcrm-font-semibold',
+                                    'imcrm-flex imcrm-min-h-[116px] imcrm-flex-col imcrm-gap-1 imcrm-border-b imcrm-border-r imcrm-border-border/70 imcrm-p-1.5 imcrm-text-xs imcrm-transition-colors',
+                                    // Sin bordes colgando en la última columna/fila.
+                                    idx % 7 === 6 && 'imcrm-border-r-0',
+                                    idx >= cells.length - 7 && 'imcrm-border-b-0',
+                                    cell.inCurrentMonth
+                                        ? isWeekend
+                                            ? 'imcrm-bg-muted/20'
+                                            : 'imcrm-bg-card'
+                                        : 'imcrm-bg-muted/40 imcrm-text-muted-foreground',
+                                    'hover:imcrm-bg-accent/40',
                                 )}
                             >
-                                <span>{cell.day}</span>
-                                {dayRecords.length > 0 && (
-                                    <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-text-[10px]">
-                                        {dayRecords.length}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                                {dayRecords.slice(0, MAX_VISIBLE_PER_DAY).map((r) => (
-                                    <button
-                                        type="button"
-                                        key={r.id}
-                                        onClick={() => onCardClick(r)}
-                                        className="imcrm-truncate imcrm-rounded imcrm-bg-primary/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-left imcrm-text-[11px] imcrm-text-primary hover:imcrm-bg-primary/20"
-                                        title={titleString(r, titleField)}
-                                    >
-                                        {titleString(r, titleField)}
-                                    </button>
-                                ))}
-                                {dayRecords.length > MAX_VISIBLE_PER_DAY && (
-                                    <span className="imcrm-px-1 imcrm-text-[10px] imcrm-text-muted-foreground">
-                                        {sprintf(
-                                            /* translators: %d: number of remaining records */
-                                            __('+%d más'),
-                                            dayRecords.length - MAX_VISIBLE_PER_DAY,
+                                <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
+                                    {/* Hoy = disco primary, como un calendario de verdad. */}
+                                    <span
+                                        className={cn(
+                                            'imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-text-[12px] imcrm-font-semibold',
+                                            cell.isToday
+                                                ? 'imcrm-bg-primary imcrm-text-primary-foreground'
+                                                : cell.inCurrentMonth
+                                                  ? 'imcrm-text-foreground'
+                                                  : 'imcrm-text-muted-foreground/70',
                                         )}
+                                    >
+                                        {cell.day}
                                     </span>
-                                )}
+                                    {dayRecords.length > 0 && (
+                                        <span className="imcrm-rounded-full imcrm-bg-muted imcrm-px-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-text-muted-foreground">
+                                            {dayRecords.length}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    {visible.map((r) => {
+                                        const color = optionColor(r);
+                                        const solid = colorVar(color);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={r.id}
+                                                onClick={() => onCardClick(r)}
+                                                className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-truncate imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-left imcrm-text-[11px] imcrm-font-medium imcrm-transition-opacity hover:imcrm-opacity-80"
+                                                style={
+                                                    solid !== undefined
+                                                        ? {
+                                                              backgroundColor: `color-mix(in srgb, ${solid} 16%, transparent)`,
+                                                              color: 'hsl(var(--imcrm-foreground))',
+                                                          }
+                                                        : {
+                                                              backgroundColor:
+                                                                  'hsl(var(--imcrm-primary) / 0.12)',
+                                                              color: 'hsl(var(--imcrm-foreground))',
+                                                          }
+                                                }
+                                                title={titleString(r, titleField)}
+                                            >
+                                                <span
+                                                    aria-hidden
+                                                    className="imcrm-h-1.5 imcrm-w-1.5 imcrm-shrink-0 imcrm-rounded-full"
+                                                    style={{
+                                                        backgroundColor:
+                                                            solid ?? 'hsl(var(--imcrm-primary))',
+                                                    }}
+                                                />
+                                                <span className="imcrm-truncate">
+                                                    {titleString(r, titleField)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                    {dayRecords.length > MAX_VISIBLE_PER_DAY && (
+                                        // Antes era texto muerto: ahora despliega el día.
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpandedDay(expanded ? null : cell.iso)}
+                                            className="imcrm-self-start imcrm-rounded imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                        >
+                                            {expanded
+                                                ? __('Ver menos')
+                                                : sprintf(
+                                                      /* translators: %d: number of remaining records */
+                                                      __('+%d más'),
+                                                      dayRecords.length - MAX_VISIBLE_PER_DAY,
+                                                  )}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
+
+            {monthCount === 0 && (
+                <p className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    <CalendarDays className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Ningún registro cae en este mes.')}
+                </p>
+            )}
         </div>
     );
 }
@@ -193,8 +310,11 @@ function buildMonthCells(cursor: Date): CalendarCell[] {
     const today = new Date();
     const todayIso = toLocalIso(today);
 
-    for (let i = 0; i < 42; i++) {
-        // 6 semanas × 7 días — siempre.
+    // 5 o 6 semanas según lo que ocupe el mes: forzar 42 celdas dejaba una
+    // fila entera de días del mes siguiente (ruido puro).
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const total = Math.ceil((dayOfWeek + daysInMonth) / 7) * 7;
+    for (let i = 0; i < total; i++) {
         const d = new Date(startOfGrid);
         d.setDate(startOfGrid.getDate() + i);
         const iso = toLocalIso(d);

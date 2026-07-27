@@ -1818,6 +1818,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el navegador de las 7 pantallas con tiras horizontales: ningún otro
         contenedor tiene una barra vertical accidental.
 
+  - [x] **Pasada de vistas: tarjetas, kanban, agrupada y calendario
+        (v0.1.125, 4 pedidos del usuario)**: (a) **la portada de las tarjetas
+        no llegaba de lado a lado** — se veía "un cuadrado dentro de la caja".
+        Causa: la tarjeta es un `<button>` y el reset propio (v0.1.55) no
+        anulaba el padding NATIVO del navegador (`1px 6px` en Chromium; el
+        preflight de Tailwind sí lo hace). Se agregó `padding: 0` al reset de
+        button/input/select/textarea — los componentes ya ponen el suyo con
+        utilities. (b) **Kanban con identidad de color por columna**: el
+        encabezado pasa de un puntito a la ETIQUETA SÓLIDA con el color de la
+        opción (el mismo chip que la tabla usa para ese valor) y la columna
+        lleva franja superior de 3px + velo del color al 8% (`color-mix`); sin
+        color, chip neutro. El color se sigue editando donde vive: el catálogo
+        de opciones del campo por el que se agrupa (una sola fuente de verdad).
+        (c) **El resumen de la vista agrupada** ("N grupos · M registros") se
+        movió al FINAL — arriba le comía altura a la tabla sin aportar nada al
+        escanear. (d) **Calendario rediseñado**: tarjeta contenedora con borde
+        y sombra, banda de días de la semana, HOY como disco primary, fines de
+        semana y días de otro mes atenuados, hover por celda, eventos como
+        chips con el COLOR del primer campo select del registro (antes todos
+        del mismo tono), "+N más" que ahora despliega el día de verdad,
+        navegación agrupada, contador de registros del mes, mes/días en
+        ESPAÑOL (usaban el locale del navegador → "July 2026", "MON") y la
+        grilla con 5 o 6 semanas según el mes (antes siempre 42 celdas → una
+        fila entera de relleno). Verificado en navegador vista por vista.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
