@@ -1723,6 +1723,35 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con QR, código malo rechazado, activación, login en dos pasos, entrada
         con respaldo, contador 10→9, desactivación).
 
+  - [x] **Tus datos: descarga y borrado (v0.1.121, GDPR art. 15 y 17)** — el
+        último pendiente de la auditoría. `GET /me/data-export` arma un JSON
+        con la cuenta (sin secretos: ni hash, ni secreto TOTP, ni códigos de
+        respaldo) y, **empresa por empresa dentro de su scope de tenant**, lo
+        que la persona escribió ahí: comentarios, actividad, menciones
+        recibidas, filtros guardados y archivos subidos — recorrer con
+        `withTenant` es lo que garantiza que el export no pueda filtrar datos
+        de una empresa a la que ya no pertenece (hay test). El shape vive en
+        `packages/shared` (`accountExportSchema`), así el front valida lo mismo
+        que arma el backend. `POST /me/delete-account` **anonimiza**: se borran
+        email, nombre, contraseña (hash de un secreto aleatorio), segundo
+        factor, firma, membresías, filtros y menciones, y se revocan todas las
+        sesiones al instante; el contenido que la persona produjo DENTRO de una
+        empresa **queda**, atribuido a "Usuario eliminado". Es una decisión de
+        producto explícita: los registros y comentarios son datos del CLIENTE
+        (el responsable del tratamiento), no del empleado que los tipeó —
+        borrarlos sería destruirle la operación a la empresa. Guard rails:
+        exige la **contraseña** (no alcanza la sesión abierta para algo
+        irreversible) y rechaza con 409 + la lista si la persona es el **único
+        admin** de alguna empresa; `GET /me/deletion-blockers` deja que la UI lo
+        avise ANTES de pedir la contraseña. Front: sección "Tus datos" en
+        Ajustes → Cuenta (descarga del JSON con nombre fechado + borrado con
+        confirmación, y el aviso de qué se conserva). 5 tests nuevos (369 API
+        en verde) + E2E navegador 7/7 del panel y 6/6 del borrado real
+        (bloqueo por único admin, contraseña equivocada que no borra,
+        anonimización verificada en la DB, vuelta al login).
+
+        **Con esto quedan cerrados TODOS los pendientes de la auditoría F8.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

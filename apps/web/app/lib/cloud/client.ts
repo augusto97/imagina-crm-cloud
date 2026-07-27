@@ -1,13 +1,16 @@
 import {
+    accountExportSchema,
     activeSessionsResponseSchema,
     auditFeedSchema,
     backupCodesSchema,
     changePasswordSchema,
+    deleteAccountSchema,
     disableTwoFactorSchema,
     enableTwoFactorSchema,
     loginResponseSchema,
     totpSetupSchema,
     verifyTwoFactorSchema,
+    type AccountExportDto,
     type ActiveSessionsResponse,
     type AuditFeed,
     type BackupCodes,
@@ -220,6 +223,23 @@ export class CloudClient {
     revokeOtherSessions(): Promise<{ revoked_sessions: number }> {
         return this.request('DELETE', '/auth/sessions', {
             schema: z.object({ revoked_sessions: z.number() }),
+        });
+    }
+
+    // --- datos personales (v0.1.121, GDPR) ---
+    exportPersonalData(): Promise<AccountExportDto> {
+        return this.request('GET', '/me/data-export', { schema: accountExportSchema });
+    }
+    deletionBlockers(): Promise<{ workspaces: Array<{ id: number; name: string }> }> {
+        return this.request('GET', '/me/deletion-blockers', {
+            schema: z.object({
+                workspaces: z.array(z.object({ id: z.number(), name: z.string() })),
+            }),
+        });
+    }
+    deleteAccount(password: string): Promise<void> {
+        return this.request('POST', '/me/delete-account', {
+            body: deleteAccountSchema.parse({ password }),
         });
     }
 

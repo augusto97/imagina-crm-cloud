@@ -12,6 +12,7 @@ import { AppearanceCard } from '@/admin/settings/AppearanceCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
 import { SecurityCard } from '@/admin/settings/SecurityCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
+import { PersonalDataCard } from '@/admin/settings/PersonalDataCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
@@ -155,6 +156,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'seguridad' && <SecurityCard />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
+                {/* Per-usuario: descarga/borrado de datos personales (GDPR). */}
+                {active === 'datos' && <PersonalDataCard />}
                 {/* Per-usuario y por dispositivo: tema claro/oscuro/sistema. */}
                 {active === 'apariencia' && <AppearanceCard />}
             </section>
