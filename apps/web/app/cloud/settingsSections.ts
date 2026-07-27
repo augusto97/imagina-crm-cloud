@@ -6,6 +6,7 @@ import {
     History,
     Palette,
     ShieldCheck,
+    DatabaseZap,
     PenLine,
     SunMoon,
     Users,
@@ -30,6 +31,7 @@ export type SettingsSectionId =
     | 'firma'
     | 'apariencia'
     | 'auditoria'
+    | 'datos'
     | 'seguridad';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
@@ -60,6 +62,8 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
                 // v0.1.116 — contraseña + dispositivos conectados.
                 { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
                 { id: 'firma', label: 'Firma de email', icon: PenLine },
+                // v0.1.121 — descarga y borrado de datos personales (GDPR).
+                { id: 'datos', label: 'Tus datos', icon: DatabaseZap },
                 // v0.1.112 — per-usuario y por dispositivo (no viaja al backend).
                 { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
             ],

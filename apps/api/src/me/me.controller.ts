@@ -2,16 +2,20 @@ import {
     Body,
     Controller,
     Get,
+    HttpCode,
     Param,
     ParseIntPipe,
     Patch,
+    Post,
     Query,
     Req,
     UseGuards,
 } from '@nestjs/common';
 import {
+    deleteAccountSchema,
     updateEmailSignatureSchema,
     updateFavoritesSchema,
+    type DeleteAccountInput,
     type Favorites,
     type MeUserSummary,
     type UpdateEmailSignatureInput,
@@ -21,6 +25,7 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { AccountDataService, type AccountExport } from './account-data.service';
 import { MeService } from './me.service';
 
 /**
@@ -30,7 +35,10 @@ import { MeService } from './me.service';
  */
 @Controller('me')
 export class MeController {
-    constructor(private readonly me: MeService) {}
+    constructor(
+        private readonly me: MeService,
+        private readonly account: AccountDataService,
+    ) {}
 
     @Get('users-search')
     @UseGuards(SessionGuard, TenantGuard)
@@ -82,6 +90,38 @@ export class MeController {
         @Body(new ZodValidationPipe(updateFavoritesSchema)) patch: UpdateFavoritesInput,
     ): Promise<Favorites> {
         return this.me.setFavorites(tenantId(req), req.authUserId!, patch);
+    }
+
+    // ── Datos personales (v0.1.121, GDPR art. 15 y 17) ──────────────────
+
+    /** Todo lo que la app sabe de esta persona, en un JSON descargable. */
+    @Get('data-export')
+    @UseGuards(SessionGuard)
+    exportData(@Req() req: FastifyRequest): Promise<AccountExport> {
+        return this.account.exportData(req.authUserId!);
+    }
+
+    /**
+     * Chequeo previo del borrado: las empresas donde es el único admin. La UI
+     * lo muestra ANTES de pedir la contraseña para no frustrar al usuario.
+     */
+    @Get('deletion-blockers')
+    @UseGuards(SessionGuard)
+    async deletionBlockers(
+        @Req() req: FastifyRequest,
+    ): Promise<{ workspaces: Array<{ id: number; name: string }> }> {
+        return { workspaces: await this.account.soleAdminWorkspaces(req.authUserId!) };
+    }
+
+    /** Borra la cuenta (anonimiza la identidad). Exige la contraseña. */
+    @Post('delete-account')
+    @HttpCode(204)
+    @UseGuards(SessionGuard)
+    async deleteAccount(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(deleteAccountSchema)) input: DeleteAccountInput,
+    ): Promise<void> {
+        await this.account.deleteAccount(req.authUserId!, input.password);
     }
 
     @Get('email-signature')
