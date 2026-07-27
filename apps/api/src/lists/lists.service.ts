@@ -9,7 +9,9 @@ import {
     type UpdateListInput,
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
+import { and, eq } from 'drizzle-orm';
 import type { Tx } from '../db/client';
+import { listSlugHistory } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -142,7 +144,6 @@ export class ListsService {
             if (patch.settings !== undefined) changes.settings = patch.settings;
 
             if (patch.slug !== undefined && patch.slug !== current.slug) {
-                // TODO(F1-slugs): registrar el rename en slug_history para redirects.
                 if (await this.repo.slugExists(tx, tenantId, patch.slug, current.id)) {
                     throw new ConflictException({
                         code: 'slug_taken',
@@ -150,6 +151,22 @@ export class ListsService {
                         data: { status: 409, errors: { slug: 'Ya está en uso' } },
                     });
                 }
+                // v0.1.117 — el slug VIEJO queda en el historial para que los
+                // enlaces y marcadores guardados sigan funcionando. Si el slug
+                // NUEVO estaba en el historial (de esta lista o de otra), se
+                // libera: un slug vivo siempre gana al histórico.
+                await tx
+                    .delete(listSlugHistory)
+                    .where(
+                        and(
+                            eq(listSlugHistory.tenantId, tenantId),
+                            eq(listSlugHistory.slug, patch.slug),
+                        ),
+                    );
+                await tx
+                    .insert(listSlugHistory)
+                    .values({ tenantId, listId: current.id, slug: current.slug })
+                    .onConflictDoNothing();
                 changes.slug = patch.slug;
             }
 
@@ -176,10 +193,29 @@ export class ListsService {
         const row = /^\d+$/.test(idOrSlug)
             ? await this.repo.findById(tx, tenantId, Number(idOrSlug))
             : await this.repo.findBySlug(tx, tenantId, idOrSlug);
-        if (!row) {
-            throw new NotFoundException(notFound(idOrSlug));
+        if (row) return row;
+
+        // v0.1.117 — Fallback al historial de slugs: si la lista se renombró,
+        // el enlace viejo sigue llevando a la lista correcta en vez de un 404.
+        // Se consulta SÓLO cuando el slug vivo no existe, así el camino normal
+        // no paga nada.
+        if (!/^\d+$/.test(idOrSlug)) {
+            const [old] = await tx
+                .select({ listId: listSlugHistory.listId })
+                .from(listSlugHistory)
+                .where(
+                    and(
+                        eq(listSlugHistory.tenantId, tenantId),
+                        eq(listSlugHistory.slug, idOrSlug),
+                    ),
+                )
+                .limit(1);
+            if (old) {
+                const byHistory = await this.repo.findById(tx, tenantId, old.listId);
+                if (byHistory) return byHistory;
+            }
         }
-        return row;
+        throw new NotFoundException(notFound(idOrSlug));
     }
 
     /**
