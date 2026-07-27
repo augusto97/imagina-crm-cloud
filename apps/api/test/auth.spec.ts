@@ -15,19 +15,36 @@ import {
     type TestRedis,
 } from './helpers/containers';
 
+/** Espera a que algo asíncrono aparezca (evita sleeps fijos que flakean). */
+async function waitFor<T>(probe: () => Promise<T | undefined>, timeoutMs = 5000): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const value = await probe();
+        if (value !== undefined) return value;
+        if (Date.now() > deadline) throw new Error('waitFor: timeout');
+        await new Promise((r) => setTimeout(r, 50));
+    }
+}
+
 describe('AuthService (Postgres + Redis reales)', () => {
     let pg: TestPg;
     let redisBox: TestRedis;
     let redis: Redis;
     let auth: AuthService;
     let sessions: SessionService;
+    const sentMail: Array<{ to: string; subject: string; text: string }> = [];
 
     beforeAll(async () => {
         [pg, redisBox] = await Promise.all([startPostgres(), startRedis()]);
         redis = new Redis(redisBox.url);
         const env = loadEnv({ REDIS_URL: redisBox.url, DATABASE_URL: pg.container.getConnectionUri() });
         sessions = new SessionService(redis, env);
-        const mail = new MailService(env, { name: 'test', send: async () => undefined });
+        const mail = new MailService(env, {
+            name: 'test',
+            send: async (m) => {
+                sentMail.push({ to: m.to, subject: m.subject, text: m.text ?? '' });
+            },
+        });
         auth = new AuthService(pg.db, redis, env, mail, sessions);
     });
 
@@ -127,6 +144,52 @@ describe('AuthService (Postgres + Redis reales)', () => {
         await auth.requestPasswordReset('ana@acme.test');
         const key2 = (await redis.keys('pwreset:*'))[0]!;
         await auth.resetPassword(key2.split(':')[1]!, 'secreto-123');
+    });
+
+    // ─── v0.1.118: verificación de email ────────────────────────────────
+
+    it('el alta queda SIN verificar, manda el correo y el link la confirma', async () => {
+        const email = 'nuevo@verify.test';
+        const reg = await auth.register({
+            email,
+            password: 'secreto-123',
+            name: 'Nuevo',
+            workspace_name: 'Verify WS',
+        });
+        // Entra igual (bloquear el primer uso mata la activación)…
+        expect(reg.token).toBeTruthy();
+        // …pero marcado como no verificado.
+        expect(reg.user.email_verified).toBe(false);
+
+        // El correo se encola SIN await dentro de register (no bloquear el
+        // alta), así que se espera por CONDICIÓN — un sleep fijo flakea en un
+        // runner frío. Y el token se saca del correo de ESTE usuario, no de un
+        // scan de Redis: `keys()` devuelve también los de otros tests y a
+        // veces terminaba verificando la cuenta equivocada.
+        const mail = await waitFor(async () =>
+            sentMail.find((m) => m.to === email && /Confirmá tu email/i.test(m.subject)),
+        );
+        const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
+        expect(token).toBeTruthy();
+
+        await auth.verifyEmail(token!);
+        const after = await auth.me(reg.user.id);
+        expect(after.user.email_verified).toBe(true);
+
+        // El token es de un solo uso.
+        await expect(auth.verifyEmail(token!)).rejects.toThrow(/inválido o expiró/i);
+    });
+
+    it('reenviar la verificación no hace nada si ya está verificado', async () => {
+        const [u] = await pg.db
+            .select()
+            .from(users)
+            .where(sql`lower(${users.email}) = 'nuevo@verify.test'`)
+            .limit(1);
+        // Silencioso: si ya está verificado, no manda correo nuevo.
+        const before = sentMail.filter((m) => m.to === 'nuevo@verify.test').length;
+        await auth.sendEmailVerification(u!.id);
+        expect(sentMail.filter((m) => m.to === 'nuevo@verify.test').length).toBe(before);
     });
 
     // ─── v0.1.116: seguridad de la cuenta ───────────────────────────────

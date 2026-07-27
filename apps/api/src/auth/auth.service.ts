@@ -45,6 +45,10 @@ const RESET_TTL_SECONDS = 30 * 60;
 const LOGIN_FAIL_MAX = 10;
 const LOGIN_FAIL_WINDOW_SECONDS = 15 * 60;
 const loginFailKey = (email: string): string => `loginfail:${email.toLowerCase()}`;
+
+/** v0.1.118 — token de verificación de email (48 h, un solo uso). */
+const VERIFY_TTL_SECONDS = 48 * 60 * 60;
+const verifyKey = (token: string): string => `emailverify:${token}`;
 const resetKey = (token: string): string => `pwreset:${token}`;
 
 function escapeHtml(s: string): string {
@@ -415,6 +419,12 @@ export class AuthService implements OnModuleInit {
             return { user, tenant };
         });
 
+        // v0.1.118 — se manda la verificación del email, pero el alta entra
+        // igual: bloquear el primer uso mata la activación. La interfaz avisa
+        // que falta confirmar. Best-effort: un fallo de correo no rompe el
+        // registro (se puede reenviar desde Ajustes).
+        void this.sendEmailVerification(result.user.id).catch(() => undefined);
+
         const token = await this.sessions.create(result.user.id);
         return {
             user: this.toSessionUser(result.user),
@@ -521,6 +531,47 @@ export class AuthService implements OnModuleInit {
         return { revoked_sessions: revoked };
     }
 
+    /**
+     * v0.1.118 — Manda (o remanda) el correo de verificación del alta.
+     * Silencioso si el email ya está verificado: no filtra estado ni molesta.
+     */
+    async sendEmailVerification(userId: number): Promise<void> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user || user.emailVerifiedAt !== null) return;
+
+        const token = randomBytes(32).toString('base64url');
+        await this.redis.set(verifyKey(token), String(user.id), 'EX', VERIFY_TTL_SECONDS);
+        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/verify?token=${token}`;
+        await this.mail.enqueue({
+            to: user.email,
+            subject: 'Confirmá tu email — Imagina Base',
+            html: `<p>Hola ${escapeHtml(user.name)},</p><p>Confirmá tu dirección de correo para activar del todo tu cuenta. El enlace vence en 48 horas:</p><p><a href="${link}">Confirmar mi email</a></p><p>Si no creaste esta cuenta, ignorá este mensaje.</p>`,
+            text: `Confirmá tu email (vence en 48 h): ${link}`,
+        });
+        this.logger.log(`Verificación de email enviada a userId=${user.id}`);
+    }
+
+    /**
+     * Consume el token de verificación. Un solo uso: `GETDEL` lee y borra en una
+     * sola operación (mismo criterio que el magic link del portal, SEC-15), así
+     * dos clicks simultáneos no lo canjean dos veces.
+     */
+    async verifyEmail(token: string): Promise<void> {
+        const userId = await this.redis.getdel(verifyKey(token));
+        if (!userId) {
+            throw new BadRequestException({
+                code: 'invalid_verify_token',
+                message: 'El enlace es inválido o expiró. Pedí uno nuevo desde Ajustes.',
+                data: { status: 400 },
+            });
+        }
+        await this.db
+            .update(users)
+            .set({ emailVerifiedAt: new Date() })
+            .where(eq(users.id, Number(userId)));
+        this.logger.log(`Email verificado para userId=${userId}`);
+    }
+
     /** v0.1.116 — Sesiones activas de la cuenta (sin exponer tokens). */
     listSessions(userId: number, currentToken: string): Promise<ActiveSession[]> {
         return this.sessions.listForUser(userId, currentToken);
@@ -593,7 +644,13 @@ export class AuthService implements OnModuleInit {
     }
 
     private toSessionUser(user: typeof users.$inferSelect): SessionUser {
-        return { id: user.id, email: user.email, name: user.name, locale: user.locale };
+        return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            locale: user.locale,
+            email_verified: user.emailVerifiedAt !== null,
+        };
     }
 
     /** Colisión de slug de workspace → sufijo `-2`, `-3`, … (CONTRACT.md §2). */

@@ -253,6 +253,13 @@
       "when": 1784200000004,
       "tag": "0035_slug_history",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784200000005,
+      "tag": "0036_email_verification",
+      "breakpoints": true
     }
   ]
 }

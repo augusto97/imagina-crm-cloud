@@ -40,7 +40,13 @@ export class BootstrapService {
             const viewRows = await this.views.listByTenant(tx, ctx.tenantId);
 
             return {
-                user: { id: user.id, email: user.email, name: user.name, locale: user.locale },
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    locale: user.locale,
+                    email_verified: user.emailVerifiedAt !== null,
+                },
                 tenant: {
                     id: tenant.id,
                     slug: tenant.slug,
