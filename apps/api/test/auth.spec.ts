@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import Redis from 'ioredis';
@@ -126,6 +127,86 @@ describe('AuthService (Postgres + Redis reales)', () => {
         await auth.requestPasswordReset('ana@acme.test');
         const key2 = (await redis.keys('pwreset:*'))[0]!;
         await auth.resetPassword(key2.split(':')[1]!, 'secreto-123');
+    });
+
+    // ─── v0.1.116: seguridad de la cuenta ───────────────────────────────
+
+    it('cambiar la contraseña cierra los OTROS dispositivos, no el actual', async () => {
+        const a = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const b = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const tokenA = a.token as string;
+        const tokenB = b.token as string;
+
+        const res = await auth.changePassword(a.user.id, tokenA, {
+            current_password: 'secreto-123',
+            new_password: 'otra-clave-999',
+        });
+        expect(res.revoked_sessions).toBeGreaterThanOrEqual(1);
+        // La sesión desde la que se cambió SIGUE viva (no te echa a vos mismo)…
+        expect(await sessions.get(tokenA)).not.toBeNull();
+        // …y las demás mueren.
+        expect(await sessions.get(tokenB)).toBeNull();
+
+        const fresh = await auth.login({ email: 'ana@acme.test', password: 'otra-clave-999' });
+        expect(fresh.token).toBeTruthy();
+        // Restaurar para los tests siguientes.
+        await auth.changePassword(fresh.user.id, fresh.token as string, {
+            current_password: 'otra-clave-999',
+            new_password: 'secreto-123',
+        });
+    });
+
+    it('cambiar la contraseña exige la actual', async () => {
+        const s = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        await expect(
+            auth.changePassword(s.user.id, s.token as string, {
+                current_password: 'no-es-esta',
+                new_password: 'da-igual-123',
+            }),
+        ).rejects.toThrow(/actual no es correcta/i);
+    });
+
+    it('lista las sesiones activas sin exponer el token y permite cerrarlas', async () => {
+        const a = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const b = await auth.login({ email: 'ana@acme.test', password: 'secreto-123' });
+        const tokenA = a.token as string;
+
+        const list = await auth.listSessions(a.user.id, tokenA);
+        expect(list.length).toBeGreaterThanOrEqual(2);
+        // El token NUNCA aparece en la respuesta.
+        expect(JSON.stringify(list)).not.toContain(tokenA);
+        expect(list[0]!.current).toBe(true);
+
+        // Se identifica la sesión B por el hash de SU token (no por el orden
+        // de la lista: varias sesiones del mismo segundo empatan y el test
+        // quedaba a merced del desempate).
+        const idOfB = createHash('sha256').update(b.token as string).digest('hex').slice(0, 16);
+        expect(list.some((x) => x.id === idOfB)).toBe(true);
+        await auth.revokeSession(a.user.id, idOfB);
+        expect(await sessions.get(b.token as string)).toBeNull();
+        await expect(auth.revokeSession(a.user.id, 'no-existe')).rejects.toThrow();
+    });
+
+    it('bloquea la fuerza bruta POR CUENTA aunque cambie la IP', async () => {
+        // El límite por IP de main.ts no frena a mil IPs contra el mismo email;
+        // este contador vive en Redis y es por cuenta.
+        const email = 'bruta@acme.test';
+        await auth.register({
+            email,
+            password: 'secreto-123',
+            name: 'Bruta',
+            workspace_name: 'Bruta WS',
+        });
+        for (let i = 0; i < 10; i++) {
+            await expect(auth.login({ email, password: 'incorrecta' })).rejects.toThrow();
+        }
+        // Al pasar el tope, ni siquiera la contraseña BUENA entra.
+        await expect(auth.login({ email, password: 'secreto-123' })).rejects.toThrow(
+            /demasiados intentos/i,
+        );
+        await redis.del(`loginfail:${email}`);
+        const ok = await auth.login({ email, password: 'secreto-123' });
+        expect(ok.token).toBeTruthy();
     });
 
     it('me devuelve usuario + memberships', async () => {

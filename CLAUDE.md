@@ -1611,6 +1611,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rate-limit por cuenta además de por IP (hoy es en memoria por nodo),
         `slug_history` para que renombrar una lista no rompa los enlaces
         viejos, y export/borrado de datos por usuario (GDPR).
+  - [x] **Seguridad de cuenta (v0.1.116)** — tres de los pendientes de la
+        auditoría:
+        (a) **Cambiar la contraseña estando adentro**: antes SÓLO existía el
+        flujo de "olvidé mi contraseña" (había que pasar por el email para
+        cambiarla). `POST /auth/change-password` verifica la actual y cierra
+        las sesiones de los OTROS dispositivos — la actual sigue viva (quien
+        cambia la clave no tiene por qué quedar afuera).
+        (b) **Sesiones activas por usuario** ("Dispositivos conectados"):
+        `GET/DELETE /auth/sessions` + `DELETE /auth/sessions/:id`. El id
+        público es un **hash del token** — el token es la credencial y no sale
+        nunca del servidor (verificado en el test y en el E2E). El
+        `last_seen` se DERIVA del TTL restante (el TTL es deslizante), así no
+        hay que escribir en Redis en cada request. El listado va en UN
+        pipeline: una cuenta con cientos de sesiones abiertas hacía 2
+        round-trips por sesión (lo detectó el propio E2E, con 198 sesiones
+        acumuladas de las corridas previas).
+        (c) **Freno de fuerza bruta POR CUENTA**: el rate limit de `main.ts`
+        es por IP y en MEMORIA de cada nodo — mil IPs contra el mismo email
+        pasaban limpio y con dos nodos el cupo se duplicaba. Ahora hay un
+        contador en Redis por email (10 fallos / 15 min, compartido entre
+        nodos) que se chequea ANTES de verificar el hash (argon2 es caro a
+        propósito) y se limpia con un login bueno.
+        Front: sección **Ajustes → Cuenta → Seguridad** (form de contraseña
+        con validación de coincidencia + lista de dispositivos con navegador/
+        SO/IP/última actividad, "este dispositivo" marcado, cerrar una o
+        "Cerrar las demás"). 4 tests API nuevos (347 en verde) + E2E navegador
+        11/11.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

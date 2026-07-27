@@ -5,6 +5,7 @@ import {
     Mail,
     History,
     Palette,
+    ShieldCheck,
     PenLine,
     SunMoon,
     Users,
@@ -28,7 +29,8 @@ export type SettingsSectionId =
     | 'correo'
     | 'firma'
     | 'apariencia'
-    | 'auditoria';
+    | 'auditoria'
+    | 'seguridad';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
@@ -55,6 +57,8 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
         {
             label: 'Cuenta',
             items: [
+                // v0.1.116 — contraseña + dispositivos conectados.
+                { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
                 { id: 'firma', label: 'Firma de email', icon: PenLine },
                 // v0.1.112 — per-usuario y por dispositivo (no viaja al backend).
                 { id: 'apariencia', label: 'Apariencia', icon: SunMoon },
