@@ -78,6 +78,8 @@ export interface TemplateEditorShellProps<TBlock extends BaseTemplateBlock> {
      * vea como la página real del cliente.
      */
     previewPage?: { bg?: string; maxWidth?: number; fontFamily?: string };
+    /** ¿La superficie destino del diseño es oscura? (ver GridCanvas). */
+    surfaceDark?: boolean;
 }
 
 /**
@@ -112,6 +114,7 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
     saveLabel,
     toolbarExtra,
     previewPage,
+    surfaceDark,
 }: TemplateEditorShellProps<TBlock>): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
@@ -695,6 +698,7 @@ export function TemplateEditorShell<TBlock extends BaseTemplateBlock>({
                         }
                     >
                         <GridCanvas
+                            surfaceDark={surfaceDark}
                             listId={listId}
                             fields={fields}
                             blocks={blocks}

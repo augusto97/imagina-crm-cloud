@@ -1752,6 +1752,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto quedan cerrados TODOS los pendientes de la auditoría F8.**
 
+  - [x] **Colores del page-builder legibles en los DOS temas (v0.1.122,
+        reporte del usuario con captura del dashboard en oscuro)** — los
+        títulos y el texto de la tabla no se veían. Causa única: los colores
+        del panel Diseño (`config.style`) se eligen en UN tema y la capa de
+        estilo sólo pintaba el FONDO; la tinta seguía saliendo de los tokens
+        del tema. En oscuro eso daba texto claro sobre un fondo claro elegido
+        antes (KPIs, headings, tabla) y tinta oscura sobre superficie oscura
+        (los headings con color propio). Ahora `blockStyleCss` resuelve la
+        tinta contra la SUPERFICIE REAL: (a) con fondo propio y sin texto
+        elegido, la tinta se deriva de la luminancia del fondo — el resultado
+        es idéntico en claro y en oscuro; (b) con fondo Y texto elegidos se
+        respetan los dos (el autor eligió el par, es estable); (c) con texto
+        elegido y sin fondo, el bloque se apoya en la superficie del tema, así
+        que una tinta que no contrasta se lleva a una franja legible
+        CONSERVANDO el tono. Y la superficie no siempre es el tema: manda el
+        fondo de PÁGINA del tablero/portal si lo tiene, por eso `surfaceDark`
+        se calcula en cada caller (dashboards, ficha, canvas del editor) y el
+        editor del portal lo fija en claro — el cliente nunca ve modo oscuro.
+        Además el fondo del bloque re-tiñe también `--imcrm-canvas`/
+        `--imcrm-background`/`--imcrm-popover` (el header sticky de la tabla
+        del widget quedaba como una banda del TEMA dentro de una tarjeta con
+        color propio) y `--imcrm-accent` un escalón corrido para que el hover
+        de fila siga notándose. De paso: las iniciales del avatar del registro
+        pasan a tinta oscura sobre los tonos claros de su paleta (ámbar/verde
+        daban ~2:1 con blanco, en ambos temas). 3 tests unitarios nuevos
+        (front 70 en verde) + **auditoría de contraste automatizada en el
+        navegador** (recorre cada nodo de texto y calcula la relación WCAG
+        contra su fondo efectivo) sobre 13 pantallas en oscuro y 2 en claro:
+        16/16.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

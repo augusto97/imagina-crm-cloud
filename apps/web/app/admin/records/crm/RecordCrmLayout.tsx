@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
 import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
+import { useTheme } from '@/lib/theme';
 import { getResolvedV2 } from '@/lib/crmTemplates';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
@@ -53,6 +54,9 @@ export function RecordCrmLayout({
 }: RecordCrmLayoutProps): JSX.Element {
     const update = useUpdateRecord(list.id);
     const toast = useToast();
+    // v0.1.122 — la ficha vive en el admin (tema claro/oscuro): la capa de
+    // estilo necesita el tema para decidir la tinta de los bloques.
+    const dark = useTheme().resolved === 'dark';
 
     const initialValues = useMemo<Record<string, unknown>>(
         () => ({ ...record.fields, ...record.relations }),
@@ -185,7 +189,7 @@ export function RecordCrmLayout({
                                             <div
                                                 key={b.id}
                                                 className={blockStyleClass(readBlockStyle({ style: b.style }))}
-                                                style={blockStyleCss(readBlockStyle({ style: b.style }))}
+                                                style={blockStyleCss(readBlockStyle({ style: b.style }), { dark })}
                                             >
                                                 <BlockRenderer
                                                     block={b}

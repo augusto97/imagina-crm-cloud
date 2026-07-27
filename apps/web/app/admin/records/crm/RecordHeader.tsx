@@ -2,6 +2,7 @@ import { ExternalLink, Mail, Phone } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { __, sprintf } from '@/lib/i18n';
+import { hexLuminance } from '@/lib/blockStyle';
 import { cn } from '@/lib/utils';
 import { colorFromString, initialsFromValue } from '@/lib/recordCategorize';
 import type { FieldEntity } from '@/types/field';
@@ -214,10 +215,16 @@ export function RecordHeader({
                             <div
                                 aria-hidden
                                 className={cn(
-                                    'imcrm-flex imcrm-h-16 imcrm-w-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-2xl imcrm-text-lg imcrm-font-semibold imcrm-text-white imcrm-shadow-imcrm-md',
+                                    'imcrm-flex imcrm-h-16 imcrm-w-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-2xl imcrm-text-lg imcrm-font-semibold imcrm-shadow-imcrm-md',
                                     'imcrm-ring-4 imcrm-ring-card',
                                 )}
-                                style={{ backgroundColor: avatarColor }}
+                                // v0.1.122 — las iniciales contrastan con el color
+                                // del avatar: con los tonos claros de la paleta
+                                // (ámbar, verde) el blanco quedaba en ~2:1.
+                                style={{
+                                    backgroundColor: avatarColor,
+                                    color: hexLuminance(avatarColor) > 0.5 ? 'hsl(224 45% 12%)' : '#ffffff',
+                                }}
                             >
                                 {initials}
                             </div>

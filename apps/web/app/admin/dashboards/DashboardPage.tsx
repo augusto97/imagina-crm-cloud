@@ -44,11 +44,13 @@ import { ApiError } from '@/lib/api';
 import {
     blockStyleClass,
     blockStyleCss,
-    PAGE_FONT_STACKS,
+    hexLuminance,
+    pageStyleCss,
     readBlockStyle,
     readPageSettings,
     type PortalPageSettings,
 } from '@/lib/blockStyle';
+import { useTheme } from '@/lib/theme';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isContentWidget, type WidgetSpec } from '@/types/dashboard';
@@ -115,6 +117,10 @@ export function DashboardPage(): JSX.Element {
     // v0.1.100 — modo PRESENTACIÓN (TV): fullscreen del tablero +
     // auto-refresh del bundle cada 60s mientras dura.
     const rootRef = useRef<HTMLDivElement | null>(null);
+    // v0.1.122 — la tinta de un widget sin fondo propio depende de la
+    // superficie sobre la que se apoya: el fondo de PÁGINA del tablero si lo
+    // tiene (manda sobre el tema), y si no el tema activo.
+    const themeDark = useTheme().resolved === 'dark';
     const [tvMode, setTvMode] = useState(false);
     useEffect(() => {
         const onChange = (): void => setTvMode(document.fullscreenElement === rootRef.current);
@@ -291,10 +297,12 @@ export function DashboardPage(): JSX.Element {
 
     const d = dashboard.data;
     const page = readPageSettings((d.settings as { page?: unknown } | undefined)?.page);
+    // v0.1.122 — `pageStyleCss` acompaña el fondo elegido con su tinta: un
+    // tablero con fondo claro seguía usando la tinta CLARA del tema oscuro.
+    const dark = page.bg !== undefined ? hexLuminance(page.bg) <= 0.5 : themeDark;
     const pageStyle: React.CSSProperties = {
-        ...(page.bg !== undefined ? { backgroundColor: page.bg, borderRadius: 12, padding: 16 } : {}),
-        ...(page.font !== undefined ? { fontFamily: PAGE_FONT_STACKS[page.font] } : {}),
-        ...(page.max_width !== undefined ? { maxWidth: `${page.max_width}px`, marginLeft: 'auto', marginRight: 'auto', width: '100%' } : {}),
+        ...pageStyleCss(page),
+        ...(page.bg !== undefined ? { borderRadius: 12, padding: 16 } : {}),
     };
 
     return (
@@ -474,7 +482,7 @@ export function DashboardPage(): JSX.Element {
                             // contenido capan el padding VERTICAL a 6px (el
                             // horizontal se conserva). Un pad explícito del
                             // panel Diseño sigue mandando.
-                            const styleCss = blockStyleCss(style);
+                            const styleCss = blockStyleCss(style, { dark });
                             if (isContentWidget(widget.type) && style.pad === undefined && styleCss.padding !== undefined) {
                                 styleCss.paddingTop = 6;
                                 styleCss.paddingBottom = 6;

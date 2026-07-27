@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from '@/lib/blockStyle';
+import { useTheme } from '@/lib/theme';
 import { __ } from '@/lib/i18n';
 import { groupBlocksByRowsAndColumns, WIDTH_PRESETS } from '@/lib/rowsLayout';
 import { cn } from '@/lib/utils';
@@ -53,6 +54,13 @@ interface Props<TBlock extends BaseTemplateBlock> {
     registry: BlockRegistry<TBlock>;
     selectedBlockIds: string[];
     preview?: boolean;
+    /**
+     * v0.1.122 — ¿la superficie sobre la que se APOYAN los bloques es oscura?
+     * No siempre coincide con el tema: el portal del cliente se ve siempre en
+     * claro, y una página con fondo propio manda sobre el tema. `undefined` =
+     * seguir el tema activo.
+     */
+    surfaceDark?: boolean;
     onBlocksChange: (next: TBlock[]) => void;
     onSelectBlock: (id: string | null, additive?: boolean) => void;
     onDropFromPalette: (payload: PalettePayload, position: DropTarget) => void;
@@ -109,11 +117,16 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
     registry,
     selectedBlockIds,
     preview = false,
+    surfaceDark,
     onBlocksChange,
     onSelectBlock,
     onDropFromPalette,
     onDropOnBlock,
 }: Props<TBlock>): JSX.Element {
+    // v0.1.122 — la tinta de los bloques se resuelve contra la superficie real
+    // (la que indique el caller) o, si no la declara, contra el tema activo.
+    const themeDark = useTheme().resolved === 'dark';
+    const dark = surfaceDark ?? themeDark;
     type Column = {
         id: string;
         width: number;
@@ -629,6 +642,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                                     >
                                         {block.type === 'nested_section' ? (
                                             <NestedSectionInline
+                                                surfaceDark={dark}
                                                 parent={block}
                                                 blocks={blocks}
                                                 registry={registry}
@@ -648,7 +662,7 @@ export function GridCanvas<TBlock extends BaseTemplateBlock>({
                                             // real y el portal.
                                             <div
                                                 className={blockStyleClass(readBlockStyle(block.config))}
-                                                style={blockStyleCss(readBlockStyle(block.config))}
+                                                style={blockStyleCss(readBlockStyle(block.config), { dark })}
                                             >
                                                 {registry.renderPreview(block, ctx)}
                                             </div>
@@ -1138,6 +1152,8 @@ interface NestedSectionInlineProps<TBlock extends BaseTemplateBlock> {
     registry: BlockRegistry<TBlock>;
     ctx: { listId: number; fields: FieldEntity[]; record: RecordEntity | null };
     preview: boolean;
+    /** Ver `Props.surfaceDark`. */
+    surfaceDark: boolean;
     selectedSet: Set<string>;
     dropTargetColId: string | null;
     draggedBlockId: React.MutableRefObject<string | null>;
@@ -1153,6 +1169,7 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
     registry,
     ctx,
     preview,
+    surfaceDark,
     selectedSet,
     dropTargetColId,
     draggedBlockId,
@@ -1161,6 +1178,7 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
     onDropFromPalette,
     onSetDropTarget,
 }: NestedSectionInlineProps<TBlock>): JSX.Element {
+    const dark = surfaceDark;
     const cfg = parent.config as unknown as {
         columns: Array<{ id: string; width: number; blocks: TBlock[] }>;
     };
@@ -1425,7 +1443,7 @@ function NestedSectionInline<TBlock extends BaseTemplateBlock>({
                                         )}
                                         <div
                                             className={`imcrm-overflow-x-auto ${blockStyleClass(readBlockStyle(subBlock.config))}`}
-                                            style={blockStyleCss(readBlockStyle(subBlock.config))}
+                                            style={blockStyleCss(readBlockStyle(subBlock.config), { dark })}
                                         >
                                             {registry.renderPreview(subBlock, ctx)}
                                         </div>

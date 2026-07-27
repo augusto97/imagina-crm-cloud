@@ -3,7 +3,7 @@ import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
-import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
+import { hexLuminance, PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
@@ -162,7 +162,11 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                 {hasTemplate ? (
                     // Template diseñado en el editor: TODOS los tipos de bloque
                     // (estáticos + interactivos contra /portal/*).
-                    <PortalRenderer boot={portalBoot} data={rendererData} />
+                    <PortalRenderer
+                        boot={portalBoot}
+                        data={rendererData}
+                        surfaceDark={page.bg !== undefined ? hexLuminance(page.bg) <= 0.5 : false}
+                    />
                 ) : (
                     // Sin template: fallback con los datos del record.
                     <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">

@@ -35,6 +35,12 @@ export interface PortalRendererData {
 interface Props {
     boot: PortalBootData;
     data: PortalRendererData;
+    /**
+     * v0.1.122 — ¿el fondo de página del diseño es oscuro? Decide la tinta de
+     * los bloques que no traen fondo propio. El portal no tiene modo oscuro:
+     * lo fija el diseño del tenant, no el navegador.
+     */
+    surfaceDark?: boolean;
 }
 
 /**
@@ -45,7 +51,7 @@ interface Props {
  * Bloques desconocidos (versionado futuro) se ignoran silenciosamente —
  * mismo criterio que el parser del template en el backend.
  */
-export function PortalRenderer({ boot, data }: Props): JSX.Element {
+export function PortalRenderer({ boot, data, surfaceDark = false }: Props): JSX.Element {
     // Bloques de tipo `notice` con `dismissible: true` pueden ser
     // cerrados por el cliente. Guardamos el set de índices cerrados
     // acá (no dentro del NoticeBlock) para poder excluir el wrapper
@@ -139,6 +145,7 @@ export function PortalRenderer({ boot, data }: Props): JSX.Element {
                                                 readBlockStyle(
                                                     block.config as Record<string, unknown>,
                                                 ),
+                                                { dark: surfaceDark },
                                             ),
                                             ...(maxH !== null
                                                 ? { maxHeight: `${maxH}px`, overflowY: 'auto' as const }
