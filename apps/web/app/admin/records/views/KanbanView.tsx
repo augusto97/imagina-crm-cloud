@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { GripVertical } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
-import { colorVar, type OptionColor } from '@/components/ui/color-picker';
+import { chipSoftStyle, colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -184,15 +184,30 @@ export function KanbanView({
             {allColumns.map((col) => {
                 const colRecords = grouped.get(col.key) ?? [];
                 const isTarget = dropTarget === col.key;
+                const colSolid = colorVar(col.color as OptionColor | undefined);
+                const colTint =
+                    colSolid !== undefined
+                        ? `color-mix(in srgb, ${colSolid} 8%, hsl(var(--imcrm-card)))`
+                        : undefined;
                 return (
                     <div
                         key={col.key}
                         className={cn(
-                            'imcrm-flex imcrm-w-80 imcrm-shrink-0 imcrm-flex-col imcrm-rounded-xl imcrm-border imcrm-bg-muted/30 imcrm-transition-all imcrm-duration-150',
+                            'imcrm-flex imcrm-w-80 imcrm-shrink-0 imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-transition-all imcrm-duration-150',
                             isTarget
-                                ? 'imcrm-border-primary/60 imcrm-bg-primary/5 imcrm-ring-2 imcrm-ring-primary/20'
+                                ? 'imcrm-border-primary/60 imcrm-ring-2 imcrm-ring-primary/20'
                                 : 'imcrm-border-border/60',
+                            colTint === undefined && 'imcrm-bg-muted/30',
                         )}
+                        // v0.1.125 — la columna se identifica por COLOR: el de la
+                        // opción del campo por el que agrupa (una sola fuente de
+                        // verdad, se edita en el catálogo del campo). Velo suave
+                        // en el fondo + franja del color arriba.
+                        style={
+                            colTint !== undefined && !isTarget
+                                ? { backgroundColor: colTint, borderTopColor: colSolid, borderTopWidth: 3 }
+                                : undefined
+                        }
                         onDragOver={(e) => {
                             if (draggingId !== null) {
                                 e.preventDefault();
@@ -206,18 +221,20 @@ export function KanbanView({
                     >
                         <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border/40 imcrm-px-3 imcrm-py-2.5">
                             <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
+                                {/* Etiqueta SÓLIDA con el color de la opción — el
+                                    mismo chip que la tabla y el Kanban usan para
+                                    ese valor, así la columna se reconoce de un
+                                    vistazo. Sin color: chip neutro. */}
                                 <span
-                                    className="imcrm-h-2.5 imcrm-w-2.5 imcrm-shrink-0 imcrm-rounded-full"
-                                    style={{
-                                        backgroundColor:
-                                            colorVar(col.color as OptionColor | undefined) ??
-                                            'hsl(var(--imcrm-muted-foreground))',
-                                    }}
-                                    aria-hidden
-                                />
-                                <h3 className="imcrm-truncate imcrm-text-xs imcrm-font-bold imcrm-uppercase imcrm-tracking-wider imcrm-text-foreground">
+                                    className={cn(
+                                        'imcrm-truncate imcrm-rounded imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wider',
+                                        col.color === undefined &&
+                                            'imcrm-bg-muted imcrm-text-muted-foreground imcrm-ring-1 imcrm-ring-border',
+                                    )}
+                                    style={chipSoftStyle(col.color as OptionColor | undefined)}
+                                >
                                     {col.label}
-                                </h3>
+                                </span>
                                 <span className="imcrm-shrink-0 imcrm-rounded-full imcrm-bg-card imcrm-px-2 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-shadow-imcrm-sm">
                                     {colRecords.length}
                                 </span>

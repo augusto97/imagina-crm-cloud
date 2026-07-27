@@ -302,17 +302,6 @@ export function GroupedTableView({
     return (
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-text-xs imcrm-text-muted-foreground">
-                <span>
-                    {sprintf(
-                        /* translators: %1$d total groups, %2$d total records */
-                        __('%1$d grupos · %2$d registros'),
-                        bundle.data?.meta.total_groups ?? 0,
-                        bundle.data?.meta.total_records ?? 0,
-                    )}
-                </span>
-            </div>
-
             {/* Scroll horizontal único compartido entre todos los
                 buckets — sin esto cada bucket tenía su propio
                 overflow-x-auto y las columnas no quedaban alineadas
@@ -377,6 +366,17 @@ export function GroupedTableView({
                 ClickUp) — la nativa del wrapper queda al fondo de la
                 lista de grupos. */}
             <StickyHScrollbar targetRef={hScrollRef} />
+
+            {/* v0.1.125 — el resumen va al FINAL: arriba le comía altura a la
+                tabla sin aportar nada al escanear los grupos. */}
+            <div className="imcrm-pt-1 imcrm-text-xs imcrm-text-muted-foreground">
+                {sprintf(
+                    /* translators: %1$d total groups, %2$d total records */
+                    __('%1$d grupos · %2$d registros'),
+                    bundle.data?.meta.total_groups ?? 0,
+                    bundle.data?.meta.total_records ?? 0,
+                )}
+            </div>
         </div>
         </RecurrencesBatchProvider>
     );
