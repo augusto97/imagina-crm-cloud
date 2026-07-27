@@ -65,3 +65,30 @@ export const authSessionSchema = z.object({
         .optional(),
 });
 export type AuthSession = z.infer<typeof authSessionSchema>;
+
+// --- v0.1.116: seguridad de la cuenta ---
+
+/** Cambio de contraseña CON sesión iniciada (distinto del flujo de "olvidé"). */
+export const changePasswordSchema = z.object({
+    current_password: z.string().min(1),
+    new_password: passwordSchema,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/**
+ * Sesión activa del usuario ("Dispositivos"). El `id` es un hash del token:
+ * el token es la credencial y NUNCA sale del servidor.
+ */
+export const activeSessionSchema = z.object({
+    id: z.string(),
+    created_at: z.string(),
+    last_seen_at: z.string(),
+    user_agent: z.string(),
+    ip: z.string(),
+    current: z.boolean(),
+    impersonated: z.boolean(),
+});
+export type ActiveSessionDto = z.infer<typeof activeSessionSchema>;
+
+export const activeSessionsResponseSchema = z.object({ data: z.array(activeSessionSchema) });
+export type ActiveSessionsResponse = z.infer<typeof activeSessionsResponseSchema>;

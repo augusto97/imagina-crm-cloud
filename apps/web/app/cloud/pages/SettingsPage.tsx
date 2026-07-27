@@ -10,6 +10,7 @@ import {
 } from '@/cloud/settingsSections';
 import { AppearanceCard } from '@/admin/settings/AppearanceCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
+import { SecurityCard } from '@/admin/settings/SecurityCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
 import { BrandingPanel } from '@/cloud/components/BrandingPanel';
 import { DomainPanel } from '@/cloud/components/DomainPanel';
@@ -150,6 +151,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
                 {/* Bitácora de acciones administrativas (v0.1.114). */}
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
+                {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}
+                {active === 'seguridad' && <SecurityCard />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
                 {/* Per-usuario y por dispositivo: tema claro/oscuro/sistema. */}

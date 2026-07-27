@@ -3,6 +3,7 @@ import {
     BadRequestException,
     ConflictException,
     ForbiddenException,
+    HttpException,
     Inject,
     Injectable,
     Logger,
@@ -27,10 +28,23 @@ import { impersonationLog, memberships, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
-import { SessionService } from './session.service';
+import { SessionService, type ActiveSession } from './session.service';
 
 /** TTL del token de reset (30 min) + prefijo en Redis. */
 const RESET_TTL_SECONDS = 30 * 60;
+
+/**
+ * v0.1.116 — Freno de fuerza bruta POR CUENTA (además del rate limit por IP).
+ *
+ * El limitador de `main.ts` es por IP y en MEMORIA de cada nodo: mil IPs
+ * distintas probando contra el mismo email pasaban limpio, y con dos nodos el
+ * cupo efectivo se duplicaba. Este contador vive en Redis (compartido entre
+ * nodos) y es por email: tras N fallos seguidos la cuenta queda bloqueada un
+ * rato, aunque el atacante rote de IP. Un login exitoso lo limpia.
+ */
+const LOGIN_FAIL_MAX = 10;
+const LOGIN_FAIL_WINDOW_SECONDS = 15 * 60;
+const loginFailKey = (email: string): string => `loginfail:${email.toLowerCase()}`;
 const resetKey = (token: string): string => `pwreset:${token}`;
 
 function escapeHtml(s: string): string {
@@ -416,7 +430,26 @@ export class AuthService implements OnModuleInit {
         };
     }
 
-    async login(input: LoginInput): Promise<AuthSession> {
+    async login(
+        input: LoginInput,
+        meta: { userAgent?: string; ip?: string } = {},
+    ): Promise<AuthSession> {
+        // Freno por cuenta: se chequea ANTES de tocar la DB o verificar el hash
+        // (argon2 es caro a propósito; no queremos gastarlo con el atacante).
+        const failKey = loginFailKey(input.email);
+        const fails = Number((await this.redis.get(failKey)) ?? 0);
+        if (fails >= LOGIN_FAIL_MAX) {
+            throw new HttpException(
+                {
+                    code: 'too_many_attempts',
+                    message:
+                        'Demasiados intentos fallidos para esta cuenta. Esperá unos minutos o restablecé tu contraseña.',
+                    data: { status: 429 },
+                },
+                429,
+            );
+        }
+
         const [user] = await this.db
             .select()
             .from(users)
@@ -429,6 +462,9 @@ export class AuthService implements OnModuleInit {
             '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
         const valid = await argon2.verify(hash, input.password).catch(() => false);
         if (!user || !valid) {
+            // Se cuenta el fallo (ventana deslizante de 15 min).
+            const n = await this.redis.incr(failKey);
+            if (n === 1) await this.redis.expire(failKey, LOGIN_FAIL_WINDOW_SECONDS);
             throw new UnauthorizedException('Credenciales inválidas');
         }
 
@@ -442,12 +478,73 @@ export class AuthService implements OnModuleInit {
             });
         }
 
-        const token = await this.sessions.create(user.id);
+        // Login bueno → se limpia el contador de fallos de la cuenta.
+        await this.redis.del(failKey);
+        const token = await this.sessions.create(user.id, meta);
         return {
             user: this.toSessionUser(user),
             memberships: await this.membershipsOf(user.id),
             token,
         };
+    }
+
+    /**
+     * v0.1.116 — Cambio de contraseña CON sesión iniciada. Antes sólo existía
+     * el flujo de "olvidé mi contraseña" (había que pasar por el email para
+     * cambiarla estando adentro).
+     *
+     * Verifica la contraseña actual, y al cambiarla cierra las sesiones de los
+     * OTROS dispositivos (la actual sigue viva: quien cambia la clave no tiene
+     * por qué quedar afuera).
+     */
+    async changePassword(
+        userId: number,
+        currentToken: string,
+        input: { current_password: string; new_password: string },
+    ): Promise<{ revoked_sessions: number }> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user) throw new UnauthorizedException('Usuario inexistente');
+
+        const valid = await argon2.verify(user.passwordHash, input.current_password).catch(() => false);
+        if (!valid) {
+            throw new BadRequestException({
+                code: 'invalid_password',
+                message: 'La contraseña actual no es correcta',
+                data: { status: 400, errors: { current_password: 'No coincide' } },
+            });
+        }
+
+        const passwordHash = await argon2.hash(input.new_password);
+        await this.db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+        const revoked = await this.sessions.destroyOthersForUser(userId, currentToken);
+        this.logger.log(`Contraseña cambiada por el usuario ${userId} (${revoked} sesiones cerradas)`);
+        return { revoked_sessions: revoked };
+    }
+
+    /** v0.1.116 — Sesiones activas de la cuenta (sin exponer tokens). */
+    listSessions(userId: number, currentToken: string): Promise<ActiveSession[]> {
+        return this.sessions.listForUser(userId, currentToken);
+    }
+
+    /** Cierra una sesión concreta del usuario. 404 si no le pertenece. */
+    async revokeSession(userId: number, publicId: string): Promise<void> {
+        const ok = await this.sessions.destroyOneForUser(userId, publicId);
+        if (!ok) {
+            throw new NotFoundException({
+                code: 'session_not_found',
+                message: 'Esa sesión ya no existe',
+                data: { status: 404 },
+            });
+        }
+    }
+
+    /** Cierra todas las sesiones menos la actual. */
+    async revokeOtherSessions(
+        userId: number,
+        currentToken: string,
+    ): Promise<{ revoked_sessions: number }> {
+        const revoked = await this.sessions.destroyOthersForUser(userId, currentToken);
+        return { revoked_sessions: revoked };
     }
 
     async me(userId: number, impersonatedBy?: number): Promise<AuthSession> {

@@ -1,20 +1,25 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     Inject,
+    Param,
     Post,
     Req,
     Res,
     UseGuards,
 } from '@nestjs/common';
 import {
+    changePasswordSchema,
     forgotPasswordSchema,
     loginInputSchema,
     registerInputSchema,
     resetPasswordSchema,
+    type ActiveSessionsResponse,
     type AuthSession,
+    type ChangePasswordInput,
     type ForgotPasswordInput,
     type LoginInput,
     type RegisterInput,
@@ -48,8 +53,14 @@ export class AuthController {
     async login(
         @Body(new ZodValidationPipe(loginInputSchema)) input: LoginInput,
         @Res({ passthrough: true }) reply: FastifyReply,
+        @Req() req?: FastifyRequest,
     ): Promise<AuthSession> {
-        const session = await this.auth.login(input);
+        // v0.1.116 — se guarda el contexto del dispositivo para que el usuario
+        // pueda reconocer sus sesiones en Ajustes → Cuenta.
+        const session = await this.auth.login(input, {
+            userAgent: String(req?.headers['user-agent'] ?? ''),
+            ip: req?.ip ?? '',
+        });
         this.setSessionCookie(reply, session.token as string);
         return session;
     }
@@ -63,6 +74,56 @@ export class AuthController {
     ): Promise<void> {
         await this.auth.logout(req.sessionToken as string);
         reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    }
+
+    /**
+     * v0.1.116 — Cambiar la contraseña estando adentro. Antes sólo existía el
+     * flujo de "olvidé mi contraseña" (había que pasar por el email para
+     * cambiarla). Cierra las sesiones de los OTROS dispositivos.
+     */
+    @Post('change-password')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    changePassword(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(changePasswordSchema)) input: ChangePasswordInput,
+    ): Promise<{ revoked_sessions: number }> {
+        return this.auth.changePassword(
+            req.authUserId as number,
+            req.sessionToken as string,
+            input,
+        );
+    }
+
+    /** v0.1.116 — Sesiones activas de la cuenta (panel "Dispositivos"). */
+    @Get('sessions')
+    @UseGuards(SessionGuard)
+    async sessions(@Req() req: FastifyRequest): Promise<ActiveSessionsResponse> {
+        return {
+            data: await this.auth.listSessions(
+                req.authUserId as number,
+                req.sessionToken as string,
+            ),
+        };
+    }
+
+    /** Cierra UNA sesión por su id público (hash del token). */
+    @Delete('sessions/:id')
+    @HttpCode(204)
+    @UseGuards(SessionGuard)
+    async revokeSession(@Req() req: FastifyRequest, @Param('id') id: string): Promise<void> {
+        await this.auth.revokeSession(req.authUserId as number, id);
+    }
+
+    /** Cierra TODAS menos la actual ("salir en los otros dispositivos"). */
+    @Delete('sessions')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    revokeOtherSessions(@Req() req: FastifyRequest): Promise<{ revoked_sessions: number }> {
+        return this.auth.revokeOtherSessions(
+            req.authUserId as number,
+            req.sessionToken as string,
+        );
     }
 
     @Get('me')

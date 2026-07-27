@@ -1,6 +1,10 @@
 import {
+    activeSessionsResponseSchema,
     auditFeedSchema,
+    changePasswordSchema,
+    type ActiveSessionsResponse,
     type AuditFeed,
+    type ChangePasswordInput,
     activitySchema,
     aggregateResultSchema,
     apiErrorSchema,
@@ -170,6 +174,24 @@ export class CloudClient {
     }
     logout(): Promise<void> {
         return this.request('POST', '/auth/logout', {});
+    }
+    // --- seguridad de la cuenta (v0.1.116) ---
+    changePassword(input: ChangePasswordInput): Promise<{ revoked_sessions: number }> {
+        return this.request('POST', '/auth/change-password', {
+            body: changePasswordSchema.parse(input),
+            schema: z.object({ revoked_sessions: z.number() }),
+        });
+    }
+    activeSessions(): Promise<ActiveSessionsResponse> {
+        return this.request('GET', '/auth/sessions', { schema: activeSessionsResponseSchema });
+    }
+    revokeSession(id: string): Promise<void> {
+        return this.request('DELETE', `/auth/sessions/${encodeURIComponent(id)}`, {});
+    }
+    revokeOtherSessions(): Promise<{ revoked_sessions: number }> {
+        return this.request('DELETE', '/auth/sessions', {
+            schema: z.object({ revoked_sessions: z.number() }),
+        });
     }
     me(): Promise<AuthSession> {
         return this.request('GET', '/auth/me', { schema: authSessionSchema });
