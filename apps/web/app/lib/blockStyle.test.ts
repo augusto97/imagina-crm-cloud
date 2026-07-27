@@ -6,7 +6,9 @@ import {
     hasBlockStyle,
     hexToHslTriplet,
     readBlockStyle,
+    pageStyleCss,
     readPageSettings,
+    surfaceInkCss,
     wrapperStyleCss,
 } from './blockStyle';
 
@@ -130,6 +132,24 @@ describe('blockStyle', () => {
         expect(css['--imcrm-background']).toBe(css['--imcrm-card']);
         // El hover de fila se separa del fondo (no queda invisible).
         expect(css['--imcrm-accent']).not.toBe(css['--imcrm-card']);
+    });
+
+    // v0.1.123 — regresión: la tinta de una superficie NO puede aplicarse al
+    // contenedor. Se filtraba a los controles y tarjetas que pintan su propio
+    // fondo con los tokens del tema (fondo de página oscuro en modo claro →
+    // botones con texto claro sobre su propio fondo claro).
+    it('v0.1.123 — pageStyleCss pinta la superficie, no la tinta', () => {
+        const css = pageStyleCss({ bg: '#0b1220', max_width: 900 }) as Record<string, unknown>;
+        expect(css.backgroundColor).toBe('#0b1220');
+        expect(css.maxWidth).toBe('900px');
+        expect(css.color).toBeUndefined();
+        expect(css['--imcrm-foreground']).toBeUndefined();
+
+        // La tinta se aplica por elemento, a lo que se apoya en esa superficie.
+        const ink = surfaceInkCss(true) as Record<string, unknown>;
+        expect(ink.color).toBe('hsl(210 40% 96%)');
+        expect(ink['--imcrm-muted-foreground']).toBe('215 20% 75%');
+        expect((surfaceInkCss(false) as Record<string, unknown>).color).toBe('hsl(224 45% 12%)');
     });
 
     it('v0.1.95 — blockStyleClass activa la herencia tipográfica', () => {

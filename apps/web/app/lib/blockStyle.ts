@@ -338,22 +338,32 @@ export function wrapperStyleCss(opts: {
 }
 
 /**
- * v0.1.122 — CSS del contenedor de PÁGINA (portal y dashboards). Mismo
- * criterio que los bloques: el fondo elegido manda y la tinta lo acompaña,
- * así un tablero con fondo claro sigue legible en modo oscuro.
+ * v0.1.122 — Tinta para el contenido que se apoya DIRECTAMENTE sobre una
+ * superficie (sin tarjeta propia). Se aplica al elemento, no a la página: un
+ * override global se filtraría a los controles y tarjetas que pintan su propio
+ * fondo con los tokens del tema (y ahí la tinta correcta es la del tema).
+ */
+export function surfaceInkCss(dark: boolean): React.CSSProperties {
+    const fg = dark ? INK_ON_DARK : INK_ON_LIGHT;
+    const muted = dark ? MUTED_ON_DARK : MUTED_ON_LIGHT;
+    return {
+        color: `hsl(${fg})`,
+        ['--imcrm-foreground' as string]: fg,
+        ['--imcrm-card-foreground' as string]: fg,
+        ['--imcrm-muted-foreground' as string]: muted,
+    } as React.CSSProperties;
+}
+
+/**
+ * v0.1.122 — CSS del contenedor de PÁGINA (portal y dashboards): fondo,
+ * tipografía y ancho máximo.
  */
 export function pageStyleCss(page: PortalPageSettings): React.CSSProperties {
     const css: React.CSSProperties & Record<string, string | number> = {};
-    if (page.bg !== undefined) {
-        css.backgroundColor = page.bg;
-        const light = hexLuminance(page.bg) > 0.5;
-        css.color = `hsl(${light ? INK_ON_LIGHT : INK_ON_DARK})`;
-        css['--imcrm-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
-        css['--imcrm-card-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
-        css['--imcrm-muted-foreground'] = light ? MUTED_ON_LIGHT : MUTED_ON_DARK;
-        const t = hexToHslTriplet(page.bg);
-        if (t !== null) css['--imcrm-canvas'] = t;
-    }
+    // Sólo la SUPERFICIE y el layout. La tinta va por elemento
+    // (`surfaceInkCss`): aplicarla al contenedor la filtraba a los controles y
+    // tarjetas que pintan su propio fondo con los tokens del tema.
+    if (page.bg !== undefined) css.backgroundColor = page.bg;
     if (page.font !== undefined) css.fontFamily = PAGE_FONT_STACKS[page.font];
     if (page.max_width !== undefined) {
         css.maxWidth = `${page.max_width}px`;

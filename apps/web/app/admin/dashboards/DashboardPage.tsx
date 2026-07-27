@@ -46,6 +46,7 @@ import {
     blockStyleCss,
     hexLuminance,
     pageStyleCss,
+    surfaceInkCss,
     readBlockStyle,
     readPageSettings,
     type PortalPageSettings,
@@ -300,10 +301,24 @@ export function DashboardPage(): JSX.Element {
     // v0.1.122 — `pageStyleCss` acompaña el fondo elegido con su tinta: un
     // tablero con fondo claro seguía usando la tinta CLARA del tema oscuro.
     const dark = page.bg !== undefined ? hexLuminance(page.bg) <= 0.5 : themeDark;
-    const pageStyle: React.CSSProperties = {
-        ...pageStyleCss(page),
-        ...(page.bg !== undefined ? { borderRadius: 12, padding: 16 } : {}),
+    // El fondo elegido pinta el TABLERO, no el chrome de la app: la barra de
+    // acciones (Editar, Presentar, Página…) sigue los tokens del tema. Si la
+    // tinta de la página se filtrara al chrome, un fondo oscuro dejaba los
+    // botones con texto claro sobre su propio fondo claro (v0.1.122 → .123).
+    const pageLayout = pageStyleCss(page);
+    const chromeStyle: React.CSSProperties = {
+        maxWidth: pageLayout.maxWidth,
+        marginLeft: pageLayout.marginLeft,
+        marginRight: pageLayout.marginRight,
+        width: pageLayout.width,
+        fontFamily: pageLayout.fontFamily,
     };
+    // El lienzo pinta el FONDO, nada más: la tinta se aplica por widget. Un
+    // override global de los foregrounds acá teñía también las tarjetas que
+    // pintan su propio fondo con los tokens del tema (y quedaban blanco sobre
+    // blanco con un fondo de página oscuro).
+    const canvasStyle: React.CSSProperties =
+        page.bg !== undefined ? { backgroundColor: page.bg, borderRadius: 12, padding: 16 } : {};
 
     return (
         <DashboardGlobalPeriodContext.Provider value={globalPeriod}>
@@ -315,7 +330,7 @@ export function DashboardPage(): JSX.Element {
                 // scroll propio + aire.
                 tvMode && 'imcrm-overflow-y-auto imcrm-bg-background imcrm-p-6',
             )}
-            style={pageStyle}
+            style={chromeStyle}
         >
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -452,6 +467,7 @@ export function DashboardPage(): JSX.Element {
                 onOpenChange={setSettingsDialogOpen}
             />
 
+            <div style={canvasStyle}>
             {d.widgets.length === 0 ? (
                 <EmptyState onAdd={handleAddWidget} />
             ) : (
@@ -482,7 +498,12 @@ export function DashboardPage(): JSX.Element {
                             // contenido capan el padding VERTICAL a 6px (el
                             // horizontal se conserva). Un pad explícito del
                             // panel Diseño sigue mandando.
-                            const styleCss = blockStyleCss(style, { dark });
+                            const styleCss = {
+                                // Un bloque de contenido SIN estilo propio se
+                                // apoya en el lienzo: su tinta sale de ahí.
+                                ...(chromeless ? surfaceInkCss(dark) : {}),
+                                ...blockStyleCss(style, { dark }),
+                            } as React.CSSProperties;
                             if (isContentWidget(widget.type) && style.pad === undefined && styleCss.padding !== undefined) {
                                 styleCss.paddingTop = 6;
                                 styleCss.paddingBottom = 6;
@@ -545,6 +566,7 @@ export function DashboardPage(): JSX.Element {
                     </DashboardGrid>
                 </Suspense>
             )}
+            </div>
 
             <WidgetFormDialog
                 initial={editingWidget}
