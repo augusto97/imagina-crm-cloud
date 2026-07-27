@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router';
 import { ArrowLeft, Loader2, Monitor } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';

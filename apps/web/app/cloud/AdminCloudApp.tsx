@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { HashRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
 import { App } from '@/App';

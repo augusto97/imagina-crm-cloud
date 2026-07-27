@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';

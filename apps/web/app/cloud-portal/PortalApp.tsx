@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
 import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { CloudApiError } from '@/lib/cloud/client';

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { BarChart3, List as ListIcon, Pin } from 'lucide-react';
 
 import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';

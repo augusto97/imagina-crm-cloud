@@ -1673,6 +1673,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         ensuciaba una aserción) — 351 API y 67 front en verde; E2E por API
         (alta → token del correo → verificar → reuso rechazado) y navegador 8/8.
 
+  - [x] **react-router v7 (v0.1.119)** — el último pendiente de dependencias de
+        la auditoría: `react-router-dom@6` arrastraba dos avisos sin parche en
+        su línea (open redirect por backslash en `<Link>`/`useNavigate` —bypass
+        de CVE-2025-68470— e inyección de constructor en `deserializeErrors`);
+        el arreglo existe **sólo** desde 7.18.0. Se migró a `react-router@7.18.1`
+        (la v8, ya publicada, exige React ≥19 y la app va con 18). En v7 los dos
+        paquetes se fusionaron: se quitó `react-router-dom` y los 30 archivos
+        importan de `react-router` — la API que usa el fork (Link, NavLink,
+        Routes/Route, Navigate, Outlet, useNavigate/useParams/useSearchParams/
+        useLocation, Hash y BrowserRouter) es idéntica, así que no hubo cambios
+        de código más allá del import. `react-router` pasa además al chunk
+        `vendor-react` (sobrevive a los deploys, como el resto de vendors desde
+        v0.1.115). Typecheck/lint 0 errores, 67 tests front en verde, build OK y
+        E2E de navegación en navegador 9/10 —el único ✗ es el 401 esperado del
+        sondeo de sesión al bootear— cubriendo Link del panel, useParams,
+        `?s=` de Ajustes, dashboards/favoritos, botón atrás y el `<Navigate>`
+        de ruta desconocida. (`uuid` y `brace-expansion` siguen con avisos pero
+        cuelgan sólo de Testcontainers y ESLint: no llegan al runtime.)
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

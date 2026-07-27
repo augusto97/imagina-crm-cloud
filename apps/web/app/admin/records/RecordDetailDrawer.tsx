@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import {
     Activity,
     ChevronDown,

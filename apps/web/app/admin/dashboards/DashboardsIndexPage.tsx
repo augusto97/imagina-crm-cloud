@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { AlertCircle, BarChart3, Copy, Lock, Plus, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';

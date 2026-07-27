@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { ArrowLeft, Search, X } from 'lucide-react';
 
 import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
