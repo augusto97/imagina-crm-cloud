@@ -3,7 +3,6 @@ import { Link } from 'react-router';
 import { Check, LayoutDashboard, Loader2, SlidersHorizontal, Sparkles, UserSquare2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
 import { useUpdateList } from '@/hooks/useLists';
 import { recordsKeys } from '@/hooks/useRecords';
@@ -84,33 +83,21 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
     };
 
     return (
-        <Card>
-            <CardHeader className="imcrm-pb-3">
-                <CardTitle className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base">
-                    <LayoutDashboard className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" />
-                    {__('Apariencia del registro')}
-                </CardTitle>
-                <CardDescription>
-                    {__(
-                        'Define cómo se ve la página individual de cada registro de esta lista. El layout CRM es ideal para contactos, ventas o leads; el clásico para listas tipo base de datos.',
-                    )}
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-5 imcrm-pt-0">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-5">
                 <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
                     <LayoutOption
                         active={currentLayout === 'classic'}
                         disabled={update.isPending}
-                        title={__('Lista')}
-                        description={__('Form lineal con todos los campos. Default.')}
+                        title={__('Ficha simple')}
+                        description={__('Todos los campos, uno debajo del otro. Es la opción por defecto.')}
                         Icon={LayoutDashboard}
                         onClick={() => void setLayout('classic')}
                     />
                     <LayoutOption
                         active={currentLayout === 'crm'}
                         disabled={update.isPending}
-                        title={__('Panel CRM')}
-                        description={__('Header con avatar, badges, sidebar colapsable y timeline.')}
+                        title={__('Ficha de cliente')}
+                        description={__('Encabezado con avatar y datos destacados, más historial al costado.')}
                         Icon={UserSquare2}
                         onClick={() => void setLayout('crm')}
                     />
@@ -122,7 +109,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                             <h4 className="imcrm-text-sm imcrm-font-semibold">{__('Plantilla')}</h4>
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    'Define qué campos van en cuál slot del panel CRM. Cada plantilla aplica heurísticas distintas a tu lista — los campos sin clasificar caen en "Otros".',
+                                    'Cada plantilla decide qué campos van al frente y cuáles quedan en el detalle. Los que no encajan en ningún lugar aparecen agrupados en "Otros".',
                                 )}
                             </p>
                         </div>
@@ -168,7 +155,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                                             {__('Personalizada')}
                                         </span>
                                         <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                            {__('Diseñada manualmente con el editor visual. Cada slot a tu medida.')}
+                                            {__('Diseñá vos mismo la ficha, campo por campo, con el editor visual.')}
                                         </span>
                                     </div>
                                     <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
@@ -196,8 +183,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                         {__('Guardando…')}
                     </p>
                 )}
-            </CardContent>
-        </Card>
+        </div>
     );
 }
 

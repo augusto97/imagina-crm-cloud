@@ -1843,6 +1843,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         grilla con 5 o 6 semanas según el mes (antes siempre 42 celdas → una
         fila entera de relleno). Verificado en navegador vista por vista.
 
+  - [x] **Ajustes de lista reconstruidos (v0.1.126, pedido del usuario:
+        "está recargado con muchas opciones")**: la página era UN scroll con
+        SEIS tarjetas abiertas a la vez (general + campos + apariencia +
+        portal + permisos + lista pública), cada una con su propio botón de
+        guardar, y el botón de ELIMINAR la lista arriba a la derecha, pegado
+        a "Ver registros". Ahora: (a) **una sección por vez** con tira de
+        pestañas (Campos · General · Apariencia · Permisos · Compartir — el
+        mismo patrón de las vistas guardadas), sección activa en `?s=`
+        linkeable, título + una línea que explica en criollo qué se hace
+        ahí, y pistas de estado en la pestaña (nº de campos, punto verde si
+        la lista está publicada). (b) **Campos**: fila con el icono de su
+        tipo y el tipo en lenguaje humano (se fue el slug en monospace, el
+        tipo EN MAYÚSCULAS y el `col:` interno), buscador cuando hay muchos,
+        **reordenar arrastrando** (el endpoint existía desde F1 y no tenía
+        UI), la fila entera abre la edición y el borrado usa el confirm
+        in-app. (c) **Permisos**: se reemplazó la matriz rol × operación
+        (4 selects por fila + una segunda tabla de campos ocultos) por una
+        tarjeta por rol con **niveles listos para usar** —Sin acceso / Solo
+        mirar / Solo lo suyo / Colaborar / Control total— y un "Ajuste fino"
+        plegado con los 4 ejes y los campos que ese rol no debe ver; una
+        combinación fuera del catálogo (p. ej. scope "asignados") se muestra
+        como personalizada en vez de mentir con un chip marcado. (d)
+        **Compartir**: portal y página pública juntos, con badge de estado y
+        el enlace público ARRIBA (es el premio, antes estaba al final).
+        (e) **General**: se fue el bloque "Sufijo de tabla" (jerga del
+        plugin) y la zona de peligro quedó al final de la sección. 6 tests
+        unitarios nuevos (77 front en verde) + E2E navegador 31/31
+        (pestañas, deep link, drag&drop persistido, niveles traducidos al
+        ajuste fino, un solo scroll, modo oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

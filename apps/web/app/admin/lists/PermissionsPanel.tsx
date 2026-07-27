@@ -1,43 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { ChevronDown, EyeOff, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
-import {
-    useListPermissions,
-    useUpdateListPermissions,
-} from '@/hooks/usePermissions';
+import { useListPermissions, useUpdateListPermissions } from '@/hooks/usePermissions';
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import type { RolePermissions, Scope } from '@imagina-base/shared';
+
+import { ACCESS_LEVELS, blankRolePermissions, levelOf, type AccessLevel } from './listAccessLevels';
 
 interface Props {
     listId: number;
 }
 
 const SCOPE_OPTIONS: Array<{ value: Scope; label: string }> = [
-    { value: 'all', label: __('Todos') },
-    { value: 'assigned', label: __('Asignados') },
-    { value: 'own', label: __('Propios') },
+    { value: 'all', label: __('Todos los registros') },
+    { value: 'assigned', label: __('Los que tiene asignados') },
+    { value: 'own', label: __('Los que creó') },
     { value: 'none', label: __('Ninguno') },
 ];
 
 /**
- * Panel de "Permisos por rol" del List Builder (Fase 7 — 1.E).
+ * Sección "Quién puede hacer qué" (permisos por rol de la lista).
  *
- * Renderiza una matriz `rol × operación` (view/create/edit/delete) editable
- * por el admin de la lista. `crm_admin` y `crm_client` no aparecen — el
- * primero tiene bypass total, el segundo solo va al portal (Fase 9).
- *
- * El `assignment_field_id` (necesario cuando scope=assigned) se elige
- * del subset de fields de tipo `user` de la lista.
+ * Una tarjeta por rol con un nivel de acceso elegible de un vistazo y
+ * un "Ajuste fino" plegado con los cuatro ejes (ver / crear / editar /
+ * eliminar) y los campos que ese rol no debe ver. Los administradores
+ * del workspace tienen acceso total siempre y no aparecen acá.
  */
 export function PermissionsPanel({ listId }: Props): JSX.Element {
     const query = useListPermissions(listId);
@@ -75,34 +67,21 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
         [perms],
     );
 
-    const setRoleScope = (role: string, op: 'view' | 'edit' | 'delete', scope: Scope): void => {
-        setPerms((prev) => {
-            const current = prev[role] ?? blankRolePermissions();
-            return { ...prev, [role]: { ...current, [op]: scope } };
-        });
+    const patchRole = (role: string, patch: Partial<RolePermissions>): void => {
+        setPerms((prev) => ({ ...prev, [role]: { ...(prev[role] ?? blankRolePermissions()), ...patch } }));
         setDirty(true);
     };
 
-    const setRoleCreate = (role: string, value: boolean): void => {
-        setPerms((prev) => {
-            const current = prev[role] ?? blankRolePermissions();
-            return { ...prev, [role]: { ...current, create: value } };
-        });
-        setDirty(true);
+    const applyLevel = (role: string, level: AccessLevel): void => {
+        patchRole(role, level.perms);
     };
 
     const toggleHiddenField = (role: string, slug: string, hide: boolean): void => {
-        setPerms((prev) => {
-            const current = prev[role] ?? blankRolePermissions();
-            const hiddenSet = new Set(current.fields_hidden);
-            if (hide) hiddenSet.add(slug);
-            else hiddenSet.delete(slug);
-            return {
-                ...prev,
-                [role]: { ...current, fields_hidden: Array.from(hiddenSet) },
-            };
-        });
-        setDirty(true);
+        const current = perms[role] ?? blankRolePermissions();
+        const hiddenSet = new Set(current.fields_hidden);
+        if (hide) hiddenSet.add(slug);
+        else hiddenSet.delete(slug);
+        patchRole(role, { fields_hidden: Array.from(hiddenSet) });
     };
 
     const allFields = fields.data ?? [];
@@ -110,10 +89,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
     const handleSave = async (): Promise<void> => {
         setSubmitError(null);
         try {
-            await update.mutateAsync({
-                permissions: perms,
-                assignment_field_id: assignmentFieldId,
-            });
+            await update.mutateAsync({ permissions: perms, assignment_field_id: assignmentFieldId });
             setDirty(false);
         } catch (err) {
             setSubmitError(
@@ -124,271 +100,222 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
 
     if (query.isLoading) {
         return (
-            <Card>
-                <CardContent className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
-                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
-                    {__('Cargando permisos…')}
-                </CardContent>
-            </Card>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
+                <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
+                {__('Cargando permisos…')}
+            </div>
         );
     }
 
     if (query.isError) {
         return (
-            <Card>
-                <CardContent className="imcrm-py-6 imcrm-text-sm imcrm-text-destructive">
-                    {__('No se pudieron cargar los permisos.')}
-                </CardContent>
-            </Card>
+            <p className="imcrm-py-6 imcrm-text-sm imcrm-text-destructive">
+                {__('No se pudieron cargar los permisos.')}
+            </p>
         );
     }
 
     return (
-        <Card>
-            <CardHeader>
-                <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                    <ShieldCheck className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
-                    <div>
-                        <CardTitle>{__('Permisos')}</CardTitle>
-                        <CardDescription>
-                            {__(
-                                'Define qué roles pueden ver, crear, editar y eliminar registros en esta lista. Administradores y administradores del CRM tienen acceso total siempre.',
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+            {configurableRoles.map((role) => {
+                const p = perms[role.slug];
+                if (!p) return null;
+                const level = levelOf(p);
+                return (
+                    <section
+                        key={role.slug}
+                        className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4"
+                    >
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-baseline imcrm-justify-between imcrm-gap-2">
+                            <h3 className="imcrm-text-sm imcrm-font-semibold">{role.label}</h3>
+                            {level === null && (
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {__('Configuración personalizada')}
+                                </span>
                             )}
-                        </CardDescription>
-                    </div>
-                </div>
-            </CardHeader>
-            <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-                <div className="imcrm-overflow-x-auto">
-                    <table className="imcrm-w-full imcrm-border-collapse imcrm-text-sm">
-                        <thead>
-                            <tr className="imcrm-border-b imcrm-border-border imcrm-text-left imcrm-text-xs imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
-                                <th className="imcrm-py-2 imcrm-pr-3 imcrm-font-medium">{__('Rol')}</th>
-                                <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Ver')}</th>
-                                <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Crear')}</th>
-                                <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Editar')}</th>
-                                <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Eliminar')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {configurableRoles.map((role) => {
-                                const p = perms[role.slug];
-                                if (!p) return null;
-                                return (
-                                    <tr
-                                        key={role.slug}
-                                        className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0"
-                                    >
-                                        <td className="imcrm-py-3 imcrm-pr-3 imcrm-font-medium imcrm-text-foreground">
-                                            {role.label}
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <ScopeSelect
-                                                value={p.view}
-                                                onChange={(v) => setRoleScope(role.slug, 'view', v)}
-                                            />
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <label className="imcrm-inline-flex imcrm-items-center imcrm-gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={p.create}
-                                                    onChange={(e) =>
-                                                        setRoleCreate(role.slug, e.target.checked)
-                                                    }
-                                                    className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
-                                                />
-                                                <span className="imcrm-text-muted-foreground">
-                                                    {p.create ? __('Sí') : __('No')}
-                                                </span>
-                                            </label>
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <ScopeSelect
-                                                value={p.edit}
-                                                onChange={(v) => setRoleScope(role.slug, 'edit', v)}
-                                            />
-                                        </td>
-                                        <td className="imcrm-px-2 imcrm-py-3">
-                                            <ScopeSelect
-                                                value={p.delete}
-                                                onChange={(v) => setRoleScope(role.slug, 'delete', v)}
-                                            />
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                        </div>
 
-                {allFields.length > 0 && (
-                    <details className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-3 imcrm-py-2">
-                        <summary className="imcrm-cursor-pointer imcrm-text-sm imcrm-font-medium">
-                            {__('Campos ocultos por rol')}
-                            <span className="imcrm-ml-2 imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('(opcional — Fase 10)')}
-                            </span>
-                        </summary>
-                        <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-muted-foreground">
-                            {__(
-                                'Marca un campo para OCULTARLO al rol. El backend lo remueve de las respuestas REST y rechaza intentos de edición. Si un campo se oculta para TODOS los roles del user, no aparece en su tabla.',
-                            )}
+                        <div
+                            role="radiogroup"
+                            aria-label={`${__('Nivel de acceso')} — ${role.label}`}
+                            className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5"
+                        >
+                            {ACCESS_LEVELS.map((l) => (
+                                <button
+                                    key={l.id}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={level === l.id}
+                                    title={l.hint}
+                                    onClick={() => applyLevel(role.slug, l)}
+                                    className={cn(
+                                        'imcrm-rounded-md imcrm-border imcrm-px-2.5 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-transition-colors',
+                                        level === l.id
+                                            ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-primary'
+                                            : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-border-primary/40 hover:imcrm-text-foreground',
+                                    )}
+                                >
+                                    {l.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {level !== null
+                                ? (ACCESS_LEVELS.find((l) => l.id === level)?.hint ?? '')
+                                : __('Este rol usa una combinación propia — mirala en el ajuste fino.')}
                         </p>
-                        <div className="imcrm-mt-3 imcrm-overflow-x-auto">
-                            <table className="imcrm-w-full imcrm-border-collapse imcrm-text-sm">
-                                <thead>
-                                    <tr className="imcrm-border-b imcrm-border-border imcrm-text-left imcrm-text-xs imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
-                                        <th className="imcrm-py-2 imcrm-pr-3 imcrm-font-medium">
-                                            {__('Campo')}
-                                        </th>
-                                        {configurableRoles.map((role) => (
-                                            <th
-                                                key={role.slug}
-                                                className="imcrm-px-2 imcrm-py-2 imcrm-text-center imcrm-font-medium"
-                                            >
-                                                {role.label}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {allFields.map((field) => (
-                                        <tr
-                                            key={field.id}
-                                            className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0"
-                                        >
-                                            <td className="imcrm-py-2 imcrm-pr-3">
-                                                <span className="imcrm-font-medium">{field.label}</span>
-                                                <span className="imcrm-ml-1 imcrm-text-xs imcrm-text-muted-foreground imcrm-font-mono">
-                                                    ({field.slug})
-                                                </span>
-                                            </td>
-                                            {configurableRoles.map((role) => {
-                                                const p = perms[role.slug];
-                                                const isHidden = p?.fields_hidden.includes(field.slug) ?? false;
+
+                        <details className="imcrm-group imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20">
+                            <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-1.5 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                                <ChevronDown
+                                    className="imcrm-h-3.5 imcrm-w-3.5 imcrm-transition-transform group-open:imcrm-rotate-180"
+                                    aria-hidden
+                                />
+                                {__('Ajuste fino')}
+                            </summary>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-px-3 imcrm-py-3">
+                                <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-3">
+                                    <ScopeField
+                                        label={__('Puede ver')}
+                                        value={p.view}
+                                        onChange={(v) => patchRole(role.slug, { view: v })}
+                                    />
+                                    <ScopeField
+                                        label={__('Puede editar')}
+                                        value={p.edit}
+                                        onChange={(v) => patchRole(role.slug, { edit: v })}
+                                    />
+                                    <ScopeField
+                                        label={__('Puede eliminar')}
+                                        value={p.delete}
+                                        onChange={(v) => patchRole(role.slug, { delete: v })}
+                                    />
+                                </div>
+
+                                <label className="imcrm-inline-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={p.create}
+                                        onChange={(e) => patchRole(role.slug, { create: e.target.checked })}
+                                        className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
+                                    />
+                                    {__('Puede crear registros nuevos')}
+                                </label>
+
+                                {allFields.length > 0 && (
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-foreground">
+                                            <EyeOff className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                            {__('Campos que este rol NO debe ver')}
+                                        </span>
+                                        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">
+                                            {allFields.map((field) => {
+                                                const hidden = p.fields_hidden.includes(field.slug);
                                                 return (
-                                                    <td
-                                                        key={role.slug}
-                                                        className="imcrm-px-2 imcrm-py-2 imcrm-text-center"
+                                                    <button
+                                                        key={field.id}
+                                                        type="button"
+                                                        aria-pressed={hidden}
+                                                        onClick={() =>
+                                                            toggleHiddenField(role.slug, field.slug, !hidden)
+                                                        }
+                                                        className={cn(
+                                                            'imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-transition-colors',
+                                                            hidden
+                                                                ? 'imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-text-destructive'
+                                                                : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                                                        )}
                                                     >
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isHidden}
-                                                            onChange={(e) =>
-                                                                toggleHiddenField(
-                                                                    role.slug,
-                                                                    field.slug,
-                                                                    e.target.checked,
-                                                                )
-                                                            }
-                                                            className="imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
-                                                            aria-label={`${__('Ocultar')} ${field.label} ${__('a')} ${role.label}`}
-                                                        />
-                                                    </td>
+                                                        {field.label}
+                                                    </button>
                                                 );
                                             })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </details>
-                )}
-
-                {usesAssigned && (
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-3">
-                        <label
-                            htmlFor="assignment-field"
-                            className="imcrm-text-sm imcrm-font-medium"
-                        >
-                            {__('Campo de asignación')}
-                        </label>
-                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__(
-                                'Algún rol usa scope "Asignados". Elige el campo (tipo Usuario) que representa al responsable del registro. Sin esto, ese scope no devolverá nada.',
-                            )}
-                        </p>
-                        <select
-                            id="assignment-field"
-                            className="imcrm-h-9 imcrm-w-full imcrm-max-w-md imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
-                            value={assignmentFieldId ?? ''}
-                            onChange={(e) => {
-                                const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
-                                setAssignmentFieldId(v);
-                                setDirty(true);
-                            }}
-                        >
-                            <option value="">{__('— Sin asignar —')}</option>
-                            {userFields.map((f) => (
-                                <option key={f.id} value={f.id}>
-                                    {f.label}
-                                </option>
-                            ))}
-                        </select>
-                        {userFields.length === 0 && (
-                            <p className="imcrm-text-xs imcrm-text-amber-600 dark:imcrm-text-amber-400">
-                                {__(
-                                    'No hay campos de tipo Usuario en esta lista. Agrega uno para poder usar el scope "Asignados".',
+                                        </div>
+                                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                            {__(
+                                                'Los campos marcados no llegan a la pantalla de ese rol ni puede modificarlos.',
+                                            )}
+                                        </p>
+                                    </div>
                                 )}
-                            </p>
-                        )}
-                    </div>
-                )}
+                            </div>
+                        </details>
+                    </section>
+                );
+            })}
 
-                {submitError !== null && (
-                    <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                        {submitError}
-                    </div>
-                )}
-
-                <div className="imcrm-flex imcrm-items-center imcrm-justify-between">
+            {usesAssigned && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-4">
+                    <label htmlFor="assignment-field" className="imcrm-text-sm imcrm-font-medium">
+                        {__('¿Qué campo dice quién es el responsable?')}
+                    </label>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__(
-                            'Scopes: "Todos" = todos los registros · "Asignados" = los del campo de asignación · "Propios" = los creados por el usuario.',
+                            'Algún rol tiene acceso a "los que tiene asignados". Elegí el campo de tipo Usuario que marca al responsable del registro.',
                         )}
                     </p>
-                    <Button
-                        onClick={handleSave}
-                        disabled={!dirty || update.isPending}
-                        className="imcrm-gap-2"
+                    <Select
+                        id="assignment-field"
+                        className="imcrm-max-w-md"
+                        value={assignmentFieldId ?? ''}
+                        onChange={(e) => {
+                            const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                            setAssignmentFieldId(v);
+                            setDirty(true);
+                        }}
                     >
-                        {update.isPending ? __('Guardando…') : __('Guardar permisos')}
-                    </Button>
+                        <option value="">{__('— Sin definir —')}</option>
+                        {userFields.map((f) => (
+                            <option key={f.id} value={f.id}>
+                                {f.label}
+                            </option>
+                        ))}
+                    </Select>
+                    {userFields.length === 0 && (
+                        <p className="imcrm-text-xs imcrm-text-warning">
+                            {__(
+                                'Esta lista no tiene ningún campo de tipo Usuario. Creá uno en la pestaña Campos para poder usar este nivel de acceso.',
+                            )}
+                        </p>
+                    )}
                 </div>
-            </CardContent>
-        </Card>
+            )}
+
+            {submitError !== null && (
+                <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                    {submitError}
+                </div>
+            )}
+
+            <div className="imcrm-flex imcrm-justify-end">
+                <Button onClick={() => void handleSave()} disabled={!dirty || update.isPending}>
+                    {update.isPending ? __('Guardando…') : __('Guardar permisos')}
+                </Button>
+            </div>
+        </div>
     );
 }
 
-function blankRolePermissions(): RolePermissions {
-    return {
-        view: 'none',
-        create: false,
-        edit: 'none',
-        delete: 'none',
-        fields_hidden: [],
-    };
-}
-
-function ScopeSelect({
+function ScopeField({
+    label,
     value,
     onChange,
 }: {
+    label: string;
     value: Scope;
     onChange: (v: Scope) => void;
 }): JSX.Element {
     return (
-        <select
-            className="imcrm-h-8 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm"
-            value={value}
-            onChange={(e) => onChange(e.target.value as Scope)}
-        >
-            {SCOPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                    {o.label}
-                </option>
-            ))}
-        </select>
+        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+            {label}
+            <Select value={value} onChange={(e) => onChange(e.target.value as Scope)}>
+                {SCOPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                        {o.label}
+                    </option>
+                ))}
+            </Select>
+        </label>
     );
 }
