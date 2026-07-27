@@ -175,6 +175,14 @@ export class CloudClient {
     logout(): Promise<void> {
         return this.request('POST', '/auth/logout', {});
     }
+    // --- verificación de email del alta (v0.1.118) ---
+    verifyEmail(token: string): Promise<void> {
+        return this.request('POST', '/auth/verify-email', { body: { token } });
+    }
+    resendEmailVerification(): Promise<void> {
+        return this.request('POST', '/auth/verify-email/resend', {});
+    }
+
     // --- seguridad de la cuenta (v0.1.116) ---
     changePassword(input: ChangePasswordInput): Promise<{ revoked_sessions: number }> {
         return this.request('POST', '/auth/change-password', {

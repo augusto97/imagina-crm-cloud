@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2, LogOut, Monitor, Smartphone } from 'lucide-react';
+import { KeyRound, Loader2, LogOut, MailCheck, MailWarning, Monitor, Smartphone } from 'lucide-react';
 
-import { api } from '@/cloud/session';
+import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +43,8 @@ function describeDevice(ua: string): { label: string; mobile: boolean } {
 export function SecurityCard(): JSX.Element {
     const qc = useQueryClient();
     const toast = useToast();
+    const user = useSession((s) => s.user);
+    const [resent, setResent] = useState(false);
     const [current, setCurrent] = useState('');
     const [next, setNext] = useState('');
     const [repeat, setRepeat] = useState('');
@@ -93,8 +95,50 @@ export function SecurityCard(): JSX.Element {
     const list = sessions.data ?? [];
     const others = list.filter((s) => !s.current).length;
 
+    const resend = useMutation({
+        mutationFn: () => api.resendEmailVerification(),
+        onSuccess: () => {
+            setResent(true);
+            toast.success(__('Te reenviamos el correo de verificación'));
+        },
+    });
+
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-8">
+            {/* ── Verificación del email (v0.1.118) ──────────────────── */}
+            {user !== null && user.email_verified === false && (
+                <section className="imcrm-flex imcrm-items-start imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-p-4">
+                    <MailWarning className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-shrink-0 imcrm-text-warning" />
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-2">
+                        <div>
+                            <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
+                                {__('Confirmá tu dirección de correo')}
+                            </p>
+                            <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                                {__('Te mandamos un enlace a')} <strong>{user.email}</strong>.{' '}
+                                {__('Sirve para recuperar tu cuenta y recibir avisos importantes.')}
+                            </p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="imcrm-self-start"
+                            disabled={resend.isPending || resent}
+                            onClick={() => resend.mutate()}
+                        >
+                            {resent ? (
+                                <>
+                                    <MailCheck className="imcrm-mr-2 imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Correo enviado')}
+                                </>
+                            ) : (
+                                __('Reenviar el correo')
+                            )}
+                        </Button>
+                    </div>
+                </section>
+            )}
+
             {/* ── Contraseña ─────────────────────────────────────────── */}
             <section className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                 <div>

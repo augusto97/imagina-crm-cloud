@@ -17,6 +17,7 @@ import {
     loginInputSchema,
     registerInputSchema,
     resetPasswordSchema,
+    verifyEmailSchema,
     type ActiveSessionsResponse,
     type AuthSession,
     type ChangePasswordInput,
@@ -24,6 +25,7 @@ import {
     type LoginInput,
     type RegisterInput,
     type ResetPasswordInput,
+    type VerifyEmailInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -93,6 +95,23 @@ export class AuthController {
             req.sessionToken as string,
             input,
         );
+    }
+
+    /** v0.1.118 — Confirma el email del alta (link del correo). Sin sesión. */
+    @Post('verify-email')
+    @HttpCode(204)
+    async verifyEmail(
+        @Body(new ZodValidationPipe(verifyEmailSchema)) input: VerifyEmailInput,
+    ): Promise<void> {
+        await this.auth.verifyEmail(input.token);
+    }
+
+    /** Reenvía el correo de verificación al usuario autenticado. */
+    @Post('verify-email/resend')
+    @HttpCode(204)
+    @UseGuards(SessionGuard)
+    async resendVerification(@Req() req: FastifyRequest): Promise<void> {
+        await this.auth.sendEmailVerification(req.authUserId as number);
     }
 
     /** v0.1.116 — Sesiones activas de la cuenta (panel "Dispositivos"). */

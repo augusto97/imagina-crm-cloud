@@ -31,6 +31,16 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     let billing: BillingService;
     const sentMail: Array<{ to: string; subject: string }> = [];
 
+    /** Espera a que llegue un correo que cumpla la condición (envíos en background). */
+    async function waitForMail(match: (m: { to: string; subject: string }) => boolean): Promise<void> {
+        const deadline = Date.now() + 5_000;
+        while (Date.now() < deadline) {
+            if (sentMail.some(match)) return;
+            await new Promise((r) => setTimeout(r, 25));
+        }
+        throw new Error('el correo esperado nunca llegó');
+    }
+
     beforeAll(async () => {
         [pg, redisBox] = await Promise.all([startPostgres(), startRedis()]);
         redis = new Redis(redisBox.url);
@@ -411,6 +421,10 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
 
     it('createTenant: si el email ya existe, lo suma como admin (no re-invita)', async () => {
         await auth.register({ email: 'ya@existe.test', password: 'password123', name: 'Ya', workspace_name: 'PrimerWS' });
+        // El alta manda el correo de verificación SIN bloquear la respuesta
+        // (v0.1.118) → lo esperamos antes de limpiar el buzón, si no cae
+        // después del reset y ensucia la comprobación de abajo.
+        await waitForMail((m) => m.to === 'ya@existe.test');
         sentMail.length = 0;
         const t = await platform.createTenant({
             workspace_name: 'Segunda Empresa',

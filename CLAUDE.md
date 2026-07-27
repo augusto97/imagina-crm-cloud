@@ -1651,6 +1651,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         2 tests (cadena de renombres, lo vivo gana + el historial no cruza
         empresas) — 349 API en verde.
 
+  - [x] **Verificación de email en el alta pública (v0.1.118)** — el registro
+        abierto creaba la cuenta y listo: cualquiera daba de alta cuentas con
+        emails ajenos o inexistentes, y el email es la identidad que usan los
+        magic links, las invitaciones y el reset de contraseña. Ahora
+        `users.email_verified_at` (migración 0036, con **backfill**: las cuentas
+        que ya existían se dan por verificadas, si no todo usuario en producción
+        vería un aviso por un correo que nunca recibió). El alta manda el correo
+        con un token de 48 h en Redis SIN bloquear la respuesta (la activación no
+        se paga con latencia) y `POST /auth/verify-email` lo canjea con `GETDEL`
+        —un solo uso atómico, mismo criterio que el magic link del portal
+        (SEC-15)—; `POST /auth/verify-email/resend` (con sesión) remanda y es
+        silencioso si ya está verificado. Decisión de producto: **no se bloquea
+        el uso de la app sin verificar** (eso mata la activación), se marca la
+        cuenta —`email_verified` viaja en la sesión y en el bootstrap— y se avisa
+        en la interfaz. Front: página `/verify?token=` fuera del router (igual
+        que el reset, con guard de un solo canje por token — el token es de un
+        uso y StrictMode montaba el efecto dos veces) y banner con botón
+        "Reenviar" en Ajustes → Cuenta → Seguridad. 2 tests de integración +
+        1 de plataforma endurecido (el correo del alta llega en background y
+        ensuciaba una aserción) — 351 API y 67 front en verde; E2E por API
+        (alta → token del correo → verificar → reuso rechazado) y navegador 8/8.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

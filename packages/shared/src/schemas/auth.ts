@@ -37,6 +37,12 @@ export const sessionUserSchema = z.object({
     email: emailSchema,
     name: z.string(),
     locale: z.string().default('es'),
+    /**
+     * v0.1.118 — `false` mientras el alta no confirme su casilla. No bloquea
+     * el uso de la app (eso mataría la activación): la interfaz avisa y las
+     * acciones que mandan correo en nombre del usuario son las que se gatean.
+     */
+    email_verified: z.boolean().default(true),
 });
 export type SessionUser = z.infer<typeof sessionUserSchema>;
 
@@ -92,3 +98,7 @@ export type ActiveSessionDto = z.infer<typeof activeSessionSchema>;
 
 export const activeSessionsResponseSchema = z.object({ data: z.array(activeSessionSchema) });
 export type ActiveSessionsResponse = z.infer<typeof activeSessionsResponseSchema>;
+
+/** v0.1.118 — reenviar el correo de verificación del alta. */
+export const verifyEmailSchema = z.object({ token: z.string().min(16).max(200) });
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
