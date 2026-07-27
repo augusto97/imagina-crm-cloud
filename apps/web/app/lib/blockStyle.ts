@@ -109,6 +109,87 @@ export function hexToHslTriplet(hex: string): string | null {
 }
 
 /**
+ * Luminancia relativa aproximada (0-1) de un hex. Decide si encima va
+ * tinta oscura o clara.
+ */
+export function hexLuminance(hex: string): number {
+    if (!HEX_RE.test(hex)) return 0;
+    let h = hex.slice(1);
+    if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Mueve la luminosidad de un triplete HSL (clampeada a 0-100). */
+function shiftLightness(triplet: string, delta: number): string {
+    const [h, s, l] = triplet.split(' ');
+    const base = parseInt((l ?? '0%').replace('%', ''), 10);
+    const next = Math.max(0, Math.min(100, base + delta));
+    return `${h} ${s} ${next}%`;
+}
+
+/** Tinta legible sobre un fondo dado (independiente del tema). */
+const INK_ON_LIGHT = '224 45% 12%';
+const INK_ON_DARK = '210 40% 96%';
+/** El "muted" acompaña a la tinta, un escalón más cerca del fondo. */
+const MUTED_ON_LIGHT = '224 18% 38%';
+const MUTED_ON_DARK = '215 20% 75%';
+
+/**
+ * v0.1.122 — Resuelve el color de texto del bloque para que SIEMPRE se lea.
+ *
+ * Tres casos:
+ *  - fondo propio + texto elegido → se respetan los dos (el autor eligió el
+ *    par; es legible en cualquier tema porque ambos son fijos).
+ *  - fondo propio SIN texto elegido → la tinta se deriva del FONDO. Antes se
+ *    heredaba la del tema y en oscuro quedaba texto claro sobre un fondo
+ *    claro: invisible.
+ *  - texto elegido SIN fondo → el bloque se apoya en la superficie del TEMA:
+ *    una tinta oscura elegida en modo claro desaparece en oscuro (y al revés),
+ *    así que se lleva a una franja de luminosidad legible conservando el tono.
+ */
+function resolveInk(
+    style: BlockStyle,
+    dark: boolean,
+): { color: string; fg: string; muted: string } | null {
+    if (style.bg !== undefined) {
+        const light = hexLuminance(style.bg) > 0.5;
+        if (style.text !== undefined) {
+            // El autor eligió el par fondo+texto: se respeta tal cual, incluido
+            // el "muted" (v0.1.95 — bajarlo por nuestra cuenta arruinaría un
+            // contraste que el autor eligió a propósito).
+            const t = hexToHslTriplet(style.text);
+            if (t === null) return null;
+            return { color: style.text, fg: t, muted: t };
+        }
+        const fg = light ? INK_ON_LIGHT : INK_ON_DARK;
+        return {
+            color: `hsl(${fg})`,
+            fg,
+            muted: light ? MUTED_ON_LIGHT : MUTED_ON_DARK,
+        };
+    }
+    if (style.text === undefined) return null;
+
+    // Sin fondo propio: hay que contrastar con la superficie del tema.
+    const lum = hexLuminance(style.text);
+    const unreadable = dark ? lum < 0.32 : lum > 0.75;
+    if (!unreadable) {
+        const t = hexToHslTriplet(style.text);
+        return t === null ? null : { color: style.text, fg: t, muted: t };
+    }
+    const t = hexToHslTriplet(style.text);
+    if (t === null) return null;
+    const [h, s] = t.split(' ');
+    // Se conserva el TONO elegido y se lleva la luminosidad a una franja
+    // legible sobre la superficie actual.
+    const lifted = `${h} ${s} ${dark ? '82%' : '28%'}`;
+    return { color: `hsl(${lifted})`, fg: lifted, muted: lifted };
+}
+
+/**
  * CSS del wrapper del bloque. Regla de comodidad: si hay fondo o borde
  * pero no se eligió relleno/radio, se aplican defaults amables (md) —
  * un fondo pegado al contenido sin padding se ve roto.
@@ -118,8 +199,15 @@ export function hexToHslTriplet(hex: string): string | null {
  * `--imcrm-muted`, foregrounds): los bloques con tarjeta propia (portal
  * y ficha CRM pintan con `hsl(var(--imcrm-card))`) adoptan el color
  * elegido en vez de quedar como tarjeta blanca sobre la banda.
+ *
+ * v0.1.122 — `dark` indica que la superficie del tema es oscura (lo pasan
+ * las superficies con tema: admin y dashboards; el portal y las listas
+ * públicas quedan siempre en claro, son diseñadas por el tenant).
  */
-export function blockStyleCss(style: BlockStyle): React.CSSProperties {
+export function blockStyleCss(
+    style: BlockStyle,
+    opts: { dark?: boolean } = {},
+): React.CSSProperties {
     const css: React.CSSProperties & Record<string, string | number> = {};
     const boxed = style.bg !== undefined || style.border !== undefined;
     if (style.bg !== undefined) {
@@ -128,19 +216,26 @@ export function blockStyleCss(style: BlockStyle): React.CSSProperties {
         if (t !== null) {
             css['--imcrm-card'] = t;
             css['--imcrm-muted'] = t;
+            // v0.1.122 — también las superficies "de página": sin esto el
+            // header sticky de la tabla (bg-canvas) quedaba como una banda del
+            // TEMA dentro de una tarjeta con color propio.
+            css['--imcrm-canvas'] = t;
+            css['--imcrm-background'] = t;
+            css['--imcrm-popover'] = t;
+            // El hover de fila necesita separarse del fondo: mismo tono, un
+            // escalón hacia la tinta.
+            css['--imcrm-accent'] = shiftLightness(t, hexLuminance(style.bg) > 0.5 ? -8 : 10);
             // Sin borde elegido, los hairlines internos se funden con el
             // fondo (una banda sólida no quiere bordecitos grises adentro).
             css['--imcrm-border'] = hexToHslTriplet(style.border ?? style.bg) ?? t;
         }
     }
-    if (style.text !== undefined) {
-        css.color = style.text;
-        const t = hexToHslTriplet(style.text);
-        if (t !== null) {
-            css['--imcrm-card-foreground'] = t;
-            css['--imcrm-foreground'] = t;
-            css['--imcrm-muted-foreground'] = t;
-        }
+    const ink = resolveInk(style, opts.dark === true);
+    if (ink !== null) {
+        css.color = ink.color;
+        css['--imcrm-card-foreground'] = ink.fg;
+        css['--imcrm-foreground'] = ink.fg;
+        css['--imcrm-muted-foreground'] = ink.muted;
     }
     if (style.border !== undefined) {
         css.border = `1px solid ${style.border}`;
@@ -216,15 +311,55 @@ export function wrapperStyleCss(opts: {
     padding?: string;
     margin?: string;
 }): React.CSSProperties {
-    const css: React.CSSProperties = {};
+    const css: React.CSSProperties & Record<string, string | number> = {};
     if (isHex(opts.bg)) {
         css.backgroundColor = opts.bg;
         css.borderRadius = `${RADIUS_PX.md}px`;
         if (opts.padding === undefined || opts.padding === '') {
             css.padding = `${PAD_PX.md}px`;
         }
+        // v0.1.122 — la tinta acompaña al fondo elegido: un fondo claro con la
+        // tinta clara del tema oscuro era texto invisible.
+        const light = hexLuminance(opts.bg) > 0.5;
+        css.color = `hsl(${light ? INK_ON_LIGHT : INK_ON_DARK})`;
+        css['--imcrm-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
+        css['--imcrm-card-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
+        css['--imcrm-muted-foreground'] = light ? MUTED_ON_LIGHT : MUTED_ON_DARK;
+        const t = hexToHslTriplet(opts.bg);
+        if (t !== null) {
+            css['--imcrm-card'] = t;
+            css['--imcrm-canvas'] = t;
+            css['--imcrm-background'] = t;
+        }
     }
     if (opts.padding !== undefined && opts.padding !== '') css.padding = opts.padding;
     if (opts.margin !== undefined && opts.margin !== '') css.margin = opts.margin;
+    return css;
+}
+
+/**
+ * v0.1.122 — CSS del contenedor de PÁGINA (portal y dashboards). Mismo
+ * criterio que los bloques: el fondo elegido manda y la tinta lo acompaña,
+ * así un tablero con fondo claro sigue legible en modo oscuro.
+ */
+export function pageStyleCss(page: PortalPageSettings): React.CSSProperties {
+    const css: React.CSSProperties & Record<string, string | number> = {};
+    if (page.bg !== undefined) {
+        css.backgroundColor = page.bg;
+        const light = hexLuminance(page.bg) > 0.5;
+        css.color = `hsl(${light ? INK_ON_LIGHT : INK_ON_DARK})`;
+        css['--imcrm-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
+        css['--imcrm-card-foreground'] = light ? INK_ON_LIGHT : INK_ON_DARK;
+        css['--imcrm-muted-foreground'] = light ? MUTED_ON_LIGHT : MUTED_ON_DARK;
+        const t = hexToHslTriplet(page.bg);
+        if (t !== null) css['--imcrm-canvas'] = t;
+    }
+    if (page.font !== undefined) css.fontFamily = PAGE_FONT_STACKS[page.font];
+    if (page.max_width !== undefined) {
+        css.maxWidth = `${page.max_width}px`;
+        css.marginLeft = 'auto';
+        css.marginRight = 'auto';
+        css.width = '100%';
+    }
     return css;
 }

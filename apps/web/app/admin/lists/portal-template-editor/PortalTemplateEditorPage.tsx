@@ -5,7 +5,7 @@ import { ArrowLeft, Loader2, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
 import { useList, useUpdateList } from '@/hooks/useLists';
-import { PAGE_FONT_STACKS, readPageSettings, type PortalPageSettings } from '@/lib/blockStyle';
+import { hexLuminance, PAGE_FONT_STACKS, readPageSettings, type PortalPageSettings } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 
 import { TemplateEditorShell } from '@/admin/template-editor-core';
@@ -104,6 +104,11 @@ export function PortalTemplateEditorPage(): JSX.Element {
             backTo={`/lists/${list.data.slug}/settings`}
             toolbarExtra={
                 <PortalPageSettingsButton value={effectivePage} onChange={setPageSettings} />
+            }
+            // El portal del cliente se ve SIEMPRE en claro: la superficie la fija
+            // el fondo de página del diseño, nunca el tema del admin.
+            surfaceDark={
+                effectivePage.bg !== undefined ? hexLuminance(effectivePage.bg) <= 0.5 : false
             }
             previewPage={{
                 bg: effectivePage.bg,

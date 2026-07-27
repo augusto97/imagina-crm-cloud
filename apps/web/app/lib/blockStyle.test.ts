@@ -94,6 +94,44 @@ describe('blockStyle', () => {
         expect(bordered['--imcrm-border']).toBe('0 0% 100%');
     });
 
+    // v0.1.122 — los colores se eligen en UN tema y se ven en los DOS: la
+    // tinta tiene que resolverse contra la superficie real, no heredarse.
+    it('v0.1.122 — un fondo claro sin texto elegido lleva tinta oscura (y al revés)', () => {
+        const claro = blockStyleCss({ bg: '#e0f2fe' }) as Record<string, unknown>;
+        expect(claro.color).toBe('hsl(224 45% 12%)');
+        expect(claro['--imcrm-foreground']).toBe('224 45% 12%');
+        expect(claro['--imcrm-muted-foreground']).toBe('224 18% 38%');
+
+        const oscuro = blockStyleCss({ bg: '#0b1220' }) as Record<string, unknown>;
+        expect(oscuro.color).toBe('hsl(210 40% 96%)');
+        expect(oscuro['--imcrm-muted-foreground']).toBe('215 20% 75%');
+
+        // Y da igual el tema del admin: manda el fondo elegido.
+        expect((blockStyleCss({ bg: '#e0f2fe' }, { dark: true }) as Record<string, unknown>).color).toBe(
+            'hsl(224 45% 12%)',
+        );
+    });
+
+    it('v0.1.122 — una tinta sin fondo se adapta a la superficie del tema', () => {
+        // Tinta oscura elegida en claro: en claro queda intacta…
+        expect(blockStyleCss({ text: '#111827' }).color).toBe('#111827');
+        // …y en oscuro se lleva a una franja legible conservando el tono.
+        expect(blockStyleCss({ text: '#111827' }, { dark: true }).color).toBe('hsl(221 39% 82%)');
+        // Una tinta que ya contrasta no se toca.
+        expect(blockStyleCss({ text: '#38bdf8' }, { dark: true }).color).toBe('#38bdf8');
+        // Y al revés: blanco sobre superficie clara se baja.
+        expect(blockStyleCss({ text: '#ffffff' }).color).toBe('hsl(0 0% 28%)');
+    });
+
+    it('v0.1.122 — el fondo también re-tiñe las superficies de página del bloque', () => {
+        const css = blockStyleCss({ bg: '#fefce8' }) as Record<string, unknown>;
+        // El header sticky de una tabla (bg-canvas) adopta el color del card.
+        expect(css['--imcrm-canvas']).toBe(css['--imcrm-card']);
+        expect(css['--imcrm-background']).toBe(css['--imcrm-card']);
+        // El hover de fila se separa del fondo (no queda invisible).
+        expect(css['--imcrm-accent']).not.toBe(css['--imcrm-card']);
+    });
+
     it('v0.1.95 — blockStyleClass activa la herencia tipográfica', () => {
         expect(blockStyleClass({})).toBe('');
         expect(blockStyleClass({ size: 'xl' })).toBe('imcrm-style-fs');
