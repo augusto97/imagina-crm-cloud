@@ -134,6 +134,38 @@ describe('ListsService (Postgres real + RLS)', () => {
         expect(left).toHaveLength(0);
     });
 
+    // v0.1.117 — El slug es etiqueta HUMANA editable (regla de oro nº 1): al
+    // renombrarla, los enlaces y marcadores guardados con el slug viejo daban
+    // 404. Ahora el slug abandonado sigue resolviendo a la lista.
+    it('renombrar el slug NO rompe los enlaces viejos', async () => {
+        const l = await service.create(tenantA, { name: 'Clientes', slug: 'clientes' });
+        await service.update(tenantA, 'clientes', { slug: 'personas' });
+
+        // El slug nuevo funciona…
+        expect((await service.get(tenantA, 'personas')).id).toBe(l.id);
+        // …y el viejo sigue llevando a la misma lista (enlace guardado).
+        expect((await service.get(tenantA, 'clientes')).id).toBe(l.id);
+
+        // Encadenar renombres conserva TODOS los slugs previos.
+        await service.update(tenantA, 'personas', { slug: 'contactos' });
+        for (const alias of ['contactos', 'personas', 'clientes']) {
+            expect((await service.get(tenantA, alias)).id).toBe(l.id);
+        }
+    });
+
+    it('un slug VIVO siempre gana al histórico, y el historial no cruza empresas', async () => {
+        const vieja = await service.create(tenantA, { name: 'Vieja', slug: 'ventas' });
+        await service.update(tenantA, 'ventas', { slug: 'ventas_2026' });
+        // Otra lista reclama el slug liberado…
+        const nueva = await service.create(tenantA, { name: 'Nueva', slug: 'ventas' });
+        // …y a partir de ahí 'ventas' es de la NUEVA (lo vivo manda).
+        expect((await service.get(tenantA, 'ventas')).id).toBe(nueva.id);
+        expect((await service.get(tenantA, 'ventas_2026')).id).toBe(vieja.id);
+
+        // El historial de A no es visible desde B (RLS).
+        await expect(service.get(tenantB, 'ventas_2026')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
     it('aislamiento RLS: el mismo slug convive en dos tenants y no se filtran', async () => {
         const a = await service.create(tenantA, { name: 'Clientes' });
         const b = await service.create(tenantB, { name: 'Clientes' });

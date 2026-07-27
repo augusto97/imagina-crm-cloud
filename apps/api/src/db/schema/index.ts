@@ -13,6 +13,7 @@ export * from './mentions';
 export * from './attachments';
 export * from './activity';
 export * from './audit-log';
+export * from './list-slug-history';
 export * from './automations';
 export * from './portal-links';
 export * from './app-releases';

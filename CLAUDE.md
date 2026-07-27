@@ -1638,6 +1638,18 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         SO/IP/última actividad, "este dispositivo" marcado, cerrar una o
         "Cerrar las demás"). 4 tests API nuevos (347 en verde) + E2E navegador
         11/11.
+  - [x] **Historial de slugs (v0.1.117)** — cierra el `TODO(F1-slugs)` que
+        quedaba en `lists.service.ts`: el slug es etiqueta HUMANA editable
+        (regla de oro nº 1), así que al renombrar una lista todo enlace o
+        marcador guardado con el slug viejo daba 404. Tabla
+        `list_slug_history` (migración 0035, RLS, único por tenant+slug): al
+        renombrar se registra el slug abandonado, y `resolve` cae al historial
+        SÓLO si el slug vivo no existe (el camino normal no paga nada).
+        Encadenar renombres conserva todos los alias previos. Un slug VIVO
+        siempre gana al histórico: si otra lista reclama el slug liberado, la
+        fila vieja queda sombreada (y se borra la del historial al reusarlo).
+        2 tests (cadena de renombres, lo vivo gana + el historial no cruza
+        empresas) — 349 API en verde.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
