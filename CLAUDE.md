@@ -1802,6 +1802,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         simétrico. 1 test de regresión (71 front en verde) + auditoría 19/19
         sobre 15 pantallas en oscuro y 4 en claro.
 
+  - [x] **Barrita de scroll fantasma en la tira de vistas (v0.1.124, reporte
+        del usuario con captura)**: en la página de registros aparecía una
+        barra vertical diminuta en el borde derecho, a la altura de la fila de
+        pestañas (justo encima de "Nuevo registro"). No era una función: es el
+        clásico traspié de `overflow-x-auto`. CSS NO deja el otro eje en
+        `visible` cuando uno de los dos deja de serlo — lo convierte a `auto`.
+        La tira de pestañas mide 36px de caja y su contenido 37 (el subrayado
+        de 2px que pisa el borde inferior con `-mb-px`), así que el navegador
+        dibujaba una barra vertical de un pixel de recorrido. Fix: declarar
+        `overflow-y: hidden` en la tira (mismo criterio que ya usaba
+        `StickyHScrollbar`) — sólo scrollea en horizontal, el subrayado activo
+        se conserva (el recorte real es de 0,5px, verificado midiendo el nodo)
+        y el scroll horizontal de las pestañas sigue funcionando. Barrido en
+        el navegador de las 7 pantallas con tiras horizontales: ningún otro
+        contenedor tiene una barra vertical accidental.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

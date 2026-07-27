@@ -94,7 +94,12 @@ export function ViewsTabs({
     };
 
     return (
-        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border">
+        // `overflow-x-auto` a secas NO deja el eje Y en `visible`: el CSS lo
+        // convierte a `auto`, y como el contenido mide 1px más que la caja el
+        // navegador dibujaba una barra vertical diminuta en el borde derecho
+        // de esta fila (v0.1.124). La tira de pestañas sólo scrollea en
+        // horizontal.
+        <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border">
             <ViewTab
                 label={__('Todos')}
                 active={activeViewId === null}
