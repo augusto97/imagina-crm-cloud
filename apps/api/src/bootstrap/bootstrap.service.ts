@@ -46,6 +46,7 @@ export class BootstrapService {
                     name: user.name,
                     locale: user.locale,
                     email_verified: user.emailVerifiedAt !== null,
+                    two_factor_enabled: user.totpEnabledAt !== null,
                 },
                 tenant: {
                     id: tenant.id,

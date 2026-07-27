@@ -1692,6 +1692,37 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de ruta desconocida. (`uuid` y `brace-expansion` siguen con avisos pero
         cuelgan sólo de Testcontainers y ESLint: no llegan al runtime.)
 
+  - [x] **Verificación en dos pasos / 2FA (v0.1.120)** — la contraseña dejaba
+        de ser suficiente sólo si el atacante fallaba 10 veces (freno de
+        v0.1.116); ahora cada usuario puede exigir además un código de su
+        teléfono. **TOTP propio** (`src/auth/totp.ts`, RFC 4226/6238 con
+        `node:crypto`, sin dependencias): HMAC-SHA1, 6 dígitos, ventanas de
+        30 s con ±1 de tolerancia, base32 RFC 4648 y URI `otpauth://` — los
+        **vectores de prueba de los RFC** están en los tests, que es la única
+        garantía real de que Google Authenticator y compañía hablen con
+        nosotros. Migración 0037: el secreto se guarda **cifrado** (secret-box
+        AES-256-GCM, `SECRETS_KEY` obligatoria en producción desde v0.1.113) y
+        los 10 códigos de respaldo **hasheados** (SHA-256; son aleatorios de 50
+        bits, no hace falta un KDF lento) — quien lea la tabla no puede generar
+        ni usar códigos. El alta es de dos pasos a propósito: el secreto
+        propuesto vive en Redis (10 min) y sólo se persiste cuando el usuario
+        confirma un código, así un QR mal escaneado no deja a nadie encerrado
+        afuera. En el login la contraseña correcta ya NO abre sesión: devuelve
+        un **desafío** de un solo uso (Redis, 5 min, 5 intentos) que se canjea
+        con el código de la app o con un código de respaldo (se consume, con
+        comparación en tiempo constante). Desactivar exige la **contraseña**
+        —con la sesión abierta sola, quien roba un equipo desarmaría el
+        factor—. Front: card "Verificación en dos pasos" en Ajustes → Cuenta →
+        Seguridad (QR dibujado en el cliente con `qrcode` cargado de forma
+        diferida —chunk aparte de 24 KB—, clave copiable para carga manual,
+        respaldos que se muestran UNA vez, regenerar y desactivar) y segundo
+        paso en la pantalla de login. 12 tests nuevos (7 unitarios con los
+        vectores del RFC + 5 de integración: alta en dos pasos, cifrado real
+        verificado en la fila cruda, desafío de un solo uso, respaldo que se
+        consume, desactivación) — 364 API en verde. E2E navegador 13/13 (alta
+        con QR, código malo rechazado, activación, login en dos pasos, entrada
+        con respaldo, contador 10→9, desactivación).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
