@@ -1782,6 +1782,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contra su fondo efectivo) sobre 13 pantallas en oscuro y 2 en claro:
         16/16.
 
+  - [x] **Fix de la regresión de v0.1.122 en modo claro (v0.1.123, reporte
+        del usuario con captura)**: al arreglar el oscuro se rompió el claro en
+        los tableros con **fondo de página oscuro** — la barra de acciones
+        (Editar/Presentar/Página) quedó con texto claro sobre su propio fondo
+        claro, y los widgets sin estilo propio (tarjeta del tema) igual.
+        Causa: v0.1.122 aplicaba la tinta de la página al CONTENEDOR
+        (`--imcrm-foreground` y compañía), y eso se hereda hacia TODO lo de
+        adentro, incluidos los controles y tarjetas que pintan su propio fondo
+        con los tokens del tema — ahí la tinta correcta es la del tema, no la
+        de la página. Ahora: (a) el fondo elegido pinta el TABLERO, no el
+        chrome de la app (el header queda sobre la superficie del tema, siempre
+        legible, elija el color que elija el usuario); (b) `pageStyleCss` sólo
+        devuelve superficie y layout — la tinta se aplica POR ELEMENTO con
+        `surfaceInkCss`, y sólo a lo que se apoya de verdad en esa superficie
+        (los bloques de contenido sin tarjeta). El agujero de la verificación
+        también se tapó: la auditoría de contraste sólo probaba fondo de página
+        CLARO; ahora cubre el caso del reporte (fondo oscuro en tema claro) y su
+        simétrico. 1 test de regresión (71 front en verde) + auditoría 19/19
+        sobre 15 pantallas en oscuro y 4 en claro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
