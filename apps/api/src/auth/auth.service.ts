@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
     BadRequestException,
     ConflictException,
@@ -14,14 +14,19 @@ import {
 import {
     slugifyTenant,
     type AuthSession,
+    type BackupCodes,
     type LoginInput,
     type MembershipSummary,
+    type MfaChallenge,
     type RegisterInput,
     type SessionUser,
+    type TotpSetup,
+    type VerifyTwoFactorInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { eq, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
+import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { impersonationLog, memberships, tenants, users } from '../db/schema';
@@ -29,6 +34,13 @@ import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
 import { SessionService, type ActiveSession } from './session.service';
+import {
+    generateBackupCodes,
+    generateTotpSecret,
+    normalizeBackupCode,
+    otpauthUri,
+    verifyTotp,
+} from './totp';
 
 /** TTL del token de reset (30 min) + prefijo en Redis. */
 const RESET_TTL_SECONDS = 30 * 60;
@@ -50,6 +62,29 @@ const loginFailKey = (email: string): string => `loginfail:${email.toLowerCase()
 const VERIFY_TTL_SECONDS = 48 * 60 * 60;
 const verifyKey = (token: string): string => `emailverify:${token}`;
 const resetKey = (token: string): string => `pwreset:${token}`;
+
+/**
+ * v0.1.120 — Segundo factor (TOTP).
+ *
+ * El alta guarda el secreto PROPUESTO en Redis (10 min): recién se persiste
+ * cuando el usuario confirma un código, así un alta abandonada no deja la
+ * cuenta con un factor que nadie puede usar. El desafío del login vive 5 min y
+ * tolera pocos intentos.
+ */
+const TOTP_PENDING_TTL_SECONDS = 10 * 60;
+const MFA_CHALLENGE_TTL_SECONDS = 5 * 60;
+const MFA_MAX_TRIES = 5;
+const totpPendingKey = (userId: number): string => `totpsetup:${userId}`;
+const mfaKey = (challenge: string): string => `mfa:${challenge}`;
+const mfaTriesKey = (challenge: string): string => `mfatries:${challenge}`;
+
+const sha256Hex = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex');
+
+/** Compara dos hashes hex en tiempo constante (longitudes distintas → false). */
+function safeEqualHex(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+}
 
 function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) =>
@@ -443,7 +478,7 @@ export class AuthService implements OnModuleInit {
     async login(
         input: LoginInput,
         meta: { userAgent?: string; ip?: string } = {},
-    ): Promise<AuthSession> {
+    ): Promise<AuthSession | MfaChallenge> {
         // Freno por cuenta: se chequea ANTES de tocar la DB o verificar el hash
         // (argon2 es caro a propósito; no queremos gastarlo con el atacante).
         const failKey = loginFailKey(input.email);
@@ -490,11 +525,194 @@ export class AuthService implements OnModuleInit {
 
         // Login bueno → se limpia el contador de fallos de la cuenta.
         await this.redis.del(failKey);
+
+        // v0.1.120 — con segundo factor activo NO se abre sesión todavía: se
+        // devuelve un desafío de un solo uso que hay que canjear con el código.
+        if (user.totpEnabledAt !== null) {
+            const challenge = randomBytes(32).toString('base64url');
+            await this.redis.set(
+                mfaKey(challenge),
+                JSON.stringify({ userId: user.id, ...meta }),
+                'EX',
+                MFA_CHALLENGE_TTL_SECONDS,
+            );
+            return { mfa_required: true, challenge };
+        }
+
         const token = await this.sessions.create(user.id, meta);
         return {
             user: this.toSessionUser(user),
             memberships: await this.membershipsOf(user.id),
             token,
+        };
+    }
+
+    /**
+     * Segundo paso del login: canjea el desafío con el código de la app (o con
+     * un código de respaldo, que se consume).
+     *
+     * El desafío se lee con `GETDEL` sólo cuando el código es BUENO: si se
+     * borrara antes, un dedazo obligaría a reingresar la contraseña. Los
+     * intentos fallidos se cuentan igual (freno de fuerza bruta sobre el
+     * desafío) y agotarlo lo invalida.
+     */
+    async verifyTwoFactorLogin(input: VerifyTwoFactorInput): Promise<AuthSession> {
+        const raw = await this.redis.get(mfaKey(input.challenge));
+        if (raw === null) {
+            throw new UnauthorizedException({
+                code: 'mfa_challenge_expired',
+                message: 'El desafío venció. Volvé a ingresar tu contraseña.',
+                data: { status: 401 },
+            });
+        }
+        const parsed = JSON.parse(raw) as { userId: number; userAgent?: string; ip?: string };
+        const tries = await this.redis.incr(mfaTriesKey(input.challenge));
+        if (tries === 1) await this.redis.expire(mfaTriesKey(input.challenge), MFA_CHALLENGE_TTL_SECONDS);
+        if (tries > MFA_MAX_TRIES) {
+            await this.redis.del(mfaKey(input.challenge));
+            throw new UnauthorizedException({
+                code: 'mfa_too_many_attempts',
+                message: 'Demasiados códigos incorrectos. Volvé a ingresar tu contraseña.',
+                data: { status: 401 },
+            });
+        }
+
+        const [user] = await this.db.select().from(users).where(eq(users.id, parsed.userId)).limit(1);
+        if (!user || user.totpEnabledAt === null || user.totpSecret === null) {
+            throw new UnauthorizedException('Código inválido');
+        }
+
+        const secret = decryptSecret(user.totpSecret, this.env.SECRETS_KEY);
+        let ok = verifyTotp(secret, input.code);
+        if (!ok) ok = await this.consumeBackupCode(user.id, user.totpBackupCodes ?? [], input.code);
+        if (!ok) throw new UnauthorizedException('Código inválido');
+
+        await this.redis.del(mfaKey(input.challenge), mfaTriesKey(input.challenge));
+        const token = await this.sessions.create(user.id, {
+            userAgent: parsed.userAgent,
+            ip: parsed.ip,
+        });
+        return {
+            user: this.toSessionUser(user),
+            memberships: await this.membershipsOf(user.id),
+            token,
+        };
+    }
+
+    /**
+     * Un código de respaldo vale UNA vez: si coincide, se borra de la lista en
+     * el mismo update (comparación en tiempo constante sobre el hash).
+     */
+    private async consumeBackupCode(
+        userId: number,
+        hashes: string[],
+        given: string,
+    ): Promise<boolean> {
+        const norm = normalizeBackupCode(given);
+        if (norm.length < 8) return false;
+        const digest = sha256Hex(norm);
+        const idx = hashes.findIndex((h) => safeEqualHex(h, digest));
+        if (idx === -1) return false;
+        const rest = hashes.filter((_, i) => i !== idx);
+        await this.db.update(users).set({ totpBackupCodes: rest }).where(eq(users.id, userId));
+        this.logger.warn(`Código de respaldo consumido por el usuario ${userId} (quedan ${rest.length})`);
+        return true;
+    }
+
+    /**
+     * Paso 1 del alta del 2FA: propone un secreto. NO se persiste hasta que el
+     * usuario confirme un código — así un alta abandonada no deja la cuenta con
+     * un factor que nadie puede usar.
+     */
+    async setupTwoFactor(userId: number): Promise<TotpSetup> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user) throw new NotFoundException('Usuario no encontrado');
+        if (user.totpEnabledAt !== null) {
+            throw new BadRequestException({
+                code: 'two_factor_already_enabled',
+                message: 'La verificación en dos pasos ya está activa.',
+                data: { status: 400 },
+            });
+        }
+        const secret = generateTotpSecret();
+        await this.redis.set(totpPendingKey(userId), secret, 'EX', TOTP_PENDING_TTL_SECONDS);
+        return {
+            secret,
+            otpauth_uri: otpauthUri('Imagina Base', user.email, secret),
+        };
+    }
+
+    /** Paso 2: confirma el código, activa el factor y entrega los respaldos. */
+    async enableTwoFactor(userId: number, code: string): Promise<BackupCodes> {
+        const secret = await this.redis.get(totpPendingKey(userId));
+        if (secret === null) {
+            throw new BadRequestException({
+                code: 'two_factor_setup_expired',
+                message: 'El alta venció. Volvé a empezar la configuración.',
+                data: { status: 400 },
+            });
+        }
+        if (!verifyTotp(secret, code)) {
+            throw new BadRequestException({
+                code: 'invalid_code',
+                message: 'El código no coincide. Revisá la hora de tu teléfono e intentá de nuevo.',
+                data: { status: 400 },
+            });
+        }
+        const codes = generateBackupCodes();
+        await this.db
+            .update(users)
+            .set({
+                totpSecret: encryptSecret(secret, this.env.SECRETS_KEY),
+                totpEnabledAt: new Date(),
+                totpBackupCodes: codes.map((c) => sha256Hex(normalizeBackupCode(c))),
+            })
+            .where(eq(users.id, userId));
+        await this.redis.del(totpPendingKey(userId));
+        this.logger.log(`2FA activado por el usuario ${userId}`);
+        return { backup_codes: codes };
+    }
+
+    /** Regenera los códigos de respaldo (invalida los anteriores). */
+    async regenerateBackupCodes(userId: number): Promise<BackupCodes> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user || user.totpEnabledAt === null) {
+            throw new BadRequestException({
+                code: 'two_factor_not_enabled',
+                message: 'La verificación en dos pasos no está activa.',
+                data: { status: 400 },
+            });
+        }
+        const codes = generateBackupCodes();
+        await this.db
+            .update(users)
+            .set({ totpBackupCodes: codes.map((c) => sha256Hex(normalizeBackupCode(c))) })
+            .where(eq(users.id, userId));
+        return { backup_codes: codes };
+    }
+
+    /**
+     * Desactiva el segundo factor. Exige la CONTRASEÑA: con la sesión abierta
+     * sola alcanzaría para que quien roba un equipo desarmado el 2FA.
+     */
+    async disableTwoFactor(userId: number, password: string): Promise<void> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        if (!user) throw new NotFoundException('Usuario no encontrado');
+        const valid = await argon2.verify(user.passwordHash, password).catch(() => false);
+        if (!valid) throw new UnauthorizedException('La contraseña no coincide');
+        await this.db
+            .update(users)
+            .set({ totpSecret: null, totpEnabledAt: null, totpBackupCodes: null })
+            .where(eq(users.id, userId));
+        this.logger.log(`2FA desactivado por el usuario ${userId}`);
+    }
+
+    /** Estado del segundo factor para el panel de Ajustes. */
+    async twoFactorStatus(userId: number): Promise<{ enabled: boolean; backup_codes_left: number }> {
+        const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+        return {
+            enabled: user?.totpEnabledAt != null,
+            backup_codes_left: user?.totpBackupCodes?.length ?? 0,
         };
     }
 
@@ -650,6 +868,7 @@ export class AuthService implements OnModuleInit {
             name: user.name,
             locale: user.locale,
             email_verified: user.emailVerifiedAt !== null,
+            two_factor_enabled: user.totpEnabledAt !== null,
         };
     }
 

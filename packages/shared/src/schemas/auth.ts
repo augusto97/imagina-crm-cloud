@@ -43,6 +43,8 @@ export const sessionUserSchema = z.object({
      * acciones que mandan correo en nombre del usuario son las que se gatean.
      */
     email_verified: z.boolean().default(true),
+    /** v0.1.120 — el segundo factor (TOTP) está activo en esta cuenta. */
+    two_factor_enabled: z.boolean().default(false),
 });
 export type SessionUser = z.infer<typeof sessionUserSchema>;
 
@@ -102,3 +104,55 @@ export type ActiveSessionsResponse = z.infer<typeof activeSessionsResponseSchema
 /** v0.1.118 — reenviar el correo de verificación del alta. */
 export const verifyEmailSchema = z.object({ token: z.string().min(16).max(200) });
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+// --- v0.1.120: verificación en dos pasos (TOTP) ---
+
+/**
+ * Alta del segundo factor: el servidor propone un secreto y el URI del QR. El
+ * secreto NO queda activo hasta que el usuario confirme un código válido.
+ */
+export const totpSetupSchema = z.object({
+    secret: z.string(),
+    otpauth_uri: z.string(),
+});
+export type TotpSetup = z.infer<typeof totpSetupSchema>;
+
+/** Confirmación del alta: el código de 6 dígitos que muestra la app. */
+export const totpCodeSchema = z
+    .string()
+    .trim()
+    .min(6)
+    .max(9)
+    .regex(/^[0-9\s-]+$/, 'Sólo dígitos');
+
+export const enableTwoFactorSchema = z.object({ code: totpCodeSchema });
+export type EnableTwoFactorInput = z.infer<typeof enableTwoFactorSchema>;
+
+/** Los códigos de respaldo se muestran UNA sola vez, al habilitar o regenerar. */
+export const backupCodesSchema = z.object({ backup_codes: z.array(z.string()) });
+export type BackupCodes = z.infer<typeof backupCodesSchema>;
+
+/** Desactivar el 2FA exige la contraseña (no basta con tener la sesión abierta). */
+export const disableTwoFactorSchema = z.object({ password: z.string().min(1) });
+export type DisableTwoFactorInput = z.infer<typeof disableTwoFactorSchema>;
+
+/**
+ * Respuesta del login cuando la cuenta tiene 2FA: en vez de abrir sesión se
+ * devuelve un desafío de un solo uso que hay que canjear con el código.
+ */
+export const mfaChallengeSchema = z.object({
+    mfa_required: z.literal(true),
+    challenge: z.string(),
+});
+export type MfaChallenge = z.infer<typeof mfaChallengeSchema>;
+
+/** El login devuelve la sesión O el desafío del segundo factor. */
+export const loginResponseSchema = z.union([mfaChallengeSchema, authSessionSchema]);
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
+
+/** Segundo paso del login: desafío + código TOTP (o uno de respaldo). */
+export const verifyTwoFactorSchema = z.object({
+    challenge: z.string().min(16).max(200),
+    code: z.string().trim().min(6).max(20),
+});
+export type VerifyTwoFactorInput = z.infer<typeof verifyTwoFactorSchema>;

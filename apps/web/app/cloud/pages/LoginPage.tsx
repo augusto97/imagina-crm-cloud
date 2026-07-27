@@ -16,6 +16,9 @@ export function LoginPage(): JSX.Element {
     const [error, setError] = useState<string | null>(null);
     const [sent, setSent] = useState(false);
     const [busy, setBusy] = useState(false);
+    // v0.1.120 — segundo paso: con 2FA activo la contraseña sola no abre sesión.
+    const [challenge, setChallenge] = useState<string | null>(null);
+    const [code, setCode] = useState('');
     const setSession = useSession((s) => s.setSession);
     // Marca del dominio white-label (ADR-S17): si se entró por el dominio de
     // una empresa, el login muestra SU logo y nombre (el color ya lo aplica
@@ -34,11 +37,22 @@ export function LoginPage(): JSX.Element {
                 setSent(true);
                 return;
             }
-            const session =
+            if (challenge !== null) {
+                const session = await api.loginTwoFactor({ challenge, code });
+                setSession(session);
+                await qc.invalidateQueries({ queryKey: ['me'] });
+                return;
+            }
+            const result =
                 mode === 'login'
                     ? await api.login({ email, password })
                     : await api.register({ email, password, name, workspace_name: workspace });
-            setSession(session);
+            if ('mfa_required' in result) {
+                setChallenge(result.challenge);
+                setPassword('');
+                return;
+            }
+            setSession(result);
             await qc.invalidateQueries({ queryKey: ['me'] });
         } catch (err) {
             setError(err instanceof CloudApiError ? err.message : 'Error inesperado');
@@ -65,7 +79,9 @@ export function LoginPage(): JSX.Element {
                         {appName}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {mode === 'login'
+                        {challenge !== null
+                            ? 'Verificación en dos pasos'
+                            : mode === 'login'
                             ? 'Entrá a tu workspace'
                             : mode === 'register'
                               ? 'Creá tu cuenta y workspace'
@@ -73,7 +89,44 @@ export function LoginPage(): JSX.Element {
                     </p>
                 </div>
 
-                {mode === 'forgot' && sent ? (
+                {challenge !== null ? (
+                    <>
+                        <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
+                            Ingresá el código de 6 dígitos de tu app de autenticación. Si perdiste
+                            el teléfono, usá uno de tus códigos de respaldo.
+                        </p>
+                        <Field label="Código" id="mfa-code">
+                            <Input
+                                id="mfa-code"
+                                value={code}
+                                onChange={(e) => setCode(e.target.value)}
+                                autoComplete="one-time-code"
+                                inputMode="text"
+                                autoFocus
+                                required
+                            />
+                        </Field>
+                        {error && (
+                            <p className="imcrm-text-sm imcrm-text-destructive" role="alert">
+                                {error}
+                            </p>
+                        )}
+                        <Button type="submit" className="imcrm-w-full" disabled={busy}>
+                            {busy ? '…' : 'Verificar'}
+                        </Button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setChallenge(null);
+                                setCode('');
+                                setError(null);
+                            }}
+                            className="imcrm-w-full imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        >
+                            Volver
+                        </button>
+                    </>
+                ) : mode === 'forgot' && sent ? (
                     <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                         Si existe una cuenta con ese email, te enviamos un enlace para restablecer la
                         contraseña. Revisá tu correo (vence en 30 minutos).
@@ -148,17 +201,19 @@ export function LoginPage(): JSX.Element {
                     </>
                 )}
 
-                <button
-                    type="button"
-                    onClick={() => {
-                        setMode(mode === 'login' ? 'register' : 'login');
-                        setError(null);
-                        setSent(false);
-                    }}
-                    className="imcrm-w-full imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground"
-                >
-                    {mode === 'login' ? '¿No tenés cuenta? Registrate' : '¿Ya tenés cuenta? Entrá'}
-                </button>
+                {challenge === null && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMode(mode === 'login' ? 'register' : 'login');
+                            setError(null);
+                            setSent(false);
+                        }}
+                        className="imcrm-w-full imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                    >
+                        {mode === 'login' ? '¿No tenés cuenta? Registrate' : '¿Ya tenés cuenta? Entrá'}
+                    </button>
+                )}
             </form>
         </div>
     );

@@ -1,10 +1,20 @@
 import {
     activeSessionsResponseSchema,
     auditFeedSchema,
+    backupCodesSchema,
     changePasswordSchema,
+    disableTwoFactorSchema,
+    enableTwoFactorSchema,
+    loginResponseSchema,
+    totpSetupSchema,
+    verifyTwoFactorSchema,
     type ActiveSessionsResponse,
     type AuditFeed,
+    type BackupCodes,
     type ChangePasswordInput,
+    type LoginResponse,
+    type TotpSetup,
+    type VerifyTwoFactorInput,
     activitySchema,
     aggregateResultSchema,
     apiErrorSchema,
@@ -166,9 +176,20 @@ export class CloudClient {
             schema: authSessionSchema,
         });
     }
-    login(input: LoginInput): Promise<AuthSession> {
+    /**
+     * Devuelve la sesión O el desafío del segundo factor (v0.1.120): con 2FA
+     * activo la contraseña sola no abre sesión.
+     */
+    login(input: LoginInput): Promise<LoginResponse> {
         return this.request('POST', '/auth/login', {
             body: loginInputSchema.parse(input),
+            schema: loginResponseSchema,
+        });
+    }
+    /** Segundo paso del login: código de la app o de respaldo. */
+    loginTwoFactor(input: VerifyTwoFactorInput): Promise<AuthSession> {
+        return this.request('POST', '/auth/login/2fa', {
+            body: verifyTwoFactorSchema.parse(input),
             schema: authSessionSchema,
         });
     }
@@ -199,6 +220,30 @@ export class CloudClient {
     revokeOtherSessions(): Promise<{ revoked_sessions: number }> {
         return this.request('DELETE', '/auth/sessions', {
             schema: z.object({ revoked_sessions: z.number() }),
+        });
+    }
+
+    // --- verificación en dos pasos (v0.1.120) ---
+    twoFactorStatus(): Promise<{ enabled: boolean; backup_codes_left: number }> {
+        return this.request('GET', '/auth/2fa', {
+            schema: z.object({ enabled: z.boolean(), backup_codes_left: z.number() }),
+        });
+    }
+    setupTwoFactor(): Promise<TotpSetup> {
+        return this.request('POST', '/auth/2fa/setup', { schema: totpSetupSchema });
+    }
+    enableTwoFactor(code: string): Promise<BackupCodes> {
+        return this.request('POST', '/auth/2fa/enable', {
+            body: enableTwoFactorSchema.parse({ code }),
+            schema: backupCodesSchema,
+        });
+    }
+    regenerateBackupCodes(): Promise<BackupCodes> {
+        return this.request('POST', '/auth/2fa/backup-codes', { schema: backupCodesSchema });
+    }
+    disableTwoFactor(password: string): Promise<void> {
+        return this.request('POST', '/auth/2fa/disable', {
+            body: disableTwoFactorSchema.parse({ password }),
         });
     }
     me(): Promise<AuthSession> {

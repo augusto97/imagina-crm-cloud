@@ -16,6 +16,7 @@ import { PlatformService } from '../src/platform/platform.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
+import { loginOk } from './helpers/login';
 
 const rt = new RealtimeService();
 const SUPERADMIN = 'boss@platform.test';
@@ -304,11 +305,11 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         // Sesión revocada de inmediato.
         expect(await sessions.get(session.token as string)).toBeNull();
         // Login bloqueado aunque la contraseña sea correcta.
-        await expect(auth.login({ email: 'act@cliente.test', password: 'password123' })).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(loginOk(auth, { email: 'act@cliente.test', password: 'password123' })).rejects.toBeInstanceOf(ForbiddenException);
 
         // Reactivar → login OK de nuevo.
         await platform.setUserDisabled(session.user.id, false);
-        const relog = await auth.login({ email: 'act@cliente.test', password: 'password123' });
+        const relog = await loginOk(auth, { email: 'act@cliente.test', password: 'password123' });
         expect(relog.token).toBeTruthy();
     });
 

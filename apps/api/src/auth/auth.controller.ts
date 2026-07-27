@@ -13,19 +13,28 @@ import {
 } from '@nestjs/common';
 import {
     changePasswordSchema,
+    disableTwoFactorSchema,
+    enableTwoFactorSchema,
     forgotPasswordSchema,
     loginInputSchema,
     registerInputSchema,
     resetPasswordSchema,
     verifyEmailSchema,
+    verifyTwoFactorSchema,
     type ActiveSessionsResponse,
     type AuthSession,
+    type BackupCodes,
     type ChangePasswordInput,
+    type DisableTwoFactorInput,
+    type EnableTwoFactorInput,
     type ForgotPasswordInput,
     type LoginInput,
+    type LoginResponse,
     type RegisterInput,
     type ResetPasswordInput,
+    type TotpSetup,
     type VerifyEmailInput,
+    type VerifyTwoFactorInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -56,15 +65,78 @@ export class AuthController {
         @Body(new ZodValidationPipe(loginInputSchema)) input: LoginInput,
         @Res({ passthrough: true }) reply: FastifyReply,
         @Req() req?: FastifyRequest,
-    ): Promise<AuthSession> {
+    ): Promise<LoginResponse> {
         // v0.1.116 — se guarda el contexto del dispositivo para que el usuario
         // pueda reconocer sus sesiones en Ajustes → Cuenta.
-        const session = await this.auth.login(input, {
+        const result = await this.auth.login(input, {
             userAgent: String(req?.headers['user-agent'] ?? ''),
             ip: req?.ip ?? '',
         });
+        // v0.1.120 — con 2FA el login no abre sesión: devuelve el desafío.
+        if ('mfa_required' in result) return result;
+        this.setSessionCookie(reply, result.token as string);
+        return result;
+    }
+
+    /** v0.1.120 — Segundo paso del login: canjea el desafío con el código. */
+    @Post('login/2fa')
+    @HttpCode(200)
+    async loginTwoFactor(
+        @Body(new ZodValidationPipe(verifyTwoFactorSchema)) input: VerifyTwoFactorInput,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<AuthSession> {
+        const session = await this.auth.verifyTwoFactorLogin(input);
         this.setSessionCookie(reply, session.token as string);
         return session;
+    }
+
+    // ── Verificación en dos pasos (v0.1.120) ────────────────────────────
+
+    /** Estado del segundo factor (panel de Ajustes → Cuenta → Seguridad). */
+    @Get('2fa')
+    @UseGuards(SessionGuard)
+    twoFactorStatus(
+        @Req() req: FastifyRequest,
+    ): Promise<{ enabled: boolean; backup_codes_left: number }> {
+        return this.auth.twoFactorStatus(req.authUserId as number);
+    }
+
+    /** Paso 1: propone un secreto + el URI del QR (todavía no lo activa). */
+    @Post('2fa/setup')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    setupTwoFactor(@Req() req: FastifyRequest): Promise<TotpSetup> {
+        return this.auth.setupTwoFactor(req.authUserId as number);
+    }
+
+    /** Paso 2: confirma el código y devuelve los códigos de respaldo. */
+    @Post('2fa/enable')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    enableTwoFactor(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(enableTwoFactorSchema)) input: EnableTwoFactorInput,
+    ): Promise<BackupCodes> {
+        return this.auth.enableTwoFactor(req.authUserId as number, input.code);
+    }
+
+    /** Nuevos códigos de respaldo (invalida los anteriores). */
+    @Post('2fa/backup-codes')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    regenerateBackupCodes(@Req() req: FastifyRequest): Promise<BackupCodes> {
+        return this.auth.regenerateBackupCodes(req.authUserId as number);
+    }
+
+    /** Desactiva el segundo factor. Exige la contraseña. */
+    @Post('2fa/disable')
+    @HttpCode(204)
+    @UseGuards(SessionGuard)
+    async disableTwoFactor(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(disableTwoFactorSchema)) input: DisableTwoFactorInput,
+    ): Promise<void> {
+        await this.auth.disableTwoFactor(req.authUserId as number, input.password);
     }
 
     @Post('logout')
