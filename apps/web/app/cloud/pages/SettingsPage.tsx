@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';

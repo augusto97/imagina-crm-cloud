@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link, NavLink, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router';
 import {
     BarChart3,
     ChevronsLeft,

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, BarChart3, CalendarRange, Copy, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { BarChartWidget } from '@/admin/dashboards/widgets/BarChartWidget';

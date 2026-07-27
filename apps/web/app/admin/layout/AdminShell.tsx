@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router';
 
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';

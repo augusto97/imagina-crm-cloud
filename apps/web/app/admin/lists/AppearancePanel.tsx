@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { Check, LayoutDashboard, Loader2, SlidersHorizontal, Sparkles, UserSquare2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
