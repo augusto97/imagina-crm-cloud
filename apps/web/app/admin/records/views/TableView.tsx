@@ -13,11 +13,12 @@ import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } 
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
+import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
-import { CAP, useCanAny } from '@/lib/permissions';
+import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { FilterTree, RecordEntity } from '@/types/record';
@@ -124,6 +125,10 @@ export function TableView({
     // El backend rechaza un PATCH sin la cap con 403; acá deshabilitamos
     // el doble-click → input UX para evitar la confusión del 403-on-submit.
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS);
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
+    // Menú contextual de fila (click derecho) — v0.1.129.
+    const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
 
     // Drag-and-drop column reorder: trackeamos qué column está siendo
     // arrastrada en local state (no persiste). Al drop, computamos el
@@ -611,6 +616,10 @@ export function TableView({
                             return (
                                 <tr
                                     key={row.id}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        setRowMenu({ record: row.original, x: e.clientX, y: e.clientY });
+                                    }}
                                     className={cn(
                                         // Sin `transition-colors` aquí — daba lag
                                         // perceptible en hover (200ms de wait con
@@ -794,6 +803,20 @@ export function TableView({
             ClickUp) — la nativa del wrapper queda al fondo de la tabla,
             invisible en listas largas. */}
         <StickyHScrollbar targetRef={tableContainerRef} />
+        <RecordRowMenu
+            target={rowMenu}
+            onClose={() => setRowMenu(null)}
+            listId={listId}
+            listSlug={listSlug ?? ''}
+            fields={fields}
+            onOpen={(r) => {
+                setRowMenu(null);
+                onRowClick?.(r);
+            }}
+            onAddColumn={onAddColumn}
+            canCreate={canCreateRecords}
+            canDelete={canDeleteRecords}
+        />
        </WrapTextContext.Provider>
       </RecurrencesBatchProvider>
     );
