@@ -11,7 +11,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { listSlugHistory } from '../db/schema';
+import { listGroups, listSlugHistory } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -141,6 +141,26 @@ export class ListsService {
             if (patch.icon !== undefined) changes.icon = patch.icon;
             if (patch.color !== undefined) changes.color = patch.color;
             if (patch.position !== undefined) changes.position = patch.position;
+            if (patch.group_id !== undefined) {
+                // Mover a una carpeta: se verifica que sea del MISMO tenant
+                // (la RLS ya lo garantiza, pero un id ajeno debe dar 404 y no
+                // una FK violation con 500).
+                if (patch.group_id !== null) {
+                    const [g] = await tx
+                        .select({ id: listGroups.id })
+                        .from(listGroups)
+                        .where(and(eq(listGroups.tenantId, tenantId), eq(listGroups.id, patch.group_id)))
+                        .limit(1);
+                    if (!g) {
+                        throw new NotFoundException({
+                            code: 'list_group_not_found',
+                            message: 'Carpeta no encontrada',
+                            data: { status: 404 },
+                        });
+                    }
+                }
+                changes.groupId = patch.group_id;
+            }
             if (patch.settings !== undefined) changes.settings = patch.settings;
 
             if (patch.slug !== undefined && patch.slug !== current.slug) {
@@ -260,6 +280,7 @@ function toList(row: ListRow): List {
         color: row.color,
         settings: row.settings,
         position: row.position,
+        group_id: row.groupId ?? null,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
     };

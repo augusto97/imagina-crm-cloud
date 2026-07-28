@@ -267,6 +267,13 @@
       "when": 1784200000006,
       "tag": "0037_totp_2fa",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784200000007,
+      "tag": "0038_list_groups",
+      "breakpoints": true
     }
   ]
 }
