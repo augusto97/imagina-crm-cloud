@@ -10,13 +10,17 @@ import {
     evaluateComputed,
     isDataField,
     jsonbKeyForField,
+    richDocToPlainText,
+    sanitizeRichDoc,
     validateFieldValue,
     type CreateRecordInput,
     type Field,
     type List,
     type ListRecordsQuery,
     type RecordDto,
+    type RichDoc,
     type Role,
+    type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
 import { sql, type SQL } from 'drizzle-orm';
@@ -37,7 +41,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
-import { RecordsRepository, type RecordRow } from './records.repository';
+import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
@@ -337,6 +341,70 @@ export class RecordsService {
         );
     }
 
+    /**
+     * Descripción rica del registro (v0.1.133). Va por su propio endpoint —
+     * no viaja en el listado — así que la lectura repite el chequeo de ACL:
+     * si el scope del rol no alcanza la fila, 404 (mismo criterio que `get`).
+     */
+    async getDescription(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+    ): Promise<RichDoc | null> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const row = await this.repo.findById(tx, tenantId, list.id, id);
+            return row;
+        });
+        if (!result || !this.aclCanReach(list, actor, 'view', result)) throw recordNotFound(id);
+        return result.description ?? null;
+    }
+
+    /**
+     * Guarda la descripción. Exige permiso de EDICIÓN sobre la fila (la misma
+     * puerta que cambiar un campo) y sanea el documento contra la whitelist
+     * compartida antes de persistir — nunca se guarda lo que mandó el cliente
+     * tal cual.
+     */
+    async updateDescription(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+        input: UpdateRecordDescriptionInput,
+    ): Promise<RichDoc | null> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const clean = sanitizeRichDoc(input.description);
+
+        const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const row = await this.repo.findById(tx, tenantId, list.id, id);
+            if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
+            await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
+            // La bitácora registra QUE cambió, no el documento entero: el
+            // activity se lee como una línea de tiempo, no como un historial
+            // de versiones (eso sería otra feature).
+            await this.activity.logInTx(tx, {
+                tenantId,
+                listId: list.id,
+                recordId: id,
+                userId: actor.userId,
+                action: 'record_updated',
+                diff: {
+                    description: {
+                        old: (row.description ?? null) === null ? '' : '…',
+                        new: clean === null ? '' : richDocToPlainText(clean, 120),
+                    },
+                },
+            });
+            return true;
+        });
+        if (!ok) throw recordNotFound(id);
+
+        this.realtime.records(tenantId, list.id);
+        return clean;
+    }
+
     async remove(
         tenantId: number,
         actor: Actor,
@@ -427,7 +495,7 @@ export class RecordsService {
         list: List,
         actor: Actor,
         action: 'view' | 'edit' | 'delete',
-        row: RecordRow,
+        row: Pick<RecordRow, 'data' | 'createdBy'>,
     ): boolean {
         const scope = effectivePermissions(list.settings, actor.role)[action];
         const assignmentId = resolvePermissions(list.settings).assignment_field_id;
@@ -542,7 +610,7 @@ export class RecordsService {
 }
 
 function toRecord(
-    row: RecordRow,
+    row: RecordRow | RecordListRow,
     relations: Record<string, number[]> = {},
     subtaskCount = 0,
 ): RecordDto {
@@ -553,6 +621,10 @@ function toRecord(
         relations,
         parent_id: row.parentId ?? null,
         subtask_count: subtaskCount,
+        // El listado trae el booleano calculado en SQL; las lecturas de una
+        // fila completa traen el documento y se deriva de él (v0.1.133).
+        has_description:
+            'hasDescription' in row ? row.hasDescription : (row.description ?? null) !== null,
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
@@ -721,7 +793,7 @@ function compileSearch(fields: Field[], search: string | undefined): SQL | undef
  * lazy en cada lectura — paridad con el hydrate del plugin; jamás se
  * persisten). Devuelve un row con `data` clonado; sin computeds es no-op.
  */
-function withComputed(fields: Field[], row: RecordRow): RecordRow {
+function withComputed<T extends { data: Record<string, unknown> }>(fields: Field[], row: T): T {
     const computed = fields.filter((f) => f.type === 'computed');
     if (computed.length === 0) return row;
     const data = { ...(row.data as Record<string, unknown>) };

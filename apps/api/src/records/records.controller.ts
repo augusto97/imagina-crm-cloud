@@ -17,11 +17,14 @@ import {
     bulkRecordsSchema,
     createRecordSchema,
     listRecordsQuerySchema,
+    updateRecordDescriptionSchema,
     updateRecordSchema,
     type BulkRecordsInput,
     type CreateRecordInput,
     type ListRecordsQuery,
     type RecordDto,
+    type RichDoc,
+    type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
@@ -75,6 +78,40 @@ export class RecordsController {
         @Param('id', ParseIntPipe) id: number,
     ): Promise<RecordDto> {
         return this.records.get(tenantId(req), actor(req), list, id);
+    }
+
+    /**
+     * Descripción rica del registro (v0.1.133). Endpoint aparte del record
+     * porque el documento NO viaja en el listado: se pide al abrir la ficha y
+     * se guarda solo (autosave), sin arrastrar el resto de los campos.
+     */
+    @Get(':id/description')
+    @RequireCapability('view_records', 'view_own_records')
+    async getDescription(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ description: RichDoc | null }> {
+        const description = await this.records.getDescription(tenantId(req), actor(req), list, id);
+        return { description };
+    }
+
+    @Patch(':id/description')
+    @RequireCapability('edit_records', 'edit_own_records')
+    async updateDescription(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(updateRecordDescriptionSchema)) input: UpdateRecordDescriptionInput,
+    ): Promise<{ description: RichDoc | null }> {
+        const description = await this.records.updateDescription(
+            tenantId(req),
+            actor(req),
+            list,
+            id,
+            input,
+        );
+        return { description };
     }
 
     @Post()

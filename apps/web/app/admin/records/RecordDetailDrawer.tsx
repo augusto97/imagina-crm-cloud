@@ -27,12 +27,14 @@ import { useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
+import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import { useList } from '@/hooks/useLists';
 import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
+import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordMetaGrid } from './RecordMetaGrid';
 
@@ -106,6 +108,7 @@ export function RecordDetailDrawer({
     onOpenChange,
 }: RecordDetailDrawerProps): JSX.Element {
     const update = useUpdateRecord(listId);
+    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const remove = useDeleteRecord(listId);
 
     const initialValues = useMemo<Record<string, unknown>>(() => {
@@ -295,6 +298,16 @@ export function RecordDetailDrawer({
                                         values={values}
                                         twoCols
                                         className="imcrm-mb-4 imcrm-mt-4"
+                                    />
+
+                                    {/* Descripción rica (v0.1.133) — el cuerpo tipo
+                                        documento de la ficha, arriba de los campos
+                                        (mismo lugar que en ClickUp). */}
+                                    <RecordDescription
+                                        listKey={listSlug ?? listId}
+                                        recordId={record.id}
+                                        editable={canEditRecords}
+                                        className="imcrm-mb-5"
                                     />
 
                                     {/* Sección "Campos" colapsable con icono del tipo por fila. */}

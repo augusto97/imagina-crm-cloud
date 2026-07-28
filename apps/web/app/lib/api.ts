@@ -217,6 +217,9 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         // Subtareas (v0.1.132): la jerarquía es por ID, no por slug — pasa tal cual.
         parent_id: (r.parent_id as number | null | undefined) ?? null,
         subtask_count: (r.subtask_count as number | undefined) ?? 0,
+        // v0.1.133 — el listado sólo dice SI hay descripción (el documento se
+        // pide aparte al abrir la ficha).
+        has_description: r.has_description === true,
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
         // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la

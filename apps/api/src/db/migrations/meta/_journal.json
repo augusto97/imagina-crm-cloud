@@ -281,6 +281,13 @@
       "when": 1784200000008,
       "tag": "0039_subtasks",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784200000009,
+      "tag": "0040_record_description",
+      "breakpoints": true
     }
   ]
 }

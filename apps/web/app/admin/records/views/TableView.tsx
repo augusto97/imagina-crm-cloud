@@ -10,7 +10,7 @@ import {
     type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
+import { AlignLeft, ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
@@ -241,6 +241,16 @@ export function TableView({
                                 )
                             )}
                             <span className="imcrm-min-w-0 imcrm-flex-1">{editable}</span>
+                            {/* v0.1.133 — señal de que el registro tiene
+                                descripción (como el icono de documento de
+                                ClickUp). El contenido no viaja en el listado:
+                                sólo este booleano. */}
+                            {ctx.row.original.has_description && (
+                                <AlignLeft
+                                    aria-label={__('Tiene descripción')}
+                                    className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70"
+                                />
+                            )}
                         </span>
                     );
                 },
