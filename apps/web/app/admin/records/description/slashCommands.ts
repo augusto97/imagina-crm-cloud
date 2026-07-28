@@ -8,11 +8,15 @@ import {
     ListChecks,
     ListOrdered,
     Minus,
+    Columns2,
     Hash,
     Image,
+    ListTree,
     Paperclip,
     Quote,
     Table as TableIcon,
+    TableOfContents,
+    Video,
     Type,
     type LucideIcon,
 } from 'lucide-react';
@@ -27,7 +31,7 @@ export interface SlashCommand {
      * antes (subir un archivo, elegir una persona o un registro). El editor
      * los intercepta y abre lo que corresponda.
      */
-    action?: 'image' | 'file' | 'mentionUser' | 'mentionRecord';
+    action?: 'image' | 'file' | 'mentionUser' | 'mentionRecord' | 'embed' | 'subtask';
     /** Grupo del menú (el orden de aparición lo da el array). */
     group: string;
     label: string;
@@ -190,6 +194,59 @@ SLASH_COMMANDS.push(
         keywords: 'adjunto archivo documento pdf subir',
         action: 'file',
         run: () => {},
+    },
+);
+
+/** Insertados y estructura (v0.1.135). */
+SLASH_COMMANDS.push(
+    {
+        id: 'embed',
+        group: __('Insertar'),
+        label: __('Insertar contenido'),
+        hint: __('YouTube, Loom, Figma, Drive, Vimeo'),
+        icon: Video,
+        keywords: 'embed insertar video youtube loom figma drive vimeo iframe',
+        action: 'embed',
+        run: () => {},
+    },
+    {
+        id: 'subtask',
+        group: __('Menciones'),
+        label: __('Subtarea'),
+        hint: __('Crea una subtarea y la enlaza'),
+        icon: ListTree,
+        keywords: 'subtarea sub tarea hijo registro',
+        action: 'subtask',
+        run: () => {},
+    },
+    {
+        id: 'columns',
+        group: __('Estructura'),
+        label: __('Columnas'),
+        hint: __('Dos columnas lado a lado'),
+        icon: Columns2,
+        keywords: 'columnas columns lado grilla layout',
+        run: (e) =>
+            e
+                .chain()
+                .focus()
+                .insertContent({
+                    type: 'columnsBlock',
+                    content: [
+                        { type: 'column', content: [{ type: 'paragraph' }] },
+                        { type: 'column', content: [{ type: 'paragraph' }] },
+                    ],
+                })
+                .run(),
+    },
+    {
+        id: 'toc',
+        group: __('Estructura'),
+        label: __('Índice'),
+        hint: __('Lista los títulos del documento'),
+        icon: TableOfContents,
+        keywords: 'indice tabla contenidos toc navegacion titulos',
+        run: (e) => e.chain().focus().insertContent({ type: 'tocBlock' }).run(),
     },
 );
 

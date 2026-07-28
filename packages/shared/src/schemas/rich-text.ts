@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EMBED_PROVIDER_LABELS, resolveEmbed } from './embeds';
 
 /**
  * Documento de texto enriquecido (v0.1.133) — la "descripción" de un registro.
@@ -52,6 +53,11 @@ const NODE_ATTRS: Record<string, readonly string[]> = {
     mentionRecord: ['id', 'listSlug', 'label'],
     imageBlock: ['fileId', 'src', 'alt', 'width'],
     fileBlock: ['fileId', 'name', 'size'],
+    // v0.1.135 — embed por proveedor conocido, columnas, índice.
+    embedBlock: ['url', 'provider'],
+    columnsBlock: [],
+    column: [],
+    tocBlock: [],
     tableHeader: ['colspan', 'rowspan', 'colwidth'],
     tableCell: ['colspan', 'rowspan', 'colwidth'],
 };
@@ -76,7 +82,13 @@ export const RICH_DOC_MAX_TEXT = 20_000;
 export const RICH_DOC_MAX_BYTES = 512 * 1024;
 
 /** Nodos que sin atributos válidos no tienen sentido (se descartan). */
-const ATOMIC_WITH_ATTRS = new Set(['mentionUser', 'mentionRecord', 'imageBlock', 'fileBlock']);
+const ATOMIC_WITH_ATTRS = new Set([
+    'mentionUser',
+    'mentionRecord',
+    'imageBlock',
+    'fileBlock',
+    'embedBlock',
+]);
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -185,6 +197,15 @@ function cleanAttrs(
                 if (src !== null) out[key] = src;
                 break;
             }
+            case 'url': {
+                // Sólo sobrevive lo que un proveedor conocido sabe embeber.
+                if (typeof value === 'string' && resolveEmbed(value) !== null) out[key] = value.trim();
+                break;
+            }
+            case 'provider': {
+                if (typeof value === 'string' && value in EMBED_PROVIDER_LABELS) out[key] = value;
+                break;
+            }
             case 'href': {
                 const href = safeLinkHref(value);
                 if (href !== null) out[key] = href;
@@ -216,6 +237,7 @@ function cleanAttrs(
     if ((type === 'mentionUser' || type === 'mentionRecord') && out.id === undefined) return undefined;
     if (type === 'fileBlock' && out.fileId === undefined) return undefined;
     if (type === 'imageBlock' && out.fileId === undefined && out.src === undefined) return undefined;
+    if (type === 'embedBlock' && out.url === undefined) return undefined;
     return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -301,6 +323,8 @@ export function isEmptyRichDoc(doc: RichDoc | null | undefined): boolean {
         'fileBlock',
         'mentionUser',
         'mentionRecord',
+        'embedBlock',
+        'tocBlock',
     ]);
     let empty = true;
     const walk = (node: RichNode): void => {

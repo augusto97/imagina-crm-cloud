@@ -6,7 +6,16 @@ import { Placeholder } from '@tiptap/extensions';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { AnyExtension } from '@tiptap/react';
 
-import { FileBlock, ImageBlock, MentionRecord, MentionUser } from './nodes';
+import {
+    Column,
+    ColumnsBlock,
+    EmbedBlock,
+    FileBlock,
+    ImageBlock,
+    MentionRecord,
+    MentionUser,
+    TocBlock,
+} from './nodes';
 
 import { __ } from '@/lib/i18n';
 
@@ -45,6 +54,11 @@ export function descriptionExtensions(placeholder: string): AnyExtension[] {
         MentionRecord,
         ImageBlock,
         FileBlock,
+        // v0.1.135 — embeds, columnas e índice.
+        EmbedBlock,
+        ColumnsBlock,
+        Column,
+        TocBlock,
         Placeholder.configure({
             placeholder: ({ node }) =>
                 node.type.name === 'heading' ? __('Título') : placeholder,

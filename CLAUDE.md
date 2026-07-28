@@ -2085,6 +2085,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Pendiente de la fase 2 (segunda mitad): embeds (YouTube/Loom/Figma/
         Drive), columnas, índice y subtarea inline.
 
+  - [x] **Bloques vivos — fase 2, segunda mitad (v0.1.135)**: cierra el menú
+        «/» con lo que faltaba del de ClickUp.
+        (a) **Embeds**: se pega el enlace y queda el contenido embebido —
+        YouTube, Vimeo, Loom, Figma y Google Drive/Docs/Sheets/Slides. Un
+        iframe corre código de OTRO origen dentro de nuestra página, así que
+        la puerta se abre por dominio conocido: `resolveEmbed` (shared, puro)
+        reconoce las formas de URL de cada proveedor y devuelve la URL
+        embebible; lo que no está en la lista NO genera iframe (queda como
+        enlace y se avisa). Se persiste la URL ORIGINAL + el proveedor y la de
+        embed se deriva en cada render (si un proveedor cambia su forma de
+        embeber, no hay que migrar documentos). La CSP de los dos proxies
+        (Caddy + nginx) suma `frame-src` con esos hosts — la lista vive en
+        `EMBED_FRAME_HOSTS` para que el código y el deploy no se separen.
+        (b) **Columnas** (2-4, apiladas bajo 640px), (c) **índice** que se
+        DERIVA de los títulos en cada render (no se guarda una copia que
+        quedaría desactualizada) y navega al hacer click, y (d) **subtarea
+        inline**: crea un REGISTRO hijo de verdad (el modelo de v0.1.132 —
+        aparece en la tabla, se filtra, se exporta) y deja su chip enlazado en
+        el documento.
+        **Tres bugs atrapados en el E2E**: (1) al insertar un bloque desde un
+        diálogo el editor no tenía el foco y el autosave lo descartaba como
+        "no lo escribió nadie" — la subtarea recién creada se perdía al
+        recargar; ahora las inserciones de la propia UI se marcan explícitas
+        (`applyUiEdit`). (2) La respuesta del autosave anterior RE-SEMBRABA el
+        documento y deshacía lo insertado: el contenido externo ahora se
+        siembra UNA vez por registro (el editor se remonta con `key` al
+        cambiar de ficha). (3) `POST /lists/:l/records` comparte path con el
+        listado y el adaptador lo normalizaba como página vacía → el id del
+        registro recién creado llegaba `undefined` (por eso el chip de la
+        subtarea salía sin destino); ahora el método decide. De yapa: zona
+        clicable al final del editor — con un embed o el índice abajo, el
+        click "en el editor" caía sobre ese bloque (el iframe hasta se come el
+        evento) y el cursor no entraba al documento.
+        5 tests unitarios nuevos en shared (formas de YouTube/Vimeo/Loom/Figma/
+        Drive, `youtube.com.evil.com` rechazado, `javascript:` rechazado,
+        columnas e índice sobreviven al saneo) — 395 API, 84 front y 39 shared
+        en verde — + E2E navegador 15/15.
+
+        **Con esto la fase 2 del editor queda completa.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

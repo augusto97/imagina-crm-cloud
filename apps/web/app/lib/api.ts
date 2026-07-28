@@ -251,8 +251,18 @@ export function mapRecordBody(body: unknown, map: FieldKeyMap): unknown {
  * UI: envelope inconsistente, records con claves f{id}→slug y paginación
  * cursor→página.
  */
-async function normalizeCloudResponse<T>(path: string, payload: unknown): Promise<ApiResponse<T>> {
-    const kind = recordsPathKind(path);
+async function normalizeCloudResponse<T>(
+    path: string,
+    payload: unknown,
+    method: Method = 'GET',
+): Promise<ApiResponse<T>> {
+    // v0.1.135 — el path de CREAR un record es el mismo que el del listado
+    // (`POST /lists/:l/records`), pero la respuesta es UN registro. Sin mirar
+    // el método, el creado se normalizaba como si fuera una página vacía y el
+    // caller recibía `[]` — así se perdía el id del registro recién creado.
+    const kind = method === 'POST' && recordsPathKind(path) === 'list'
+        ? 'item'
+        : recordsPathKind(path);
 
     if (kind !== null) {
         const listKey = listKeyFromPath(path) ?? '';
@@ -401,7 +411,7 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
 
     const slugRenamed = parseSlugRename(response.headers.get('X-Imagina-CRM-Slug-Renamed'));
 
-    const normalized = await normalizeCloudResponse<T>(path, payload);
+    const normalized = await normalizeCloudResponse<T>(path, payload, method);
     return { ...normalized, slugRenamed };
 }
 
