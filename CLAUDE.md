@@ -1945,6 +1945,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         E2E navegador 7/7 (menú, ID al portapapeles, duplicar 72→73,
         confirmación, borrar 73→72).
 
+  - [x] **Carpetas de listas (v0.1.130, pedido del usuario mirando ClickUp)**:
+        con muchas listas el menú era una lista plana imposible de escanear.
+        Tabla `list_groups` (migración 0038, RLS) + `lists.group_id` nullable
+        con **ON DELETE SET NULL**: borrar una carpeta NUNCA se lleva las
+        listas puestas, vuelven a la raíz. UN solo nivel a propósito — la
+        jerarquía espacio → carpeta → lista de ClickUp agrega dos niveles de
+        navegación para el mismo resultado. Endpoints `/list-groups`
+        (GET con sesión; POST/PATCH/DELETE con `manage_lists`) y `group_id`
+        en el PATCH de lista, que valida que la carpeta sea del MISMO tenant
+        (id ajeno → 404, no una FK violation con 500). Front: `ListsTree` en
+        el panel — carpetas colapsables (persistido en localStorage) con
+        contador, alta con "+", renombrar y eliminar desde su menú, y
+        **arrastrar una lista sobre el encabezado de una carpeta la mueve
+        ahí**, sobre la raíz la saca, y sobre otra lista la reordena (el
+        gesto de v0.1.107 sigue igual porque el destino es distinto).
+        5 tests de backend (aislamiento entre empresas incluido) + E2E
+        navegador 10/10 (crear, mover con persistencia tras recargar,
+        colapsar, sacar, borrar con confirmación y las listas intactas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

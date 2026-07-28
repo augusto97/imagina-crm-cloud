@@ -7,6 +7,8 @@ export interface ListSummary {
     color: string | null;
     settings: Record<string, unknown>;
     position: number;
+    /** Carpeta del menú, o null = cuelga de la raíz (v0.1.130). */
+    group_id: number | null;
     created_by: number;
     created_at: string;
     updated_at: string;
@@ -30,4 +32,13 @@ export interface UpdateListInput {
     color?: string | null;
     settings?: Record<string, unknown>;
     position?: number;
+    /** `null` saca la lista de su carpeta. */
+    group_id?: number | null;
+}
+
+/** Carpeta del menú de listas (v0.1.130). */
+export interface ListGroup {
+    id: number;
+    name: string;
+    position: number;
 }

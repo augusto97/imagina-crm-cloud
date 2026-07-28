@@ -8,6 +8,7 @@ import {
     uniqueIndex,
     varchar,
 } from 'drizzle-orm/pg-core';
+import { listGroups } from './list-groups';
 import { tenants } from './tenants';
 
 export const lists = pgTable(
@@ -23,6 +24,10 @@ export const lists = pgTable(
         color: varchar('color', { length: 32 }),
         settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
         position: integer('position').notNull().default(0),
+        /** Carpeta del menú, o null = cuelga de la raíz. */
+        groupId: bigint('group_id', { mode: 'number' }).references(() => listGroups.id, {
+            onDelete: 'set null',
+        }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

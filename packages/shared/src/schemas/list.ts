@@ -10,6 +10,8 @@ export const listSchema = z.object({
     color: z.string().max(32).nullable().default(null),
     settings: z.record(z.unknown()).default({}),
     position: z.number().int().nonnegative().default(0),
+    /** Carpeta del menú, o null = cuelga de la raíz (v0.1.130). */
+    group_id: idSchema.nullable().default(null),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
 });
@@ -35,6 +37,8 @@ export const updateListSchema = z
         icon: z.string().max(64).nullable(),
         color: z.string().max(32).nullable(),
         position: z.number().int().nonnegative(),
+        /** `null` saca la lista de su carpeta y la devuelve a la raíz. */
+        group_id: idSchema.nullable(),
         settings: z.record(z.unknown()),
     })
     .partial()
@@ -48,3 +52,30 @@ export const reorderListsSchema = z.object({
     list_ids: z.array(idSchema).min(1),
 });
 export type ReorderListsInput = z.infer<typeof reorderListsSchema>;
+
+/**
+ * Carpetas del menú de listas (v0.1.130). Un solo nivel: una carpeta
+ * agrupa listas y las que no tienen carpeta cuelgan de la raíz.
+ */
+export const listGroupSchema = z.object({
+    id: idSchema,
+    name: z.string().min(1).max(190),
+    position: z.number().int().nonnegative().default(0),
+});
+export type ListGroup = z.infer<typeof listGroupSchema>;
+
+export const createListGroupSchema = z.object({
+    name: z.string().trim().min(1).max(190),
+});
+export type CreateListGroupInput = z.infer<typeof createListGroupSchema>;
+
+export const updateListGroupSchema = z
+    .object({
+        name: z.string().trim().min(1).max(190),
+        position: z.number().int().nonnegative(),
+    })
+    .partial()
+    .refine((patch) => Object.keys(patch).length > 0, {
+        message: 'El patch no puede estar vacío',
+    });
+export type UpdateListGroupInput = z.infer<typeof updateListGroupSchema>;

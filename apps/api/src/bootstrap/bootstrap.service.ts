@@ -65,6 +65,7 @@ export class BootstrapService {
                     color: l.color,
                     settings: l.settings,
                     position: l.position,
+                    group_id: l.groupId ?? null,
                     created_at: l.createdAt.toISOString(),
                     updated_at: l.updatedAt.toISOString(),
                 })),
