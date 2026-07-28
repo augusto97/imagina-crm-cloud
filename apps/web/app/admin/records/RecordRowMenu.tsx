@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Columns3, CopyPlus, Hash, Link2, SquareArrowOutUpRight, Trash2 } from 'lucide-react';
+import { Check, Columns3, CopyPlus, Hash, Link2, ListTree, SquareArrowOutUpRight, Trash2 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
@@ -32,6 +32,8 @@ interface RecordRowMenuProps {
     onOpen: (record: RecordEntity) => void;
     /** Alta de campo desde el menú; si no se pasa, la opción no aparece. */
     onAddColumn?: () => void;
+    /** Abre el alta de una SUBTAREA de este registro (v0.1.132). */
+    onCreateSubtask?: (record: RecordEntity) => void;
     canDelete: boolean;
     canCreate: boolean;
 }
@@ -57,6 +59,7 @@ export function RecordRowMenu({
     fields,
     onOpen,
     onAddColumn,
+    onCreateSubtask,
     canDelete,
     canCreate,
 }: RecordRowMenuProps): JSX.Element | null {
@@ -161,6 +164,12 @@ export function RecordRowMenu({
                 </DropdownMenuItem>
 
                 {(canCreate || onAddColumn) && <DropdownMenuSeparator />}
+                {canCreate && onCreateSubtask && record.parent_id === null && (
+                    <DropdownMenuItem onSelect={() => onCreateSubtask(record)}>
+                        <ListTree className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Crear subtarea')}
+                    </DropdownMenuItem>
+                )}
                 {canCreate && (
                     <DropdownMenuItem onSelect={() => void duplicate()}>
                         <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />

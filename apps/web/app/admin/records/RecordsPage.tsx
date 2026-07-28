@@ -225,6 +225,8 @@ export function RecordsPage(): JSX.Element {
     // Vive en state para que su identidad sea estable mientras el
     // diálogo está abierto (el efecto del diálogo depende de ella).
     const [createDefaults, setCreateDefaults] = useState<Record<string, unknown> | undefined>(undefined);
+    // Padre del alta en curso: si viene, el registro nace como subtarea suya.
+    const [createParentId, setCreateParentId] = useState<number | null>(null);
     const [importOpen, setImportOpen] = useState(false);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
@@ -764,6 +766,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     size="sm"
                                     onClick={() => {
                                         setCreateDefaults(undefined);
+                                        setCreateParentId(null);
                                         setCreateOpen(true);
                                     }}
                                     disabled={!fields.data || fields.data.length === 0}
@@ -890,6 +893,11 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onAddColumn={openFieldCreate}
                                     onEditField={canManageList ? openFieldEdit : undefined}
                                     wrapText={state.wrapText}
+                                    onCreateSubtask={(record) => {
+                                        setCreateDefaults(undefined);
+                                        setCreateParentId(record.id);
+                                        setCreateOpen(true);
+                                    }}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))
@@ -925,6 +933,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         open={createOpen}
                         onOpenChange={setCreateOpen}
                         initialValues={createDefaults}
+                        parentId={createParentId}
                     />
 
                     <RecordDetailDrawer

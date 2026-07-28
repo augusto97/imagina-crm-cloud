@@ -214,6 +214,9 @@ export function mapRecord(raw: unknown, map: FieldKeyMap): unknown {
         id: r.id,
         fields,
         relations,
+        // Subtareas (v0.1.132): la jerarquía es por ID, no por slug — pasa tal cual.
+        parent_id: (r.parent_id as number | null | undefined) ?? null,
+        subtask_count: (r.subtask_count as number | undefined) ?? 0,
         created_by: r.created_by,
         // El fork asume timestamps naive-UTC (les concatena 'Z' al formatear,
         // herencia del plugin WP). El backend nuevo devuelve ISO con 'Z' → la
@@ -237,7 +240,7 @@ export function mapRecordBody(body: unknown, map: FieldKeyMap): unknown {
     for (const [k, v] of Object.entries(src)) {
         data[map.toFid[k] ?? k] = v; // slug → f{id} (fallback: deja la clave)
     }
-    return { data };
+    return b.parent_id !== undefined ? { data, parent_id: b.parent_id } : { data };
 }
 
 /**

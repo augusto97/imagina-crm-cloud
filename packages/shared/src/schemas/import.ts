@@ -98,9 +98,29 @@ export interface ImportCsvUnmappedColumn {
     sample: string;
 }
 
+/**
+ * Columnas ESPECIALES del mapeo de import (v0.1.132 — jerarquía de subtareas).
+ * No son campos: viajan en el mismo `mapping` (columna → destino) porque el
+ * diálogo ya lo tiene armado, y no pueden colisionar con un slug real porque
+ * todo slug de campo empieza con letra (`SLUG_REGEX`).
+ *
+ * - `__id`     — el identificador de la fila EN EL ARCHIVO. Sirve para que
+ *                `__parent` pueda referirse a otra fila del mismo archivo.
+ * - `__parent` — de quién es subtarea esta fila: o un `__id` del archivo, o el
+ *                id real de un registro que ya existe en la lista.
+ */
+export const IMPORT_ID_COLUMN = '__id';
+export const IMPORT_PARENT_COLUMN = '__parent';
+
+/** Cabeceras que emite el export CSV cuando la lista tiene subtareas. */
+export const EXPORT_ID_HEADER = 'ID';
+export const EXPORT_PARENT_HEADER = 'Subtarea de';
+
 export interface ImportCsvRunResult {
     imported: number;
     skipped: number;
+    /** Filas que quedaron colgadas de un padre (v0.1.132). */
+    linked_subtasks: number;
     errors: Array<{ row: number; message: string }>;
     truncated: boolean;
     created_fields: Array<{ slug: string; label: string; type: string }>;

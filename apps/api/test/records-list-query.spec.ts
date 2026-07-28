@@ -34,3 +34,17 @@ describe('parseListQuery (query del listado de records)', () => {
         expect(q.sort_dir).toBe('asc');
     });
 });
+
+describe('subtareas en la query (v0.1.132)', () => {
+    it('`parent` e `include_subtasks` llegan al service', () => {
+        const q = parseListQuery({ parent: '42', include_subtasks: '1' });
+        expect(q.parent).toBe(42);
+        expect(q.include_subtasks).toBe(true);
+    });
+
+    it('sin esos params el listado queda como siempre (sólo primer nivel)', () => {
+        const q = parseListQuery({});
+        expect(q.parent).toBeUndefined();
+        expect(q.include_subtasks).toBeUndefined();
+    });
+});

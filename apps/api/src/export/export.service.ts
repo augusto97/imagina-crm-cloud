@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { asc, eq, gt, isNull, and, type SQL } from 'drizzle-orm';
+import { asc, eq, gt, isNotNull, isNull, and, type SQL } from 'drizzle-orm';
 import {
+    EXPORT_ID_HEADER,
+    EXPORT_PARENT_HEADER,
     isDataField,
     jsonbKeyForField,
     type ExportBundle,
@@ -65,9 +67,21 @@ export class ExportService {
                 ? opts.fieldIds.map((id) => byId.get(id)).filter((f) => f !== undefined)
                 : dataFields;
 
+        // v0.1.132 — jerarquía. Las subtareas SIEMPRE se exportan (si no, el
+        // archivo perdería filas en silencio), pero las dos columnas que la
+        // describen sólo aparecen si la lista tiene alguna: una lista sin
+        // subtareas exporta exactamente el mismo CSV que antes.
+        const withHierarchy = await this.hasSubtasks(tenantId, list.id);
+
         onStart(`${list.slug}.csv`);
         if (opts.withBom) write('﻿');
-        write(csvLine(columns.map((c) => c.label), opts.delimiter));
+        const header = columns.map((c) => c.label);
+        write(
+            csvLine(
+                withHierarchy ? [EXPORT_ID_HEADER, EXPORT_PARENT_HEADER, ...header] : header,
+                opts.delimiter,
+            ),
+        );
 
         let cursor: number | undefined;
         for (;;) {
@@ -76,11 +90,15 @@ export class ExportService {
                 limit: 200,
                 sort_dir: 'asc',
                 filter_tree: opts.filterTree,
+                include_subtasks: true,
             });
             for (const r of page.data) {
+                const cells = columns.map((c) => stringifyCell(r.data[jsonbKeyForField(c.id)], c.type));
                 write(
                     csvLine(
-                        columns.map((c) => stringifyCell(r.data[jsonbKeyForField(c.id)], c.type)),
+                        withHierarchy
+                            ? [String(r.id), r.parent_id === null ? '' : String(r.parent_id), ...cells]
+                            : cells,
                         opts.delimiter,
                     ),
                 );
@@ -138,6 +156,25 @@ export class ExportService {
         write(']}');
     }
 
+    /** ¿La lista tiene alguna subtarea viva? (una query, con LIMIT 1). */
+    private async hasSubtasks(tenantId: number, listId: number): Promise<boolean> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: records.id })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, listId),
+                        isNotNull(records.parentId),
+                        isNull(records.deletedAt),
+                    ),
+                )
+                .limit(1),
+        );
+        return rows.length > 0;
+    }
+
     /** Recorre los records por keyset (id asc) en páginas de 1000. */
     private async *iterateRecords(tenantId: number, listId: number): AsyncGenerator<RecordDto> {
         let cursor: number | undefined;
@@ -163,6 +200,10 @@ export class ExportService {
                     id: r.id,
                     list_id: r.listId,
                     data: r.data,
+                    // v0.1.132 — la jerarquía viaja en el archivo: quién es
+                    // subtarea de quién se reconstruye por estos ids.
+                    parent_id: r.parentId ?? null,
+                    subtask_count: 0,
                     created_by: r.createdBy,
                     created_at: r.createdAt.toISOString(),
                     updated_at: r.updatedAt.toISOString(),

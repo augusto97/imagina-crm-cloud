@@ -128,6 +128,38 @@ describe('ExportService (Postgres real)', () => {
         expect(filtered.trimEnd().split('\r\n')).toEqual(['Nombre', 'Globex']);
     });
 
+    // v0.1.132 — la jerarquía viaja en el CSV (y las subtareas NO se pierden).
+    it('streamCsvExport: incluye subtareas y las columnas de jerarquía', async () => {
+        await listsService.create(tenantId, { name: 'Tareas' });
+        const titulo = await fieldsService.create(tenantId, 'tareas', {
+            label: 'Título',
+            type: 'text',
+            slug: 'titulo',
+        });
+        const padre = await recordsService.create(tenantId, admin, 'tareas', {
+            data: { [`f${titulo.id}`]: 'Mudanza' },
+        });
+        const hija = await recordsService.create(tenantId, admin, 'tareas', {
+            data: { [`f${titulo.id}`]: 'Embalar' },
+            parent_id: padre.id,
+        });
+
+        let out = '';
+        await exportService.streamCsvExport(
+            tenantId,
+            admin,
+            'tareas',
+            { fieldIds: [titulo.id], delimiter: ',', withBom: false },
+            () => {},
+            (c) => { out += c; },
+        );
+        expect(out.trimEnd().split('\r\n')).toEqual([
+            'ID,Subtarea de,Título',
+            `${padre.id},,Mudanza`,
+            `${hija.id},${padre.id},Embalar`,
+        ]);
+    });
+
     // SEC-10: el streaming produce EXACTAMENTE el mismo bundle JSON.
     it('streamExport produce el mismo bundle JSON válido', async () => {
         const list = await listsService.create(tenantId, { name: 'Stream' });

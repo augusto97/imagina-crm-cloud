@@ -1977,6 +1977,42 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         por fila sin afectar a las vecinas, persiste marcada y con selección
         activa, vuelve a ocultarse al desmarcar, y el encabezado igual).
 
+  - [x] **Subtareas (v0.1.132, pedido del usuario)**: un registro puede colgar
+        de otro. `records.parent_id` (migración 0039, FK a la propia tabla con
+        ON DELETE CASCADE + índice parcial) y **UN solo nivel**: una subtarea
+        no puede tener subtareas (400 `subtask_depth`) — el mismo criterio que
+        las carpetas de v0.1.130, porque la profundidad ilimitada obliga a
+        resolver árboles en cada listado y no compra nada. El listado devuelve
+        SÓLO el primer nivel y trae `subtask_count` por fila (una query
+        agrupada por página, regla de oro nº 8); `?parent=<id>` trae las hijas
+        de un registro y `?include_subtasks=1` devuelve todo plano (lo que
+        necesitan export y aggregates). Borrar un padre se lleva sus subtareas
+        en el mismo tx. **OJO**: `parseListQuery` es un whitelist — los dos
+        parámetros nuevos hubo que copiarlos explícitamente (fue exactamente
+        el bug de v0.1.68 con `filter_tree`, y acá volvió a aparecer: sin eso
+        expandir un padre duplicaba la tabla entera). Front: chevron en la
+        primera columna de la tabla que despliega las hijas ANIDADAS (TanStack
+        `getSubRows` + `getExpandedRowModel`, sangría por profundidad; las
+        hijas se piden sólo al expandir), "Crear subtarea" en el menú de click
+        derecho (oculto si la fila ya es una subtarea) y el mismo modal de alta
+        con el padre pre-cargado.
+        **Excel/CSV** (la duda del usuario): la jerarquía viaja en el archivo.
+        El export CSV incluye SIEMPRE las subtareas —si no, el archivo perdería
+        filas en silencio— y antepone dos columnas, `ID` y `Subtarea de`, sólo
+        cuando la lista tiene alguna (una lista sin subtareas exporta igual que
+        antes). El import las reconoce solas por la cabecera y las mapea a dos
+        destinos especiales del diálogo (`__id` / `__parent`, que no pueden
+        chocar con un slug real porque todo slug empieza con letra): segunda
+        pasada tras el bulk insert que resuelve cada referencia contra el `ID`
+        de otra fila **del mismo archivo** o contra el id real de un registro
+        que ya existe en la lista. Lo que no resuelve NO se pierde: la fila
+        entra al primer nivel y queda reportada (padre inexistente, o un tercer
+        nivel que se aplana). El JSON de intercambio ya llevaba `parent_id`.
+        11 tests nuevos (6 de subtareas, 4 del CSV jerárquico, 1 del export;
+        389 API en verde) + E2E navegador 9/9 y round-trip real por API
+        (exportar → importar en una lista nueva → el padre queda con su
+        subtarea).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

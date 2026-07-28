@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+    EXPORT_ID_HEADER,
+    EXPORT_PARENT_HEADER,
+    IMPORT_ID_COLUMN,
+    IMPORT_PARENT_COLUMN,
     isDataField,
     jsonbKeyForField,
     validateFieldValue,
@@ -190,9 +194,16 @@ export class ImportService {
         let rows = parsed.rows;
 
         const mapping = new Map<number, string>();
+        // Columnas de JERARQUÍA (v0.1.132): viajan en el mismo mapping pero no
+        // son campos — se apartan acá para que el resto del flujo no las vea.
+        let idColumn: number | null = null;
+        let parentColumn: number | null = null;
         for (const [k, slug] of Object.entries(input.mapping)) {
             const idx = Number(k);
-            if (Number.isInteger(idx) && idx >= 0 && slug !== '') mapping.set(idx, slug);
+            if (!Number.isInteger(idx) || idx < 0 || slug === '') continue;
+            if (slug === IMPORT_ID_COLUMN) idColumn = idx;
+            else if (slug === IMPORT_PARENT_COLUMN) parentColumn = idx;
+            else mapping.set(idx, slug);
         }
 
         // 1. Crear los campos nuevos. Errores de creación → filas virtuales
@@ -234,7 +245,7 @@ export class ImportService {
         //    pérdida de datos (0.36.5 del plugin).
         const unmappedColumnsWithData: ImportCsvUnmappedColumn[] = [];
         headers.forEach((header, colIdx) => {
-            if (mapping.has(colIdx)) return;
+            if (mapping.has(colIdx) || colIdx === idColumn || colIdx === parentColumn) return;
             let rowsWithData = 0;
             let sampleCell = '';
             for (const row of rows) {
@@ -257,7 +268,7 @@ export class ImportService {
         // 4. Coerción + validación por fila. Celdas vacías se omiten del
         //    payload (partial); raw no vacío que coerce a vacío → warning.
         const cellWarnings: ImportCsvCellWarning[] = [];
-        const staged: Array<Record<string, unknown>> = [];
+        const staged: Array<StagedRow> = [];
         let skipped = 0;
 
         rows.forEach((row, idx) => {
@@ -300,7 +311,12 @@ export class ImportService {
                 skipped++;
                 return;
             }
-            staged.push(data);
+            staged.push({
+                data,
+                row: rowNumber,
+                fileId: idColumn === null ? '' : (row[idColumn] ?? '').trim(),
+                parentRef: parentColumn === null ? '' : (row[parentColumn] ?? '').trim(),
+            });
         });
 
         // 5. Límite de plan sobre el LOTE completo (SEC-09) + bulk insert.
@@ -311,16 +327,33 @@ export class ImportService {
             const chunk = staged.slice(i, i + CHUNK);
             await this.tenantDb.withTenant(tenantId, async (tx) => {
                 const { records } = await import('../db/schema');
-                await tx.insert(records).values(
-                    chunk.map((data) => ({ tenantId, listId: list.id, data, createdBy: actorId })),
-                );
+                const inserted = await tx
+                    .insert(records)
+                    .values(
+                        chunk.map((s) => ({ tenantId, listId: list.id, data: s.data, createdBy: actorId })),
+                    )
+                    .returning({ id: records.id });
+                // El RETURNING de un INSERT … VALUES respeta el orden de las
+                // filas: cada staged se queda con SU id para poder resolver
+                // después las referencias de jerarquía del archivo.
+                inserted.forEach((r, j) => {
+                    const s = chunk[j];
+                    if (s) s.newId = r.id;
+                });
             });
         }
+
+        // 6. Jerarquía (v0.1.132): segunda pasada. `__parent` puede apuntar al
+        //    `__id` de otra fila del MISMO archivo (lo típico al recrear una
+        //    lista) o al id real de un registro que ya existe en la lista.
+        const linked = await this.linkSubtasks(tenantId, list.id, staged, errors);
+
         if (staged.length > 0) this.realtime.records(tenantId, list.id);
 
         return {
             imported: staged.length,
             skipped,
+            linked_subtasks: linked,
             errors,
             truncated,
             created_fields: createdFields,
@@ -328,6 +361,85 @@ export class ImportService {
             cell_warnings: cellWarnings,
             unmapped_columns_with_data: unmappedColumnsWithData,
         };
+    }
+
+    /**
+     * Cuelga las filas importadas de su padre. Devuelve cuántas quedaron
+     * vinculadas; lo que no se pudo resolver se reporta como error de fila
+     * (la fila YA se importó — queda de primer nivel, no se pierde).
+     *
+     * Reglas (las mismas del create de records): el padre tiene que existir en
+     * esta lista y ser de PRIMER NIVEL — no hay subtareas de subtareas, así
+     * que un archivo con tres niveles importa el tercero aplanado y lo dice.
+     */
+    private async linkSubtasks(
+        tenantId: number,
+        listId: number,
+        staged: StagedRow[],
+        errors: ImportCsvRunResult['errors'],
+    ): Promise<number> {
+        const wanted = staged.filter((s) => s.parentRef !== '' && s.newId !== undefined);
+        if (wanted.length === 0) return 0;
+
+        // Índice de los `__id` del archivo → id real recién creado.
+        const byFileId = new Map<string, number>();
+        for (const s of staged) {
+            if (s.fileId !== '' && s.newId !== undefined) byFileId.set(s.fileId, s.newId);
+        }
+        // Un id real sólo vale si es una raíz viva de ESTA lista (el chequeo
+        // corre en el scope del tenant — un id ajeno simplemente no aparece).
+        const externalIds = [
+            ...new Set(
+                wanted
+                    .filter((s) => !byFileId.has(s.parentRef))
+                    .map((s) => Number(s.parentRef))
+                    .filter((n) => Number.isInteger(n) && n > 0),
+            ),
+        ];
+        const validExternal = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.recordsRepo.rootIdsIn(tx, tenantId, listId, externalIds),
+        );
+
+        // Quién termina siendo hijo: un padre que a su vez es hijo daría un
+        // tercer nivel, que el modelo no admite.
+        const willBeChild = new Set<number>();
+        for (const s of wanted) {
+            const target = byFileId.get(s.parentRef);
+            if (target !== undefined && target !== s.newId) willBeChild.add(s.newId!);
+        }
+
+        const byParent = new Map<number, number[]>();
+        for (const s of wanted) {
+            const target = byFileId.get(s.parentRef)
+                ?? (validExternal.has(Number(s.parentRef)) ? Number(s.parentRef) : undefined);
+            if (target === undefined) {
+                errors.push({
+                    row: s.row,
+                    message: `No se encontró el registro padre "${s.parentRef}" — la fila se importó al primer nivel.`,
+                });
+                continue;
+            }
+            if (target === s.newId) continue;
+            if (willBeChild.has(target)) {
+                errors.push({
+                    row: s.row,
+                    message: `"${s.parentRef}" ya es una subtarea: no hay subtareas dentro de subtareas — la fila se importó al primer nivel.`,
+                });
+                continue;
+            }
+            const bucket = byParent.get(target);
+            if (bucket) bucket.push(s.newId!);
+            else byParent.set(target, [s.newId!]);
+        }
+
+        let linked = 0;
+        for (const [parentId, ids] of byParent) {
+            await this.tenantDb.withTenant(tenantId, (tx) =>
+                this.recordsRepo.setParent(tx, tenantId, listId, ids, parentId),
+            );
+            linked += ids.length;
+        }
+        return linked;
     }
 
     /** Campos importables: los que viven en `records.data` (sin relation/computed). */
@@ -398,6 +510,19 @@ export class ImportService {
 
         return result;
     }
+}
+
+/** Una fila validada, lista para insertar, con sus referencias de jerarquía. */
+interface StagedRow {
+    data: Record<string, unknown>;
+    /** Nº de fila humano (para los errores). */
+    row: number;
+    /** Valor de la columna `__id` (identificador DENTRO del archivo). */
+    fileId: string;
+    /** Valor de la columna `__parent`: un `__id` del archivo o un id real. */
+    parentRef: string;
+    /** Id real, disponible después del insert. */
+    newId?: number;
 }
 
 // --- Helpers puros del import CSV -------------------------------------------
@@ -533,6 +658,17 @@ function suggestMapping(headers: string[], listFields: Field[]): Record<string, 
     const suggestions: Record<string, string> = {};
     const usedSlugs = new Set<string>();
     headers.forEach((header, idx) => {
+        // Un archivo que salió del propio export trae las columnas de
+        // jerarquía con estas cabeceras: se re-mapean solas.
+        const norm = normalizeKey(header);
+        if (norm === normalizeKey(EXPORT_ID_HEADER)) {
+            suggestions[String(idx)] = IMPORT_ID_COLUMN;
+            return;
+        }
+        if (norm === normalizeKey(EXPORT_PARENT_HEADER)) {
+            suggestions[String(idx)] = IMPORT_PARENT_COLUMN;
+            return;
+        }
         let bestSlug: string | null = null;
         let bestScore = 0;
         const normHeader = normalizeKey(header);

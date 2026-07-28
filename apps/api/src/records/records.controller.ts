@@ -135,6 +135,11 @@ export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         sort_dir: raw.sort_dir,
         sort: raw.sort,
         search: raw.search,
+        // Subtareas (v0.1.132). OJO: este objeto es un WHITELIST — lo que no
+        // se copia acá se descarta en silencio (fue exactamente el bug de
+        // v0.1.68 con `filter_tree`).
+        parent: raw.parent,
+        include_subtasks: raw.include_subtasks,
     };
     const rawTree = typeof raw.filter_tree === 'string' ? raw.filter_tree : raw.filter;
     if (typeof rawTree === 'string' && rawTree.trim() !== '') {
