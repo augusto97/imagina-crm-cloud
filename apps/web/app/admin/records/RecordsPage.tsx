@@ -10,6 +10,7 @@ import {
     Plus,
     Search,
     Settings,
+    Share2,
     SlidersHorizontal,
     Zap,
 } from 'lucide-react';
@@ -40,6 +41,7 @@ import { ExportButton } from './ExportButton';
 import { FieldCreateDialog } from './FieldCreateDialog';
 import { FiltersPanel } from './FiltersPanel';
 import { ImportDialog } from './ImportDialog';
+import { ShareDialog } from './ShareDialog';
 import { Pagination } from './Pagination';
 import { RecordCreateDialog } from './RecordCreateDialog';
 import { RecordDetailDrawer } from './RecordDetailDrawer';
@@ -229,6 +231,8 @@ export function RecordsPage(): JSX.Element {
     const [exportOpen, setExportOpen] = useState(false);
     // Panel "Personalizar vista" (engranaje de la toolbar) — v0.1.127.
     const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
+    // Diálogo "Compartir" (v0.1.128) — enlace del equipo + página pública.
+    const [shareOpen, setShareOpen] = useState(false);
 
     // Capability gating (Fase 7 — 1.E). El backend ya rechaza acciones
     // sin cap; aquí solo ocultamos los botones para evitar UX de
@@ -490,6 +494,20 @@ const applyView = (view: SavedViewEntity | null): void => {
                     </h1>
                 </nav>
 
+                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5">
+                    {/* "Compartir" lo ve cualquiera que pueda abrir la lista: el
+                        enlace del equipo sirve a todos y publicar hacia afuera
+                        se gatea DENTRO del diálogo. */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShareOpen(true)}
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
+                    >
+                        <Share2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Compartir')}
+                    </Button>
+
                 {(canManageAutomations || canManageList || canImportRecords || canExportRecords) && (
                     <>
                         {/* Desktop: iconos + label extra discretos (h-7, 12px). */}
@@ -575,6 +593,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         </div>
                     </>
                 )}
+                </div>
             </header>
 
             {/*
@@ -600,6 +619,14 @@ const applyView = (view: SavedViewEntity | null): void => {
                 listSlug={list.data.slug}
                 open={importOpen}
                 onOpenChange={setImportOpen}
+            />
+
+            <ShareDialog
+                open={shareOpen}
+                onOpenChange={setShareOpen}
+                listId={list.data.id}
+                listName={list.data.name}
+                canPublish={canManageList}
             />
 
             {fields.data && fields.data.length > 0 && (

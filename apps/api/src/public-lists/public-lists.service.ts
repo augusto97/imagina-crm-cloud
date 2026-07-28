@@ -13,12 +13,23 @@ import {
     type PublicRecordsQuery,
     type UpdatePublicListInput,
 } from '@imagina-base/shared';
-import { and, asc, desc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { fields, lists, publicLists, records, tenants } from '../db/schema';
+import { fields, lists, publicLists, records, savedViews, tenants } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
+import { compileFilterTree, type FilterableField } from '../records/query-builder';
 import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+
+/**
+ * ¿El enlace ya venció? La fecha es un día calendario (`YYYY-MM-DD`) y
+ * vale hasta el final de ese día en UTC — que caduque "el 31" y deje de
+ * andar a las 00:00 del 31 sería una sorpresa desagradable.
+ */
+function isExpired(expiresAt: string, now: Date = new Date()): boolean {
+    const end = Date.parse(`${expiresAt}T23:59:59.999Z`);
+    return Number.isFinite(end) && now.getTime() > end;
+}
 
 /** Tipos de campo cuyo texto se busca en la búsqueda pública. */
 const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url', 'select']);
@@ -68,7 +79,16 @@ export class PublicListsService {
         });
 
         // Sincronizar el mapeo público (tabla sin RLS, en la conexión base).
+        //
+        // OJO con el UNIQUE (tenant_id, list_id): si la fila ya existía con
+        // OTRO token, un `onConflictDoNothing` no hacía nada y el mapeo se
+        // quedaba con el token viejo — la app mostraba un enlace que devolvía
+        // 404 para siempre. El token de `settings` es la verdad: se borra
+        // cualquier mapeo de esta lista que no sea ese y se inserta el bueno.
         if (next.enabled && next.token) {
+            await this.db
+                .delete(publicLists)
+                .where(and(eq(publicLists.listId, list.id), ne(publicLists.token, next.token)));
             await this.db
                 .insert(publicLists)
                 .values({ token: next.token, tenantId, listId: list.id })
@@ -103,6 +123,11 @@ export class PublicListsService {
         if (!cfg.enabled) {
             throw new NotFoundException({ code: 'public_list_disabled', data: { status: 404 } });
         }
+        // Caducidad: vencido responde 404 igual que un token desconocido —
+        // a quien tenga el link viejo no se le confirma que existió.
+        if (cfg.expires_at !== null && isExpired(cfg.expires_at)) {
+            throw new NotFoundException({ code: 'public_list_expired', data: { status: 404 } });
+        }
         return { tenantId, listId, cfg };
     }
 
@@ -114,6 +139,40 @@ export class PublicListsService {
             return l?.name ?? 'Lista';
         });
         return { name, allowed_domains: cfg.allowed_domains };
+    }
+
+    /**
+     * Condición extra cuando se publica una VISTA guardada: sus filtros
+     * acotan lo que ve el visitante. Se compila con el mismo query builder
+     * whitelisteado que usa la app (regla de oro nº 4) — nunca se interpola
+     * nada del config crudo. Una vista de otra lista, borrada o con un
+     * filtro ilegible simplemente no agrega condición.
+     */
+    private async viewFilterSql(
+        tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
+        listId: number,
+        viewId: number | null,
+        fieldRows: Array<{ id: number; type: string }>,
+    ): Promise<{ sql: SQL | undefined; name: string | null }> {
+        if (viewId === null) return { sql: undefined, name: null };
+        const [view] = await tx
+            .select({ name: savedViews.name, config: savedViews.config })
+            .from(savedViews)
+            .where(and(eq(savedViews.id, viewId), eq(savedViews.listId, listId)))
+            .limit(1);
+        if (!view) return { sql: undefined, name: null };
+        const tree = (view.config as Record<string, unknown>).filter_tree;
+        if (tree === undefined || tree === null) return { sql: undefined, name: view.name };
+        const byId = new Map<number, FilterableField>(
+            fieldRows.map((f) => [f.id, { id: f.id, type: f.type as FilterableField['type'] }] as const),
+        );
+        try {
+            return { sql: compileFilterTree(byId, tree as never, new Date()), name: view.name };
+        } catch {
+            // Un filtro que ya no compila (campo borrado, operador viejo) no
+            // debe tumbar la página pública.
+            return { sql: undefined, name: view.name };
+        }
     }
 
     async getMeta(token: string): Promise<PublicListMeta> {
@@ -145,10 +204,13 @@ export class PublicListsService {
             );
             const b = parsed.success ? parsed.data : brandingSchema.parse({});
 
+            const publishedView = await this.viewFilterSql(tx, listId, cfg.view_id, fieldRows);
+
             return {
                 name: l?.name ?? 'Lista',
                 description,
                 fields: visibleFields,
+                view_name: publishedView.name,
                 sort_allowed: cfg.sort_allowed_slugs.filter((s) => visible.has(s)),
                 default_sort: cfg.default_sort,
                 per_page: cfg.per_page,
@@ -176,8 +238,11 @@ export class PublicListsService {
             const visibleFields = fieldRows.filter((f) => visible.has(f.slug));
             const slugToKey = new Map(visibleFields.map((f) => [f.slug, jsonbKeyForField(f.id)]));
 
-            // WHERE: no borrados + búsqueda (si habilitada) sobre campos de texto.
+            // WHERE: no borrados + filtros de la vista publicada + búsqueda
+            // (si está habilitada) sobre los campos de texto visibles.
             const conds: SQL[] = [eq(records.listId, listId), isNull(records.deletedAt)];
+            const viewCond = (await this.viewFilterSql(tx, listId, cfg.view_id, fieldRows)).sql;
+            if (viewCond) conds.push(viewCond);
             if (cfg.search_enabled && query.search && query.search.trim() !== '') {
                 const term = `%${query.search.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
                 const searchable = visibleFields.filter((f) => SEARCHABLE_TYPES.has(f.type));

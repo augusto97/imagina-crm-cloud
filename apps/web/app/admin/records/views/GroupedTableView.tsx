@@ -834,7 +834,7 @@ function GroupBucketSection({
                                         <tr
                                             key={record.id}
                                             className={cn(
-                                                'imcrm-group/row imcrm-border-t imcrm-border-border/50',
+                                                'imcrm-group/row imcrm-border-t imcrm-border-border',
                                                 isSelected
                                                     ? 'imcrm-bg-primary/5'
                                                     : 'hover:imcrm-bg-muted/40',
@@ -897,7 +897,7 @@ function GroupBucketSection({
                                 fila). Igual que TableView flat. */}
                             {(onAddRecord || onFooterAggregatesChange) && (
                                 <tfoot className="imcrm-group/footer">
-                                    <tr className="imcrm-border-t imcrm-border-border/50">
+                                    <tr className="imcrm-border-t imcrm-border-border">
                                         <td className="imcrm-w-10" />
                                         {columns.map((c, ci) => {
                                             const w = columnSizing[c.id] ?? defaultSizeForColumn(c);

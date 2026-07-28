@@ -616,7 +616,7 @@ export function TableView({
                                         // perceptible en hover (200ms de wait con
                                         // duration-100 antes de la primera frame).
                                         // Hover bg debe ser instantáneo.
-                                        'imcrm-group/row imcrm-border-t imcrm-border-border/50',
+                                        'imcrm-group/row imcrm-border-t imcrm-border-border',
                                         isSelected
                                             ? 'imcrm-bg-primary/5'
                                             : 'hover:imcrm-bg-muted/40',
@@ -694,7 +694,7 @@ export function TableView({
                     — sin separador visual entre contenido y footer. */}
                 {(onAddRecord || onFooterAggregatesChange) && (
                     <tfoot className="imcrm-group/footer">
-                        <tr className="imcrm-border-t imcrm-border-border/50">
+                        <tr className="imcrm-border-t imcrm-border-border">
                             <td className="imcrm-w-10" />
                             {table.getVisibleLeafColumns().map((col) => {
                                 const meta = col.columnDef.meta as
