@@ -1929,6 +1929,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         esquinas de 8, publicar una vista → 11 filas filtradas en la página
         pública, vencer → 404).
 
+  - [x] **Menú contextual del registro (v0.1.129, captura del usuario)**:
+        click DERECHO sobre una fila (tabla plana y agrupada) abre el menú del
+        registro — Abrir, Copiar enlace, Copiar ID, Duplicar, Agregar una
+        columna y Eliminar (con confirmación in-app). Sólo entraron las
+        acciones que existen de verdad: el menú de ClickUp trae seguir la
+        tarea, recordatorios, combinar, convertir y tipo de tarea, que acá no
+        tienen equivalente, y ponerlas apagadas sería peor que no ponerlas.
+        Duplicar copia los campos ESCRIBIBLES: los `computed` los calcula el
+        backend en cada lectura y los `file`/`relation` apuntan a otras
+        entidades — copiarlos a ciegas crearía vínculos compartidos que nadie
+        pidió. El menú se ancla a un trigger de 0×0 en las coordenadas del
+        click para reusar el posicionamiento, el teclado y el cierre de Radix.
+        Gates por capability (duplicar exige crear, eliminar exige borrar).
+        E2E navegador 7/7 (menú, ID al portapapeles, duplicar 72→73,
+        confirmación, borrar 73→72).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

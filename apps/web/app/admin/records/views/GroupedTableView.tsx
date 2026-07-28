@@ -6,6 +6,9 @@ import { useAggregates, type AggregatesResponse } from '@/hooks/useAggregates';
 import { useRecords, useRecordsGroupedBundle } from '@/hooks/useRecords';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 
+import { CAP, useCan, useCanAny } from '@/lib/permissions';
+
+import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
@@ -542,6 +545,10 @@ function GroupBucketSection({
     // El bucket es un componente aparte: el flag viaja por contexto
     // (lo provee GroupedTableView), no por prop.
     const wrapText = useWrapText();
+    // Menú contextual de fila (click derecho) — v0.1.129.
+    const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS);
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
 
     // Filter tree del bucket: árbol base + condición `groupByField op
     // value`. Solo se usa para fallback (page > 1 o cuando el bundle
@@ -833,6 +840,10 @@ function GroupBucketSection({
                                     return (
                                         <tr
                                             key={record.id}
+                                            onContextMenu={(e) => {
+                                                e.preventDefault();
+                                                setRowMenu({ record, x: e.clientX, y: e.clientY });
+                                            }}
                                             className={cn(
                                                 'imcrm-group/row imcrm-border-t imcrm-border-border',
                                                 isSelected
@@ -991,6 +1002,21 @@ function GroupBucketSection({
                     )}
                 </div>
             )}
+
+            <RecordRowMenu
+                target={rowMenu}
+                onClose={() => setRowMenu(null)}
+                listId={listId}
+                listSlug={listSlug ?? ''}
+                fields={columns.map((c) => c.field).filter((f): f is FieldEntity => f !== null)}
+                onOpen={(r) => {
+                    setRowMenu(null);
+                    onRowClick?.(r);
+                }}
+                onAddColumn={onAddColumn}
+                canCreate={canCreateRecords}
+                canDelete={canDeleteRecords}
+            />
         </section>
     );
 }
