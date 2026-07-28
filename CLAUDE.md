@@ -1873,6 +1873,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (pestañas, deep link, drag&drop persistido, niveles traducidos al
         ajuste fino, un solo scroll, modo oscuro).
 
+  - [x] **Densidad del chrome + panel "Personalizar vista" (v0.1.127, dos
+        pedidos del usuario)**: (a) **más compacto** — la barra superior de
+        la app y la cabecera del panel lateral bajan de 48 a 40 px (van en la
+        misma línea visual: se mueven juntas o se desalinean), el encabezado
+        de la lista pasa de 36 a 28 px (la altura real de sus botones ghost),
+        las pestañas de vistas de 36 a 32 px y el ritmo vertical de la página
+        de registros de 0.5 a 0.3 rem. Se hizo cambiando la clase del
+        COMPONENTE, no redefiniendo las utilidades de Tailwind (`.imcrm-h-12`,
+        `.imcrm-gap-2` las usan decenas de pantallas — redefinirlas habría
+        apretado toda la app, que es justo lo que el usuario pidió evitar);
+        el margen negativo que proponía para pegar la cabecera se reemplazó
+        por bajar su `min-height`, que no puede recortar contenido.
+        (b) **Un botón con todos los ajustes de la vista**, como ClickUp:
+        `ViewSettingsSheet` ("Personalizar") reúne en un panel lateral lo que
+        estaba repartido entre tres botones de la toolbar y el breadcrumb —
+        Campos (con su "N en pantalla" y el diálogo de orden/visibilidad),
+        Filtro (el mismo editor, embebido), Agrupar por, y las acciones de la
+        vista (por defecto, copiar enlace, eliminar) y de la lista (exportar,
+        importar, automatizaciones, configurar). Filtrar se queda en la
+        toolbar: es lo único de ahí que se usa a diario. (c) **"Ajustar
+        texto"** de verdad (`wrap_text` en el estado común de las vistas —
+        shared, mapeo y ambas tablas por contexto): las celdas dejan de
+        recortar con elipsis y muestran el contenido completo; se guarda en
+        la vista como cualquier otra preferencia. 2 tests nuevos (79 en el
+        front) + E2E navegador 12/12 del panel y 12/12 de las medidas
+        (barra 40 px alineada con el panel, pestañas 32, gap 4.8 px, sin
+        desborde, resto de las pantallas intactas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

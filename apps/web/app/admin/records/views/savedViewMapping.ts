@@ -60,6 +60,9 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.groupByFieldId !== null) {
         config.group_by_field_id = state.groupByFieldId;
     }
+    if (state.wrapText) {
+        config.wrap_text = true;
+    }
     return config;
 }
 
@@ -112,6 +115,7 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
         collapsedGroups: config.collapsed_groups ?? [],
         footerAggregates: config.footer_aggregates ?? {},
         groupByFieldId: config.group_by_field_id ?? null,
+        wrapText: config.wrap_text === true,
     };
 }
 

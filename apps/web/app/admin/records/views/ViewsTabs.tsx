@@ -180,7 +180,7 @@ export function ViewsTabs({
                 type="button"
                 onClick={onAskCreateView}
                 title={__('Guardar filtros, ordenamiento y columnas como una vista nombrada')}
-                className="imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
+                className="imcrm-flex imcrm-h-8 imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-whitespace-nowrap imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-text-foreground"
                 aria-label={__('Crear vista nueva')}
             >
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -268,7 +268,7 @@ function ViewTab({ label, active, onClick, isDefault, typeIcon, rightAction }: V
                 // medium, subrayado 2px que pisa (-mb-px) el border-b
                 // del contenedor. Sin wrap: la tab bar scrollea
                 // horizontal en mobile.
-                'imcrm--mb-px imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
+                'imcrm--mb-px imcrm-flex imcrm-h-8 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
                 active
                     ? 'imcrm-border-primary imcrm-text-foreground'
                     : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground',

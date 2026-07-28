@@ -250,7 +250,7 @@ export function Sidebar({
                     collapsed && 'lg:imcrm-hidden',
                 )}
             >
-                <div className="imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-border-b imcrm-border-border imcrm-px-4">
+                <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-border-b imcrm-border-border imcrm-px-4">
                     <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-text-foreground">
                         {panelTitle}
                     </span>

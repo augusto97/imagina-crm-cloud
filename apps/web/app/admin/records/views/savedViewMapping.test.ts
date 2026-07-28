@@ -17,6 +17,7 @@ const baseState: RecordsState = {
     collapsedGroups: [],
     footerAggregates: {},
     groupByFieldId: null,
+    wrapText: false,
 };
 
 /**
@@ -107,5 +108,20 @@ describe('hasChangesVsView', () => {
         const legacy: SavedViewConfig = { filters: [{ field_id: 7, op: 'eq', value: 'a' }] };
         const state = viewConfigToState(legacy, 50);
         expect(hasChangesVsView(state, legacy)).toBe(false);
+    });
+});
+
+describe('ajustar texto', () => {
+    it('viaja a la vista guardada y vuelve', () => {
+        const config = stateToViewConfig({ ...baseState, wrapText: true });
+        expect(config.wrap_text).toBe(true);
+        expect(viewConfigToState(config, 50).wrapText).toBe(true);
+    });
+
+    it('apagado no ensucia la config (es el default)', () => {
+        expect(stateToViewConfig(baseState).wrap_text).toBeUndefined();
+        expect(viewConfigToState({}, 50).wrapText).toBe(false);
+        // Y encenderlo cuenta como cambio pendiente de guardar.
+        expect(hasChangesVsView({ ...baseState, wrapText: true }, {})).toBe(true);
     });
 });

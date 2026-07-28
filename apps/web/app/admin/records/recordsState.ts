@@ -68,6 +68,12 @@ export interface RecordsState {
      * la cell del footer queda con "Calcular ▾" como CTA.
      */
     footerAggregates: Record<string, string>;
+    /**
+     * "Ajustar texto": las celdas dejan de recortar con elipsis y la
+     * fila crece a lo que ocupe el contenido. Se persiste en la vista
+     * guardada como cualquier otra preferencia de presentación.
+     */
+    wrapText: boolean;
 }
 
 /**
@@ -95,6 +101,7 @@ export const INITIAL_STATE: RecordsState = {
     groupByFieldId: null,
     collapsedGroups: [],
     footerAggregates: {},
+    wrapText: false,
 };
 
 /**
