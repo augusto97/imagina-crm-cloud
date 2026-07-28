@@ -13,6 +13,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
 import { renderCellValue } from './renderCellValue';
+import { useWrapText } from './wrapText';
 
 interface EditableCellProps {
     field: FieldEntity;
@@ -57,6 +58,7 @@ function EditableCellInner({
     canEdit: canEditByUser = true,
 }: EditableCellProps): JSX.Element {
     const update = useUpdateRecord(listId);
+    const wrapText = useWrapText();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<unknown>(value);
     const [error, setError] = useState<string | null>(null);
@@ -160,7 +162,8 @@ function EditableCellInner({
         // ellipsis) recorta el contenido cuando supera el ancho de la
         // columna — sin esto, long_text/multi_select largos se metían
         // visualmente sobre las celdas vecinas. El user usa el drawer
-        // de detalle para ver/editar el contenido completo.
+        // de detalle para ver/editar el contenido completo, o activa
+        // "Ajustar texto" en el panel de la vista (`wrapText`).
         return (
             <button
                 type="button"
@@ -170,7 +173,8 @@ function EditableCellInner({
                 onClick={startEdit}
                 disabled={!canEdit}
                 className={cn(
-                    'imcrm-block imcrm-w-full imcrm-truncate imcrm-text-left imcrm-min-h-[1.5rem]',
+                    'imcrm-block imcrm-w-full imcrm-text-left imcrm-min-h-[1.5rem]',
+                    wrapText ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
                     canEdit && 'hover:imcrm-bg-accent/40 imcrm-rounded imcrm--mx-1 imcrm-px-1',
                     !canEdit && 'imcrm-cursor-default',
                 )}
@@ -413,6 +417,7 @@ const DateCellTrigger = forwardRef<
             {...rest}
             className={cn(
                 'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-1 imcrm-truncate imcrm-text-left imcrm-min-h-[1.5rem] imcrm-rounded imcrm--mx-1 imcrm-px-1 hover:imcrm-bg-accent/40',
+                /* las fechas no se benefician del wrap: nunca desbordan */
                 rest.className,
             )}
             title={hasRecurrence

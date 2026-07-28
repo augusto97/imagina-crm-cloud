@@ -34,6 +34,9 @@ const viewStateCommon = {
     column_order: z.array(z.coerce.string()).default([]),
     collapsed_groups: z.array(z.string()).default([]),
     footer_aggregates: z.record(z.string(), z.string()).default({}),
+    /** Filas de alto variable: el texto largo se muestra completo en vez
+     * de recortarse con elipsis ("Ajustar texto" de ClickUp). */
+    wrap_text: z.boolean().optional(),
 };
 
 export const tableViewConfigSchema = z.object({

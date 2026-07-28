@@ -10,6 +10,7 @@ import {
     Plus,
     Search,
     Settings,
+    SlidersHorizontal,
     Zap,
 } from 'lucide-react';
 
@@ -74,10 +75,9 @@ import { CardsView } from './views/CardsView';
 import { KanbanView } from './views/KanbanView';
 import { GroupedTableView } from './views/GroupedTableView';
 
-import { ColumnsMenu } from './views/ColumnsMenu';
-import { GroupSelector } from './views/GroupSelector';
 import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
+import { ViewSettingsSheet } from './views/ViewSettingsSheet';
 import { ViewsTabs } from './views/ViewsTabs';
 import {
     hasChangesVsView,
@@ -227,6 +227,8 @@ export function RecordsPage(): JSX.Element {
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
+    // Panel "Personalizar vista" (engranaje de la toolbar) — v0.1.127.
+    const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
 
     // Capability gating (Fase 7 — 1.E). El backend ya rechaza acciones
     // sin cap; aquí solo ocultamos los botones para evitar UX de
@@ -460,7 +462,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         // tabla nunca scrollea verticalmente por su cuenta (pedido
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
             {/*
               Fila 1 — breadcrumb (patrón ClickUp): fila DELGADA (~36px)
               con "Listas / {nombre}" a 13-14px. A la derecha, las
@@ -469,7 +471,7 @@ const applyView = (view: SavedViewEntity | null): void => {
               primaria "+ Nuevo registro" vive en la toolbar (fila 3),
               junto a la búsqueda.
             */}
-            <header className="imcrm-flex imcrm-min-h-[36px] imcrm-items-center imcrm-justify-between imcrm-gap-3">
+            <header className="imcrm-flex imcrm-min-h-7 imcrm-items-center imcrm-justify-between imcrm-gap-3">
                 <nav
                     aria-label={__('Ruta de navegación')}
                     className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[13px]"
@@ -518,32 +520,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     </Link>
                                 </Button>
                             )}
-                            {canImportRecords && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setImportOpen(true)}
-                                    // Sin gate por campos: el ImportDialog crea los
-                                    // campos on-the-fly desde el CSV — importar a una
-                                    // lista recién creada (vacía) es el caso típico.
-                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
-                                >
-                                    <FileUp className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Importar')}
-                                </Button>
-                            )}
-                            {canExportRecords && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setExportOpen(true)}
-                                    disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs imcrm-text-muted-foreground"
-                                >
-                                    <Download className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Exportar')}
-                                </Button>
-                            )}
+                            {/* Importar y Exportar viven en el panel del
+                                engranaje desde v0.1.127 — el breadcrumb queda
+                                con lo que se abre a diario. */}
                         </div>
 
                         {/* Mobile: colapsa a "···". */}
@@ -623,6 +602,39 @@ const applyView = (view: SavedViewEntity | null): void => {
                 onOpenChange={setImportOpen}
             />
 
+            {fields.data && fields.data.length > 0 && (
+                <ViewSettingsSheet
+                    open={viewSettingsOpen}
+                    onOpenChange={setViewSettingsOpen}
+                    listId={list.data.id}
+                    listSlug={list.data.slug}
+                    fields={fields.data}
+                    activeView={activeView}
+                    onSelectView={applyView}
+                    filterTree={state.filterTree}
+                    onFilterTreeChange={setFilterTree}
+                    columnVisibility={state.columnVisibility}
+                    onColumnVisibilityChange={(next) =>
+                        setState((s) => ({ ...s, columnVisibility: next }))
+                    }
+                    columnOrder={state.columnOrder}
+                    onColumnOrderChange={(next) => setState((s) => ({ ...s, columnOrder: next }))}
+                    groupByFieldId={state.groupByFieldId}
+                    onGroupByFieldIdChange={(next) =>
+                        setState((s) => ({ ...s, groupByFieldId: next, page: 1 }))
+                    }
+                    canGroup={!isAlternativeView}
+                    wrapText={state.wrapText}
+                    onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
+                    canManageList={canManageList}
+                    canManageAutomations={canManageAutomations}
+                    canImport={canImportRecords}
+                    canExport={canExportRecords}
+                    onImport={() => setImportOpen(true)}
+                    onExport={() => setExportOpen(true)}
+                />
+            )}
+
             {fields.data && fields.data.length === 0 && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-8 imcrm-text-center">
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
@@ -676,30 +688,24 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 tree={state.filterTree}
                                 onChange={setFilterTree}
                             />
-                            <ColumnsMenu
-                                fields={fields.data}
-                                visibility={state.columnVisibility}
-                                onChange={(next) =>
-                                    setState((s) => ({ ...s, columnVisibility: next }))
-                                }
-                                columnOrder={state.columnOrder}
-                                onColumnOrderChange={(next) =>
-                                    setState((s) => ({ ...s, columnOrder: next }))
-                                }
-                            />
-                            {!isAlternativeView && (
-                                <GroupSelector
-                                    fields={fields.data}
-                                    value={state.groupByFieldId}
-                                    onChange={(next) =>
-                                        setState((s) => ({
-                                            ...s,
-                                            groupByFieldId: next,
-                                            page: 1,
-                                        }))
-                                    }
-                                />
-                            )}
+                            {/*
+                              Engranaje "Personalizar vista" (v0.1.127,
+                              patrón ClickUp): columnas, agrupación, ajustar
+                              texto y las acciones de la vista y de la lista
+                              viven en UN panel con su valor actual a la
+                              vista. Filtrar se queda en la toolbar: es lo
+                              único de acá que se usa todos los días.
+                            */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setViewSettingsOpen(true)}
+                                className="imcrm-gap-1.5"
+                                title={__('Personalizar vista')}
+                            >
+                                <SlidersHorizontal className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Personalizar')}
+                            </Button>
                         </div>
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                             {records.isFetching && !records.isLoading && (
@@ -820,6 +826,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateDefaults(prefillForGroup(groupField, bucketValue));
                                         setCreateOpen(true);
                                     }}
+                                    wrapText={state.wrapText}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))
@@ -855,6 +862,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     }}
                                     onAddColumn={openFieldCreate}
                                     onEditField={canManageList ? openFieldEdit : undefined}
+                                    wrapText={state.wrapText}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))

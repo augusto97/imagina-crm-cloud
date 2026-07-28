@@ -23,6 +23,9 @@ export interface SavedViewConfig {
      * el mismo estado.
      */
     collapsed_groups?: string[];
+    /** Si `true`, las celdas muestran el texto completo (varias líneas)
+     * en vez de recortarlo. "Ajustar texto" del panel de la vista. */
+    wrap_text?: boolean;
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la

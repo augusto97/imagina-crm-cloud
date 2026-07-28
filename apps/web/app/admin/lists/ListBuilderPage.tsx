@@ -88,9 +88,9 @@ export function ListBuilderPage(): JSX.Element {
     const data = list.data;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
             {/* Fila 1 — breadcrumb compacto, igual que la página de registros. */}
-            <header className="imcrm-flex imcrm-min-h-[36px] imcrm-items-center imcrm-justify-between imcrm-gap-3">
+            <header className="imcrm-flex imcrm-min-h-7 imcrm-items-center imcrm-justify-between imcrm-gap-3">
                 <nav
                     aria-label={__('Ruta de navegación')}
                     className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[13px]"
@@ -150,7 +150,7 @@ export function ListBuilderPage(): JSX.Element {
                             aria-selected={isActive}
                             onClick={() => select(section.id)}
                             className={cn(
-                                'imcrm--mb-px imcrm-flex imcrm-h-9 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
+                                'imcrm--mb-px imcrm-flex imcrm-h-8 imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-2.5 imcrm-text-[13px] imcrm-font-medium imcrm-transition-colors',
                                 isActive
                                     ? 'imcrm-border-primary imcrm-text-foreground'
                                     : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground',
@@ -167,7 +167,7 @@ export function ListBuilderPage(): JSX.Element {
 
             {/* Fila 3 — la sección activa. Ancho contenido: son formularios,
                 no una tabla; a 1400px de ancho serían ilegibles. */}
-            <div className="imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-4">
+            <div className="imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-4 imcrm-pt-2">
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                     <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
                         {activeSection.title}

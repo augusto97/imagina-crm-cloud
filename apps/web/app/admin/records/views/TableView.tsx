@@ -13,6 +13,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } 
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
+import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
@@ -77,6 +78,9 @@ interface TableViewProps {
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
     /** Total de registros (para porcentajes en el footer). */
     totalCount?: number;
+    /** "Ajustar texto": las celdas muestran el contenido completo en
+     * varias líneas en vez de recortarlo con elipsis. */
+    wrapText?: boolean;
 }
 
 /**
@@ -112,6 +116,7 @@ export function TableView({
     footerAggregates,
     onFooterAggregatesChange,
     totalCount,
+    wrapText = false,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -359,7 +364,7 @@ export function TableView({
 
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
-       <>
+       <WrapTextContext.Provider value={wrapText}>
         <div
             // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
             // vertical es el de la PÁGINA (main del shell) — la tabla
@@ -652,7 +657,8 @@ export function TableView({
                                                     // con elipsis va dentro de `EditableCell` para que
                                                     // afecte solo al modo lectura — el editor inline
                                                     // necesita escaparse del clip cuando el user clickea.
-                                                    'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
+                                                    'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5',
+                                                    wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
                                                     cellSticky && (isSelected
                                                         ? 'imcrm-bg-primary/5'
                                                         : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
@@ -788,7 +794,7 @@ export function TableView({
             ClickUp) — la nativa del wrapper queda al fondo de la tabla,
             invisible en listas largas. */}
         <StickyHScrollbar targetRef={tableContainerRef} />
-       </>
+       </WrapTextContext.Provider>
       </RecurrencesBatchProvider>
     );
 }

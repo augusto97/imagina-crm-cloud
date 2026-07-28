@@ -5,6 +5,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates, type AggregatesResponse } from '@/hooks/useAggregates';
 import { useRecords, useRecordsGroupedBundle } from '@/hooks/useRecords';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
+
+import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -86,6 +88,8 @@ interface GroupedTableViewProps {
      */
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
+    /** "Ajustar texto" — ver `WrapTextContext`. */
+    wrapText?: boolean;
 }
 
 /**
@@ -128,6 +132,7 @@ export function GroupedTableView({
     onAddRecord,
     footerAggregates,
     onFooterAggregatesChange,
+    wrapText = false,
 }: GroupedTableViewProps): JSX.Element {
     const filterTreeParam = useMemo(
         () => (filterTree.children.length === 0 ? undefined : filterTree),
@@ -301,6 +306,7 @@ export function GroupedTableView({
 
     return (
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
+        <WrapTextContext.Provider value={wrapText}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {/* Scroll horizontal único compartido entre todos los
                 buckets — sin esto cada bucket tenía su propio
@@ -378,6 +384,7 @@ export function GroupedTableView({
                 )}
             </div>
         </div>
+        </WrapTextContext.Provider>
         </RecurrencesBatchProvider>
     );
 }
@@ -532,6 +539,9 @@ function GroupBucketSection({
 }: GroupBucketSectionProps): JSX.Element {
     const [page, setPage] = useState(1);
     const perPage = 50;
+    // El bucket es un componente aparte: el flag viaja por contexto
+    // (lo provee GroupedTableView), no por prop.
+    const wrapText = useWrapText();
 
     // Filter tree del bucket: árbol base + condición `groupByField op
     // value`. Solo se usa para fallback (page > 1 o cuando el bundle
@@ -857,7 +867,8 @@ function GroupBucketSection({
                                                         key={c.id}
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                         className={cn(
-                                                            'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5 imcrm-align-middle',
+                                                            'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5',
+                                                            wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
                                                             sticky && (isSelected
                                                                 ? 'imcrm-bg-primary/5'
                                                                 : 'imcrm-bg-background group-hover/row:imcrm-bg-muted/40'),
