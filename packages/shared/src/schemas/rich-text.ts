@@ -46,6 +46,12 @@ const NODE_ATTRS: Record<string, readonly string[]> = {
     horizontalRule: [],
     table: [],
     tableRow: [],
+    // Bloques "vivos" (v0.1.134): apuntan a entidades de la app por ID, no a
+    // contenido pegado. El render los resuelve; acá sólo se guarda el vínculo.
+    mentionUser: ['id', 'label'],
+    mentionRecord: ['id', 'listSlug', 'label'],
+    imageBlock: ['fileId', 'src', 'alt', 'width'],
+    fileBlock: ['fileId', 'name', 'size'],
     tableHeader: ['colspan', 'rowspan', 'colwidth'],
     tableCell: ['colspan', 'rowspan', 'colwidth'],
 };
@@ -68,6 +74,9 @@ export const RICH_DOC_MAX_DEPTH = 12;
 export const RICH_DOC_MAX_TEXT = 20_000;
 /** Tamaño serializado máximo (≈ el "peso" de la descripción en la fila). */
 export const RICH_DOC_MAX_BYTES = 512 * 1024;
+
+/** Nodos que sin atributos válidos no tienen sentido (se descartan). */
+const ATOMIC_WITH_ATTRS = new Set(['mentionUser', 'mentionRecord', 'imageBlock', 'fileBlock']);
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -145,6 +154,37 @@ function cleanAttrs(
                 }
                 break;
             }
+            case 'id':
+            case 'fileId': {
+                const n = Number(value);
+                if (Number.isInteger(n) && n > 0 && n < Number.MAX_SAFE_INTEGER) out[key] = n;
+                break;
+            }
+            case 'width': {
+                const n = Number(value);
+                if (Number.isFinite(n) && n >= 40 && n <= 2000) out[key] = Math.round(n);
+                break;
+            }
+            case 'size': {
+                const n = Number(value);
+                if (Number.isInteger(n) && n >= 0) out[key] = n;
+                break;
+            }
+            case 'label':
+            case 'name':
+            case 'alt': {
+                if (typeof value === 'string' && value !== '') out[key] = value.slice(0, 190);
+                break;
+            }
+            case 'listSlug': {
+                if (typeof value === 'string' && /^[a-z][a-z0-9_]{0,62}$/.test(value)) out[key] = value;
+                break;
+            }
+            case 'src': {
+                const src = safeLinkHref(value);
+                if (src !== null) out[key] = src;
+                break;
+            }
             case 'href': {
                 const href = safeLinkHref(value);
                 if (href !== null) out[key] = href;
@@ -172,6 +212,10 @@ function cleanAttrs(
     }
     // Un enlace sin href no es un enlace.
     if (type === 'link' && out.href === undefined) return undefined;
+    // Ídem los bloques vivos: sin la referencia no hay qué resolver.
+    if ((type === 'mentionUser' || type === 'mentionRecord') && out.id === undefined) return undefined;
+    if (type === 'fileBlock' && out.fileId === undefined) return undefined;
+    if (type === 'imageBlock' && out.fileId === undefined && out.src === undefined) return undefined;
     return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -218,6 +262,7 @@ function cleanNode(raw: unknown, depth: number, state: CleanState): RichNode | n
 
     const attrs = cleanAttrs(node.type, node.attrs, allowed);
     if (attrs !== undefined) out.attrs = attrs;
+    else if (ATOMIC_WITH_ATTRS.has(node.type)) return null;
 
     if (Array.isArray(node.content)) {
         const content: RichNode[] = [];
@@ -247,7 +292,16 @@ export function sanitizeRichDoc(input: unknown): RichDoc | null {
 /** ¿El documento no aporta nada? (sin texto y sin nodos "con cuerpo"). */
 export function isEmptyRichDoc(doc: RichDoc | null | undefined): boolean {
     if (doc === null || doc === undefined) return true;
-    const ATOMS = new Set(['horizontalRule', 'table', 'taskItem', 'codeBlock']);
+    const ATOMS = new Set([
+        'horizontalRule',
+        'table',
+        'taskItem',
+        'codeBlock',
+        'imageBlock',
+        'fileBlock',
+        'mentionUser',
+        'mentionRecord',
+    ]);
     let empty = true;
     const walk = (node: RichNode): void => {
         if (!empty) return;
@@ -326,3 +380,37 @@ export const updateRecordDescriptionSchema = z.object({
     description: richDocSchema.nullable(),
 });
 export type UpdateRecordDescriptionInput = z.infer<typeof updateRecordDescriptionSchema>;
+
+/**
+ * IDs de usuario mencionados en el documento (v0.1.134).
+ *
+ * La mención NO se busca por texto: es un nodo con el id de la persona, así
+ * que renombrar a alguien no rompe el vínculo (misma lógica que las claves
+ * `f{field_id}` — el ID es la verdad, la etiqueta es humana).
+ */
+export function collectMentionedUserIds(doc: RichDoc | null | undefined): number[] {
+    const out = new Set<number>();
+    const walk = (node: RichNode): void => {
+        if (node.type === 'mentionUser') {
+            const id = Number((node.attrs as { id?: unknown } | undefined)?.id);
+            if (Number.isInteger(id) && id > 0) out.add(id);
+        }
+        for (const child of node.content ?? []) walk(child);
+    };
+    if (doc) walk(doc);
+    return [...out];
+}
+
+/** IDs de los archivos referenciados (imágenes y adjuntos) del documento. */
+export function collectFileIds(doc: RichDoc | null | undefined): number[] {
+    const out = new Set<number>();
+    const walk = (node: RichNode): void => {
+        if (node.type === 'imageBlock' || node.type === 'fileBlock') {
+            const id = Number((node.attrs as { fileId?: unknown } | undefined)?.fileId);
+            if (Number.isInteger(id) && id > 0) out.add(id);
+        }
+        for (const child of node.content ?? []) walk(child);
+    };
+    if (doc) walk(doc);
+    return [...out];
+}

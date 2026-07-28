@@ -82,7 +82,9 @@ export const accountExportSchema = z.object({
                 }),
             ),
             mentions_received: z.array(
-                z.object({ comment_id: idSchema, snippet: z.string(), created_at: z.string() }),
+                // `comment_id` es null cuando la mención vino de la DESCRIPCIÓN del
+                // registro (v0.1.134), no de un comentario.
+                z.object({ comment_id: idSchema.nullable(), snippet: z.string(), created_at: z.string() }),
             ),
             saved_filters: z.array(z.object({ name: z.string(), created_at: z.string() })),
             files_uploaded: z.array(

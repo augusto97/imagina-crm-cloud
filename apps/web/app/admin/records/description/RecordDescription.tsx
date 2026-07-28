@@ -15,6 +15,8 @@ const DescriptionEditor = lazy(() =>
 
 interface RecordDescriptionProps {
     listKey: string | number;
+    /** Slug de la lista (para el selector de registro a mencionar). */
+    listSlug?: string;
     recordId: number;
     /** Sin permiso de edición el documento se ve, pero no se toca. */
     editable: boolean;
@@ -53,6 +55,7 @@ export function docKey(doc: JSONContent | null | undefined): string {
  */
 export function RecordDescription({
     listKey,
+    listSlug,
     recordId,
     editable,
     className,
@@ -165,6 +168,7 @@ export function RecordDescription({
                     <DescriptionEditor
                         value={(data ?? null) as JSONContent | null}
                         editable={editable}
+                        listSlug={listSlug ?? (typeof listKey === 'string' ? listKey : undefined)}
                         onChange={handleChange}
                         onBlurFlush={flush}
                     />
