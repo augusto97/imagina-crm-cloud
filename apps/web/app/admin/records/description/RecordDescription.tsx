@@ -166,9 +166,11 @@ export function RecordDescription({
             ) : (
                 <Suspense fallback={<div className="imcrm-h-16" />}>
                     <DescriptionEditor
+                        key={recordId}
                         value={(data ?? null) as JSONContent | null}
                         editable={editable}
                         listSlug={listSlug ?? (typeof listKey === 'string' ? listKey : undefined)}
+                        recordId={recordId}
                         onChange={handleChange}
                         onBlurFlush={flush}
                     />

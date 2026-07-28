@@ -14,10 +14,13 @@ import {
     Underline as UnderlineIcon,
 } from 'lucide-react';
 
+import { resolveEmbed } from '@imagina-base/shared';
+
 import { api } from '@/cloud/session';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { SubtaskPrompt } from './SubtaskPrompt';
 import { RecordPickerDialog } from './RecordPickerDialog';
 import { UserMentionMenu } from './UserMentionMenu';
 
@@ -29,6 +32,8 @@ interface DescriptionEditorProps {
     editable: boolean;
     /** Lista del registro: arranca seleccionada al mencionar otro registro. */
     listSlug?: string;
+    /** Registro dueño del documento (para crear subtareas desde el menú). */
+    recordId?: number;
     /**
      * `fromUser` distingue una edición real de la normalización que hace el
      * propio editor al cargar (agrega el párrafo final, completa atributos por
@@ -64,6 +69,7 @@ export function DescriptionEditor({
     value,
     editable,
     listSlug,
+    recordId,
     onChange,
     onBlurFlush,
 }: DescriptionEditorProps): JSX.Element {
@@ -72,6 +78,15 @@ export function DescriptionEditor({
     const [uploadKind, setUploadKind] = useState<'image' | 'file'>('file');
     const [uploading, setUploading] = useState(false);
     const [pickRecord, setPickRecord] = useState(false);
+    /**
+     * Inserciones que hace la propia UI (mención, archivo, embed, subtarea).
+     * El autosave sólo cuenta los cambios "del usuario" y los mide por el foco
+     * del editor — pero al volver de un diálogo el foco todavía no está ahí, y
+     * sin esta marca el bloque recién insertado NO se guardaba.
+     */
+    const uiEdit = useRef(false);
+    /** Título tipeado de la subtarea a crear (null = diálogo cerrado). */
+    const [newSubtask, setNewSubtask] = useState<string | null>(null);
     const [userQuery, setUserQuery] = useState<string | null>(null);
     const [slash, setSlash] = useState<SlashState>(CLOSED);
     const slashRef = useRef(slash);
@@ -87,6 +102,20 @@ export function DescriptionEditor({
     );
 
     const closeSlash = useCallback(() => setSlash(CLOSED), []);
+
+    /** Corre una inserción de la UI marcándola como edición real. */
+    const applyUiEdit = useCallback((run: () => void) => {
+        uiEdit.current = true;
+        try {
+            run();
+        } finally {
+            // El update de ProseMirror es síncrono, pero el flag se limpia en
+            // el próximo tick por si alguna extensión encadena otro cambio.
+            setTimeout(() => {
+                uiEdit.current = false;
+            }, 0);
+        }
+    }, []);
 
     /** Ejecuta un comando: borra el `/consulta` tipeado y aplica el bloque. */
     const runCommand = useCallback((editor: Editor, cmd: SlashCommand, from: number, query: string) => {
@@ -107,13 +136,41 @@ export function DescriptionEditor({
             setPickRecord(true);
             return;
         }
+        if (cmd.action === 'embed') {
+            const url = window.prompt(
+                __('Pegá el enlace de YouTube, Loom, Figma, Drive o Vimeo'),
+                'https://',
+            );
+            if (url === null || url.trim() === '') return;
+            const resolved = resolveEmbed(url);
+            if (resolved === null) {
+                // Honestidad: si no lo sabemos embeber, se deja como enlace en
+                // vez de dibujar un marco vacío.
+                window.alert(__('Ese enlace no se puede insertar; queda como enlace normal.'));
+                editor.chain().focus().insertContent(url.trim()).run();
+                return;
+            }
+            applyUiEdit(() => editor
+                .chain()
+                .focus()
+                .insertContent({
+                    type: 'embedBlock',
+                    attrs: { url: url.trim(), provider: resolved.provider },
+                })
+                .run());
+            return;
+        }
+        if (cmd.action === 'subtask') {
+            setNewSubtask('');
+            return;
+        }
         if (cmd.action === 'mentionUser') {
             // Se escribe el `@` y el propio trigger abre el buscador.
             editor.chain().focus().insertContent('@').run();
             return;
         }
         cmd.run(editor);
-    }, []);
+    }, [applyUiEdit]);
 
     const editor = useEditor(
         {
@@ -158,7 +215,7 @@ export function DescriptionEditor({
                 },
             },
             onUpdate: ({ editor: ed }) => {
-                onChange(isDocEmpty(ed) ? null : ed.getJSON(), ed.isFocused);
+                onChange(isDocEmpty(ed) ? null : ed.getJSON(), ed.isFocused || uiEdit.current);
                 syncSlash(ed);
             },
             onSelectionUpdate: ({ editor: ed }) => syncSlash(ed),
@@ -241,16 +298,24 @@ export function DescriptionEditor({
         }));
     }, []);
 
-    // Contenido externo (cambió el registro, o llegó del servidor): se
-    // reemplaza sin ensuciar el historial ni mover el cursor del usuario si es
-    // el mismo documento.
+    /**
+     * El documento se SIEMBRA una sola vez por registro.
+     *
+     * Antes se re-sincronizaba con cada respuesta del servidor, y eso pisaba
+     * ediciones locales: al insertar un bloque desde un diálogo (subtarea,
+     * archivo), la respuesta del autosave anterior volvía a montar el
+     * documento viejo y se perdía lo insertado. Mientras el editor está
+     * montado, la fuente de verdad es lo que hay en pantalla; lo que llega del
+     * servidor sólo importa al cambiar de registro (y ahí el componente se
+     * remonta con `key`).
+     */
+    const seeded = useRef(false);
     useEffect(() => {
-        if (!editor) return;
-        const current = editor.getJSON();
-        const next = value ?? { type: 'doc', content: [{ type: 'paragraph' }] };
-        if (JSON.stringify(current) === JSON.stringify(next)) return;
-        if (editor.isFocused) return; // no pisar lo que se está tipeando
-        editor.commands.setContent(next, { emitUpdate: false });
+        if (!editor || seeded.current) return;
+        seeded.current = true;
+        if (value === null) return;
+        if (JSON.stringify(editor.getJSON()) === JSON.stringify(value)) return;
+        editor.commands.setContent(value, { emitUpdate: false });
     }, [editor, value]);
 
     useEffect(() => {
@@ -262,6 +327,23 @@ export function DescriptionEditor({
     return (
         <div ref={wrapperRef} className="imcrm-relative">
             <EditorContent editor={editor} className="imcrm-imcrm-editor" />
+
+            {/* Zona clicable al final: con un bloque atómico grande abajo (un
+                embed, el índice) el click "en el editor" cae sobre ese bloque
+                —el iframe hasta se come el evento— y el cursor no entra al
+                documento. Este espacio lo pone al final, como en cualquier
+                editor serio. */}
+            {editable && (
+                <div
+                    aria-hidden
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        editor.chain().focus('end').run();
+                    }}
+                    className="imcrm-h-6 imcrm-cursor-text"
+                    data-imcrm-editor-tail
+                />
+            )}
 
             {/* ——— Barra flotante de formato (al seleccionar texto) ——— */}
             {editable && (
@@ -405,7 +487,7 @@ export function DescriptionEditor({
                     top={slash.rect.top}
                     left={slash.rect.left}
                     onPick={(user) => {
-                        editor
+                        applyUiEdit(() => editor
                             .chain()
                             .focus()
                             .deleteRange({ from: slash.from, to: slash.from + userQuery.length + 1 })
@@ -413,7 +495,7 @@ export function DescriptionEditor({
                                 { type: 'mentionUser', attrs: { id: user.id, label: user.display_name } },
                                 { type: 'text', text: ' ' },
                             ])
-                            .run();
+                            .run());
                         setUserQuery(null);
                     }}
                     onClose={() => setUserQuery(null)}
@@ -434,7 +516,7 @@ export function DescriptionEditor({
                     void api
                         .uploadFile(file)
                         .then(({ id }) => {
-                            editor
+                            applyUiEdit(() => editor
                                 .chain()
                                 .focus()
                                 .insertContent(
@@ -445,7 +527,7 @@ export function DescriptionEditor({
                                               attrs: { fileId: id, name: file.name, size: file.size },
                                           },
                                 )
-                                .run();
+                                .run());
                         })
                         .catch(() => {
                             window.alert(__('No se pudo subir el archivo.'));
@@ -466,7 +548,7 @@ export function DescriptionEditor({
                     onOpenChange={setPickRecord}
                     defaultListSlug={listSlug}
                     onPick={(pick) => {
-                        editor
+                        applyUiEdit(() => editor
                             .chain()
                             .focus()
                             .insertContent([
@@ -476,7 +558,34 @@ export function DescriptionEditor({
                                 },
                                 { type: 'text', text: ' ' },
                             ])
-                            .run();
+                            .run());
+                    }}
+                />
+            )}
+
+            {/* Crear una subtarea REAL y enlazarla (v0.1.135). */}
+            {newSubtask !== null && listSlug !== undefined && recordId !== undefined && (
+                <SubtaskPrompt
+                    listSlug={listSlug}
+                    parentId={recordId}
+                    onClose={() => setNewSubtask(null)}
+                    onCreated={(created) => {
+                        setNewSubtask(null);
+                        applyUiEdit(() => editor
+                            .chain()
+                            .focus()
+                            .insertContent([
+                                {
+                                    type: 'mentionRecord',
+                                    attrs: {
+                                        id: created.id,
+                                        listSlug,
+                                        label: created.label,
+                                    },
+                                },
+                                { type: 'text', text: ' ' },
+                            ])
+                            .run());
                     }}
                 />
             )}

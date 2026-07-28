@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
 import { Node, mergeAttributes } from '@tiptap/react';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import { Link } from 'react-router';
-import { AtSign, Download, FileText, Hash, ImageOff } from 'lucide-react';
+import { AtSign, Download, FileText, Hash, ImageOff, Link as LinkIcon, ListTree } from 'lucide-react';
+import { EMBED_PROVIDER_LABELS, resolveEmbed } from '@imagina-base/shared';
 
 import { useAttachments } from '@/hooks/useAttachments';
+import { sanitizeHref } from '@/lib/sanitize';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -232,4 +235,191 @@ function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ——— Embed (proveedor conocido) ————————————————————————————————————————
+
+export const EmbedBlock = Node.create({
+    name: 'embedBlock',
+    group: 'block',
+    atom: true,
+    draggable: true,
+
+    addAttributes() {
+        return {
+            /** URL original (la que pegó la persona). */
+            url: { default: null },
+            provider: { default: null },
+        };
+    },
+    parseHTML() {
+        return [{ tag: 'div[data-imcrm-embed-block]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['div', mergeAttributes({ 'data-imcrm-embed-block': '' }, HTMLAttributes)];
+    },
+    addNodeView() {
+        return ReactNodeViewRenderer(EmbedBlockView);
+    },
+});
+
+function EmbedBlockView({ node }: NodeViewProps): JSX.Element {
+    const url = String(node.attrs.url ?? '');
+    // La URL embebible se DERIVA en cada render (no se persiste): si un
+    // proveedor cambia su forma de embeber, no hay que migrar documentos.
+    const resolved = resolveEmbed(url);
+
+    return (
+        <NodeViewWrapper className="imcrm-my-3" data-imcrm-embed-block="" data-drag-handle>
+            {resolved === null ? (
+                <a
+                    href={sanitizeHref(url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    contentEditable={false}
+                    className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-4 imcrm-text-xs imcrm-text-muted-foreground"
+                >
+                    <LinkIcon className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    {url === '' ? __('Embed sin dirección') : url}
+                </a>
+            ) : (
+                <span className="imcrm-block imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border">
+                    <span
+                        className="imcrm-relative imcrm-block imcrm-w-full"
+                        style={{ paddingTop: `${Math.round(resolved.ratio * 100)}%` }}
+                    >
+                        <iframe
+                            src={resolved.src}
+                            title={EMBED_PROVIDER_LABELS[resolved.provider]}
+                            loading="lazy"
+                            allow="accelerometer; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            className="imcrm-absolute imcrm-inset-0 imcrm-h-full imcrm-w-full"
+                            style={{ border: 0 }}
+                        />
+                    </span>
+                </span>
+            )}
+        </NodeViewWrapper>
+    );
+}
+
+// ——— Columnas ——————————————————————————————————————————————————————————
+
+/**
+ * Una columna: contiene bloques normales. No tiene NodeView propia — es un
+ * contenedor, el layout lo pone el CSS del padre.
+ */
+export const Column = Node.create({
+    name: 'column',
+    content: 'block+',
+    isolating: true,
+    parseHTML() {
+        return [{ tag: 'div[data-imcrm-column]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return [
+            'div',
+            mergeAttributes({ 'data-imcrm-column': '', class: 'imcrm-doc-column' }, HTMLAttributes),
+            0,
+        ];
+    },
+});
+
+export const ColumnsBlock = Node.create({
+    name: 'columnsBlock',
+    group: 'block',
+    content: 'column{2,4}',
+    parseHTML() {
+        return [{ tag: 'div[data-imcrm-columns]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return [
+            'div',
+            mergeAttributes({ 'data-imcrm-columns': '', class: 'imcrm-doc-columns' }, HTMLAttributes),
+            0,
+        ];
+    },
+});
+
+// ——— Índice (tabla de contenidos) ——————————————————————————————————————
+
+export const TocBlock = Node.create({
+    name: 'tocBlock',
+    group: 'block',
+    atom: true,
+    draggable: true,
+    parseHTML() {
+        return [{ tag: 'div[data-imcrm-toc]' }];
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['div', mergeAttributes({ 'data-imcrm-toc': '' }, HTMLAttributes)];
+    },
+    addNodeView() {
+        return ReactNodeViewRenderer(TocBlockView);
+    },
+});
+
+/**
+ * El índice NO se persiste: se DERIVA de los títulos del documento en cada
+ * render. Guardar una copia obligaría a mantenerla sincronizada con el texto
+ * — y quedaría desactualizada en cuanto alguien renombre un título.
+ */
+function TocBlockView({ editor }: NodeViewProps): JSX.Element {
+    const [items, setItems] = useState<Array<{ level: number; text: string; pos: number }>>([]);
+
+    useEffect(() => {
+        const read = (): void => {
+            const out: Array<{ level: number; text: string; pos: number }> = [];
+            editor.state.doc.descendants((n, pos) => {
+                if (n.type.name === 'heading') {
+                    const text = n.textContent.trim();
+                    if (text !== '') out.push({ level: Number(n.attrs.level ?? 1), text, pos });
+                }
+                return true;
+            });
+            setItems(out);
+        };
+        read();
+        editor.on('update', read);
+        return () => {
+            editor.off('update', read);
+        };
+    }, [editor]);
+
+    return (
+        <NodeViewWrapper className="imcrm-my-3" data-imcrm-toc="" data-drag-handle>
+            <nav
+                contentEditable={false}
+                aria-label={__('Índice')}
+                className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2"
+            >
+                <span className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                    <ListTree className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                    {__('Índice')}
+                </span>
+                {items.length === 0 ? (
+                    <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Agregá títulos y aparecerán acá.')}
+                    </span>
+                ) : (
+                    <ol className="imcrm-m-0 imcrm-list-none imcrm-p-0">
+                        {items.map((it) => (
+                            <li key={`${it.pos}-${it.text}`} style={{ paddingLeft: (it.level - 1) * 12 }}>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        editor.chain().focus().setTextSelection(it.pos + 1).scrollIntoView().run();
+                                    }}
+                                    className="imcrm-block imcrm-w-full imcrm-truncate imcrm-rounded imcrm-px-1 imcrm-py-0.5 imcrm-text-left imcrm-text-[13px] imcrm-text-foreground hover:imcrm-bg-accent/60"
+                                >
+                                    {it.text}
+                                </button>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+            </nav>
+        </NodeViewWrapper>
+    );
 }

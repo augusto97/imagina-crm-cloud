@@ -71,6 +71,9 @@
     #     `frame-ancestors 'self'` lo bloquearían (el navegador aplica la
     #     INTERSECCIÓN de las dos políticas) y el iframe del cliente moriría.
     #   · Las descargas de archivos mandan `Content-Security-Policy: sandbox`.
+    #   · `frame-src` (v0.1.135): sólo los proveedores que el editor de
+    #     descripción sabe embeber (la lista vive en `EMBED_FRAME_HOSTS`
+    #     de packages/shared — si se agrega uno allá, va también acá).
     # Por eso el matcher excluye el API.
     @spa not path /api/*
     header @spa {
@@ -79,7 +82,7 @@
         # el detalle de por qué cada directiva es como es (inline de scripts
         # por el pre-pintado del tema, inline de estilos por Radix y el
         # page-builder, data:/blob: por los previews de imágenes).
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.figma.com https://drive.google.com https://docs.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
 }
 

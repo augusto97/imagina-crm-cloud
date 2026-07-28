@@ -918,3 +918,31 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
     outline: 2px solid hsl(var(--imcrm-ring));
     border-radius: 4px;
 }
+
+/* Columnas del documento (v0.1.135). En pantallas chicas se apilan: dos
+   columnas de 300px en un teléfono no son dos columnas, son un desastre. */
+.imcrm-imcrm-editor .imcrm-doc-columns,
+.imcrm-doc-columns {
+    display: flex;
+    gap: 1rem;
+    margin: 0.9em 0;
+    align-items: flex-start;
+}
+.imcrm-imcrm-editor .imcrm-doc-column,
+.imcrm-doc-column {
+    flex: 1 1 0;
+    min-width: 0;
+}
+@media (max-width: 640px) {
+    .imcrm-imcrm-editor .imcrm-doc-columns,
+    .imcrm-doc-columns {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+}
+/* En el editor, la columna se ve como zona soltable. */
+.imcrm-imcrm-editor .imcrm-doc-column {
+    border: 1px dashed hsl(var(--imcrm-border));
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+}
