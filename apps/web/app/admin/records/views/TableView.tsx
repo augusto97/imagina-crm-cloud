@@ -403,7 +403,7 @@ export function TableView({
                     )}
                 >
                     {table.getHeaderGroups().map((hg) => (
-                        <tr key={hg.id} className="imcrm-border-b imcrm-border-border">
+                        <tr key={hg.id} className="imcrm-group/head imcrm-border-b imcrm-border-border">
                             <th
                                 scope="col"
                                 className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
@@ -415,6 +415,12 @@ export function TableView({
                                         if (el) el.indeterminate = someVisibleSelected;
                                     }}
                                     onChange={toggleAll}
+                                    className={cn(
+                                        'imcrm-h-3.5 imcrm-w-3.5 imcrm-cursor-pointer imcrm-rounded-[3px] imcrm-border-input imcrm-accent-primary imcrm-transition-opacity',
+                                        allVisibleSelected || someVisibleSelected
+                                            ? 'imcrm-opacity-100'
+                                            : 'imcrm-opacity-0 group-hover/head:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                                    )}
                                     aria-label={__('Seleccionar todos')}
                                 />
                             </th>
@@ -639,6 +645,18 @@ export function TableView({
                                             type="checkbox"
                                             checked={isSelected}
                                             onChange={() => toggleOne(row.original.id)}
+                                            // v0.1.131 — la casilla sólo aparece al pasar
+                                            // el mouse por la fila (estilo ClickUp). Si la
+                                            // fila está marcada, o hay una selección en
+                                            // curso, queda visible: escondérsela a alguien
+                                            // que está seleccionando es sacarle la forma de
+                                            // desmarcar.
+                                            className={cn(
+                                                'imcrm-h-3.5 imcrm-w-3.5 imcrm-cursor-pointer imcrm-rounded-[3px] imcrm-border-input imcrm-accent-primary imcrm-transition-opacity',
+                                                isSelected || selectedIds.length > 0
+                                                    ? 'imcrm-opacity-100'
+                                                    : 'imcrm-opacity-0 group-hover/row:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                                            )}
                                             aria-label={sprintf(
                                                 /* translators: %d: record ID */
                                                 __('Seleccionar registro %d'),
