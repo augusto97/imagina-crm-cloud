@@ -204,6 +204,7 @@ export class ExportService {
                     // subtarea de quién se reconstruye por estos ids.
                     parent_id: r.parentId ?? null,
                     subtask_count: 0,
+                    has_description: (r.description ?? null) !== null,
                     created_by: r.createdBy,
                     created_at: r.createdAt.toISOString(),
                     updated_at: r.updatedAt.toISOString(),

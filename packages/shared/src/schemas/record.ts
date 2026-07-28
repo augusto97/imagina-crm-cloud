@@ -25,6 +25,14 @@ export const recordSchema = z.object({
     parent_id: idSchema.nullable().default(null),
     /** Cuántas subtareas vivas cuelgan de este registro (sólo lectura). */
     subtask_count: z.number().int().nonnegative().default(0),
+    /**
+     * ¿El registro tiene descripción (v0.1.133)? El CONTENIDO no viaja en el
+     * listado a propósito — una página de 50 filas con documentos completos
+     * pesaría de más y la tabla no lo muestra. La descripción se pide aparte
+     * (`GET .../records/:id/description`) al abrir la ficha; acá sólo va el
+     * indicador que necesita el icono de la fila.
+     */
+    has_description: z.boolean().default(false),
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,

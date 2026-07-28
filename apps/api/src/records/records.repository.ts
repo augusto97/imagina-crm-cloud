@@ -1,9 +1,29 @@
 import { Injectable } from '@nestjs/common';
+import type { RichDoc } from '@imagina-base/shared';
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { records } from '../db/schema';
 
 export type RecordRow = typeof records.$inferSelect;
+
+/**
+ * Columnas del LISTADO: todas menos `description` (que puede pesar cientos de
+ * KB por fila), más el booleano que necesita el icono de la tabla.
+ */
+const LIST_COLUMNS = {
+    id: records.id,
+    tenantId: records.tenantId,
+    listId: records.listId,
+    data: records.data,
+    parentId: records.parentId,
+    createdBy: records.createdBy,
+    createdAt: records.createdAt,
+    updatedAt: records.updatedAt,
+    deletedAt: records.deletedAt,
+    hasDescription: sql<boolean>`(${records.description} IS NOT NULL)`,
+} as const;
+
+export type RecordListRow = Omit<RecordRow, 'description'> & { hasDescription: boolean };
 
 export interface ListRecordsOpts {
     where?: SQL;
@@ -56,7 +76,7 @@ export class RecordsRepository {
      * Listado con cursor pagination keyset por `id` (STANDALONE §3.5).
      * Pide `limit + 1` para saber si hay página siguiente sin contar todo.
      */
-    async list(tx: Tx, tenantId: number, listId: number, opts: ListRecordsOpts): Promise<RecordRow[]> {
+    async list(tx: Tx, tenantId: number, listId: number, opts: ListRecordsOpts): Promise<RecordListRow[]> {
         const sorted = opts.orderBy !== undefined && opts.orderBy.length > 0;
         const cursorClause =
             !sorted && opts.cursor !== undefined
@@ -73,7 +93,10 @@ export class RecordsRepository {
                     : eq(records.parentId, opts.parent);
 
         const base = tx
-            .select()
+            // v0.1.133 — el listado NO trae la descripción: un documento por
+            // fila multiplicaría el peso de la página (y la tabla sólo
+            // necesita saber si hay o no). El contenido se pide aparte.
+            .select(LIST_COLUMNS)
             .from(records)
             .where(
                 and(
@@ -170,6 +193,51 @@ export class RecordsRepository {
                     eq(records.tenantId, tenantId),
                     eq(records.listId, listId),
                     inArray(records.id, ids),
+                ),
+            );
+    }
+
+    /**
+     * Sólo la descripción de un registro (v0.1.133). Query propia porque es
+     * lo ÚNICO que no viaja en el listado: se pide al abrir la ficha.
+     */
+    async findDescription(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        id: number,
+    ): Promise<{ description: RichDoc | null } | null> {
+        const [row] = await tx
+            .select({ description: records.description })
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    eq(records.id, id),
+                    isNull(records.deletedAt),
+                ),
+            )
+            .limit(1);
+        return row === undefined ? null : { description: row.description ?? null };
+    }
+
+    /** Persiste (o borra, con `null`) la descripción. */
+    async updateDescription(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        id: number,
+        description: RichDoc | null,
+    ): Promise<void> {
+        await tx
+            .update(records)
+            .set({ description, updatedAt: new Date() })
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    eq(records.id, id),
                 ),
             );
     }

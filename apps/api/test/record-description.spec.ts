@@ -1,0 +1,156 @@
+import { sanitizeRichDoc, type RichDoc } from '@imagina-base/shared';
+import { eq } from 'drizzle-orm';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ActivityRepository } from '../src/activity/activity.repository';
+import { ActivityService } from '../src/activity/activity.service';
+import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
+import { fields, lists, records, tenants } from '../src/db/schema';
+import { withTenant } from '../src/db/tenant-tx';
+import { FieldsRepository } from '../src/fields/fields.repository';
+import { FieldsService } from '../src/fields/fields.service';
+import { ListsRepository } from '../src/lists/lists.repository';
+import { ListsService } from '../src/lists/lists.service';
+import { RealtimeService } from '../src/realtime/realtime.service';
+import { RecordsRepository } from '../src/records/records.repository';
+import { RecordsService, type Actor } from '../src/records/records.service';
+import { RelationsRepository } from '../src/records/relations.repository';
+import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { startPostgres, type TestPg } from './helpers/containers';
+
+const rt = new RealtimeService();
+const admin: Actor = { userId: 1, role: 'admin' };
+const viewer: Actor = { userId: 2, role: 'viewer' };
+
+const doc = (text: string): RichDoc => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+});
+
+describe('Descripción del registro (v0.1.133)', () => {
+    let pg: TestPg;
+    let recs: RecordsService;
+    let lists_: ListsService;
+    let fields_: FieldsService;
+    let tenantId: number;
+    let titleKey: string;
+
+    beforeAll(async () => {
+        pg = await startPostgres();
+        const tenantDb = new TenantDb(pg.db);
+        lists_ = new ListsService(tenantDb, new ListsRepository(), rt);
+        fields_ = new FieldsService(tenantDb, new FieldsRepository(), lists_, rt);
+        recs = new RecordsService(
+            tenantDb,
+            new RecordsRepository(),
+            lists_,
+            fields_,
+            rt,
+            new ActivityService(tenantDb, new ActivityRepository(), lists_),
+            new AutomationDispatcher(),
+            new RelationsRepository(),
+        );
+        const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
+        tenantId = t!.id;
+    });
+
+    afterAll(async () => {
+        await pg?.stop();
+    });
+
+    beforeEach(async () => {
+        await withTenant(pg.db, tenantId, async (tx) => {
+            await tx.delete(records).where(eq(records.tenantId, tenantId));
+            await tx.delete(fields).where(eq(fields.tenantId, tenantId));
+            await tx.delete(lists).where(eq(lists.tenantId, tenantId));
+        });
+        await lists_.create(tenantId, { name: 'Tareas' });
+        const f = await fields_.create(tenantId, 'tareas', {
+            label: 'Título',
+            type: 'text',
+            slug: 'titulo',
+        });
+        titleKey = `f${f.id}`;
+    });
+
+    const create = () => recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Mudanza' } });
+
+    it('round-trip: se guarda, se lee, y el listado sólo dice que existe', async () => {
+        const rec = await create();
+        // Recién creado no tiene descripción.
+        expect(await recs.getDescription(tenantId, admin, 'tareas', rec.id)).toBeNull();
+
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, {
+            description: doc('Plan de la mudanza'),
+        });
+        const stored = await recs.getDescription(tenantId, admin, 'tareas', rec.id);
+        expect(stored?.content?.[0]?.content?.[0]?.text).toBe('Plan de la mudanza');
+
+        // El LISTADO no arrastra el documento: sólo el indicador.
+        const page = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
+        const row = page.data.find((r) => r.id === rec.id)!;
+        expect(row.has_description).toBe(true);
+        expect((row as unknown as Record<string, unknown>).description).toBeUndefined();
+
+        // `null` borra y el indicador vuelve a false.
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, { description: null });
+        expect(await recs.getDescription(tenantId, admin, 'tareas', rec.id)).toBeNull();
+        const page2 = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
+        expect(page2.data.find((r) => r.id === rec.id)!.has_description).toBe(false);
+    });
+
+    it('lo que se persiste pasa por la whitelist (nada de `javascript:` ni nodos raros)', async () => {
+        const rec = await create();
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, {
+            description: {
+                type: 'doc',
+                content: [
+                    { type: 'script', content: [{ type: 'text', text: 'alert(1)' }] },
+                    {
+                        type: 'paragraph',
+                        content: [
+                            {
+                                type: 'text',
+                                text: 'click',
+                                marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }],
+                            },
+                            {
+                                type: 'text',
+                                text: ' ok',
+                                marks: [{ type: 'link', attrs: { href: 'https://imagina.com' } }],
+                            },
+                        ],
+                    },
+                ],
+            } as RichDoc,
+        });
+
+        const stored = await recs.getDescription(tenantId, admin, 'tareas', rec.id);
+        // El nodo desconocido no existe y la marca con esquema peligroso se cayó.
+        expect(stored?.content).toHaveLength(1);
+        const [malo, bueno] = stored!.content![0]!.content!;
+        expect(malo?.marks).toBeUndefined();
+        expect(bueno?.marks?.[0]?.attrs?.href).toBe('https://imagina.com');
+
+        // Y en la fila cruda tampoco quedó nada del nodo `script`.
+        const [raw] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select({ d: records.description }).from(records).where(eq(records.id, rec.id)),
+        );
+        expect(JSON.stringify(raw?.d)).not.toContain('script');
+    });
+
+    it('editar la descripción exige permiso de EDICIÓN sobre la fila', async () => {
+        const rec = await create();
+        // El rol viewer no edita: el registro "no existe" para esa mutación.
+        await expect(
+            recs.updateDescription(tenantId, viewer, 'tareas', rec.id, { description: doc('hola') }),
+        ).rejects.toThrow();
+        expect(await recs.getDescription(tenantId, admin, 'tareas', rec.id)).toBeNull();
+    });
+
+    it('sanitizeRichDoc: un documento vacío es null (el indicador no miente)', () => {
+        expect(sanitizeRichDoc({ type: 'doc', content: [{ type: 'paragraph' }] })).toBeNull();
+        expect(sanitizeRichDoc({ type: 'paragraph' })).toBeNull();
+        expect(sanitizeRichDoc(doc('   '))).toBeNull();
+        expect(sanitizeRichDoc(doc('x'))).not.toBeNull();
+    });
+});

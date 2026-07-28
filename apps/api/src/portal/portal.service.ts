@@ -669,6 +669,7 @@ export class PortalService {
                     ),
                     parent_id: record.parentId ?? null,
                     subtask_count: 0,
+                    has_description: (record.description ?? null) !== null,
                     created_by: record.createdBy,
                     created_at: record.createdAt.toISOString(),
                     updated_at: record.updatedAt.toISOString(),

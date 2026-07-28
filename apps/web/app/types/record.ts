@@ -6,6 +6,8 @@ export interface RecordEntity {
     parent_id: number | null;
     /** Cuántas subtareas cuelgan de este registro. */
     subtask_count: number;
+    /** ¿Tiene descripción? (el documento no viaja en el listado). */
+    has_description: boolean;
     created_by: number;
     created_at: string;
     updated_at: string;

@@ -400,6 +400,7 @@ export const crmRegistry: BlockRegistry<V2Block> = {
             relations: {} as Record<string, number[]>,
             parent_id: null,
             subtask_count: 0,
+            has_description: false,
             created_at: '',
             updated_at: '',
             created_by: 0,

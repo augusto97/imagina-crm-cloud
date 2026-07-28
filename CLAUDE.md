@@ -2013,6 +2013,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (exportar → importar en una lista nueva → el padre queda con su
         subtarea).
 
+  - [x] **Descripción del registro: editor de bloques estilo ClickUp/Notion
+        (v0.1.133, pedido del usuario con capturas del menú «/»)**: cada
+        registro gana un CUERPO tipo documento, arriba de los campos, igual
+        que una tarea de ClickUp. Se escribe con atajos markdown (`## `, `- `,
+        `1. `, `> `, ```` ``` ````), el menú **«/»** inserta bloques (texto,
+        títulos 1-3, listas con viñetas/numeradas/de control, cita, bloque de
+        código, divisor, tabla) con búsqueda sin acentos y navegación por
+        teclado, y al seleccionar texto aparece la **barra flotante** (negrita,
+        cursiva, subrayado, tachado, código, color de texto, resaltado, enlace,
+        borrar formato). **Guarda solo** (autosave con debounce + flush al
+        salir) con aviso "Guardando…/Guardado".
+        Motor: **TipTap 3** (ProseMirror) en un chunk aparte de carga diferida
+        —150 KB gz que sólo se bajan al abrir una ficha, la tabla no los paga—
+        y con el set de extensiones acotado a lo que el backend sabe guardar.
+        Persistencia: columna `records.description` jsonb (migración 0040) con
+        el ÁRBOL del documento, no HTML: `sanitizeRichDoc` (packages/shared)
+        es la única puerta de entrada — whitelist de nodos/marcas/atributos,
+        `href` con esquemas seguros (un `javascript:` se cae solo), techos de
+        nodos/profundidad/tamaño (512 KB) — así el render nunca tiene que
+        confiar en el contenido. El documento **NO viaja en el listado** (una
+        página de 50 filas con documentos completos pesaría de más): el
+        listado trae `has_description` calculado en SQL (icono en la fila,
+        como ClickUp) y el contenido se pide/guarda por endpoints propios
+        (`GET/PATCH /lists/:l/records/:id/description`, ACL de ver/editar la
+        fila). **Bug atrapado en el E2E antes de salir**: abrir una ficha
+        disparaba `PATCH {description:null}` —el editor emite un cambio propio
+        al montar (párrafo final, atributos por defecto)— y eso habría BORRADO
+        descripciones con sólo entrar a mirarlas; ahora un cambio sólo cuenta
+        si el editor tiene el foco (edición real) y además se compara la firma
+        del documento ignorando los párrafos vacíos del final. 4 tests API +
+        5 unitarios del front (16 nuevos entre ambos: 393 API y 84 front en
+        verde) + E2E navegador 17/17 (menú por grupos, filtrado, atajo `## `,
+        lista de control, negrita por barra flotante, autoguardado, icono en
+        la fila y persistencia tras recargar) y verificación aparte de que
+        abrir/cerrar un registro CON descripción no manda ni un PATCH.
+        Pendiente (fase 2, cuando se pida): bloques "vivos" del menú de
+        ClickUp — mención de persona/registro, subtarea inline, imagen y
+        adjuntos del módulo de archivos, embeds (YouTube/Figma/Loom/Drive),
+        columnas, índice y botones.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

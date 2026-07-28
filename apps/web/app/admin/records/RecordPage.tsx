@@ -16,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +28,7 @@ import { useDeleteRecord, useRecord, useUpdateRecord } from '@/hooks/useRecords'
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
+import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
 /**
@@ -51,6 +53,7 @@ export function RecordPage(): JSX.Element {
     const list = useList(listSlug);
     const fields = useFields(list.data?.id);
     const record = useRecord(list.data?.id, id);
+    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const update = useUpdateRecord(list.data?.id ?? 0);
     const remove = useDeleteRecord(list.data?.id ?? 0);
     const confirm = useConfirm();
@@ -234,6 +237,14 @@ export function RecordPage(): JSX.Element {
                 <main className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
                     {/* Grilla de metadatos estilo ClickUp: icono+label → valor. */}
                     <RecordMetaGrid record={record.data} fields={fields.data} values={values} />
+
+                    {/* Descripción rica (v0.1.133) — mismo componente que el
+                        modal del registro. */}
+                    <RecordDescription
+                        listKey={listSlug ?? list.data.id}
+                        recordId={record.data.id}
+                        editable={canEditRecords}
+                    />
 
                     {/* Sección "Campos" colapsable: una fila por campo custom
                      * (icono del tipo + label a la izquierda, editor inline a
