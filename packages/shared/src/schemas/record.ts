@@ -17,6 +17,14 @@ export const recordSchema = z.object({
      * adjunta en cada lectura (batch por página).
      */
     relations: z.record(z.array(idSchema)).optional(),
+    /**
+     * Registro padre dentro de la MISMA lista (subtareas, v0.1.132). `null`
+     * = registro de primer nivel. Un solo nivel de anidado: una subtarea no
+     * puede tener subtareas.
+     */
+    parent_id: idSchema.nullable().default(null),
+    /** Cuántas subtareas vivas cuelgan de este registro (sólo lectura). */
+    subtask_count: z.number().int().nonnegative().default(0),
     created_by: idSchema,
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
@@ -28,6 +36,8 @@ export const recordDataSchema = z.record(z.string().regex(/^f\d+$/), z.unknown()
 
 export const createRecordSchema = z.object({
     data: recordDataSchema.default({}),
+    /** Crea el registro como subtarea de otro de la misma lista. */
+    parent_id: idSchema.nullable().optional(),
 });
 export type CreateRecordInput = z.infer<typeof createRecordSchema>;
 
@@ -71,6 +81,15 @@ export const listRecordsQuerySchema = z.object({
      * La UI la usa cuando la lista supera una página (si no, filtra client-side).
      */
     search: z.string().trim().max(200).optional(),
+    /**
+     * Subtareas (v0.1.132). Por defecto el listado devuelve SÓLO los
+     * registros de primer nivel — si no, las subtareas aparecerían sueltas
+     * y los totales contarían dos veces lo mismo.
+     *  - `parent=<id>`: devuelve las subtareas de ese registro.
+     *  - `include_subtasks=1`: devuelve todo plano (lo usa el export).
+     */
+    parent: z.coerce.number().int().positive().optional(),
+    include_subtasks: z.coerce.boolean().optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 

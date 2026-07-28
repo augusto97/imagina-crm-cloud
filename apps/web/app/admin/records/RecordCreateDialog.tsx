@@ -33,6 +33,12 @@ interface RecordCreateDialogProps {
      * abre el diálogo con estado=hecho ya seteado.
      */
     initialValues?: Record<string, unknown>;
+    /**
+     * Si viene, el registro se crea como SUBTAREA de este id (v0.1.132).
+     * El backend valida que el padre exista, sea de esta lista y de primer
+     * nivel.
+     */
+    parentId?: number | null;
 }
 
 /**
@@ -50,6 +56,7 @@ export function RecordCreateDialog({
     open,
     onOpenChange,
     initialValues,
+    parentId,
 }: RecordCreateDialogProps): JSX.Element {
     const create = useCreateRecord(listId);
     const { reset: resetCreate } = create;
@@ -78,7 +85,7 @@ export function RecordCreateDialog({
         setError(null);
         setFieldErrors({});
         try {
-            await create.mutateAsync(values);
+            await create.mutateAsync(parentId != null ? { values, parentId } : values);
             onOpenChange(false);
         } catch (err) {
             if (err instanceof ApiError) {

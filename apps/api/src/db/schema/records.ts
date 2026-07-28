@@ -16,6 +16,8 @@ export const records = pgTable('records', {
         .notNull()
         .references(() => lists.id, { onDelete: 'cascade' }),
     data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    /** Padre dentro de la misma lista (subtareas). null = primer nivel. */
+    parentId: bigint('parent_id', { mode: 'number' }),
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

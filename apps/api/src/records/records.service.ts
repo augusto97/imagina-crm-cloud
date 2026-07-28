@@ -92,10 +92,25 @@ export class RecordsService {
         const data = this.validateData(fields, rel.data, { partial: false });
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
+            // lista y ser de primer nivel — un solo nivel de anidado.
+            const parentId = input.parent_id ?? null;
+            if (parentId !== null) {
+                const parent = await this.repo.findById(tx, tenantId, listId, parentId);
+                if (!parent) throw recordNotFound(parentId);
+                if (parent.parentId !== null) {
+                    throw new BadRequestException({
+                        code: 'subtask_depth',
+                        message: 'Una subtarea no puede tener subtareas',
+                        data: { status: 400 },
+                    });
+                }
+            }
             const inserted = await this.repo.insert(tx, {
                 tenantId,
                 listId,
                 data,
+                parentId,
                 createdBy: actor.userId,
             });
             await this.syncRelations(tx, tenantId, inserted.id, rel.values);
@@ -162,7 +177,7 @@ export class RecordsService {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
-        const { rows, fields, hiddenKeys, rels, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const fieldsById = new Map<number, FilterableField>(
@@ -184,7 +199,16 @@ export class RecordsService {
             // tipos sin orden útil (relation/file/computed) se descartan.
             const orderBy = parseFieldSort(query.sort, fieldsById);
             const sorted = orderBy.length > 0;
+            // Subtareas: por defecto sólo primer nivel. `parent` trae las de
+            // un registro; `include_subtasks` devuelve todo plano (export).
+            const parent =
+                query.parent !== undefined
+                    ? query.parent
+                    : query.include_subtasks === true
+                        ? ('any' as const)
+                        : ('roots' as const);
             const result = await this.repo.list(tx, tenantId, list.id, {
+                parent,
                 where,
                 // Con sort por campo el keyset por id no aplica: el cursor
                 // se reinterpreta como OFFSET (opaco para el cliente).
@@ -202,12 +226,18 @@ export class RecordsService {
                 result.map((r) => r.id),
                 relFieldIds,
             );
+            const subtaskCounts = await this.repo.subtaskCounts(
+                tx,
+                tenantId,
+                result.map((r) => r.id),
+            );
             return {
                 rows: result,
                 fields,
                 hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
                 rels,
                 relFieldIds,
+                subtaskCounts,
             };
         });
 
@@ -222,7 +252,11 @@ export class RecordsService {
         return {
             data: page.map((r) =>
                 stripHidden(
-                    toRecord(withComputed(fields, r), byFieldToKeys(relFieldIds, rels.get(r.id))),
+                    toRecord(
+                        withComputed(fields, r),
+                        byFieldToKeys(relFieldIds, rels.get(r.id)),
+                        subtaskCounts.get(r.id) ?? 0,
+                    ),
                     hiddenKeys,
                 ),
             ),
@@ -317,6 +351,9 @@ export class RecordsService {
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
             const ok = await this.repo.softDelete(tx, tenantId, listId, id);
             if (ok) {
+                // Las subtareas se van con el padre: si no, quedarían vivas
+                // colgando de un registro que ya nadie ve.
+                await this.repo.softDeleteChildren(tx, tenantId, id);
                 // Los vínculos que SALEN del record se limpian (paridad con el
                 // plugin); los que ENTRAN se filtran al leer (target borrado).
                 await this.relationsRepo.deleteBySource(tx, tenantId, id);
@@ -504,12 +541,18 @@ export class RecordsService {
     }
 }
 
-function toRecord(row: RecordRow, relations: Record<string, number[]> = {}): RecordDto {
+function toRecord(
+    row: RecordRow,
+    relations: Record<string, number[]> = {},
+    subtaskCount = 0,
+): RecordDto {
     return {
         id: row.id,
         list_id: row.listId,
         data: row.data,
         relations,
+        parent_id: row.parentId ?? null,
+        subtask_count: subtaskCount,
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),

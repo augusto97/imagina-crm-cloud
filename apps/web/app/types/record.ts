@@ -2,6 +2,10 @@ export interface RecordEntity {
     id: number;
     fields: Record<string, unknown>;
     relations: Record<string, number[]>;
+    /** Registro padre (subtareas), o null si es de primer nivel. */
+    parent_id: number | null;
+    /** Cuántas subtareas cuelgan de este registro. */
+    subtask_count: number;
     created_by: number;
     created_at: string;
     updated_at: string;
@@ -65,6 +69,8 @@ export interface RecordsQuery {
      * prioriza sobre `filter` cuando ambos vienen.
      */
     filter_tree?: FilterTree | string;
+    /** Subtareas: trae las que cuelgan de este registro (v0.1.132). */
+    parent?: number;
 }
 
 /**

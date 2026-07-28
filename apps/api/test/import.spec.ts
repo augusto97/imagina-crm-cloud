@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import type { CreateFieldInput, Field } from '@imagina-base/shared';
+import { IMPORT_ID_COLUMN, IMPORT_PARENT_COLUMN, type CreateFieldInput, type Field } from '@imagina-base/shared';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fields, lists, records, tenants } from '../src/db/schema';
@@ -237,5 +237,85 @@ describe('ImportService (Postgres real)', () => {
                 tx.update(tenants).set({ plan: 'enterprise' }).where(eq(tenants.id, tenantId)),
             );
         }
+    });
+    // --- Jerarquía de subtareas en el CSV (v0.1.132) ------------------------
+
+    it('run: la columna "Subtarea de" cuelga filas del MISMO archivo', async () => {
+        // Formato que emite nuestro propio export cuando la lista tiene
+        // subtareas: ID + "Subtarea de" adelante.
+        const csv = [
+            'ID,Subtarea de,Nombre',
+            '10,,Mudanza',
+            '11,10,Embalar',
+            '12,10,Camión',
+            '13,,Suelta',
+        ].join('\n');
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv,
+            mapping: { 0: IMPORT_ID_COLUMN, 1: IMPORT_PARENT_COLUMN, 2: 'nombre' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(4);
+        expect(res.linked_subtasks).toBe(2);
+
+        // El primer nivel son 2; el padre "Mudanza" cuenta 2 subtareas.
+        const page = await recordsService.list(tenantId, admin, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(page.data).toHaveLength(2);
+        const padre = page.data.find((r) => r.data[`f${f.nombre!.id}`] === 'Mudanza')!;
+        expect(padre.subtask_count).toBe(2);
+
+        const hijos = await recordsService.list(tenantId, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            parent: padre.id,
+        });
+        expect(hijos.data.map((r) => r.data[`f${f.nombre!.id}`]).sort()).toEqual(['Camión', 'Embalar']);
+    });
+
+    it('run: "Subtarea de" acepta el id real de un registro que ya existe', async () => {
+        const padre = await recordsService.create(tenantId, admin, 'clientes', {
+            data: { [`f${f.nombre!.id}`]: 'Existente' },
+        });
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv: `Subtarea de,Nombre\n${padre.id},Nueva subtarea\n999999,Padre inexistente`,
+            mapping: { 0: IMPORT_PARENT_COLUMN, 1: 'nombre' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(2);
+        expect(res.linked_subtasks).toBe(1);
+        // El padre inexistente no pierde la fila: se importa al primer nivel
+        // y queda reportado.
+        expect(res.errors).toHaveLength(1);
+        expect(res.errors[0]!.message).toContain('999999');
+
+        const hijos = await recordsService.list(tenantId, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            parent: padre.id,
+        });
+        expect(hijos.data.map((r) => r.data[`f${f.nombre!.id}`])).toEqual(['Nueva subtarea']);
+    });
+
+    it('run: un tercer nivel se aplana y se reporta (no hay subtareas de subtareas)', async () => {
+        const csv = ['ID,Subtarea de,Nombre', '1,,Raíz', '2,1,Hija', '3,2,Nieta'].join('\n');
+        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+            csv,
+            mapping: { 0: IMPORT_ID_COLUMN, 1: IMPORT_PARENT_COLUMN, 2: 'nombre' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(3);
+        expect(res.linked_subtasks).toBe(1);
+        expect(res.errors[0]!.message).toContain('subtareas dentro de subtareas');
+    });
+
+    it('preview: las cabeceras del export se re-mapean solas a la jerarquía', async () => {
+        const res = await importService.preview(
+            tenantId,
+            'clientes',
+            'ID,Subtarea de,Nombre\n1,,ACME\n',
+        );
+        expect(res.suggested_mapping['0']).toBe(IMPORT_ID_COLUMN);
+        expect(res.suggested_mapping['1']).toBe(IMPORT_PARENT_COLUMN);
+        expect(res.suggested_mapping['2']).toBe('nombre');
     });
 });

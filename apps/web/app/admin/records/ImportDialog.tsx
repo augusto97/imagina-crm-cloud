@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, FileUp, Loader2, Plus, TriangleAlert, X } from 'lucide-react';
+import { IMPORT_ID_COLUMN, IMPORT_PARENT_COLUMN } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +43,8 @@ interface NewFieldSpec {
 interface RunResponse {
     imported: number;
     skipped: number;
+    /** Filas que quedaron colgadas de un padre (columna "Subtarea de"). */
+    linked_subtasks?: number;
     errors: Array<{ row: number; message: string }>;
     truncated: boolean;
     created_fields: Array<{ slug: string; label: string; type: string }>;
@@ -177,15 +180,26 @@ export function ImportDialog({
                 // usuario solo revisa y dispara (antes: tenía que elegir
                 // "Crear campo nuevo" columna por columna a mano).
                 if ((res.data.fields ?? []).length === 0) {
+                    const suggested = res.data.suggested_mapping ?? {};
                     setNewFields(
                         Object.fromEntries(
-                            res.data.headers.map((header, idx) => [
-                                idx,
-                                {
-                                    label: header || `${__('Columna')} ${idx + 1}`,
-                                    type: res.data.suggested_types?.[String(idx)] ?? 'text',
-                                },
-                            ]),
+                            res.data.headers
+                                // Las columnas de jerarquía NO son campos: si
+                                // el archivo salió de nuestro export, se
+                                // mapean solas y crear un campo "ID" sería
+                                // basura.
+                                .map((header, idx) => [idx, header] as const)
+                                .filter(([idx]) => {
+                                    const s = suggested[String(idx)];
+                                    return s !== IMPORT_ID_COLUMN && s !== IMPORT_PARENT_COLUMN;
+                                })
+                                .map(([idx, header]) => [
+                                    idx,
+                                    {
+                                        label: header || `${__('Columna')} ${idx + 1}`,
+                                        type: res.data.suggested_types?.[String(idx)] ?? 'text',
+                                    },
+                                ]),
                         ),
                     );
                 }
@@ -580,6 +594,14 @@ function MapStep({
                                                     </option>
                                                 ))}
                                             </optgroup>
+                                            <optgroup label={__('Subtareas')}>
+                                                <option value={IMPORT_ID_COLUMN}>
+                                                    {__('ID de la fila (para referenciarla)')}
+                                                </option>
+                                                <option value={IMPORT_PARENT_COLUMN}>
+                                                    {__('Subtarea de…')}
+                                                </option>
+                                            </optgroup>
                                             <option value={NEW_TOKEN}>
                                                 + {__('Crear campo nuevo')}
                                             </option>
@@ -658,6 +680,14 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                             {' · '}
                             <span className="imcrm-text-muted-foreground">
                                 {result.skipped.toLocaleString()} {__('omitidos')}
+                            </span>
+                        </>
+                    )}
+                    {(result.linked_subtasks ?? 0) > 0 && (
+                        <>
+                            {' · '}
+                            <span className="imcrm-text-muted-foreground">
+                                {result.linked_subtasks!.toLocaleString()} {__('como subtareas')}
                             </span>
                         </>
                     )}

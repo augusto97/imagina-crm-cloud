@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import {
     flexRender,
     getCoreRowModel,
+    getExpandedRowModel,
     useReactTable,
     type ColumnDef,
     type ColumnOrderState,
@@ -9,11 +10,12 @@ import {
     type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
+import { SubtaskFetcher } from '../SubtaskFetcher';
 import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
@@ -82,6 +84,8 @@ interface TableViewProps {
     /** "Ajustar texto": las celdas muestran el contenido completo en
      * varias líneas en vez de recortarlo con elipsis. */
     wrapText?: boolean;
+    /** Alta de subtarea desde el menú contextual de la fila (v0.1.132). */
+    onCreateSubtask?: (record: RecordEntity) => void;
 }
 
 /**
@@ -118,6 +122,7 @@ export function TableView({
     onFooterAggregatesChange,
     totalCount,
     wrapText = false,
+    onCreateSubtask,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -129,6 +134,14 @@ export function TableView({
     const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
     // Menú contextual de fila (click derecho) — v0.1.129.
     const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
+    // Subtareas (v0.1.132): qué padres están abiertos y sus hijos ya traídos.
+    // Los hijos NO vienen en el listado (que devuelve sólo primer nivel): los
+    // pide un `SubtaskFetcher` por padre abierto.
+    const [expandedIds, setExpandedIds] = useState<number[]>([]);
+    const [childrenByParent, setChildrenByParent] = useState<Record<number, RecordEntity[]>>({});
+    const toggleSubtasks = (id: number): void => {
+        setExpandedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
 
     // Drag-and-drop column reorder: trackeamos qué column está siendo
     // arrastrada en local state (no persiste). Al drop, computamos el
@@ -171,19 +184,66 @@ export function TableView({
         const dynamic = fields
             .filter((f) => f.type !== 'relation')
             .sort((a, b) => a.position - b.position)
-            .map<ColumnDef<RecordEntity>>((field) => ({
+            .map<ColumnDef<RecordEntity>>((field, i) => ({
                 id: field.slug,
                 header: field.label,
                 accessorFn: (row) => row.fields[field.slug],
-                cell: (ctx) => (
-                    <EditableCell
-                        listId={listId}
-                        recordId={ctx.row.original.id}
-                        field={field}
-                        value={ctx.getValue()}
-                        canEdit={canEditRecords}
-                    />
-                ),
+                cell: (ctx) => {
+                    const editable = (
+                        <EditableCell
+                            listId={listId}
+                            recordId={ctx.row.original.id}
+                            field={field}
+                            value={ctx.getValue()}
+                            canEdit={canEditRecords}
+                        />
+                    );
+                    // El chevron de subtareas vive en la PRIMERA columna de
+                    // campo (la que hace de "nombre"), como en ClickUp. Las
+                    // subtareas se dibujan sangradas por `row.depth`.
+                    if (i !== 0) return editable;
+                    const n = ctx.row.original.subtask_count;
+                    const isOpen = expandedIds.includes(ctx.row.original.id);
+                    return (
+                        <span
+                            className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1"
+                            style={ctx.row.depth > 0 ? { paddingLeft: ctx.row.depth * 16 } : undefined}
+                        >
+                            {n > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleSubtasks(ctx.row.original.id);
+                                    }}
+                                    aria-expanded={isOpen}
+                                    aria-label={sprintf(
+                                        /* translators: %d: subtask count */
+                                        __('%d subtareas'),
+                                        n,
+                                    )}
+                                    className="imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                                >
+                                    <ChevronRight
+                                        aria-hidden
+                                        className={cn(
+                                            'imcrm-h-3.5 imcrm-w-3.5 imcrm-transition-transform',
+                                            isOpen && 'imcrm-rotate-90',
+                                        )}
+                                    />
+                                </button>
+                            ) : (
+                                ctx.row.depth > 0 && (
+                                    <span
+                                        aria-hidden
+                                        className="imcrm-h-1 imcrm-w-1 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-muted-foreground/50"
+                                    />
+                                )
+                            )}
+                            <span className="imcrm-min-w-0 imcrm-flex-1">{editable}</span>
+                        </span>
+                    );
+                },
                 size: defaultSizeForType(field.type),
                 minSize: 80,
                 maxSize: 800,
@@ -225,7 +285,7 @@ export function TableView({
                 meta: { fieldId: null },
             },
         ];
-    }, [fields, listId, canEditRecords]);
+    }, [fields, listId, canEditRecords, expandedIds]);
 
     // Footer aggregations: pedimos sum/avg/count/min/max para todos
     // los fields visibles que son numéricos / fecha / checkbox / etc.
@@ -245,15 +305,33 @@ export function TableView({
         filterTree,
     });
 
+    // Las filas de los padres abiertos llevan sus hijos como `subRows`, que
+    // es lo que TanStack expande — así las subtareas se pintan con TODAS las
+    // columnas, sin duplicar el render de celdas.
+    const dataWithSubRows = useMemo(
+        () =>
+            records.map((r) =>
+                expandedIds.includes(r.id)
+                    ? { ...r, subRows: childrenByParent[r.id] ?? [] }
+                    : r,
+            ),
+        [records, expandedIds, childrenByParent],
+    );
+
     const table = useReactTable({
-        data: records,
+        data: dataWithSubRows,
         columns,
         getCoreRowModel: getCoreRowModel(),
+        getExpandedRowModel: getExpandedRowModel(),
+        getSubRows: (row) => (row as RecordEntity & { subRows?: RecordEntity[] }).subRows,
         columnResizeMode: 'onChange',
         state: {
             columnVisibility,
             columnSizing,
             columnOrder,
+            // Sólo tienen subfilas los padres abiertos, así que "todo
+            // expandido" equivale a "los que el usuario abrió".
+            expanded: true,
         },
         onColumnVisibilityChange: (updater) => {
             const next = typeof updater === 'function' ? updater(columnVisibility) : updater;
@@ -821,6 +899,15 @@ export function TableView({
             ClickUp) — la nativa del wrapper queda al fondo de la tabla,
             invisible en listas largas. */}
         <StickyHScrollbar targetRef={tableContainerRef} />
+        {expandedIds.map((id) => (
+            <SubtaskFetcher
+                key={id}
+                listId={listId}
+                parentId={id}
+                onLoaded={(rows) => setChildrenByParent((prev) => ({ ...prev, [id]: rows }))}
+            />
+        ))}
+
         <RecordRowMenu
             target={rowMenu}
             onClose={() => setRowMenu(null)}
@@ -832,6 +919,7 @@ export function TableView({
                 onRowClick?.(r);
             }}
             onAddColumn={onAddColumn}
+            onCreateSubtask={onCreateSubtask}
             canCreate={canCreateRecords}
             canDelete={canDeleteRecords}
         />

@@ -303,11 +303,37 @@ export function useRecord(listId: string | number | undefined, recordId: number 
     });
 }
 
+/** Valores sueltos, o `{ values, parentId }` para crear una subtarea. */
+export type CreateRecordVars =
+    | Record<string, unknown>
+    | { values: Record<string, unknown>; parentId?: number | null };
+
+function isWrappedCreate(
+    input: CreateRecordVars,
+): input is { values: Record<string, unknown>; parentId?: number | null } {
+    return (
+        typeof input === 'object'
+        && input !== null
+        && 'values' in input
+        && typeof (input as { values: unknown }).values === 'object'
+        && ('parentId' in input || Object.keys(input).length === 1)
+    );
+}
+
 export function useCreateRecord(listId: string | number) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (values: Record<string, unknown>) => {
-            const res = await api.post<RecordEntity>(`/lists/${listId}/records`, { fields: values });
+        mutationFn: async (input: CreateRecordVars) => {
+            // Dos formas de llamarlo: los valores sueltos (lo de siempre) o
+            // `{ values, parentId }` para crear una SUBTAREA (v0.1.132). El
+            // padre va como clave propia del body, nunca mezclado con los
+            // valores — un campo podría llamarse igual que la clave.
+            const wrapped = isWrappedCreate(input);
+            const values = wrapped ? input.values : input;
+            const parentId = wrapped ? input.parentId ?? null : null;
+            const body: Record<string, unknown> = { fields: values };
+            if (parentId !== null) body.parent_id = parentId;
+            const res = await api.post<RecordEntity>(`/lists/${listId}/records`, body);
             return res.data;
         },
         onSuccess: () => {
