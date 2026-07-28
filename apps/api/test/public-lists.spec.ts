@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
-import { attachments, fields, lists, publicLists, records, tenants, users } from '../src/db/schema';
+import { attachments, fields, lists, publicLists, records, savedViews, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -231,6 +231,70 @@ describe('Listas públicas embebibles', () => {
         const [row] = await pg.db.select().from(publicLists).where(eq(publicLists.listId, f.nombre!.list_id));
         expect(row).toBeUndefined();
         await expect(pub.getMeta(cfg.token)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('el enlace caduca: pasada la fecha responde 404 (como un token desconocido)', async () => {
+        await seed();
+        const cfg = await publish({ expires_at: '2020-01-01' });
+        await expect(pub.getMeta(cfg.token)).rejects.toThrow();
+        await expect(pub.getRecords(cfg.token, {})).rejects.toThrow();
+        // Con una fecha futura vuelve a servir, y sin fecha también.
+        const alive = await publish({ expires_at: '2999-12-31' });
+        expect((await pub.getRecords(alive.token, {})).data).toHaveLength(3);
+        const forever = await publish({ expires_at: null });
+        expect((await pub.getRecords(forever.token, {})).data).toHaveLength(3);
+    });
+
+    it('publicar UNA vista: sus filtros acotan lo que ve el visitante', async () => {
+        await seed();
+        const view = await withTenant(pg.db, tenantId, async (tx) => {
+            const [row] = await tx
+                .insert(savedViews)
+                .values({
+                    tenantId,
+                    listId: (await lists_.get(tenantId, 'directorio')).id,
+                    name: 'Grandes',
+                    type: 'table',
+                    config: {
+                        filter_tree: {
+                            type: 'group',
+                            logic: 'and',
+                            children: [
+                                { type: 'condition', field_id: f.monto!.id, op: 'gte', value: 200 },
+                            ],
+                        },
+                    },
+                })
+                .returning();
+            return row!;
+        });
+
+        const cfg = await publish({ view_id: view.id });
+        const page = await pub.getRecords(cfg.token, {});
+        expect(page.data.map((r) => r.data.nombre).sort()).toEqual(['Ana', 'Carla']);
+        expect((await pub.getMeta(cfg.token)).view_name).toBe('Grandes');
+
+        // Sin vista publicada vuelven los tres, y el nombre de vista queda en null.
+        const all = await publish({ view_id: null });
+        expect((await pub.getRecords(all.token, {})).data).toHaveLength(3);
+        expect((await pub.getMeta(all.token)).view_name).toBeNull();
+    });
+
+    it('si el mapeo quedó con un token viejo, al guardar se re-sincroniza', async () => {
+        await seed();
+        const cfg = await publish();
+        // Simulamos el estado corrupto: el mapeo apunta a otro token (pasaba
+        // cuando el token de settings se regeneraba y el UNIQUE por lista
+        // hacía que el insert no tocara la fila vieja).
+        await pg.db
+            .update(publicLists)
+            .set({ token: 'token-viejo' })
+            .where(eq(publicLists.listId, (await lists_.get(tenantId, 'directorio')).id));
+        await expect(pub.getRecords(cfg.token, {})).rejects.toThrow();
+
+        await publish({ per_page: 25 });
+        expect((await pub.getRecords(cfg.token, {})).data).toHaveLength(3);
+        await expect(pub.getRecords('token-viejo', {})).rejects.toThrow();
     });
 
     it('token inexistente → 404', async () => {

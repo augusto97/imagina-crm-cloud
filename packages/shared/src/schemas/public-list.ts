@@ -20,6 +20,19 @@ export const publicListSettingsSchema = z.object({
     search_enabled: z.boolean().default(true),
     allowed_domains: z.array(z.string()).default([]),
     cache_ttl: z.number().int().min(0).max(3600).default(60),
+    /**
+     * Vista guardada que se publica. Con `null` sale la lista completa;
+     * con una vista, sus FILTROS acotan lo que ve el visitante (los
+     * campos expuestos siguen siendo `visible_field_slugs` — filtrar no
+     * es lo mismo que mostrar).
+     */
+    view_id: z.number().int().positive().nullable().default(null),
+    /**
+     * Caducidad del enlace (`YYYY-MM-DD`). Pasada esa fecha el enlace
+     * responde 404, igual que un token desconocido: no se le confirma a
+     * nadie que existió. `null` = no caduca.
+     */
+    expires_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
 });
 export type PublicListSettings = z.infer<typeof publicListSettingsSchema>;
 
@@ -33,6 +46,8 @@ export const PUBLIC_LIST_DEFAULTS: PublicListSettings = {
     search_enabled: true,
     allowed_domains: [],
     cache_ttl: 60,
+    view_id: null,
+    expires_at: null,
 };
 
 /** Body del PATCH admin de la config pública (parcial). */
@@ -63,6 +78,8 @@ export interface PublicListMeta {
     default_sort: string | null;
     per_page: number;
     search_enabled: boolean;
+    /** Nombre de la vista publicada, si se publicó una vista concreta. */
+    view_name: string | null;
     /** White-label del workspace dueño (logo por URL firmada, sin sesión). */
     branding: { primary_color: string | null; app_name: string | null; logo_url: string | null };
 }

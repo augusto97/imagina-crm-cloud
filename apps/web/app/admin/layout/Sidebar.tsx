@@ -170,7 +170,11 @@ export function Sidebar({
             <nav
                 aria-label={__('Navegación principal')}
                 onClick={onClose}
-                className="imcrm-flex imcrm-w-[68px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-bg-sidebar imcrm-px-2 imcrm-py-3 imcrm-text-sidebar-foreground"
+                // En escritorio el riel FLOTA: esquinas redondeadas y un
+                // respiro de 6px contra los bordes de la ventana y contra el
+                // panel (v0.1.128, estilo ClickUp). En mobile es un drawer a
+                // pantalla completa, así que ahí va pegado y sin redondear.
+                className="imcrm-flex imcrm-w-[68px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-bg-sidebar imcrm-px-2 imcrm-py-3 imcrm-text-sidebar-foreground lg:imcrm-my-1.5 lg:imcrm-ml-1.5 lg:imcrm-mr-1.5 lg:imcrm-rounded-xl"
             >
                 {/* Marca: sólo el cuadrado/logo (el nombre vive en el panel). */}
                 <div className="imcrm-mb-2 imcrm-flex imcrm-shrink-0 imcrm-justify-center">

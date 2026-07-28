@@ -1901,6 +1901,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (barra 40 px alineada con el panel, pestañas 32, gap 4.8 px, sin
         desborde, resto de las pantallas intactas).
 
+  - [x] **Línea por fila, riel flotante y diálogo de Compartir (v0.1.128,
+        tres pedidos del usuario con capturas de ClickUp)**: (a) **la línea
+        divisoria de cada fila** existía en el DOM pero estaba al 50% de
+        opacidad — sobre blanco daba ~#F2F3F5, o sea nada. Ahora usa el color
+        de borde completo en la tabla plana y en la agrupada, que es el ritmo
+        de lectura que tiene ClickUp. (b) **El riel del menú FLOTA**: en
+        escritorio lleva esquinas redondeadas y 6 px de aire contra los bordes
+        de la ventana y contra el panel; en mobile sigue pegado y sin
+        redondear, porque ahí es un drawer a pantalla completa. (c)
+        **Compartir de verdad**: botón en la cabecera de la lista que abre un
+        diálogo con los dos niveles bien separados —el enlace del equipo (lo
+        abre quien tiene cuenta y permiso) y la publicación hacia afuera— y en
+        el segundo, además de lo que ya existía (publicar, enlace, insertar
+        por iframe, campos visibles, dominios), dos funciones nuevas de
+        backend: **publicar UNA vista guardada**, cuyos filtros acotan lo que
+        ve el visitante (se compila con el mismo query builder whitelisteado
+        de la app — los campos expuestos siguen siendo los marcados: filtrar
+        no es mostrar), y **caducidad del enlace**, que vencido responde 404
+        opaco, igual que un token desconocido. **Bug encontrado en el
+        camino**: el mapeo token→lista tiene UNIQUE por lista, así que si la
+        fila había quedado con un token viejo el `onConflictDoNothing` no la
+        tocaba nunca y la app mostraba un enlace público que devolvía 404 para
+        siempre; ahora el token de `settings` manda y el mapeo se
+        re-sincroniza al guardar. 3 tests nuevos (16 del spec de listas
+        públicas) + E2E navegador 12/12 (línea visible, riel a 6 px con
+        esquinas de 8, publicar una vista → 11 filas filtradas en la página
+        pública, vencer → 404).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
