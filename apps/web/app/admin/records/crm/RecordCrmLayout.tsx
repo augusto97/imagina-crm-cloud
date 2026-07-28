@@ -10,12 +10,14 @@ import { blockStyleClass, blockStyleCss, readBlockStyle, wrapperStyleCss } from 
 import { useTheme } from '@/lib/theme';
 import { getResolvedV2 } from '@/lib/crmTemplates';
 import { __ } from '@/lib/i18n';
+import { CAP, useCanAny } from '@/lib/permissions';
 import { groupBlocksByRowsAndColumns } from '@/lib/rowsLayout';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 import type { RecordEntity } from '@/types/record';
 
 import { BlockRenderer } from './BlockRenderer';
+import { RecordDescription } from '../description/RecordDescription';
 import { PortalAccessButton } from './PortalAccessButton';
 
 interface RecordCrmLayoutProps {
@@ -53,6 +55,7 @@ export function RecordCrmLayout({
     deleting,
 }: RecordCrmLayoutProps): JSX.Element {
     const update = useUpdateRecord(list.id);
+    const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const toast = useToast();
     // v0.1.122 — la ficha vive en el admin (tema claro/oscuro): la capa de
     // estilo necesita el tema para decidir la tinta de los bloques.
@@ -140,6 +143,16 @@ export function RecordCrmLayout({
                     </Button>
                 </div>
             </div>
+
+            {/* Descripción rica (v0.1.134): también en el layout por
+                plantilla — si no, una lista con diseño propio se quedaba
+                sin el cuerpo del registro. */}
+            <RecordDescription
+                listKey={list.slug}
+                listSlug={list.slug}
+                recordId={record.id}
+                editable={canEditRecords}
+            />
 
             <PortalAccessButton list={list} record={record} />
 

@@ -1,4 +1,5 @@
 import {
+    AtSign,
     Code2,
     Heading1,
     Heading2,
@@ -7,6 +8,9 @@ import {
     ListChecks,
     ListOrdered,
     Minus,
+    Hash,
+    Image,
+    Paperclip,
     Quote,
     Table as TableIcon,
     Type,
@@ -18,6 +22,12 @@ import { __ } from '@/lib/i18n';
 
 export interface SlashCommand {
     id: string;
+    /**
+     * Comandos que NO se resuelven con el editor solo: necesitan pedir algo
+     * antes (subir un archivo, elegir una persona o un registro). El editor
+     * los intercepta y abre lo que corresponda.
+     */
+    action?: 'image' | 'file' | 'mentionUser' | 'mentionRecord';
     /** Grupo del menú (el orden de aparición lo da el array). */
     group: string;
     label: string;
@@ -138,6 +148,50 @@ export const SLASH_COMMANDS: SlashCommand[] = [
         run: (e) => e.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
     },
 ];
+
+/** Bloques "vivos" (v0.1.134): apuntan a entidades de la app, no a texto. */
+SLASH_COMMANDS.push(
+    {
+        id: 'mention-user',
+        group: __('Menciones'),
+        label: __('Mencionar persona'),
+        hint: __('Le avisa en su campana'),
+        icon: AtSign,
+        keywords: 'mencionar persona usuario arroba equipo notificar',
+        action: 'mentionUser',
+        run: () => {},
+    },
+    {
+        id: 'mention-record',
+        group: __('Menciones'),
+        label: __('Mencionar registro'),
+        hint: __('Enlaza a otro registro'),
+        icon: Hash,
+        keywords: 'mencionar registro tarea vincular enlazar referencia',
+        action: 'mentionRecord',
+        run: () => {},
+    },
+    {
+        id: 'image',
+        group: __('Archivos'),
+        label: __('Imagen'),
+        hint: __('Sube una imagen'),
+        icon: Image,
+        keywords: 'imagen foto captura subir jpg png',
+        action: 'image',
+        run: () => {},
+    },
+    {
+        id: 'file',
+        group: __('Archivos'),
+        label: __('Adjunto'),
+        hint: __('Sube un archivo'),
+        icon: Paperclip,
+        keywords: 'adjunto archivo documento pdf subir',
+        action: 'file',
+        run: () => {},
+    },
+);
 
 /** Normaliza para buscar sin acentos ni mayúsculas. */
 export function normalizeQuery(s: string): string {

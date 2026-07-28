@@ -7,6 +7,7 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    collectMentionedUserIds,
     evaluateComputed,
     isDataField,
     jsonbKeyForField,
@@ -23,9 +24,10 @@ import {
     type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
-import { sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
-import { records } from '../db/schema';
+import type { Tx } from '../db/client';
+import { memberships, mentions, records } from '../db/schema';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
@@ -381,6 +383,7 @@ export class RecordsService {
             const row = await this.repo.findById(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
+            await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
             // La bitácora registra QUE cambió, no el documento entero: el
             // activity se lee como una línea de tiempo, no como un historial
             // de versiones (eso sería otra feature).
@@ -403,6 +406,59 @@ export class RecordsService {
 
         this.realtime.records(tenantId, list.id);
         return clean;
+    }
+
+    /**
+     * Menciones escritas EN la descripción (v0.1.134).
+     *
+     * A diferencia de los comentarios (que buscan tokens `@email` en el
+     * texto), acá la mención es un NODO con el id de la persona: renombrarla
+     * no rompe el vínculo. Igual se valida contra los miembros del workspace
+     * — un id ajeno no notifica a nadie.
+     *
+     * Se re-escriben en cada guardado: primero se borran las de esta
+     * descripción y se vuelven a insertar. Es lo que hace que sacar una
+     * mención del documento la saque también de la campana.
+     */
+    private async storeDescriptionMentions(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        recordId: number,
+        authorId: number,
+        doc: RichDoc | null,
+    ): Promise<void> {
+        await tx
+            .delete(mentions)
+            .where(
+                and(
+                    eq(mentions.tenantId, tenantId),
+                    eq(mentions.recordId, recordId),
+                    eq(mentions.source, 'description'),
+                ),
+            );
+        const ids = collectMentionedUserIds(doc).filter((id) => id !== authorId);
+        if (ids.length === 0) return;
+
+        const members = await tx
+            .select({ userId: memberships.userId })
+            .from(memberships)
+            .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids)));
+        if (members.length === 0) return;
+
+        const snippet = richDocToPlainText(doc, 180);
+        await tx.insert(mentions).values(
+            members.map((m) => ({
+                tenantId,
+                commentId: null,
+                listId,
+                recordId,
+                mentionedUserId: m.userId,
+                authorUserId: authorId,
+                source: 'description',
+                snippet,
+            })),
+        );
     }
 
     async remove(

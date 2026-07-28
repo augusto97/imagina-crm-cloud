@@ -14,8 +14,12 @@ import {
     Underline as UnderlineIcon,
 } from 'lucide-react';
 
+import { api } from '@/cloud/session';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+
+import { RecordPickerDialog } from './RecordPickerDialog';
+import { UserMentionMenu } from './UserMentionMenu';
 
 import { HIGHLIGHT_COLORS, TEXT_COLORS, descriptionExtensions } from './editorSetup';
 import { filterCommands, type SlashCommand } from './slashCommands';
@@ -23,6 +27,8 @@ import { filterCommands, type SlashCommand } from './slashCommands';
 interface DescriptionEditorProps {
     value: JSONContent | null;
     editable: boolean;
+    /** Lista del registro: arranca seleccionada al mencionar otro registro. */
+    listSlug?: string;
     /**
      * `fromUser` distingue una edición real de la normalización que hace el
      * propio editor al cargar (agrega el párrafo final, completa atributos por
@@ -57,9 +63,16 @@ const CLOSED: SlashState = { open: false, query: '', from: 0, index: 0, rect: nu
 export function DescriptionEditor({
     value,
     editable,
+    listSlug,
     onChange,
     onBlurFlush,
 }: DescriptionEditorProps): JSX.Element {
+    // Bloques "vivos" (v0.1.134): lo que no se resuelve con el editor solo.
+    const fileInput = useRef<HTMLInputElement>(null);
+    const [uploadKind, setUploadKind] = useState<'image' | 'file'>('file');
+    const [uploading, setUploading] = useState(false);
+    const [pickRecord, setPickRecord] = useState(false);
+    const [userQuery, setUserQuery] = useState<string | null>(null);
     const [slash, setSlash] = useState<SlashState>(CLOSED);
     const slashRef = useRef(slash);
     slashRef.current = slash;
@@ -82,8 +95,24 @@ export function DescriptionEditor({
             .focus()
             .deleteRange({ from, to: from + query.length + 1 })
             .run();
-        cmd.run(editor);
         setSlash(CLOSED);
+        // Los bloques vivos necesitan pedir algo antes de existir.
+        if (cmd.action === 'image' || cmd.action === 'file') {
+            setUploadKind(cmd.action);
+            // Un tick: el input tiene que tener ya el `accept` correcto.
+            setTimeout(() => fileInput.current?.click(), 0);
+            return;
+        }
+        if (cmd.action === 'mentionRecord') {
+            setPickRecord(true);
+            return;
+        }
+        if (cmd.action === 'mentionUser') {
+            // Se escribe el `@` y el propio trigger abre el buscador.
+            editor.chain().focus().insertContent('@').run();
+            return;
+        }
+        cmd.run(editor);
     }, []);
 
     const editor = useEditor(
@@ -155,8 +184,12 @@ export function DescriptionEditor({
     const syncSlash = useCallback((ed: Editor) => {
         const { state } = ed;
         const { from, empty } = state.selection;
-        if (!empty || !ed.isEditable) {
+        // Sólo con el editor ENFOCADO: si no, un documento que ya terminaba en
+        // "/" abría el menú con sólo abrir la ficha (y su capa de "click
+        // afuera" bloqueaba media pantalla).
+        if (!empty || !ed.isEditable || !ed.isFocused) {
             setSlash(CLOSED);
+            setUserQuery(null);
             return;
         }
         const $from = state.selection.$from;
@@ -166,6 +199,26 @@ export function DescriptionEditor({
             undefined,
             '￼',
         );
+        // `@` → buscador de personas (v0.1.134). Se maneja aparte del menú de
+        // bloques porque sus opciones vienen del servidor.
+        const atMatch = /(?:^|\s)@([^\s@]{0,40})$/.exec(textBefore);
+        if (atMatch !== null) {
+            const q = atMatch[1] ?? '';
+            const atPos = from - q.length - 1;
+            const c = ed.view.coordsAtPos(atPos);
+            const bb = wrapperRef.current?.getBoundingClientRect();
+            setUserQuery(q);
+            setSlash({
+                open: false,
+                query: q,
+                from: atPos,
+                index: 0,
+                rect: { top: c.bottom - (bb?.top ?? 0) + 6, left: c.left - (bb?.left ?? 0) },
+            });
+            return;
+        }
+        setUserQuery(null);
+
         const match = /(?:^|\s)\/([^\s/]{0,30})$/.exec(textBefore);
         if (match === null) {
             setSlash(CLOSED);
@@ -345,6 +398,89 @@ export function DescriptionEditor({
                     })}
                 </div>
             )}
+            {/* ——— Buscador de personas («@») ——— */}
+            {editable && userQuery !== null && slash.rect !== null && (
+                <UserMentionMenu
+                    query={userQuery}
+                    top={slash.rect.top}
+                    left={slash.rect.left}
+                    onPick={(user) => {
+                        editor
+                            .chain()
+                            .focus()
+                            .deleteRange({ from: slash.from, to: slash.from + userQuery.length + 1 })
+                            .insertContent([
+                                { type: 'mentionUser', attrs: { id: user.id, label: user.display_name } },
+                                { type: 'text', text: ' ' },
+                            ])
+                            .run();
+                        setUserQuery(null);
+                    }}
+                    onClose={() => setUserQuery(null)}
+                />
+            )}
+
+            {/* Subida de imagen / adjunto (el input vive oculto). */}
+            <input
+                ref={fileInput}
+                type="file"
+                hidden
+                accept={uploadKind === 'image' ? 'image/*' : undefined}
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file === undefined) return;
+                    setUploading(true);
+                    void api
+                        .uploadFile(file)
+                        .then(({ id }) => {
+                            editor
+                                .chain()
+                                .focus()
+                                .insertContent(
+                                    uploadKind === 'image'
+                                        ? { type: 'imageBlock', attrs: { fileId: id, alt: file.name } }
+                                        : {
+                                              type: 'fileBlock',
+                                              attrs: { fileId: id, name: file.name, size: file.size },
+                                          },
+                                )
+                                .run();
+                        })
+                        .catch(() => {
+                            window.alert(__('No se pudo subir el archivo.'));
+                        })
+                        .finally(() => setUploading(false));
+                }}
+            />
+            {uploading && (
+                <span className="imcrm-mt-1 imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Subiendo…')}
+                </span>
+            )}
+
+            {/* Selector de registro a mencionar. */}
+            {pickRecord && (
+                <RecordPickerDialog
+                    open={pickRecord}
+                    onOpenChange={setPickRecord}
+                    defaultListSlug={listSlug}
+                    onPick={(pick) => {
+                        editor
+                            .chain()
+                            .focus()
+                            .insertContent([
+                                {
+                                    type: 'mentionRecord',
+                                    attrs: { id: pick.id, listSlug: pick.listSlug, label: pick.label },
+                                },
+                                { type: 'text', text: ' ' },
+                            ])
+                            .run();
+                    }}
+                />
+            )}
+
             {/* Cerrar el menú al hacer click afuera del editor. */}
             {slash.open && (
                 <div

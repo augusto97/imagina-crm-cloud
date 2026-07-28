@@ -16,9 +16,13 @@ export const mentions = pgTable('mentions', {
     tenantId: bigint('tenant_id', { mode: 'number' })
         .notNull()
         .references(() => tenants.id),
-    commentId: bigint('comment_id', { mode: 'number' })
-        .notNull()
-        .references(() => comments.id, { onDelete: 'cascade' }),
+    /**
+     * Comentario del que salió la mención. NULL cuando vino de la DESCRIPCIÓN
+     * del registro (v0.1.134) — ahí no hay comentario del que colgar.
+     */
+    commentId: bigint('comment_id', { mode: 'number' }).references(() => comments.id, {
+        onDelete: 'cascade',
+    }),
     listId: bigint('list_id', { mode: 'number' })
         .notNull()
         .references(() => lists.id, { onDelete: 'cascade' }),
@@ -31,6 +35,8 @@ export const mentions = pgTable('mentions', {
     authorUserId: bigint('author_user_id', { mode: 'number' })
         .notNull()
         .references(() => users.id),
+    /** `comment` | `description` — de dónde vino la mención. */
+    source: text('source').notNull().default('comment'),
     snippet: text('snippet').notNull().default(''),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

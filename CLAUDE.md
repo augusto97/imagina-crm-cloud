@@ -2053,6 +2053,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         adjuntos del módulo de archivos, embeds (YouTube/Figma/Loom/Drive),
         columnas, índice y botones.
 
+  - [x] **Bloques vivos de la descripción — fase 2, primera mitad (v0.1.134)**:
+        el documento del registro deja de ser sólo texto y empieza a apuntar a
+        ENTIDADES de la app. Cuatro nodos nuevos, cada uno con su entrada en la
+        whitelist compartida (si no, el backend los descartaría al guardar):
+        **mención de persona** (`@` abre el buscador de miembros; se inserta un
+        chip con el ID, así renombrar a alguien no rompe el vínculo — misma
+        regla que las claves `f{field_id}`), **mención de registro** (comando
+        `/`, buscador que cruza listas y usa la búsqueda del servidor → respeta
+        el ACL: nadie menciona lo que no puede ver; el chip es un enlace que
+        abre esa ficha), **imagen** y **adjunto** (suben al módulo de archivos
+        propio — ADR-S16 — y se resuelven por id en cada render, así la URL
+        nunca queda cableada en el documento).
+        Las menciones son de verdad: llegan a la campana. `mentions.comment_id`
+        pasa a nullable + columna `source` (migración 0041) porque una mención
+        escrita en la descripción no cuelga de ningún comentario; se
+        **re-escriben en cada guardado** (borrar la mención del texto la saca
+        también del feed), se validan contra los miembros del workspace (un id
+        ajeno no notifica a nadie) y no hay auto-mención.
+        **Dos bugs atrapados en el E2E**: (a) el menú `/` se abría al CARGAR un
+        documento que terminaba en "/" —y su capa de "click afuera" bloqueaba
+        media pantalla—; ahora los menús exigen que el editor tenga el foco,
+        igual que el guard del autosave de v0.1.133; (b) el layout CRM por
+        plantilla no montaba la descripción, así que una lista con diseño
+        propio se quedaba sin el cuerpo del registro. 2 tests de API nuevos
+        (mención que notifica y se retira, bloques de archivo que conservan su
+        referencia y se descartan sin ella) — 395 API y 84 front en verde —
+        + E2E navegador 12/12 (menú con los grupos nuevos, `@`, chip de
+        persona, buscador de registros, enlace navegable, subida de adjunto y
+        persistencia de los tres tras recargar).
+        Pendiente de la fase 2 (segunda mitad): embeds (YouTube/Loom/Figma/
+        Drive), columnas, índice y subtarea inline.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

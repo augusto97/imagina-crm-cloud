@@ -6,6 +6,8 @@ import { Placeholder } from '@tiptap/extensions';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { AnyExtension } from '@tiptap/react';
 
+import { FileBlock, ImageBlock, MentionRecord, MentionUser } from './nodes';
+
 import { __ } from '@/lib/i18n';
 
 /**
@@ -37,6 +39,12 @@ export function descriptionExtensions(placeholder: string): AnyExtension[] {
         BackgroundColor,
         Highlight.configure({ multicolor: true }),
         TableKit.configure({ table: { resizable: true } }),
+        // Bloques "vivos" (v0.1.134): mención de persona/registro, imagen y
+        // adjunto del módulo de archivos.
+        MentionUser,
+        MentionRecord,
+        ImageBlock,
+        FileBlock,
         Placeholder.configure({
             placeholder: ({ node }) =>
                 node.type.name === 'heading' ? __('Título') : placeholder,

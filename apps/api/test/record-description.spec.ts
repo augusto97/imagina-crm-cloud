@@ -1,4 +1,5 @@
 import { sanitizeRichDoc, type RichDoc } from '@imagina-base/shared';
+import { memberships, mentions, users } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -152,5 +153,83 @@ describe('Descripción del registro (v0.1.133)', () => {
         expect(sanitizeRichDoc({ type: 'paragraph' })).toBeNull();
         expect(sanitizeRichDoc(doc('   '))).toBeNull();
         expect(sanitizeRichDoc(doc('x'))).not.toBeNull();
+    });
+    // --- Bloques "vivos" (v0.1.134) -----------------------------------------
+
+    it('una mención en la descripción crea la notificación del mencionado', async () => {
+        // OJO: el autor tiene que ser un usuario DISTINTO de los mencionados —
+        // si no, el primer id de la secuencia coincide con el del actor y la
+        // regla de "no auto-mención" se lleva puesta la aserción.
+        const [author] = await pg.db
+            .insert(users)
+            .values({ email: 'author@acme.test', passwordHash: 'x', name: 'Autor' })
+            .returning();
+        const boss: Actor = { userId: author!.id, role: 'admin' };
+        // Dos miembros del workspace + un tercero AJENO (no debe notificarse).
+        const [alice] = await pg.db
+            .insert(users)
+            .values({ email: 'alice@acme.test', passwordHash: 'x', name: 'Alice' })
+            .returning();
+        const [extern] = await pg.db
+            .insert(users)
+            .values({ email: 'extern@otra.test', passwordHash: 'x', name: 'Extern' })
+            .returning();
+        await pg.db.insert(memberships).values({ tenantId, userId: alice!.id, role: 'agent' });
+
+        const rec = await create();
+        const withMentions = (): RichDoc => ({
+            type: 'doc',
+            content: [
+                {
+                    type: 'paragraph',
+                    content: [
+                        { type: 'text', text: 'Ojo ' },
+                        { type: 'mentionUser', attrs: { id: alice!.id, label: 'Alice' } },
+                        { type: 'text', text: ' y ' },
+                        { type: 'mentionUser', attrs: { id: extern!.id, label: 'Extern' } },
+                        // Auto-mención: no se notifica a uno mismo.
+                        { type: 'mentionUser', attrs: { id: boss.userId, label: 'Yo' } },
+                    ],
+                },
+            ],
+        });
+        await recs.updateDescription(tenantId, boss, 'tareas', rec.id, {
+            description: withMentions(),
+        });
+
+        const rows = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(mentions).where(eq(mentions.recordId, rec.id)),
+        );
+        expect(rows.map((r) => r.mentionedUserId)).toEqual([alice!.id]);
+        expect(rows[0]!.source).toBe('description');
+        expect(rows[0]!.commentId).toBeNull();
+
+        // Sacar la mención del documento la saca también de la campana.
+        await recs.updateDescription(tenantId, boss, 'tareas', rec.id, { description: doc('sin nadie') });
+        const after = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(mentions).where(eq(mentions.recordId, rec.id)),
+        );
+        expect(after).toHaveLength(0);
+    });
+
+    it('los bloques de archivo e imagen conservan su referencia; sin ella se descartan', async () => {
+        const rec = await create();
+        await recs.updateDescription(tenantId, admin, 'tareas', rec.id, {
+            description: {
+                type: 'doc',
+                content: [
+                    { type: 'imageBlock', attrs: { fileId: 7, alt: 'Plano' } },
+                    { type: 'fileBlock', attrs: { fileId: 9, name: 'contrato.pdf', size: 2048 } },
+                    // Sin fileId ni src: no hay nada que resolver → fuera.
+                    { type: 'imageBlock', attrs: { alt: 'huérfana' } },
+                    // Una URL externa con esquema peligroso tampoco sobrevive.
+                    { type: 'imageBlock', attrs: { src: 'javascript:alert(1)' } },
+                ],
+            } as RichDoc,
+        });
+        const stored = await recs.getDescription(tenantId, admin, 'tareas', rec.id);
+        expect(stored?.content).toHaveLength(2);
+        expect(stored?.content?.[0]).toMatchObject({ type: 'imageBlock', attrs: { fileId: 7 } });
+        expect(stored?.content?.[1]).toMatchObject({ type: 'fileBlock', attrs: { fileId: 9 } });
     });
 });
