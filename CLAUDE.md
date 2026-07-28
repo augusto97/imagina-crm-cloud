@@ -1964,6 +1964,19 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 10/10 (crear, mover con persistencia tras recargar,
         colapsar, sacar, borrar con confirmación y las listas intactas).
 
+  - [x] **Casillas de selección al pasar el mouse (v0.1.131, captura del
+        usuario)**: la casilla de cada fila estaba siempre visible y ocupaba
+        una columna de ruido permanente. Ahora aparece **al pasar el mouse por
+        la fila** (estilo ClickUp) y queda fija cuando la fila está marcada o
+        cuando hay una selección en curso — escondérsela a alguien que está
+        seleccionando es sacarle la forma de desmarcar. Igual el "seleccionar
+        todos" del encabezado (aparece al pasar por la cabecera, o si hay algo
+        marcado). Se aplicó a la tabla plana y a la agrupada, con la casilla
+        compacta (14px, esquinas suaves, color primary) en vez del control por
+        defecto del navegador. E2E navegador 10/10 (oculta en reposo, aparece
+        por fila sin afectar a las vecinas, persiste marcada y con selección
+        activa, vuelve a ocultarse al desmarcar, y el encabezado igual).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

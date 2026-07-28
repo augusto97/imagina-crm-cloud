@@ -716,7 +716,7 @@ function GroupBucketSection({
                             aria-label={labelText}
                         >
                             <thead>
-                                <tr className="imcrm-border-b imcrm-border-border">
+                                <tr className="imcrm-group/head imcrm-border-b imcrm-border-border">
                                     <th
                                         scope="col"
                                         className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
@@ -725,6 +725,12 @@ function GroupBucketSection({
                                             type="checkbox"
                                             checked={allRecordsSelected}
                                             onChange={toggleAllInGroup}
+                                            className={cn(
+                                                'imcrm-h-3.5 imcrm-w-3.5 imcrm-cursor-pointer imcrm-rounded-[3px] imcrm-border-input imcrm-accent-primary imcrm-transition-opacity',
+                                                allRecordsSelected || selectedIds.length > 0
+                                                    ? 'imcrm-opacity-100'
+                                                    : 'imcrm-opacity-0 group-hover/head:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                                            )}
                                             aria-label={__('Seleccionar todos en grupo')}
                                         />
                                     </th>
@@ -859,6 +865,12 @@ function GroupBucketSection({
                                                     type="checkbox"
                                                     checked={isSelected}
                                                     onChange={() => toggleOne(record.id)}
+                                                    className={cn(
+                                                        'imcrm-h-3.5 imcrm-w-3.5 imcrm-cursor-pointer imcrm-rounded-[3px] imcrm-border-input imcrm-accent-primary imcrm-transition-opacity',
+                                                        isSelected || selectedIds.length > 0
+                                                            ? 'imcrm-opacity-100'
+                                                            : 'imcrm-opacity-0 group-hover/row:imcrm-opacity-100 focus-visible:imcrm-opacity-100',
+                                                    )}
                                                     aria-label={sprintf(
                                                         /* translators: %d id */
                                                         __('Seleccionar registro %d'),
