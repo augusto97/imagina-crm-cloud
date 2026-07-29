@@ -11,6 +11,7 @@ import {
     fieldSlugSchema,
     jsonbKeyForField,
     parseFieldConfig,
+    resolveTitleFieldId,
     slugify,
     validateFieldValue,
     type CreateFieldInput,
@@ -96,8 +97,13 @@ export class FieldsService {
     }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
-        const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        return this.listByListId(tenantId, listId);
+        // Este es el listado que consume la UI: acá sí se marca cuál es el
+        // campo TÍTULO (v0.1.136), derivado de `settings.title_field_id` de la
+        // lista con fallback al primer texto.
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.listByListId(tenantId, list.id);
+        const titleId = resolveTitleFieldId(fields, list.settings);
+        return fields.map((f) => (f.id === titleId ? { ...f, is_primary: true } : f));
     }
 
     /**
@@ -391,6 +397,9 @@ function toField(row: FieldRow): Field {
         is_required: row.isRequired,
         is_unique: row.isUnique,
         is_indexed: row.isIndexed,
+        // El título se DERIVA de los settings de la lista (ver `list()`); en
+        // las lecturas internas no hace falta y queda en false.
+        is_primary: false,
         position: row.position,
     };
 }

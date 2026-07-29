@@ -1,5 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { capabilitiesMap, type Bootstrap, type FieldType, type ViewType } from '@imagina-base/shared';
+import {
+    capabilitiesMap,
+    resolveTitleFieldId,
+    type Bootstrap,
+    type FieldType,
+    type ViewType,
+} from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { tenants, users } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
@@ -38,6 +44,18 @@ export class BootstrapService {
             const listRows = await this.lists.listAll(tx, ctx.tenantId);
             const fieldRows = await this.fields.listByTenant(tx, ctx.tenantId);
             const viewRows = await this.views.listByTenant(tx, ctx.tenantId);
+
+            // Campo que hace de TÍTULO en cada lista (v0.1.136): se deriva de
+            // `settings.title_field_id` con fallback al primer texto, en el
+            // mismo lugar que lo resuelve `/fields`.
+            const titleFieldIds = new Set<number>();
+            for (const l of listRows) {
+                const own = fieldRows
+                    .filter((f) => f.listId === l.id)
+                    .map((f) => ({ id: f.id, type: f.type as FieldType }));
+                const titleId = resolveTitleFieldId(own, l.settings);
+                if (titleId !== null) titleFieldIds.add(titleId);
+            }
 
             return {
                 user: {
@@ -79,6 +97,7 @@ export class BootstrapService {
                     is_required: f.isRequired,
                     is_unique: f.isUnique,
                     is_indexed: f.isIndexed,
+                    is_primary: titleFieldIds.has(f.id),
                     position: f.position,
                 })),
                 views: viewRows.map((v) => ({

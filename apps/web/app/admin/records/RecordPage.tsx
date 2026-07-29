@@ -18,6 +18,8 @@ import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
+import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
+import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -137,8 +139,7 @@ export function RecordPage(): JSX.Element {
     }
 
     const dirty = JSON.stringify(values) !== JSON.stringify(initialValues);
-    const titleField = fields.data?.find((f) => f.is_primary)
-        ?? fields.data?.find((f) => f.type === 'text');
+    const titleField = titleFieldOf(fields.data);
     const titleValue = titleField ? record.data.fields[titleField.slug] : undefined;
     const title =
         typeof titleValue === 'string' && titleValue !== ''
@@ -209,12 +210,22 @@ export function RecordPage(): JSX.Element {
                             {list.data.name}
                         </Link>
                     </Button>
-                    <h1 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
-                        {title}
-                        <Badge variant="outline" className="imcrm-font-mono imcrm-text-xs">
+                    {/* El título ES el campo primario y se edita acá (v0.1.136). */}
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <RecordTitleInput
+                            field={titleField}
+                            value={titleField ? values[titleField.slug] : undefined}
+                            onChange={(next) =>
+                                titleField && setValues((v) => ({ ...v, [titleField.slug]: next }))
+                            }
+                            fallback={title}
+                            editable={canEditRecords}
+                            className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
+                        />
+                        <Badge variant="outline" className="imcrm-shrink-0 imcrm-font-mono imcrm-text-xs">
                             #{record.data.id}
                         </Badge>
-                    </h1>
+                    </div>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                     <Button

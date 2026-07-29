@@ -1,5 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
-import { Columns3, GripVertical, KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+    Columns3,
+    GripVertical,
+    Heading1,
+    KeyRound,
+    Loader2,
+    MoreHorizontal,
+    Pencil,
+    Plus,
+    Search,
+    Trash2,
+} from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,8 +25,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
-import { useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
+import { fieldsKeys, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
+import { useList, useUpdateList } from '@/hooks/useLists';
+import { invalidateForList } from '@/hooks/useRecords';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -24,6 +38,14 @@ import { FieldDialog } from './FieldDialog';
 
 interface FieldBuilderProps {
     listId: number;
+}
+
+/**
+ * v0.1.136 — Sólo un campo de TEXTO puede hacer de título del registro:
+ * el título es una línea, no un monto ni una fecha.
+ */
+function canBeTitle(field: FieldEntity): boolean {
+    return field.type === 'text' || field.type === 'long_text';
 }
 
 /**
@@ -38,10 +60,14 @@ interface FieldBuilderProps {
  * formulario de alta.
  */
 export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
+    const qc = useQueryClient();
+    const list = useList(listId);
+    const listData = list.data;
     const fields = useFields(listId);
     const types = useFieldTypes();
     const deleteField = useDeleteField(listId);
     const reorder = useReorderFields(listId);
+    const updateList = useUpdateList(listId);
     const confirm = useConfirm();
 
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -86,6 +112,19 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         if (!moved) return;
         next.splice(targetIndex, 0, moved);
         reorder.mutate(next.map((f) => f.id));
+    };
+
+    /**
+     * v0.1.136 — Elegir el campo que hace de TÍTULO del registro. No es una
+     * propiedad del campo: vive en `settings.title_field_id` de la lista
+     * (una lista tiene un solo título), así que se guarda con el PATCH de la
+     * lista y hay que refrescar los campos (el backend deriva `is_primary`).
+     */
+    const makeTitle = (field: FieldEntity): void => {
+        updateList.mutate(
+            { settings: { ...(listData?.settings ?? {}), title_field_id: field.id } },
+            { onSuccess: () => invalidateForList(qc, fieldsKeys.all, listId) },
+        );
     };
 
     const handleDelete = async (field: FieldEntity): Promise<void> => {
@@ -176,6 +215,11 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                             }}
                             onEdit={() => openEdit(field)}
                             onDelete={() => void handleDelete(field)}
+                            onMakeTitle={
+                                canBeTitle(field) && !field.is_primary
+                                    ? () => makeTitle(field)
+                                    : undefined
+                            }
                         />
                     ))}
                 </ul>
@@ -209,6 +253,8 @@ interface FieldRowProps {
     onDrop: (e: React.DragEvent) => void;
     onEdit: () => void;
     onDelete: () => void;
+    /** `undefined` cuando este campo no puede ser el título (o ya lo es). */
+    onMakeTitle?: () => void;
 }
 
 function FieldRow({
@@ -220,6 +266,7 @@ function FieldRow({
     onDrop,
     onEdit,
     onDelete,
+    onMakeTitle,
 }: FieldRowProps): JSX.Element {
     const Icon = fieldTypeIcon(field.type);
     return (
@@ -258,7 +305,7 @@ function FieldRow({
                         {field.is_primary && (
                             <Badge variant="secondary" className="imcrm-gap-1">
                                 <KeyRound className="imcrm-h-3 imcrm-w-3" />
-                                {__('Principal')}
+                                {__('Título')}
                             </Badge>
                         )}
                         {field.is_required && <Badge variant="outline">{__('Obligatorio')}</Badge>}
@@ -290,6 +337,12 @@ function FieldRow({
                         <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Modificar')}
                     </DropdownMenuItem>
+                    {onMakeTitle && (
+                        <DropdownMenuItem onSelect={onMakeTitle}>
+                            <Heading1 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Usar como título')}
+                        </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem danger onSelect={onDelete}>
                         <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />

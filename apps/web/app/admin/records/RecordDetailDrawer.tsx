@@ -36,6 +36,8 @@ import type { RecordEntity } from '@/types/record';
 import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
+import { RecordTitleInput } from './RecordTitleInput';
+import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from './RecordMetaGrid';
 
 interface RecordDetailDrawerProps {
@@ -160,8 +162,7 @@ export function RecordDetailDrawer({
 
     // Título del record (mismo criterio que RecordPage): valor del campo
     // primario — o del primer text — con fallback "Registro #id".
-    const titleField =
-        fields.find((f) => f.is_primary) ?? fields.find((f) => f.type === 'text');
+    const titleField = titleFieldOf(fields);
     const titleValue = titleField ? record.fields[titleField.slug] : undefined;
     const title =
         typeof titleValue === 'string' && titleValue !== ''
@@ -287,8 +288,23 @@ export function RecordDetailDrawer({
                                         {__('Registro')}
                                     </span>
 
-                                    <SheetTitle className="imcrm-mt-2 imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
-                                        {title}
+                                    {/* El título ES el campo primario (v0.1.136):
+                                        se edita acá y la fila de "Campos" lo
+                                        refleja al instante — mismo estado. */}
+                                    <SheetTitle asChild>
+                                        <div className="imcrm-mt-2">
+                                            <RecordTitleInput
+                                                field={titleField}
+                                                value={titleField ? values[titleField.slug] : undefined}
+                                                onChange={(next) =>
+                                                    titleField
+                                                    && setValues((v) => ({ ...v, [titleField.slug]: next }))
+                                                }
+                                                fallback={title}
+                                                editable={canEditRecords}
+                                                className="imcrm--ml-1.5"
+                                            />
+                                        </div>
                                     </SheetTitle>
 
                                     {/* Metadatos estilo ClickUp — 2 columnas (modal ancho). */}

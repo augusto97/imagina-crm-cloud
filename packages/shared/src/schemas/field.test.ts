@@ -5,6 +5,7 @@ import {
     FIELD_TYPES,
     jsonbKeyForField,
     optionColorSchema,
+    resolveTitleFieldId,
     selectOptionSchema,
 } from './field';
 
@@ -43,5 +44,32 @@ describe('tipos de campo (CONTRACT.md §3)', () => {
         };
         expect(fieldSchema.safeParse({ ...base, slug: 'estado' }).success).toBe(true);
         expect(fieldSchema.safeParse({ ...base, slug: 'created_at' }).success).toBe(false);
+    });
+});
+
+describe('campo de título del registro (v0.1.136)', () => {
+    const fields = [
+        { id: 10, type: 'number' as const },
+        { id: 11, type: 'text' as const },
+        { id: 12, type: 'text' as const },
+        { id: 13, type: 'long_text' as const },
+    ];
+
+    it('sin elección, cae al primer campo de texto (lo que la UI adivinaba)', () => {
+        expect(resolveTitleFieldId(fields, {})).toBe(11);
+        expect(resolveTitleFieldId(fields, null)).toBe(11);
+    });
+
+    it('respeta el campo elegido por la lista', () => {
+        expect(resolveTitleFieldId(fields, { title_field_id: 13 })).toBe(13);
+    });
+
+    it('ignora una elección que ya no existe o no es texto', () => {
+        expect(resolveTitleFieldId(fields, { title_field_id: 999 })).toBe(11);
+        expect(resolveTitleFieldId(fields, { title_field_id: 10 })).toBe(11);
+    });
+
+    it('una lista sin campos de texto no tiene título editable', () => {
+        expect(resolveTitleFieldId([{ id: 1, type: 'number' }], {})).toBeNull();
     });
 });

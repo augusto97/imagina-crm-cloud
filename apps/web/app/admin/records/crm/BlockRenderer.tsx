@@ -59,14 +59,30 @@ export function BlockRenderer({
     headerData,
 }: BlockRendererProps): JSX.Element | null {
     if (block.type === 'header') {
-        // 0.57.36 — bloque de presentación, solo lectura. Las acciones
-        // Guardar/Eliminar viven en la toolbar del registro (fuera del
-        // template) y en el drawer.
+        // 0.57.36 — las acciones Guardar/Eliminar viven en la toolbar del
+        // registro (fuera del template) y en el drawer.
+        // v0.1.136 — el TÍTULO sí se edita acá: es el campo de título del
+        // registro, igual que en el modal y en la ficha clásica. En la
+        // preview del editor (`recordId <= 0`, registro de mentira) queda
+        // de sólo lectura.
+        const data = headerData
+            ?? { titleField: null, subtitleFields: [], statusFields: [], quickActions: [] };
+        const tf = data.titleField;
+        const editable = recordId > 0 && tf !== null
+            && (tf.type === 'text' || tf.type === 'long_text');
         return (
             <RecordHeader
                 record={record}
-                data={headerData ?? { titleField: null, subtitleFields: [], statusFields: [], quickActions: [] }}
+                data={data}
                 style={block.config}
+                edit={
+                    editable && tf
+                        ? {
+                              value: typeof values[tf.slug] === 'string' ? (values[tf.slug] as string) : '',
+                              onChange: (next) => onChange({ ...values, [tf.slug]: next }),
+                          }
+                        : undefined
+                }
             />
         );
     }
