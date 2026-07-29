@@ -16,6 +16,8 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { RecordFieldsForm } from './RecordFieldsForm';
+import { RecordTitleInput } from './RecordTitleInput';
+import { titleFieldOf } from '@/lib/recordTitle';
 
 interface RecordCreateDialogProps {
     listId: number;
@@ -59,6 +61,7 @@ export function RecordCreateDialog({
     parentId,
 }: RecordCreateDialogProps): JSX.Element {
     const create = useCreateRecord(listId);
+    const titleField = titleFieldOf(fields);
     const { reset: resetCreate } = create;
     const [values, setValues] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
@@ -133,8 +136,24 @@ export function RecordCreateDialog({
                                     {__('Registro')}
                                 </span>
 
-                                <SheetTitle className="imcrm-mt-2 imcrm-text-2xl imcrm-font-bold imcrm-tracking-tight">
-                                    {__('Nuevo registro')}
+                                {/* v0.1.136 — el título del alta ya no es un
+                                    cartel fijo: se escribe acá y va al campo
+                                    primario, igual que en la ficha. */}
+                                <SheetTitle asChild>
+                                    <div className="imcrm-mt-2">
+                                        <RecordTitleInput
+                                            field={titleField}
+                                            value={titleField ? values[titleField.slug] : undefined}
+                                            onChange={(next) =>
+                                                titleField
+                                                && setValues((v) => ({ ...v, [titleField.slug]: next }))
+                                            }
+                                            fallback={__('Nuevo registro')}
+                                            editable
+                                            autoFocus
+                                            className="imcrm--ml-1.5"
+                                        />
+                                    </div>
                                 </SheetTitle>
 
                                 {/* Mismo layout de filas planas del drawer: icono

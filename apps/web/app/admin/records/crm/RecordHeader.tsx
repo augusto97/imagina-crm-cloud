@@ -37,6 +37,14 @@ interface RecordHeaderProps {
     record: RecordEntity;
     data: RecordHeaderData;
     style: RecordHeaderStyle;
+    /**
+     * v0.1.136 — El título del header ES el campo de título del registro,
+     * así que se edita acá mismo (igual que en el modal y en la ficha
+     * clásica). Sin esta prop el header sigue siendo de sólo lectura: es
+     * lo que necesita la PREVIEW del editor de plantillas, donde el
+     * registro es de mentira.
+     */
+    edit?: { value: string; onChange: (next: string) => void };
 }
 
 /**
@@ -57,16 +65,39 @@ export function RecordHeader({
     record,
     data,
     style,
+    edit,
 }: RecordHeaderProps): JSX.Element {
     const titleField = data.titleField;
-    const titleValue =
+    const stored =
         titleField && typeof record.fields[titleField.slug] === 'string'
             ? (record.fields[titleField.slug] as string)
             : '';
+    // Con edición, lo que se ve es el borrador en curso, no lo guardado.
+    const titleValue = edit ? edit.value : stored;
     const title =
         titleValue !== ''
             ? titleValue
             : sprintf(/* translators: %d id */ __('Registro #%d'), record.id);
+
+    const titleNode = edit && titleField ? (
+        <input
+            type="text"
+            value={edit.value}
+            aria-label={titleField.label}
+            placeholder={titleField.label}
+            onChange={(e) => edit.onChange(e.target.value)}
+            // `font: inherit` — el input tiene que verse como el título que
+            // reemplaza, no como un input: la tipografía la pone el h1 de
+            // cada variante.
+            style={{ font: 'inherit', letterSpacing: 'inherit', color: 'inherit' }}
+            className={cn(
+                'imcrm-min-w-0 imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-border-transparent',
+                'imcrm-bg-transparent imcrm-px-1 imcrm-py-0 imcrm-outline-none imcrm-transition-colors',
+                'hover:imcrm-border-border focus:imcrm-border-ring focus:imcrm-bg-background',
+                'placeholder:imcrm-font-normal placeholder:imcrm-text-muted-foreground/70',
+            )}
+        />
+    ) : null;
 
     const initials = initialsFromValue(titleValue || String(record.id));
     const avatarColor = style.accentColor ?? colorFromString(titleValue || String(record.id));
@@ -113,7 +144,7 @@ export function RecordHeader({
                     )}
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                         <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
-                            <span className="imcrm-truncate">{title}</span>
+                            {titleNode ?? <span className="imcrm-truncate">{title}</span>}
                             {idBadge}
                         </h1>
                         {style.showSubtitle && subtitleParts.length > 0 && (
@@ -134,7 +165,7 @@ export function RecordHeader({
                 <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
                         <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                            <span className="imcrm-truncate">{title}</span>
+                            {titleNode ?? <span className="imcrm-truncate">{title}</span>}
                             {idBadge}
                         </h1>
                         {style.showSubtitle && subtitleParts.length > 0 && (
@@ -170,7 +201,7 @@ export function RecordHeader({
                 )}
                 <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5 imcrm-text-center">
                     <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                        <span>{title}</span>
+                        {titleNode ?? <span>{title}</span>}
                         {idBadge}
                     </h1>
                     {style.showSubtitle && subtitleParts.length > 0 && (
@@ -231,7 +262,7 @@ export function RecordHeader({
                         )}
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1.5">
                             <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                                <span className="imcrm-truncate">{title}</span>
+                                {titleNode ?? <span className="imcrm-truncate">{title}</span>}
                                 {idBadge}
                             </h1>
                             {style.showSubtitle && subtitleParts.length > 0 && (

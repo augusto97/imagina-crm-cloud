@@ -2125,6 +2125,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto la fase 2 del editor queda completa.**
 
+  - [x] **Título del registro editable + campo de título elegible (v0.1.136,
+        reporte del usuario con capturas)**: el título de la ficha no se podía
+        editar (había que bajar a "Campos" a cambiar el mismo valor) y el alta
+        mostraba un cartel fijo "Nuevo registro". La duda de fondo —"creo que
+        toma el primer campo como título, no sé si eso es correcto"— tenía dos
+        respuestas: el patrón SÍ es el correcto (ClickUp/Airtable: el título es
+        el campo primario, no un campo aparte), pero estaba mal implementado —
+        `is_primary` NUNCA lo mandaba el backend, así que la UI caía siempre al
+        primer campo de texto por posición. Ahora: (a) el campo de título vive
+        en `settings.title_field_id` de la lista y el backend lo DERIVA en cada
+        respuesta de campos (`resolveTitleFieldId` en shared, con el mismo
+        fallback al primer texto) — `/fields`, `bootstrap` y `portal.me` marcan
+        `is_primary`; el PATCH de la lista valida que sea un campo de TEXTO de
+        esa lista (400 `invalid_title_field`); (b) acción **"Usar como título"**
+        en el menú de cada campo de Ajustes → Campos (sólo text/long_text, y no
+        en el que ya lo es), con el badge "Título" en la fila; (c) el título es
+        un INPUT en las cuatro superficies: modal del registro, página del
+        registro, alta (escribir ahí llena el campo, ya no es un cartel) y el
+        header de las plantillas CRM (`RecordHeader` recibe `edit` opcional —
+        sin él, la preview del editor de plantillas sigue de sólo lectura); de
+        paso, si la plantilla no eligió campo de título, ahora cae al de la
+        lista en vez de mostrar "Registro #N" con el registro ya nombrado.
+        (d) **Interlineado del editor de descripción** (reporte aparte): usaba
+        `.imcrm-prose`, calibrado para PROSA larga (1.65 de interlineado, 0.75em
+        entre párrafos) — en una ficha de tarea se leía suelto comparado con
+        ClickUp. Apretado SÓLO dentro del editor (15px, 1.5, párrafos a 0.2em →
+        el renglón pasa de ~38px de paso a 25,5px); el resto de la app conserva
+        su prosa. 7 tests nuevos (4 shared + 4 front; 395 API, 88 front, 43
+        shared en verde) + E2E navegador 11/11 (elegir título, persistencia,
+        rechazo del campo numérico, edición y guardado en modal/alta) y 3/3 del
+        header por plantilla.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

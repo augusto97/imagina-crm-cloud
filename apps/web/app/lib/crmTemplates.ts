@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { pickPrimaryField } from '@/lib/recordCategorize';
+import { titleFieldOf } from '@/lib/recordTitle';
 import type { FieldEntity } from '@/types/field';
 
 /**
@@ -2656,7 +2657,11 @@ export function resolveV2(
 
     return {
         header: {
-            titleField: lookupOne(config.header.title_field_slug),
+            // v0.1.136 — si la plantilla no eligió campo de título, cae al
+            // de la lista (el marcado `is_primary` por el backend, o el
+            // primer texto). Antes el header mostraba "Registro #N" aunque
+            // el registro tuviera nombre.
+            titleField: lookupOne(config.header.title_field_slug) ?? titleFieldOf(fields) ?? null,
             subtitleFields: lookupMany(config.header.subtitle_field_slugs),
             statusFields: lookupMany(config.header.status_field_slugs),
             quickActions,

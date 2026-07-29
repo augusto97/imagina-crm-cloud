@@ -11,10 +11,12 @@ import {
     tenantFormatSchema,
     isDataField,
     jsonbKeyForField,
+    resolveTitleFieldId,
     validateFieldValue,
     type ActivityDto,
     type CommentDto,
     type Field,
+    type FieldType,
     type IssueMagicLinkInput,
     type MagicLinkResult,
     type PortalBoot,
@@ -646,6 +648,10 @@ export class PortalService {
             };
             // v0.1.104 — el portal muestra montos y fechas del record: usa el
             // mismo formato regional configurado por la empresa.
+            const titleFieldId = resolveTitleFieldId(
+                fieldRows.map((f) => ({ id: f.id, type: f.type as FieldType })),
+                list.settings,
+            );
             const parsedFormat = tenantFormatSchema.safeParse(
                 (tenantRow?.settings as Record<string, unknown> | undefined)?.format ?? {},
             );
@@ -684,6 +690,7 @@ export class PortalService {
                     is_required: f.isRequired,
                     is_unique: f.isUnique,
                     is_indexed: f.isIndexed,
+                    is_primary: f.id === titleFieldId,
                     position: f.position,
                 })),
                 template,

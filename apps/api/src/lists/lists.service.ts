@@ -2,7 +2,9 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import {
     listSlugSchema,
     slugify,
+    TITLE_FIELD_TYPES,
     type CreateListInput,
+    type FieldType,
     type List,
     type ListPermissionsDoc,
     type ListRoleMeta,
@@ -11,7 +13,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { listGroups, listSlugHistory } from '../db/schema';
+import { fields, listGroups, listSlugHistory } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -161,7 +163,33 @@ export class ListsService {
                 }
                 changes.groupId = patch.group_id;
             }
-            if (patch.settings !== undefined) changes.settings = patch.settings;
+            if (patch.settings !== undefined) {
+                // v0.1.136 — `title_field_id` (el campo que hace de título del
+                // registro) tiene que ser un campo de TEXTO de ESTA lista: un
+                // id ajeno o de otro tipo dejaría la ficha sin título editable.
+                const chosen = Number((patch.settings as Record<string, unknown>).title_field_id);
+                if (Number.isInteger(chosen) && chosen > 0) {
+                    const [f] = await tx
+                        .select({ id: fields.id, type: fields.type })
+                        .from(fields)
+                        .where(
+                            and(
+                                eq(fields.tenantId, tenantId),
+                                eq(fields.listId, current.id),
+                                eq(fields.id, chosen),
+                            ),
+                        )
+                        .limit(1);
+                    if (!f || !TITLE_FIELD_TYPES.includes(f.type as FieldType)) {
+                        throw new BadRequestException({
+                            code: 'invalid_title_field',
+                            message: 'El campo de título tiene que ser un campo de texto de esta lista',
+                            data: { status: 400 },
+                        });
+                    }
+                }
+                changes.settings = patch.settings;
+            }
 
             if (patch.slug !== undefined && patch.slug !== current.slug) {
                 if (await this.repo.slugExists(tx, tenantId, patch.slug, current.id)) {

@@ -322,4 +322,37 @@ describe('FieldsService (Postgres real + RLS)', () => {
             expect(again.label).toBe('C0 renombrado');
         });
     });
+    describe('campo de título del registro (v0.1.136)', () => {
+        it('sin elección, el primer campo de texto viene marcado is_primary', async () => {
+            await service.create(tenantA, 'clientes', { label: 'Monto', type: 'currency' });
+            const nombre = await service.create(tenantA, 'clientes', { label: 'Nombre', type: 'text' });
+            await service.create(tenantA, 'clientes', { label: 'Notas', type: 'long_text' });
+
+            const list = await service.list(tenantA, 'clientes');
+            expect(list.filter((f) => f.is_primary).map((f) => f.id)).toEqual([nombre.id]);
+        });
+
+        it('la lista elige su campo de título y la marca se mueve', async () => {
+            await service.create(tenantA, 'clientes', { label: 'Nombre', type: 'text' });
+            const notas = await service.create(tenantA, 'clientes', { label: 'Notas', type: 'long_text' });
+
+            await listsService.update(tenantA, 'clientes', { settings: { title_field_id: notas.id } });
+
+            const list = await service.list(tenantA, 'clientes');
+            expect(list.filter((f) => f.is_primary).map((f) => f.id)).toEqual([notas.id]);
+        });
+
+        it('un campo que no es de texto (o de otra lista) se rechaza', async () => {
+            const monto = await service.create(tenantA, 'clientes', { label: 'Monto', type: 'currency' });
+            const otra = await listsService.create(tenantA, { name: 'Otra' });
+            const ajeno = await service.create(tenantA, String(otra.id), { label: 'Ajeno', type: 'text' });
+
+            await expect(
+                listsService.update(tenantA, 'clientes', { settings: { title_field_id: monto.id } }),
+            ).rejects.toBeInstanceOf(BadRequestException);
+            await expect(
+                listsService.update(tenantA, 'clientes', { settings: { title_field_id: ajeno.id } }),
+            ).rejects.toBeInstanceOf(BadRequestException);
+        });
+    });
 });

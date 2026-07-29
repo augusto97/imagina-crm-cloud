@@ -830,6 +830,52 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
     min-height: 3.5rem;
 }
 
+/*
+ * Interlineado del documento (v0.1.136).
+ *
+ * `.imcrm-prose` está calibrado para PROSA larga (notas en markdown, texto
+ * del portal, firmas): 1.65 de interlineado y 0.75em de aire entre párrafos.
+ * En una ficha de tarea eso se lee como un texto suelto — el usuario lo
+ * comparó con ClickUp y tiene razón: ahí cada Enter es un renglón, no un
+ * párrafo de artículo. Acá se aprieta SÓLO dentro del editor; el resto de la
+ * app conserva su prosa.
+ */
+.imcrm-imcrm-editor .ProseMirror {
+    /* 15px: el cuerpo del documento en ClickUp. A 16px (el default del
+       navegador que traía `.imcrm-prose`) desentona con el resto de la
+       ficha, que va en 14. */
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+.imcrm-imcrm-editor .ProseMirror p {
+    margin: 0.2em 0;
+}
+.imcrm-imcrm-editor .ProseMirror h1,
+.imcrm-imcrm-editor .ProseMirror h2,
+.imcrm-imcrm-editor .ProseMirror h3,
+.imcrm-imcrm-editor .ProseMirror h4 {
+    margin: 0.85em 0 0.2em;
+    line-height: 1.25;
+}
+.imcrm-imcrm-editor .ProseMirror > :first-child {
+    margin-top: 0;
+}
+.imcrm-imcrm-editor .ProseMirror ul,
+.imcrm-imcrm-editor .ProseMirror ol {
+    margin: 0.3em 0;
+}
+.imcrm-imcrm-editor .ProseMirror li {
+    margin: 0.1em 0;
+}
+/* Dentro de un ítem, el párrafo no agrega su propio aire. */
+.imcrm-imcrm-editor .ProseMirror li > p {
+    margin: 0;
+}
+.imcrm-imcrm-editor .ProseMirror blockquote,
+.imcrm-imcrm-editor .ProseMirror pre {
+    margin: 0.6em 0;
+}
+
 /* Placeholder del primer bloque vacío (extensión Placeholder). */
 .imcrm-imcrm-editor .ProseMirror p.is-editor-empty:first-child::before,
 .imcrm-imcrm-editor .ProseMirror .is-empty::before {

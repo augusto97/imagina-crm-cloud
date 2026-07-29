@@ -118,6 +118,14 @@ export const fieldSchema = z.object({
     is_required: z.boolean().default(false),
     is_unique: z.boolean().default(false),
     is_indexed: z.boolean().default(false),
+    /**
+     * ¿Es el campo que hace de TÍTULO del registro (v0.1.136)?
+     *
+     * No es una columna propia: se DERIVA de `list.settings.title_field_id`
+     * (una lista tiene un solo título). Si la lista no eligió ninguno, cae al
+     * primer campo de texto — que es lo que la UI venía adivinando sola.
+     */
+    is_primary: z.boolean().default(false),
     position: z.number().int().nonnegative().default(0),
 });
 export type Field = z.infer<typeof fieldSchema>;
@@ -171,3 +179,25 @@ export const reorderFieldsSchema = z.object({
     field_ids: z.array(idSchema).min(1),
 });
 export type ReorderFieldsInput = z.infer<typeof reorderFieldsSchema>;
+
+/**
+ * Cuál de los campos hace de TÍTULO del registro (v0.1.136).
+ *
+ * Una lista elige el suyo en `settings.title_field_id`; si no eligió ninguno
+ * (o el elegido ya no existe / no es texto) cae al primer campo de texto —
+ * el mismo criterio que la UI venía adivinando sola, ahora en un solo lugar
+ * y compartido por back y front.
+ */
+export const TITLE_FIELD_TYPES: readonly FieldType[] = ['text', 'long_text'];
+
+export function resolveTitleFieldId(
+    fields: Array<Pick<Field, 'id' | 'type'>>,
+    settings: Record<string, unknown> | null | undefined,
+): number | null {
+    const chosen = Number((settings ?? {}).title_field_id);
+    if (Number.isInteger(chosen) && chosen > 0) {
+        const hit = fields.find((f) => f.id === chosen && TITLE_FIELD_TYPES.includes(f.type));
+        if (hit) return hit.id;
+    }
+    return fields.find((f) => TITLE_FIELD_TYPES.includes(f.type))?.id ?? null;
+}
