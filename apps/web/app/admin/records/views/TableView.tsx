@@ -17,7 +17,7 @@ import { useAggregates } from '@/hooks/useAggregates';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
-import type { RowDensity } from '../recordsState';
+import type { RowDensity, RowFontSize } from '../recordsState';
 import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
@@ -95,6 +95,8 @@ interface TableViewProps {
     spreadsheet?: boolean;
     /** Densidad elegida; `null` = el default de la presentación. */
     density?: RowDensity | null;
+    /** Tamaño de letra elegido; `null` = el default de la presentación. */
+    fontSize?: RowFontSize | null;
     /** Índice de la primera fila de la página (para numerar continuo). */
     rowNumberOffset?: number;
 }
@@ -136,6 +138,7 @@ export function TableView({
     onCreateSubtask,
     spreadsheet = false,
     density = null,
+    fontSize = null,
     rowNumberOffset = 0,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -455,6 +458,7 @@ export function TableView({
                     wrapText && 'imcrm-wrap-cells',
                     spreadsheet && 'imcrm-records-grid',
                     `imcrm-density-${density ?? (spreadsheet ? 'compact' : 'normal')}`,
+                    `imcrm-fontsize-${fontSize ?? (spreadsheet ? 'sm' : 'md')}`,
                 )}
                 // `width: 100%` + `minWidth: totalSize`: la tabla llena el
                 // contenedor (las columnas estiran proporcionalmente, sin

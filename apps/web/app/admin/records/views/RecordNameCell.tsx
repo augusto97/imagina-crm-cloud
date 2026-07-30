@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlignLeft, ChevronRight } from 'lucide-react';
+import { AlignLeft, ChevronRight, CornerDownRight } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -66,6 +66,13 @@ export function RecordNameCell({
                         )}
                     />
                 </button>
+            ) : depth > 0 ? (
+                // El codo de sangría se mantiene (v0.1.141): lo que descuadraba
+                // la vista era el hueco del chevron, no esto.
+                <CornerDownRight
+                    aria-label={__('Subtarea')}
+                    className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/50"
+                />
             ) : (
                 <span aria-hidden className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
             )}

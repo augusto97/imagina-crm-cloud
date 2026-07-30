@@ -2260,6 +2260,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         alto de fila). 2 tests nuevos (92 front en verde) + E2E navegador 9/9
         con medición de bordes, elipsis, gutter, centrado y las tres alturas.
 
+  - [x] **Vuelta atrás de dos cambios de v0.1.140 + tamaño de letra
+        (v0.1.141)**: (a) **los chips del multi_select vuelven a verse
+        TODOS**. La v0.1.140 puso el contenedor en bloque con
+        `text-overflow` del CONJUNTO y el resultado fue que se veía una sola
+        opción y las demás desaparecían tras "…" — no es lo que hace ClickUp
+        ni lo que se había pedido. Vuelve el flex de una línea: los chips se
+        encogen y cada uno corta SU texto con elipsis, que es la forma en que
+        el usuario lo había aprobado en v0.1.139. (b) **El codo de sangría de
+        la subtarea vuelve**: lo que descuadraba la vista era el hueco del
+        chevron en la fila CERRADA (ya resuelto reservándolo siempre), no el
+        icono — que además gustaba. (c) **Tamaño de letra por vista**
+        (`font_size` en el estado común: shared, mapeo y las dos tablas):
+        Chica / Normal / Grande (12,5 / 14 / 15,5px) junto al selector de
+        densidad en Personalizar, persistido igual. La hoja de cálculo
+        arranca en chica y la lista en normal; la grilla ya no cablea su
+        tipografía. 2 tests nuevos (94 front en verde) + E2E navegador 7/7
+        (los dos chips visibles con elipsis propia, icono de subtarea
+        presente, filas de primer nivel alineadas en una sola x, y la letra
+        cambiando de 12,5 a 15,5px con la elección persistida).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

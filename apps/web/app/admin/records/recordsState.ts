@@ -87,10 +87,18 @@ export interface RecordsState {
      * Se guarda en la vista como cualquier otra preferencia.
      */
     density: RowDensity | null;
+    /**
+     * Tamaño de letra de la tabla (v0.1.141). `null` = el default de la
+     * presentación: 12,5px en la hoja de cálculo, 14 en la lista.
+     */
+    fontSize: RowFontSize | null;
 }
 
 /** Alturas de fila que puede elegir quien mira la vista. */
 export type RowDensity = 'compact' | 'normal' | 'comfortable';
+
+/** Tamaños de letra de la tabla. */
+export type RowFontSize = 'sm' | 'md' | 'lg';
 
 /**
  * Page size por default para `/records`. Subido a 200 (de 50) en
@@ -120,6 +128,7 @@ export const INITIAL_STATE: RecordsState = {
     wrapText: false,
     spreadsheet: false,
     density: null,
+    fontSize: null,
 };
 
 /**
