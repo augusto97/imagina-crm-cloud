@@ -2298,6 +2298,25 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         lista. E2E navegador 14/14 (ancho real de la casilla, y el panel
         abierto en tabla, kanban, calendario, tarjetas y agrupada).
 
+  - [x] **Los paneles laterales se pueden cerrar en el teléfono (v0.1.143,
+        reporte del usuario)**: "Personalizar vista" no tenía salida en
+        celular. El contenedor compartido de los paneles (`SheetContent`) no
+        dibujaba ninguna X — cada panel tenía que acordarse de poner la suya
+        en su cabecera, y tres no lo hacían (Personalizar vista, Mencionar
+        registro, Nueva subtarea). En escritorio no se notaba porque queda
+        velo alrededor para tocar afuera y está la tecla Escape; en el
+        teléfono el panel ocupa TODA la pantalla, así que sin X no hay forma
+        de volver. En vez de agregarla panel por panel —que es justo lo que
+        se venía olvidando— ahora la pone el contenedor: cada
+        `SheetCloseButton` que un panel dibuje en su cabecera se anuncia,
+        y la de respaldo se monta sólo si no hubo ninguna (los efectos de
+        los hijos corren antes que el del contenedor, así que no hay un
+        fotograma con dos X). Objetivo táctil de 36px. E2E navegador 9/9 en
+        390×844 y escritorio (una sola X, dentro de pantalla, cierra, no se
+        monta sobre el título), 3/3 de no-duplicación (modal del registro,
+        historial de automatizaciones, panel de empresa de la consola) y 3/3
+        de los paneles del editor de descripción.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
