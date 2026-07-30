@@ -750,11 +750,23 @@ function GroupBucketSection({
                             style={{ tableLayout: 'fixed', width: '100%', minWidth: tableWidth }}
                             aria-label={labelText}
                         >
+                            {/* Ver TableView: sin `<colgroup>` la columna de
+                                la casilla se estira con el sobrante. */}
+                            <colgroup>
+                                <col style={{ width: 28 }} />
+                                {columns.map((c) => (
+                                    <col
+                                        key={c.id}
+                                        style={{ width: columnSizing[c.id] ?? defaultSizeForColumn(c) }}
+                                    />
+                                ))}
+                                {onAddColumn && <col />}
+                            </colgroup>
                             <thead>
                                 <tr className="imcrm-group/head">
                                     <th
                                         scope="col"
-                                        className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
+                                        className="imcrm-w-7 imcrm-px-1.5 imcrm-py-2"
                                     >
                                         <input
                                             type="checkbox"
@@ -898,7 +910,7 @@ function GroupBucketSection({
                                             )}
                                         >
                                             <td
-                                                className="imcrm-w-8 imcrm-px-2 imcrm-py-2.5 imcrm-align-middle"
+                                                className="imcrm-w-7 imcrm-px-1.5 imcrm-py-2.5 imcrm-align-middle"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                               <span className="imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-items-center imcrm-justify-center">
@@ -974,7 +986,7 @@ function GroupBucketSection({
                             {(onAddRecord || onFooterAggregatesChange) && (
                                 <tfoot className="imcrm-group/footer">
                                     <tr>
-                                        <td className="imcrm-w-8" />
+                                        <td className="imcrm-w-7" />
                                         {columns.map((c, ci) => {
                                             const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
                                             const isFirstDynamic = c.field !== null

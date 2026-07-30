@@ -2280,6 +2280,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         presente, filas de primer nivel alineadas en una sola x, y la letra
         cambiando de 12,5 a 15,5px con la elección persistida).
 
+  - [x] **Casilla clavada + panel Personalizar por tipo de vista (v0.1.142,
+        2 reportes del usuario)**: (a) **la columna de la casilla seguía
+        ancha** aunque en v0.1.140 se le pidieran 32px: con
+        `table-layout: fixed` + `width: 100%` el navegador reparte el espacio
+        sobrante ENTRE TODAS las columnas, así que la casilla terminaba en
+        ~44px (el usuario lo mostró con el inspector). Se agregó un
+        `<colgroup>` en las dos tablas: la casilla queda clavada en **28px**
+        y el sobrante se lo lleva la última columna. (b) **El panel
+        "Personalizar vista" mostraba TODO en todas las vistas** — densidad,
+        letra, ajustar texto, hoja de cálculo y columnas no significan nada
+        en kanban, calendario ni tarjetas, y ver controles que no hacen nada
+        confunde. Ahora el panel recibe el `viewType`: los ajustes de tabla
+        sólo salen en la tabla (incluida la agrupada), la hoja de cálculo
+        además desaparece cuando hay agrupación (son excluyentes), y en las
+        otras vistas quedan sólo Filtro + las acciones de la vista y de la
+        lista. E2E navegador 14/14 (ancho real de la casilla, y el panel
+        abierto en tabla, kanban, calendario, tarjetas y agrupada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

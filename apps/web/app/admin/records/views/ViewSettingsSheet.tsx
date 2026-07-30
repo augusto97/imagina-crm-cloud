@@ -71,6 +71,13 @@ interface ViewSettingsSheetProps {
     onGroupByFieldIdChange: (next: number | null) => void;
     /** Agrupar no aplica en kanban/calendario/tarjetas. */
     canGroup: boolean;
+    /**
+     * Tipo de la vista abierta (v0.1.142). El panel mostraba TODOS los
+     * ajustes en todas las vistas: densidad, letra, ajustar texto, hoja de
+     * cálculo y columnas no significan nada en kanban, calendario o
+     * tarjetas, y ver ahí controles que no hacen nada confunde.
+     */
+    viewType: 'table' | 'kanban' | 'calendar' | 'cards';
     wrapText: boolean;
     spreadsheet: boolean;
     onSpreadsheetChange: (next: boolean) => void;
@@ -117,6 +124,7 @@ export function ViewSettingsSheet({
     groupByFieldId,
     onGroupByFieldIdChange,
     canGroup,
+    viewType,
     wrapText,
     spreadsheet,
     onSpreadsheetChange,
@@ -139,6 +147,8 @@ export function ViewSettingsSheet({
 
     const [columnsOpen, setColumnsOpen] = useState(false);
     const [filtersOpen, setFiltersOpen] = useState(false);
+    // Sólo la tabla tiene filas, columnas y densidad.
+    const isTable = viewType === 'table';
     const [copied, setCopied] = useState(false);
 
     const hiddenCount = Object.values(columnVisibility).filter((v) => v === false).length;
@@ -204,6 +214,7 @@ export function ViewSettingsSheet({
                                 : __('Estás viendo todos los registros. Guardá estos ajustes como una vista para volver a ellos.')}
                         </p>
 
+                        {isTable && (
                         <Group_ label={__('Densidad y letra')}>
                             {/* v0.1.140 — la hoja de cálculo arrancaba fija en
                                 compacta y para algunos era demasiado apretada:
@@ -259,7 +270,9 @@ export function ViewSettingsSheet({
                                 })}
                             </div>
                         </Group_>
+                        )}
 
+                        {isTable && (
                         <Group_ label={__('Mostrar')}>
                             <ToggleRow
                                 icon={WrapText}
@@ -268,13 +281,17 @@ export function ViewSettingsSheet({
                                 checked={wrapText}
                                 onChange={onWrapTextChange}
                             />
-                            <ToggleRow
-                                icon={Grid3x3}
-                                label={__('Hoja de cálculo')}
-                                hint={__('Numera las filas y dibuja la cuadrícula, sin agrupar.')}
-                                checked={spreadsheet}
-                                onChange={onSpreadsheetChange}
-                            />
+                            {/* La hoja de cálculo no convive con la
+                                agrupación: es una grilla plana. */}
+                            {groupByFieldId === null && (
+                                <ToggleRow
+                                    icon={Grid3x3}
+                                    label={__('Hoja de cálculo')}
+                                    hint={__('Numera las filas y dibuja la cuadrícula.')}
+                                    checked={spreadsheet}
+                                    onChange={onSpreadsheetChange}
+                                />
+                            )}
                             <ToggleRow
                                 icon={Columns3}
                                 label={__('Columna de número')}
@@ -285,18 +302,24 @@ export function ViewSettingsSheet({
                                 }
                             />
                         </Group_>
+                        )}
 
                         <Group_ label={__('Qué se ve y en qué orden')}>
-                            <RowButton
-                                icon={Columns3}
-                                label={__('Campos')}
-                                value={sprintf(
-                                    /* translators: %d: visible column count */
-                                    __('%d en pantalla'),
-                                    visibleColumns,
-                                )}
-                                onClick={() => setColumnsOpen(true)}
-                            />
+                            {/* Las columnas son de la tabla: en kanban,
+                                calendario y tarjetas los campos visibles se
+                                eligen en el diálogo propio de la vista. */}
+                            {isTable && (
+                                <RowButton
+                                    icon={Columns3}
+                                    label={__('Campos')}
+                                    value={sprintf(
+                                        /* translators: %d: visible column count */
+                                        __('%d en pantalla'),
+                                        visibleColumns,
+                                    )}
+                                    onClick={() => setColumnsOpen(true)}
+                                />
+                            )}
 
                             <RowButton
                                 icon={Filter}
