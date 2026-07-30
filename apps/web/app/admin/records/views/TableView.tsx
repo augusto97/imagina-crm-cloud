@@ -467,6 +467,21 @@ export function TableView({
                 style={{ tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() }}
                 aria-label={__('Registros de la lista')}
             >
+                {/*
+                  v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el
+                  espacio sobrante ENTRE TODAS las columnas, así que la de la
+                  casilla se estiraba a ~44px por más que se le pidieran 32
+                  (reporte del usuario, con el inspector abierto). Con un
+                  `<colgroup>` la casilla queda clavada en 32px y el sobrante
+                  se lo lleva la última columna, que es la vacía del "+".
+                */}
+                <colgroup>
+                    <col style={{ width: 28 }} />
+                    {table.getVisibleLeafColumns().map((col) => (
+                        <col key={col.id} style={{ width: col.getSize() }} />
+                    ))}
+                    {onAddColumn && <col />}
+                </colgroup>
                 <thead
                     className={cn(
                         'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-background imcrm-transition-shadow imcrm-duration-150',
@@ -477,7 +492,7 @@ export function TableView({
                         <tr key={hg.id} className="imcrm-group/head">
                             <th
                                 scope="col"
-                                className="imcrm-w-8 imcrm-px-2 imcrm-py-2"
+                                className="imcrm-w-7 imcrm-px-1.5 imcrm-py-2"
                             >
                                 <input
                                     type="checkbox"
@@ -719,7 +734,7 @@ export function TableView({
                                         // v0.1.140 — w-8/px-2 (antes w-10/px-3): entre la
                                         // casilla, el chevron y el nombre había ~72px de
                                         // aire y la columna arrancaba muy adentro.
-                                        className="imcrm-w-8 imcrm-px-2 imcrm-py-2.5 imcrm-align-middle"
+                                        className="imcrm-w-7 imcrm-px-1.5 imcrm-py-2.5 imcrm-align-middle"
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                       {/* `flex` en la celda: un input inline se apoya en la
@@ -819,7 +834,7 @@ export function TableView({
                 {(onAddRecord || onFooterAggregatesChange) && (
                     <tfoot className="imcrm-group/footer">
                         <tr>
-                            <td className="imcrm-w-8" />
+                            <td className="imcrm-w-7" />
                             {table.getVisibleLeafColumns().map((col) => {
                                 const meta = col.columnDef.meta as
                                     | { fieldId: number | null; primary?: boolean }

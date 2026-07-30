@@ -657,6 +657,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         setState((s) => ({ ...s, groupByFieldId: next, page: 1 }))
                     }
                     canGroup={!isAlternativeView}
+                    viewType={isKanban ? 'kanban' : isCalendar ? 'calendar' : isCards ? 'cards' : 'table'}
                     wrapText={state.wrapText}
                     onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
                     spreadsheet={state.spreadsheet}
