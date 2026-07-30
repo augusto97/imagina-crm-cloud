@@ -21,7 +21,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ListGroup, ListSummary } from '@/types/list';
 
-import { listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 
 import { PanelListLink } from './PanelListLink';
 
@@ -182,7 +182,7 @@ export function ListsTree({
                 to={`/lists/${list.slug}/records`}
                 name={list.name}
                 starred={starredIds.includes(list.id)}
-                icon={listIcon(list.icon)}
+                icon={listIcon(list.icon) ?? DEFAULT_LIST_ICON}
                 iconColor={listColor(list.color)}
                 onToggleStar={() => onToggleStar(list.id)}
             />

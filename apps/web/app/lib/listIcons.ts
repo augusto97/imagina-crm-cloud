@@ -87,6 +87,13 @@ export const LIST_ICONS: Array<{ key: string; icon: LucideIcon; label: string }>
     { key: 'home', icon: Home, label: 'General' },
 ];
 
+/**
+ * Icono de las listas que no eligieron uno (v0.1.139). Antes caían a un
+ * puntito gris igual para todas — el usuario lo pidió explícitamente: toda
+ * lista se ve con icono, elija o no.
+ */
+export const DEFAULT_LIST_ICON: LucideIcon = List;
+
 /** El icono de una lista, o `undefined` si no eligió ninguno (o es viejo). */
 export function listIcon(key: string | null | undefined): LucideIcon | undefined {
     if (typeof key !== 'string' || key === '') return undefined;

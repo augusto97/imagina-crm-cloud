@@ -39,7 +39,11 @@ export function SaveViewDialog({
     const fields = useFields(listId);
     const [name, setName] = useState('');
     const [setDefault, setSetDefault] = useState(false);
-    const [type, setType] = useState<SavedViewType>('table');
+    // v0.1.139 — `spreadsheet` no es un tipo del backend: es una vista
+    // `table` con la presentación de hoja de cálculo. Se ofrece como una
+    // opción más porque para el usuario ES otro tipo de vista (en ClickUp
+    // "Tabla" y "Lista" son entradas distintas del menú de vistas).
+    const [type, setType] = useState<SavedViewType | 'spreadsheet'>('table');
     const [groupByFieldId, setGroupByFieldId] = useState<number>(0);
     const [dateFieldId, setDateFieldId] = useState<number>(0);
     const [cardFieldIds, setCardFieldIds] = useState<number[]>([]);
@@ -103,12 +107,16 @@ export function SaveViewDialog({
                         ...(cardCoverFieldId > 0 ? { card_cover_field_id: cardCoverFieldId } : {}),
                         card_size: cardSize,
                     }
-                    : config;
+                    : type === 'spreadsheet'
+                      // Hoja de cálculo: plana por definición (no agrupa) y
+                      // con la presentación de grilla.
+                      ? { ...config, spreadsheet: true, group_by_field_id: undefined }
+                      : config;
 
         try {
             const view = await create.mutateAsync({
                 name: name.trim(),
-                type,
+                type: type === 'spreadsheet' ? 'table' : type,
                 config: payloadConfig,
                 is_default: setDefault,
             });
@@ -169,9 +177,10 @@ export function SaveViewDialog({
                             <Select
                                 id="view-type"
                                 value={type}
-                                onChange={(e) => setType(e.target.value as SavedViewType)}
+                                onChange={(e) => setType(e.target.value as SavedViewType | 'spreadsheet')}
                             >
-                                <option value="table">{__('Tabla')}</option>
+                                <option value="table">{__('Lista (tabla)')}</option>
+                                <option value="spreadsheet">{__('Hoja de cálculo (estilo Excel)')}</option>
                                 <option value="kanban" disabled={selectFields.length === 0}>
                                     {selectFields.length === 0
                                         ? __('Kanban (necesitas al menos un campo Select)')
@@ -247,7 +256,7 @@ export function SaveViewDialog({
                             {__('Establecer como vista por defecto')}
                         </label>
 
-                        {type === 'table' && (
+                        {(type === 'table' || type === 'spreadsheet') && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
                                 <span className="imcrm-font-medium imcrm-text-foreground">
                                     {__('Se guardará:')}

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlignLeft, ChevronRight, CornerDownRight } from 'lucide-react';
+import { AlignLeft, ChevronRight } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -37,6 +37,12 @@ export function RecordNameCell({
             className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1"
             style={depth > 0 ? { paddingLeft: depth * 20 } : undefined}
         >
+            {/* El hueco del chevron se reserva SIEMPRE (v0.1.139): antes sólo
+                existía en las filas con subtareas y eso corría el texto de esa
+                fila respecto de las vecinas — el usuario lo marcó como que
+                "descuadra la vista". En ClickUp la columna arranca en la misma
+                x para todas las filas; la subtarea se distingue por la
+                sangría, no por un icono extra. */}
             {n > 0 ? (
                 <button
                     type="button"
@@ -61,16 +67,7 @@ export function RecordNameCell({
                     />
                 </button>
             ) : (
-                depth > 0 && (
-                    // Antes acá había un punto de 4px que no decía nada
-                    // (reporte del usuario). El codo de sangría es la señal
-                    // que usa ClickUp: se lee como "esto cuelga de la fila
-                    // de arriba".
-                    <CornerDownRight
-                        aria-label={__('Subtarea')}
-                        className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/50"
-                    />
-                )
+                <span aria-hidden className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
             )}
             <span className="imcrm-min-w-0 imcrm-flex-1">{children}</span>
             {/* Señal de que el registro tiene descripción (v0.1.133): el

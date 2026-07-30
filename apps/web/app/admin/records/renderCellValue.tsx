@@ -19,7 +19,7 @@ export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: str
         // Sin punto/dot a la izquierda: el chip sólido YA es el color de la
         // opción — el punto duplicaba la señal y desperdiciaba ancho de celda.
         <span
-            className="imcrm-inline-flex imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
+            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-truncate imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor:     'hsl(var(--imcrm-border))',

@@ -126,3 +126,17 @@ describe('ajustar texto', () => {
         expect(hasChangesVsView({ ...baseState, wrapText: true }, {})).toBe(true);
     });
 });
+
+describe('hoja de cálculo (v0.1.137/139)', () => {
+    it('viaja a la vista guardada y vuelve', () => {
+        const config = stateToViewConfig({ ...baseState, spreadsheet: true });
+        expect(config.spreadsheet).toBe(true);
+        expect(viewConfigToState(config, 50).spreadsheet).toBe(true);
+    });
+
+    it('apagada no ensucia la config, y encenderla es un cambio a guardar', () => {
+        expect(stateToViewConfig(baseState).spreadsheet).toBeUndefined();
+        expect(viewConfigToState({}, 50).spreadsheet).toBe(false);
+        expect(hasChangesVsView({ ...baseState, spreadsheet: true }, {})).toBe(true);
+    });
+});

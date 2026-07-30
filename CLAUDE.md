@@ -2209,6 +2209,35 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (403 API en verde) + E2E navegador 8/8 (buscar, compartir, persistir,
         cambiar el nivel, quitar).
 
+  - [x] **Repaso del lote anterior (v0.1.139, 5 correcciones del usuario)**:
+        (a) **doble línea en la cabecera** — la tabla quedaba con una raya
+        arriba (el `border-t` del contenedor de cada bucket) y otra abajo (el
+        `border-bottom` que v0.1.137 le puso al `th`): la cabecera encajonada.
+        Ahora la cabecera NO lleva línea propia en la vista de lista —como
+        ClickUp, donde la primera raya es la que separa la primera fila— y sí
+        la lleva en la hoja de cálculo, donde ES parte de la grilla.
+        (b) **los chips cortan, no parten**: `OptionChipDisplay` no tenía
+        `whitespace-nowrap`, así que "VPS en Hetzner" se rompía en dos
+        renglones DENTRO del chip; ahora los dos chips (lectura y edición)
+        truncan con elipsis y comparten la clase `imcrm-opt-chip`.
+        (c) **el chevron de subtareas ya no corre el texto**: el hueco se
+        reserva SIEMPRE (ancho fijo), así todas las filas arrancan en la misma
+        x —antes sólo la fila con subtareas tenía el chevron y descuadraba la
+        columna— y la subtarea se distingue por la sangría, sin el codo extra.
+        (d) **la hoja de cálculo es una VISTA, no un ajuste**: aparece como
+        tipo propio en "+ Vista" ("Hoja de cálculo (estilo Excel)" — por
+        dentro sigue siendo una vista `table` con `config.spreadsheet`, sin
+        tipo nuevo en el backend), tiene su icono en la pestaña, y sobre todo
+        DENSIDAD real: 12,5px de tipografía, 2px de padding vertical,
+        anulación de los `min-h` de los editores inline (fila de 29 → 25px),
+        cabecera compacta sin mayúsculas y cuadrícula completa.
+        (e) **icono por defecto en todas las listas**: el puntito gris
+        desapareció; la lista que no eligió icono muestra el genérico.
+        2 tests nuevos del round-trip de la vista (90 front en verde) + E2E
+        navegador 13/13 (medición de líneas, chip de una sola línea con
+        elipsis, misma x en todas las filas, densidad y numeración de la
+        grilla, cero puntitos en el menú).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
