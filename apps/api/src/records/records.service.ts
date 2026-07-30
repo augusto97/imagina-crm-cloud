@@ -84,7 +84,7 @@ export class RecordsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
         // ACL por lista: el rol debe tener create habilitado para esta lista.
-        if (!effectivePermissions(list.settings, actor.role).create) {
+        if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
             throw new ForbiddenException({
                 code: 'forbidden_create',
                 message: 'Tu rol no puede crear registros en esta lista',
@@ -161,7 +161,7 @@ export class RecordsService {
             return {
                 row: r,
                 fields,
-                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
+                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role, actor.userId),
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
             };
@@ -194,7 +194,7 @@ export class RecordsService {
             // ILIKE sobre los campos searchables, AND con filtros y scope.
             const searchWhere = compileSearch(fields, query.search);
             // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
-            const perms = effectivePermissions(list.settings, actor.role);
+            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
             const assignmentId = resolvePermissions(list.settings).assignment_field_id;
             const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
@@ -240,7 +240,7 @@ export class RecordsService {
             return {
                 rows: result,
                 fields,
-                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role),
+                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role, actor.userId),
                 rels,
                 relFieldIds,
                 subtaskCounts,
@@ -553,7 +553,7 @@ export class RecordsService {
         action: 'view' | 'edit' | 'delete',
         row: Pick<RecordRow, 'data' | 'createdBy'>,
     ): boolean {
-        const scope = effectivePermissions(list.settings, actor.role)[action];
+        const scope = effectivePermissions(list.settings, actor.role, actor.userId)[action];
         const assignmentId = resolvePermissions(list.settings).assignment_field_id;
         const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
         const assignmentValue = assignmentKey
@@ -778,8 +778,9 @@ function hiddenKeysFor(
     fields: Field[],
     settings: Record<string, unknown>,
     role: Role,
+    userId?: number,
 ): Set<string> {
-    const hiddenSlugs = hiddenFieldsFor(settings, role);
+    const hiddenSlugs = hiddenFieldsFor(settings, role, userId);
     if (hiddenSlugs.size === 0) return new Set();
     const keys = new Set<string>();
     for (const f of fields) {

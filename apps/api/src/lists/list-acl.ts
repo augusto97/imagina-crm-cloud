@@ -27,17 +27,28 @@ export function resolvePermissions(settings: Record<string, unknown>): ListPermi
     const parsed = listPermissionsSchema.safeParse(raw);
     const base: ListPermissions = parsed.success
         ? parsed.data
-        : { permissions: {}, assignment_field_id: null };
+        : { permissions: {}, assignment_field_id: null, users: {} };
     // Rellenar los roles configurables faltantes con defaults.
     const permissions: Record<string, RolePermissions> = { ...base.permissions };
     for (const role of CONFIGURABLE_ROLES) {
         if (!permissions[role]) permissions[role] = defaultRolePermissions(role);
     }
-    return { permissions, assignment_field_id: base.assignment_field_id };
+    return { permissions, assignment_field_id: base.assignment_field_id, users: base.users ?? {} };
 }
 
-/** Permiso efectivo del rol para esta lista. */
-export function effectivePermissions(settings: Record<string, unknown>, role: Role): RolePermissions {
+/**
+ * Permiso efectivo para esta lista.
+ *
+ * v0.1.138 — si la lista fue compartida con ESTA persona (`users[userId]`),
+ * ese acceso MANDA sobre el de su rol: es el punto de compartir con alguien
+ * puntual sin cambiarle el rol en todo el workspace. `admin` queda afuera a
+ * propósito (siempre tiene acceso total) y `client` va por el portal.
+ */
+export function effectivePermissions(
+    settings: Record<string, unknown>,
+    role: Role,
+    userId?: number,
+): RolePermissions {
     if (role === 'admin') {
         return { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] };
     }
@@ -45,6 +56,10 @@ export function effectivePermissions(settings: Record<string, unknown>, role: Ro
         return { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] };
     }
     const doc = resolvePermissions(settings);
+    if (userId !== undefined) {
+        const own = doc.users[String(userId)];
+        if (own) return own;
+    }
     return doc.permissions[role] ?? defaultRolePermissions(role as ConfigurableRole);
 }
 
@@ -53,13 +68,18 @@ export function scopeFor(
     settings: Record<string, unknown>,
     role: Role,
     action: 'view' | 'edit' | 'delete',
+    userId?: number,
 ): Scope {
-    return effectivePermissions(settings, role)[action];
+    return effectivePermissions(settings, role, userId)[action];
 }
 
 /** Campos ocultos para el rol (Set de slugs). */
-export function hiddenFieldsFor(settings: Record<string, unknown>, role: Role): Set<string> {
-    return new Set(effectivePermissions(settings, role).fields_hidden);
+export function hiddenFieldsFor(
+    settings: Record<string, unknown>,
+    role: Role,
+    userId?: number,
+): Set<string> {
+    return new Set(effectivePermissions(settings, role, userId).fields_hidden);
 }
 
 /**

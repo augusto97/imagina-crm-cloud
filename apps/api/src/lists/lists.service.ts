@@ -11,9 +11,9 @@ import {
     type UpdateListInput,
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { fields, listGroups, listSlugHistory } from '../db/schema';
+import { fields, listGroups, listSlugHistory, memberships, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -61,12 +61,39 @@ export class ListsService {
     async getPermissions(tenantId: number, idOrSlug: string): Promise<ListPermissionsDoc> {
         const list = await this.get(tenantId, idOrSlug);
         const doc = resolvePermissions(list.settings);
+        // v0.1.138 — accesos POR PERSONA. Se resuelven contra los miembros
+        // vivos del workspace: si alguien dejó la empresa, su acceso no se
+        // muestra (y tampoco sirve: el guard de tenant lo frena antes).
+        const ids = Object.keys(doc.users)
+            .map((k) => Number(k))
+            .filter((n) => Number.isInteger(n) && n > 0);
+        const people = ids.length > 0 ? await this.membersByIds(tenantId, ids) : [];
         return {
             list_id: list.id,
             permissions: doc.permissions,
             assignment_field_id: doc.assignment_field_id,
             roles: CONFIGURABLE_ROLE_META,
+            users: people.map((u) => ({
+                user_id: u.id,
+                name: u.name,
+                email: u.email,
+                permissions: doc.users[String(u.id)]!,
+            })),
         };
+    }
+
+    /** Miembros del workspace por id (para resolver los accesos por persona). */
+    private async membersByIds(
+        tenantId: number,
+        ids: number[],
+    ): Promise<Array<{ id: number; name: string; email: string }>> {
+        return this.tenantDb.withTenant(tenantId, async (tx) =>
+            tx
+                .select({ id: users.id, name: users.name, email: users.email })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids))),
+        );
     }
 
     /** Actualiza el ACL de la lista (merge en settings.permissions). */
@@ -84,9 +111,35 @@ export class ListsService {
             input.assignment_field_id !== undefined
                 ? input.assignment_field_id
                 : current.assignment_field_id;
+        // v0.1.138 — los accesos por persona se reemplazan completos (la UI
+        // manda el mapa entero). Sólo entran MIEMBROS de esta empresa: un id
+        // cualquiera no puede quedar guardado con acceso a la lista.
+        let nextUsers = current.users;
+        if (input.users !== undefined) {
+            const ids = Object.keys(input.users)
+                .map((k) => Number(k))
+                .filter((n) => Number.isInteger(n) && n > 0);
+            const members = ids.length > 0 ? await this.membersByIds(tenantId, ids) : [];
+            const allowed = new Set(members.map((m) => m.id));
+            const invalid = ids.filter((id) => !allowed.has(id));
+            if (invalid.length > 0) {
+                throw new BadRequestException({
+                    code: 'not_a_member',
+                    message: 'Sólo se puede compartir con miembros de esta empresa',
+                    data: { status: 400, errors: { users: invalid.join(', ') } },
+                });
+            }
+            nextUsers = Object.fromEntries(
+                ids.map((id) => [String(id), input.users![String(id)]!]),
+            );
+        }
         const settings = {
             ...list.settings,
-            permissions: { permissions: nextPermissions, assignment_field_id: nextAssignment },
+            permissions: {
+                permissions: nextPermissions,
+                assignment_field_id: nextAssignment,
+                users: nextUsers,
+            },
         };
         await this.update(tenantId, idOrSlug, { settings });
         return this.getPermissions(tenantId, idOrSlug);

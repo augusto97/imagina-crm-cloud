@@ -16,6 +16,8 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { UpdatePublicListInput } from '@imagina-base/shared';
 
+import { ListPeopleAccess } from '@/admin/lists/ListPeopleAccess';
+
 interface ShareDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -187,6 +189,16 @@ export function ShareDialog({
                                     {__('Copiar')}
                                 </Button>
                             </div>
+
+                            {/* v0.1.138 — compartir con una persona puntual.
+                                Hasta acá el acceso era sólo por ROL: para
+                                sumar a alguien había que cambiarle el rol en
+                                TODO el workspace. */}
+                            {canPublish && (
+                                <div className="imcrm-mt-3 imcrm-border-t imcrm-border-border imcrm-pt-3">
+                                    <ListPeopleAccess listId={listId} />
+                                </div>
+                            )}
                         </section>
 
                         {/* ── 2. Con cualquiera ────────────────────────── */}
