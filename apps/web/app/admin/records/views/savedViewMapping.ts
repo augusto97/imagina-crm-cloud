@@ -69,6 +69,9 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.density !== null) {
         config.density = state.density;
     }
+    if (state.fontSize !== null) {
+        config.font_size = state.fontSize;
+    }
     return config;
 }
 
@@ -126,6 +129,10 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
         density:
             config.density === 'compact' || config.density === 'normal' || config.density === 'comfortable'
                 ? config.density
+                : null,
+        fontSize:
+            config.font_size === 'sm' || config.font_size === 'md' || config.font_size === 'lg'
+                ? config.font_size
                 : null,
     };
 }

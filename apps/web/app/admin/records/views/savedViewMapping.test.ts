@@ -20,6 +20,7 @@ const baseState: RecordsState = {
     wrapText: false,
     spreadsheet: false,
     density: null,
+    fontSize: null,
 };
 
 /**
@@ -153,5 +154,19 @@ describe('densidad de las filas (v0.1.140)', () => {
         expect(stateToViewConfig(baseState).density).toBeUndefined();
         expect(viewConfigToState({}, 50).density).toBeNull();
         expect(viewConfigToState({ density: 'gigante' }, 50).density).toBeNull();
+    });
+});
+
+describe('tamaño de letra (v0.1.141)', () => {
+    it('viaja a la vista guardada y vuelve', () => {
+        const config = stateToViewConfig({ ...baseState, fontSize: 'lg' });
+        expect(config.font_size).toBe('lg');
+        expect(viewConfigToState(config, 50).fontSize).toBe('lg');
+    });
+
+    it('sin elegir no ensucia la config, y un valor raro no se adopta', () => {
+        expect(stateToViewConfig(baseState).font_size).toBeUndefined();
+        expect(viewConfigToState({}, 50).fontSize).toBeNull();
+        expect(viewConfigToState({ font_size: 'enorme' }, 50).fontSize).toBeNull();
     });
 });

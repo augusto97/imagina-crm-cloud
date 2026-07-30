@@ -31,13 +31,20 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import { countConditions, isEmptyTree, isGroupableType, type FilterTree } from '@/types/record';
-import type { RowDensity } from '../recordsState';
+import type { RowDensity, RowFontSize } from '../recordsState';
 
 /** Las tres densidades de fila que puede elegir quien mira la vista. */
 const DENSITIES: Array<{ id: RowDensity; label: string }> = [
     { id: 'compact', label: __('Compacta') },
     { id: 'normal', label: __('Normal') },
     { id: 'comfortable', label: __('Cómoda') },
+];
+
+/** Tamaños de letra de la tabla (v0.1.141), a la par de la densidad. */
+const FONT_SIZES: Array<{ id: RowFontSize; label: string }> = [
+    { id: 'sm', label: __('Chica') },
+    { id: 'md', label: __('Normal') },
+    { id: 'lg', label: __('Grande') },
 ];
 import type { SavedViewEntity } from '@/types/view';
 
@@ -69,6 +76,8 @@ interface ViewSettingsSheetProps {
     onSpreadsheetChange: (next: boolean) => void;
     density: RowDensity | null;
     onDensityChange: (next: RowDensity | null) => void;
+    fontSize: RowFontSize | null;
+    onFontSizeChange: (next: RowFontSize | null) => void;
     onWrapTextChange: (next: boolean) => void;
 
     canManageList: boolean;
@@ -113,6 +122,8 @@ export function ViewSettingsSheet({
     onSpreadsheetChange,
     density,
     onDensityChange,
+    fontSize,
+    onFontSizeChange,
     onWrapTextChange,
     canManageList,
     canManageAutomations,
@@ -193,7 +204,7 @@ export function ViewSettingsSheet({
                                 : __('Estás viendo todos los registros. Guardá estos ajustes como una vista para volver a ellos.')}
                         </p>
 
-                        <Group_ label={__('Densidad')}>
+                        <Group_ label={__('Densidad y letra')}>
                             {/* v0.1.140 — la hoja de cálculo arrancaba fija en
                                 compacta y para algunos era demasiado apretada:
                                 ahora cada vista guarda cuánto respira. */}
@@ -214,6 +225,35 @@ export function ViewSettingsSheet({
                                             )}
                                         >
                                             {d.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <div className="imcrm-flex imcrm-gap-1 imcrm-px-1 imcrm-pb-1">
+                                {FONT_SIZES.map((f) => {
+                                    const active = (fontSize ?? (spreadsheet ? 'sm' : 'md')) === f.id;
+                                    return (
+                                        <button
+                                            key={f.id}
+                                            type="button"
+                                            aria-pressed={active}
+                                            aria-label={sprintf(
+                                                /* translators: %s: font size name */
+                                                __('Letra %s'),
+                                                f.label,
+                                            )}
+                                            onClick={() => onFontSizeChange(f.id)}
+                                            className={cn(
+                                                'imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1.5 imcrm-transition-colors',
+                                                f.id === 'sm' && 'imcrm-text-[11px]',
+                                                f.id === 'md' && 'imcrm-text-[13px]',
+                                                f.id === 'lg' && 'imcrm-text-[15px]',
+                                                active
+                                                    ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary'
+                                                    : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-bg-accent',
+                                            )}
+                                        >
+                                            {f.label}
                                         </button>
                                     );
                                 })}

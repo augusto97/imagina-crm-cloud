@@ -46,6 +46,12 @@ const viewStateCommon = {
      * demasiado apretada: ahora cada vista guarda la suya.
      */
     density: z.enum(['compact', 'normal', 'comfortable']).optional(),
+    /**
+     * v0.1.141 — Tamaño de letra de la tabla, elegido junto a la densidad
+     * (no tenía sentido poder apretar las filas y no poder achicar o
+     * agrandar el texto).
+     */
+    font_size: z.enum(['sm', 'md', 'lg']).optional(),
 };
 
 export const tableViewConfigSchema = z.object({

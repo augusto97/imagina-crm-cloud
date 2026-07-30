@@ -11,7 +11,7 @@ import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
-import type { RowDensity } from '../recordsState';
+import type { RowDensity, RowFontSize } from '../recordsState';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
@@ -100,6 +100,8 @@ interface GroupedTableViewProps {
     wrapText?: boolean;
     /** Densidad de las filas (v0.1.140). */
     density?: RowDensity | null;
+    /** Tamaño de letra (v0.1.141). */
+    fontSize?: RowFontSize | null;
 }
 
 /**
@@ -145,6 +147,7 @@ export function GroupedTableView({
     onFooterAggregatesChange,
     wrapText = false,
     density = null,
+    fontSize = null,
 }: GroupedTableViewProps): JSX.Element {
     const filterTreeParam = useMemo(
         () => (filterTree.children.length === 0 ? undefined : filterTree),
@@ -370,6 +373,7 @@ export function GroupedTableView({
                                 onEditField={onEditField}
                                 onCreateSubtask={onCreateSubtask}
                                 density={density}
+                                fontSize={fontSize}
                                 onAddRecord={
                                     onAddRecord
                                         ? () => onAddRecord(groupByField, bucket.value)
@@ -516,6 +520,7 @@ interface GroupBucketSectionProps {
     onAddRecord?: () => void;
     onCreateSubtask?: (record: RecordEntity) => void;
     density?: RowDensity | null;
+    fontSize?: RowFontSize | null;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
 }
@@ -552,6 +557,7 @@ function GroupBucketSection({
     onAddRecord,
     onCreateSubtask,
     density = null,
+    fontSize = null,
     footerAggregates,
     onFooterAggregatesChange,
 }: GroupBucketSectionProps): JSX.Element {
@@ -735,6 +741,7 @@ function GroupBucketSection({
                                 'imcrm-records-table imcrm-w-full imcrm-text-sm',
                                 wrapText && 'imcrm-wrap-cells',
                                 `imcrm-density-${density ?? 'normal'}`,
+                                `imcrm-fontsize-${fontSize ?? 'md'}`,
                             )}
                             // `width: 100%` + `minWidth: tableWidth`: la tabla
                             // llena el contenedor (sin vacío a la derecha) y

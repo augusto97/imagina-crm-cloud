@@ -31,6 +31,8 @@ export interface SavedViewConfig {
     spreadsheet?: boolean;
     /** Densidad de las filas: 'compact' | 'normal' | 'comfortable'. */
     density?: string;
+    /** Tamaño de letra de la tabla: 'sm' | 'md' | 'lg'. */
+    font_size?: string;
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la

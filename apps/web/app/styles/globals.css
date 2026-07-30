@@ -863,29 +863,20 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  * línea recortada por el ancho de la columna; con ajuste, en varias y la
  * fila crece. Fuera de la tabla (tarjetas, kanban) nada cambia.
  *
- * v0.1.140 — sin ajuste el contenedor deja de ser flex y pasa a ser un
- * BLOQUE de línea única: así el navegador aplica `text-overflow: ellipsis`
- * sobre los chips (que son inline-flex) y el corte termina en "…" al final
- * de la celda, como ClickUp. Con flex no había forma: `text-overflow` no
- * aplica a los hijos de un contenedor flex, y lo que se veía era o un chip
- * cortado a la mitad o cada chip con su propia elipsis.
+ * v0.1.141 — sin ajuste TODOS los chips siguen a la vista, en una línea:
+ * se encogen y cada uno corta su propio texto con "…". La v0.1.140 los
+ * puso en un bloque con `text-overflow` del conjunto y el resultado fue
+ * que se veía UNA opción y las demás desaparecían detrás de tres puntos —
+ * que no es lo que hace ClickUp ni lo que se pidió.
  */
 .imcrm-records-table td .imcrm-cell-chips {
-    display: block;
-    white-space: nowrap;
+    display: flex;
+    flex-wrap: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
-}
-.imcrm-records-table td .imcrm-cell-chips > * {
-    flex-shrink: 0;
-    vertical-align: middle;
-    margin-right: 4px;
 }
 .imcrm-records-table.imcrm-wrap-cells td .imcrm-cell-chips {
-    display: flex;
     flex-wrap: wrap;
     overflow: visible;
-    text-overflow: clip;
 }
 
 /*
@@ -922,6 +913,17 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 }
 
 /*
+ * Tamaño de letra de la tabla (v0.1.141). Va de la mano con la densidad:
+ * no tenía sentido poder apretar las filas y no poder achicar o agrandar
+ * el texto. `md` es el tamaño histórico de la lista (14px).
+ */
+.imcrm-records-table.imcrm-fontsize-sm { font-size: 12.5px; }
+.imcrm-records-table.imcrm-fontsize-md { font-size: 14px; }
+.imcrm-records-table.imcrm-fontsize-lg { font-size: 15.5px; }
+.imcrm-records-table.imcrm-fontsize-lg thead th { font-size: 12px; }
+.imcrm-records-table.imcrm-fontsize-md thead th { font-size: 11px; }
+
+/*
  * Vista "Hoja de cálculo" (v0.1.137, densidad real en v0.1.139).
  *
  * No alcanza con dibujar líneas: una hoja de cálculo se reconoce por la
@@ -930,9 +932,6 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  * agregaste unas líneas"). Va en CSS y no en clases por celda porque toca
  * cuerpo, cabecera y pie de dos tablas y tiene que moverse en bloque.
  */
-.imcrm-records-table.imcrm-records-grid {
-    font-size: 12.5px;
-}
 .imcrm-records-table.imcrm-records-grid thead th,
 .imcrm-records-table.imcrm-records-grid tbody td,
 .imcrm-records-table.imcrm-records-grid tfoot td {
