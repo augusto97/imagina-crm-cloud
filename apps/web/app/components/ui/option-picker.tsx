@@ -187,14 +187,11 @@ export function OptionPicker({
         }
         return (
             <span
-                className={cn(
-                    'imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1',
-                    // Sin ajuste de texto: una sola línea recortada por el
-                    // ancho de la columna (el default de la tabla).
-                    wrap || !isCell
-                        ? 'imcrm-flex-wrap'
-                        : 'imcrm-flex-nowrap imcrm-overflow-hidden',
-                )}
+                // `imcrm-cell-chips`: DENTRO de la tabla, el "Ajustar texto"
+                // de la vista decide si envuelven o van en una línea
+                // recortada (regla en globals.css, que gana por
+                // especificidad). Fuera de la tabla envuelven siempre.
+                className="imcrm-cell-chips imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-wrap imcrm-items-center imcrm-gap-1"
             >
                 {Array.from(currentSet).map((v) => {
                     const opt = options.find((o) => o.value === v);
@@ -370,7 +367,10 @@ function OptionChipDisplay({
     // Sin punto/dot: el chip sólido ya lleva el color de la opción.
     return (
         <span
-            className="imcrm-inline-flex imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
+            // v0.1.139 — el chip nunca parte su texto en dos renglones
+            // (reporte del usuario, con captura): si no entra, se corta con
+            // elipsis. `min-w-0` es lo que habilita el truncate dentro del flex.
+            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-truncate imcrm-whitespace-nowrap imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor: 'hsl(var(--imcrm-border))',

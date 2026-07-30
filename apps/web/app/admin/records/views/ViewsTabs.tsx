@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Columns3, LayoutGrid, MoreHorizontal, Pencil, Plus, Save, Star, Table, Undo2 } from 'lucide-react';
+import { Calendar, Columns3, Grid3x3, LayoutGrid, MoreHorizontal, Pencil, Plus, Save, Star, Table, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -123,6 +123,11 @@ export function ViewsTabs({
                                 <Calendar className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : view.type === 'cards' ? (
                                 <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
+                            ) : view.config.spreadsheet === true ? (
+                                // Hoja de cálculo: es una vista `table` con
+                                // otra presentación, pero para el usuario es
+                                // otro tipo de vista y merece su icono.
+                                <Grid3x3 className="imcrm-h-3.5 imcrm-w-3.5" />
                             ) : (
                                 <Table className="imcrm-h-3.5 imcrm-w-3.5" />
                             )

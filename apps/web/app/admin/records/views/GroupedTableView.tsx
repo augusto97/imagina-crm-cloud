@@ -712,7 +712,7 @@ function GroupBucketSection({
                 // Sin `overflow-x-auto` aquí — el scroll horizontal es
                 // del wrapper exterior compartido entre todos los
                 // buckets (single-scroll ClickUp-style).
-                <div className="imcrm-border-t imcrm-border-border">
+                <div>
                     {records.isLoading ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-4 imcrm-py-4 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />

@@ -833,8 +833,17 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  * agrupada) con cuerpo, cabecera y pie: una sola regla las cubre a todas
  * y no se puede volver a olvidar en un `<td>` nuevo.
  */
-.imcrm-records-table thead th,
 .imcrm-records-table tbody td {
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+}
+/*
+ * v0.1.139 — la cabecera NO lleva línea. La tenía abajo (v0.1.137) y el
+ * contenedor una arriba, así que quedaba encajonada entre dos rayas: el
+ * usuario lo marcó como "doble línea". En la vista de lista de ClickUp la
+ * cabecera flota y la primera raya es la que separa la primera fila. En el
+ * modo hoja de cálculo sí lleva —ahí la cabecera ES parte de la grilla.
+ */
+.imcrm-records-table.imcrm-records-grid thead th {
     border-bottom: 1px solid hsl(var(--imcrm-border));
 }
 .imcrm-records-table tfoot td {
@@ -864,9 +873,53 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 }
 
 /*
- * Modo hoja de cálculo (v0.1.137): además de las líneas horizontales,
- * separadores verticales entre columnas — el look de Excel que tiene la
- * vista Tabla de ClickUp.
+ * Vista "Hoja de cálculo" (v0.1.137, densidad real en v0.1.139).
+ *
+ * No alcanza con dibujar líneas: una hoja de cálculo se reconoce por la
+ * DENSIDAD — filas bajas, tipografía chica, celdas ajustadas — que es lo
+ * que permite ver muchos datos de un vistazo (el usuario lo marcó: "sólo
+ * agregaste unas líneas"). Va en CSS y no en clases por celda porque toca
+ * cuerpo, cabecera y pie de dos tablas y tiene que moverse en bloque.
+ */
+.imcrm-records-table.imcrm-records-grid {
+    font-size: 12.5px;
+}
+.imcrm-records-table.imcrm-records-grid thead th,
+.imcrm-records-table.imcrm-records-grid tbody td,
+.imcrm-records-table.imcrm-records-grid tfoot td {
+    padding: 2px 8px;
+}
+.imcrm-records-table.imcrm-records-grid thead th {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    background: hsl(var(--imcrm-muted) / 0.5);
+}
+/* Las celdas de la grilla son de UNA línea: el alto de fila no baila.
+   El `min-h-[1.5rem]` que traen los editores inline manda el alto de la
+   fila, así que en la grilla se anula (si no, 24px de contenido + padding
+   dejan la fila en 29px y la densidad de Excel no aparece). */
+.imcrm-records-table.imcrm-records-grid tbody td > *,
+.imcrm-records-table.imcrm-records-grid tbody td button,
+.imcrm-records-table.imcrm-records-grid tbody td > span > span {
+    min-height: 0;
+    line-height: 1.4;
+}
+.imcrm-records-table.imcrm-records-grid .imcrm-cell-chips {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+/* Los chips también achican: en una grilla el alto de fila lo manda la
+   grilla, no el contenido. */
+.imcrm-records-table.imcrm-records-grid .imcrm-opt-chip {
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 11px;
+}
+
+/*
+ * Modo hoja de cálculo: separadores verticales entre columnas — el look
+ * de Excel que tiene la vista Tabla de ClickUp.
  */
 .imcrm-records-table.imcrm-records-grid thead th + th,
 .imcrm-records-table.imcrm-records-grid tbody td + td,
