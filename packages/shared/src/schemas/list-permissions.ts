@@ -36,6 +36,13 @@ export const listPermissionsSchema = z.object({
     permissions: z.record(rolePermissionsSchema),
     /** Campo (tipo user) usado por el scope `assigned`. */
     assignment_field_id: idSchema.nullable().default(null),
+    /**
+     * v0.1.138 — Acceso POR PERSONA: `user_id` → permisos, para compartir
+     * una lista con alguien puntual sin tocar el rol que tiene en todo el
+     * workspace. Pisa lo que diga su rol para ESTA lista (puede dar más o
+     * menos); `admin` no se ve afectado, siempre tiene acceso total.
+     */
+    users: z.record(rolePermissionsSchema).default({}),
 });
 export type ListPermissions = z.infer<typeof listPermissionsSchema>;
 
@@ -43,6 +50,8 @@ export type ListPermissions = z.infer<typeof listPermissionsSchema>;
 export const updateListPermissionsSchema = z.object({
     permissions: z.record(rolePermissionsSchema).optional(),
     assignment_field_id: idSchema.nullable().optional(),
+    /** Mapa completo de accesos por persona (reemplaza el guardado). */
+    users: z.record(rolePermissionsSchema).optional(),
 });
 export type UpdateListPermissionsInput = z.infer<typeof updateListPermissionsSchema>;
 
@@ -57,6 +66,13 @@ export interface ListPermissionsDoc {
     permissions: Record<string, RolePermissions>;
     assignment_field_id: number | null;
     roles: ListRoleMeta[];
+    /** v0.1.138 — accesos por persona, con los datos para mostrarlos. */
+    users: Array<{
+        user_id: number;
+        name: string;
+        email: string;
+        permissions: RolePermissions;
+    }>;
 }
 
 /** Defaults por rol cuando la lista no tiene ACL configurada (refleja las

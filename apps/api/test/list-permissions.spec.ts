@@ -1,8 +1,8 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, records, tenants } from '../src/db/schema';
+import { fields, lists, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -141,5 +141,104 @@ describe('ACL por lista (permisos por rol)', () => {
         const doc = await lists_.getPermissions(tenantId, 'clientes');
         expect(doc.roles.map((r) => r.slug).sort()).toEqual(['agent', 'manager', 'viewer']);
         expect(doc.permissions.agent!.view).toBe('own'); // default
+    });
+
+    describe('compartir con una persona puntual (v0.1.138)', () => {
+        // El acceso por persona vive en el ACL de la lista y sólo admite
+        // MIEMBROS de la empresa (si no, cualquier id quedaría con acceso).
+        let socia: Actor;
+
+        beforeAll(async () => {
+            // Los ids de `users` son identity: se insertan primero unos
+            // rellenos para que el id de la socia NO choque con los actores
+            // del spec (admin=1, agent=2, viewer=3), que no existen como
+            // filas y arrancarían la secuencia en 1.
+            await pg.db.insert(users).values([
+                { email: 'filler1@acme.test', name: 'F1', passwordHash: 'x' },
+                { email: 'filler2@acme.test', name: 'F2', passwordHash: 'x' },
+                { email: 'filler3@acme.test', name: 'F3', passwordHash: 'x' },
+            ]);
+            const [u] = await pg.db
+                .insert(users)
+                .values({ email: 'socia@acme.test', name: 'Socia', passwordHash: 'x' })
+                .returning();
+            socia = { userId: u!.id, role: 'agent' };
+            await pg.db.insert(memberships).values({ tenantId, userId: u!.id, role: 'agent' });
+        });
+
+        it('el acceso por persona pisa el de su rol en ESTA lista', async () => {
+            await seed();
+            // Por rol, un agent sólo ve lo que creó — y ella no creó nada.
+            const antes = await recs.list(tenantId, socia, 'clientes', { limit: 50, sort_dir: 'asc' });
+            expect(antes.data).toHaveLength(0);
+
+            await lists_.updatePermissions(tenantId, 'clientes', {
+                users: {
+                    [String(socia.userId)]: {
+                        view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [],
+                    },
+                },
+            });
+
+            const despues = await recs.list(tenantId, socia, 'clientes', { limit: 50, sort_dir: 'asc' });
+            expect(despues.data).toHaveLength(3);
+            // El rol quedó intacto: es un acceso de esta lista, no del workspace.
+            const doc = await lists_.getPermissions(tenantId, 'clientes');
+            expect(doc.permissions.agent!.view).toBe('own');
+            expect(doc.users).toEqual([
+                expect.objectContaining({ user_id: socia.userId, name: 'Socia', email: 'socia@acme.test' }),
+            ]);
+            // Y otro agent sin acceso propio sigue viendo sólo lo suyo.
+            const otro = await recs.list(tenantId, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+            expect(otro.data).toHaveLength(1);
+        });
+
+        it('quitar a la persona la devuelve al acceso de su rol', async () => {
+            await seed();
+            await lists_.updatePermissions(tenantId, 'clientes', {
+                users: {
+                    [String(socia.userId)]: {
+                        view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [],
+                    },
+                },
+            });
+            await lists_.updatePermissions(tenantId, 'clientes', { users: {} });
+
+            const despues = await recs.list(tenantId, socia, 'clientes', { limit: 50, sort_dir: 'asc' });
+            expect(despues.data).toHaveLength(0);
+            expect((await lists_.getPermissions(tenantId, 'clientes')).users).toEqual([]);
+        });
+
+        it('no se puede compartir con alguien que no es de la empresa', async () => {
+            await expect(
+                lists_.updatePermissions(tenantId, 'clientes', {
+                    users: {
+                        '99999': { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] },
+                    },
+                }),
+            ).rejects.toBeInstanceOf(BadRequestException);
+        });
+
+        it('el acceso por persona también puede RESTRINGIR (y ocultar campos)', async () => {
+            await seed();
+            await lists_.updatePermissions(tenantId, 'clientes', {
+                permissions: {
+                    agent: { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] },
+                },
+                users: {
+                    [String(socia.userId)]: {
+                        view: 'all', create: false, edit: 'none', delete: 'none',
+                        fields_hidden: ['monto'],
+                    },
+                },
+            });
+
+            const page = await recs.list(tenantId, socia, 'clientes', { limit: 50, sort_dir: 'asc' });
+            expect(page.data).toHaveLength(3);
+            for (const r of page.data) expect(r.data[key('monto')]).toBeUndefined();
+            await expect(
+                recs.create(tenantId, socia, 'clientes', { data: { [key('nombre')]: 'X' } }),
+            ).rejects.toBeInstanceOf(ForbiddenException);
+        });
     });
 });

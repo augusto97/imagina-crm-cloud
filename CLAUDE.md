@@ -2187,8 +2187,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de 36 iconos + 10 colores, selector en Ajustes → General y render en
         el árbol del panel. 1 test de API (399) + E2E navegador 8/8 de la
         tabla y 8/8 de agrupada/iconos/chips.
-        **Pendiente del mismo lote**: compartir una lista con una persona
-        puntual (hoy el ACL es por ROL) — va en el release siguiente.
+  - [x] **Compartir una lista con una persona puntual (v0.1.138)**: cierra
+        el último reporte del lote anterior. Hasta acá el acceso a una lista
+        se decidía SÓLO por rol, así que para sumar a alguien había que
+        cambiarle el rol en TODO el workspace — justo lo que nadie quiere
+        hacer. El ACL de la lista (`settings.permissions`, sin migración)
+        gana un mapa `users` (id → permisos) que **pisa** el acceso del rol
+        para ESA lista: puede dar más (un agent que ve todo) o menos (alguien
+        que sólo mira y con campos ocultos). `admin` queda afuera a propósito
+        (siempre tiene acceso total) y el rol del workspace no se toca.
+        `effectivePermissions/scopeFor/hiddenFieldsFor` reciben el `userId`
+        y los cuatro caminos de `records.service` (crear, listar, leer fila,
+        campos ocultos) lo pasan. Guard rail: sólo se puede compartir con
+        **miembros de la empresa** — un id cualquiera se rechaza con 400
+        `not_a_member`, si no quedaría un acceso guardado para alguien que no
+        pertenece. `GET /lists/:l/permissions` devuelve los accesos con
+        nombre y correo resueltos contra los miembros VIVOS (quien se fue no
+        aparece). Front: sección "Personas con acceso" dentro de Compartir →
+        Con tu equipo (buscador de miembros, nivel por persona con el mismo
+        catálogo de niveles de v0.1.126, cambio y quitar). 4 tests nuevos
+        (403 API en verde) + E2E navegador 8/8 (buscar, compartir, persistir,
+        cambiar el nivel, quitar).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
