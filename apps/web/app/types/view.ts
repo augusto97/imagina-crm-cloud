@@ -29,6 +29,8 @@ export interface SavedViewConfig {
     /** Si `true`, la tabla se muestra como hoja de cálculo: numeración de
      * filas, separadores verticales y sin agrupar. */
     spreadsheet?: boolean;
+    /** Densidad de las filas: 'compact' | 'normal' | 'comfortable'. */
+    density?: string;
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la

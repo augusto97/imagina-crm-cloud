@@ -19,6 +19,7 @@ const baseState: RecordsState = {
     groupByFieldId: null,
     wrapText: false,
     spreadsheet: false,
+    density: null,
 };
 
 /**
@@ -138,5 +139,19 @@ describe('hoja de cálculo (v0.1.137/139)', () => {
         expect(stateToViewConfig(baseState).spreadsheet).toBeUndefined();
         expect(viewConfigToState({}, 50).spreadsheet).toBe(false);
         expect(hasChangesVsView({ ...baseState, spreadsheet: true }, {})).toBe(true);
+    });
+});
+
+describe('densidad de las filas (v0.1.140)', () => {
+    it('viaja a la vista guardada y vuelve', () => {
+        const config = stateToViewConfig({ ...baseState, density: 'comfortable' });
+        expect(config.density).toBe('comfortable');
+        expect(viewConfigToState(config, 50).density).toBe('comfortable');
+    });
+
+    it('sin elegir no ensucia la config, y un valor raro no se adopta', () => {
+        expect(stateToViewConfig(baseState).density).toBeUndefined();
+        expect(viewConfigToState({}, 50).density).toBeNull();
+        expect(viewConfigToState({ density: 'gigante' }, 50).density).toBeNull();
     });
 });

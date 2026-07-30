@@ -66,6 +66,9 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.spreadsheet) {
         config.spreadsheet = true;
     }
+    if (state.density !== null) {
+        config.density = state.density;
+    }
     return config;
 }
 
@@ -120,6 +123,10 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
         groupByFieldId: config.group_by_field_id ?? null,
         wrapText: config.wrap_text === true,
         spreadsheet: config.spreadsheet === true,
+        density:
+            config.density === 'compact' || config.density === 'normal' || config.density === 'comfortable'
+                ? config.density
+                : null,
     };
 }
 

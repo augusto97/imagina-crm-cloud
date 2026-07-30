@@ -661,6 +661,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
                     spreadsheet={state.spreadsheet}
                     onSpreadsheetChange={(next) => setState((s) => ({ ...s, spreadsheet: next }))}
+                    density={state.density}
+                    onDensityChange={(next) => setState((s) => ({ ...s, density: next }))}
                     canManageList={canManageList}
                     canManageAutomations={canManageAutomations}
                     canImport={canImportRecords}
@@ -863,6 +865,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateOpen(true);
                                     }}
                                     wrapText={state.wrapText}
+                                    density={state.density}
                                     onCreateSubtask={(record) => {
                                         setCreateDefaults(undefined);
                                         setCreateParentId(record.id);
@@ -905,6 +908,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onEditField={canManageList ? openFieldEdit : undefined}
                                     wrapText={state.wrapText}
                                     spreadsheet={state.spreadsheet}
+                                    density={state.density}
                                     rowNumberOffset={(state.page - 1) * state.perPage}
                                     onCreateSubtask={(record) => {
                                         setCreateDefaults(undefined);

@@ -40,6 +40,12 @@ const viewStateCommon = {
     /** v0.1.137 — "Hoja de cálculo": tabla plana estilo Excel (numeración
      * de filas + separadores verticales, sin agrupar). */
     spreadsheet: z.boolean().optional(),
+    /**
+     * v0.1.140 — Densidad de las filas, elegida por quien mira la vista.
+     * La hoja de cálculo arrancaba fija en "compacta" y para algunos era
+     * demasiado apretada: ahora cada vista guarda la suya.
+     */
+    density: z.enum(['compact', 'normal', 'comfortable']).optional(),
 };
 
 export const tableViewConfigSchema = z.object({

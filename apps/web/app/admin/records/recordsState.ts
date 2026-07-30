@@ -81,7 +81,16 @@ export interface RecordsState {
      * agrupación (la vista Tabla de ClickUp funciona así).
      */
     spreadsheet: boolean;
+    /**
+     * Densidad de las filas (v0.1.140). `null` = el default de la
+     * presentación: apretada en la hoja de cálculo, normal en la lista.
+     * Se guarda en la vista como cualquier otra preferencia.
+     */
+    density: RowDensity | null;
 }
+
+/** Alturas de fila que puede elegir quien mira la vista. */
+export type RowDensity = 'compact' | 'normal' | 'comfortable';
 
 /**
  * Page size por default para `/records`. Subido a 200 (de 50) en
@@ -110,6 +119,7 @@ export const INITIAL_STATE: RecordsState = {
     footerAggregates: {},
     wrapText: false,
     spreadsheet: false,
+    density: null,
 };
 
 /**
