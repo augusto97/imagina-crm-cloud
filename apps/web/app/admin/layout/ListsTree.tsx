@@ -21,6 +21,8 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ListGroup, ListSummary } from '@/types/list';
 
+import { listColor, listIcon } from '@/lib/listIcons';
+
 import { PanelListLink } from './PanelListLink';
 
 const COLLAPSED_KEY = 'imcrm:list-groups:collapsed';
@@ -180,6 +182,8 @@ export function ListsTree({
                 to={`/lists/${list.slug}/records`}
                 name={list.name}
                 starred={starredIds.includes(list.id)}
+                icon={listIcon(list.icon)}
+                iconColor={listColor(list.color)}
                 onToggleStar={() => onToggleStar(list.id)}
             />
         </li>

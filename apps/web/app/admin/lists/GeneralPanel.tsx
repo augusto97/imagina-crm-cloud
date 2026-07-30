@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import type { ListSummary } from '@/types/list';
 
+import { ListIconPicker } from './ListIconPicker';
 import { SlugEditor } from './SlugEditor';
 
 interface Props {
@@ -36,6 +37,8 @@ export function GeneralPanel({ list }: Props): JSX.Element {
     const [description, setDescription] = useState(list.description ?? '');
     const [slug, setSlug] = useState(list.slug);
     const [slugDirty, setSlugDirty] = useState(false);
+    const [icon, setIcon] = useState<string | null>(list.icon);
+    const [color, setColor] = useState<string | null>(list.color);
     const [submitError, setSubmitError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -43,9 +46,15 @@ export function GeneralPanel({ list }: Props): JSX.Element {
         setDescription(list.description ?? '');
         setSlug(list.slug);
         setSlugDirty(false);
+        setIcon(list.icon);
+        setColor(list.color);
     }, [list]);
 
-    const dirty = name !== list.name || description !== (list.description ?? '') || slug !== list.slug;
+    const dirty = name !== list.name
+        || description !== (list.description ?? '')
+        || slug !== list.slug
+        || icon !== list.icon
+        || color !== list.color;
 
     const handleSave = async (): Promise<void> => {
         setSubmitError(null);
@@ -54,6 +63,8 @@ export function GeneralPanel({ list }: Props): JSX.Element {
                 name: name.trim(),
                 description: description.trim() || null,
                 slug: slug !== list.slug ? slug : undefined,
+                icon,
+                color,
             });
             toast.success(__('Cambios guardados'));
             // El slug es parte de la URL: si cambió, movemos la página a la
@@ -75,6 +86,20 @@ export function GeneralPanel({ list }: Props): JSX.Element {
                     <Input id="list-name" value={name} onChange={(e) => setName(e.target.value)} />
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Es el nombre que se ve en el menú lateral.')}
+                    </p>
+                </div>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label>{__('Icono')}</Label>
+                    <ListIconPicker
+                        icon={icon}
+                        color={color}
+                        onChange={(next) => {
+                            setIcon(next.icon);
+                            setColor(next.color);
+                        }}
+                    />
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Se ve junto al nombre en el menú lateral.')}
                     </p>
                 </div>
                 <SlugEditor

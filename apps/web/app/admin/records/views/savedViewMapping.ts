@@ -63,6 +63,9 @@ export function stateToViewConfig(state: RecordsState): SavedViewConfig {
     if (state.wrapText) {
         config.wrap_text = true;
     }
+    if (state.spreadsheet) {
+        config.spreadsheet = true;
+    }
     return config;
 }
 
@@ -116,6 +119,7 @@ export function viewConfigToState(config: SavedViewConfig, perPage: number): Rec
         footerAggregates: config.footer_aggregates ?? {},
         groupByFieldId: config.group_by_field_id ?? null,
         wrapText: config.wrap_text === true,
+        spreadsheet: config.spreadsheet === true,
     };
 }
 

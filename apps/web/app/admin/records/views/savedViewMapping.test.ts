@@ -18,6 +18,7 @@ const baseState: RecordsState = {
     footerAggregates: {},
     groupByFieldId: null,
     wrapText: false,
+    spreadsheet: false,
 };
 
 /**

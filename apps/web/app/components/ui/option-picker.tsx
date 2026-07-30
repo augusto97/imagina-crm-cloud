@@ -34,6 +34,14 @@ interface OptionPickerProps {
      * multi el popover queda abierto para marcar varios.
      */
     variant?: 'default' | 'cell';
+    /**
+     * v0.1.137 — "Ajustar texto" de la vista. En una celda con `wrap`, los
+     * chips se acomodan en varias líneas y la fila crece (como en ClickUp);
+     * sin él van en UNA línea que se recorta con el ancho de la columna.
+     * Antes el multi_select siempre envolvía: el ajuste de la vista no lo
+     * tocaba, que es justo lo que el usuario venía marcando.
+     */
+    wrap?: boolean;
 }
 
 /**
@@ -56,6 +64,7 @@ export function OptionPicker({
     disabled,
     compact,
     variant = 'default',
+    wrap = false,
 }: OptionPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -177,7 +186,16 @@ export function OptionPicker({
             );
         }
         return (
-            <span className="imcrm-flex imcrm-flex-1 imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
+            <span
+                className={cn(
+                    'imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1',
+                    // Sin ajuste de texto: una sola línea recortada por el
+                    // ancho de la columna (el default de la tabla).
+                    wrap || !isCell
+                        ? 'imcrm-flex-wrap'
+                        : 'imcrm-flex-nowrap imcrm-overflow-hidden',
+                )}
+            >
                 {Array.from(currentSet).map((v) => {
                     const opt = options.find((o) => o.value === v);
                     return (
@@ -203,7 +221,10 @@ export function OptionPicker({
                     onClick={isCell ? (e) => e.stopPropagation() : undefined}
                     className={cn(
                         isCell
-                            ? 'imcrm-flex imcrm-w-full imcrm-min-h-[1.5rem] imcrm-items-center imcrm-rounded imcrm-text-left imcrm-text-sm imcrm--mx-1 imcrm-px-1 hover:imcrm-bg-accent/40'
+                            ? cn(
+                                'imcrm-flex imcrm-w-full imcrm-min-h-[1.5rem] imcrm-rounded imcrm-text-left imcrm-text-sm imcrm--mx-1 imcrm-px-1 hover:imcrm-bg-accent/40',
+                                wrap ? 'imcrm-items-start' : 'imcrm-items-center',
+                            )
                             : cn(
                                 'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
                                 compact ? 'imcrm-min-h-8 imcrm-px-2 imcrm-py-1' : 'imcrm-min-h-9 imcrm-px-3 imcrm-py-1.5',

@@ -2157,6 +2157,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         rechazo del campo numérico, edición y guardado en modal/alta) y 3/3 del
         header por plantilla.
 
+  - [x] **Lote de tabla, subtareas y listas (v0.1.137, 6 reportes del
+        usuario)**: (a) **las líneas de fila no existían** — estaban puestas
+        como `border-t` en el `<tr>` y el navegador las IGNORA: la tabla
+        necesita `border-collapse: separate` (con `collapse` los headers y las
+        columnas sticky pierden el borde al scrollear) y en ese modo los bordes
+        del `<tr>` no se pintan. Por eso v0.1.128 "subió la opacidad" de algo
+        que nunca se dibujó. Ahora la línea vive en las CELDAS, por una regla
+        de `globals.css` que cubre cuerpo/cabecera/pie de las DOS tablas.
+        (b) **El header no tiene bordes** (ClickUp tampoco): lo que se veía
+        como separador de columna era el asa de resize pintada siempre —
+        ahora aparece al pasar el mouse. (c) **"Ajustar texto" manda sobre
+        select/multi_select**: los chips envolvían SIEMPRE; sin ajuste van en
+        una línea recortada por el ancho de la columna, con ajuste en varias
+        y la fila crece. (d) **Subtareas en TODAS las tablas**: la vista
+        agrupada no las tenía porque el `grouped-bundle` armaba un DTO
+        recortado que se comía `subtask_count`, `parent_id`,
+        `has_description` y `relations` (los campos relation también salían en
+        blanco); ahora devuelve lo mismo que el listado plano y la primera
+        columna es un componente compartido (`RecordNameCell`) — el chevron,
+        el icono de descripción y el menú "Crear subtarea" salen en las dos
+        vistas por construcción. La fila de subtarea cambia el punto de 4px
+        por el codo de sangría. (e) **Modo "Hoja de cálculo"** (toggle en
+        Personalizar, persistido en la vista): numera las filas —el número
+        ocupa el lugar de la casilla y le cede el paso al hover—, dibuja la
+        cuadrícula vertical y NO agrupa, como la vista Tabla de ClickUp.
+        (f) **Iconos por lista**: `lists.icon`/`color` existían desde F1 sin
+        interfaz (el menú pintaba el mismo punto para todas); catálogo curado
+        de 36 iconos + 10 colores, selector en Ajustes → General y render en
+        el árbol del panel. 1 test de API (399) + E2E navegador 8/8 de la
+        tabla y 8/8 de agrupada/iconos/chips.
+        **Pendiente del mismo lote**: compartir una lista con una persona
+        puntual (hoy el ACL es por ROL) — va en el release siguiente.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

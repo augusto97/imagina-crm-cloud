@@ -10,12 +10,13 @@ import {
     type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { AlignLeft, ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
 import { useAggregates } from '@/hooks/useAggregates';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
+import { RecordNameCell } from './RecordNameCell';
 import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
@@ -86,6 +87,13 @@ interface TableViewProps {
     wrapText?: boolean;
     /** Alta de subtarea desde el menú contextual de la fila (v0.1.132). */
     onCreateSubtask?: (record: RecordEntity) => void;
+    /**
+     * "Hoja de cálculo" (v0.1.137): numeración de filas + separadores
+     * verticales entre columnas. La vista Tabla de ClickUp se ve así.
+     */
+    spreadsheet?: boolean;
+    /** Índice de la primera fila de la página (para numerar continuo). */
+    rowNumberOffset?: number;
 }
 
 /**
@@ -123,6 +131,8 @@ export function TableView({
     totalCount,
     wrapText = false,
     onCreateSubtask,
+    spreadsheet = false,
+    rowNumberOffset = 0,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -202,56 +212,15 @@ export function TableView({
                     // campo (la que hace de "nombre"), como en ClickUp. Las
                     // subtareas se dibujan sangradas por `row.depth`.
                     if (i !== 0) return editable;
-                    const n = ctx.row.original.subtask_count;
-                    const isOpen = expandedIds.includes(ctx.row.original.id);
                     return (
-                        <span
-                            className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1"
-                            style={ctx.row.depth > 0 ? { paddingLeft: ctx.row.depth * 16 } : undefined}
+                        <RecordNameCell
+                            record={ctx.row.original}
+                            depth={ctx.row.depth}
+                            expanded={expandedIds.includes(ctx.row.original.id)}
+                            onToggle={() => toggleSubtasks(ctx.row.original.id)}
                         >
-                            {n > 0 ? (
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleSubtasks(ctx.row.original.id);
-                                    }}
-                                    aria-expanded={isOpen}
-                                    aria-label={sprintf(
-                                        /* translators: %d: subtask count */
-                                        __('%d subtareas'),
-                                        n,
-                                    )}
-                                    className="imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                >
-                                    <ChevronRight
-                                        aria-hidden
-                                        className={cn(
-                                            'imcrm-h-3.5 imcrm-w-3.5 imcrm-transition-transform',
-                                            isOpen && 'imcrm-rotate-90',
-                                        )}
-                                    />
-                                </button>
-                            ) : (
-                                ctx.row.depth > 0 && (
-                                    <span
-                                        aria-hidden
-                                        className="imcrm-h-1 imcrm-w-1 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-muted-foreground/50"
-                                    />
-                                )
-                            )}
-                            <span className="imcrm-min-w-0 imcrm-flex-1">{editable}</span>
-                            {/* v0.1.133 — señal de que el registro tiene
-                                descripción (como el icono de documento de
-                                ClickUp). El contenido no viaja en el listado:
-                                sólo este booleano. */}
-                            {ctx.row.original.has_description && (
-                                <AlignLeft
-                                    aria-label={__('Tiene descripción')}
-                                    className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70"
-                                />
-                            )}
-                        </span>
+                            {editable}
+                        </RecordNameCell>
                     );
                 },
                 size: defaultSizeForType(field.type),
@@ -476,7 +445,12 @@ export function TableView({
             }}
         >
             <table
-                className="imcrm-w-full imcrm-text-sm"
+                className={cn(
+                    'imcrm-records-table imcrm-w-full imcrm-text-sm',
+                    // Manda sobre los chips de select/multi_select (globals.css).
+                    wrapText && 'imcrm-wrap-cells',
+                    spreadsheet && 'imcrm-records-grid',
+                )}
                 // `width: 100%` + `minWidth: totalSize`: la tabla llena el
                 // contenedor (las columnas estiran proporcionalmente, sin
                 // vacío a la derecha) y conserva el scroll horizontal
@@ -491,7 +465,7 @@ export function TableView({
                     )}
                 >
                     {table.getHeaderGroups().map((hg) => (
-                        <tr key={hg.id} className="imcrm-group/head imcrm-border-b imcrm-border-border">
+                        <tr key={hg.id} className="imcrm-group/head">
                             <th
                                 scope="col"
                                 className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
@@ -627,12 +601,13 @@ export function TableView({
                                                 />
                                             )}
                                         </div>
-                                        {/* Resize handle estilo Excel: barra
-                                            de 4px al borde derecho del <th>.
-                                            Antes era de 1px transparent y el
-                                            user no la encontraba. Ahora es
-                                            visible (border) y resalta a
-                                            primary on hover. */}
+                                        {/* Asa de resize al borde derecho del
+                                            <th>. v0.1.137 — sólo aparece al
+                                            pasar el mouse por la cabecera: en
+                                            reposo se leía como un BORDE de
+                                            columna (el header de ClickUp no
+                                            tiene separadores) y era justo lo
+                                            que el usuario venía marcando. */}
                                         {h.column.getCanResize() && (
                                             <div
                                                 onMouseDown={(e) => {
@@ -652,7 +627,7 @@ export function TableView({
                                                 }}
                                                 className={cn(
                                                     'imcrm-absolute imcrm-right-0 imcrm-top-0 imcrm-h-full imcrm-w-1 imcrm-cursor-col-resize imcrm-select-none imcrm-touch-none imcrm-z-20',
-                                                    'imcrm-bg-border/40 hover:imcrm-bg-primary/60',
+                                                    'imcrm-bg-transparent group-hover/th:imcrm-bg-border hover:imcrm-bg-primary/60',
                                                     h.column.getIsResizing() && 'imcrm-bg-primary imcrm-w-[2px]',
                                                 )}
                                                 aria-hidden
@@ -705,8 +680,14 @@ export function TableView({
                             {(shouldVirtualize
                                 ? virtualRows.map((vi) => rows[vi.index]!)
                                 : rows
-                            ).map((row) => {
+                            ).map((row, visualIndex) => {
                             const isSelected = selectedSet.has(row.original.id);
+                            // Numeración continua entre páginas; con
+                            // virtualización el índice real es el de la fila.
+                            const rowNumber = rowNumberOffset
+                                + (shouldVirtualize
+                                    ? virtualRows[visualIndex]?.index ?? visualIndex
+                                    : visualIndex) + 1;
                             return (
                                 <tr
                                     key={row.id}
@@ -719,7 +700,7 @@ export function TableView({
                                         // perceptible en hover (200ms de wait con
                                         // duration-100 antes de la primera frame).
                                         // Hover bg debe ser instantáneo.
-                                        'imcrm-group/row imcrm-border-t imcrm-border-border',
+                                        'imcrm-group/row',
                                         isSelected
                                             ? 'imcrm-bg-primary/5'
                                             : 'hover:imcrm-bg-muted/40',
@@ -729,6 +710,19 @@ export function TableView({
                                         className="imcrm-w-10 imcrm-px-3 imcrm-py-2.5 imcrm-align-middle"
                                         onClick={(e) => e.stopPropagation()}
                                     >
+                                      <span className="imcrm-relative imcrm-flex imcrm-h-3.5 imcrm-w-3.5 imcrm-items-center imcrm-justify-center">
+                                        {/* Hoja de cálculo: el número de fila
+                                            ocupa el lugar de la casilla y le
+                                            cede el paso al pasar el mouse
+                                            (igual que ClickUp). */}
+                                        {spreadsheet && !isSelected && selectedIds.length === 0 && (
+                                            <span
+                                                aria-hidden
+                                                className="imcrm-pointer-events-none imcrm-absolute imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground/70 group-hover/row:imcrm-opacity-0"
+                                            >
+                                                {rowNumber}
+                                            </span>
+                                        )}
                                         <input
                                             type="checkbox"
                                             checked={isSelected}
@@ -751,6 +745,7 @@ export function TableView({
                                                 row.original.id,
                                             )}
                                         />
+                                      </span>
                                     </td>
                                     {row.getVisibleCells().map((cell, cellIndex) => {
                                         // El "ID" (primera celda dinámica) actúa como zona de drawer:
@@ -809,7 +804,7 @@ export function TableView({
                     — sin separador visual entre contenido y footer. */}
                 {(onAddRecord || onFooterAggregatesChange) && (
                     <tfoot className="imcrm-group/footer">
-                        <tr className="imcrm-border-t imcrm-border-border">
+                        <tr>
                             <td className="imcrm-w-10" />
                             {table.getVisibleLeafColumns().map((col) => {
                                 const meta = col.columnDef.meta as

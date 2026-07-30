@@ -95,7 +95,19 @@ export class RecordsGroupedService {
             const rows = page.data.map((r) => ({
                 id: r.id,
                 fields: mapKeys(r.data as Record<string, unknown>, toSlug),
-                relations: {},
+                // v0.1.137 — el bundle armaba su propio DTO recortado y se
+                // comía `relations` (siempre vacío), `parent_id`,
+                // `subtask_count` y `has_description`: por eso la vista
+                // AGRUPADA no mostraba subtareas ni el icono de descripción,
+                // y los campos relation salían en blanco. Sale lo mismo que
+                // en el listado plano.
+                relations: mapKeys(
+                    (r.relations ?? {}) as Record<string, unknown>,
+                    toSlug,
+                ),
+                parent_id: r.parent_id ?? null,
+                subtask_count: r.subtask_count ?? 0,
+                has_description: r.has_description ?? false,
                 created_by: r.created_by,
                 created_at: stripZ(r.created_at),
                 updated_at: stripZ(r.updated_at),
