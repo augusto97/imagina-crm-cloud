@@ -9,6 +9,8 @@ import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
 
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
+import { SubtaskFetcher } from '../SubtaskFetcher';
+import { RecordNameCell } from './RecordNameCell';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
@@ -84,6 +86,8 @@ interface GroupedTableViewProps {
      * pre-rellenar el form de creación.
      */
     onAddRecord?: (groupByField: FieldEntity, bucketValue: string | null) => void;
+    /** Alta de subtarea desde el menú contextual de la fila (v0.1.137). */
+    onCreateSubtask?: (record: RecordEntity) => void;
     /**
      * Cálculos opt-in del footer por columna (compartidos entre
      * todos los buckets, igual que ClickUp). Si está vacío o sin
@@ -133,6 +137,7 @@ export function GroupedTableView({
     onAddColumn,
     onEditField,
     onAddRecord,
+    onCreateSubtask,
     footerAggregates,
     onFooterAggregatesChange,
     wrapText = false,
@@ -359,6 +364,7 @@ export function GroupedTableView({
                                 // el flat view (un solo trigger).
                                 onAddColumn={onAddColumn}
                                 onEditField={onEditField}
+                                onCreateSubtask={onCreateSubtask}
                                 onAddRecord={
                                     onAddRecord
                                         ? () => onAddRecord(groupByField, bucket.value)
@@ -503,6 +509,7 @@ interface GroupBucketSectionProps {
     /** Menú contextual "⌄" por columna de campo (ver GroupedTableViewProps). */
     onEditField?: (field: FieldEntity) => void;
     onAddRecord?: () => void;
+    onCreateSubtask?: (record: RecordEntity) => void;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
 }
@@ -537,6 +544,7 @@ function GroupBucketSection({
     onAddColumn,
     onEditField,
     onAddRecord,
+    onCreateSubtask,
     footerAggregates,
     onFooterAggregatesChange,
 }: GroupBucketSectionProps): JSX.Element {
@@ -547,6 +555,15 @@ function GroupBucketSection({
     const wrapText = useWrapText();
     // Menú contextual de fila (click derecho) — v0.1.129.
     const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
+    // Subtareas abiertas dentro de este bucket (v0.1.137). La vista
+    // agrupada no las tenía: el usuario reportó que sólo salían en la
+    // vista plana. Los hijos se piden por padre abierto (el listado
+    // devuelve sólo el primer nivel).
+    const [expandedIds, setExpandedIds] = useState<number[]>([]);
+    const [subtasksByParent, setSubtasksByParent] = useState<Record<number, RecordEntity[]>>({});
+    const toggleSubtasks = (id: number): void => {
+        setExpandedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    };
     const canCreateRecords = useCan(CAP.CREATE_RECORDS);
     const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
 
@@ -707,7 +724,10 @@ function GroupBucketSection({
                         </p>
                     ) : (
                         <table
-                            className="imcrm-w-full imcrm-text-sm"
+                            className={cn(
+                                'imcrm-records-table imcrm-w-full imcrm-text-sm',
+                                wrapText && 'imcrm-wrap-cells',
+                            )}
                             // `width: 100%` + `minWidth: tableWidth`: la tabla
                             // llena el contenedor (sin vacío a la derecha) y
                             // todos los buckets comparten el mismo min-width
@@ -716,7 +736,7 @@ function GroupBucketSection({
                             aria-label={labelText}
                         >
                             <thead>
-                                <tr className="imcrm-group/head imcrm-border-b imcrm-border-border">
+                                <tr className="imcrm-group/head">
                                     <th
                                         scope="col"
                                         className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
@@ -815,7 +835,7 @@ function GroupBucketSection({
                                                             window.addEventListener('pointerup', up);
                                                         }}
                                                         onClick={(e) => e.stopPropagation()}
-                                                        className="imcrm-absolute imcrm-right-0 imcrm-top-0 imcrm-z-20 imcrm-h-full imcrm-w-1 imcrm-cursor-col-resize imcrm-select-none imcrm-touch-none imcrm-bg-border/40 hover:imcrm-bg-primary/60"
+                                                        className="imcrm-absolute imcrm-right-0 imcrm-top-0 imcrm-z-20 imcrm-h-full imcrm-w-1 imcrm-cursor-col-resize imcrm-select-none imcrm-touch-none imcrm-bg-transparent group-hover/th:imcrm-bg-border hover:imcrm-bg-primary/60"
                                                         aria-hidden
                                                     />
                                                 )}
@@ -841,7 +861,12 @@ function GroupBucketSection({
                                 </tr>
                             </thead>
                             <tbody>
-                                {(records.data?.data ?? []).map((record) => {
+                                {(records.data?.data ?? []).flatMap((r) => [
+                                    { record: r, depth: 0 },
+                                    ...(expandedIds.includes(r.id)
+                                        ? (subtasksByParent[r.id] ?? []).map((c) => ({ record: c, depth: 1 }))
+                                        : []),
+                                ]).map(({ record, depth }) => {
                                     const isSelected = selectedSet.has(record.id);
                                     return (
                                         <tr
@@ -851,7 +876,7 @@ function GroupBucketSection({
                                                 setRowMenu({ record, x: e.clientX, y: e.clientY });
                                             }}
                                             className={cn(
-                                                'imcrm-group/row imcrm-border-t imcrm-border-border',
+                                                'imcrm-group/row',
                                                 isSelected
                                                     ? 'imcrm-bg-primary/5'
                                                     : 'hover:imcrm-bg-muted/40',
@@ -905,7 +930,18 @@ function GroupBucketSection({
                                                                 : undefined
                                                         }
                                                     >
-                                                        {renderColumnCell(c, record, listId)}
+                                                        {ci === 0 ? (
+                                                            <RecordNameCell
+                                                                record={record}
+                                                                depth={depth}
+                                                                expanded={expandedIds.includes(record.id)}
+                                                                onToggle={() => toggleSubtasks(record.id)}
+                                                            >
+                                                                {renderColumnCell(c, record, listId)}
+                                                            </RecordNameCell>
+                                                        ) : (
+                                                            renderColumnCell(c, record, listId)
+                                                        )}
                                                     </td>
                                                 );
                                             })}
@@ -920,7 +956,7 @@ function GroupBucketSection({
                                 fila). Igual que TableView flat. */}
                             {(onAddRecord || onFooterAggregatesChange) && (
                                 <tfoot className="imcrm-group/footer">
-                                    <tr className="imcrm-border-t imcrm-border-border">
+                                    <tr>
                                         <td className="imcrm-w-10" />
                                         {columns.map((c, ci) => {
                                             const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
@@ -1015,6 +1051,17 @@ function GroupBucketSection({
                 </div>
             )}
 
+            {/* Un fetcher por padre abierto: `useRecords` no puede
+                llamarse dentro del map de filas. */}
+            {expandedIds.map((pid) => (
+                <SubtaskFetcher
+                    key={pid}
+                    listId={listId}
+                    parentId={pid}
+                    onLoaded={(rows) => setSubtasksByParent((prev) => ({ ...prev, [pid]: rows }))}
+                />
+            ))}
+
             <RecordRowMenu
                 target={rowMenu}
                 onClose={() => setRowMenu(null)}
@@ -1026,6 +1073,7 @@ function GroupBucketSection({
                     onRowClick?.(r);
                 }}
                 onAddColumn={onAddColumn}
+                onCreateSubtask={onCreateSubtask}
                 canCreate={canCreateRecords}
                 canDelete={canDeleteRecords}
             />

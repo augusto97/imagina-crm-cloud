@@ -13,6 +13,8 @@ import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
+import { RecordsGroupedService } from '../src/records/records-grouped.service';
+import { AggregateService } from '../src/aggregate/aggregate.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
@@ -25,6 +27,7 @@ describe('Subtareas (v0.1.132)', () => {
     let recs: RecordsService;
     let lists_: ListsService;
     let fields_: FieldsService;
+    let grouped: RecordsGroupedService;
     let tenantId: number;
     let titleKey: string;
 
@@ -42,6 +45,12 @@ describe('Subtareas (v0.1.132)', () => {
             new ActivityService(tenantDb, new ActivityRepository(), lists_),
             new AutomationDispatcher(),
             new RelationsRepository(),
+        );
+        grouped = new RecordsGroupedService(
+            recs,
+            new AggregateService(tenantDb, lists_, fields_),
+            lists_,
+            fields_,
         );
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
@@ -132,5 +141,37 @@ describe('Subtareas (v0.1.132)', () => {
 
     it('un padre inexistente rechaza la subtarea', async () => {
         await expect(create('Huérfana', 999999)).rejects.toThrow();
+    });
+
+    it('la vista agrupada recibe las MISMAS señales que la plana (v0.1.137)', async () => {
+        // El bundle armaba su propio DTO recortado: sin `subtask_count` la
+        // tabla agrupada nunca dibujaba el chevron de subtareas (reporte del
+        // usuario: "sólo funciona en la vista Todos").
+        const estado = await fields_.create(tenantId, 'tareas', {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'activo', label: 'Activo' }] },
+        });
+        const padre = await create('Mudanza');
+        await create('Embalar', padre.id);
+
+        const bundle = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: estado.id,
+            expanded: ['__null__'],
+            perPage: 20,
+            aggregateFieldIds: [],
+        })) as {
+            expanded: Record<string, { records: { data: Array<Record<string, unknown>> } }>;
+        };
+
+        const rows = bundle.expanded['__null__']!.records.data;
+        const row = rows.find((r) => r.id === padre.id)!;
+        expect(row.subtask_count).toBe(1);
+        expect(row).toHaveProperty('parent_id', null);
+        expect(row).toHaveProperty('has_description', false);
+        expect(row).toHaveProperty('relations');
+        // El primer nivel sigue siendo el primer nivel: la hija no aparece
+        // suelta dentro del bucket.
+        expect(rows.some((r) => r.parent_id !== null)).toBe(false);
     });
 });

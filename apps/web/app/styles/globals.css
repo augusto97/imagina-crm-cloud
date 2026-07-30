@@ -818,6 +818,63 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ * Tabla de registros — líneas de fila (v0.1.137)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * La línea que separa cada fila estaba puesta como `border-t` en el `<tr>`
+ * desde siempre, y NUNCA se dibujó: la tabla necesita
+ * `border-collapse: separate` (con `collapse` los headers y las columnas
+ * sticky pierden sus bordes al scrollear) y en ese modo el navegador
+ * IGNORA los bordes declarados en `<tr>`. Por eso v0.1.128 "subió la
+ * opacidad" de algo que no existía. La línea tiene que vivir en las
+ * CELDAS.
+ *
+ * Va en CSS y no en clases por celda porque son dos tablas (plana y
+ * agrupada) con cuerpo, cabecera y pie: una sola regla las cubre a todas
+ * y no se puede volver a olvidar en un `<td>` nuevo.
+ */
+.imcrm-records-table thead th,
+.imcrm-records-table tbody td {
+    border-bottom: 1px solid hsl(var(--imcrm-border));
+}
+.imcrm-records-table tfoot td {
+    border-top: 1px solid hsl(var(--imcrm-border));
+}
+/* Las filas de relleno del virtualizador no son filas: no llevan línea. */
+.imcrm-records-table tbody tr[aria-hidden='true'] td {
+    border-bottom: 0;
+}
+
+/*
+ * "Ajustar texto" y los chips de select/multi_select (v0.1.137).
+ *
+ * El ajuste de la vista sólo llegaba al texto plano: los chips envolvían
+ * SIEMPRE (el usuario lo comparó con ClickUp, donde el ajuste manda sobre
+ * todos los tipos de campo). Dentro de la tabla, sin ajuste van en una
+ * línea recortada por el ancho de la columna; con ajuste, en varias y la
+ * fila crece. Fuera de la tabla (tarjetas, kanban) nada cambia.
+ */
+.imcrm-records-table td .imcrm-cell-chips {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+.imcrm-records-table.imcrm-wrap-cells td .imcrm-cell-chips {
+    flex-wrap: wrap;
+    overflow: visible;
+}
+
+/*
+ * Modo hoja de cálculo (v0.1.137): además de las líneas horizontales,
+ * separadores verticales entre columnas — el look de Excel que tiene la
+ * vista Tabla de ClickUp.
+ */
+.imcrm-records-table.imcrm-records-grid thead th + th,
+.imcrm-records-table.imcrm-records-grid tbody td + td,
+.imcrm-records-table.imcrm-records-grid tfoot td + td {
+    border-left: 1px solid hsl(var(--imcrm-border));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  * Editor de descripción del registro (v0.1.133)
  * ═══════════════════════════════════════════════════════════════════════
  *

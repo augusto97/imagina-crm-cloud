@@ -48,7 +48,10 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         const opts = extractFieldOptions(field);
         const map = new Map(opts.map((o) => [o.value, o]));
         return (
-            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+            // `imcrm-cell-chips`: dentro de la tabla, "Ajustar texto" decide
+            // si estos chips van en una línea o en varias (v0.1.137). Fuera
+            // de la tabla (tarjetas, kanban) siempre envuelven.
+            <div className="imcrm-cell-chips imcrm-flex imcrm-flex-wrap imcrm-gap-1">
                 {value.map((v, i) => (
                     <OptionChip key={i} opt={map.get(String(v))} fallback={String(v)} />
                 ))}

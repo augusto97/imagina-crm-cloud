@@ -37,6 +37,9 @@ const viewStateCommon = {
     /** Filas de alto variable: el texto largo se muestra completo en vez
      * de recortarse con elipsis ("Ajustar texto" de ClickUp). */
     wrap_text: z.boolean().optional(),
+    /** v0.1.137 — "Hoja de cálculo": tabla plana estilo Excel (numeración
+     * de filas + separadores verticales, sin agrupar). */
+    spreadsheet: z.boolean().optional(),
 };
 
 export const tableViewConfigSchema = z.object({

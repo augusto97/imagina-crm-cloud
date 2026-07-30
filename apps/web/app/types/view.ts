@@ -26,6 +26,9 @@ export interface SavedViewConfig {
     /** Si `true`, las celdas muestran el texto completo (varias líneas)
      * en vez de recortarlo. "Ajustar texto" del panel de la vista. */
     wrap_text?: boolean;
+    /** Si `true`, la tabla se muestra como hoja de cálculo: numeración de
+     * filas, separadores verticales y sin agrupar. */
+    spreadsheet?: boolean;
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la

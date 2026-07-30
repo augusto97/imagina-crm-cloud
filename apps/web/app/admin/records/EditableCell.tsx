@@ -123,6 +123,9 @@ function EditableCellInner({
                     listId={listId}
                     mode={field.type === 'select' ? 'single' : 'multi'}
                     variant="cell"
+                    // v0.1.137 — "Ajustar texto" también manda sobre los chips
+                    // (paridad con ClickUp): sin él, una línea recortada.
+                    wrap={wrapText}
                     value={
                         field.type === 'select'
                             ? (typeof value === 'string' ? value : null)

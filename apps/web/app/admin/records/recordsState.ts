@@ -74,6 +74,13 @@ export interface RecordsState {
      * guardada como cualquier otra preferencia de presentación.
      */
     wrapText: boolean;
+    /**
+     * "Hoja de cálculo" (v0.1.137): la tabla se ve como un Excel plano —
+     * numeración de filas y separadores verticales entre columnas, y los
+     * registros NO se agrupan aunque la vista tenga un campo de
+     * agrupación (la vista Tabla de ClickUp funciona así).
+     */
+    spreadsheet: boolean;
 }
 
 /**
@@ -102,6 +109,7 @@ export const INITIAL_STATE: RecordsState = {
     collapsedGroups: [],
     footerAggregates: {},
     wrapText: false,
+    spreadsheet: false,
 };
 
 /**

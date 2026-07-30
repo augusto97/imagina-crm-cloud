@@ -13,12 +13,15 @@ export function PanelListLink({
     name,
     starred,
     icon: Icon,
+    iconColor,
     onToggleStar,
 }: {
     to: string;
     name: string;
     starred: boolean;
     icon?: LucideIcon;
+    /** Color del icono (hex). v0.1.137 — icono propio por lista. */
+    iconColor?: string;
     onToggleStar: () => void;
 }): JSX.Element {
     return (
@@ -35,7 +38,14 @@ export function PanelListLink({
                 }
             >
                 {Icon !== undefined ? (
-                    <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-opacity-60" aria-hidden />
+                    <Icon
+                        className={cn(
+                            'imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0',
+                            iconColor === undefined && 'imcrm-opacity-60',
+                        )}
+                        style={iconColor !== undefined ? { color: iconColor } : undefined}
+                        aria-hidden
+                    />
                 ) : (
                     <span
                         aria-hidden

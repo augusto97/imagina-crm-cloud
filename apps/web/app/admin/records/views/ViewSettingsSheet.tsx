@@ -7,6 +7,7 @@ import {
     Download,
     FileUp,
     Filter,
+    Grid3x3,
     Group,
     Settings,
     Star,
@@ -56,6 +57,8 @@ interface ViewSettingsSheetProps {
     /** Agrupar no aplica en kanban/calendario/tarjetas. */
     canGroup: boolean;
     wrapText: boolean;
+    spreadsheet: boolean;
+    onSpreadsheetChange: (next: boolean) => void;
     onWrapTextChange: (next: boolean) => void;
 
     canManageList: boolean;
@@ -96,6 +99,8 @@ export function ViewSettingsSheet({
     onGroupByFieldIdChange,
     canGroup,
     wrapText,
+    spreadsheet,
+    onSpreadsheetChange,
     onWrapTextChange,
     canManageList,
     canManageAutomations,
@@ -183,6 +188,13 @@ export function ViewSettingsSheet({
                                 hint={__('Muestra el contenido completo en varias líneas.')}
                                 checked={wrapText}
                                 onChange={onWrapTextChange}
+                            />
+                            <ToggleRow
+                                icon={Grid3x3}
+                                label={__('Hoja de cálculo')}
+                                hint={__('Numera las filas y dibuja la cuadrícula, sin agrupar.')}
+                                checked={spreadsheet}
+                                onChange={onSpreadsheetChange}
                             />
                             <ToggleRow
                                 icon={Columns3}

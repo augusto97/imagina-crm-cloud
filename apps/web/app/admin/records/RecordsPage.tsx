@@ -394,7 +394,11 @@ const applyView = (view: SavedViewEntity | null): void => {
     const isCalendar = activeView?.type === 'calendar';
     const isCards = activeView?.type === 'cards';
     const isAlternativeView = isKanban || isCalendar || isCards;
-    const isTableGrouped = !isAlternativeView && state.groupByFieldId !== null;
+    // v0.1.137 — el modo hoja de cálculo ignora la agrupación a propósito:
+    // una hoja de Excel no tiene bloques, tiene filas numeradas.
+    const isTableGrouped = !isAlternativeView
+        && state.groupByFieldId !== null
+        && !state.spreadsheet;
     const tableGroupByField =
         isTableGrouped && fields.data
             ? fields.data.find((f) => f.id === state.groupByFieldId)
@@ -655,6 +659,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                     canGroup={!isAlternativeView}
                     wrapText={state.wrapText}
                     onWrapTextChange={(next) => setState((s) => ({ ...s, wrapText: next }))}
+                    spreadsheet={state.spreadsheet}
+                    onSpreadsheetChange={(next) => setState((s) => ({ ...s, spreadsheet: next }))}
                     canManageList={canManageList}
                     canManageAutomations={canManageAutomations}
                     canImport={canImportRecords}
@@ -857,6 +863,11 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateOpen(true);
                                     }}
                                     wrapText={state.wrapText}
+                                    onCreateSubtask={(record) => {
+                                        setCreateDefaults(undefined);
+                                        setCreateParentId(record.id);
+                                        setCreateOpen(true);
+                                    }}
                                     footerAggregates={state.footerAggregates}
                                     onFooterAggregatesChange={(next) =>
                                         setState((s) => ({ ...s, footerAggregates: next }))
@@ -893,6 +904,8 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onAddColumn={openFieldCreate}
                                     onEditField={canManageList ? openFieldEdit : undefined}
                                     wrapText={state.wrapText}
+                                    spreadsheet={state.spreadsheet}
+                                    rowNumberOffset={(state.page - 1) * state.perPage}
                                     onCreateSubtask={(record) => {
                                         setCreateDefaults(undefined);
                                         setCreateParentId(record.id);
