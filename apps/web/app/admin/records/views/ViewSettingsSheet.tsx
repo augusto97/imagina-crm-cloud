@@ -31,6 +31,14 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import { countConditions, isEmptyTree, isGroupableType, type FilterTree } from '@/types/record';
+import type { RowDensity } from '../recordsState';
+
+/** Las tres densidades de fila que puede elegir quien mira la vista. */
+const DENSITIES: Array<{ id: RowDensity; label: string }> = [
+    { id: 'compact', label: __('Compacta') },
+    { id: 'normal', label: __('Normal') },
+    { id: 'comfortable', label: __('Cómoda') },
+];
 import type { SavedViewEntity } from '@/types/view';
 
 import { FiltersPanel } from '../FiltersPanel';
@@ -59,6 +67,8 @@ interface ViewSettingsSheetProps {
     wrapText: boolean;
     spreadsheet: boolean;
     onSpreadsheetChange: (next: boolean) => void;
+    density: RowDensity | null;
+    onDensityChange: (next: RowDensity | null) => void;
     onWrapTextChange: (next: boolean) => void;
 
     canManageList: boolean;
@@ -101,6 +111,8 @@ export function ViewSettingsSheet({
     wrapText,
     spreadsheet,
     onSpreadsheetChange,
+    density,
+    onDensityChange,
     onWrapTextChange,
     canManageList,
     canManageAutomations,
@@ -180,6 +192,33 @@ export function ViewSettingsSheet({
                                   )
                                 : __('Estás viendo todos los registros. Guardá estos ajustes como una vista para volver a ellos.')}
                         </p>
+
+                        <Group_ label={__('Densidad')}>
+                            {/* v0.1.140 — la hoja de cálculo arrancaba fija en
+                                compacta y para algunos era demasiado apretada:
+                                ahora cada vista guarda cuánto respira. */}
+                            <div className="imcrm-flex imcrm-gap-1 imcrm-px-1 imcrm-py-1">
+                                {DENSITIES.map((d) => {
+                                    const active = (density ?? (spreadsheet ? 'compact' : 'normal')) === d.id;
+                                    return (
+                                        <button
+                                            key={d.id}
+                                            type="button"
+                                            aria-pressed={active}
+                                            onClick={() => onDensityChange(d.id)}
+                                            className={cn(
+                                                'imcrm-flex-1 imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-transition-colors',
+                                                active
+                                                    ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary'
+                                                    : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-bg-accent',
+                                            )}
+                                        >
+                                            {d.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </Group_>
 
                         <Group_ label={__('Mostrar')}>
                             <ToggleRow

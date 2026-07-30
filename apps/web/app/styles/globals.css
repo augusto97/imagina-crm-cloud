@@ -846,9 +846,9 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 .imcrm-records-table.imcrm-records-grid thead th {
     border-bottom: 1px solid hsl(var(--imcrm-border));
 }
-.imcrm-records-table tfoot td {
-    border-top: 1px solid hsl(var(--imcrm-border));
-}
+/* El pie NO agrega su propia raya: la última fila ya trae la suya y las
+   dos juntas se veían como una línea doble al final de la tabla
+   (reporte del usuario, v0.1.140). */
 /* Las filas de relleno del virtualizador no son filas: no llevan línea. */
 .imcrm-records-table tbody tr[aria-hidden='true'] td {
     border-bottom: 0;
@@ -862,14 +862,63 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
  * todos los tipos de campo). Dentro de la tabla, sin ajuste van en una
  * línea recortada por el ancho de la columna; con ajuste, en varias y la
  * fila crece. Fuera de la tabla (tarjetas, kanban) nada cambia.
+ *
+ * v0.1.140 — sin ajuste el contenedor deja de ser flex y pasa a ser un
+ * BLOQUE de línea única: así el navegador aplica `text-overflow: ellipsis`
+ * sobre los chips (que son inline-flex) y el corte termina en "…" al final
+ * de la celda, como ClickUp. Con flex no había forma: `text-overflow` no
+ * aplica a los hijos de un contenedor flex, y lo que se veía era o un chip
+ * cortado a la mitad o cada chip con su propia elipsis.
  */
 .imcrm-records-table td .imcrm-cell-chips {
-    flex-wrap: nowrap;
+    display: block;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+}
+.imcrm-records-table td .imcrm-cell-chips > * {
+    flex-shrink: 0;
+    vertical-align: middle;
+    margin-right: 4px;
 }
 .imcrm-records-table.imcrm-wrap-cells td .imcrm-cell-chips {
+    display: flex;
     flex-wrap: wrap;
     overflow: visible;
+    text-overflow: clip;
+}
+
+/*
+ * Densidad de las filas (v0.1.140) — la elige quien mira la vista y se
+ * guarda con ella. La hoja de cálculo arranca en `compact`; la lista, en
+ * `normal`. `comfortable` es para listas con textos largos.
+ *
+ * Va por clase en la <table> y no por celda porque tiene que mover cuerpo,
+ * cabecera y pie de las dos tablas a la vez.
+ */
+.imcrm-records-table.imcrm-density-compact tbody td,
+.imcrm-records-table.imcrm-density-compact thead th,
+.imcrm-records-table.imcrm-density-compact tfoot td {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+.imcrm-records-table.imcrm-density-compact tbody td > *,
+.imcrm-records-table.imcrm-density-compact tbody td button,
+.imcrm-records-table.imcrm-density-compact tbody td > span > span {
+    min-height: 0;
+    line-height: 1.4;
+}
+.imcrm-records-table.imcrm-density-normal tbody td,
+.imcrm-records-table.imcrm-density-normal thead th,
+.imcrm-records-table.imcrm-density-normal tfoot td {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.imcrm-records-table.imcrm-density-comfortable tbody td,
+.imcrm-records-table.imcrm-density-comfortable thead th,
+.imcrm-records-table.imcrm-density-comfortable tfoot td {
+    padding-top: 12px;
+    padding-bottom: 12px;
 }
 
 /*
@@ -887,7 +936,8 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 .imcrm-records-table.imcrm-records-grid thead th,
 .imcrm-records-table.imcrm-records-grid tbody td,
 .imcrm-records-table.imcrm-records-grid tfoot td {
-    padding: 2px 8px;
+    padding-left: 8px;
+    padding-right: 8px;
 }
 .imcrm-records-table.imcrm-records-grid thead th {
     font-size: 11px;
@@ -895,15 +945,12 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
     text-transform: none;
     background: hsl(var(--imcrm-muted) / 0.5);
 }
-/* Las celdas de la grilla son de UNA línea: el alto de fila no baila.
-   El `min-h-[1.5rem]` que traen los editores inline manda el alto de la
-   fila, así que en la grilla se anula (si no, 24px de contenido + padding
-   dejan la fila en 29px y la densidad de Excel no aparece). */
-.imcrm-records-table.imcrm-records-grid tbody td > *,
-.imcrm-records-table.imcrm-records-grid tbody td button,
-.imcrm-records-table.imcrm-records-grid tbody td > span > span {
+/* En la grilla las celdas son de UNA línea (el `min-h-[1.5rem]` de los
+   editores inline mandaría el alto de fila). En densidades más holgadas
+   el `min-h` vuelve a aplicar y las filas respiran. */
+.imcrm-records-table.imcrm-records-grid.imcrm-density-compact tbody td > *,
+.imcrm-records-table.imcrm-records-grid.imcrm-density-compact tbody td button {
     min-height: 0;
-    line-height: 1.4;
 }
 .imcrm-records-table.imcrm-records-grid .imcrm-cell-chips {
     flex-wrap: nowrap;

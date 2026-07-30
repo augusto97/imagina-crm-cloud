@@ -2238,6 +2238,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         elipsis, misma x en todas las filas, densidad y numeración de la
         grilla, cero puntitos en el menú).
 
+  - [x] **Ajuste fino de la tabla + densidad elegible (v0.1.140, 5 reportes
+        del usuario)**: (a) **la línea de abajo seguía doble** — la última
+        fila trae su raya y el `tfoot` sumaba un `border-top` justo debajo;
+        el pie ya no dibuja línea propia. (b) **Los chips cortan con "…" al
+        FINAL de la celda** (antes cada chip truncaba por su cuenta y se veían
+        dos elipsis, o uno partido al medio): sin "Ajustar texto" el
+        contenedor deja de ser flex y pasa a ser un BLOQUE de línea única, y
+        ahí el navegador sí aplica `text-overflow: ellipsis` sobre los chips
+        —que son inline-flex—; `text-overflow` no aplica a hijos de un
+        contenedor flex, por eso antes no había forma. (c) **Menos aire a la
+        izquierda**: la columna de la casilla pasa de 40 a 32px (padding 12→8)
+        y las celdas de 12 a 8px — el nombre arranca ~20px antes. (d) **La
+        casilla, centrada**: un `<input>` inline se apoya en la línea base y
+        quedaba 2px sobre el centro en la vista agrupada; ahora va dentro de
+        una caja flex centrada en las DOS tablas. (e) **Densidad elegible**
+        (`density` en el estado común de las vistas — shared, mapeo y las dos
+        tablas): Compacta / Normal / Cómoda en el panel Personalizar,
+        persistida en la vista; la hoja de cálculo arranca en compacta y la
+        lista en normal, pero cualquiera puede cambiarlas (25 / 37 / 49px de
+        alto de fila). 2 tests nuevos (92 front en verde) + E2E navegador 9/9
+        con medición de bordes, elipsis, gutter, centrado y las tres alturas.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

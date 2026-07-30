@@ -11,6 +11,7 @@ import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
+import type { RowDensity } from '../recordsState';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
@@ -97,6 +98,8 @@ interface GroupedTableViewProps {
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
     /** "Ajustar texto" — ver `WrapTextContext`. */
     wrapText?: boolean;
+    /** Densidad de las filas (v0.1.140). */
+    density?: RowDensity | null;
 }
 
 /**
@@ -141,6 +144,7 @@ export function GroupedTableView({
     footerAggregates,
     onFooterAggregatesChange,
     wrapText = false,
+    density = null,
 }: GroupedTableViewProps): JSX.Element {
     const filterTreeParam = useMemo(
         () => (filterTree.children.length === 0 ? undefined : filterTree),
@@ -365,6 +369,7 @@ export function GroupedTableView({
                                 onAddColumn={onAddColumn}
                                 onEditField={onEditField}
                                 onCreateSubtask={onCreateSubtask}
+                                density={density}
                                 onAddRecord={
                                     onAddRecord
                                         ? () => onAddRecord(groupByField, bucket.value)
@@ -510,6 +515,7 @@ interface GroupBucketSectionProps {
     onEditField?: (field: FieldEntity) => void;
     onAddRecord?: () => void;
     onCreateSubtask?: (record: RecordEntity) => void;
+    density?: RowDensity | null;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
 }
@@ -545,6 +551,7 @@ function GroupBucketSection({
     onEditField,
     onAddRecord,
     onCreateSubtask,
+    density = null,
     footerAggregates,
     onFooterAggregatesChange,
 }: GroupBucketSectionProps): JSX.Element {
@@ -727,6 +734,7 @@ function GroupBucketSection({
                             className={cn(
                                 'imcrm-records-table imcrm-w-full imcrm-text-sm',
                                 wrapText && 'imcrm-wrap-cells',
+                                `imcrm-density-${density ?? 'normal'}`,
                             )}
                             // `width: 100%` + `minWidth: tableWidth`: la tabla
                             // llena el contenedor (sin vacío a la derecha) y
@@ -883,9 +891,10 @@ function GroupBucketSection({
                                             )}
                                         >
                                             <td
-                                                className="imcrm-w-10 imcrm-px-3 imcrm-py-2.5 imcrm-align-middle"
+                                                className="imcrm-w-8 imcrm-px-2 imcrm-py-2.5 imcrm-align-middle"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
+                                              <span className="imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-items-center imcrm-justify-center">
                                                 <input
                                                     type="checkbox"
                                                     checked={isSelected}
@@ -902,6 +911,7 @@ function GroupBucketSection({
                                                         record.id,
                                                     )}
                                                 />
+                                              </span>
                                             </td>
                                             {columns.map((c, ci) => {
                                                 const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
@@ -915,7 +925,7 @@ function GroupBucketSection({
                                                         key={c.id}
                                                         style={{ width: w, maxWidth: w, ...(sticky ?? {}) }}
                                                         className={cn(
-                                                            'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5',
+                                                            'imcrm-overflow-hidden imcrm-px-2 imcrm-py-2.5',
                                                             wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
                                                             sticky && (isSelected
                                                                 ? 'imcrm-bg-primary/5'
@@ -957,7 +967,7 @@ function GroupBucketSection({
                             {(onAddRecord || onFooterAggregatesChange) && (
                                 <tfoot className="imcrm-group/footer">
                                     <tr>
-                                        <td className="imcrm-w-10" />
+                                        <td className="imcrm-w-8" />
                                         {columns.map((c, ci) => {
                                             const w = columnSizing[c.id] ?? defaultSizeForColumn(c);
                                             const isFirstDynamic = c.field !== null

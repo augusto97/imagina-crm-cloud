@@ -17,6 +17,7 @@ import { useAggregates } from '@/hooks/useAggregates';
 import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
+import type { RowDensity } from '../recordsState';
 import { WrapTextContext } from '../wrapText';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
@@ -92,6 +93,8 @@ interface TableViewProps {
      * verticales entre columnas. La vista Tabla de ClickUp se ve así.
      */
     spreadsheet?: boolean;
+    /** Densidad elegida; `null` = el default de la presentación. */
+    density?: RowDensity | null;
     /** Índice de la primera fila de la página (para numerar continuo). */
     rowNumberOffset?: number;
 }
@@ -132,6 +135,7 @@ export function TableView({
     wrapText = false,
     onCreateSubtask,
     spreadsheet = false,
+    density = null,
     rowNumberOffset = 0,
 }: TableViewProps): JSX.Element {
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -450,6 +454,7 @@ export function TableView({
                     // Manda sobre los chips de select/multi_select (globals.css).
                     wrapText && 'imcrm-wrap-cells',
                     spreadsheet && 'imcrm-records-grid',
+                    `imcrm-density-${density ?? (spreadsheet ? 'compact' : 'normal')}`,
                 )}
                 // `width: 100%` + `minWidth: totalSize`: la tabla llena el
                 // contenedor (las columnas estiran proporcionalmente, sin
@@ -468,7 +473,7 @@ export function TableView({
                         <tr key={hg.id} className="imcrm-group/head">
                             <th
                                 scope="col"
-                                className="imcrm-w-10 imcrm-px-3 imcrm-py-2"
+                                className="imcrm-w-8 imcrm-px-2 imcrm-py-2"
                             >
                                 <input
                                     type="checkbox"
@@ -707,10 +712,15 @@ export function TableView({
                                     )}
                                 >
                                     <td
-                                        className="imcrm-w-10 imcrm-px-3 imcrm-py-2.5 imcrm-align-middle"
+                                        // v0.1.140 — w-8/px-2 (antes w-10/px-3): entre la
+                                        // casilla, el chevron y el nombre había ~72px de
+                                        // aire y la columna arrancaba muy adentro.
+                                        className="imcrm-w-8 imcrm-px-2 imcrm-py-2.5 imcrm-align-middle"
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                      <span className="imcrm-relative imcrm-flex imcrm-h-3.5 imcrm-w-3.5 imcrm-items-center imcrm-justify-center">
+                                      {/* `flex` en la celda: un input inline se apoya en la
+                                          línea base y quedaba ~2px sobre el centro. */}
+                                      <span className="imcrm-relative imcrm-flex imcrm-h-4 imcrm-w-4 imcrm-items-center imcrm-justify-center">
                                         {/* Hoja de cálculo: el número de fila
                                             ocupa el lugar de la casilla y le
                                             cede el paso al pasar el mouse
@@ -767,7 +777,7 @@ export function TableView({
                                                     // con elipsis va dentro de `EditableCell` para que
                                                     // afecte solo al modo lectura — el editor inline
                                                     // necesita escaparse del clip cuando el user clickea.
-                                                    'imcrm-overflow-hidden imcrm-px-3 imcrm-py-2.5',
+                                                    'imcrm-overflow-hidden imcrm-px-2 imcrm-py-2.5',
                                                     wrapText ? 'imcrm-align-top' : 'imcrm-align-middle',
                                                     cellSticky && (isSelected
                                                         ? 'imcrm-bg-primary/5'
@@ -805,7 +815,7 @@ export function TableView({
                 {(onAddRecord || onFooterAggregatesChange) && (
                     <tfoot className="imcrm-group/footer">
                         <tr>
-                            <td className="imcrm-w-10" />
+                            <td className="imcrm-w-8" />
                             {table.getVisibleLeafColumns().map((col) => {
                                 const meta = col.columnDef.meta as
                                     | { fieldId: number | null; primary?: boolean }
