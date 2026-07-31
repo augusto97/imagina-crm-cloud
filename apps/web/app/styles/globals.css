@@ -158,38 +158,47 @@
 
     #imcrm-root[data-imcrm-theme='dark'],
     [data-imcrm-theme='dark'] {
-        --imcrm-background: 224 16% 8%;
-        --imcrm-foreground: 220 14% 96%;
+        /* v0.1.148 — el fondo del modo oscuro pasa de #111318 (un navy muy
+         * apagado, `224 16% 8%`) al GRIS NEUTRO #121212 que pidió el usuario.
+         * Las superficies vecinas se neutralizan con él: un fondo gris puro
+         * con tarjetas azuladas se lee como un error de color, no como una
+         * decisión. Se conservan EXACTAS las distancias de luminancia que ya
+         * tenía la escala (canvas hundido < fondo < tarjeta < muted < borde),
+         * así el contraste y la jerarquía no cambian — sólo el tinte. Los
+         * colores de marca y semánticos (primary, éxito, aviso, tones) no se
+         * tocan: ahí el color SÍ significa algo. */
+        --imcrm-background: 0 0% 7%; /* #121212 */
+        --imcrm-foreground: 0 0% 96%;
 
-        --imcrm-card: 224 16% 10%;
-        --imcrm-card-foreground: 220 14% 96%;
+        --imcrm-card: 0 0% 9%;
+        --imcrm-card-foreground: 0 0% 96%;
 
-        --imcrm-popover: 224 16% 10%;
-        --imcrm-popover-foreground: 220 14% 96%;
+        --imcrm-popover: 0 0% 9%;
+        --imcrm-popover-foreground: 0 0% 96%;
 
         --imcrm-primary: 190 80% 52%;
-        --imcrm-primary-foreground: 224 16% 8%;
+        --imcrm-primary-foreground: 0 0% 7%;
 
-        --imcrm-secondary: 224 14% 16%;
-        --imcrm-secondary-foreground: 220 14% 96%;
+        --imcrm-secondary: 0 0% 15%;
+        --imcrm-secondary-foreground: 0 0% 96%;
 
-        --imcrm-muted: 224 14% 16%;
-        --imcrm-muted-foreground: 220 9% 60%;
+        --imcrm-muted: 0 0% 15%;
+        --imcrm-muted-foreground: 0 0% 60%;
 
-        --imcrm-accent: 224 14% 18%;
-        --imcrm-accent-foreground: 220 14% 96%;
+        --imcrm-accent: 0 0% 17%;
+        --imcrm-accent-foreground: 0 0% 96%;
 
         --imcrm-destructive: 0 72% 55%;
         --imcrm-destructive-foreground: 0 0% 100%;
 
-        --imcrm-border: 224 14% 18%;
-        --imcrm-input: 224 14% 18%;
+        --imcrm-border: 0 0% 17%;
+        --imcrm-input: 0 0% 17%;
         --imcrm-ring: 190 80% 52%;
 
-        --imcrm-sidebar: 224 16% 9%;
-        --imcrm-sidebar-foreground: 220 14% 90%;
-        --imcrm-sidebar-border: 224 14% 16%;
-        --imcrm-sidebar-accent: 224 14% 14%;
+        --imcrm-sidebar: 0 0% 8%;
+        --imcrm-sidebar-foreground: 0 0% 90%;
+        --imcrm-sidebar-border: 0 0% 15%;
+        --imcrm-sidebar-accent: 0 0% 13%;
         --imcrm-sidebar-accent-foreground: 190 80% 60%;
 
         /* v0.1.112 — faltaban en el bloque dark heredado del plugin (el canvas
@@ -197,18 +206,18 @@
          * texto claro). En claro el canvas es más oscuro que el fondo (panel
          * gris / trabajo blanco); en oscuro se invierte la relación pero se
          * mantiene el orden: panel más hundido que el área de trabajo. */
-        --imcrm-canvas: 224 16% 6%;
+        --imcrm-canvas: 0 0% 5%;
 
         /* Semánticos: los del tema claro son sólidos con texto blanco; sobre
          * un fondo oscuro hay que subir lightness y poner tinta encima. */
         --imcrm-success: 152 55% 45%;
-        --imcrm-success-foreground: 224 16% 8%;
+        --imcrm-success-foreground: 0 0% 7%;
 
         --imcrm-warning: 38 92% 55%;
-        --imcrm-warning-foreground: 224 16% 8%;
+        --imcrm-warning-foreground: 0 0% 7%;
 
         --imcrm-info: 217 91% 62%;
-        --imcrm-info-foreground: 224 16% 8%;
+        --imcrm-info-foreground: 0 0% 7%;
 
         /* Tones de los StatTiles: mismos hues, un punto más claros para que
          * no se hundan contra las superficies oscuras. */
