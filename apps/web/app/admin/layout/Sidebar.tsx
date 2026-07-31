@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
     BarChart3,
@@ -382,7 +383,12 @@ export function Sidebar({
             </nav>
 
             {/* ── Panel FLOTANTE del hover (sólo escritorio) ─────────────── */}
-            {peeking !== null && (
+            {/* Va por PORTAL al body (v0.1.145.1): el contenedor del sidebar
+                lleva `translate-x` para el drawer de mobile, y un transform
+                crea un CONTEXTO DE APILADO — dentro de él, el z-index del
+                flotante no puede competir con el contenido, que al venir
+                después en el DOM le quedaba encima (reporte del usuario). */}
+            {peeking !== null && createPortal(
                 <div
                     data-testid="imcrm-peek-panel"
                     onMouseEnter={clearTimers}
@@ -408,7 +414,8 @@ export function Sidebar({
                     >
                         {panelBody(peeking)}
                     </nav>
-                </div>
+                </div>,
+                document.body,
             )}
 
             {/* ── Panel interno claro (contextual según el riel) ────────── */}

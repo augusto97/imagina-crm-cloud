@@ -2361,6 +2361,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         buscador y antes de "Nuevo registro") + 2/2 del picker de icono
         (elegir → persiste con su color tras recargar).
 
+  - [x] **Fix: el menú flotante quedaba DEBAJO del contenido (v0.1.146,
+        reporte del usuario con captura)**: las tarjetas y botones de la
+        página se dibujaban encima del panel flotante de v0.1.145. No era el
+        z-index: el contenedor del sidebar lleva `translate-x` (el drawer de
+        mobile) y **un transform crea un contexto de apilado**, así que el
+        `z-40` del flotante sólo competía DENTRO del sidebar; hacia afuera el
+        sidebar se apila por orden de DOM, y como viene antes que el
+        contenido, cualquier elemento posicionado del área de trabajo le
+        quedaba encima. Fix: el flotante se monta por **portal al `<body>`**,
+        fuera de ese contexto (mismo camino que usan los diálogos de Radix,
+        que sí aparecían bien). E2E navegador 9/9 en Plataforma, Registros y
+        Dashboards: barrido de 40 puntos por pantalla verificando que ningún
+        elemento del contenido pinta sobre el panel, y que cuelga del body.
+        Modo oscuro comprobado: el flotante y el panel acoplado comparten
+        fondo (`rgb(13,14,18)`) — el portal no se queda sin los tokens del
+        tema porque viven en `:root`.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
