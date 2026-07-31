@@ -355,8 +355,8 @@ export function DashboardPage(): JSX.Element {
                             type="button"
                             onClick={() => setSettingsDialogOpen(true)}
                             className="imcrm-ml-1 imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition-opacity hover:imcrm-bg-accent hover:imcrm-text-foreground group-hover/title:imcrm-opacity-100 focus-visible:imcrm-opacity-100"
-                            aria-label={__('Editar nombre y descripción')}
-                            title={__('Editar nombre y descripción')}
+                            aria-label={__('Configuración del dashboard')}
+                            title={__('Configuración del dashboard')}
                         >
                             <Pencil className="imcrm-h-4 imcrm-w-4" />
                         </button>

@@ -1,10 +1,12 @@
 import { Link } from 'react-router';
-import { BarChart3, List as ListIcon, Pin } from 'lucide-react';
+import { Pin } from 'lucide-react';
 
 import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { useDashboards } from '@/hooks/useDashboards';
 import { useLists } from '@/hooks/useLists';
 import { __ } from '@/lib/i18n';
+import { DEFAULT_LIST_ICON, listIcon } from '@/lib/listIcons';
+import { dashboardIcon } from '@/lib/dashboardIcon';
 
 /**
  * v0.1.108 — Página del menú "Favoritos" del riel: SOLO los elementos que el
@@ -32,7 +34,8 @@ export function FavoritesPage(): JSX.Element {
                 to: `/lists/${l.slug}/records`,
                 name: l.name,
                 kindLabel: __('Lista'),
-                icon: ListIcon,
+                // v0.1.145 — el icono real de cada uno, igual que en el menú.
+                icon: listIcon(l.icon) ?? DEFAULT_LIST_ICON,
                 unpin: () => update.mutate(toggledFavorites(favs, 'lists', l.id)),
             })),
         ...favs.dashboards
@@ -43,7 +46,7 @@ export function FavoritesPage(): JSX.Element {
                 to: `/dashboards/${d.id}`,
                 name: d.name,
                 kindLabel: __('Dashboard'),
-                icon: BarChart3,
+                icon: dashboardIcon(d.settings),
                 unpin: () => update.mutate(toggledFavorites(favs, 'dashboards', d.id)),
             })),
     ];
