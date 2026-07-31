@@ -2400,6 +2400,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verificable (reglas aplicadas, `@supports` correctamente inerte en
         Chrome, riel con su tinte, espejo intacto, nativa en 0px).
 
+  - [x] **Fondo del modo oscuro a #121212 (v0.1.148, pedido del usuario)**:
+        el fondo era `224 16% 8%` = **#111318**, un navy muy apagado heredado
+        del bloque dark del plugin. Ahora es el **gris neutro #121212**
+        (`0 0% 7%`). Las superficies vecinas se neutralizan CON él —tarjeta,
+        popover, canvas, riel por defecto, muted/accent/borde/input y las
+        tintas de texto—: un fondo gris puro con tarjetas azuladas se lee como
+        un error de color, no como una decisión. Se conservan EXACTAS las
+        distancias de luminancia de la escala (canvas #0d0d0d < fondo #121212
+        < tarjeta #171717 < muted #262626 < borde #2b2b2b), así la jerarquía y
+        el contraste no cambian: sólo el tinte. Lo que NO se toca es el color
+        con significado —primary, éxito/aviso/info, los tones de los tiles y
+        los chips de opciones— ni el riel cuando el tenant tiene white-label
+        (ese lo re-tiñe `brandVars` con su hue, como siempre). Verificado en
+        el navegador: `--imcrm-background` = #121212 exacto, las cinco
+        superficies del tema con R=G=B, la jerarquía intacta y una auditoría
+        de contraste WCAG sobre la tabla sin un solo texto por debajo de
+        4.5:1 (5/5).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
