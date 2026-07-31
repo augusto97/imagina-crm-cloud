@@ -370,14 +370,16 @@ function OptionChipDisplay({
             // v0.1.139 — el chip nunca parte su texto en dos renglones
             // (reporte del usuario, con captura): si no entra, se corta con
             // elipsis. `min-w-0` es lo que habilita el truncate dentro del flex.
-            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-truncate imcrm-whitespace-nowrap imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
+            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-overflow-hidden imcrm-whitespace-nowrap imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor: 'hsl(var(--imcrm-border))',
                 color: 'hsl(var(--imcrm-foreground))',
             }}
         >
-            {label}
+            {/* v0.1.144 — la elipsis vive en un span interno: `text-overflow`
+                no aplica al chip, que es un contenedor flex. */}
+            <span className="imcrm-min-w-0 imcrm-truncate">{label}</span>
         </span>
     );
 }

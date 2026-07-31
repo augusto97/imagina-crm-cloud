@@ -2317,6 +2317,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         historial de automatizaciones, panel de empresa de la consola) y 3/3
         de los paneles del editor de descripción.
 
+  - [x] **Los chips cortan con "…" de verdad (v0.1.144, reporte del usuario
+        con captura)**: desde v0.1.139 el chip llevaba la elipsis puesta,
+        pero el navegador la IGNORABA y el texto salía cortado a cuchillo.
+        Causa: `text-overflow` **no aplica a un contenedor flex**, y el chip
+        es `inline-flex` (lo necesita para alinear su contenido) — el texto
+        queda como ítem anónimo del flex, no como línea de un bloque, así que
+        no hay dónde dibujar los tres puntos. Verificado en el navegador con
+        una página mínima: mismo chip en `inline-flex` → corte seco; con el
+        texto en un span interno → "Gestión si…". Fix: el label va en un
+        `<span class="truncate">` propio dentro del chip, en las DOS
+        superficies (`OptionChip` de la tabla y `OptionChipDisplay` del
+        OptionPicker). Lo aprobado en v0.1.141 se conserva: se ven TODAS las
+        opciones, cada una se achica y corta su propio texto; con "Ajustar
+        texto" siguen envolviendo completas. E2E navegador 7/7 con las
+        etiquetas exactas del reporte (dos chips de 90 y 83 px, ambos con
+        elipsis pintada, select simple igual, wrap intacto).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
