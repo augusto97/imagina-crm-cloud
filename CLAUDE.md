@@ -2378,6 +2378,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         fondo (`rgb(13,14,18)`) — el portal no se queda sin los tokens del
         tema porque viven en `:root`.
 
+  - [x] **Barras de scroll propias (v0.1.147, pedido del usuario mirando
+        ClickUp)**: las del sistema son anchas, cuadradas y con flechas; en una
+        app densa (tabla ancha + panel + área de trabajo) comen espacio y
+        ensucian. Ahora son finas (10px de riel, thumb de 6px por el truco de
+        `border: 2px solid transparent` + `background-clip: padding-box`, que
+        deja el área de agarre cómoda), redondeadas, con pista transparente y
+        thumb que se marca al pasar el mouse y al arrastrar. El tinte sale de
+        `--imcrm-muted-foreground`, así que el **modo oscuro se resuelve solo**;
+        el riel de la marca (oscuro por diseño en tema claro) lleva su propia
+        clase `imcrm-scroll-on-dark` con blanco translúcido. **OJO con mezclar
+        las dos APIs**: en Chrome moderno declarar `scrollbar-width` DESACTIVA
+        los `::-webkit-scrollbar` (la propiedad estándar gana), así que las
+        estándar van dentro de `@supports not selector(::-webkit-scrollbar)` —
+        o sea, sólo Firefox. Se conservan la barra espejo del fondo (v0.1.75) y
+        el ocultamiento de la nativa del wrapper (v0.1.82): sigue habiendo UNA
+        sola barra horizontal. **Límite de la verificación**: el Chromium
+        headless del entorno NO pinta scrollbars personalizados (un thumb rojo
+        de prueba sale blanco y el riel no reserva ancho), así que el aspecto
+        final se comprueba en el navegador del usuario; acá se verificó lo
+        verificable (reglas aplicadas, `@supports` correctamente inerte en
+        Chrome, riel con su tinte, espejo intacto, nativa en 0px).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
