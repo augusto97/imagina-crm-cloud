@@ -19,14 +19,18 @@ export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: str
         // Sin punto/dot a la izquierda: el chip sólido YA es el color de la
         // opción — el punto duplicaba la señal y desperdiciaba ancho de celda.
         <span
-            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-truncate imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
+            className="imcrm-opt-chip imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[12px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap"
             style={style ?? {
                 backgroundColor: 'hsl(var(--imcrm-muted))',
                 borderColor:     'hsl(var(--imcrm-border))',
                 color:           'hsl(var(--imcrm-foreground))',
             }}
         >
-            {opt?.label ?? fallback}
+            {/* El texto va en un span PROPIO (v0.1.144): `text-overflow` no
+                aplica a un contenedor flex — con la elipsis puesta en el chip
+                (que es inline-flex) el navegador la ignoraba y el texto salía
+                cortado a cuchillo, sin los tres puntos. */}
+            <span className="imcrm-min-w-0 imcrm-truncate">{opt?.label ?? fallback}</span>
         </span>
     );
 }
