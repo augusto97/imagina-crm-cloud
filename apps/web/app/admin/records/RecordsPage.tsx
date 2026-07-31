@@ -728,24 +728,6 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 tree={state.filterTree}
                                 onChange={setFilterTree}
                             />
-                            {/*
-                              Engranaje "Personalizar vista" (v0.1.127,
-                              patrón ClickUp): columnas, agrupación, ajustar
-                              texto y las acciones de la vista y de la lista
-                              viven en UN panel con su valor actual a la
-                              vista. Filtrar se queda en la toolbar: es lo
-                              único de acá que se usa todos los días.
-                            */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setViewSettingsOpen(true)}
-                                className="imcrm-gap-1.5"
-                                title={__('Personalizar vista')}
-                            >
-                                <SlidersHorizontal className="imcrm-h-3.5 imcrm-w-3.5" />
-                                {__('Personalizar')}
-                            </Button>
                         </div>
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                             {records.isFetching && !records.isLoading && (
@@ -772,6 +754,25 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                                 )}
                             </div>
+                            {/*
+                              Engranaje "Personalizar vista" (v0.1.127,
+                              patrón ClickUp): columnas, agrupación, ajustar
+                              texto y las acciones de la vista y de la lista
+                              viven en UN panel. v0.1.145 — sólo el icono y
+                              a la DERECHA, después del buscador (pedido del
+                              usuario): es un ajuste ocasional, no compite
+                              con Filtrar, que sí se usa a diario.
+                            */}
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => setViewSettingsOpen(true)}
+                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                                aria-label={__('Personalizar vista')}
+                                title={__('Personalizar vista')}
+                            >
+                                <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
                             {canCreateRecords && (
                                 <Button
                                     size="sm"

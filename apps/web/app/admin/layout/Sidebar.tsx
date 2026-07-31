@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
     BarChart3,
@@ -22,6 +22,8 @@ import { toggledFavorites, useFavorites, useUpdateFavorites, type Favorites } fr
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
+import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
+import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
@@ -56,8 +58,12 @@ function railSectionFromPath(pathname: string): RailSection {
  * Sidebar doble estilo ClickUp:
  *  - RIEL (izquierda, fijo, ~68px, tema oscuro `--imcrm-sidebar*`): logo de la
  *    marca arriba (sólo el cuadrado, sin texto) + items verticales de icono
- *    con etiqueta chica debajo (Inicio / Dashboards / Ajustes / Plataforma) +
- *    toggle de colapso del panel abajo del todo.
+ *    con etiqueta chica debajo (Listas / Favoritos / Dashboards / Ajustes /
+ *    Plataforma). Con el panel cerrado, arriba del todo aparece el botón de
+ *    abrirlo (v0.1.145); con el panel abierto, el de cerrarlo vive en la
+ *    cabecera del panel.
+ *  - HOVER en un item del riel → su contenido aparece FLOTANDO sobre el área
+ *    de trabajo (v0.1.145, como ClickUp), sin navegar ni abrir el panel.
  *  - PANEL interno (~240px, tema CLARO): CONTEXTUAL — su contenido depende
  *    del item activo del riel (derivado de la ruta con useLocation):
  *      · Inicio      → workspace + árbol de listas ("Espacio de trabajo").
@@ -105,6 +111,38 @@ export function Sidebar({
     const [params] = useSearchParams();
     const section = railSectionFromPath(pathname);
 
+    // v0.1.145 — al pasar el mouse por un item del riel, su contenido
+    // aparece FLOTANDO (lo que hace ClickUp): con el panel cerrado es la
+    // única forma de ojear otra sección sin abrirla, y con el panel abierto
+    // sirve para espiar una sección distinta de la que estás viendo. Con
+    // retardo de apertura/cierre para que no parpadee al cruzar el riel.
+    const [hovered, setHovered] = useState<RailSection | null>(null);
+    const openTimer = useRef<number | null>(null);
+    const closeTimer = useRef<number | null>(null);
+    const clearTimers = (): void => {
+        if (openTimer.current !== null) window.clearTimeout(openTimer.current);
+        if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+        openTimer.current = null;
+        closeTimer.current = null;
+    };
+    const peek = (s: RailSection): void => {
+        clearTimers();
+        openTimer.current = window.setTimeout(() => setHovered(s), 120);
+    };
+    const unpeek = (): void => {
+        clearTimers();
+        closeTimer.current = window.setTimeout(() => setHovered(null), 180);
+    };
+    // Al navegar (o al desmontar) el flotante se va: si no, queda tapando
+    // justo el contenido al que acabás de entrar.
+    useEffect(() => {
+        clearTimers();
+        setHovered(null);
+        return clearTimers;
+    }, [pathname]);
+    // Sólo flota lo que NO estás viendo ya en el panel acoplado.
+    const peeking = hovered !== null && (collapsed || hovered !== section) ? hovered : null;
+
     // Branding white-label del tenant (logo + nombre). Lee del query cache
     // que puebla `useBranding` en AdminCloudApp; nulls → marca por defecto.
     const branding = useBrandingData();
@@ -136,14 +174,87 @@ export function Sidebar({
 
     // Header del panel según la sección del riel: nombre del workspace para
     // los árboles de contenido, título fijo para las navs Ajustes/Plataforma.
-    const panelTitle =
-        section === 'settings'
+    const titleFor = (sec: RailSection): string =>
+        sec === 'settings'
             ? __('Ajustes')
-            : section === 'platform'
+            : sec === 'platform'
               ? __('Plataforma')
-              : section === 'favorites'
+              : sec === 'favorites'
                 ? __('Favoritos')
                 : workspaceTitle;
+
+    /**
+     * El CONTENIDO del panel para una sección. Lo usan las dos superficies
+     * —el panel acoplado y el flotante del hover— así que agregar algo acá
+     * sale en ambas por construcción.
+     */
+    const panelBody = (sec: RailSection): JSX.Element => (
+        <>
+            {sec === 'home' && (
+                <>
+                    {lists.data && lists.data.length > 0 && (
+                        <ListsTree
+                            lists={lists.data}
+                            canManageLists={canManageLists}
+                            starredIds={favs.lists}
+                            onToggleStar={(id: number) => toggleFav('lists', id)}
+                            onReorder={handleListDrop}
+                            dragIndexRef={dragIndexRef}
+                        />
+                    )}
+                    {lists.isLoading && <PanelLoading />}
+                </>
+            )}
+
+            {sec === 'dashboards' && (
+                <>
+                    <PanelNavItem
+                        to="/dashboards"
+                        icon={LayoutGrid}
+                        label={__('Todos los dashboards')}
+                        active={pathname === '/dashboards'}
+                    />
+                    {dashboards.data && dashboards.data.length > 0 && (
+                        <PanelSection label={__('Tus dashboards')}>
+                            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                                {dashboards.data.map((d) => (
+                                    <li key={d.id}>
+                                        <PanelListLink
+                                            to={`/dashboards/${d.id}`}
+                                            name={d.name}
+                                            // v0.1.145 — su icono, nunca el
+                                            // puntito genérico (el usuario ya
+                                            // lo había pedido para las listas).
+                                            icon={dashboardIcon(d.settings)}
+                                            iconColor={dashboardColor(d.settings)}
+                                            starred={favs.dashboards.includes(d.id)}
+                                            onToggleStar={() => toggleFav('dashboards', d.id)}
+                                        />
+                                    </li>
+                                ))}
+                            </ul>
+                        </PanelSection>
+                    )}
+                    {dashboards.isLoading && <PanelLoading />}
+                </>
+            )}
+
+            {sec === 'favorites' && (
+                <FavoritesSection
+                    favs={favs}
+                    lists={lists.data ?? []}
+                    dashboards={dashboards.data ?? []}
+                    onToggle={toggleFav}
+                />
+            )}
+
+            {sec === 'settings' && (
+                <SettingsPanelNav isAdmin={isAdmin} requested={params.get('s')} />
+            )}
+
+            {sec === 'platform' && <PlatformPanelNav requested={params.get('tab')} />}
+        </>
+    );
 
     const toggleCollapsed = (): void => {
         setCollapsed((c) => {
@@ -180,7 +291,7 @@ export function Sidebar({
                 className="imcrm-flex imcrm-w-[68px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-bg-sidebar imcrm-px-2 imcrm-py-3 imcrm-text-sidebar-foreground lg:imcrm-my-1.5 lg:imcrm-ml-1.5 lg:imcrm-mr-1.5 lg:imcrm-rounded-xl"
             >
                 {/* Marca: sólo el cuadrado/logo (el nombre vive en el panel). */}
-                <div className="imcrm-mb-2 imcrm-flex imcrm-shrink-0 imcrm-justify-center">
+                <div className="imcrm-mb-1 imcrm-flex imcrm-shrink-0 imcrm-justify-center">
                     {brandLogoUrl ? (
                         <img
                             src={brandLogoUrl}
@@ -194,12 +305,47 @@ export function Sidebar({
                     )}
                 </div>
 
-                <RailItem to="/lists" active={section === 'home'} icon={ListIcon} label={__('Listas')} />
+                {/* Con el panel CERRADO, el botón de abrirlo vive arriba del
+                    riel (v0.1.145, como ClickUp) — antes estaba al fondo,
+                    lejos de donde se lo busca. Con el panel abierto, el de
+                    cerrarlo vive en la cabecera del panel. */}
+                {collapsed && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCollapsed();
+                            }}
+                            className="imcrm-hidden imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-py-1.5 imcrm-text-sidebar-foreground/70 imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-white lg:imcrm-flex"
+                            aria-label={__('Expandir panel')}
+                            title={__('Expandir panel')}
+                            aria-expanded={false}
+                        >
+                            <ChevronsRight className="imcrm-h-4 imcrm-w-4" />
+                        </button>
+                        <span
+                            aria-hidden
+                            className="imcrm-mx-auto imcrm-mb-1 imcrm-hidden imcrm-h-px imcrm-w-6 imcrm-bg-white/20 lg:imcrm-block"
+                        />
+                    </>
+                )}
+
+                <RailItem
+                    to="/lists"
+                    active={section === 'home'}
+                    icon={ListIcon}
+                    label={__('Listas')}
+                    onPeek={() => peek('home')}
+                    onUnpeek={unpeek}
+                />
                 <RailItem
                     to="/favorites"
                     active={section === 'favorites'}
                     icon={Pin}
                     label={__('Favoritos')}
+                    onPeek={() => peek('favorites')}
+                    onUnpeek={unpeek}
                 />
                 {canSeeDashboards && (
                     <RailItem
@@ -207,6 +353,8 @@ export function Sidebar({
                         active={section === 'dashboards'}
                         icon={BarChart3}
                         label={__('Dashboards')}
+                        onPeek={() => peek('dashboards')}
+                        onUnpeek={unpeek}
                     />
                 )}
                 {canSeeSettings && (
@@ -215,6 +363,8 @@ export function Sidebar({
                         active={section === 'settings'}
                         icon={Settings}
                         label={__('Ajustes')}
+                        onPeek={() => peek('settings')}
+                        onUnpeek={unpeek}
                     />
                 )}
                 {isSuperadmin.data === true && (
@@ -223,30 +373,43 @@ export function Sidebar({
                         active={section === 'platform'}
                         icon={ShieldAlert}
                         label={__('Plataforma')}
+                        onPeek={() => peek('platform')}
+                        onUnpeek={unpeek}
                     />
                 )}
 
                 <div className="imcrm-flex-1" aria-hidden />
-
-                {/* Toggle del panel (sólo escritorio; en mobile es un drawer). */}
-                <button
-                    type="button"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        toggleCollapsed();
-                    }}
-                    className="imcrm-hidden imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-py-2 imcrm-text-sidebar-foreground/70 imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-white lg:imcrm-flex"
-                    aria-label={collapsed ? __('Expandir panel') : __('Colapsar panel')}
-                    title={collapsed ? __('Expandir panel') : __('Colapsar panel')}
-                    aria-expanded={!collapsed}
-                >
-                    {collapsed ? (
-                        <ChevronsRight className="imcrm-h-4 imcrm-w-4" />
-                    ) : (
-                        <ChevronsLeft className="imcrm-h-4 imcrm-w-4" />
-                    )}
-                </button>
             </nav>
+
+            {/* ── Panel FLOTANTE del hover (sólo escritorio) ─────────────── */}
+            {peeking !== null && (
+                <div
+                    data-testid="imcrm-peek-panel"
+                    onMouseEnter={clearTimers}
+                    onMouseLeave={unpeek}
+                    // Al elegir algo, el flotante se va. No alcanza con
+                    // reaccionar al cambio de ruta: clickear el item en el
+                    // que YA estás no cambia el pathname y el panel quedaba
+                    // abierto tapando el contenido.
+                    onClick={() => {
+                        clearTimers();
+                        setHovered(null);
+                    }}
+                    className="imcrm-fixed imcrm-bottom-1.5 imcrm-left-[80px] imcrm-top-1.5 imcrm-z-40 imcrm-hidden imcrm-w-[248px] imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-shadow-imcrm-xl lg:imcrm-flex"
+                >
+                    <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-border-b imcrm-border-border imcrm-px-4">
+                        <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-text-foreground">
+                            {titleFor(peeking)}
+                        </span>
+                    </div>
+                    <nav
+                        aria-label={titleFor(peeking)}
+                        className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
+                    >
+                        {panelBody(peeking)}
+                    </nav>
+                </div>
+            )}
 
             {/* ── Panel interno claro (contextual según el riel) ────────── */}
             <div
@@ -257,10 +420,27 @@ export function Sidebar({
                     collapsed && 'lg:imcrm-hidden',
                 )}
             >
-                <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-border-b imcrm-border-border imcrm-px-4">
-                    <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-text-foreground">
-                        {panelTitle}
+                <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pl-4 imcrm-pr-2">
+                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-text-foreground">
+                        {titleFor(section)}
                     </span>
+                    {/* Cerrar el panel se hace DESDE el panel (v0.1.145,
+                        como ClickUp): el botón vive en su cabecera, no
+                        perdido al fondo del riel. Sólo escritorio: en
+                        mobile el conjunto es un drawer. */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCollapsed();
+                        }}
+                        className="imcrm-hidden imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-flex"
+                        aria-label={__('Colapsar panel')}
+                        title={__('Colapsar panel')}
+                        aria-expanded
+                    >
+                        <ChevronsLeft className="imcrm-h-4 imcrm-w-4" />
+                    </button>
                 </div>
 
                 <nav
@@ -268,66 +448,7 @@ export function Sidebar({
                     onClick={onClose}
                     className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
                 >
-                    {section === 'home' && (
-                        <>
-                            {lists.data && lists.data.length > 0 && (
-                                <ListsTree
-                                    lists={lists.data}
-                                    canManageLists={canManageLists}
-                                    starredIds={favs.lists}
-                                    onToggleStar={(id: number) => toggleFav('lists', id)}
-                                    onReorder={handleListDrop}
-                                    dragIndexRef={dragIndexRef}
-                                />
-                            )}
-                            {lists.isLoading && <PanelLoading />}
-                        </>
-                    )}
-
-                    {section === 'dashboards' && (
-                        <>
-                            <PanelNavItem
-                                to="/dashboards"
-                                icon={LayoutGrid}
-                                label={__('Todos los dashboards')}
-                                active={pathname === '/dashboards'}
-                            />
-                            {dashboards.data && dashboards.data.length > 0 && (
-                                <PanelSection label={__('Tus dashboards')}>
-                                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                                        {dashboards.data.map((d) => (
-                                            <li key={d.id}>
-                                                <PanelListLink
-                                                    to={`/dashboards/${d.id}`}
-                                                    name={d.name}
-                                                    starred={favs.dashboards.includes(d.id)}
-                                                    onToggleStar={() => toggleFav('dashboards', d.id)}
-                                                />
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </PanelSection>
-                            )}
-                            {dashboards.isLoading && <PanelLoading />}
-                        </>
-                    )}
-
-                    {section === 'favorites' && (
-                        <FavoritesSection
-                            favs={favs}
-                            lists={lists.data ?? []}
-                            dashboards={dashboards.data ?? []}
-                            onToggle={toggleFav}
-                        />
-                    )}
-
-                    {section === 'settings' && (
-                        <SettingsPanelNav isAdmin={isAdmin} requested={params.get('s')} />
-                    )}
-
-                    {section === 'platform' && (
-                        <PlatformPanelNav requested={params.get('tab')} />
-                    )}
+                    {panelBody(section)}
                 </nav>
             </div>
         </div>
@@ -396,16 +517,23 @@ function RailItem({
     icon: Icon,
     label,
     active,
+    onPeek,
+    onUnpeek,
 }: {
     to: string;
     icon: LucideIcon;
     label: string;
     active: boolean;
+    /** Hover: abre el panel flotante de esta sección (v0.1.145). */
+    onPeek?: () => void;
+    onUnpeek?: () => void;
 }): JSX.Element {
     return (
         <Link
             to={to}
             title={label}
+            onMouseEnter={onPeek}
+            onMouseLeave={onUnpeek}
             aria-current={active ? 'page' : undefined}
             className={cn(
                 'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1 imcrm-py-2 imcrm-transition-colors imcrm-duration-100',
@@ -452,21 +580,39 @@ function FavoritesSection({
     onToggle,
 }: {
     favs: Favorites;
-    lists: Array<{ id: number; slug: string; name: string }>;
-    dashboards: Array<{ id: number; name: string }>;
+    lists: Array<{ id: number; slug: string; name: string; icon?: string | null; color?: string | null }>;
+    dashboards: Array<{ id: number; name: string; settings?: Record<string, unknown> }>;
     onToggle: (kind: keyof Favorites, id: number) => void;
 }): JSX.Element | null {
     const listById = new Map(lists.map((l) => [l.id, l]));
     const dashById = new Map(dashboards.map((d) => [d.id, d]));
+    // Cada anclado con SU icono (v0.1.145): el de la lista o el del
+    // dashboard, nunca el puntito genérico.
     const items = [
         ...favs.lists
             .map((id) => listById.get(id))
             .filter((l): l is (typeof lists)[number] => l !== undefined)
-            .map((l) => ({ key: `l-${l.id}`, to: `/lists/${l.slug}/records`, name: l.name, kind: 'lists' as const, id: l.id })),
+            .map((l) => ({
+                key: `l-${l.id}`,
+                to: `/lists/${l.slug}/records`,
+                name: l.name,
+                kind: 'lists' as const,
+                id: l.id,
+                icon: listIcon(l.icon) ?? DEFAULT_LIST_ICON,
+                iconColor: listColor(l.color),
+            })),
         ...favs.dashboards
             .map((id) => dashById.get(id))
             .filter((d): d is (typeof dashboards)[number] => d !== undefined)
-            .map((d) => ({ key: `d-${d.id}`, to: `/dashboards/${d.id}`, name: d.name, kind: 'dashboards' as const, id: d.id })),
+            .map((d) => ({
+                key: `d-${d.id}`,
+                to: `/dashboards/${d.id}`,
+                name: d.name,
+                kind: 'dashboards' as const,
+                id: d.id,
+                icon: dashboardIcon(d.settings),
+                iconColor: dashboardColor(d.settings),
+            })),
     ];
     if (items.length === 0) {
         return (
@@ -484,7 +630,8 @@ function FavoritesSection({
                             to={it.to}
                             name={it.name}
                             starred
-                            icon={it.kind === 'dashboards' ? BarChart3 : undefined}
+                            icon={it.icon}
+                            iconColor={it.iconColor}
                             onToggleStar={() => onToggle(it.kind, it.id)}
                         />
                     </li>

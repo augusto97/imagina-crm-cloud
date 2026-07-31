@@ -17,7 +17,20 @@ import type {
     UpdateDashboardInput,
 } from '@/types/dashboard';
 
+import { ListIconPicker } from '@/admin/lists/ListIconPicker';
+
 import { DashboardVisibilityFields } from './DashboardVisibilityFields';
+
+/** El icono guardado en `settings` (string o nada). */
+function readIcon(settings: Record<string, unknown> | undefined): string | null {
+    const v = settings?.['icon'];
+    return typeof v === 'string' && v !== '' ? v : null;
+}
+
+function readColor(settings: Record<string, unknown> | undefined): string | null {
+    const v = settings?.['color'];
+    return typeof v === 'string' && v !== '' ? v : null;
+}
 
 interface DashboardSettingsDialogProps {
     dashboard: DashboardEntity;
@@ -43,6 +56,10 @@ export function DashboardSettingsDialog({
         dashboard.visibility ?? 'workspace',
     );
     const [allowedRoles, setAllowedRoles] = useState<string[]>(dashboard.allowed_roles ?? []);
+    // v0.1.145 — icono del dashboard (mismo catálogo que las listas). Vive
+    // en `settings`, que es un record permisivo: cero trabajo de backend.
+    const [icon, setIcon] = useState<string | null>(readIcon(dashboard.settings));
+    const [color, setColor] = useState<string | null>(readColor(dashboard.settings));
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -51,6 +68,8 @@ export function DashboardSettingsDialog({
             setDescription(dashboard.description ?? '');
             setVisibility(dashboard.visibility ?? 'workspace');
             setAllowedRoles(dashboard.allowed_roles ?? []);
+            setIcon(readIcon(dashboard.settings));
+            setColor(readColor(dashboard.settings));
             setError(null);
         }
         // `dashboard` cambia de referencia en cada refetch; dependemos sólo de
@@ -78,6 +97,11 @@ export function DashboardSettingsDialog({
             name: trimmedName,
             description: description.trim() === '' ? null : description.trim(),
         };
+        // El icono se MERGEA sobre los settings guardados: `page` (fondo,
+        // ancho, tipografía) vive ahí mismo y un PATCH plano lo borraría.
+        if (icon !== readIcon(dashboard.settings) || color !== readColor(dashboard.settings)) {
+            patch.settings = { ...(dashboard.settings ?? {}), icon, color };
+        }
         if (visibility !== savedVisibility || (visibility === 'roles' && rolesChanged)) {
             patch.visibility = visibility;
             patch.allowed_roles = visibility === 'roles' ? allowedRoles : [];
@@ -130,6 +154,18 @@ export function DashboardSettingsDialog({
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 autoFocus
+                            />
+                        </div>
+
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                            <Label>{__('Icono')}</Label>
+                            <ListIconPicker
+                                icon={icon}
+                                color={color}
+                                onChange={(next) => {
+                                    setIcon(next.icon);
+                                    setColor(next.color);
+                                }}
                             />
                         </div>
 

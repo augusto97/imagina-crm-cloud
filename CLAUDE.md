@@ -2334,6 +2334,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         etiquetas exactas del reporte (dos chips de 90 y 83 px, ambos con
         elipsis pintada, select simple igual, wrap intacto).
 
+  - [x] **Menú flotante al pasar el mouse + 3 ajustes de chrome (v0.1.145,
+        4 pedidos del usuario con capturas de ClickUp)**: (a) **hover en el
+        riel → el contenido de esa sección aparece FLOTANDO** sobre el área
+        de trabajo, sin navegar ni abrir el panel (retardo de 120 ms para
+        abrir y 180 para cerrar, así no parpadea al cruzar el riel; se va al
+        navegar Y al clickear adentro —clickear el item en el que ya estás no
+        cambia la ruta y el panel quedaba tapando el contenido—). Sólo flota
+        lo que NO estás viendo ya acoplado. El contenido del panel se extrajo
+        a UNA función que usan las dos superficies, así lo que se agregue sale
+        en ambas por construcción. (b) **Los toggles se mudaron a donde se los
+        busca**: con el panel cerrado, el botón de abrirlo va ARRIBA del riel
+        (bajo el logo, con hairline); con el panel abierto, el de cerrarlo va
+        en la CABECERA del panel — antes ambos vivían al fondo del riel.
+        (c) **Los dashboards del menú llevan icono**, no el puntito genérico:
+        el que elija quien lo crea (fila "Icono" nueva en la configuración del
+        dashboard, MISMO catálogo que las listas —un solo vocabulario de
+        iconos en la app— guardado en `settings.icon/color`, que es un record
+        permisivo: cero backend) o el genérico de tablero. La página y el
+        panel de Favoritos también muestran el icono real de cada anclado.
+        (d) **"Personalizar" pasa a ser sólo el icono y se mudó a la derecha,
+        después del buscador**: es un ajuste ocasional y no tiene por qué
+        competir con Filtrar, que sí se usa a diario. E2E navegador 21/21
+        (flotante aparece/cierra/no duplica al activo, botones arriba y en la
+        cabecera, iconos sin puntos, botón icon-only a la derecha del
+        buscador y antes de "Nuevo registro") + 2/2 del picker de icono
+        (elegir → persiste con su color tras recargar).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
