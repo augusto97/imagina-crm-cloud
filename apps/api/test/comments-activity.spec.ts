@@ -122,6 +122,8 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         // desc por id → el update primero.
         expect(log.data[0]).toMatchObject({ action: 'record_updated' });
         expect(log.data[0]!.diff[key()]).toEqual({ from: 'ACME', to: 'ACME2' });
+        // v0.1.149 — el feed dice QUIÉN lo hizo, no "usuario #2".
+        expect(log.data[0]!.user_name).toBe('Ana');
     });
 
     it('borrar loguea record_deleted', async () => {

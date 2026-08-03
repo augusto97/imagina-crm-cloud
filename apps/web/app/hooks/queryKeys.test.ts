@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 
+import { activityKeys } from '@/hooks/useActivity';
 import { automationsKeys } from '@/hooks/useAutomations';
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
@@ -45,9 +46,31 @@ describe('contrato de las queryKeys por lista', () => {
             fieldsKeys.forList(42),
             viewsKeys.forList(42),
             automationsKeys.forList(42),
+            // v0.1.149 — la actividad tenía el mismo segmento 'list' de más
+            // que rompió las automatizaciones en v0.1.85: el feed del registro
+            // no se refrescaba al editar.
+            activityKeys.forList(42),
+            activityKeys.forRecord(42, 7),
         ]) {
             expect(key[1]).toBe('42');
         }
+    });
+
+    it('invalidar por id alcanza a la actividad registrada por slug', () => {
+        const qc = clientWithLists();
+        let refetched = false;
+        qc.setQueryDefaults(activityKeys.forRecord('clientes', 7), {
+            queryFn: () => {
+                refetched = true;
+                return Promise.resolve([]);
+            },
+        });
+        qc.setQueryData([...activityKeys.forRecord('clientes', 7), 100], []);
+        invalidateForList(qc, activityKeys.all, 42);
+        expect(
+            qc.getQueryState([...activityKeys.forRecord('clientes', 7), 100])?.isInvalidated,
+        ).toBe(true);
+        void refetched;
     });
 
     it('el identificador siempre viaja como string (id numérico y slug no deben divergir de tipo)', () => {

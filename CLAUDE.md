@@ -2418,6 +2418,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de contraste WCAG sobre la tabla sin un solo texto por debajo de
         4.5:1 (5/5).
 
+  - [x] **Actividad del registro detallada, estilo ClickUp (v0.1.149,
+        reporte del usuario)**: el feed decía sólo `record_updated · por
+        usuario #2`. La causa era otra vez un desencuentro de shapes: la UI
+        seguía esperando el del plugin (`record.updated` + `changes.fields`
+        por slug) mientras el backend escribe `record_updated` + `diff` por
+        clave `f{id}` — así que ni el verbo ni el detalle matcheaban y el
+        diff, que SIEMPRE estuvo guardado, no se mostraba. Ahora: (a) el DTO
+        trae `user_name` (leftJoin en la misma query, como la bitácora — no
+        una request por entrada); el portal del cliente lo manda en `null` a
+        propósito: nombrar al empleado ante el cliente es otra decisión.
+        (b) `activityText.ts` traduce el log a lenguaje humano —resuelve
+        `f101`→«Estado» contra el catálogo de campos (sin catálogo cae a la
+        clave cruda: mejor "cambió f101" que esconder el cambio), distingue
+        **estableció / cambió / vació**, y formatea cada valor como en la
+        ficha (fechas y números con el formato regional de la empresa,
+        opciones con su ETIQUETA, checkbox Sí/No)—. (c) El panel se reescribió:
+        avatar de iniciales, frase por cambio ("SF cambió Razón social de
+        ~~Acme, S.A.~~ a E2E título 75014"), chips con el color real de la
+        opción, valor anterior tachado y hora relativa con la exacta en el
+        title; el timeline del layout CRM usa el mismo formateador en una
+        línea. (d) De paso, `activityKeys` tenía el segmento 'list' de más que
+        rompió las automatizaciones en v0.1.85 → el feed no se refrescaba
+        nunca al editar; el id vuelve al índice 1 y las mutaciones de record
+        lo invalidan. 8 tests unitarios del formateador + 2 del contrato de
+        keys (103 front) + assert del `user_name` en el spec de la API. E2E
+        navegador 7/7 (cero "record_updated", cero "por usuario #N", nombre,
+        campo, valores y hora relativa).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -386,6 +386,10 @@ export class PortalService {
             record_id: row.recordId,
             user_id: row.userId,
             action: row.action as ActivityDto['action'],
+            // El portal NO nombra a quién de la empresa tocó el registro
+            // (v0.1.149): el nombre se agregó para el feed interno; exponerlo
+            // al cliente sería ampliar lo que ve, y eso se decide aparte.
+            user_name: null,
             diff: row.diff,
             created_at: row.createdAt.toISOString(),
         }));

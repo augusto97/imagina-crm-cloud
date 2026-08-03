@@ -82,6 +82,9 @@ function toActivity(row: ActivityRow): ActivityDto {
         record_id: row.recordId,
         user_id: row.userId,
         action: row.action as ActivityAction,
+        // v0.1.149 — el nombre de quien hizo el cambio: sin esto el feed
+        // sólo podía decir "por usuario #2".
+        user_name: row.userName,
         diff: row.diff,
         created_at: row.createdAt.toISOString(),
     };

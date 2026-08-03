@@ -3,6 +3,7 @@ import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClie
 
 import { api } from '@/lib/api';
 import type { AggregatesResponse } from '@/hooks/useAggregates';
+import { activityKeys } from '@/hooks/useActivity';
 import { listsKeys } from '@/hooks/useLists';
 import type { ListSummary } from '@/types/list';
 import type {
@@ -343,6 +344,7 @@ export function useCreateRecord(listId: string | number) {
             // en la lista A marcaba stale el cache de TODAS las listas,
             // disparando refetches en cascada al volver a la lista B.
             invalidateForList(qc, recordsKeys.all, listId);
+            invalidateForList(qc, activityKeys.all, listId);
         },
     });
 }
@@ -418,6 +420,9 @@ export function useUpdateRecord(listId: string | number) {
         },
         onSettled: () => {
             invalidateForList(qc, recordsKeys.all, listId);
+            // v0.1.149 — cada edición escribe una entrada de actividad: el
+            // feed de la ficha tiene que verla sin recargar.
+            invalidateForList(qc, activityKeys.all, listId);
         },
     });
 }
