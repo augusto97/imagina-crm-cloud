@@ -1,28 +1,34 @@
-import {
-    Activity,
-    CircleCheck,
-    CircleX,
-    Loader2,
-    MessageSquare,
-    Pencil,
-    Plus,
-    Trash2,
-    Workflow,
-} from 'lucide-react';
+import { Activity, Loader2 } from 'lucide-react';
 
+import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
+import { useFields } from '@/hooks/useFields';
 import { useRecordActivity } from '@/hooks/useActivity';
-import { __, sprintf } from '@/lib/i18n';
+import { __ } from '@/lib/i18n';
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
-import type { ActivityAction, ActivityEntity } from '@/types/activity';
+import type { FieldEntity } from '@/types/field';
+import type { ActivityEntity } from '@/types/activity';
+
+import {
+    actionText,
+    actorOf,
+    changeSentence,
+    changesOf,
+    formatActivityValue,
+    relativeTime,
+    type FieldChange,
+} from './activityText';
 
 /**
- * Timeline de actividad de un registro.
+ * Timeline de actividad de un registro (reescrito en v0.1.149).
  *
- * Cada entrada se renderiza con un ícono según `action`, fecha relativa
- * y, para `record.updated`, el diff de campos en una tabla compacta
- * "antes / después". Para `comment.*`, muestra el snippet (ya truncado
- * por el backend). Para `automation.run`, indica status y nombre de
- * la automatización.
+ * Antes decía sólo "record_updated · por usuario #2": la UI seguía esperando
+ * el shape del plugin (`record.updated` + `changes.fields[slug]`) mientras el
+ * backend guarda `record_updated` + `diff` por clave `f{id}`, así que ni el
+ * verbo ni el detalle matcheaban. Ahora cada entrada se lee como una frase:
+ * QUIÉN, QUÉ campo, de QUÉ valor a CUÁL — con los valores formateados igual
+ * que en la ficha (fechas y números con el formato de la empresa, opciones
+ * con su etiqueta y su color).
  */
 interface ActivityPanelProps {
     listId: number;
@@ -31,6 +37,9 @@ interface ActivityPanelProps {
 
 export function ActivityPanel({ listId, recordId }: ActivityPanelProps): JSX.Element {
     const activity = useRecordActivity(listId, recordId, 100);
+    // El catálogo de campos es lo que traduce `f101` → "Estado" y da el tipo
+    // para formatear el valor. Ya está en cache: la ficha lo usa para todo.
+    const fields = useFields(listId);
 
     if (activity.isLoading) {
         return (
@@ -57,189 +66,201 @@ export function ActivityPanel({ listId, recordId }: ActivityPanelProps): JSX.Ele
     }
 
     return (
-        <ol className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+        <ol className="imcrm-flex imcrm-flex-col">
             {activity.data.map((entry) => (
-                <ActivityRow key={entry.id} entry={entry} />
+                <ActivityRow key={entry.id} entry={entry} fields={fields.data ?? []} />
             ))}
         </ol>
     );
 }
 
-function ActivityRow({ entry }: { entry: ActivityEntity }): JSX.Element {
+function ActivityRow({
+    entry,
+    fields,
+}: {
+    entry: ActivityEntity;
+    fields: FieldEntity[];
+}): JSX.Element {
+    const changes = changesOf(entry, fields);
+    const actor = actorOf(entry);
+    const verb = actionText(entry, changes.length);
+    const exact = formatDateTimeStr(entry.created_at);
+
     return (
-        <li className="imcrm-flex imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3">
-            <span
-                className={cn(
-                    'imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full',
-                    iconBgFor(entry.action),
-                )}
-                aria-hidden
-            >
-                {iconFor(entry.action)}
-            </span>
+        <li className="imcrm-flex imcrm-gap-2.5 imcrm-py-2">
+            <Initials name={actor} system={entry.user_id === null || entry.user_id <= 0} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
-                <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-text-xs">
-                    <span className="imcrm-font-medium imcrm-text-foreground">
-                        {labelFor(entry)}
-                    </span>
-                    <span className="imcrm-text-muted-foreground">
-                        {new Date(entry.created_at + 'Z').toLocaleString()}
-                    </span>
-                </div>
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {entry.user_id !== null && entry.user_id > 0 && (
-                        <span>
-                            {sprintf(
-                                /* translators: %d: user id */
-                                __('por usuario #%d'),
-                                entry.user_id,
-                            )}
-                        </span>
+                <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    <span className="imcrm-font-medium imcrm-text-foreground">{actor}</span>
+                    {verb !== '' && <> {verb}</>}
+                    {changes.length === 0 && (
+                        <>
+                            {' '}
+                            <time
+                                dateTime={entry.created_at}
+                                title={exact}
+                                className="imcrm-whitespace-nowrap imcrm-text-muted-foreground/80"
+                            >
+                                · {relativeTime(entry.created_at)}
+                            </time>
+                        </>
                     )}
-                </div>
-                <ActivityDetail entry={entry} />
+                </p>
+
+                {changes.map((c, i) => (
+                    <ChangeLine
+                        key={`${c.label}-${i}`}
+                        change={c}
+                        // La hora va en la ÚLTIMA línea del bloque: repetirla
+                        // en cada campo cambiado sería ruido (todas comparten
+                        // la misma marca de tiempo).
+                        time={i === changes.length - 1 ? entry.created_at : null}
+                        exact={exact}
+                    />
+                ))}
             </div>
         </li>
     );
 }
 
-function ActivityDetail({ entry }: { entry: ActivityEntity }): JSX.Element | null {
-    if (entry.action === 'record.updated') {
-        return <RecordUpdatedDetail changes={entry.changes} />;
-    }
-    if (entry.action === 'comment.created' || entry.action === 'comment.updated') {
-        const content = String(
-            (entry.changes as { content?: unknown; after?: unknown }).content ??
-                (entry.changes as { after?: unknown }).after ??
-                '',
-        );
-        if (content === '') return null;
-        return (
-            <p className="imcrm-mt-1 imcrm-rounded imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-foreground">
-                {content}
-            </p>
-        );
-    }
-    if (entry.action === 'automation.run') {
-        const status = String(entry.changes.status ?? 'unknown');
-        const name = String(entry.changes.automation_name ?? '');
-        return (
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                <span className="imcrm-font-medium">{name}</span>
-                {' — '}
-                <span
-                    className={
-                        status === 'success'
-                            ? 'imcrm-text-success'
-                            : status === 'failed'
-                              ? 'imcrm-text-destructive'
-                              : ''
-                    }
-                >
-                    {status}
-                </span>
-            </p>
-        );
-    }
-    return null;
-}
-
-function RecordUpdatedDetail({
-    changes,
+function ChangeLine({
+    change,
+    time,
+    exact,
 }: {
-    changes: Record<string, unknown>;
-}): JSX.Element | null {
-    const fields = changes.fields;
-    if (!fields || typeof fields !== 'object') return null;
-
-    const entries = Object.entries(fields as Record<string, { before?: unknown; after?: unknown }>);
-    if (entries.length === 0) return null;
-
+    change: FieldChange;
+    time: string | null;
+    exact: string;
+}): JSX.Element {
+    const { verb, from, to } = changeSentence(change);
     return (
-        <table className="imcrm-mt-1 imcrm-w-full imcrm-text-xs">
-            <thead>
-                <tr className="imcrm-text-muted-foreground">
-                    <th className="imcrm-text-left imcrm-font-normal">{__('Campo')}</th>
-                    <th className="imcrm-text-left imcrm-font-normal">{__('Antes')}</th>
-                    <th className="imcrm-text-left imcrm-font-normal">{__('Después')}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {entries.map(([slug, diff]) => (
-                    <tr key={slug} className="imcrm-border-t imcrm-border-border/60">
-                        <td className="imcrm-py-1 imcrm-pr-2 imcrm-font-mono imcrm-text-foreground">
-                            {slug}
-                        </td>
-                        <td className="imcrm-py-1 imcrm-pr-2 imcrm-text-muted-foreground">
-                            {renderValue(diff?.before)}
-                        </td>
-                        <td className="imcrm-py-1 imcrm-text-foreground">
-                            {renderValue(diff?.after)}
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
+        <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
+            {verb}{' '}
+            <span className="imcrm-font-medium imcrm-text-foreground">{change.label}</span>
+            {from !== null && to !== null && (
+                <>
+                    {' '}
+                    {__('de')} <Value field={change.field} raw={change.from} text={from} old />
+                    {' '}
+                    {__('a')} <Value field={change.field} raw={change.to} text={to} />
+                </>
+            )}
+            {from === null && to !== null && (
+                <>
+                    {' '}
+                    {__('en')} <Value field={change.field} raw={change.to} text={to} />
+                </>
+            )}
+            {from !== null && to === null && (
+                <>
+                    {' '}
+                    ({__('antes')} <Value field={change.field} raw={change.from} text={from} old />)
+                </>
+            )}
+            {time !== null && (
+                <time
+                    dateTime={time}
+                    title={exact}
+                    className="imcrm-whitespace-nowrap imcrm-text-muted-foreground/80"
+                >
+                    {' · '}
+                    {relativeTime(time)}
+                </time>
+            )}
+        </p>
     );
 }
 
-function renderValue(v: unknown): string {
-    if (v === null || v === undefined || v === '') return '—';
-    if (typeof v === 'object') return JSON.stringify(v);
-    return String(v);
-}
-
-function iconFor(action: ActivityAction): JSX.Element {
-    switch (action) {
-        case 'record.created':
-            return <Plus className="imcrm-h-3.5 imcrm-w-3.5" />;
-        case 'record.updated':
-            return <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />;
-        case 'record.deleted':
-            return <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />;
-        case 'comment.created':
-        case 'comment.updated':
-            return <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />;
-        case 'comment.deleted':
-            return <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />;
-        case 'automation.run':
-            return <Workflow className="imcrm-h-3.5 imcrm-w-3.5" />;
-        default:
-            return <Activity className="imcrm-h-3.5 imcrm-w-3.5" />;
+/**
+ * El valor: los de select/multi_select van como CHIP con el color de la
+ * opción (el mismo que se ve en la tabla), el resto como texto resaltado.
+ * El valor anterior se atenúa para que la lectura sea "de X a Y".
+ */
+function Value({
+    field,
+    raw,
+    text,
+    old,
+}: {
+    field: FieldEntity | undefined;
+    raw: unknown;
+    text: string;
+    old?: boolean;
+}): JSX.Element {
+    if (field !== undefined && (field.type === 'select' || field.type === 'multi_select')) {
+        const values = Array.isArray(raw) ? raw : [raw];
+        return (
+            <span className="imcrm-inline-flex imcrm-flex-wrap imcrm-gap-1 imcrm-align-middle">
+                {values.map((v, i) => (
+                    <OptionPill
+                        key={i}
+                        field={field}
+                        value={v}
+                        label={formatActivityValue(field, v) ?? String(v)}
+                        old={old}
+                    />
+                ))}
+            </span>
+        );
     }
+    return (
+        <span
+            className={cn(
+                'imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-text-[12px]',
+                old ? 'imcrm-text-muted-foreground imcrm-line-through' : 'imcrm-text-foreground',
+            )}
+        >
+            {text}
+        </span>
+    );
 }
 
-function iconBgFor(action: ActivityAction): string {
-    if (action === 'record.created') return 'imcrm-bg-success/15 imcrm-text-success';
-    if (action === 'record.deleted' || action === 'comment.deleted')
-        return 'imcrm-bg-destructive/15 imcrm-text-destructive';
-    if (action === 'automation.run') return 'imcrm-bg-primary/15 imcrm-text-primary';
-    return 'imcrm-bg-muted imcrm-text-muted-foreground';
+function OptionPill({
+    field,
+    value,
+    label,
+    old,
+}: {
+    field: FieldEntity;
+    value: unknown;
+    label: string;
+    old?: boolean;
+}): JSX.Element {
+    const opts = (field.config as { options?: Array<{ value?: string; color?: string }> }).options;
+    const color = Array.isArray(opts)
+        ? (opts.find((o) => String(o.value) === String(value))?.color as OptionColor | undefined)
+        : undefined;
+    const style = chipSoftStyle(color);
+    return (
+        <span
+            className={cn(
+                'imcrm-inline-flex imcrm-max-w-[220px] imcrm-items-center imcrm-overflow-hidden imcrm-rounded imcrm-border imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-leading-tight imcrm-whitespace-nowrap',
+                old && 'imcrm-opacity-60',
+            )}
+            style={style ?? {
+                backgroundColor: 'hsl(var(--imcrm-muted))',
+                borderColor: 'hsl(var(--imcrm-border))',
+                color: 'hsl(var(--imcrm-foreground))',
+            }}
+        >
+            <span className="imcrm-min-w-0 imcrm-truncate">{label}</span>
+        </span>
+    );
 }
 
-function labelFor(entry: ActivityEntity): string {
-    switch (entry.action) {
-        case 'record.created':
-            return __('Registro creado');
-        case 'record.updated':
-            return __('Registro actualizado');
-        case 'record.deleted':
-            return entry.changes.purge === true
-                ? __('Registro purgado')
-                : __('Registro eliminado');
-        case 'comment.created':
-            return __('Comentario añadido');
-        case 'comment.updated':
-            return __('Comentario editado');
-        case 'comment.deleted':
-            return __('Comentario eliminado');
-        case 'automation.run':
-            return __('Automatización ejecutada');
-        default:
-            return entry.action;
-    }
+/** Avatar de iniciales (el sistema lleva su propio icono). */
+function Initials({ name, system }: { name: string; system: boolean }): JSX.Element {
+    const initials = name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((w) => w.charAt(0).toUpperCase())
+        .join('');
+    return (
+        <span
+            aria-hidden
+            className="imcrm-mt-0.5 imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-[10px] imcrm-font-semibold imcrm-text-foreground/70 imcrm-ring-1 imcrm-ring-border"
+        >
+            {system ? <Activity className="imcrm-h-3 imcrm-w-3" /> : initials}
+        </span>
+    );
 }
-
-// Iconos no usados arriba pero conservados para futuros tipos.
-void CircleCheck;
-void CircleX;

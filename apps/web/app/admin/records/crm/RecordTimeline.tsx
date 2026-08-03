@@ -22,7 +22,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
+import { summarizeActivity } from '@/admin/activity/activityText';
 import { useRecordActivity } from '@/hooks/useActivity';
+import { useFields } from '@/hooks/useFields';
+import type { FieldEntity } from '@/types/field';
 import {
     useComments,
     useCreateComment,
@@ -92,6 +95,8 @@ export function RecordTimeline({
 }: RecordTimelineProps): JSX.Element {
     const comments = useComments(listId, recordId);
     const activity = useRecordActivity(listId, recordId);
+    // Catálogo de campos: traduce `f101` → "Estado" en el detalle (v0.1.149).
+    const fields = useFields(listId);
     const createComment = useCreateComment(listId, recordId);
     const updateComment = useUpdateComment(listId, recordId);
     const deleteComment = useDeleteComment(listId, recordId);
@@ -306,7 +311,13 @@ export function RecordTimeline({
                                 );
                             }
                             if (item.kind === 'activity' && item.activity) {
-                                return <ActivityRow key={`a-${item.activity.id}`} activity={item.activity} />;
+                                return (
+                                    <ActivityRow
+                                        key={`a-${item.activity.id}`}
+                                        activity={item.activity}
+                                        fields={fields.data ?? []}
+                                    />
+                                );
                             }
                             return null;
                         })}
@@ -552,9 +563,15 @@ function describeMode(meta: CommentMetadata): string {
     return '· ' + parts.join(' · ');
 }
 
-function ActivityRow({ activity }: { activity: ActivityEntity }): JSX.Element {
+function ActivityRow({
+    activity,
+    fields,
+}: {
+    activity: ActivityEntity;
+    fields: FieldEntity[];
+}): JSX.Element {
     const ts = parseTimestamp(activity.created_at);
-    const { Icon, iconColor, label } = describeActivity(activity);
+    const { Icon, iconColor, label } = describeActivity(activity, fields);
 
     return (
         <li className="imcrm-flex imcrm-gap-3">
@@ -581,33 +598,28 @@ interface ActivityDescription {
     label: string;
 }
 
-function describeActivity(a: ActivityEntity): ActivityDescription {
-    if (a.action === 'record.created') {
+function describeActivity(a: ActivityEntity, fields: FieldEntity[]): ActivityDescription {
+    // v0.1.149 — el detalle (quién, qué campo, de qué a qué) sale del mismo
+    // formateador que usa el panel lateral.
+    if (a.action === 'record.created' || a.action === 'record_created') {
         return {
             Icon: Plus,
             iconColor: 'imcrm-bg-success/15 imcrm-text-success',
-            label: __('Registro creado'),
+            label: summarizeActivity(a, fields),
         };
     }
-    if (a.action === 'record.deleted') {
+    if (a.action === 'record.deleted' || a.action === 'record_deleted') {
         return {
             Icon: Trash2,
             iconColor: 'imcrm-bg-destructive/15 imcrm-text-destructive',
-            label: __('Registro eliminado'),
+            label: summarizeActivity(a, fields),
         };
     }
-    if (a.action === 'record.updated') {
-        const changes = a.changes as { fields?: Record<string, unknown> } | null;
-        const fieldsChanged = changes?.fields && typeof changes.fields === 'object'
-            ? Object.keys(changes.fields)
-            : [];
-        const label = fieldsChanged.length > 0
-            ? sprintf(__('Actualizó %s'), fieldsChanged.join(', '))
-            : __('Actualizó el registro');
+    if (a.action === 'record.updated' || a.action === 'record_updated') {
         return {
             Icon: Pencil,
             iconColor: 'imcrm-bg-info/15 imcrm-text-info',
-            label,
+            label: summarizeActivity(a, fields),
         };
     }
     if (a.action.startsWith('comment.')) {

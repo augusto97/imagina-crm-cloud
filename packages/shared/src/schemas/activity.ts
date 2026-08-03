@@ -26,6 +26,8 @@ export const activitySchema = z.object({
     list_id: idSchema,
     record_id: idSchema.nullable(),
     user_id: idSchema.nullable(),
+    /** Nombre de quien hizo el cambio (v0.1.149); null si lo hizo el sistema. */
+    user_name: z.string().nullable().default(null),
     action: activityActionSchema,
     diff: z.record(z.unknown()),
     created_at: isoDateTimeSchema,
