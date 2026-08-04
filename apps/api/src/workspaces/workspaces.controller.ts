@@ -2,6 +2,7 @@ import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundEx
 import {
     customDomainInputSchema,
     smtpConfigSchema,
+    smtpDiagnoseInputSchema,
     updateBrandingSchema,
     updateStylePresetsSchema,
     updateTenantFormatSchema,
@@ -11,6 +12,8 @@ import {
     type DomainDnsReport,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type SmtpDiagnoseInput,
+    type SmtpDiagnostic,
     type BrandingResponse,
     type MembershipSummary,
     type TenantDomain,
@@ -26,6 +29,7 @@ import { DomainsService } from '../domains/domains.service';
 import { TenantGuard, type TenantContext } from '../tenancy/tenant.guard';
 import { MailService } from '../mail/mail.service';
 import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
+import { SmtpProbeService } from '../mail/smtp-probe.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { AuditService, type AuditEntryDto } from '../audit/audit.service';
 import { BrandingService } from './branding.service';
@@ -39,6 +43,7 @@ export class WorkspacesController {
         private readonly smtp: TenantSmtpService,
         private readonly mail: MailService,
         private readonly smtpDns: SmtpDnsService,
+        private readonly smtpProbe: SmtpProbeService,
         private readonly domains: DomainsService,
         private readonly audit: AuditService,
     ) {}
@@ -298,5 +303,38 @@ export class WorkspacesController {
         } catch (err) {
             return { ok: false, error: err instanceof Error ? err.message : String(err) };
         }
+    }
+
+    /**
+     * Diagnóstico de conectividad (v0.1.151): prueba los puertos SMTP DESDE EL
+     * SERVIDOR y explica qué está pasando. "Connection timeout" no le sirve a
+     * nadie; esto distingue host mal escrito, puerto equivocado, TLS mal
+     * elegido y —la causa nº 1— el VPS bloqueando el correo saliente.
+     *
+     * Acepta host/puerto en el body para poder diagnosticar lo que hay escrito
+     * en el formulario, sin tener que guardar una config rota primero.
+     */
+    @Post('current/smtp/diagnose')
+    @HttpCode(200)
+    @UseGuards(TenantGuard)
+    async diagnoseSmtp(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(smtpDiagnoseInputSchema)) input: SmtpDiagnoseInput,
+    ): Promise<SmtpDiagnostic> {
+        this.assertAdmin(req);
+        const saved = await this.smtp.get(req.tenant!.tenantId);
+        const host = (input.host ?? saved.host).trim();
+        if (!host) {
+            throw new NotFoundException({
+                code: 'smtp_not_configured',
+                message: 'Escribí primero el host del servidor SMTP',
+                data: { status: 404 },
+            });
+        }
+        return this.smtpProbe.diagnose({
+            host,
+            port: input.port ?? saved.port ?? 587,
+            secure: input.secure ?? saved.secure,
+        });
     }
 }

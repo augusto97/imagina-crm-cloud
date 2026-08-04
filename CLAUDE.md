@@ -2480,6 +2480,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contra un servidor SMTP real: config rota → error accionable en las 3
         superficies, reescribir contraseña → entrega verificada en el servidor.
 
+  - [x] **Diagnóstico de conexión SMTP (v0.1.151, reporte del usuario: "le
+        coloco los datos y responde con Connection timeout")**: ese mensaje ya
+        es el error REAL del servidor —no logra abrir el TCP contra el SMTP—,
+        pero no le sirve a nadie: no distingue host mal escrito de puerto
+        equivocado, de TLS mal elegido, o de que el proveedor del VPS bloquee el
+        correo saliente (Hetzner, DigitalOcean, Oracle, Google Cloud y AWS lo
+        hacen por defecto: es la causa nº 1). Ahora hay un botón **"Diagnosticar
+        conexión"** que prueba DESDE EL SERVIDOR —la única máquina cuya
+        conectividad importa— los cuatro puertos SMTP (25/465/587/2525) más el
+        configurado, lee el saludo (`220 …`) y devuelve un veredicto con
+        consejos accionables: `ok` / `tls_mismatch` (conecta pero la casilla de
+        seguridad no corresponde al puerto) / `port_closed` (ese no, pero otro
+        sí → sugiere cuál) / `all_blocked` (nadie responde → apunta al bloqueo
+        del proveedor y a pedir el desbloqueo o usar el 2525) / `dns_failed`
+        (con la ayuda de "sacá el http://" y "eso es un email, no un host").
+        Se diagnostica lo que hay en el FORMULARIO —no hace falta guardar una
+        config rota primero— vía `POST /workspaces/current/smtp/diagnose`
+        (admin). Alcance acotado a propósito: sólo esos puertos y nunca contra
+        direcciones link-local (169.254.0.0/16, fe80::/10 — donde viven los
+        endpoints de metadata de las nubes); las privadas SÍ se prueban porque
+        un relay interno es legítimo y el envío real también llega ahí. Además:
+        (a) el **puerto y la casilla "Conexión segura" se sincronizan solos**
+        (465 → TLS implícito ON; 25/587/2525 → STARTTLS OFF) con aviso inline
+        si el usuario los descasa a mano — la mezcla es la causa clásica del
+        timeout; (b) el error del botón "Probar envío" se traduce a algo
+        accionable (timeout → "tocá Diagnosticar"; 535 → credenciales; 550 →
+        remitente), conservando el texto original. 10 tests de API (veredictos
+        puros + sockets reales + link-local) y 8 del front (418 API, 111 front
+        en verde) + E2E navegador 14/14 y por curl contra un SMTP local (sink
+        alcanzable, puerto equivocado, TLS cruzado, host inexistente, metadata
+        bloqueada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

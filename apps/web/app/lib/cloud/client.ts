@@ -61,6 +61,8 @@ import {
     slugCheckResultSchema,
     smtpConfigSchema,
     smtpConfigPublicSchema,
+    smtpDiagnoseInputSchema,
+    smtpDiagnosticSchema,
     smtpDnsReportSchema,
     updateAutomationSchema,
     updateBrandingSchema,
@@ -117,6 +119,8 @@ import {
     type SlugCheckResult,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type SmtpDiagnoseInput,
+    type SmtpDiagnostic,
     type SmtpDnsReport,
     type UpdateAutomationInput,
     type UpdateBrandingInput,
@@ -522,6 +526,17 @@ export class CloudClient {
     /** Registros DNS (SPF/DKIM/DMARC) del SMTP propio, verificados en vivo. */
     tenantSmtpDns(): Promise<SmtpDnsReport> {
         return this.request('GET', '/workspaces/current/smtp/dns', { schema: smtpDnsReportSchema });
+    }
+    /**
+     * Diagnóstico de conectividad (v0.1.151): el SERVIDOR prueba los puertos
+     * SMTP y dice qué pasa. Se manda lo que hay en el formulario para poder
+     * diagnosticar sin guardar una config rota.
+     */
+    tenantSmtpDiagnose(input: SmtpDiagnoseInput): Promise<SmtpDiagnostic> {
+        return this.request('POST', '/workspaces/current/smtp/diagnose', {
+            body: smtpDiagnoseInputSchema.parse(input),
+            schema: smtpDiagnosticSchema,
+        });
     }
     /** Envía un correo de prueba al email del propio admin (sin cola). */
     tenantSmtpTest(): Promise<{ ok: boolean; error?: string }> {
