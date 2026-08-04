@@ -2446,6 +2446,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 7/7 (cero "record_updated", cero "por usuario #N", nombre,
         campo, valores y hora relativa).
 
+  - [x] **Auditoría del envío de correo — el SMTP ya no falla en silencio
+        (v0.1.150, reporte del usuario: "configuro SMTP y no envía")**: el
+        camino feliz funcionaba (verificado con un servidor SMTP de prueba:
+        botón de prueba, magic link y automatización entregaron), pero **todo
+        fallo degradaba a un "enviado" mentiroso**. Reproducido exacto: con la
+        contraseña guardada cifrada con OTRA `SECRETS_KEY` (la clave cambió
+        entre el guardado y hoy), `getForSend` capturaba el error, se caía al
+        SMTP de plataforma y de ahí al transporte `log` → el botón "Probar
+        envío" respondía `{"ok":true}` y el correo moría en el logger. Además
+        `GET /workspaces/current/smtp` tiraba 500 y el panel del front **se
+        oculta ante cualquier error**, así que la tarjeta de SMTP desaparecía
+        de Ajustes; y guardar sin reescribir la contraseña también 500 → no
+        había forma de recuperarse desde la UI. Arreglos: (a) los dos niveles
+        (empresa y plataforma) distinguen **no configurado** de **configurado
+        pero inusable**, y el segundo **LANZA** en vez de degradar — un SMTP
+        configurado nunca cae al `log`; (b) el GET informa
+        `password_unreadable` y el panel lo dice ("tus correos no se están
+        enviando… escribí la contraseña de nuevo") en vez de desaparecer;
+        guardar con contraseña vacía en ese estado se rechaza con
+        `smtp_password_required`; (c) `send_email` de automatizaciones y el
+        magic link del portal pasan a **envío en el acto**: el motor ya corre
+        en su propio worker, así que no se pierde resiliencia y a cambio el
+        error queda donde el usuario lo busca — el run figura `failed` con el
+        motivo del SMTP, y el botón de acceso al portal avisa "el enlace se
+        generó, pero el correo no salió: …" (antes decía "enviado" siempre por
+        un `.catch(() => undefined)`); (d) el transporte `log` avisa con WARN
+        en producción que el correo NO salió por falta de SMTP; (e) timeouts
+        de nodemailer (10s conexión / 20s socket) — sin ellos un host mal
+        escrito colgaba el botón de prueba dos minutos y bloqueaba el worker.
+        7 tests del SMTP por empresa (incluida la recuperación completa) + 1
+        del run fallido de automatización — 408 API y 103 front en verde; E2E
+        contra un servidor SMTP real: config rota → error accionable en las 3
+        superficies, reescribir contraseña → entrega verificada en el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

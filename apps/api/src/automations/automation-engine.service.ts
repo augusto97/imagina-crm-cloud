@@ -465,7 +465,14 @@ export class AutomationEngine {
                 const isHtml = Boolean(cfg.is_html);
                 // En HTML, los valores interpolados se escapan (no el template).
                 const body = isHtml ? mergeHtml(cfg.body) : merge(cfg.body);
-                await this.mail.enqueue({
+                // v0.1.150 — se envía EN EL ACTO (no por la cola de correo). El
+                // motor ya corre dentro de su propio worker BullMQ, así que no
+                // se pierde nada de resiliencia; a cambio, si el SMTP rechaza
+                // (credenciales, remitente no permitido, host caído) el error
+                // queda escrito en el historial de la automatización, que es
+                // donde el usuario lo busca. Antes se encolaba y el run decía
+                // "Encolado" aunque el correo nunca saliera.
+                await this.mail.sendNow({
                     tenantId: ctx.tenantId,
                     to,
                     subject,
@@ -475,7 +482,7 @@ export class AutomationEngine {
                     from: cfg.from_email ? merge(cfg.from_email) : undefined,
                     fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
                 });
-                return ok('send_email', `Encolado a ${to}: "${subject}"`, { to, subject });
+                return ok('send_email', `Enviado a ${to}: "${subject}"`, { to, subject });
             }
             default:
                 return skip(spec.type, 'Acción no reconocida.');

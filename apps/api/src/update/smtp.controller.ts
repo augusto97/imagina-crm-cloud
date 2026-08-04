@@ -31,14 +31,17 @@ export class SmtpController {
 
     @Get()
     async get(): Promise<SmtpConfigPublic> {
-        const c = await this.platform.getSmtp();
+        // Nunca revienta por una contraseña ilegible: lo dice (v0.1.150).
+        const read = await this.platform.readSmtp();
+        const c = read.state === 'none' ? null : read.config;
         return {
-            configured: c !== null,
+            configured: read.state !== 'none',
             host: c?.host ?? '',
             port: c?.port ?? 587,
             secure: c?.secure ?? false,
             user: c?.user ?? '',
             from: c?.from ?? '',
+            password_unreadable: read.state === 'unreadable',
         };
     }
 

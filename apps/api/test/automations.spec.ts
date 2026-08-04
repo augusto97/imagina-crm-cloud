@@ -27,7 +27,10 @@ import { TenantDb } from '../src/tenancy/tenant-db.service';
 class CapturingMailTransport implements MailTransport {
     readonly name = 'capture';
     readonly sent: MailMessage[] = [];
+    /** Simula un SMTP que rechaza (credenciales, remitente, host caído). */
+    failWith: string | null = null;
     send(message: MailMessage): Promise<void> {
+        if (this.failWith !== null) return Promise.reject(new Error(this.failWith));
         this.sent.push(message);
         return Promise.resolve();
     }
@@ -188,6 +191,42 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
 
         expect(mailbox.sent).toHaveLength(1);
         expect(mailbox.sent[0]).toMatchObject({ to: 'ventas@acme.test', subject: 'Deal vip', text: 'Monto: 5000' });
+    });
+
+    // v0.1.150 — el usuario reportó "configuro SMTP y no envía": el fallo del
+    // envío tiene que quedar ESCRITO en el historial de la automatización, que
+    // es donde se lo busca. Antes se encolaba y el run decía "Encolado" aunque
+    // el correo nunca saliera.
+    it('send_email: si el envío falla, el run queda como fallido con el motivo', async () => {
+        mailbox.sent.length = 0;
+        mailbox.failWith = 'Invalid login: 535 authentication failed';
+        try {
+            await automationsService.create(tenantId, 'deals', {
+                name: 'Avisar con SMTP roto',
+                trigger_type: 'record_created',
+                actions: [
+                    { type: 'send_email', config: { to: 'ventas@acme.test', subject: 'X', body: 'Y' } },
+                ],
+            });
+            const rec = await recordsService.create(tenantId, admin, 'deals', {
+                data: { [key('monto')]: 1 },
+            });
+            await engine.process({
+                tenantId,
+                listId,
+                recordId: rec.id,
+                trigger: 'record_created',
+                after: { [key('monto')]: 1 },
+            });
+
+            const runs = await automationsService.runsById(tenantId, await firstAutomationId(), {});
+            expect(runs.data[0]!.status).toBe('failed');
+            const entry = runs.data[0]!.actions_log.find((l) => l.action === 'send_email');
+            expect(entry?.status).toBe('failed');
+            expect(entry?.message).toContain('authentication failed');
+        } finally {
+            mailbox.failWith = null;
+        }
     });
 
     // SEC-08: en email HTML, los valores de registro interpolados se escapan

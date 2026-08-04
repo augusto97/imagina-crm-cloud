@@ -21,6 +21,12 @@ export class SmtpMailTransport implements MailTransport {
             port: config.port,
             secure: config.secure,
             auth: config.user ? { user: config.user, pass: config.pass } : undefined,
+            // v0.1.150 — sin timeouts, nodemailer espera 2 minutos por conexión:
+            // el botón "Probar envío" quedaba colgado y el worker de correo se
+            // bloqueaba con un host mal escrito. Falla rápido y con mensaje.
+            connectionTimeout: 10_000,
+            greetingTimeout: 10_000,
+            socketTimeout: 20_000,
         });
     }
 

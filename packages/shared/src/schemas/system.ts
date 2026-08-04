@@ -17,6 +17,13 @@ export type SmtpConfig = z.infer<typeof smtpConfigSchema>;
 
 /** Vista pública (sin password) + flag de si hay config guardada. */
 export const smtpConfigPublicSchema = z.object({
+    /**
+     * v0.1.150 — la contraseña guardada no se puede descifrar (cambió
+     * `SECRETS_KEY` entre el guardado y ahora). El panel lo dice y pide
+     * reescribirla: antes esto reventaba el GET con un 500 y el panel entero
+     * desaparecía, mientras los correos se "enviaban" al logger.
+     */
+    password_unreadable: z.boolean().default(false),
     configured: z.boolean(),
     host: z.string().default(''),
     port: z.number().default(587),

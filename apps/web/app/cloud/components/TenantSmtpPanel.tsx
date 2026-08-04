@@ -126,12 +126,32 @@ export function TenantSmtpPanel(): JSX.Element | null {
                             </CardDescription>
                         </div>
                     </div>
-                    <Badge dot variant={c.configured ? 'success' : 'secondary'} className="imcrm-shrink-0">
-                        {c.configured ? 'SMTP propio' : 'Correo de la plataforma'}
+                    <Badge
+                        dot
+                        variant={c.password_unreadable ? 'destructive' : c.configured ? 'success' : 'secondary'}
+                        className="imcrm-shrink-0"
+                    >
+                        {c.password_unreadable
+                            ? 'Revisar contraseña'
+                            : c.configured
+                              ? 'SMTP propio'
+                              : 'Correo de la plataforma'}
                     </Badge>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
+            {/* v0.1.150 — la contraseña guardada no se puede descifrar (cambió
+                la clave de cifrado del servidor). Antes esto rompía el GET con
+                un 500, el panel entero desaparecía y los correos se daban por
+                enviados sin salir. */}
+            {c.password_unreadable && (
+                <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                    <span className="imcrm-font-medium">Tus correos no se están enviando.</span> No se
+                    puede leer la contraseña guardada (cambió la clave de cifrado del servidor).
+                    Escribila de nuevo abajo y guardá para volver a habilitar el envío.
+                </div>
+            )}
+
             {!c.configured && (
                 <div className="imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                     <span className="imcrm-font-medium imcrm-text-foreground">
