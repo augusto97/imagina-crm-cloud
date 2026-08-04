@@ -2540,6 +2540,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         por servidor propio sale y no consume cuota; E2E por curl (segundo
         envío rebotado con el mensaje accionable) y navegador 9/9.
 
+  - [x] **Portal del cliente: acceso visible y "todo lo relacionado a mí"
+        (v0.1.153, reporte del usuario: "coloco un correo pero no veo que quede
+        registrado… ¿cómo se relacionan los clientes de las listas?")**. Dos
+        huecos distintos:
+        (a) **El acceso SÍ quedaba guardado** (`portal_links` desde F3, un
+        cliente = un registro por empresa), pero la ficha no lo mostraba: había
+        que re-tipear el email en cada envío sin saber si el cliente ya tenía
+        acceso ni si llegó a entrar. Ahora la tarjeta lista **quién tiene
+        acceso**, con "Última entrada" (columna `portal_links.last_access_at`,
+        migración 0043, que se estampa al canjear el enlace) o "Todavía no
+        entró" — que es justo lo que hay que saber cuando el cliente dice que
+        no le llegó. Botones **Reenviar enlace** (sin re-escribir nada) y
+        **Quitar acceso** (borra el vínculo, la membresía `client` y **revoca
+        sus sesiones al instante**). El input de email sólo aparece la primera
+        vez. Endpoints `GET /lists/:l/portal/access?record_id=` y
+        `DELETE /lists/:l/portal/access/:userId` (`manage_lists`).
+        (b) **Cross-list**: el motor ya sabía acotar OTRAS listas al cliente
+        (`portalScope`: campo `relation` hacia su registro, o campo `user`),
+        pero sólo se llegaba diseñando bloques en la plantilla. Ahora el panel
+        del portal tiene **"Qué más ve el cliente"**: el backend DETECTA las
+        listas vinculadas (`GET /lists/:l/portal/related-options`, mismo
+        criterio que el scope — si no aparece ahí, no habría forma de saber qué
+        filas le pertenecen) y el admin marca cuáles mostrar
+        (`settings.portal.related_lists`). **Opt-in, fail-closed**: sin
+        elección explícita el cliente no ve ninguna otra lista — una lista
+        interna que apunte al cliente (comisiones, costos) no tiene por qué
+        serle visible. `portal.me` devuelve `related_lists` y el SPA renderiza
+        una sección por lista con SUS registros (el listado del portal ya
+        filtraba por scope y quitaba los campos ocultos del rol `client`; ahora
+        además devuelve las etiquetas de las columnas visibles). 3 tests de API
+        nuevos (427 en verde) + E2E navegador 10/10 en el admin (detección,
+        persistencia de la elección, alta de acceso que queda listada y
+        sobrevive al reload) y 4/4 en el portal real (magic link → ficha +
+        "Tareas Portal" con las 2 tareas del cliente y ninguna ajena).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

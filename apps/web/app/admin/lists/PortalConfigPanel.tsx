@@ -16,6 +16,9 @@ import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import type { ListSummary } from '@/types/list';
 import { PORTAL_DEFAULTS, type PortalSettings, type PortalTemplate } from '@/types/portal';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import type { PortalRelatedList } from '@imagina-base/shared';
 
 interface Props {
     list: ListSummary;
@@ -53,6 +56,21 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
             await update.mutateAsync({ settings: mergeIntoSettings(list.settings, next) });
         } catch (err) {
             setPortal(portal); // revertir
+            setSubmitError(
+                err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'),
+            );
+        }
+    };
+
+    const handleRelated = async (ids: number[]): Promise<void> => {
+        setSubmitError(null);
+        const previous = portal;
+        const next = { ...portal, related_lists: ids };
+        setPortal(next);
+        try {
+            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, next) });
+        } catch (err) {
+            setPortal(previous);
             setSubmitError(
                 err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'),
             );
@@ -123,6 +141,17 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                             </div>
                         </div>
 
+                        {/* v0.1.153 — "todo lo relacionado a mí": qué OTRAS
+                            listas ve el cliente en su portal. Opt-in: por
+                            defecto ninguna (una lista interna con un vínculo al
+                            cliente no tiene por qué ser visible para él). */}
+                        <RelatedListsPicker
+                            list={list}
+                            selected={portal.related_lists}
+                            disabled={update.isPending}
+                            onChange={(ids) => void handleRelated(ids)}
+                        />
+
                         {/* Cómo accede el cliente — reemplaza al shortcode de WordPress. */}
                         <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-px-4 imcrm-py-3">
                             <KeyRound className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />
@@ -154,6 +183,81 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
     );
 }
 
+/**
+ * Elige qué otras listas ve el cliente en su portal. Sólo aparecen las que de
+ * verdad se pueden acotar a él: las que tienen un campo `relation` apuntando a
+ * esta lista (sus facturas, sus tickets) o un campo `user`. Si una lista no
+ * está acá, el backend no tendría forma de saber qué filas le pertenecen —y
+ * por diseño no muestra nada antes que mostrar de más.
+ */
+function RelatedListsPicker({
+    list,
+    selected,
+    disabled,
+    onChange,
+}: {
+    list: ListSummary;
+    selected: number[];
+    disabled: boolean;
+    onChange: (ids: number[]) => void;
+}): JSX.Element {
+    const options = useQuery({
+        queryKey: ['portal-related-options', list.id],
+        queryFn: async (): Promise<PortalRelatedList[]> => {
+            const res = await api.get<{ options: PortalRelatedList[] }>(
+                `/lists/${encodeURIComponent(list.slug)}/portal/related-options`,
+            );
+            return res.data.options;
+        },
+        retry: false,
+    });
+
+    const toggle = (id: number): void => {
+        onChange(selected.includes(id) ? selected.filter((n) => n !== id) : [...selected, id]);
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+            <span className="imcrm-text-sm imcrm-font-medium">{__('Qué más ve el cliente')}</span>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Además de su ficha, el cliente puede ver los registros de otras listas que le pertenecen (sus facturas, sus tickets…). Elegí cuáles: por defecto no ve ninguna.')}
+                </p>
+                {options.isLoading && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Buscando listas vinculadas…')}</p>
+                )}
+                {options.data?.length === 0 && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Ninguna otra lista está vinculada a ésta. Agregá un campo de tipo "relación" apuntando a esta lista (por ejemplo, en Facturas un campo "Cliente") y aparecerá acá.')}
+                    </p>
+                )}
+                {(options.data ?? []).map((o) => (
+                    <label
+                        key={o.list_id}
+                        className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2.5 imcrm-text-sm"
+                    >
+                        <input
+                            type="checkbox"
+                            className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-rounded imcrm-border-input"
+                            checked={selected.includes(o.list_id)}
+                            disabled={disabled}
+                            onChange={() => toggle(o.list_id)}
+                        />
+                        <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                            <span className="imcrm-font-medium">{o.name}</span>
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                {o.via === 'relation'
+                                    ? `${__('Se vincula por el campo')} «${o.via_field_label}»`
+                                    : `${__('Se filtra por el campo de usuario')} «${o.via_field_label}»`}
+                            </span>
+                        </span>
+                    </label>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // ───────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────
@@ -165,6 +269,9 @@ function readPortal(settings: Record<string, unknown>): PortalSettings {
     }
     const p = raw as Record<string, unknown>;
     return {
+        related_lists: Array.isArray(p.related_lists)
+            ? p.related_lists.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)
+            : [],
         enabled: Boolean(p.enabled),
         owner_field_id:
             typeof p.owner_field_id === 'number' && p.owner_field_id > 0 ? p.owner_field_id : null,

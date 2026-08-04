@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     Inject,
@@ -23,7 +24,9 @@ import {
     type IssueMagicLinkInput,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalAccessList,
     type PortalCommentInput,
+    type PortalRelatedOptions,
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -59,6 +62,48 @@ export class PortalController {
         @Body(new ZodValidationPipe(issueMagicLinkSchema)) input: IssueMagicLinkInput,
     ): Promise<MagicLinkResult> {
         return this.portal.issue(req.tenant!.tenantId, list, input);
+    }
+
+    /**
+     * Quién tiene acceso al portal de un record (v0.1.153) — con la fecha de
+     * su última entrada. El acceso SIEMPRE quedó guardado; faltaba mostrarlo.
+     */
+    @Get('lists/:list/portal/access')
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    access(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Query('record_id') recordId: string,
+    ): Promise<PortalAccessList> {
+        return this.portal.accessFor(req.tenant!.tenantId, list, Number(recordId) || 0);
+    }
+
+    /** Quita el acceso de un cliente (borra el vínculo y revoca sus sesiones). */
+    @Delete('lists/:list/portal/access/:userId')
+    @HttpCode(204)
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    revokeAccess(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('userId') userId: string,
+    ): Promise<void> {
+        return this.portal.revokeAccess(req.tenant!.tenantId, list, Number(userId) || 0);
+    }
+
+    /**
+     * Listas que se PUEDEN mostrar en el portal (tienen un campo relation
+     * hacia esta lista, o un campo `user`). Alimenta el panel del portal.
+     */
+    @Get('lists/:list/portal/related-options')
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    async relatedOptions(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+    ): Promise<PortalRelatedOptions> {
+        return { options: await this.portal.relatedOptions(req.tenant!.tenantId, list) };
     }
 
     /** Ruta pública: consume el token de un solo uso y abre la sesión del client. */

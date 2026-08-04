@@ -335,6 +335,67 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(closed.data).toHaveLength(0);
     });
 
+    it('el acceso QUEDA registrado: se ve quién lo tiene y cuándo entró (v0.1.153)', async () => {
+        const before = await portal.accessFor(tenantId, 'clientes', recordId);
+        const emails = before.users.map((u) => u.email);
+
+        const link = await portal.issue(tenantId, 'clientes', {
+            record_id: recordId,
+            email: 'registrado@acme.test',
+        });
+        const after = await portal.accessFor(tenantId, 'clientes', recordId);
+        const nuevo = after.users.find((u) => u.email === 'registrado@acme.test');
+        expect(emails).not.toContain('registrado@acme.test');
+        expect(nuevo).toBeDefined();
+        // Emitido pero todavía no usado: el admin necesita distinguirlo.
+        expect(nuevo!.last_access_at).toBeNull();
+
+        await portal.consume(link.token);
+        const used = await portal.accessFor(tenantId, 'clientes', recordId);
+        expect(used.users.find((u) => u.email === 'registrado@acme.test')!.last_access_at).not.toBeNull();
+    });
+
+    it('quitar el acceso borra el vínculo y mata las sesiones del cliente', async () => {
+        const link = await portal.issue(tenantId, 'clientes', {
+            record_id: recordId,
+            email: 'revocar@acme.test',
+        });
+        const { sessionToken } = await portal.consume(link.token);
+        const session = await sessions.get(sessionToken);
+        expect(session).not.toBeNull();
+        const userId = session!.userId;
+
+        await portal.revokeAccess(tenantId, 'clientes', userId);
+
+        expect(await sessions.get(sessionToken)).toBeNull();
+        const list = await portal.accessFor(tenantId, 'clientes', recordId);
+        expect(list.users.map((u) => u.email)).not.toContain('revocar@acme.test');
+        await expect(portal.me(userId)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('relatedOptions detecta las listas vinculadas y `me` sólo expone las habilitadas', async () => {
+        const uid = await clientSession('relacionadas@acme.test');
+
+        // "Pedidos" ya tiene un campo relation → clientes (test anterior).
+        const options = await portal.relatedOptions(tenantId, 'clientes');
+        const pedidos = options.find((o) => o.slug === 'pedidos');
+        expect(pedidos).toBeDefined();
+        expect(pedidos!.via).toBe('relation');
+        // Una lista sin vínculo NO es candidata (no habría forma de acotarla).
+        expect(options.some((o) => o.slug === 'secretos')).toBe(false);
+
+        // Sin elección explícita, el cliente no ve ninguna otra lista.
+        expect((await portal.me(uid)).related_lists).toEqual([]);
+
+        // El admin habilita "Pedidos" → aparece en el portal del cliente.
+        const clientes = await listsService.get(tenantId, 'clientes');
+        await listsService.update(tenantId, 'clientes', {
+            settings: { ...clientes.settings, portal: { enabled: true, related_lists: [pedidos!.list_id] } },
+        });
+        const boot = await portal.me(uid);
+        expect(boot.related_lists.map((r) => r.slug)).toEqual(['pedidos']);
+    });
+
     it('el token es de un solo uso', async () => {
         const link = await portal.issue(tenantId, 'clientes', {
             record_id: recordId,

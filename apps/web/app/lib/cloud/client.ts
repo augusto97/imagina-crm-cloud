@@ -50,7 +50,9 @@ import {
     magicLinkResultSchema,
     paginated,
     paymentConfigSchema,
+    portalAccessListSchema,
     portalBootSchema,
+    portalRelatedOptionsSchema,
     publicBootSchema,
     recordSchema,
     tenantDomainSchema,
@@ -107,7 +109,9 @@ import {
     type CreateCheckoutInput,
     type MagicLinkResult,
     type PaymentConfig,
+    type PortalAccessList,
     type PortalBoot,
+    type PortalRelatedOptions,
     type PublicBoot,
     type RecordDto,
     type TenantDomain,
@@ -669,6 +673,54 @@ export class CloudClient {
     /** Boot del portal para el client autenticado (record + campos + template). */
     portalMe(): Promise<PortalBoot> {
         return this.request('GET', '/portal/me', { schema: portalBootSchema });
+    }
+    /** Registros de OTRA lista que le pertenecen al cliente (scope del portal). */
+    portalRelatedRecords(
+        listSlug: string,
+        params: { page?: number; per_page?: number } = {},
+    ): Promise<{
+        data: Array<{ id: number; fields: Record<string, unknown> }>;
+        fields: Array<{ slug: string; label: string; type: string; config: Record<string, unknown> }>;
+        meta: { page: number; per_page: number; total: number; total_pages: number };
+    }> {
+        const q = new URLSearchParams();
+        q.set('page', String(params.page ?? 1));
+        q.set('per_page', String(params.per_page ?? 20));
+        return this.request('GET', `/portal/lists/${encodeURIComponent(listSlug)}/records?${q.toString()}`, {
+            schema: z.object({
+                data: z.array(z.object({ id: z.number(), fields: z.record(z.unknown()) })),
+                fields: z
+                    .array(
+                        z.object({
+                            slug: z.string(),
+                            label: z.string(),
+                            type: z.string(),
+                            config: z.record(z.unknown()).default({}),
+                        }),
+                    )
+                    .default([]),
+                meta: z.object({
+                    page: z.number(),
+                    per_page: z.number(),
+                    total: z.number(),
+                    total_pages: z.number(),
+                }),
+            }),
+        });
+    }
+    // --- acceso al portal desde el admin (v0.1.153) ---
+    portalAccess(list: string | number, recordId: number): Promise<PortalAccessList> {
+        return this.request('GET', `/lists/${list}/portal/access?record_id=${recordId}`, {
+            schema: portalAccessListSchema,
+        });
+    }
+    portalRevokeAccess(list: string | number, userId: number): Promise<void> {
+        return this.request('DELETE', `/lists/${list}/portal/access/${userId}`, {});
+    }
+    portalRelatedOptions(list: string | number): Promise<PortalRelatedOptions> {
+        return this.request('GET', `/lists/${list}/portal/related-options`, {
+            schema: portalRelatedOptionsSchema,
+        });
     }
 
     private async unwrap<T>(p: Promise<{ data: T }>): Promise<T> {

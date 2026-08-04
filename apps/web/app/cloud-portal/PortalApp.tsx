@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useQuery as useRQ } from '@tanstack/react-query';
 import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
@@ -177,9 +178,88 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                         </dl>
                     </section>
                 )}
+
+                {/* v0.1.153 — "todo lo relacionado a mí": las listas que la
+                    empresa habilitó en el panel del portal (sus facturas, sus
+                    tickets…). El backend ya devuelve SOLO las filas del
+                    cliente (scope del portal) y sin los campos ocultos. */}
+                {(boot.related_lists ?? []).map((rel) => (
+                    <RelatedListSection key={rel.list_id} slug={rel.slug} name={rel.name} />
+                ))}
             </main>
         </div>
     );
+}
+
+/**
+ * Una lista relacionada dentro del portal: "Mis facturas", "Mis tickets".
+ * Pide `/portal/lists/:slug/records`, que ya viene acotado a lo del cliente.
+ */
+function RelatedListSection({ slug, name }: { slug: string; name: string }): JSX.Element | null {
+    const q = useRQ({
+        queryKey: ['portal-related', slug],
+        queryFn: () => portalApi.portalRelatedRecords(slug, { per_page: 20 }),
+        retry: false,
+    });
+
+    if (q.isError) return null;
+    const cols = (q.data?.fields ?? []).slice(0, 6);
+    return (
+        <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
+            <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-3">
+                <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">{name}</h2>
+                {q.data && (
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {q.data.meta.total === 0
+                            ? 'Sin registros'
+                            : `${q.data.meta.total} ${q.data.meta.total === 1 ? 'registro' : 'registros'}`}
+                    </span>
+                )}
+            </div>
+            {!q.data ? (
+                <p className="imcrm-text-sm imcrm-text-muted-foreground">Cargando…</p>
+            ) : q.data.data.length === 0 ? (
+                <p className="imcrm-text-sm imcrm-text-muted-foreground">Todavía no hay nada acá.</p>
+            ) : (
+                <div className="imcrm-overflow-x-auto">
+                    <table className="imcrm-w-full imcrm-text-sm">
+                        <thead>
+                            <tr className="imcrm-border-b imcrm-border-border imcrm-text-left imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                {cols.map((c) => (
+                                    <th key={c.slug} className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">
+                                        {c.label}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {q.data.data.map((row) => (
+                                <tr key={row.id} className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-0">
+                                    {cols.map((c) => (
+                                        <td key={c.slug} className="imcrm-px-2 imcrm-py-2 imcrm-align-top">
+                                            {renderPortalCell(c, row.fields[c.slug])}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+
+/** Formatea una celda de lista relacionada con el mismo criterio de la ficha. */
+function renderPortalCell(
+    col: { slug: string; label: string; type: string; config: Record<string, unknown> },
+    value: unknown,
+): string {
+    const text = formatValue(
+        { id: 0, list_id: 0, slug: col.slug, label: col.label, type: col.type, config: col.config } as unknown as Field,
+        value,
+    );
+    return text === '' ? '—' : text;
 }
 
 function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Element {

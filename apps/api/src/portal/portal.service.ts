@@ -21,7 +21,9 @@ import {
     type IssueMagicLinkInput,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalAccessList,
     type PortalCommentInput,
+    type PortalRelatedList,
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
@@ -229,6 +231,15 @@ export class PortalService {
         }
         const payload = JSON.parse(raw) as MagicPayload;
         const sessionToken = await this.sessions.create(payload.userId);
+        // v0.1.153 — queda registrado que el cliente ENTRÓ. El admin necesita
+        // saber si el enlace se usó o si el correo se perdió en el camino.
+        await this.db
+            .update(portalLinks)
+            .set({ lastAccessAt: new Date() })
+            .where(and(eq(portalLinks.userId, payload.userId), eq(portalLinks.tenantId, payload.tenantId)))
+            .catch((err: unknown) => {
+                this.logger.warn(`No se pudo registrar el acceso al portal: ${String(err)}`);
+            });
         return { sessionToken };
     }
 
@@ -462,6 +473,8 @@ export class PortalService {
         perPage: number,
     ): Promise<{
         data: Array<{ id: number; fields: Record<string, unknown>; relations: Record<string, unknown> }>;
+        /** Campos VISIBLES para el cliente (para titular las columnas). */
+        fields: Array<{ slug: string; label: string; type: string; config: Record<string, unknown> }>;
         meta: { page: number; per_page: number; total: number; total_pages: number };
     }> {
         const link = await this.requireLink(userId);
@@ -514,6 +527,12 @@ export class PortalService {
                         relations: {},
                     };
                 }),
+                fields: visible.map((f) => ({
+                    slug: f.slug,
+                    label: f.label,
+                    type: f.type,
+                    config: (f.config ?? {}) as Record<string, unknown>,
+                })),
                 meta: { page: p, per_page: pp, total, total_pages: Math.max(1, Math.ceil(total / pp)) },
             };
         });
@@ -589,6 +608,153 @@ export class PortalService {
     }
 
     /** Boot del portal para el client autenticado: su record + fields + template. */
+    /**
+     * Quién tiene acceso al portal de un record (v0.1.153). El vínculo siempre
+     * se guardó; lo que faltaba era MOSTRARLO: sin esto el admin re-tipeaba el
+     * email en cada envío sin saber si el cliente ya tenía acceso.
+     */
+    async accessFor(tenantId: number, listIdOrSlug: string, recordId: number): Promise<PortalAccessList> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const rows = await this.db
+            .select({
+                userId: portalLinks.userId,
+                createdAt: portalLinks.createdAt,
+                lastAccessAt: portalLinks.lastAccessAt,
+                email: users.email,
+                name: users.name,
+            })
+            .from(portalLinks)
+            .innerJoin(users, eq(users.id, portalLinks.userId))
+            .where(
+                and(
+                    eq(portalLinks.tenantId, tenantId),
+                    eq(portalLinks.listId, list.id),
+                    eq(portalLinks.recordId, recordId),
+                ),
+            )
+            .orderBy(portalLinks.createdAt);
+        return {
+            users: rows.map((r) => ({
+                user_id: r.userId,
+                email: r.email,
+                name: r.name,
+                created_at: r.createdAt.toISOString(),
+                last_access_at: r.lastAccessAt ? r.lastAccessAt.toISOString() : null,
+            })),
+        };
+    }
+
+    /**
+     * Quita el acceso de un cliente: borra el vínculo, su membresía `client` y
+     * REVOCA sus sesiones al instante (si no, seguiría dentro hasta que expire
+     * la cookie — mismo criterio que desactivar un usuario, v0.1.116).
+     */
+    async revokeAccess(tenantId: number, listIdOrSlug: string, userId: number): Promise<void> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const [link] = await this.db
+            .select({ id: portalLinks.id })
+            .from(portalLinks)
+            .where(
+                and(
+                    eq(portalLinks.tenantId, tenantId),
+                    eq(portalLinks.listId, list.id),
+                    eq(portalLinks.userId, userId),
+                ),
+            )
+            .limit(1);
+        if (!link) {
+            throw new NotFoundException({
+                code: 'portal_access_not_found',
+                message: 'Ese cliente no tiene acceso al portal de esta lista',
+                data: { status: 404 },
+            });
+        }
+        // Guard rail: sólo se revoca a usuarios `client` (una cuenta de equipo
+        // jamás llega acá — `issue` lo impide — pero el borrado de membresía
+        // no puede depender de eso).
+        await this.db.delete(portalLinks).where(eq(portalLinks.id, link.id));
+        await this.db
+            .delete(memberships)
+            .where(
+                and(
+                    eq(memberships.tenantId, tenantId),
+                    eq(memberships.userId, userId),
+                    eq(memberships.role, 'client'),
+                ),
+            );
+        await this.sessions.destroyAllForUser(userId);
+    }
+
+    /**
+     * Listas que PODRÍAN mostrarse en el portal del cliente: las que tienen un
+     * campo `relation` apuntando a la lista del portal (sus facturas, sus
+     * tickets…) o un campo `user` (lo suyo, por usuario). Es exactamente el
+     * mismo criterio que `portalScope` — si acá no aparece, el cliente no
+     * podría ver nada de esa lista aunque se la habilitaran.
+     */
+    async relatedOptions(tenantId: number, listIdOrSlug: string): Promise<PortalRelatedList[]> {
+        const portalList = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const otherLists = await tx
+                .select({ id: lists.id, slug: lists.slug, name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), sql`${lists.id} <> ${portalList.id}`))
+                .orderBy(lists.position, lists.id);
+            if (otherLists.length === 0) return [];
+            const ids = otherLists.map((l) => l.id);
+            const fieldRows = await tx
+                .select()
+                .from(fields)
+                .where(sql`${fields.listId} IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`)
+                .orderBy(fields.position);
+
+            const out: PortalRelatedList[] = [];
+            for (const l of otherLists) {
+                const own = fieldRows.filter((f) => f.listId === l.id);
+                const rel = own.find(
+                    (f) =>
+                        f.type === 'relation'
+                        && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === portalList.id,
+                );
+                const settings = (l.settings ?? {}) as { icon?: unknown; color?: unknown };
+                const base = {
+                    list_id: l.id,
+                    slug: l.slug,
+                    name: l.name,
+                    icon: typeof settings.icon === 'string' ? settings.icon : null,
+                    color: typeof settings.color === 'string' ? settings.color : null,
+                };
+                if (rel) {
+                    out.push({ ...base, via: 'relation', via_field_label: rel.label });
+                    continue;
+                }
+                const userField = own.find((f) => f.type === 'user');
+                if (userField) out.push({ ...base, via: 'user', via_field_label: userField.label });
+            }
+            return out;
+        });
+    }
+
+    /**
+     * Las relacionadas que el admin HABILITÓ (`settings.portal.related_lists`),
+     * intersectadas con las que de verdad tienen vínculo. Fail-closed: sin
+     * elección explícita el cliente no ve ninguna otra lista — exponer todo lo
+     * que "roza" su registro filtraría datos internos (comisiones, costos…).
+     */
+    private async enabledRelatedLists(
+        tenantId: number,
+        listId: number,
+        listSettings: Record<string, unknown>,
+    ): Promise<PortalRelatedList[]> {
+        const raw = (listSettings.portal ?? {}) as { related_lists?: unknown };
+        const chosen = Array.isArray(raw.related_lists)
+            ? raw.related_lists.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0)
+            : [];
+        if (chosen.length === 0) return [];
+        const options = await this.relatedOptions(tenantId, String(listId));
+        return options.filter((o) => chosen.includes(o.list_id));
+    }
+
     async me(userId: number): Promise<PortalBoot> {
         const link = await this.tenantDb.withUser(userId, async (tx) => {
             const [row] = await tx
@@ -673,9 +839,16 @@ export class PortalService {
             );
             const format = parsedFormat.success ? parsedFormat.data : tenantFormatSchema.parse({});
 
+            const relatedLists = await this.enabledRelatedLists(
+                link.tenantId,
+                list.id,
+                list.settings as Record<string, unknown>,
+            );
+
             return {
                 branding,
                 format,
+                related_lists: relatedLists,
                 list_id: list.id,
                 list_slug: list.slug,
                 list_name: list.name,
