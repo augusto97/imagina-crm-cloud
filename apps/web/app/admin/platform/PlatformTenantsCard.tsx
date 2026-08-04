@@ -658,6 +658,19 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 <UsageRow label={__('Usuarios')} used={t.usage.users} limit={detail.data.limits.max_users} />
                                 <UsageRow label={__('Automatizaciones')} used={t.usage.automations} limit={detail.data.limits.max_automations} />
                                 <UsageRow label={__('Storage')} used={formatMb(t.usage.storage_bytes)} limit={detail.data.limits.max_storage_mb} suffix=" MB" />
+                                {/* Correos por el SMTP de la PLATAFORMA (ADR-S18): es lo que
+                                    le cuesta al operador. Con SMTP propio, la empresa no
+                                    consume cuota y se muestra como ilimitado. */}
+                                <UsageRow
+                                    label={__('Correos este mes')}
+                                    used={detail.data.emails_month ?? 0}
+                                    limit={detail.data.own_smtp ? null : detail.data.limits.max_emails_month}
+                                />
+                                {detail.data.own_smtp && (
+                                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        {__('Esta empresa tiene SMTP propio: sus correos no salen por la plataforma.')}
+                                    </p>
+                                )}
                             </section>
 
                             {/* Miembros */}

@@ -10,6 +10,8 @@ import {
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { attachments, automations, memberships, records, tenants } from '../db/schema';
+import { EmailQuotaService } from '../mail/email-quota.service';
+import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PlansService } from './plans.service';
 
@@ -18,11 +20,20 @@ export class BillingService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly plans: PlansService,
+        private readonly emailQuota: EmailQuotaService,
+        private readonly tenantSmtp: TenantSmtpService,
     ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
         const { plan, status, archivedAt, subscriptionEndsAt } = await this.planStatus(tenantId);
-        const usage = await this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId));
+        const [usage, emails, smtp] = await Promise.all([
+            this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId)),
+            this.emailQuota.usedThisMonth(tenantId),
+            // Con SMTP propio los correos salen por el servidor del cliente:
+            // no consumen la cuota de la plataforma (ADR-S18).
+            this.tenantSmtp.get(tenantId),
+        ]);
+        usage.emails_month = emails;
         return {
             plan,
             status,
@@ -33,6 +44,7 @@ export class BillingService {
             }),
             limits: await this.plans.limits(plan),
             usage,
+            own_smtp: smtp.configured,
         };
     }
 
@@ -133,6 +145,9 @@ export class BillingService {
             users: u?.n ?? 0,
             automations: a?.n ?? 0,
             storage_bytes: Number(st?.n ?? 0),
+            // Lo completa `summary` (vive fuera del scope del tenant: el
+            // contador lo escribe el worker de correo por la conexión base).
+            emails_month: 0,
         };
     }
 

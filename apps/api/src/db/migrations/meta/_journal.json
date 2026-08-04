@@ -295,6 +295,13 @@
       "when": 1784200000010,
       "tag": "0041_description_mentions",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784200000011,
+      "tag": "0042_email_quota",
+      "breakpoints": true
     }
   ]
 }

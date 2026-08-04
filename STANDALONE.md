@@ -607,4 +607,31 @@ nivel a). Gestión en Ajustes → Marca (solo admin), con verificación en vivo.
 
 ---
 
-**Versión del documento:** 1.11.0 (dominio personalizado por tenant — ADR-S17)
+**ADR-S18 — Cuota mensual de correo por el SMTP de la plataforma.**
+El SMTP por empresa (v0.1.65) es opcional: sin él los correos de un tenant
+—automatizaciones, accesos al portal— salen por el SMTP de la PLATAFORMA. Eso
+deja dos costos del lado del operador: el envío en sí y, sobre todo, la
+**reputación del dominio remitente compartido** (un cliente usando la app como
+plataforma de mailing quema la entregabilidad de todos). Decisión: cuota
+**mensual por plan** (`plans.max_emails_month`, NULL = ilimitado, editable
+desde la consola) que cuenta **sólo** los correos enviados por el SMTP de la
+plataforma. Con SMTP propio configurado no hay límite ni contador: esos correos
+no pasan por nuestra infraestructura, así que el límite es también la palanca
+comercial —"si necesitás más, configurá tu servidor"— en vez de un muro.
+
+Contador en `email_usage` (tenant + período `YYYY-MM` en UTC, RLS; migración
+0042): se incrementa **después** de un envío exitoso —un correo que no salió no
+consume cuota— y el chequeo corre **antes** de entregar, así el mensaje que
+excede no se manda. El error es explícito y llega a donde el usuario lo busca:
+el run de la automatización queda `failed` con el motivo y el botón de acceso al
+portal lo muestra; en la cola de BullMQ se marca `UnrecoverableError` (el mes no
+cambia en dos segundos: reintentar es desperdicio). Los correos de **cuenta**
+(reset de contraseña, verificación de email, invitaciones de plataforma) no
+tienen tenant y por eso nunca se limitan: frenarlos dejaría a una persona
+afuera de su propia cuenta. El consumo se ve en Ajustes → Plan y uso (barra
+"Correos este mes", con la salida por SMTP propio explicada) y en la consola de
+operador (columna por plan + fila en el detalle de cada empresa).
+
+---
+
+**Versión del documento:** 1.12.0 (cuota de correo por plan — ADR-S18)

@@ -12,6 +12,11 @@ export const plans = pgTable('plans', {
     maxAutomations: integer('max_automations'),
     /** Cuota de archivos subidos en MB (ADR-S16). NULL = ilimitado. */
     maxStorageMb: integer('max_storage_mb'),
+    /**
+     * Correos por mes por el SMTP de la PLATAFORMA (ADR-S18). NULL = ilimitado.
+     * Con SMTP propio del cliente no aplica.
+     */
+    maxEmailsMonth: integer('max_emails_month'),
     // Precio de checkout self-serve (ADR-S12). `null` = no vendible en esa moneda
     // (enterprise = "contactar ventas"). Entero: USD sin centavos, COP sin decimales.
     priceUsd: integer('price_usd'),

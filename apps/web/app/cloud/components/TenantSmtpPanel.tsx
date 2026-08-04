@@ -155,7 +155,9 @@ export function TenantSmtpPanel(): JSX.Element | null {
                         <div>
                             <CardTitle>Correo (SMTP) del workspace</CardTitle>
                             <CardDescription>
-                                Servidor de envío propio de tu empresa para automatizaciones y magic links del portal.
+                                Servidor de envío propio de tu empresa para automatizaciones y magic links del
+                                portal. Configurándolo, tus correos dejan de consumir la cuota mensual del plan:
+                                salen por tu servidor, sin límite.
                             </CardDescription>
                         </div>
                     </div>

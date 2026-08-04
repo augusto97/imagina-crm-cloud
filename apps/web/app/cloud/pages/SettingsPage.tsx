@@ -203,6 +203,20 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     limit={summary.limits.max_storage_mb}
                     suffix=" MB"
                 />
+                {/* Cuota de correo (ADR-S18): sólo cuentan los que salen por el
+                    SMTP de la plataforma. Con SMTP propio no hay límite. */}
+                <UsageBar
+                    label="Correos este mes"
+                    used={summary.usage.emails_month}
+                    limit={summary.own_smtp ? null : summary.limits.max_emails_month}
+                    note={
+                        summary.own_smtp
+                            ? 'Sin límite: tus correos salen por tu propio servidor SMTP.'
+                            : summary.limits.max_emails_month === null
+                              ? undefined
+                              : 'Incluye automatizaciones y accesos al portal. ¿Necesitás más? Configurá tu propio SMTP en Ajustes → Correo (SMTP) y no hay límite.'
+                    }
+                />
             </CardContent>
         </Card>
     );
@@ -213,12 +227,15 @@ function UsageBar({
     used,
     limit,
     suffix = '',
+    note,
 }: {
     label: string;
     used: number;
     limit: number | null;
     /** Unidad opcional pegada a los números (p.ej. " MB"). */
     suffix?: string;
+    /** Aclaración bajo la barra (qué cuenta, cómo levantar el límite). */
+    note?: string;
 }): JSX.Element {
     const pct = limit === null ? 0 : Math.min(100, (used / limit) * 100);
     // Umbrales semánticos: normal → advertencia (≥75%) → crítico (≥90%).
@@ -241,6 +258,7 @@ function UsageBar({
                     />
                 )}
             </div>
+            {note && <p className="imcrm-text-xs imcrm-text-muted-foreground">{note}</p>}
         </div>
     );
 }
