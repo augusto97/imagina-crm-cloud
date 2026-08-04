@@ -90,6 +90,18 @@ export const magicLinkResultSchema = z.object({
 });
 export type MagicLinkResult = z.infer<typeof magicLinkResultSchema>;
 
+/**
+ * El propio cliente pide un enlace nuevo (v0.1.154). El magic link vence a
+ * las 24 h y la sesión a los 30 días de inactividad: sin esto, volver a
+ * entrar dependía de llamar a la empresa. NO crea accesos — sólo re-emite
+ * para quien YA fue autorizado; la respuesta es siempre la misma, exista o
+ * no el email (no se puede usar para averiguar quién es cliente de quién).
+ */
+export const portalRequestAccessSchema = z.object({
+    email: z.string().trim().toLowerCase().email().max(255),
+});
+export type PortalRequestAccessInput = z.infer<typeof portalRequestAccessSchema>;
+
 export const consumeMagicLinkSchema = z.object({ token: z.string().min(1) });
 export type ConsumeMagicLinkInput = z.infer<typeof consumeMagicLinkSchema>;
 

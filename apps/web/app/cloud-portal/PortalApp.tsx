@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery as useRQ } from '@tanstack/react-query';
 import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -62,7 +62,9 @@ function PortalPage(): JSX.Element {
         retry: false,
     });
 
-    if (boot.isError) return <Centered>Tu enlace expiró o no tenés acceso. Pedí uno nuevo.</Centered>;
+    // v0.1.154 — el enlace vence a las 24 h y la sesión a los 30 días de
+    // inactividad: en vez de un cartel muerto, el cliente pide uno nuevo acá.
+    if (boot.isError) return <RequestAccessScreen />;
     if (!boot.data) return <Centered>Cargando tu portal…</Centered>;
 
     return <PortalContent boot={boot.data} />;
@@ -275,6 +277,59 @@ function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Eleme
 }
 
 
+
+/**
+ * Sin sesión (o vencida): el cliente se manda solo un enlace nuevo. La
+ * respuesta del backend es siempre la misma exista o no el email, así que el
+ * mensaje de confirmación no confirma nada — es a propósito.
+ */
+function RequestAccessScreen(): JSX.Element {
+    const [email, setEmail] = useState('');
+    const ask = useMutation({ mutationFn: () => portalApi.portalRequestAccess(email.trim()) });
+
+    return (
+        <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-background imcrm-p-6">
+            <div className="imcrm-w-full imcrm-max-w-sm imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6">
+                <div className="imcrm-space-y-1">
+                    <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Entrar a tu portal</h1>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        Tu enlace de acceso venció o cerraste sesión. Escribí tu correo y te mandamos uno nuevo.
+                    </p>
+                </div>
+                {ask.isSuccess ? (
+                    <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm">
+                        Si ese correo tiene acceso, en unos segundos te llega un enlace. Revisá también la carpeta
+                        de spam.
+                    </p>
+                ) : (
+                    <form
+                        className="imcrm-space-y-3"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (email.includes('@')) ask.mutate();
+                        }}
+                    >
+                        <input
+                            type="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="tu@email.com"
+                            className="imcrm-h-10 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-3 imcrm-text-sm"
+                        />
+                        <button
+                            type="submit"
+                            disabled={ask.isPending || !email.includes('@')}
+                            className="imcrm-h-10 imcrm-w-full imcrm-rounded-md imcrm-bg-primary imcrm-text-sm imcrm-font-medium imcrm-text-primary-foreground disabled:imcrm-opacity-60"
+                        >
+                            {ask.isPending ? 'Enviando…' : 'Enviarme un enlace'}
+                        </button>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+}
 
 function Centered({ children }: { children: React.ReactNode }): JSX.Element {
     return (

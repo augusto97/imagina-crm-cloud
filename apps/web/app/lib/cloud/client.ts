@@ -52,6 +52,7 @@ import {
     paymentConfigSchema,
     portalAccessListSchema,
     portalBootSchema,
+    portalRequestAccessSchema,
     portalRelatedOptionsSchema,
     publicBootSchema,
     recordSchema,
@@ -668,6 +669,15 @@ export class CloudClient {
     consumePortal(token: string): Promise<void> {
         return this.request('POST', '/portal/consume', {
             body: consumeMagicLinkSchema.parse({ token }),
+        });
+    }
+    /**
+     * El propio cliente pide un enlace nuevo (v0.1.154). Público: no hace
+     * falta sesión. Siempre responde ok — no revela si el email tiene acceso.
+     */
+    portalRequestAccess(email: string): Promise<void> {
+        return this.request('POST', '/portal/request-access', {
+            body: portalRequestAccessSchema.parse({ email }),
         });
     }
     /** Boot del portal para el client autenticado (record + campos + template). */
