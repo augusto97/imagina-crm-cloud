@@ -2600,6 +2600,43 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         entrega verificada en el servidor, el enlace entra y la sesión persiste
         al volver).
 
+  - [x] **Constructor y probador de webhooks + fix del "Personalizado…"
+        (v0.1.155, 3 reportes del usuario)**:
+        (a) **"Personalizado…" del trigger `due_date_reached` no hacía nada** al
+        clickearlo. El `<select>` está CONTROLADO por `offset_minutes`, así que
+        al elegir esa opción el handler no cambiaba nada y el valor volvía solo
+        al preset anterior — el input de días nunca aparecía. Ahora la elección
+        manual vive en su propio estado (y arranca encendida si el offset
+        guardado no coincide con ningún preset).
+        (b) **Constructor de webhooks salientes**: la acción `call_webhook` era
+        una URL + un cuadro de texto para escribir el cuerpo a mano, y el
+        content-type estaba cableado en `application/json` — imposible pegarle a
+        una API que pide `x-www-form-urlencoded` (el caso del usuario: un
+        gateway de WhatsApp con `secret`, `account`, `recipient`, `message`).
+        Ahora hay **tipo de contenido** (JSON o formulario) y **filas
+        clave/valor** para cuerpo, **cabeceras** y **parámetros de la URL**, con
+        merge tags en cada valor; el cuerpo crudo queda como opción avanzada y
+        el secreto de firma HMAC pasa a la sección plegada. La petición la arma
+        `buildWebhookRequest` (PURO): lo que se prueba es literalmente lo que
+        después ejecuta el motor. Configs viejas siguen andando (headers como
+        objeto plano, `body_template`).
+        (c) **Probador ("Probar ahora")**: `POST /lists/:l/automations/
+        test-webhook` (`manage_automations`) resuelve las variables contra un
+        registro REAL de la lista (el indicado o el último), ejecuta la petición
+        con el guard anti-SSRF de SEC-03 y devuelve **lo que se envió y lo que
+        contestaron** (status + cuerpo, capado a 4 KB — `safeWebhookFetch` ganó
+        `captureBody`). Un destino bloqueado o caído es un RESULTADO con su
+        motivo, no un 500: el usuario lee "SSRF: destino de red interna
+        bloqueado" o el timeout en la misma tarjeta.
+        (d) De paso, el portal: `/portal/acceso` **sin token o con uno vencido**
+        terminaba en un cartel muerto; ahora cae en la misma pantalla de
+        auto-servicio de v0.1.154 (el cliente se manda un enlace nuevo).
+        7 tests nuevos (6 unitarios del builder —form/JSON/headers/query/firma/
+        shape legacy— y 1 de integración del probador con registro de muestra y
+        destino bloqueado): 435 API y 111 front en verde. E2E navegador 13/13
+        (Personalizado abre el input y persiste, constructor completo, prueba
+        real con el cuerpo `{"recipient":"+57…"}` y el motivo del bloqueo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -14,9 +14,12 @@ import {
 import {
     createAutomationSchema,
     updateAutomationSchema,
+    webhookTestInputSchema,
     type Automation,
     type CreateAutomationInput,
     type UpdateAutomationInput,
+    type WebhookTestInput,
+    type WebhookTestResult,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -46,6 +49,21 @@ export class AutomationsController {
         @Param('id', ParseIntPipe) id: number,
     ): Promise<Automation> {
         return this.automations.get(req.tenant!.tenantId, list, id);
+    }
+
+    /**
+     * Probador del webhook SALIENTE (v0.1.155): ejecuta la petición tal como
+     * la haría el motor y devuelve lo enviado + lo respondido.
+     */
+    @Post('test-webhook')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    testWebhook(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(webhookTestInputSchema)) input: WebhookTestInput,
+    ): Promise<WebhookTestResult> {
+        return this.automations.testWebhook(req.tenant!.tenantId, list, input);
     }
 
     @Post()

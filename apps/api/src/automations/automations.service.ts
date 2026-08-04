@@ -7,14 +7,19 @@ import type {
     CreateAutomationInput,
     HookCapture,
     UpdateAutomationInput,
+    WebhookTestInput,
+    WebhookTestResult,
 } from '@imagina-base/shared';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { safeWebhookFetch } from '../common/safe-fetch';
 import { DRIZZLE, type Db } from '../db/client';
-import { automationHooks } from '../db/schema';
+import { automationHooks, fields, records } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { applyMergeTags } from './merge-tags';
+import { buildWebhookRequest } from './webhook-request';
 import {
     AutomationsRepository,
     type AutomationRow,
@@ -153,6 +158,100 @@ export class AutomationsService {
         );
         if (!deleted) throw notFound(id);
         await this.scheduler.remove(id);
+    }
+
+    /**
+     * Probador de webhooks salientes (v0.1.155). Arma la petición con el MISMO
+     * builder que el motor, resolviendo las variables contra un registro real
+     * de la lista (el indicado o el último), la ejecuta con el guard anti-SSRF
+     * y devuelve lo enviado + lo respondido.
+     *
+     * Configurar una API ajena (un gateway de WhatsApp, un CRM externo) era
+     * escribir a ciegas y esperar a que saltara un registro para ver si
+     * funcionaba; ahora se ve el cuerpo exacto y el error exacto en el acto.
+     */
+    async testWebhook(
+        tenantId: number,
+        listIdOrSlug: string,
+        input: WebhookTestInput,
+    ): Promise<WebhookTestResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const sample = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const fieldRows = await tx
+                .select({ id: fields.id, slug: fields.slug })
+                .from(fields)
+                .where(eq(fields.listId, list.id));
+            const where = input.record_id
+                ? and(
+                      eq(records.tenantId, tenantId),
+                      eq(records.listId, list.id),
+                      eq(records.id, input.record_id),
+                      isNull(records.deletedAt),
+                  )
+                : and(eq(records.tenantId, tenantId), eq(records.listId, list.id), isNull(records.deletedAt));
+            const [row] = await tx
+                .select({ id: records.id, data: records.data })
+                .from(records)
+                .where(where)
+                .orderBy(desc(records.id))
+                .limit(1);
+            return {
+                slugToKey: new Map(fieldRows.map((f) => [f.slug, `f${f.id}`])),
+                record: row ?? null,
+            };
+        });
+
+        const data = (sample.record?.data ?? {}) as Record<string, unknown>;
+        const accessor = (token: string): unknown => {
+            if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
+            if (token === 'date.today') return new Date().toISOString().slice(0, 10);
+            const key = sample.slugToKey.get(token.replace(/^before\./, ''));
+            return key !== undefined ? data[key] : undefined;
+        };
+        const merge = (raw: unknown): string =>
+            applyMergeTags(typeof raw === 'string' ? raw : '', accessor, sample.record?.id ?? null);
+
+        const req = buildWebhookRequest(input.config, merge, {
+            recordId: sample.record?.id ?? null,
+            listId: list.id,
+        });
+        const request = {
+            url: req.url,
+            method: req.method,
+            headers: req.headers,
+            body: req.body ?? null,
+        };
+        if (!req.url) {
+            return {
+                request,
+                response: null,
+                error: 'Falta la URL del webhook.',
+                sample_record_id: sample.record?.id ?? null,
+            };
+        }
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                body: req.body,
+                captureBody: true,
+            });
+            return {
+                request,
+                response: { status: res.status, content_type: res.contentType ?? '', body: res.body ?? '' },
+                error: null,
+                sample_record_id: sample.record?.id ?? null,
+            };
+        } catch (err) {
+            // Un destino bloqueado o caído NO es un 500 de nuestra app: es el
+            // resultado de la prueba, y el usuario tiene que poder leerlo.
+            return {
+                request,
+                response: null,
+                error: err instanceof Error ? err.message : String(err),
+                sample_record_id: sample.record?.id ?? null,
+            };
+        }
     }
 
     /**

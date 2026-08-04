@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import {
     jsonbKeyForField,
@@ -11,6 +10,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
+import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
 import { automationRuns, records } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
@@ -430,28 +430,24 @@ export class AutomationEngine {
                 return ok('create_record', `Creó registro #${row.id} en lista ${targetList}.${note}`, { record_id: row.id });
             }
             case 'call_webhook': {
-                const url = merge(cfg.url);
-                if (!url) return skip('call_webhook', 'URL vacía.');
-                const method = String(cfg.method ?? 'POST').toUpperCase();
-                const headers: Record<string, string> = { 'content-type': 'application/json' };
-                if (cfg.headers && typeof cfg.headers === 'object') {
-                    for (const [k, v] of Object.entries(cfg.headers as Record<string, unknown>)) headers[k] = String(v);
-                }
-                const body = typeof cfg.body_template === 'string' && cfg.body_template.trim() !== ''
-                    ? merge(cfg.body_template)
-                    : JSON.stringify({ record_id: ctx.recordId, list_id: ctx.listId });
-                if (cfg.secret) {
-                    headers['x-imagina-signature'] =
-                        'sha256=' + createHmac('sha256', String(cfg.secret)).update(body).digest('hex');
-                }
+                // v0.1.155 — la petición la arma `buildWebhookRequest` (puro):
+                // el PROBADOR de la UI usa la misma función, así lo que se
+                // prueba es literalmente lo que después se ejecuta.
+                const req = buildWebhookRequest(cfg, merge, {
+                    recordId: ctx.recordId ?? null,
+                    listId: ctx.listId,
+                });
+                if (!req.url) return skip('call_webhook', 'URL vacía.');
                 // Guard anti-SSRF (SEC-03): bloquea metadata/loopback/red interna
                 // y pinea la IP resuelta (anti DNS-rebinding) + timeout.
-                const res = await safeWebhookFetch(url, {
-                    method,
-                    headers,
-                    body: method !== 'GET' && method !== 'HEAD' ? body : undefined,
+                const res = await safeWebhookFetch(req.url, {
+                    method: req.method,
+                    headers: req.headers,
+                    body: req.body,
                 });
-                return ok('call_webhook', `${method} ${url} → ${res.status}`, { status: res.status });
+                return ok('call_webhook', `${req.method} ${req.url} → ${res.status}`, {
+                    status: res.status,
+                });
             }
             case 'send_email': {
                 // SEC-08: destinatarios saneados y CAPADOS (to/cc/bcc son

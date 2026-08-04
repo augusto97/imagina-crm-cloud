@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from 'react';
-import { ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Play, Plus, Trash2 } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import { useEmailSignature } from '@/hooks/useEmailSignature';
 import { useFields } from '@/hooks/useFields';
 import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
+import { api } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import type {
     ActionMeta,
@@ -22,6 +24,7 @@ import type {
     TriggerConfig,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
+import type { WebhookTestResult } from '@imagina-base/shared';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -550,7 +553,15 @@ function DueDateConfig({
             : Number(config.tolerance_minutes ?? 1440); // default 1 día — más útil que 30min para casos tipo "vencido hoy"
 
     const dateFields = fields.filter((f) => f.type === 'date' || f.type === 'datetime');
-    const currentPreset = offsetToPresetId(offset);
+    /**
+     * v0.1.155 — el select es CONTROLADO por el offset, así que al elegir
+     * "Personalizado…" el handler no cambiaba nada y el valor volvía solo al
+     * preset anterior: clickearlo no hacía absolutamente nada. Ahora la
+     * elección manual vive en su propio estado (y arranca encendida si el
+     * offset guardado no coincide con ningún preset).
+     */
+    const [manual, setManual] = useState(() => offsetToPresetId(offset) === 'custom');
+    const currentPreset = manual ? 'custom' : offsetToPresetId(offset);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
@@ -578,9 +589,12 @@ function DueDateConfig({
                 onChange={(e) => {
                     const id = e.target.value;
                     if (id === 'custom') {
-                        // Mantén el offset que ya estaba.
+                        // Se conserva el offset actual: el input de días
+                        // aparece con ese valor para ajustarlo.
+                        setManual(true);
                         return;
                     }
+                    setManual(false);
                     const preset = DUE_DATE_PRESETS.find((p) => p.id === id);
                     if (preset) {
                         onChange({ ...config, offset_minutes: preset.offsetMinutes });
@@ -1323,6 +1337,112 @@ function FieldValueInput({
     );
 }
 
+interface KeyValueRow {
+    key: string;
+    value: string;
+}
+
+/** Lee filas `[{key,value}]`, tolerando el objeto plano de configs viejas. */
+function readRows(raw: unknown): KeyValueRow[] {
+    if (Array.isArray(raw)) {
+        return raw
+            .filter((r): r is Record<string, unknown> => r !== null && typeof r === 'object')
+            .map((r) => ({ key: String(r.key ?? ''), value: String(r.value ?? '') }));
+    }
+    if (raw !== null && typeof raw === 'object') {
+        return Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
+            key,
+            value: String(value ?? ''),
+        }));
+    }
+    return [];
+}
+
+/**
+ * Editor de filas clave/valor con merge tags en el valor. Es la pieza que
+ * convierte "escribí el JSON a mano" en "completá los datos que pide la API".
+ */
+function KeyValueEditor({
+    label,
+    hint,
+    rows,
+    onChange,
+    fields,
+    keyPlaceholder,
+    valuePlaceholder,
+}: {
+    label: string;
+    hint?: string;
+    rows: KeyValueRow[];
+    onChange: (next: KeyValueRow[]) => void;
+    fields: FieldEntity[];
+    keyPlaceholder?: string;
+    valuePlaceholder?: string;
+}): JSX.Element {
+    const patch = (i: number, part: Partial<KeyValueRow>): void => {
+        onChange(rows.map((r, idx) => (idx === i ? { ...r, ...part } : r)));
+    };
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label className="imcrm-text-xs imcrm-text-muted-foreground">{label}</Label>
+            {hint && <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{hint}</p>}
+            {rows.map((row, i) => (
+                <div
+                    key={i}
+                    className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-p-2"
+                >
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        <Input
+                            className="imcrm-h-8 imcrm-flex-1 imcrm-font-mono imcrm-text-xs"
+                            placeholder={keyPlaceholder ?? 'clave'}
+                            value={row.key}
+                            onChange={(e) => patch(i, { key: e.target.value })}
+                        />
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="imcrm-text-destructive hover:imcrm-text-destructive"
+                            aria-label={__('Quitar')}
+                            onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
+                        >
+                            <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </Button>
+                    </div>
+                    <MergeTagInput
+                        value={row.value}
+                        onChange={(next) => patch(i, { value: next })}
+                        fields={fields}
+                        placeholder={valuePlaceholder ?? __('valor o {{campo}}')}
+                    />
+                </div>
+            ))}
+            <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="imcrm-w-fit imcrm-gap-1.5"
+                onClick={() => onChange([...rows, { key: '', value: '' }])}
+            >
+                <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Agregar')}
+            </Button>
+        </div>
+    );
+}
+
+/**
+ * Constructor + PROBADOR de webhooks salientes (v0.1.155).
+ *
+ * Antes esto era una URL y un cuadro de texto para escribir el cuerpo a mano:
+ * para pegarle a una API real (un gateway de WhatsApp que pide
+ * `application/x-www-form-urlencoded` con `secret`, `account`, `recipient`,
+ * `message`) había que adivinar el formato y esperar a que saltara un registro
+ * para ver si funcionaba. Ahora: tipo de contenido, filas clave/valor para
+ * cuerpo, cabeceras y parámetros de la URL —cada valor con sus variables— y un
+ * botón que ejecuta la petición de verdad y muestra qué se mandó y qué
+ * contestaron.
+ */
 function CallWebhookConfig({
     spec,
     onChange,
@@ -1332,16 +1452,44 @@ function CallWebhookConfig({
     onChange: (next: ActionSpec) => void;
     fields: FieldEntity[];
 }): JSX.Element {
+    // El contexto trae el ID de la lista; el endpoint acepta id o slug.
+    const listId = useContext(AutomationEditorListContext);
     const url = typeof spec.config.url === 'string' ? spec.config.url : '';
     const method = typeof spec.config.method === 'string' ? spec.config.method : 'POST';
-    const body = typeof spec.config.body_template === 'string' ? spec.config.body_template : '';
+    const contentType = spec.config.content_type === 'form' ? 'form' : 'json';
+    const rawBody = typeof spec.config.body_template === 'string' ? spec.config.body_template : '';
+    const bodyRows = readRows(spec.config.body_params);
+    const headerRows = readRows(spec.config.headers);
+    const queryRows = readRows(spec.config.query_params);
+    const secret = typeof spec.config.secret === 'string' ? spec.config.secret : '';
+    const hasBody = method !== 'GET' && method !== 'HEAD';
+    const [showRaw, setShowRaw] = useState(rawBody !== '' && bodyRows.length === 0);
+    const [test, setTest] = useState<WebhookTestResult | null>(null);
 
     const set = (patch: Record<string, unknown>): void => {
         onChange({ ...spec, config: { ...spec.config, ...patch } });
     };
 
+    const run = useMutation({
+        mutationFn: async (): Promise<WebhookTestResult> => {
+            const res = await api.post<WebhookTestResult>(
+                `/lists/${listId ?? 0}/automations/test-webhook`,
+                { config: spec.config },
+            );
+            return res.data;
+        },
+        onSuccess: (r) => setTest(r),
+        onError: (err: unknown) =>
+            setTest({
+                request: { url, method, headers: {}, body: null },
+                response: null,
+                error: err instanceof Error ? err.message : String(err),
+                sample_record_id: null,
+            }),
+    });
+
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <div className="imcrm-flex imcrm-gap-2 imcrm-items-start">
                 <Select
                     value={method}
@@ -1357,23 +1505,172 @@ function CallWebhookConfig({
                 </Select>
                 <div className="imcrm-flex-1">
                     <MergeTagInput
-                        placeholder="https://example.com/hook"
+                        placeholder="https://api.tu-proveedor.com/enviar"
                         value={url}
                         onChange={(next) => set({ url: next })}
                         fields={fields}
                     />
                 </div>
             </div>
-            <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Body (opcional, soporta merge tags)')}
-            </Label>
-            <MergeTagInput
-                rows={3}
-                value={body}
-                onChange={(next) => set({ body_template: next })}
-                fields={fields}
-                placeholder='{"id": {{record.id}}, "name": "{{name}}"}'
-            />
+
+            {hasBody && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Tipo de contenido')}
+                    </Label>
+                    <Select value={contentType} onChange={(e) => set({ content_type: e.target.value })}>
+                        <option value="json">JSON (application/json)</option>
+                        <option value="form">
+                            {__('Datos de formulario (x-www-form-urlencoded)')}
+                        </option>
+                    </Select>
+                </div>
+            )}
+
+            {hasBody && !showRaw && (
+                <KeyValueEditor
+                    label={__('Cuerpo — datos que pide la API')}
+                    hint={__('Una fila por dato. El valor acepta variables del registro.')}
+                    rows={bodyRows}
+                    onChange={(next) => set({ body_params: next })}
+                    fields={fields}
+                    keyPlaceholder="recipient"
+                    valuePlaceholder="{{telefono}}"
+                />
+            )}
+            {hasBody && showRaw && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Cuerpo crudo (se manda tal cual)')}
+                    </Label>
+                    <MergeTagInput
+                        rows={3}
+                        value={rawBody}
+                        onChange={(next) => set({ body_template: next })}
+                        fields={fields}
+                        placeholder='{"id": {{record.id}}, "name": "{{name}}"}'
+                    />
+                </div>
+            )}
+            {hasBody && (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-w-fit"
+                    onClick={() => setShowRaw(!showRaw)}
+                >
+                    {showRaw ? __('Usar filas clave/valor') : __('Escribir el cuerpo a mano')}
+                </Button>
+            )}
+
+            <details className="imcrm-group imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2 [&[open]]:imcrm-bg-card">
+                <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-2 imcrm-text-[12px] imcrm-font-medium imcrm-text-foreground/80 [&::-webkit-details-marker]:imcrm-hidden">
+                    <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground imcrm-transition-transform group-open:imcrm-rotate-90" />
+                    <span>{__('Cabeceras, parámetros de la URL y firma')}</span>
+                </summary>
+                <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <KeyValueEditor
+                        label={__('Cabeceras (headers)')}
+                        hint={__('Por ejemplo Authorization: Bearer tu-token.')}
+                        rows={headerRows}
+                        onChange={(next) => set({ headers: next })}
+                        fields={fields}
+                        keyPlaceholder="Authorization"
+                        valuePlaceholder="Bearer …"
+                    />
+                    <KeyValueEditor
+                        label={__('Parámetros de la URL (query)')}
+                        rows={queryRows}
+                        onChange={(next) => set({ query_params: next })}
+                        fields={fields}
+                        keyPlaceholder="api_key"
+                    />
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                        <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Secreto para firmar (opcional)')}
+                        </Label>
+                        <Input
+                            value={secret}
+                            onChange={(e) => set({ secret: e.target.value })}
+                            placeholder={__('deja vacío si el destino no verifica firma')}
+                        />
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('Se envía la cabecera x-imagina-signature con el HMAC-SHA256 del cuerpo: el destino puede comprobar que el pedido salió de acá.')}
+                        </p>
+                    </div>
+                </div>
+            </details>
+
+            {/* Probador: ejecuta la MISMA petición que hará el motor. */}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    disabled={run.isPending || url.trim() === '' || listId === undefined}
+                    onClick={() => run.mutate()}
+                >
+                    <Play className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {run.isPending ? __('Probando…') : __('Probar ahora')}
+                </Button>
+                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Manda la petición de verdad, usando el último registro de la lista para resolver las variables.')}
+                </span>
+            </div>
+
+            {test && <WebhookTestReport result={test} />}
+        </div>
+    );
+}
+
+/** Resultado del probador: qué se mandó y qué contestaron. */
+function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Element {
+    const status = result.response?.status ?? 0;
+    const good = status >= 200 && status < 300;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                {result.error ? (
+                    <Badge dot variant="destructive">
+                        {__('No se pudo conectar')}
+                    </Badge>
+                ) : (
+                    <Badge dot variant={good ? 'success' : 'warning'}>
+                        HTTP {status}
+                    </Badge>
+                )}
+                <span className="imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {result.request.method} {result.request.url}
+                </span>
+            </div>
+            {result.error && <p className="imcrm-text-sm imcrm-text-destructive">{result.error}</p>}
+            {result.request.body !== null && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {__('Se envió')}
+                    </Label>
+                    <pre className="imcrm-max-h-32 imcrm-overflow-auto imcrm-rounded imcrm-bg-muted/50 imcrm-p-2 imcrm-font-mono imcrm-text-[11px]">
+                        {result.request.body}
+                    </pre>
+                </div>
+            )}
+            {result.response && result.response.body !== '' && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {__('Respondió')}
+                    </Label>
+                    <pre className="imcrm-max-h-32 imcrm-overflow-auto imcrm-rounded imcrm-bg-muted/50 imcrm-p-2 imcrm-font-mono imcrm-text-[11px]">
+                        {result.response.body}
+                    </pre>
+                </div>
+            )}
+            {result.sample_record_id === null && (
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('La lista no tiene registros: las variables se resolvieron vacías.')}
+                </p>
+            )}
         </div>
     );
 }

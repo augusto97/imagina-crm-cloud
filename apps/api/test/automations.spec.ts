@@ -138,6 +138,40 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
 
     const key = (s: string) => `f${f[s]!.id}`;
 
+    it('probador de webhook: arma la petición real con un registro de muestra y no explota si el destino está bloqueado', async () => {
+        await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 4200, [key('estado')]: 'vip' },
+        });
+
+        const res = await automationsService.testWebhook(tenantId, 'deals', {
+            config: {
+                url: 'https://api.example.test/enviar',
+                method: 'POST',
+                content_type: 'form',
+                body_params: [
+                    { key: 'estado', value: '{{estado}}' },
+                    { key: 'monto', value: '{{monto}}' },
+                ],
+                headers: [{ key: 'Authorization', value: 'Bearer tok' }],
+            },
+        });
+
+        // Las variables se resolvieron contra el ÚLTIMO registro de la lista.
+        expect(res.sample_record_id).not.toBeNull();
+        expect(res.request.method).toBe('POST');
+        expect(res.request.body).toBe('estado=vip&monto=4200');
+        expect(res.request.headers['content-type']).toBe('application/x-www-form-urlencoded');
+        expect(res.request.headers.authorization).toBe('Bearer tok');
+
+        // Un destino de red interna es un RESULTADO de la prueba (con su
+        // motivo), no un 500 de la app: el guard SSRF de SEC-03 sigue firme.
+        const blocked = await automationsService.testWebhook(tenantId, 'deals', {
+            config: { url: 'http://169.254.169.254/latest/meta-data/' },
+        });
+        expect(blocked.response).toBeNull();
+        expect(blocked.error ?? '').toMatch(/SSRF|interna/i);
+    });
+
     it('update_field: deal grande (field_filters) → marca VIP; run success con log', async () => {
         await automationsService.create(tenantId, 'deals', {
             name: 'Marcar VIP',
