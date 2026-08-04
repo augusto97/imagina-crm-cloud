@@ -31,6 +31,7 @@ import {
     automations,
     comments,
     dashboards,
+    emailUsage,
     fields,
     impersonationLog,
     lists,
@@ -45,6 +46,8 @@ import {
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
+import { EmailQuotaService, periodOf } from '../mail/email-quota.service';
+import { TenantSmtpService } from '../mail/tenant-smtp.service';
 
 /**
  * Consola de plataforma (operador SaaS). Corre sobre la conexión BASE (rol
@@ -61,6 +64,8 @@ export class PlatformService {
         private readonly billing: BillingService,
         private readonly auth: AuthService,
         private readonly plans: PlansService,
+        private readonly emailQuota: EmailQuotaService,
+        private readonly tenantSmtp: TenantSmtpService,
     ) {}
 
     /**
@@ -104,11 +109,20 @@ export class PlatformService {
             return { data: [], meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset } };
         }
 
-        const [recMap, userMap, autoMap, storageMap, ownerMap] = await Promise.all([
+        const [recMap, userMap, autoMap, storageMap, emailMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(inArray(memberships.tenantId, ids)).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
             this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(inArray(attachments.tenantId, ids)).groupBy(attachments.tenantId)),
+            // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
+            // acotado a los ids de ESTA página (mismo criterio de v0.1.115).
+            this.countByTenant(
+                this.db
+                    .select({ tid: emailUsage.tenantId, n: sql<number>`coalesce(sum(${emailUsage.sent}), 0)::int` })
+                    .from(emailUsage)
+                    .where(and(inArray(emailUsage.tenantId, ids), eq(emailUsage.period, periodOf())))
+                    .groupBy(emailUsage.tenantId),
+            ),
             this.ownersByTenant(),
         ]);
 
@@ -119,6 +133,7 @@ export class PlatformService {
                     users: userMap.get(t.id) ?? 0,
                     automations: autoMap.get(t.id) ?? 0,
                     storage_bytes: Number(storageMap.get(t.id) ?? 0),
+                    emails_month: Number(emailMap.get(t.id) ?? 0),
                 }),
             ),
             meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset },
@@ -174,11 +189,19 @@ export class PlatformService {
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(eq(memberships.tenantId, id))
             .orderBy(memberships.createdAt);
-        const limits = await this.plans.limits(tenant.plan);
+        const [limits, emails, smtp] = await Promise.all([
+            this.plans.limits(tenant.plan),
+            // Consumo de correo de plataforma del mes (ADR-S18): es lo que le
+            // cuesta al operador. Con SMTP propio, el cliente no consume nada.
+            this.emailQuota.usedThisMonth(id),
+            this.tenantSmtp.get(id),
+        ]);
         return {
             tenant,
             members: rows.map((m) => ({ user_id: m.user_id, name: m.name, email: m.email, role: m.role, disabled: m.disabledAt != null })),
             limits,
+            emails_month: emails,
+            own_smtp: smtp.configured,
         };
     }
 

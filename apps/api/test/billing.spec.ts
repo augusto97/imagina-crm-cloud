@@ -3,6 +3,9 @@ import { isReadOnly } from '@imagina-base/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
+import { loadEnv } from '../src/config/env';
+import { EmailQuotaService } from '../src/mail/email-quota.service';
+import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
 import { attachments, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -24,7 +27,14 @@ describe('BillingService (Postgres real)', () => {
         pg = await startPostgres();
         tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
-        billing = new BillingService(tenantDb, new PlansService(pg.db));
+        const plansSvc = new PlansService(pg.db);
+        const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });
+        billing = new BillingService(
+            tenantDb,
+            plansSvc,
+            new EmailQuotaService(pg.db, plansSvc),
+            new TenantSmtpService(pg.db, env),
+        );
     });
 
     afterAll(async () => {

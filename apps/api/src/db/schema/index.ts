@@ -12,6 +12,7 @@ export * from './saved-filters';
 export * from './comments';
 export * from './mentions';
 export * from './attachments';
+export * from './email-usage';
 export * from './activity';
 export * from './audit-log';
 export * from './list-slug-history';

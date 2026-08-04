@@ -1,5 +1,6 @@
 import { Global, Logger, Module } from '@nestjs/common';
 import { ENV, type Env } from '../config/env';
+import { EmailQuotaService } from './email-quota.service';
 import { SmtpDnsService } from './smtp-dns.service';
 import { SmtpProbeService } from './smtp-probe.service';
 import { TenantSmtpService } from './tenant-smtp.service';
@@ -18,6 +19,7 @@ import { SmtpMailTransport } from './transports/smtp.transport';
 @Global()
 @Module({
     providers: [
+        EmailQuotaService,
         SmtpDnsService,
         SmtpProbeService,
         TenantSmtpService,
@@ -47,6 +49,7 @@ import { SmtpMailTransport } from './transports/smtp.transport';
         PlatformSettingsService,
     ],
     exports: [
+        EmailQuotaService,
         SmtpDnsService,
         SmtpProbeService,
         TenantSmtpService,

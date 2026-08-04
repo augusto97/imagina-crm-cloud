@@ -2512,6 +2512,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         alcanzable, puerto equivocado, TLS cruzado, host inexistente, metadata
         bloqueada).
 
+  - [x] **Cuota mensual de correos por plan (v0.1.152, ADR-S18, pedido del
+        usuario: "que no usen mi app como plataforma de mailing")**: los correos
+        que un cliente manda SIN SMTP propio salen por el servidor de la
+        PLATAFORMA — los paga el operador, y peor: queman la reputación del
+        dominio remitente compartido. Ahora cada plan tiene `max_emails_month`
+        (columna nueva en `plans`, NULL = ilimitado, editable desde la consola;
+        semilla trial 100 / starter 1.000 / pro 10.000 / enterprise ∞) y el
+        contador vive en `email_usage` (tenant + período `YYYY-MM` en UTC, RLS,
+        migración 0042). **Con SMTP propio configurado no hay cuota ni
+        contador**: esos correos no pasan por nuestra infraestructura, así que
+        el límite es la palanca comercial —"si necesitás más, configurá tu
+        servidor"— en vez de un muro. El chequeo corre ANTES de entregar (el
+        correo que excede no se manda) y el contador se suma DESPUÉS del envío
+        exitoso (un correo que no salió no se cobra); en la cola de BullMQ el
+        fallo se marca `UnrecoverableError` —el mes no cambia en dos segundos,
+        reintentar es desperdicio— y el error llega a donde el usuario lo
+        busca: el run de la automatización queda `failed` con el motivo y el
+        botón de acceso al portal lo muestra. Los correos de **cuenta** (reset
+        de contraseña, verificación de email, invitaciones de plataforma) no
+        tienen tenant y NUNCA se limitan: frenarlos dejaría a alguien afuera de
+        su propia cuenta. Superficies: barra "Correos este mes" en Ajustes →
+        Plan y uso (con la salida por SMTP propio explicada), columna
+        "Correos/mes" editable en la card Planes de la consola y fila en el
+        detalle de cada empresa. 6 tests nuevos (424 API en verde), incluido
+        uno con un **SMTP real levantado en el test** que prueba que el correo
+        por servidor propio sale y no consume cuota; E2E por curl (segundo
+        envío rebotado con el mensaje accionable) y navegador 9/9.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

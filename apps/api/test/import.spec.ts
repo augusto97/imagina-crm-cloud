@@ -6,6 +6,9 @@ import { fields, lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
+import { loadEnv } from '../src/config/env';
+import { EmailQuotaService } from '../src/mail/email-quota.service';
+import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { ImportService } from '../src/import/import.service';
@@ -54,7 +57,15 @@ describe('ImportService (Postgres real)', () => {
             listsService,
             fieldsService,
             new RecordsRepository(),
-            new BillingService(tenantDb, new PlansService(pg.db)),
+            (() => {
+                const plansSvc = new PlansService(pg.db);
+                return new BillingService(
+                    tenantDb,
+                    plansSvc,
+                    new EmailQuotaService(pg.db, plansSvc),
+                    new TenantSmtpService(pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' })),
+                );
+            })(),
             rt,
         );
 
