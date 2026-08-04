@@ -25,6 +25,8 @@ export const portalLinks = pgTable(
             .notNull()
             .references(() => records.id, { onDelete: 'cascade' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        /** Última vez que el cliente canjeó un enlace y entró (v0.1.153). */
+        lastAccessAt: timestamp('last_access_at', { withTimezone: true }),
     },
     (t) => [uniqueIndex('portal_links_user_tenant_ux').on(t.userId, t.tenantId)],
 );

@@ -10,6 +10,23 @@ import { publicBrandingSchema, tenantFormatSchema } from './tenant';
  * devuelve el record + meta de campos + template de bloques (JSON en
  * list.settings.portal_template; el editor/renderer ya vive en el front).
  */
+/**
+ * Una lista que el cliente ve en su portal además de su propia ficha
+ * (v0.1.153). `via` explica POR QUÉ le pertenecen esas filas: un campo
+ * `relation` que apunta a su registro, o un campo `user` que lo apunta a él.
+ */
+export const portalRelatedListSchema = z.object({
+    list_id: idSchema,
+    slug: z.string(),
+    name: z.string(),
+    icon: z.string().nullable().default(null),
+    color: z.string().nullable().default(null),
+    via: z.enum(['relation', 'user']),
+    /** Campo por el que se vincula (para explicarlo en la UI del admin). */
+    via_field_label: z.string().default(''),
+});
+export type PortalRelatedList = z.infer<typeof portalRelatedListSchema>;
+
 export const portalBootSchema = z.object({
     list_id: idSchema,
     list_slug: z.string(),
@@ -24,6 +41,12 @@ export const portalBootSchema = z.object({
     branding: publicBrandingSchema.default({ primary_color: null, app_name: null, logo_url: null }),
     /** v0.1.104 — formato regional del workspace (números/fecha/hora). */
     format: tenantFormatSchema.default({}),
+    /**
+     * v0.1.153 — listas RELACIONADAS que el cliente ve además de su ficha
+     * (sus facturas, sus tickets…). Opt-in por lista desde el panel del
+     * portal: si el admin no eligió ninguna, viene vacío (fail-closed).
+     */
+    related_lists: z.array(portalRelatedListSchema).default([]),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 
@@ -69,3 +92,30 @@ export type MagicLinkResult = z.infer<typeof magicLinkResultSchema>;
 
 export const consumeMagicLinkSchema = z.object({ token: z.string().min(1) });
 export type ConsumeMagicLinkInput = z.infer<typeof consumeMagicLinkSchema>;
+
+/**
+ * Quién tiene acceso al portal de un record (v0.1.153). El vínculo SIEMPRE
+ * estuvo persistido en `portal_links` — lo que faltaba era mostrarlo: el admin
+ * tenía que reescribir el email cada vez, sin saber si el cliente ya tenía
+ * acceso ni si había entrado alguna vez.
+ */
+export const portalAccessUserSchema = z.object({
+    user_id: idSchema,
+    email: z.string(),
+    name: z.string(),
+    created_at: z.string(),
+    /** Última vez que canjeó un enlace y entró. `null` = nunca entró. */
+    last_access_at: z.string().nullable().default(null),
+});
+export type PortalAccessUser = z.infer<typeof portalAccessUserSchema>;
+
+export const portalAccessListSchema = z.object({
+    users: z.array(portalAccessUserSchema),
+});
+export type PortalAccessList = z.infer<typeof portalAccessListSchema>;
+
+/** Candidatas a "listas relacionadas" del portal, detectadas por el backend. */
+export const portalRelatedOptionsSchema = z.object({
+    options: z.array(portalRelatedListSchema),
+});
+export type PortalRelatedOptions = z.infer<typeof portalRelatedOptionsSchema>;

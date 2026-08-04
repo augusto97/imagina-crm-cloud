@@ -7,12 +7,19 @@ export interface PortalSettings {
     enabled: boolean;
     owner_field_id: number | null;
     default_template_id: number | null;
+    /**
+     * v0.1.153 — ids de las listas RELACIONADAS que el cliente ve en su portal
+     * además de su ficha. Opt-in (vacío = ninguna): una lista interna que
+     * apunte al cliente no tiene por qué ser visible para él.
+     */
+    related_lists: number[];
 }
 
 export const PORTAL_DEFAULTS: PortalSettings = {
     enabled: false,
     owner_field_id: null,
     default_template_id: null,
+    related_lists: [],
 };
 
 export type PortalBlockType =

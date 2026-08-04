@@ -302,6 +302,13 @@
       "when": 1784200000011,
       "tag": "0042_email_quota",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784200000012,
+      "tag": "0043_portal_access",
+      "breakpoints": true
     }
   ]
 }
