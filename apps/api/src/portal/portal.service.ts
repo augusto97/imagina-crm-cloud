@@ -4,6 +4,7 @@ import {
     ForbiddenException,
     Inject,
     Injectable,
+    Logger,
     NotFoundException,
 } from '@nestjs/common';
 import {
@@ -59,6 +60,8 @@ interface MagicPayload {
  */
 @Injectable()
 export class PortalService {
+    private readonly logger = new Logger(PortalService.name);
+
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(REDIS) private readonly redis: Redis,
@@ -184,22 +187,31 @@ export class PortalService {
         await this.redis.set(magicKey(token), JSON.stringify(payload), 'EX', MAGIC_TTL_SECONDS);
         const path = `/portal/acceso?token=${token}`;
 
-        // Email transaccional: le mandamos el acceso al cliente. Best-effort —
-        // si el correo falla, igual devolvemos el link para que el admin lo
-        // comparta manualmente (la cola BullMQ ya reintenta por su cuenta).
-        // Con dominio propio (ADR-S17) el link sale por el dominio del tenant.
+        // Email transaccional: le mandamos el acceso al cliente. Con dominio
+        // propio (ADR-S17) el link sale por el dominio del tenant.
+        //
+        // v0.1.150 — se envía EN EL ACTO y el resultado VUELVE. Antes se
+        // encolaba con un `.catch()` que se comía el error, así que la UI
+        // decía "Acceso enviado por email" aunque el SMTP lo hubiera
+        // rechazado. El enlace se devuelve igual para compartirlo a mano.
         const url = `${await this.domains.baseUrlFor(tenantId)}${path}`;
-        await this.mail
-            .enqueue({
+        let emailSent = true;
+        let emailError: string | null = null;
+        try {
+            await this.mail.sendNow({
                 tenantId,
                 to: input.email,
                 subject: `Tu acceso al portal de ${list.name}`,
                 text: `Hola,\n\nAccedé a tu portal con este enlace (válido por 24 h):\n${url}\n\nSi no esperabas este correo, ignoralo.`,
                 html: `<p>Hola,</p><p>Accedé a tu portal con este enlace (válido por 24 h):</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
-            })
-            .catch(() => undefined);
+            });
+        } catch (err) {
+            emailSent = false;
+            emailError = err instanceof Error ? err.message : String(err);
+            this.logger.error(`Magic link: el correo a ${input.email} no salió: ${emailError}`);
+        }
 
-        return { token, path };
+        return { token, path, email_sent: emailSent, email_error: emailError };
     }
 
     /** Consume el token (un solo uso) y abre una sesión. Devuelve el token de sesión. */

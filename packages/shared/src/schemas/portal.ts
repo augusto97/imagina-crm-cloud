@@ -56,6 +56,14 @@ export const magicLinkResultSchema = z.object({
     token: z.string(),
     /** Ruta pública del SPA para consumir el token (`/portal/acceso?token=…`). */
     path: z.string(),
+    /**
+     * v0.1.150 — ¿el correo salió DE VERDAD? Antes el fallo se tragaba con un
+     * `.catch()` y la UI decía "Acceso enviado por email" igual: el admin creía
+     * que el cliente lo había recibido. El enlace se devuelve siempre para
+     * poder compartirlo a mano.
+     */
+    email_sent: z.boolean().default(true),
+    email_error: z.string().nullable().default(null),
 });
 export type MagicLinkResult = z.infer<typeof magicLinkResultSchema>;
 

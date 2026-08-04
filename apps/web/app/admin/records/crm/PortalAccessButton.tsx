@@ -48,8 +48,15 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
     const value = email || detectedEmail;
 
     const issue = useMutation({
-        mutationFn: async (to: string): Promise<{ token: string; path: string }> => {
-            const res = await api.post<{ token: string; path: string }>(
+        mutationFn: async (
+            to: string,
+        ): Promise<{ token: string; path: string; email_sent?: boolean; email_error?: string | null }> => {
+            const res = await api.post<{
+                token: string;
+                path: string;
+                email_sent?: boolean;
+                email_error?: string | null;
+            }>(
                 `/lists/${encodeURIComponent(list.slug)}/portal/magic-link`,
                 { record_id: record.id, email: to },
             );
@@ -58,7 +65,17 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
         onSuccess: (data, to) => {
             setSentTo(to);
             setLastPath(data.path);
-            toast.success(__('Acceso enviado por email a'), to);
+            // v0.1.150 — decir la verdad: si el SMTP rechazó el correo, el
+            // enlace igual sirve (queda abajo para copiarlo), pero el cliente
+            // NO lo recibió. Antes siempre decía "enviado".
+            if (data.email_sent === false) {
+                toast.error(
+                    __('El enlace se generó, pero el correo no salió'),
+                    data.email_error ?? __('Revisá el SMTP en Ajustes → Correo.'),
+                );
+            } else {
+                toast.success(__('Acceso enviado por email a'), to);
+            }
         },
         onError: (err: unknown) => {
             const msg = err instanceof ApiError || err instanceof Error

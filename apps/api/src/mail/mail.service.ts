@@ -48,35 +48,33 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
     private async activeTransport(message?: MailMessage): Promise<MailTransport> {
         // 1) SMTP PROPIO del tenant emisor (white-label de correo): si la
         //    empresa configuró el suyo, sus correos salen por él.
+        //
+        // v0.1.150 — si el tenant TIENE SMTP propio pero es inusable, el error
+        // SUBE. Antes se capturaba y se seguía con plataforma/env: en una
+        // instalación sin SMTP de plataforma eso significaba caer al transporte
+        // `log`, o sea "enviado" en la UI y nada en la bandeja del cliente.
         if (message?.tenantId !== undefined && this.tenantSmtp) {
-            try {
-                const cfg = await this.tenantSmtp.getForSend(message.tenantId);
-                if (cfg) {
-                    const hash = JSON.stringify(cfg);
-                    const cached = this.tenantSmtpCache.get(message.tenantId);
-                    if (cached?.hash === hash) return cached.transport;
-                    const transport = new SmtpMailTransport(cfg);
-                    if (this.tenantSmtpCache.size > 100) this.tenantSmtpCache.clear();
-                    this.tenantSmtpCache.set(message.tenantId, { hash, transport });
-                    return transport;
-                }
-                this.tenantSmtpCache.delete(message.tenantId);
-            } catch (err) {
-                this.logger.warn(`SMTP del tenant ${message.tenantId} falló al resolver, uso plataforma: ${String(err)}`);
-            }
-        }
-        // 2) SMTP de PLATAFORMA (superadmin) → 3) transporte por env.
-        try {
-            const cfg = this.platform ? await this.platform.getSmtp() : null;
+            const cfg = await this.tenantSmtp.getForSend(message.tenantId);
             if (cfg) {
                 const hash = JSON.stringify(cfg);
-                if (this.cachedSmtp?.hash !== hash) {
-                    this.cachedSmtp = { hash, transport: new SmtpMailTransport(cfg) };
-                }
-                return this.cachedSmtp.transport;
+                const cached = this.tenantSmtpCache.get(message.tenantId);
+                if (cached?.hash === hash) return cached.transport;
+                const transport = new SmtpMailTransport(cfg);
+                if (this.tenantSmtpCache.size > 100) this.tenantSmtpCache.clear();
+                this.tenantSmtpCache.set(message.tenantId, { hash, transport });
+                return transport;
             }
-        } catch (err) {
-            this.logger.warn(`No se pudo leer SMTP de plataforma, uso el transporte por env: ${String(err)}`);
+            this.tenantSmtpCache.delete(message.tenantId);
+        }
+        // 2) SMTP de PLATAFORMA (superadmin) → 3) transporte por env. Mismo
+        //    criterio: una config rota lanza en vez de degradar en silencio.
+        const cfg = this.platform ? await this.platform.getSmtp() : null;
+        if (cfg) {
+            const hash = JSON.stringify(cfg);
+            if (this.cachedSmtp?.hash !== hash) {
+                this.cachedSmtp = { hash, transport: new SmtpMailTransport(cfg) };
+            }
+            return this.cachedSmtp.transport;
         }
         this.cachedSmtp = null;
         return this.transport;
