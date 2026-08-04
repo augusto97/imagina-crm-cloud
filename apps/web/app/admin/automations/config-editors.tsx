@@ -1323,10 +1323,14 @@ function FieldValueInput({
     }
 
     // text / long_text / email / url / relation / user / file:
-    // MergeTagInput con chips para insertar variables al cursor.
+    // MergeTagInput con chips para insertar variables al cursor. Los de texto
+    // CRECEN con el contenido (v0.1.156): un mensaje largo no entra en un
+    // renglón y quedaba imposible de revisar.
+    const growable = field.type === 'text' || field.type === 'long_text';
     return (
         <div className="imcrm-flex-1">
             <MergeTagInput
+                {...(growable ? { rows: 1, autoGrow: true } : {})}
                 value={value}
                 onChange={onChange}
                 fields={availableFields ?? []}
@@ -1413,6 +1417,8 @@ function KeyValueEditor({
                         value={row.value}
                         onChange={(next) => patch(i, { value: next })}
                         fields={fields}
+                        rows={1}
+                        autoGrow
                         placeholder={valuePlaceholder ?? __('valor o {{campo}}')}
                     />
                 </div>
@@ -1545,6 +1551,7 @@ function CallWebhookConfig({
                     </Label>
                     <MergeTagInput
                         rows={3}
+                        autoGrow
                         value={rawBody}
                         onChange={(next) => set({ body_template: next })}
                         fields={fields}

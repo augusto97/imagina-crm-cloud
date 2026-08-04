@@ -18,6 +18,12 @@ interface MergeTagInputProps {
     fields: FieldEntity[];
     /** rows > 0 → renderea como Textarea. */
     rows?: number;
+    /**
+     * v0.1.156 — el textarea CRECE con el contenido (hasta un tope) y se puede
+     * arrastrar. Un mensaje largo con variables (el cuerpo de un WhatsApp, una
+     * nota) en un renglón de 32px es inusable: no se ve lo que se escribió.
+     */
+    autoGrow?: boolean;
     placeholder?: string;
     /** Botón "+ Agregar firma" debajo (solo en body de email). */
     showSignatureButton?: boolean;
@@ -45,11 +51,15 @@ interface MergeTagInputProps {
  * El cursor se preserva: al insertar, posicionamos el caret al final
  * del tag insertado.
  */
+/** Tope del crecimiento automático: pasado eso, scrollea dentro del textarea. */
+const MAX_AUTO_GROW_PX = 320;
+
 export function MergeTagInput({
     value,
     onChange,
     fields,
     rows,
+    autoGrow = false,
     placeholder,
     showSignatureButton = false,
     onInsertSignature,
@@ -57,6 +67,14 @@ export function MergeTagInput({
     ...rest
 }: MergeTagInputProps): JSX.Element {
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    // Auto-alto: se recalcula en cada cambio de valor (y al montar, para que
+    // un valor ya guardado se vea entero al abrir la automatización).
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!autoGrow || !el || !(el instanceof HTMLTextAreaElement)) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, MAX_AUTO_GROW_PX)}px`;
+    }, [autoGrow, value]);
     const [pendingSelection, setPendingSelection] = useState<number | null>(null);
     const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -105,7 +123,7 @@ export function MergeTagInput({
                     onChange={(e) => onChange(e.target.value)}
                     rows={rows}
                     placeholder={placeholder}
-                    className={className}
+                    className={cn(autoGrow && 'imcrm-resize-y imcrm-overflow-hidden', className)}
                     {...rest}
                 />
             ) : (

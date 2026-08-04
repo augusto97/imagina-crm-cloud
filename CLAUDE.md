@@ -2637,6 +2637,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (Personalizado abre el input y persiste, constructor completo, prueba
         real con el cuerpo `{"recipient":"+57…"}` y el motivo del bloqueo).
 
+  - [x] **Cajas de texto que crecen en las automatizaciones (v0.1.156,
+        reporte del usuario: "¿y si el campo que quiero enviar es un texto
+        largo? un renglón casi no es útil")**: el valor de cada fila del
+        constructor de webhooks era un `<input>` de una línea — un mensaje de
+        WhatsApp con variables no se podía ni leer ni revisar. `MergeTagInput`
+        gana `autoGrow`: el textarea **crece con el contenido** (recalculado en
+        cada cambio y AL MONTAR, así una automatización guardada se abre con el
+        mensaje entero a la vista), con tope de 320px —a partir de ahí
+        scrollea— y `resize-y` para agrandarlo a mano. Aplicado a: las filas
+        clave/valor del webhook (cuerpo, cabeceras, query), el cuerpo crudo, y
+        el mapeo de `create_record`/`update_field` cuando el campo destino es
+        `text`/`long_text`. Los valores cortos (URL, asunto, número, fecha)
+        siguen en una línea: crecer ahí sería ruido. E2E navegador 4/4 (es
+        textarea, crece 80→96→196px al escribir, se ve el texto completo sin
+        scroll interno, y se puede arrastrar).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
