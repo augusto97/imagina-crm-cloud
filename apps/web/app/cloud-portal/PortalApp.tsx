@@ -44,13 +44,16 @@ function AccessPage(): JSX.Element {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
-    if (!token) return <Centered>Falta el token de acceso en el enlace.</Centered>;
+    // v0.1.155 — un enlace sin token o ya usado/vencido terminaba en un cartel
+    // muerto. Ahora cae en la misma pantalla de auto-servicio: el cliente se
+    // manda uno nuevo sin depender de nadie.
+    if (!token) return <RequestAccessScreen note="Ese enlace no trae el código de acceso." />;
     if (consume.isError) {
         const msg =
             consume.error instanceof CloudApiError
                 ? consume.error.message
                 : 'No se pudo validar el enlace.';
-        return <Centered>{msg}</Centered>;
+        return <RequestAccessScreen note={msg} />;
     }
     return <Centered>Validando tu acceso…</Centered>;
 }
@@ -283,7 +286,7 @@ function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Eleme
  * respuesta del backend es siempre la misma exista o no el email, así que el
  * mensaje de confirmación no confirma nada — es a propósito.
  */
-function RequestAccessScreen(): JSX.Element {
+function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
     const [email, setEmail] = useState('');
     const ask = useMutation({ mutationFn: () => portalApi.portalRequestAccess(email.trim()) });
 
@@ -293,7 +296,8 @@ function RequestAccessScreen(): JSX.Element {
                 <div className="imcrm-space-y-1">
                     <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Entrar a tu portal</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        Tu enlace de acceso venció o cerraste sesión. Escribí tu correo y te mandamos uno nuevo.
+                        {note ?? 'Tu enlace de acceso venció o cerraste sesión.'} Escribí tu correo y te
+                        mandamos uno nuevo.
                     </p>
                 </div>
                 {ask.isSuccess ? (

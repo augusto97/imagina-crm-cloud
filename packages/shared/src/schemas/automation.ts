@@ -182,3 +182,42 @@ export const hookCaptureSchema = z.object({
     received_at: z.string(),
 });
 export type HookCapture = z.infer<typeof hookCaptureSchema>;
+
+/**
+ * Probador de webhooks salientes (v0.1.155). El backend arma la petición con
+ * el MISMO builder que usa el motor, la ejecuta contra el destino real (con
+ * el guard anti-SSRF de SEC-03) y devuelve lo que mandó y lo que contestaron.
+ * Sin esto, configurar una API ajena era escribir a ciegas y esperar a que
+ * saltara un registro para ver si funcionaba.
+ */
+export const webhookTestInputSchema = z.object({
+    /** El `config` de la acción `call_webhook` tal cual se está editando. */
+    config: z.record(z.unknown()),
+    /** Registro de muestra para resolver las variables. Default: el último. */
+    record_id: z.number().int().positive().optional(),
+});
+export type WebhookTestInput = z.infer<typeof webhookTestInputSchema>;
+
+export const webhookTestResultSchema = z.object({
+    /** Lo que se envió, ya con las variables resueltas. */
+    request: z.object({
+        url: z.string(),
+        method: z.string(),
+        headers: z.record(z.string()),
+        body: z.string().nullable().default(null),
+    }),
+    /** `null` si no se llegó a conectar (ver `error`). */
+    response: z
+        .object({
+            status: z.number(),
+            content_type: z.string().default(''),
+            body: z.string().default(''),
+        })
+        .nullable()
+        .default(null),
+    /** Motivo por el que no hubo respuesta (SSRF bloqueado, timeout, DNS…). */
+    error: z.string().nullable().default(null),
+    /** Id del registro usado para resolver las variables (`null` = ninguno). */
+    sample_record_id: z.number().nullable().default(null),
+});
+export type WebhookTestResult = z.infer<typeof webhookTestResultSchema>;

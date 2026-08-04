@@ -28,14 +28,27 @@ export interface SafeFetchOptions {
     headers?: Record<string, string>;
     body?: string;
     timeoutMs?: number;
+    /**
+     * Devolver el cuerpo de la respuesta (capado). Lo usa el PROBADOR de
+     * webhooks (v0.1.155): sin ver qué contestó el otro lado, "200" no alcanza
+     * para saber si el mensaje salió. El motor no lo pide: no le sirve y
+     * evita retener respuestas grandes en memoria.
+     */
+    captureBody?: boolean;
 }
 
 export interface SafeFetchResult {
     status: number;
+    /** Sólo con `captureBody`: primeros 8 KB de la respuesta. */
+    body?: string;
+    contentType?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const MAX_RESPONSE_BYTES = 256 * 1024;
+/** Tope de lo que se retiene y se muestra en el probador. */
+const MAX_PREVIEW_BYTES = 8 * 1024;
+const MAX_PREVIEW_CHARS = 4000;
 
 export async function safeWebhookFetch(
     rawUrl: string,
@@ -70,15 +83,26 @@ export async function safeWebhookFetch(
             { method, headers: opts.headers, lookup: guardedLookup },
             (res) => {
                 const status = res.statusCode ?? 0;
+                const contentType = String(res.headers['content-type'] ?? '');
                 let received = 0;
+                const chunks: Buffer[] = [];
+                const done = (): SafeFetchResult =>
+                    opts.captureBody
+                        ? {
+                              status,
+                              contentType,
+                              body: Buffer.concat(chunks).toString('utf8').slice(0, MAX_PREVIEW_CHARS),
+                          }
+                        : { status };
                 res.on('data', (chunk: Buffer) => {
                     received += chunk.length;
+                    if (opts.captureBody && received <= MAX_PREVIEW_BYTES) chunks.push(chunk);
                     if (received > MAX_RESPONSE_BYTES) res.destroy();
                 });
-                res.on('end', () => resolve({ status }));
+                res.on('end', () => resolve(done()));
                 // Si abortamos por tamaño, el status ya se capturó.
-                res.on('aborted', () => resolve({ status }));
-                res.on('error', () => resolve({ status }));
+                res.on('aborted', () => resolve(done()));
+                res.on('error', () => resolve(done()));
             },
         );
         req.on('error', (err) => reject(err));
