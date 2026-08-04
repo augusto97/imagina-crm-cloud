@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DnsRecordCheck, SmtpConfigPublic } from '@imagina-base/shared';
-import { Check, Copy, Mail } from 'lucide-react';
+import type {
+    DnsRecordCheck,
+    SmtpConfigPublic,
+    SmtpDiagnostic,
+    SmtpPortProbe,
+} from '@imagina-base/shared';
+import { Check, Copy, Mail, Stethoscope } from 'lucide-react';
 import { api, useSession } from '@/cloud/session';
+import { explainSendError, tlsMismatch } from './smtpHelp';
 import { CloudApiError } from '@/lib/cloud/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -82,13 +88,40 @@ export function TenantSmtpPanel(): JSX.Element | null {
             setNotice(
                 r.ok
                     ? { kind: 'ok', text: `Correo de prueba enviado a ${myEmail || 'tu email'}.` }
-                    : { kind: 'err', text: r.error || 'No se pudo enviar la prueba.' },
+                    : { kind: 'err', text: explainSendError(r.error) },
             ),
         onError: (e) =>
             setNotice({
                 kind: 'err',
                 text: e instanceof Error ? e.message : 'No se pudo enviar la prueba.',
             }),
+    });
+
+    /**
+     * v0.1.151 — "Connection timeout" no dice nada útil. El SERVIDOR prueba los
+     * puertos SMTP y explica qué pasa (host mal escrito, puerto equivocado, TLS
+     * mal elegido, o el VPS bloqueando el correo saliente). Se manda lo que hay
+     * en el formulario: se puede diagnosticar sin guardar una config rota.
+     */
+    const [diagnosis, setDiagnosis] = useState<SmtpDiagnostic | null>(null);
+    const diagnose = useMutation({
+        mutationFn: () =>
+            api.tenantSmtpDiagnose({
+                host: form.host.trim(),
+                port: Number(form.port) || 587,
+                secure: form.secure,
+            }),
+        onSuccess: (d) => {
+            setDiagnosis(d);
+            setNotice(null);
+        },
+        onError: (e) => {
+            setDiagnosis(null);
+            setNotice({
+                kind: 'err',
+                text: e instanceof Error ? e.message : 'No se pudo diagnosticar la conexión.',
+            });
+        },
     });
 
     const clear = useMutation({
@@ -108,7 +141,7 @@ export function TenantSmtpPanel(): JSX.Element | null {
     if (!smtpQ.data) return null;
 
     const c: SmtpConfigPublic = smtpQ.data;
-    const busy = save.isPending || sendTest.isPending || clear.isPending;
+    const busy = save.isPending || sendTest.isPending || clear.isPending || diagnose.isPending;
     const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && !busy;
 
     return (
@@ -184,7 +217,17 @@ export function TenantSmtpPanel(): JSX.Element | null {
                         className={inputCls}
                         value={form.port}
                         inputMode="numeric"
-                        onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
+                        onChange={(e) => {
+                            const port = e.target.value;
+                            // El puerto DEFINE el modo TLS: 465 es implícito,
+                            // 25/587/2525 usan STARTTLS. Mezclarlos es la causa
+                            // clásica del timeout, así que se sincroniza solo.
+                            setForm((f) => ({
+                                ...f,
+                                port,
+                                secure: port === '465' ? true : port === '587' || port === '25' || port === '2525' ? false : f.secure,
+                            }));
+                        }}
                         placeholder="587"
                     />
                 </Field>
@@ -215,14 +258,21 @@ export function TenantSmtpPanel(): JSX.Element | null {
                         placeholder="Tu Empresa <no-reply@tu-dominio.com>"
                     />
                 </Field>
-                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-self-end imcrm-text-sm">
-                    <input
-                        type="checkbox"
-                        checked={form.secure}
-                        onChange={(e) => setForm((f) => ({ ...f, secure: e.target.checked }))}
-                    />
-                    Conexión segura (SSL/TLS, puerto 465)
-                </label>
+                <div className="imcrm-self-end">
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                        <input
+                            type="checkbox"
+                            checked={form.secure}
+                            onChange={(e) => setForm((f) => ({ ...f, secure: e.target.checked }))}
+                        />
+                        Conexión segura (SSL/TLS, puerto 465)
+                    </label>
+                    {tlsMismatch(form) && (
+                        <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                            {tlsMismatch(form)}
+                        </p>
+                    )}
+                </div>
             </div>
 
             {c.configured && form.pass.length === 0 && (
@@ -258,6 +308,17 @@ export function TenantSmtpPanel(): JSX.Element | null {
                 >
                     {sendTest.isPending ? 'Enviando…' : 'Probar envío'}
                 </Button>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => diagnose.mutate()}
+                    disabled={busy || form.host.trim().length === 0}
+                    title="El servidor prueba los puertos SMTP y explica qué está fallando"
+                >
+                    <Stethoscope className="imcrm-mr-1.5 imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {diagnose.isPending ? 'Diagnosticando…' : 'Diagnosticar conexión'}
+                </Button>
                 {c.configured && (
                     <Button
                         type="button"
@@ -273,9 +334,99 @@ export function TenantSmtpPanel(): JSX.Element | null {
             </div>
             </form>
 
+            {diagnosis && <DiagnosisSection report={diagnosis} />}
+
             {c.configured && <DnsSection />}
             </CardContent>
         </Card>
+    );
+}
+
+const VERDICT_META: Record<
+    SmtpDiagnostic['verdict'],
+    { label: string; variant: 'success' | 'warning' | 'destructive' }
+> = {
+    ok: { label: 'La conexión funciona', variant: 'success' },
+    tls_mismatch: { label: 'Revisá «Conexión segura»', variant: 'warning' },
+    port_closed: { label: 'Ese puerto no responde', variant: 'warning' },
+    all_blocked: { label: 'Sin salida SMTP', variant: 'destructive' },
+    dns_failed: { label: 'El host no resuelve', variant: 'destructive' },
+};
+
+const PROBE_META: Record<
+    SmtpPortProbe['status'],
+    { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' }
+> = {
+    open: { label: 'Responde', variant: 'success' },
+    timeout: { label: 'Sin respuesta', variant: 'destructive' },
+    refused: { label: 'Rechazado', variant: 'warning' },
+    error: { label: 'Error de red', variant: 'warning' },
+};
+
+/** Resultado del diagnóstico: veredicto + consejos + qué dijo cada puerto. */
+function DiagnosisSection({ report }: { report: SmtpDiagnostic }): JSX.Element {
+    const meta = VERDICT_META[report.verdict];
+    return (
+        <section className="imcrm-space-y-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                <Badge dot variant={meta.variant}>
+                    {meta.label}
+                </Badge>
+                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                    Probado desde el servidor contra{' '}
+                    <span className="imcrm-font-medium imcrm-text-foreground">{report.host}</span>
+                    {report.dns.addresses.length > 0 && <> ({report.dns.addresses.join(', ')})</>}
+                </span>
+            </div>
+
+            <ul className="imcrm-space-y-1.5 imcrm-text-sm">
+                {report.hints.map((hint) => (
+                    <li key={hint} className="imcrm-flex imcrm-gap-2">
+                        <span className="imcrm-text-muted-foreground" aria-hidden>
+                            •
+                        </span>
+                        <span>{hint}</span>
+                    </li>
+                ))}
+            </ul>
+
+            {report.ports.length > 0 && (
+                <ul className="imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-border imcrm-border-border">
+                    {report.ports.map((p) => {
+                        const pm = PROBE_META[p.status];
+                        return (
+                            <li
+                                key={p.port}
+                                className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm"
+                            >
+                                <span className="imcrm-w-16 imcrm-font-mono imcrm-text-xs">
+                                    :{p.port}
+                                </span>
+                                <Badge dot variant={pm.variant}>
+                                    {pm.label}
+                                </Badge>
+                                {p.port === report.port && (
+                                    <Badge variant="outline">el configurado</Badge>
+                                )}
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {p.ms} ms
+                                </span>
+                                {p.greeting && (
+                                    <code className="imcrm-min-w-0 imcrm-truncate imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">
+                                        {p.greeting}
+                                    </code>
+                                )}
+                                {p.error && (
+                                    <span className="imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">
+                                        {p.error}
+                                    </span>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+        </section>
     );
 }
 

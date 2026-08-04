@@ -34,6 +34,54 @@ export const smtpConfigPublicSchema = z.object({
 export type SmtpConfigPublic = z.infer<typeof smtpConfigPublicSchema>;
 
 /**
+ * Diagnóstico de CONECTIVIDAD al servidor SMTP (v0.1.151). Un "Connection
+ * timeout" al enviar no dice nada útil: puede ser el host mal escrito, el
+ * puerto equivocado, TLS mal elegido o —lo más común en un VPS— el proveedor
+ * bloqueando el correo saliente. El backend prueba los puertos SMTP desde el
+ * SERVIDOR (que es quien envía) y devuelve qué responde cada uno.
+ */
+export const smtpPortProbeSchema = z.object({
+    port: z.number(),
+    /** open = hubo conexión TCP; timeout = nadie respondió; refused = puerto cerrado. */
+    status: z.enum(['open', 'timeout', 'refused', 'error']),
+    /** Milisegundos que tardó el intento. */
+    ms: z.number(),
+    /** Saludo del servidor (`220 smtp.acme.com ESMTP`), si lo mandó. */
+    greeting: z.string().optional(),
+    /** Código de error de red (ECONNREFUSED, EHOSTUNREACH…). */
+    error: z.string().optional(),
+});
+export type SmtpPortProbe = z.infer<typeof smtpPortProbeSchema>;
+
+export const smtpDiagnosticSchema = z.object({
+    host: z.string(),
+    port: z.number(),
+    secure: z.boolean(),
+    dns: z.object({
+        ok: z.boolean(),
+        addresses: z.array(z.string()),
+        error: z.string().optional(),
+    }),
+    ports: z.array(smtpPortProbeSchema),
+    /**
+     * ok = se conecta; tls_mismatch = conecta pero la opción "conexión segura"
+     * no corresponde al puerto; port_closed = ese puerto no, pero otro sí;
+     * all_blocked = ningún puerto SMTP responde; dns_failed = el host no resuelve.
+     */
+    verdict: z.enum(['ok', 'tls_mismatch', 'port_closed', 'all_blocked', 'dns_failed']),
+    hints: z.array(z.string()),
+});
+export type SmtpDiagnostic = z.infer<typeof smtpDiagnosticSchema>;
+
+/** Permite diagnosticar lo que hay en el formulario, sin guardarlo antes. */
+export const smtpDiagnoseInputSchema = z.object({
+    host: z.string().trim().max(255).optional(),
+    port: z.coerce.number().int().min(1).max(65535).optional(),
+    secure: z.boolean().optional(),
+});
+export type SmtpDiagnoseInput = z.infer<typeof smtpDiagnoseInputSchema>;
+
+/**
  * Un registro DNS recomendado para el SMTP propio del workspace
  * (SPF/DKIM/DMARC), con su estado verificado en vivo por el backend
  * (`GET /workspaces/current/smtp/dns`).
