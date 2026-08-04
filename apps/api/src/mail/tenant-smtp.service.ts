@@ -153,7 +153,7 @@ export class TenantSmtpService {
         let pass = '';
         try {
             pass = pass_enc ? decryptSecret(pass_enc, this.env.SECRETS_KEY) : '';
-        } catch (err) {
+        } catch {
             return {
                 state: 'unreadable',
                 reason: 'la contraseña guardada no se puede descifrar con la clave actual del servidor',
