@@ -2575,6 +2575,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sobrevive al reload) y 4/4 en el portal real (magic link → ficha +
         "Tareas Portal" con las 2 tareas del cliente y ninguna ajena).
 
+  - [x] **El cliente vuelve a entrar solo (v0.1.154, pregunta del usuario:
+        "¿cómo ingresa después si el link dura 24 h?")**: el magic link vence a
+        las **24 h** y es de un solo uso, pero al canjearlo abre una **sesión de
+        30 días DESLIZANTES** (`getex` renueva el TTL en cada request) — o sea
+        que un cliente que entra cada tanto no necesita nada más. Faltaba el
+        caso borde: 30 días sin entrar, cerró sesión, cambió de dispositivo o le
+        revocaron y volvieron a dar acceso. Antes eso era un cartel muerto
+        ("pedí uno nuevo") que obligaba a llamar a la empresa. Ahora la pantalla
+        del portal sin sesión **es un formulario**: el cliente escribe su correo
+        y `POST /portal/request-access` (público) le manda un enlace nuevo.
+        Reglas: **nunca crea accesos** —sólo re-emite para quien la empresa ya
+        autorizó (`portal_links`)—, la respuesta es **siempre la misma** exista o
+        no el email (no sirve como directorio de "quién es cliente de quién"),
+        se saltea usuarios desactivados, y hay freno por email en Redis (3 cada
+        15 min, compartido entre nodos) además del rate limit por IP. Un email
+        con portal en varias empresas recibe un enlace por cada una (cap 3), con
+        el nombre en el asunto. La emisión se extrajo a `sendMagicLink` — el
+        botón del admin y el auto-servicio comparten el MISMO camino (incluida
+        la cuota de correo de ADR-S18 y el SMTP propio del tenant). 1 test de
+        integración (email sin acceso no manda nada, con acceso manda y el
+        enlace abre sesión, y el freno corta el 3.º) — 428 API y 111 front en
+        verde — + E2E navegador 6/6 contra un SMTP real (pantalla, envío,
+        entrega verificada en el servidor, el enlace entra y la sesión persiste
+        al volver).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

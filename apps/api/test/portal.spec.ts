@@ -396,6 +396,33 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(boot.related_lists.map((r) => r.slug)).toEqual(['pedidos']);
     });
 
+    it('el cliente puede pedirse un enlace nuevo, sin revelar si el email existe (v0.1.154)', async () => {
+        await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'vuelve@acme.test' });
+        const before = mailbox.sent.length;
+
+        // Email SIN acceso: responde igual (no lanza) pero no manda nada.
+        await portal.requestAccess('desconocido@nadie.test');
+        expect(mailbox.sent.length).toBe(before);
+
+        // Email con acceso: le llega un enlace nuevo, usable.
+        await portal.requestAccess('vuelve@acme.test');
+        expect(mailbox.sent.length).toBe(before + 1);
+        const mail = mailbox.sent.at(-1)!;
+        expect(mail.to).toBe('vuelve@acme.test');
+        const token = /portal\/acceso\?token=([A-Za-z0-9_-]+)/.exec(mail.text ?? '')?.[1];
+        expect(token).toBeDefined();
+        const { sessionToken } = await portal.consume(token!);
+        expect(await sessions.get(sessionToken)).not.toBeNull();
+
+        // Freno de abuso: 3 pedidos cada 15 min por email (ya se usó uno
+        // arriba, así que pasan 2 más y el tercero se descarta en silencio).
+        const after = mailbox.sent.length;
+        await portal.requestAccess('vuelve@acme.test');
+        await portal.requestAccess('vuelve@acme.test');
+        await portal.requestAccess('vuelve@acme.test');
+        expect(mailbox.sent.length).toBe(after + 2);
+    });
+
     it('el token es de un solo uso', async () => {
         const link = await portal.issue(tenantId, 'clientes', {
             record_id: recordId,

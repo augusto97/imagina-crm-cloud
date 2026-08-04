@@ -184,35 +184,89 @@ export class PortalService {
             return uid;
         });
 
+        // Email transaccional con el acceso. Con dominio propio (ADR-S17) el
+        // link sale por el dominio del tenant. v0.1.150 — se envía EN EL ACTO
+        // y el resultado VUELVE: antes un fallo del SMTP se tragaba y la UI
+        // decía "enviado" igual.
+        return this.sendMagicLink(tenantId, userId, input.email, list.name);
+    }
+
+    /**
+     * El propio cliente pide un enlace nuevo (v0.1.154). Sólo re-emite para
+     * quien YA tiene acceso: nunca crea vínculos. La respuesta es SIEMPRE la
+     * misma —exista o no el email— para que no sirva de directorio de "quién
+     * es cliente de quién"; el resultado real llega por correo o no llega.
+     *
+     * Un mismo email puede tener portal en más de una empresa (el vínculo es
+     * por usuario+tenant): se manda un enlace por cada una, con el nombre de
+     * la empresa en el asunto.
+     */
+    async requestAccess(email: string): Promise<void> {
+        // Freno de abuso por email (compartido entre nodos): 3 pedidos cada
+        // 15 min. El rate limit por IP de `main.ts` es la otra mitad.
+        const rlKey = `portalreq:${email}`;
+        const attempts = await this.redis.incr(rlKey);
+        if (attempts === 1) await this.redis.expire(rlKey, 900);
+        if (attempts > 3) {
+            this.logger.warn(`Pedidos de acceso al portal frenados para ${email}`);
+            return;
+        }
+
+        const [user] = await this.db
+            .select({ id: users.id, disabledAt: users.disabledAt })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`)
+            .limit(1);
+        if (!user || user.disabledAt !== null) return;
+
+        const links = await this.db
+            .select({ tenantId: portalLinks.tenantId, listId: portalLinks.listId })
+            .from(portalLinks)
+            .where(eq(portalLinks.userId, user.id))
+            .limit(3);
+        if (links.length === 0) return;
+
+        for (const link of links) {
+            const [list] = await this.db
+                .select({ name: lists.name })
+                .from(lists)
+                .where(eq(lists.id, link.listId))
+                .limit(1);
+            await this.sendMagicLink(link.tenantId, user.id, email, list?.name ?? 'tu portal');
+        }
+    }
+
+    /**
+     * Acuña el token de un solo uso (24 h) y lo manda por correo. Devuelve el
+     * resultado del envío para que el admin sepa si SALIÓ (v0.1.150) — el
+     * enlace se devuelve igual para poder compartirlo a mano.
+     */
+    private async sendMagicLink(
+        tenantId: number,
+        userId: number,
+        email: string,
+        listName: string,
+    ): Promise<MagicLinkResult> {
         const token = randomBytes(24).toString('base64url');
         const payload: MagicPayload = { userId, tenantId };
         await this.redis.set(magicKey(token), JSON.stringify(payload), 'EX', MAGIC_TTL_SECONDS);
         const path = `/portal/acceso?token=${token}`;
-
-        // Email transaccional: le mandamos el acceso al cliente. Con dominio
-        // propio (ADR-S17) el link sale por el dominio del tenant.
-        //
-        // v0.1.150 — se envía EN EL ACTO y el resultado VUELVE. Antes se
-        // encolaba con un `.catch()` que se comía el error, así que la UI
-        // decía "Acceso enviado por email" aunque el SMTP lo hubiera
-        // rechazado. El enlace se devuelve igual para compartirlo a mano.
         const url = `${await this.domains.baseUrlFor(tenantId)}${path}`;
         let emailSent = true;
         let emailError: string | null = null;
         try {
             await this.mail.sendNow({
                 tenantId,
-                to: input.email,
-                subject: `Tu acceso al portal de ${list.name}`,
+                to: email,
+                subject: `Tu acceso al portal de ${listName}`,
                 text: `Hola,\n\nAccedé a tu portal con este enlace (válido por 24 h):\n${url}\n\nSi no esperabas este correo, ignoralo.`,
                 html: `<p>Hola,</p><p>Accedé a tu portal con este enlace (válido por 24 h):</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
             });
         } catch (err) {
             emailSent = false;
             emailError = err instanceof Error ? err.message : String(err);
-            this.logger.error(`Magic link: el correo a ${input.email} no salió: ${emailError}`);
+            this.logger.error(`Magic link: el correo a ${email} no salió: ${emailError}`);
         }
-
         return { token, path, email_sent: emailSent, email_error: emailError };
     }
 

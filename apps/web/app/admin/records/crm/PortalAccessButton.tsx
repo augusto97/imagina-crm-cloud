@@ -233,7 +233,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
                 </Button>
             )}
             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                {__('El enlace es de un solo uso y vence en 24 h. Reenviarlo no crea un acceso nuevo: es el mismo cliente entrando otra vez.')}
+                {__('El enlace es de un solo uso y vence en 24 h. Una vez que entra, su sesión dura 30 días y se renueva cada vez que vuelve; si se le vence, puede pedirse uno nuevo solo desde la pantalla del portal.')}
             </p>
         </div>
     );

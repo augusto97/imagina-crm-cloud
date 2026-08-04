@@ -17,6 +17,7 @@ import {
     consumeMagicLinkSchema,
     issueMagicLinkSchema,
     portalCommentSchema,
+    portalRequestAccessSchema,
     portalUpdateMeSchema,
     type ActivityDto,
     type CommentDto,
@@ -26,6 +27,7 @@ import {
     type PortalBoot,
     type PortalAccessList,
     type PortalCommentInput,
+    type PortalRequestAccessInput,
     type PortalRelatedOptions,
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
@@ -104,6 +106,21 @@ export class PortalController {
         @Param('list') list: string,
     ): Promise<PortalRelatedOptions> {
         return { options: await this.portal.relatedOptions(req.tenant!.tenantId, list) };
+    }
+
+    /**
+     * Ruta PÚBLICA: el propio cliente pide un enlace nuevo cuando el anterior
+     * venció (v0.1.154). Siempre responde lo mismo — no revela si el email
+     * tiene o no acceso — y nunca crea accesos: sólo re-emite para quien la
+     * empresa ya autorizó.
+     */
+    @Post('portal/request-access')
+    @HttpCode(200)
+    async requestAccess(
+        @Body(new ZodValidationPipe(portalRequestAccessSchema)) input: PortalRequestAccessInput,
+    ): Promise<{ ok: true }> {
+        await this.portal.requestAccess(input.email);
+        return { ok: true };
     }
 
     /** Ruta pública: consume el token de un solo uso y abre la sesión del client. */
