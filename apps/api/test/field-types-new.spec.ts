@@ -27,6 +27,10 @@ import { startPostgres, type TestPg } from './helpers/containers';
 const rt = new RealtimeService();
 const admin: Actor = { userId: 1, role: 'admin' };
 
+/** El controller completa `limit`/`sort_dir` con sus defaults; acá van a mano. */
+const q = (extra: Record<string, unknown> = {}) =>
+    ({ limit: 50, sort_dir: 'asc', ...extra }) as Parameters<RecordsService['list']>[3];
+
 describe('Tipos de campo nuevos: phone / rating / percent / duration', () => {
     let pg: TestPg;
     let listsService: ListsService;
@@ -102,7 +106,7 @@ describe('Tipos de campo nuevos: phone / rating / percent / duration', () => {
         await service.create(tenantId, admin, 'clientes', {
             data: { [k.nombre!]: 'Beto', [k.telefono!]: '+1 2025551234' },
         });
-        const found = await service.list(tenantId, admin, 'clientes', { search: '1112233' });
+        const found = await service.list(tenantId, admin, 'clientes', q({ search: '1112233' }));
         expect(found.data.map((r) => r.data[k.nombre!])).toEqual(['Ana']);
     });
 
@@ -115,23 +119,23 @@ describe('Tipos de campo nuevos: phone / rating / percent / duration', () => {
         });
 
         // La duración se guardó en minutos, no como el texto que se escribió.
-        const all = await service.list(tenantId, admin, 'clientes', {});
+        const all = await service.list(tenantId, admin, 'clientes', q());
         const tiempos = Object.fromEntries(
             all.data.map((r) => [r.data[k.nombre!], r.data[k.tiempo!]]),
         );
         expect(tiempos).toEqual({ Nueve: 90, Diez: 45 });
 
         // '9' > '10' en texto: si el filtro fuera textual, esto devolvería Nueve.
-        const gt = await service.list(tenantId, admin, 'clientes', {
+        const gt = await service.list(tenantId, admin, 'clientes', q({
             filter_tree: {
                 type: 'group',
                 logic: 'and',
                 children: [{ type: 'condition', field_id: id.avance!, op: 'gt', value: 9 }],
             } as never,
-        });
+        }));
         expect(gt.data.map((r) => r.data[k.nombre!])).toEqual(['Diez']);
 
-        const bySat = await service.list(tenantId, admin, 'clientes', { sort: `field_${id.satisfaccion!}:desc` });
+        const bySat = await service.list(tenantId, admin, 'clientes', q({ sort: `field_${id.satisfaccion!}:desc` }));
         expect(bySat.data.map((r) => r.data[k.nombre!])).toEqual(['Diez', 'Nueve']);
     });
 
