@@ -1462,7 +1462,13 @@ function CallWebhookConfig({
     const listId = useContext(AutomationEditorListContext);
     const url = typeof spec.config.url === 'string' ? spec.config.url : '';
     const method = typeof spec.config.method === 'string' ? spec.config.method : 'POST';
-    const contentType = spec.config.content_type === 'form' ? 'form' : 'json';
+    const contentType =
+        typeof spec.config.content_type === 'string' &&
+        ['json', 'form', 'multipart', 'text', 'xml', 'html'].includes(spec.config.content_type)
+            ? spec.config.content_type
+            : 'json';
+    // text/xml/html se escriben a mano: "una fila por dato" no aplica.
+    const rawOnly = contentType === 'text' || contentType === 'xml' || contentType === 'html';
     const rawBody = typeof spec.config.body_template === 'string' ? spec.config.body_template : '';
     const bodyRows = readRows(spec.config.body_params);
     const headerRows = readRows(spec.config.headers);
@@ -1527,13 +1533,19 @@ function CallWebhookConfig({
                     <Select value={contentType} onChange={(e) => set({ content_type: e.target.value })}>
                         <option value="json">JSON (application/json)</option>
                         <option value="form">
-                            {__('Datos de formulario (x-www-form-urlencoded)')}
+                            {__('Datos de formulario codificados (x-www-form-urlencoded)')}
                         </option>
+                        <option value="multipart">
+                            {__('Form-data (multipart, sólo campos de texto)')}
+                        </option>
+                        <option value="text">{__('Texto plano (text/plain)')}</option>
+                        <option value="xml">XML (application/xml)</option>
+                        <option value="html">HTML (text/html)</option>
                     </Select>
                 </div>
             )}
 
-            {hasBody && !showRaw && (
+            {hasBody && !showRaw && !rawOnly && (
                 <KeyValueEditor
                     label={__('Cuerpo — datos que pide la API')}
                     hint={__('Una fila por dato. El valor acepta variables del registro.')}
@@ -1544,7 +1556,7 @@ function CallWebhookConfig({
                     valuePlaceholder="{{telefono}}"
                 />
             )}
-            {hasBody && showRaw && (
+            {hasBody && (showRaw || rawOnly) && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Cuerpo crudo (se manda tal cual)')}
@@ -1559,7 +1571,7 @@ function CallWebhookConfig({
                     />
                 </div>
             )}
-            {hasBody && (
+            {hasBody && !rawOnly && (
                 <Button
                     type="button"
                     variant="ghost"
