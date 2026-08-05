@@ -57,6 +57,8 @@ interface GroupedTableViewProps {
      * `defaultSizeForType`. Sin esto el user perdía sus ajustes de
      * width al agrupar.
      */
+    /** Setter de visibilidad — habilita "Ocultar columna" en el menú. */
+    onColumnVisibilityChange?: (next: Record<string, boolean>) => void;
     columnSizing?: Record<string, number>;
     /** Callback de resize por columna (drag del borde derecho del th).
      * Sin él, los handles no se renderizan. */
@@ -134,6 +136,7 @@ export function GroupedTableView({
     onSelectionChange,
     onRowClick,
     columnVisibility,
+    onColumnVisibilityChange,
     columnSizing,
     onColumnSizingChange,
     columnOrder,
@@ -371,6 +374,17 @@ export function GroupedTableView({
                                 // el flat view (un solo trigger).
                                 onAddColumn={onAddColumn}
                                 onEditField={onEditField}
+                                allFields={fields}
+                                onHideColumn={
+                                    onColumnVisibilityChange
+                                        ? (f) =>
+                                              onColumnVisibilityChange({
+                                                  ...columnVisibility,
+                                                  // El id de columna es el SLUG del campo.
+                                                  [f.slug]: false,
+                                              })
+                                        : undefined
+                                }
                                 onCreateSubtask={onCreateSubtask}
                                 density={density}
                                 fontSize={fontSize}
@@ -517,6 +531,10 @@ interface GroupBucketSectionProps {
     onAddColumn?: () => void;
     /** Menú contextual "⌄" por columna de campo (ver GroupedTableViewProps). */
     onEditField?: (field: FieldEntity) => void;
+    /** Todos los campos de la lista — para "Mover al inicio/final". */
+    allFields?: FieldEntity[];
+    /** Ocultar la columna en la vista actual. */
+    onHideColumn?: (field: FieldEntity) => void;
     onAddRecord?: () => void;
     onCreateSubtask?: (record: RecordEntity) => void;
     density?: RowDensity | null;
@@ -554,6 +572,8 @@ function GroupBucketSection({
     aggregateFieldIds,
     onAddColumn,
     onEditField,
+    allFields,
+    onHideColumn,
     onAddRecord,
     onCreateSubtask,
     density = null,
@@ -833,8 +853,11 @@ function GroupBucketSection({
                                                     {c.field !== null && onEditField !== undefined && (
                                                         <FieldHeaderMenu
                                                             listId={listId}
+                                                            listSlug={listSlug}
                                                             field={c.field}
+                                                            fields={allFields}
                                                             onEdit={onEditField}
+                                                            onHide={onHideColumn}
                                                         />
                                                     )}
                                                 </span>
@@ -872,7 +895,9 @@ function GroupBucketSection({
                                     {onAddColumn && (
                                         <th
                                             scope="col"
-                                            className="imcrm-w-12 imcrm-px-2 imcrm-py-2"
+                                            // v0.1.160 — el "+" queda FIJO a la
+                                            // derecha, no al final del scroll.
+                                            className="imcrm-sticky imcrm-right-0 imcrm-z-20 imcrm-w-12 imcrm-bg-background imcrm-px-2 imcrm-py-2"
                                         >
                                             <button
                                                 type="button"
@@ -974,7 +999,9 @@ function GroupBucketSection({
                                                     </td>
                                                 );
                                             })}
-                                            {onAddColumn && <td className="imcrm-w-12" />}
+                                            {onAddColumn && (
+                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                    )}
                                         </tr>
                                     );
                                 })}
@@ -1059,7 +1086,9 @@ function GroupBucketSection({
                                                 </td>
                                             );
                                         })}
-                                        {onAddColumn && <td className="imcrm-w-12" />}
+                                        {onAddColumn && (
+                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                    )}
                                     </tr>
                                 </tfoot>
                             )}
