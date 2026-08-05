@@ -408,6 +408,7 @@ function toField(row: FieldRow): Field {
         // las lecturas internas no hace falta y queda en false.
         is_primary: false,
         position: row.position,
+        created_at: row.createdAt.toISOString(),
     };
 }
 

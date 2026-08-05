@@ -99,6 +99,7 @@ export class BootstrapService {
                     is_indexed: f.isIndexed,
                     is_primary: titleFieldIds.has(f.id),
                     position: f.position,
+                    created_at: f.createdAt.toISOString(),
                 })),
                 views: viewRows.map((v) => ({
                     id: v.id,

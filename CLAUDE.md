@@ -2809,6 +2809,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         menú, ocultar columna, filtro/agrupado del administrador y el deep
         link) + 4/4 del cuadro de edición y su botón.
 
+  - [x] **Repaso de v0.1.160 (v0.1.161, 3 reportes del usuario)**:
+        (a) **la vista previa del tipo de campo no se veía**: era una tarjeta
+        posicionada en absoluto DENTRO del panel lateral, así que el
+        `overflow` del panel la recortaba y su velo la tapaba. Ahora es un
+        `Popover` de Radix portaleado al `<body>` (el mismo camino que usan
+        los diálogos, que sí se veían), anclado a la izquierda del ítem, sin
+        capturar el puntero. Medido en el navegador: `240×115` visible y
+        `elementFromPoint` sobre su centro devuelve la propia preview.
+        (b) **"Automatizar" llevaba al editor vacío**, con el trigger por
+        defecto y nada más — "entonces no tiene sentido". Ahora navega con el
+        campo en la URL (`?action=update_field&field=<id>`) y el editor
+        arranca NOMBRADO («Establecer «Satisfacción»») y con la acción
+        "Actualizar un campo" ya cargada para esa columna y ABIERTA, como el
+        "Establecer campo personalizado" de ClickUp. **OJO**: el estado
+        inicial del editor se fija una sola vez (`useState` + `key`), así que
+        el catálogo de campos entró en la espera de carga — montar con los
+        campos a medio traer dejaba la automatización vacía para siempre.
+        (c) **El administrador de campos era una lista con filtros**: ahora es
+        una TABLA con columnas alineadas (Nombre · Tipo · Propiedades ·
+        Creado), badges de obligatorio/sin repetidos/indexado, resumen arriba
+        ("9 campos · 2 obligatorios") y el editor en panel lateral. Y de paso
+        salió un hueco real: la columna "Creado" no podía llenarse nunca
+        porque `created_at` está en la tabla `fields` desde F1 pero el DTO
+        jamás la emitía — se agregó al schema compartido y a los tres
+        constructores (`fields`, `bootstrap`, `portal.me`). E2E navegador
+        19/19.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

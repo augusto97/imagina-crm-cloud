@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
 
 import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Sheet,
+    SheetBody,
+    SheetCloseButton,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+} from '@/components/ui/sheet';
 import { useCreateField, useUpdateField } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { ApiError } from '@/lib/api';
@@ -171,40 +178,25 @@ export function FieldDialog({
     const canSubmit = label.trim() !== '' && type !== '' && !isPending;
 
     return (
-        <Dialog.Root open={open} onOpenChange={onOpenChange}>
-            <Dialog.Portal>
-                <Dialog.Overlay
-                    className={cn(
-                        'imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm',
-                    )}
-                />
-                <Dialog.Content
-                    className={cn(
-                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-w-[calc(100%-1.5rem)] imcrm-max-w-md',
-                        'imcrm--translate-x-1/2 imcrm--translate-y-1/2',
-                        'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-p-6 imcrm-shadow-imcrm-lg',
-                        'imcrm-max-h-[85vh] imcrm-overflow-y-auto',
-                    )}
-                >
-                    <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                        <div>
-                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
-                                {isEdit ? __('Editar campo') : __('Añadir campo')}
-                            </Dialog.Title>
-                            <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {isEdit
-                                    ? __('El tipo no se puede cambiar tras crear el campo. Los demás atributos sí.')
-                                    : __('Define el label, tipo, slug y configuración del nuevo campo.')}
-                            </Dialog.Description>
-                        </div>
-                        <Dialog.Close asChild>
-                            <Button variant="ghost" size="icon" aria-label={__('Cerrar')}>
-                                <X className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
-                        </Dialog.Close>
+        // v0.1.161 — PANEL LATERAL, no modal centrado: en el administrador de
+        // campos se edita uno tras otro, y un panel deja la tabla a la vista
+        // mientras se trabaja (es lo que hace ClickUp).
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md">
+                <SheetHeader className="imcrm-flex imcrm-flex-row imcrm-items-start imcrm-justify-between imcrm-gap-2">
+                    <div>
+                        <SheetTitle>{isEdit ? __('Editar campo') : __('Añadir campo')}</SheetTitle>
+                        <SheetDescription>
+                            {isEdit
+                                ? __('El tipo se puede convertir; los datos existentes se migran.')
+                                : __('Define el label, tipo, slug y configuración del nuevo campo.')}
+                        </SheetDescription>
                     </div>
+                    <SheetCloseButton />
+                </SheetHeader>
 
-                    <form onSubmit={handleSubmit} className="imcrm-mt-4 imcrm-flex imcrm-flex-col imcrm-gap-4">
+                <SheetBody>
+                    <form onSubmit={handleSubmit} className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                             <Label htmlFor="field-label">{__('Label')}</Label>
                             <Input
@@ -304,11 +296,9 @@ export function FieldDialog({
                         )}
 
                         <div className="imcrm-flex imcrm-justify-end imcrm-gap-2">
-                            <Dialog.Close asChild>
-                                <Button type="button" variant="outline">
-                                    {__('Cancelar')}
-                                </Button>
-                            </Dialog.Close>
+                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                {__('Cancelar')}
+                            </Button>
                             <Button type="submit" disabled={!canSubmit}>
                                 {isPending
                                     ? __('Guardando…')
@@ -318,9 +308,9 @@ export function FieldDialog({
                             </Button>
                         </div>
                     </form>
-                </Dialog.Content>
-            </Dialog.Portal>
-        </Dialog.Root>
+                </SheetBody>
+            </SheetContent>
+        </Sheet>
     );
 }
 

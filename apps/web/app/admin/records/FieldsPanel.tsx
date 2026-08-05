@@ -6,6 +6,7 @@ import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     Sheet,
     SheetBody,
@@ -61,6 +62,8 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
     const [isRequired, setIsRequired] = useState(false);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
+    /** Tipo bajo el mouse — su vista previa se muestra al costado. */
+    const [hovered, setHovered] = useState<FieldTypeSlug | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -171,14 +174,26 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                             {tab === 'new' ? (
                                 <>
                                     {popular.length > 0 && (
-                                        <TypeSection title={__('Populares')} options={popular} onPick={pick} />
+                                        <TypeSection
+                                            title={__('Populares')}
+                                            options={popular}
+                                            onPick={pick}
+                                            hovered={hovered}
+                                            onHover={setHovered}
+                                        />
                                     )}
                                     {filtered.length === 0 ? (
                                         <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                                             {__('Ningún tipo coincide con la búsqueda.')}
                                         </p>
                                     ) : (
-                                        <TypeSection title={__('Todos')} options={filtered} onPick={pick} />
+                                        <TypeSection
+                                            title={__('Todos')}
+                                            options={filtered}
+                                            onPick={pick}
+                                            hovered={hovered}
+                                            onHover={setHovered}
+                                        />
                                     )}
                                 </>
                             ) : (
@@ -256,10 +271,14 @@ function TypeSection({
     title,
     options,
     onPick,
+    hovered,
+    onHover,
 }: {
     title: string;
     options: typeof FIELD_TYPE_OPTIONS;
     onPick: PickFn;
+    hovered: FieldTypeSlug | null;
+    onHover: (type: FieldTypeSlug | null) => void;
 }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -269,27 +288,53 @@ function TypeSection({
             {options.map((opt) => {
                 const Icon = fieldTypeIcon(opt.type);
                 return (
-                    <div key={opt.type} className="imcrm-group/type imcrm-relative">
-                        <button
-                            type="button"
-                            onClick={() => onPick(opt.type)}
-                            className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
+                    // v0.1.161 — la vista previa va en un POPOVER portaleado al
+                    // body. Como tarjeta absoluta dentro del panel quedaba
+                    // recortada por el overflow del sheet y tapada por su
+                    // overlay: existía en el DOM pero no se veía (reporte del
+                    // usuario). `pointer-events-none` para que el mouse siga
+                    // siendo del item, no de la tarjeta.
+                    <Popover
+                        key={opt.type}
+                        open={hovered === opt.type}
+                        // Controlado por el hover, pero Radix también cierra
+                        // con Escape/click afuera: sin este handler el estado
+                        // quedaba abierto y el Escape se consumía sin cerrar
+                        // NADA (ni la preview ni el panel).
+                        onOpenChange={(next) => {
+                            if (!next) onHover(null);
+                        }}
+                    >
+                        <PopoverTrigger asChild>
+                            <button
+                                type="button"
+                                onMouseEnter={() => onHover(opt.type)}
+                                onMouseLeave={() => onHover(null)}
+                                onFocus={() => onHover(opt.type)}
+                                onBlur={() => onHover(null)}
+                                onClick={() => onPick(opt.type)}
+                                className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
+                            >
+                                <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{opt.label}</span>
+                                <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 group-hover/type:imcrm-opacity-100">
+                                    {__('Crear')}
+                                </span>
+                            </button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                            side="left"
+                            align="start"
+                            sideOffset={12}
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                            className="imcrm-pointer-events-none imcrm-w-60"
                         >
-                            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{opt.label}</span>
-                            <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 group-hover/type:imcrm-opacity-100">
-                                {__('Crear')}
-                            </span>
-                        </button>
-                        {/* Vista previa + descripción al pasar el mouse — es lo
-                            que resuelve "¿y cómo se va a ver esto?". */}
-                        <div className="imcrm-pointer-events-none imcrm-absolute imcrm-right-full imcrm-top-0 imcrm-z-50 imcrm-mr-3 imcrm-hidden imcrm-w-60 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-3 imcrm-shadow-imcrm-lg group-hover/type:imcrm-block">
                             <FieldTypePreview type={opt.type} />
                             <p className="imcrm-mt-2 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
                                 {opt.description}
                             </p>
-                        </div>
-                    </div>
+                        </PopoverContent>
+                    </Popover>
                 );
             })}
         </div>

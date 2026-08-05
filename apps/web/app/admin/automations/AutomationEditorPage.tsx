@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
     AlertCircle,
     ArrowDown,
@@ -100,6 +100,12 @@ export function AutomationEditorPage(): JSX.Element {
         listSlug: string;
         automationId: string;
     }>();
+    // v0.1.161 — "Automatizar" desde el menú de una columna llega con el
+    // campo YA elegido: abrir el editor vacío con el trigger por defecto no
+    // le servía a nadie (reporte del usuario). `?action=update_field&field=`
+    // arma la acción con ese campo, como el "Establecer campo personalizado"
+    // de ClickUp.
+    const [searchParams] = useSearchParams();
     const isNew = automationId === undefined;
     const editId = isNew ? undefined : Number(automationId);
 
@@ -116,7 +122,17 @@ export function AutomationEditorPage(): JSX.Element {
         [automations.data, editId],
     );
 
-    if (list.isLoading || (editId !== undefined && automations.isLoading) || triggers.isLoading || actionsCatalog.isLoading) {
+    // `fields` entra en la espera a propósito: `presetFromQuery` resuelve el
+    // campo de la URL contra el catálogo, y el estado inicial del editor se
+    // fija UNA vez (useState + key) — montar con los campos a medio cargar
+    // dejaría la automatización vacía para siempre.
+    if (
+        list.isLoading
+        || (editId !== undefined && automations.isLoading)
+        || triggers.isLoading
+        || actionsCatalog.isLoading
+        || fields.isLoading
+    ) {
         return <EditorSkeleton />;
     }
 
@@ -146,8 +162,37 @@ export function AutomationEditorPage(): JSX.Element {
             actionsCatalog={actionsCatalog.data ?? []}
             fields={fields.data ?? []}
             lists={lists.data ?? []}
+            preset={
+                isNew
+                    ? presetFromQuery(searchParams, fields.data ?? [])
+                    : null
+            }
         />
     );
+}
+
+/**
+ * Estado inicial derivado de la URL, para las entradas "desde el contexto"
+ * (hoy: el menú de una columna). Sin parámetros devuelve `null` y el editor
+ * arranca como siempre.
+ */
+function presetFromQuery(
+    params: URLSearchParams,
+    fields: FieldEntity[],
+): AutomationFormState | null {
+    if (params.get('action') !== 'update_field') return null;
+    const fieldId = Number(params.get('field') ?? '');
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field) return null;
+    return {
+        ...EMPTY_AUTOMATION_STATE,
+        name: sprintf(
+            /* translators: %s: nombre del campo */
+            __('Establecer «%s»'),
+            field.label,
+        ),
+        actions: [{ type: 'update_field', config: { values: { [field.slug]: '' } } }],
+    };
 }
 
 function EditorBody({
@@ -157,6 +202,7 @@ function EditorBody({
     actionsCatalog,
     fields,
     lists,
+    preset,
 }: {
     list: ListSummary;
     editing: AutomationEntity | null;
@@ -164,6 +210,8 @@ function EditorBody({
     actionsCatalog: ActionMeta[];
     fields: FieldEntity[];
     lists: ListSummary[];
+    /** Estado inicial derivado de la URL (ver `presetFromQuery`). */
+    preset?: AutomationFormState | null;
 }): JSX.Element {
     const navigate = useNavigate();
     const toast = useToast();
@@ -171,7 +219,7 @@ function EditorBody({
     const update = useUpdateAutomation(list.id);
 
     const [state, setState] = useState<AutomationFormState>(() =>
-        editing ? fromAutomation(editing) : EMPTY_AUTOMATION_STATE,
+        editing ? fromAutomation(editing) : (preset ?? EMPTY_AUTOMATION_STATE),
     );
     const [error, setError] = useState<string | null>(null);
     const [runsOpen, setRunsOpen] = useState(false);
@@ -187,7 +235,9 @@ function EditorBody({
     // Qué tarjetas están expandidas. Al editar, todas colapsadas (el
     // flujo se lee como frases); al crear, el trigger arranca abierto.
     const [expanded, setExpanded] = useState<Set<string>>(
-        () => new Set(editing ? [] : ['trigger']),
+        // Con preset, la acción ya cargada arranca ABIERTA: es lo que el
+        // usuario viene a completar (el valor a poner en el campo).
+        () => new Set(editing ? [] : preset ? ['trigger', 'action-0'] : ['trigger']),
     );
 
     const initialJson = useRef(JSON.stringify(editing ? fromAutomation(editing) : EMPTY_AUTOMATION_STATE));

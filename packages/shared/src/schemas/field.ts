@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema } from './common';
+import { idSchema, isoDateTimeSchema } from './common';
 import { fieldSlugSchema } from './slug';
 
 /** Tipos de campo del plugin (CONTRACT.md §3). */
@@ -158,6 +158,12 @@ export const fieldSchema = z.object({
      */
     is_primary: z.boolean().default(false),
     position: z.number().int().nonnegative().default(0),
+    /**
+     * Alta del campo (v0.1.161). El administrador de campos la muestra en su
+     * columna "Creado"; la columna existía en la tabla desde F1 pero el DTO
+     * nunca la emitía, así que la celda salía siempre vacía.
+     */
+    created_at: isoDateTimeSchema,
 });
 export type Field = z.infer<typeof fieldSchema>;
 

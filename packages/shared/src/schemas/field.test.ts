@@ -41,6 +41,7 @@ describe('tipos de campo (CONTRACT.md §3)', () => {
             label: 'X',
             type: 'text',
             config: {},
+            created_at: '2026-08-05T00:00:00.000Z',
         };
         expect(fieldSchema.safeParse({ ...base, slug: 'estado' }).success).toBe(true);
         expect(fieldSchema.safeParse({ ...base, slug: 'created_at' }).success).toBe(false);
