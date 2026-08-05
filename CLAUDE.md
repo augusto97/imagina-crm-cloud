@@ -2870,6 +2870,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         popovers, sin aviso al abrir, y los motivos reales al tipear un
         nombre interno ocupado o reservado).
 
+  - [x] **Administrador de campos multi-columna (v0.1.163, corrección de
+        rumbo del usuario)**: la v0.1.162 se pasó de alcance — convirtió a
+        modal el panel de **agregar campo**, que no había que tocar ("ese no
+        te pedí tocarlo"). Vuelve a ser el panel lateral de v0.1.160, con la
+        preview arreglada: UNA sola región fija al pie del panel (el popover
+        por ítem duplicaba porque el mismo tipo está en «Populares» y en
+        «Todos»). Lo que sí se rehízo es el **administrador de campos**
+        (Ajustes → Campos), que era una tabla con filtros y ahora es la
+        interfaz de TRES COLUMNAS de ClickUp: (a) **navegación** a la
+        izquierda —todos los campos, por tipo con contador, y las otras
+        listas del workspace (se salta de un administrador a otro sin volver
+        al menú)—; (b) **tabla agrupada por tipo** al centro, con chip y
+        contador por grupo, columnas alineadas que se caen solas cuando no
+        hay ancho, menú por fila (modificar / renombrar / usar como título /
+        duplicar / copiar ID / eliminar) y una fila **"+ Crear campo de
+        <tipo>"** en cada grupo; (c) **panel de ajustes** a la derecha con
+        TODO lo del campo, que es lo que el usuario echaba en falta ("cada
+        campo tiene más opciones"): nombre, **descripción** (columna nueva
+        `fields.description`, migración 0044 — se muestra como ayuda bajo el
+        campo en los formularios), tipo con conversión y su aviso de riesgo,
+        nombre interno, configuración del tipo, obligatorio / sin repetidos /
+        indexar / usar como título, y **qué roles NO lo ven** (escribe en
+        `settings.permissions[rol].fields_hidden` — el MISMO ACL que aplica
+        el backend, visto desde el campo en vez de desde el rol). La sección
+        Campos pasa a ancho completo (el resto de Ajustes sigue contenido:
+        son formularios). E2E navegador 18/18.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

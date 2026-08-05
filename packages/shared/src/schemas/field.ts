@@ -164,6 +164,12 @@ export const fieldSchema = z.object({
      * nunca la emitía, así que la celda salía siempre vacía.
      */
     created_at: isoDateTimeSchema,
+    /**
+     * Ayuda para el equipo (v0.1.163): "cómo se usa este campo". Metadata
+     * pura — se muestra bajo el campo en los formularios y en el
+     * administrador; no participa de la validación del valor.
+     */
+    description: z.string().max(500).nullable().default(null),
 });
 export type Field = z.infer<typeof fieldSchema>;
 
@@ -184,6 +190,7 @@ export const createFieldSchema = z.object({
     is_required: z.boolean().optional(),
     is_unique: z.boolean().optional(),
     is_indexed: z.boolean().optional(),
+    description: z.string().max(500).nullable().optional(),
 });
 export type CreateFieldInput = z.infer<typeof createFieldSchema>;
 
@@ -203,6 +210,7 @@ export const updateFieldSchema = z
         is_required: z.boolean(),
         is_unique: z.boolean(),
         is_indexed: z.boolean(),
+        description: z.string().max(500).nullable(),
         position: z.number().int().nonnegative(),
     })
     .partial()

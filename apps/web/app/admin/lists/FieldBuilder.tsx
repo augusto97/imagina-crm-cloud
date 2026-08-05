@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
     Columns3,
@@ -7,6 +7,8 @@ import {
     Hash,
     Heading1,
     KeyRound,
+    Layers,
+    List as ListIcon,
     Loader2,
     MoreHorizontal,
     Pencil,
@@ -27,18 +29,19 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import { fieldsKeys, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
+import { useToast } from '@/components/ui/toast';
+import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
-import { useList, useUpdateList } from '@/hooks/useLists';
+import { useList, useLists, useUpdateList } from '@/hooks/useLists';
 import { invalidateForList } from '@/hooks/useRecords';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { formatDateStr } from '@/lib/tenantFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { FieldEntity } from '@/types/field';
+import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 import { FieldDialog } from './FieldDialog';
+import { FieldSettingsPanel } from './FieldSettingsPanel';
 
 interface FieldBuilderProps {
     listId: number;
@@ -53,34 +56,47 @@ function canBeTitle(field: FieldEntity): boolean {
 }
 
 /**
- * Sección "Campos" de la configuración de la lista.
+ * Administrador de campos de la lista (Ajustes → Campos).
  *
- * Rediseñada en v0.1.126: cada campo es una fila con el icono de su
- * tipo, el nombre y el tipo en lenguaje humano (antes: el slug en
- * monospace y el tipo EN MAYÚSCULAS, más el nombre de la columna
- * interna — jerga que no le decía nada a nadie). Se puede buscar
- * cuando hay muchos y ARRASTRAR para reordenar: el orden de esta
- * lista es el orden en que los campos aparecen en la ficha y en el
- * formulario de alta.
+ * v0.1.163 — Reescrito como interfaz de TRES COLUMNAS, el
+ * "Administrador de campos personalizados" de ClickUp (pedido del usuario:
+ * "es una interfaz multi columna con varias opciones"):
+ *
+ *   - **Izquierda**: navegación — todos los campos, por tipo (con contador)
+ *     y las otras listas del workspace (el administrador de una lista se
+ *     alcanza desde el de otra, sin volver al menú).
+ *   - **Centro**: tabla agrupada por tipo con su chip, contador, columnas
+ *     alineadas (Nombre · Propiedades · Creado), menú por fila y una fila
+ *     "+ Crear campo de <tipo>" en cada grupo.
+ *   - **Derecha**: los ajustes del campo seleccionado, con TODAS sus
+ *     opciones (nombre, descripción, tipo, nombre interno, config del tipo,
+ *     obligatorio / sin repetidos / indexar / título, y qué roles no lo ven).
+ *
+ * El orden de los campos sigue siendo arrastrable, pero sólo en la vista
+ * plana (con un filtro puesto, soltar una fila entre otras dos no describe
+ * una posición real).
  */
 export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const qc = useQueryClient();
+    const navigate = useNavigate();
     const list = useList(listId);
     const listData = list.data;
+    const lists = useLists();
     const fields = useFields(listId);
     const types = useFieldTypes();
+    const createField = useCreateField(listId);
     const deleteField = useDeleteField(listId);
     const reorder = useReorderFields(listId);
     const updateList = useUpdateList(listId);
     const confirm = useConfirm();
+    const toast = useToast();
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<FieldEntity | null>(null);
     const [search, setSearch] = useState('');
-    // v0.1.160 — el administrador de campos: filtro por tipo y agrupado por
-    // tipo, como el "Administrador de campos personalizados" de ClickUp.
+    /** Navegación de la izquierda: '' = todos; si no, un tipo. */
     const [typeFilter, setTypeFilter] = useState<string>('');
-    const [groupByType, setGroupByType] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
     const dragIndexRef = useRef<number | null>(null);
     const [params, setParams] = useSearchParams();
 
@@ -98,14 +114,11 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         return f.label.toLowerCase().includes(term) || f.slug.toLowerCase().includes(term);
     });
 
-    const requiredCount = all.filter((f) => f.is_required).length;
-    const indexedCount = all.filter((f) => f.is_indexed).length;
-
-    /** Tipos presentes en la lista, para poblar el filtro. */
-    const typesPresent = useMemo(() => {
-        const seen = new Set<string>();
-        for (const f of all) seen.add(f.type);
-        return [...seen];
+    /** Tipos presentes en la lista con su contador, para la navegación. */
+    const typeCounts = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const f of all) map.set(f.type, (map.get(f.type) ?? 0) + 1);
+        return [...map.entries()];
     }, [all]);
 
     /** Filas agrupadas por tipo (el orden de los grupos es el de aparición). */
@@ -119,29 +132,45 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         return [...map.entries()];
     }, [visible]);
 
-    // Reordenar sólo tiene sentido sobre la lista COMPLETA: con un
-    // filtro activo, soltar una fila entre otras dos no describe una
-    // posición real.
-    const canReorder = term === '' && typeFilter === '' && !groupByType && all.length > 1;
+    const selected = selectedId !== null ? all.find((f) => f.id === selectedId) ?? null : null;
+
+    // Reordenar sólo tiene sentido sobre la lista COMPLETA: con un filtro
+    // activo, soltar una fila entre otras dos no describe una posición real.
+    const canReorder = term === '' && typeFilter === '' && all.length > 1;
 
     const openCreate = (): void => {
         setEditingField(null);
         setDialogOpen(true);
     };
-    const openEdit = (field: FieldEntity): void => {
-        setEditingField(field);
-        setDialogOpen(true);
+
+    /** "+ Crear campo de <tipo>": alta directa con el tipo del grupo. */
+    const createOfType = async (type: FieldTypeSlug): Promise<void> => {
+        const label = sprintf(
+            /* translators: %s: nombre del tipo de campo */
+            __('%s nuevo'),
+            typeLabels.get(type) ?? type,
+        );
+        try {
+            const created = await createField.mutateAsync({ label, type });
+            setSelectedId(created.id);
+            toast.success(__('Campo creado'), label);
+        } catch (err) {
+            toast.error(
+                __('No se pudo crear el campo'),
+                err instanceof Error ? err.message : undefined,
+            );
+        }
     };
 
-    // `?field=<id>` abre ese campo — es como el panel de campos y el menú de
-    // la columna mandan a "ajustes avanzados" sin perder de vista cuál era.
+    // `?field=<id>` selecciona ese campo — es como el panel de campos y el
+    // menú de la columna mandan a "ajustes avanzados" sin perder de vista
+    // cuál era.
     const requestedFieldId = Number(params.get('field') ?? '');
     useEffect(() => {
         if (!Number.isInteger(requestedFieldId) || requestedFieldId <= 0) return;
-        const target = (fields.data ?? []).find((f) => f.id === requestedFieldId);
+        const target = all.find((f) => f.id === requestedFieldId);
         if (!target) return;
-        setEditingField(target);
-        setDialogOpen(true);
+        setSelectedId(target.id);
         const next = new URLSearchParams(params);
         next.delete('field');
         setParams(next, { replace: true });
@@ -172,6 +201,37 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         );
     };
 
+    const handleDuplicate = async (field: FieldEntity): Promise<void> => {
+        try {
+            await createField.mutateAsync({
+                label: sprintf(
+                    /* translators: %s: label del campo original */
+                    __('%s (copia)'),
+                    field.label,
+                ),
+                type: field.type,
+                config: field.config,
+                is_required: field.is_required,
+                description: field.description ?? null,
+            });
+            toast.success(__('Campo duplicado'));
+        } catch (err) {
+            toast.error(
+                __('No se pudo duplicar el campo'),
+                err instanceof Error ? err.message : undefined,
+            );
+        }
+    };
+
+    const handleCopyId = async (field: FieldEntity): Promise<void> => {
+        try {
+            await navigator.clipboard.writeText(String(field.id));
+            toast.success(__('ID de campo copiado'), `#${field.id}`);
+        } catch {
+            toast.error(__('No se pudo copiar al portapapeles'));
+        }
+    };
+
     const handleDelete = async (field: FieldEntity): Promise<void> => {
         const ok = await confirm({
             title: sprintf(
@@ -186,42 +246,16 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
             destructive: true,
         });
         if (!ok) return;
+        if (selectedId === field.id) setSelectedId(null);
         deleteField.mutate({ id: field.id, purge: false });
     };
 
+    const requiredCount = all.filter((f) => f.is_required).length;
+    const indexedCount = all.filter((f) => f.is_indexed).length;
+    const otherLists = (lists.data ?? []).filter((l) => l.id !== listId);
+
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            {/* Resumen de la lista de campos (v0.1.161): con 15 campos, saber
-                de una cuántos hay y cuántos se están viendo con el filtro
-                puesto es la diferencia entre un administrador y una lista. */}
-            {all.length > 0 && (
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {visible.length === all.length
-                        ? sprintf(
-                            /* translators: %d: cantidad de campos */
-                            __('%d campos'),
-                            all.length,
-                        )
-                        : sprintf(
-                            /* translators: 1: campos visibles, 2: total */
-                            __('%1$d de %2$d campos'),
-                            visible.length,
-                            all.length,
-                        )}
-                    {requiredCount > 0
-                        && ` · ${sprintf(
-                            /* translators: %d: cantidad de campos obligatorios */
-                            __('%d obligatorios'),
-                            requiredCount,
-                        )}`}
-                    {indexedCount > 0
-                        && ` · ${sprintf(
-                            /* translators: %d: cantidad de campos indexados */
-                            __('%d indexados'),
-                            indexedCount,
-                        )}`}
-                </p>
-            )}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <div className="imcrm-relative imcrm-min-w-[180px] imcrm-flex-1 sm:imcrm-max-w-xs">
                     <Search
@@ -236,37 +270,10 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                         className="imcrm-h-9 imcrm-pl-8"
                     />
                 </div>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
-                    {typesPresent.length > 1 && (
-                        <>
-                            <Select
-                                value={typeFilter}
-                                onChange={(e) => setTypeFilter(e.target.value)}
-                                aria-label={__('Filtrar por tipo')}
-                                className="imcrm-h-9 imcrm-w-auto imcrm-text-sm"
-                            >
-                                <option value="">{__('Todos los tipos')}</option>
-                                {typesPresent.map((t) => (
-                                    <option key={t} value={t}>
-                                        {typeLabels.get(t) ?? t}
-                                    </option>
-                                ))}
-                            </Select>
-                            <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-muted-foreground">
-                                <input
-                                    type="checkbox"
-                                    checked={groupByType}
-                                    onChange={(e) => setGroupByType(e.target.checked)}
-                                />
-                                {__('Agrupar por tipo')}
-                            </label>
-                        </>
-                    )}
-                    <Button onClick={openCreate} className="imcrm-gap-2">
-                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                        {__('Nuevo campo')}
-                    </Button>
-                </div>
+                <Button onClick={openCreate} className="imcrm-gap-2">
+                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                    {__('Nuevo campo')}
+                </Button>
             </div>
 
             {fields.isLoading && (
@@ -292,154 +299,282 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 />
             )}
 
-            {all.length > 0 && visible.length === 0 && (
-                <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Ningún campo coincide con la búsqueda.')}
-                </p>
-            )}
-
-            {visible.length > 0 && groupByType && (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                    {groups.map(([type, rows]) => (
-                        <div key={type} className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-foreground imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
-                                    {(() => {
-                                        const GroupIcon = fieldTypeIcon(type);
-                                        return <GroupIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />;
-                                    })()}
-                                    {typeLabels.get(type) ?? type}
-                                </span>
-                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{rows.length}</span>
+            {all.length > 0 && (
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-4">
+                    {/* ── Columna 1: navegación ───────────────────────── */}
+                    <nav className="imcrm-hidden imcrm-w-52 imcrm-shrink-0 imcrm-flex-col imcrm-gap-4 lg:imcrm-flex">
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                            <NavItem
+                                active={typeFilter === ''}
+                                onClick={() => setTypeFilter('')}
+                                icon={Layers}
+                                label={__('Todos los campos')}
+                                count={all.length}
+                            />
+                            <p className="imcrm-px-2 imcrm-pt-1 imcrm-text-[11px] imcrm-text-muted-foreground">
+                                {requiredCount > 0 && sprintf(
+                                    /* translators: %d: cantidad de campos obligatorios */
+                                    __('%d obligatorios'),
+                                    requiredCount,
+                                )}
+                                {requiredCount > 0 && indexedCount > 0 && ' · '}
+                                {indexedCount > 0 && sprintf(
+                                    /* translators: %d: cantidad de campos indexados */
+                                    __('%d indexados'),
+                                    indexedCount,
+                                )}
                             </p>
-                            <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
-                                <li>
-                                    <FieldsTableHeader />
-                                </li>
-                                {rows.map((field) => (
-                                    <FieldRow
-                                        key={field.id}
-                                        field={field}
-                                        typeLabel={typeLabels.get(field.type) ?? field.type}
-                                        draggable={false}
-                                        onDragStart={() => undefined}
-                                        onDragOver={() => undefined}
-                                        onDrop={() => undefined}
-                                        onEdit={() => openEdit(field)}
-                                        onDelete={() => void handleDelete(field)}
-                                        onMakeTitle={
-                                            canBeTitle(field) && !field.is_primary
-                                                ? () => makeTitle(field)
-                                                : undefined
-                                        }
+                        </div>
+
+                        <NavSection title={__('Por tipo')}>
+                            {typeCounts.map(([type, count]) => (
+                                <NavItem
+                                    key={type}
+                                    active={typeFilter === type}
+                                    onClick={() => setTypeFilter(type)}
+                                    icon={fieldTypeIcon(type)}
+                                    label={typeLabels.get(type) ?? type}
+                                    count={count}
+                                />
+                            ))}
+                        </NavSection>
+
+                        {otherLists.length > 0 && (
+                            <NavSection title={__('Otras listas')}>
+                                {otherLists.slice(0, 12).map((l) => (
+                                    <NavItem
+                                        key={l.id}
+                                        active={false}
+                                        onClick={() => navigate(`/lists/${l.slug}/edit?s=campos`)}
+                                        icon={ListIcon}
+                                        label={l.name}
                                     />
                                 ))}
-                            </ul>
-                        </div>
-                    ))}
+                            </NavSection>
+                        )}
+                    </nav>
+
+                    {/* ── Columna 2: la tabla, agrupada por tipo ──────── */}
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3">
+                        {visible.length === 0 ? (
+                            <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
+                                {__('Ningún campo coincide con la búsqueda.')}
+                            </p>
+                        ) : (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                                <FieldsTableHeader />
+                                {groups.map(([type, rows]) => {
+                                    const GroupIcon = fieldTypeIcon(type);
+                                    return (
+                                        <div key={type} className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-foreground imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
+                                                    <GroupIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />
+                                                    {typeLabels.get(type) ?? type}
+                                                </span>
+                                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{rows.length}</span>
+                                            </p>
+                                            <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
+                                                {rows.map((field) => (
+                                                    <FieldRow
+                                                        key={field.id}
+                                                        field={field}
+                                                        selected={selectedId === field.id}
+                                                        draggable={canReorder}
+                                                        onDragStart={() => {
+                                                            dragIndexRef.current = all.findIndex((f) => f.id === field.id);
+                                                        }}
+                                                        onDragOver={(e) => {
+                                                            if (canReorder) e.preventDefault();
+                                                        }}
+                                                        onDrop={(e) => {
+                                                            e.preventDefault();
+                                                            handleDrop(all.findIndex((f) => f.id === field.id));
+                                                        }}
+                                                        onSelect={() => setSelectedId(field.id)}
+                                                        onRename={() => {
+                                                            setEditingField(field);
+                                                            setDialogOpen(true);
+                                                        }}
+                                                        onDuplicate={() => void handleDuplicate(field)}
+                                                        onCopyId={() => void handleCopyId(field)}
+                                                        onDelete={() => void handleDelete(field)}
+                                                        onMakeTitle={
+                                                            canBeTitle(field) && !field.is_primary
+                                                                ? () => makeTitle(field)
+                                                                : undefined
+                                                        }
+                                                    />
+                                                ))}
+                                                <li>
+                                                    <button
+                                                        type="button"
+                                                        disabled={createField.isPending}
+                                                        onClick={() => void createOfType(type as FieldTypeSlug)}
+                                                        className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-1.5 imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent/40 hover:imcrm-text-foreground"
+                                                    >
+                                                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                                        {sprintf(
+                                                            /* translators: %s: nombre del tipo de campo */
+                                                            __('Crear campo de %s'),
+                                                            (typeLabels.get(type) ?? type).toLowerCase(),
+                                                        )}
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {canReorder && (
+                            <p className="imcrm-pt-2 imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('Arrastrá un campo por el asa de la izquierda para cambiar su orden.')}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* ── Columna 3: ajustes del campo elegido ────────── */}
+                    <div className="imcrm-hidden imcrm-w-[340px] imcrm-shrink-0 xl:imcrm-block">
+                        {selected ? (
+                            <FieldSettingsPanel
+                                key={selected.id}
+                                listId={listId}
+                                field={selected}
+                                onDelete={() => void handleDelete(selected)}
+                                onMakeTitle={
+                                    canBeTitle(selected) && !selected.is_primary
+                                        ? () => makeTitle(selected)
+                                        : undefined
+                                }
+                            />
+                        ) : (
+                            <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-8 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
+                                {__('Elegí un campo de la lista para ver y cambiar todos sus ajustes.')}
+                            </div>
+                        )}
+                    </div>
                 </div>
-            )}
-
-            {visible.length > 0 && !groupByType && (
-                <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
-                    <li>
-                        <FieldsTableHeader />
-                    </li>
-                    {visible.map((field, i) => (
-                        <FieldRow
-                            key={field.id}
-                            field={field}
-                            typeLabel={typeLabels.get(field.type) ?? field.type}
-                            draggable={canReorder}
-                            onDragStart={() => {
-                                dragIndexRef.current = i;
-                            }}
-                            onDragOver={(e) => {
-                                if (canReorder) e.preventDefault();
-                            }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                handleDrop(i);
-                            }}
-                            onEdit={() => openEdit(field)}
-                            onDelete={() => void handleDelete(field)}
-                            onMakeTitle={
-                                canBeTitle(field) && !field.is_primary
-                                    ? () => makeTitle(field)
-                                    : undefined
-                            }
-                        />
-                    ))}
-                </ul>
-            )}
-
-            {canReorder && (
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Arrastrá un campo por el asa de la izquierda para cambiar su orden.')}
-                </p>
             )}
 
             <FieldDialog
                 listId={listId}
                 field={editingField}
                 open={dialogOpen}
-                onOpenChange={(open) => {
-                    setDialogOpen(open);
-                    if (!open) setEditingField(null);
-                }}
+                onOpenChange={setDialogOpen}
             />
         </div>
     );
 }
 
-interface FieldRowProps {
-    field: FieldEntity;
-    typeLabel: string;
-    draggable: boolean;
-    onDragStart: () => void;
-    onDragOver: (e: React.DragEvent) => void;
-    onDrop: (e: React.DragEvent) => void;
-    onEdit: () => void;
-    onDelete: () => void;
-    /** `undefined` cuando este campo no puede ser el título (o ya lo es). */
-    onMakeTitle?: () => void;
+function NavSection({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+            <p className="imcrm-px-2 imcrm-pb-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                {title}
+            </p>
+            {children}
+        </div>
+    );
+}
+
+function NavItem({
+    active,
+    onClick,
+    icon: Icon,
+    label,
+    count,
+}: {
+    active: boolean;
+    onClick: () => void;
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    count?: number;
+}): JSX.Element {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-sm',
+                active
+                    ? 'imcrm-bg-accent imcrm-font-medium imcrm-text-foreground'
+                    : 'imcrm-text-muted-foreground hover:imcrm-bg-accent/50 hover:imcrm-text-foreground',
+            )}
+        >
+            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
+            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{label}</span>
+            {count !== undefined && (
+                <span className="imcrm-shrink-0 imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground">
+                    {count}
+                </span>
+            )}
+        </button>
+    );
 }
 
 /**
- * v0.1.161 — grilla de COLUMNAS alineadas (Nombre · Tipo · Propiedades ·
- * Creado), como el administrador de campos de ClickUp: con 15 campos, una
- * lista de tarjetas no deja comparar nada. Las mismas columnas que el
- * encabezado de abajo — de ahí que compartan `FIELD_GRID`.
+ * v0.1.161 — grilla de COLUMNAS alineadas, como el administrador de campos
+ * de ClickUp: con 15 campos, una lista de tarjetas no deja comparar nada.
+ * Las mismas columnas que el encabezado — de ahí que compartan `FIELD_GRID`.
  */
-const FIELD_GRID = 'imcrm-grid imcrm-grid-cols-[20px_minmax(0,1fr)_150px_150px_110px_36px] imcrm-items-center imcrm-gap-2';
+const FIELD_GRID = cn(
+    'imcrm-grid imcrm-items-center imcrm-gap-2',
+    // Las columnas de detalle sólo aparecen cuando hay ancho para ellas: con
+    // el panel de ajustes abierto en pantallas medianas, forzarlas hacía que
+    // los textos se pisaran entre sí.
+    'imcrm-grid-cols-[20px_minmax(0,1fr)_36px]',
+    '[@media(min-width:1100px)]:imcrm-grid-cols-[20px_minmax(0,1fr)_150px_36px]',
+    '[@media(min-width:1320px)]:imcrm-grid-cols-[20px_minmax(0,1fr)_150px_100px_36px]',
+);
+/** Celdas que sólo se muestran a partir de cierto ancho. */
+const CELL_PROPS = 'imcrm-hidden [@media(min-width:1100px)]:imcrm-flex';
+const CELL_CREATED = 'imcrm-hidden [@media(min-width:1320px)]:imcrm-block';
 
 function FieldsTableHeader(): JSX.Element {
     return (
         <div
             className={cn(
                 FIELD_GRID,
-                'imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5',
+                'imcrm-px-2 imcrm-pb-1',
                 'imcrm-text-[11px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground',
             )}
         >
             <span aria-hidden />
             <span>{__('Nombre')}</span>
-            <span>{__('Tipo')}</span>
-            <span>{__('Propiedades')}</span>
-            <span>{__('Creado')}</span>
+            <span className={CELL_PROPS}>{__('Propiedades')}</span>
+            <span className={CELL_CREATED}>{__('Creado')}</span>
             <span aria-hidden />
         </div>
     );
 }
 
+interface FieldRowProps {
+    field: FieldEntity;
+    selected: boolean;
+    draggable: boolean;
+    onDragStart: () => void;
+    onDragOver: (e: React.DragEvent) => void;
+    onDrop: (e: React.DragEvent) => void;
+    onSelect: () => void;
+    onRename: () => void;
+    onDuplicate: () => void;
+    onCopyId: () => void;
+    onDelete: () => void;
+    onMakeTitle?: () => void;
+}
+
 function FieldRow({
     field,
-    typeLabel,
+    selected,
     draggable,
     onDragStart,
     onDragOver,
     onDrop,
-    onEdit,
+    onSelect,
+    onRename,
+    onDuplicate,
+    onCopyId,
     onDelete,
     onMakeTitle,
 }: FieldRowProps): JSX.Element {
@@ -450,7 +585,11 @@ function FieldRow({
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDrop={onDrop}
-            className={cn(FIELD_GRID, 'imcrm-group imcrm-px-2 imcrm-py-1.5 hover:imcrm-bg-accent/30')}
+            className={cn(
+                FIELD_GRID,
+                'imcrm-group imcrm-px-2 imcrm-py-1.5',
+                selected ? 'imcrm-bg-accent/60' : 'hover:imcrm-bg-accent/30',
+            )}
         >
             <span
                 aria-hidden
@@ -462,32 +601,37 @@ function FieldRow({
                 <GripVertical className="imcrm-h-4 imcrm-w-4" />
             </span>
 
-            {/* La fila entera abre la edición: es lo que el usuario intenta
-                hacer el 95% de las veces. */}
+            {/* La fila entera selecciona el campo: sus ajustes aparecen en la
+                columna de la derecha, sin sacar la tabla de la vista. */}
             <button
                 type="button"
-                onClick={onEdit}
-                className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-1 imcrm-py-1 imcrm-text-left focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary"
+                onClick={onSelect}
+                className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5 imcrm-rounded-md imcrm-px-1 imcrm-py-1 imcrm-text-left focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary"
             >
-                <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                <span className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{field.label}</span>
-                {field.is_primary && (
-                    <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1">
-                        <KeyRound className="imcrm-h-3 imcrm-w-3" />
-                        {__('Título')}
-                    </Badge>
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
+                    <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                    <span className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{field.label}</span>
+                    {field.is_primary && (
+                        <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1">
+                            <KeyRound className="imcrm-h-3 imcrm-w-3" />
+                            {__('Título')}
+                        </Badge>
+                    )}
+                </span>
+                {field.description !== null && field.description !== undefined && field.description !== '' && (
+                    <span className="imcrm-truncate imcrm-pl-6 imcrm-text-xs imcrm-text-muted-foreground">
+                        {field.description}
+                    </span>
                 )}
             </button>
 
-            <span className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{typeLabel}</span>
-
-            <span className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+            <span className={cn(CELL_PROPS, 'imcrm-flex-wrap imcrm-gap-1')}>
                 {field.is_required && <Badge variant="outline">{__('Obligatorio')}</Badge>}
                 {field.is_unique && <Badge variant="outline">{__('Sin repetidos')}</Badge>}
                 {field.is_indexed && <Badge variant="outline">{__('Indexado')}</Badge>}
             </span>
 
-            <span className="imcrm-truncate imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground">
+            <span className={cn(CELL_CREATED, 'imcrm-truncate imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground')}>
                 {field.created_at ? formatDateStr(field.created_at.slice(0, 10)) : '—'}
             </span>
 
@@ -507,28 +651,32 @@ function FieldRow({
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={onEdit}>
-                        <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <DropdownMenuItem onSelect={onSelect}>
+                        <Pencil className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                         {__('Modificar')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={onRename}>
+                        <Pencil className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Cambiar el nombre')}
                     </DropdownMenuItem>
                     {onMakeTitle && (
                         <DropdownMenuItem onSelect={onMakeTitle}>
-                            <Heading1 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            <Heading1 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                             {__('Usar como título')}
                         </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem
-                        onSelect={() => {
-                            void navigator.clipboard.writeText(String(field.id));
-                        }}
-                    >
-                        <Hash className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <DropdownMenuItem onSelect={onDuplicate}>
+                        <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Duplicar')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={onCopyId}>
+                        <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                         {__('Copiar ID de campo')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem danger onSelect={onDelete}>
-                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {__('Eliminar')}
+                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Eliminar de esta lista')}
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>

@@ -166,8 +166,15 @@ export function ListBuilderPage(): JSX.Element {
             </div>
 
             {/* Fila 3 — la sección activa. Ancho contenido: son formularios,
-                no una tabla; a 1400px de ancho serían ilegibles. */}
-            <div className="imcrm-flex imcrm-w-full imcrm-max-w-4xl imcrm-flex-col imcrm-gap-4 imcrm-pt-2">
+                no una tabla; a 1400px de ancho serían ilegibles. La excepción
+                es "Campos" (v0.1.163), que es un administrador de TRES
+                columnas y necesita el ancho de la pantalla. */}
+            <div
+                className={cn(
+                    'imcrm-flex imcrm-w-full imcrm-flex-col imcrm-gap-4 imcrm-pt-2',
+                    active === 'campos' ? 'imcrm-max-w-none' : 'imcrm-max-w-4xl',
+                )}
+            >
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                     <h2 className="imcrm-text-base imcrm-font-semibold imcrm-tracking-tight">
                         {activeSection.title}

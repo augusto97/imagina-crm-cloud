@@ -47,6 +47,8 @@ export interface FieldEntity {
     position: number;
     created_at: string;
     updated_at: string;
+    /** Ayuda para el equipo (v0.1.163): "cómo se usa este campo". */
+    description?: string | null;
     column_name?: string;
 }
 
@@ -58,6 +60,7 @@ export interface CreateFieldInput {
     is_required?: boolean;
     is_unique?: boolean;
     is_primary?: boolean;
+    description?: string | null;
     is_indexed?: boolean;
     position?: number;
 }
@@ -77,6 +80,7 @@ export interface UpdateFieldInput {
     is_required?: boolean;
     is_unique?: boolean;
     is_primary?: boolean;
+    description?: string | null;
     is_indexed?: boolean;
     position?: number;
 }
