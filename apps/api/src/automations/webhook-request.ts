@@ -45,13 +45,41 @@ function readPairs(raw: unknown, merge: MergeFn): KeyValue[] {
     return [];
 }
 
+/**
+ * Tipos de contenido soportados. Los tres primeros arman el cuerpo desde las
+ * filas clave/valor; los tres últimos mandan el cuerpo TAL CUAL se escribe
+ * (no tiene sentido "una fila por dato" en un XML).
+ *
+ * `multipart` sólo lleva campos de TEXTO: subir archivos por webhook no está
+ * soportado (habría que resolver adjuntos y streamearlos), y ofrecerlo a medias
+ * sería peor que no ofrecerlo.
+ */
+export const WEBHOOK_CONTENT_TYPES = ['json', 'form', 'multipart', 'text', 'xml', 'html'] as const;
+export type WebhookContentType = (typeof WEBHOOK_CONTENT_TYPES)[number];
+
+/** Los que se escriben a mano (sin filas clave/valor). */
+export const RAW_BODY_TYPES: readonly WebhookContentType[] = ['text', 'xml', 'html'];
+
+const MIME: Record<WebhookContentType, string> = {
+    json: 'application/json',
+    form: 'application/x-www-form-urlencoded',
+    multipart: 'multipart/form-data',
+    text: 'text/plain; charset=utf-8',
+    xml: 'application/xml',
+    html: 'text/html; charset=utf-8',
+};
+
 export function buildWebhookRequest(
     cfg: Record<string, unknown>,
     merge: MergeFn,
     fallback: { recordId: number | null; listId: number },
 ): WebhookRequest {
     const method = String(cfg.method ?? 'POST').toUpperCase();
-    const contentType = cfg.content_type === 'form' ? 'form' : 'json';
+    const contentType: WebhookContentType = (WEBHOOK_CONTENT_TYPES as readonly string[]).includes(
+        String(cfg.content_type),
+    )
+        ? (cfg.content_type as WebhookContentType)
+        : 'json';
 
     // Query params: se agregan a la URL respetando lo que ya traiga escrito.
     let url = merge(cfg.url).trim();
@@ -74,26 +102,39 @@ export function buildWebhookRequest(
             ? merge(cfg.body_template)
             : '';
 
+    const raw = RAW_BODY_TYPES.includes(contentType);
     let body: string | undefined;
     if (method === 'GET' || method === 'HEAD') {
         body = undefined;
-    } else if (params.length > 0) {
+    } else if (!raw && params.length > 0) {
         if (contentType === 'form') {
             body = params
                 .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
                 .join('&');
-            headers['content-type'] ??= 'application/x-www-form-urlencoded';
+            headers['content-type'] ??= MIME.form;
+        } else if (contentType === 'multipart') {
+            // Boundary determinista por longitud: no hace falta azar, sólo que
+            // no aparezca en el contenido (se verifica y se alarga si aparece).
+            let boundary = '----ImaginaBase' + String(body ?? '').length.toString(36) + 'x9f3';
+            while (params.some((p) => p.value.includes(boundary))) boundary += 'x';
+            body =
+                params
+                    .map(
+                        (p) =>
+                            `--${boundary}\r\nContent-Disposition: form-data; name="${p.key.replace(/"/g, '')}"\r\n\r\n${p.value}\r\n`,
+                    )
+                    .join('') + `--${boundary}--\r\n`;
+            headers['content-type'] ??= `${MIME.multipart}; boundary=${boundary}`;
         } else {
             body = JSON.stringify(Object.fromEntries(params.map((p) => [p.key, p.value])));
-            headers['content-type'] ??= 'application/json';
+            headers['content-type'] ??= MIME.json;
         }
     } else if (rawTemplate !== '') {
         body = rawTemplate;
-        headers['content-type'] ??=
-            contentType === 'form' ? 'application/x-www-form-urlencoded' : 'application/json';
+        headers['content-type'] ??= MIME[contentType];
     } else {
         body = JSON.stringify({ record_id: fallback.recordId, list_id: fallback.listId });
-        headers['content-type'] ??= 'application/json';
+        headers['content-type'] ??= MIME.json;
     }
 
     // Firma HMAC del cuerpo (opcional): el receptor puede verificar que el

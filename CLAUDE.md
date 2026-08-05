@@ -2653,6 +2653,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         textarea, crece 80→96→196px al escribir, se ve el texto completo sin
         scroll interno, y se puede arrastrar).
 
+  - [x] **Fix del 411 en webhooks salientes + tipos de contenido completos
+        (v0.1.157, reporte del usuario con la respuesta cruda del servidor)**:
+        (a) **BUG REAL nuestro**: `safeWebhookFetch` escribía el cuerpo sin
+        `Content-Length`, y node:http entonces manda `Transfer-Encoding:
+        chunked` — Apache/PHP y varios gateways de WhatsApp/SMS contestan
+        **411 Length Required** sin leer el body. Reproducido con un servidor
+        local (`{te:'chunked', cl:null}` sin la cabecera; `{te:null, cl:'7'}`
+        con ella). `withContentLength` (puro, exportado) la agrega SIEMPRE que
+        hay cuerpo, con `Buffer.byteLength` —bytes, no caracteres: `a=ñ` son 4
+        y contar caracteres cortaría el cuerpo— y respeta la del llamador.
+        (b) **Tipos de contenido**: eran 2 (JSON y urlencoded) y ahora son 6,
+        alineados con lo que ofrecen las herramientas de automatización —
+        JSON, **x-www-form-urlencoded**, **multipart/form-data** (boundary
+        armado acá; SÓLO campos de texto: subir archivos por webhook no está
+        soportado y ofrecerlo a medias sería peor), **text/plain**,
+        **application/xml** y **text/html**. Los tres últimos se escriben a
+        mano (en un XML no aplica "una fila por dato"), así que el editor
+        cambia solo a cuerpo crudo y esconde el toggle de filas.
+        5 tests nuevos (bytes vs caracteres, GET/HEAD sin cabecera, no pisar la
+        del llamador, chunked verificado contra un servidor real, multipart y
+        text/xml) — 440 API y 111 front en verde; E2E navegador 6/6 del
+        selector. **OJO al restaurar specs**: `safe-fetch.spec.ts` YA existía
+        (los tests del guard SSRF de SEC-03) y se sobrescribió por accidente;
+        se recuperó con `git checkout` y los nuevos se APENDIERON. El síntoma
+        fue el contador de tests BAJANDO (436 → 433) con el mismo número de
+        archivos.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

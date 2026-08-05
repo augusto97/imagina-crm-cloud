@@ -92,6 +92,46 @@ describe('buildWebhookRequest', () => {
         expect(signed.headers['x-imagina-signature']).toMatch(/^sha256=[a-f0-9]{64}$/);
     });
 
+    it('multipart arma partes de texto con boundary coherente', () => {
+        const req = buildWebhookRequest(
+            {
+                url: 'https://x.test/h',
+                content_type: 'multipart',
+                body_params: [{ key: 'recipient', value: '{{telefono}}' }],
+            },
+            merge,
+            fallback,
+        );
+        const boundary = /boundary=(.+)$/.exec(req.headers['content-type']!)?.[1];
+        expect(boundary).toBeTruthy();
+        expect(req.body).toContain(`--${boundary}\r\nContent-Disposition: form-data; name="recipient"`);
+        expect(req.body!.endsWith(`--${boundary}--\r\n`)).toBe(true);
+    });
+
+    it('text/xml/html mandan el cuerpo TAL CUAL, con su mime', () => {
+        const xml = buildWebhookRequest(
+            {
+                url: 'https://x.test/h',
+                content_type: 'xml',
+                body_template: '<msg to="{{telefono}}"/>',
+                // Las filas se ignoran: en XML no aplica "una fila por dato".
+                body_params: [{ key: 'a', value: '1' }],
+            },
+            merge,
+            fallback,
+        );
+        expect(xml.headers['content-type']).toBe('application/xml');
+        expect(xml.body).toBe('<msg to="+573001112233"/>');
+
+        const txt = buildWebhookRequest(
+            { url: 'https://x.test/h', content_type: 'text', body_template: 'hola {{nombre}}' },
+            merge,
+            fallback,
+        );
+        expect(txt.headers['content-type']).toBe('text/plain; charset=utf-8');
+        expect(txt.body).toBe('hola Ana');
+    });
+
     it('acepta el shape viejo de headers (objeto plano) sin romper automatizaciones guardadas', () => {
         const req = buildWebhookRequest(
             { url: 'https://x.test/h', headers: { 'X-Api-Key': 'k' } },

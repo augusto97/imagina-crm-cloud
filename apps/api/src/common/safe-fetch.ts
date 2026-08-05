@@ -75,12 +75,15 @@ export async function safeWebhookFetch(
 
     const method = (opts.method ?? 'POST').toUpperCase();
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+    const headers = withContentLength(opts.headers ?? {}, method, opts.body);
+    const hasBody = opts.body !== undefined && method !== 'GET' && method !== 'HEAD';
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest;
 
     return new Promise<SafeFetchResult>((resolve, reject) => {
         const req = transport(
             url,
-            { method, headers: opts.headers, lookup: guardedLookup },
+            { method, headers, lookup: guardedLookup },
             (res) => {
                 const status = res.statusCode ?? 0;
                 const contentType = String(res.headers['content-type'] ?? '');
@@ -109,11 +112,31 @@ export async function safeWebhookFetch(
         req.setTimeout(timeoutMs, () => {
             req.destroy(new Error(`Webhook excedió el timeout de ${timeoutMs}ms`));
         });
-        if (opts.body !== undefined && method !== 'GET' && method !== 'HEAD') {
+        if (hasBody) {
             req.write(opts.body);
         }
         req.end();
     });
+}
+
+/**
+ * v0.1.157 — `Content-Length` OBLIGATORIO cuando hay cuerpo.
+ *
+ * Sin esa cabecera, node:http manda `Transfer-Encoding: chunked` y Apache/PHP
+ * (y varios gateways de WhatsApp/SMS) contestan **411 Length Required** sin
+ * leer el cuerpo. Se respeta un content-length puesto por el llamador.
+ */
+export function withContentLength(
+    headers: Record<string, string>,
+    method: string,
+    body: string | undefined,
+): Record<string, string> {
+    const out = { ...headers };
+    const verb = method.toUpperCase();
+    if (body === undefined || verb === 'GET' || verb === 'HEAD') return out;
+    if (Object.keys(out).some((h) => h.toLowerCase() === 'content-length')) return out;
+    out['content-length'] = String(Buffer.byteLength(body));
+    return out;
 }
 
 type LookupCb = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family: number) => void;
