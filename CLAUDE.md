@@ -2680,6 +2680,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         fue el contador de tests BAJANDO (436 → 433) con el mismo número de
         archivos.
 
+  - [x] **Cuatro tipos de campo que faltaban (v0.1.158, reporte del usuario:
+        "no hay campo teléfono… revisá si se nos pasó alguno")**: se auditó el
+        catálogo contra ClickUp y Airtable. Faltaban cuatro que están en las
+        dos, y ahora existen end-to-end (shared → API → las ~15 superficies
+        del front):
+        (a) **Teléfono** con **indicativo de país** — el valor se guarda en UNA
+        cadena canónica E.164 (`+573001112233`), no en dos columnas: así es
+        comparable, buscable y sale listo para `tel:`, WhatsApp y webhooks sin
+        re-armarlo (el caso del propio usuario). El indicativo se DERIVA del
+        valor (`splitPhone`, gana el prefijo más largo: `+1809` es Dominicana,
+        `+1` EE.UU.), así que cambiarle el país por defecto al campo no
+        invalida lo ya guardado. `normalizePhone` limpia la puntuación humana,
+        traduce `00`→`+` y a un número local le pone el indicativo del país
+        configurado (quitando el 0 de tronco); **sin país configurado no
+        inventa uno**: guarda los dígitos tal cual, porque atribuirle un país
+        equivocado al dato de un cliente es peor que dejarlo incompleto.
+        Catálogo curado de 58 países (América completa, Europa occidental,
+        destinos frecuentes) en `shared` — un país que no esté igual se escribe
+        con `+`. En la tabla el número NO es un enlace entero (si lo fuera, el
+        click de la celda lo comería y el teléfono sería el único campo que no
+        se puede corregir en línea): texto plano + icono de llamar al hover,
+        como ClickUp; en la ficha y el portal sí es enlace `tel:`.
+        (b) **Calificación** (estrellas / corazones / llamas, 1-10),
+        (c) **Porcentaje** (0-100 con barra de avance) y (d) **Duración**
+        (`1h 30m`, `1:30` o `90` — se guarda en MINUTOS). Los tres son
+        NÚMEROS a propósito: filtran, ordenan y se agregan con el motor
+        numérico que ya existía (si fueran texto, `'9' > '10'` y el filtro
+        mentiría en silencio) — de ahí que sumar horas de un proyecto o
+        promediar la satisfacción salgan gratis en el pie de la tabla y en
+        los widgets.
+        Backend: QueryBuilder (`::numeric`), índices de expresión (btree para
+        los tres + trgm para el teléfono), **búsqueda server-side incluye
+        `phone`** (buscar por teléfono es LO que se hace en un CRM), agregados,
+        detección de tipo al importar (exige `+`/`00` o separadores: un número
+        pelado de 10 dígitos es indistinguible de una cifra y ahí gana
+        `number`), conversión de tipo que escribe **lo que la persona LEÍA**
+        (`duration`→texto da `1h 30m`, no `90`) y CSV export igual.
+        Front: catálogo del modal de creación, iconos por tipo, editores de
+        config, celda editable (la calificación se pone con UN click en la
+        estrella, como select), ficha/modal, formulario de alta, filtros,
+        edición masiva, mapeo de automatizaciones, tabla de dashboards y
+        portal del cliente. 17 tests nuevos en shared + 5 de integración en la
+        API (445 en verde) + E2E navegador 17/17.
+        **Lo que NO entró, y por qué**: *ubicación/dirección* (sin geocoder es
+        un texto y con geocoder es una integración aparte), *código de barras*
+        y *botón* (nichos), *autonumérico* (el registro ya tiene su ID) y
+        *creado por / fecha de creación* (ya son metadata de la fila, se ven
+        en la tabla). El hueco real que queda es **rollup / lookup / count**
+        —traer o agregar un valor a través de un campo `relation`—: es una
+        feature propia (necesita resolver la relación en el motor de lectura),
+        no un tipo más, y merece su release.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

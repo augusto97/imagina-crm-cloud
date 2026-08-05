@@ -173,6 +173,12 @@ function typedExpr(key: string, type: FieldType): SQL {
     switch (type) {
         case 'number':
         case 'currency':
+        case 'rating':
+        case 'percent':
+        case 'duration':
+            // v0.1.158 — rating/percent/duration guardan un número (estrellas,
+            // 0-100 y minutos): comparan y ordenan con el motor numérico, no
+            // como texto (donde '9' > '10').
             return sql`${asText}::numeric`;
         case 'date':
             return sql`${asText}::date`;
@@ -183,8 +189,12 @@ function typedExpr(key: string, type: FieldType): SQL {
     }
 }
 
+const NUMERIC_FILTER_TYPES: readonly FieldType[] = [
+    'number', 'currency', 'rating', 'percent', 'duration',
+];
+
 function castValue(type: FieldType, value: unknown): number | string {
-    if (type === 'number' || type === 'currency') {
+    if (NUMERIC_FILTER_TYPES.includes(type)) {
         const n = typeof value === 'number' ? value : Number(value);
         if (!Number.isFinite(n)) {
             throw new BadRequestException('Valor numérico inválido en el filtro');

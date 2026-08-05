@@ -35,3 +35,5 @@ export * from './schemas/export';
 export * from './schemas/import';
 export * from './field-types/validate';
 export * from './field-types/computed';
+export * from './field-types/phone';
+export * from './field-types/duration';

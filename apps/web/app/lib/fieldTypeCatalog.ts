@@ -1,7 +1,7 @@
 import type { FieldTypeMeta, FieldTypeSlug } from '@/types/field';
 
 /**
- * Catálogo de los 14 tipos de campo (Imagina Base cloud).
+ * Catálogo de los tipos de campo (Imagina Base cloud).
  *
  * En el plugin este catálogo lo servía el endpoint WordPress `GET /field-types`
  * (SystemController → FieldTypeRegistry). En la app cloud ese endpoint nunca se
@@ -40,10 +40,14 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'datetime', label: 'Fecha y hora', description: 'Fecha del calendario con hora.', supportsUnique: true },
     { slug: 'checkbox', label: 'Casilla', description: 'Sí o no (marcado / sin marcar).', supportsUnique: false },
     { slug: 'email', label: 'Email', description: 'Dirección de correo validada.', supportsUnique: true },
+    { slug: 'phone', label: 'Teléfono', description: 'Número con indicativo del país.', supportsUnique: true },
     { slug: 'url', label: 'URL', description: 'Enlace web validado.', supportsUnique: true },
     { slug: 'user', label: 'Usuario', description: 'Un miembro del workspace.', supportsUnique: false },
     { slug: 'relation', label: 'Relación', description: 'Vincula registros de otra lista.', supportsUnique: false },
     { slug: 'file', label: 'Archivo', description: 'Archivos adjuntos al registro.', supportsUnique: false },
+    { slug: 'rating', label: 'Calificación', description: 'Estrellas (de 1 a 10).', supportsUnique: false },
+    { slug: 'percent', label: 'Porcentaje', description: 'Avance de 0 a 100 con barra.', supportsUnique: false },
+    { slug: 'duration', label: 'Duración', description: 'Tiempo en horas y minutos.', supportsUnique: false },
     { slug: 'computed', label: 'Calculado', description: 'Se calcula a partir de otros campos.', supportsUnique: false },
 ];
 

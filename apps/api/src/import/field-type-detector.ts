@@ -7,6 +7,11 @@
  *  1. checkbox  — ≥80% de los valores no vacíos son sí/no/1/0/x.
  *  2. email     — ≥80% con forma de email.
  *  3. url       — ≥80% empiezan con http(s)://.
+ *  3b. phone    — ≥80% con forma de teléfono INTERNACIONAL o con separadores
+ *                 (`+57 300 111 2233`, `(305) 555-1234`). Un número pelado
+ *                 de 10 dígitos NO alcanza: es indistinguible de una cifra,
+ *                 así que ahí gana `number` y el usuario elige el tipo en el
+ *                 mapeo (mentirle al detector saldría más caro).
  *  4. number    — ≥80% numéricos (tras limpiar separadores de miles ES/US).
  *  5. datetime  — ≥80% parsean como fecha Y ≥50% incluyen hora (`:`).
  *  6. date      — ≥80% parsean como fecha.
@@ -29,6 +34,7 @@ export function detectFieldType(sample: string[]): string {
     if (matches(nonEmpty, isBoolish) >= needed) return 'checkbox';
     if (matches(nonEmpty, (v) => EMAIL_RE.test(v)) >= needed) return 'email';
     if (matches(nonEmpty, (v) => /^https?:\/\//i.test(v)) >= needed) return 'url';
+    if (matches(nonEmpty, isPhonish) >= needed) return 'phone';
     if (matches(nonEmpty, isNumberish) >= needed) return 'number';
 
     if (matches(nonEmpty, isDateish) >= needed) {
@@ -46,6 +52,18 @@ function matches(values: string[], predicate: (v: string) => boolean): number {
     let hits = 0;
     for (const v of values) if (predicate(v)) hits++;
     return hits;
+}
+
+/**
+ * Teléfono: exige una SEÑAL explícita (prefijo internacional o separadores
+ * humanos) además de un largo plausible. Sin eso sería imposible separarlo
+ * de una cifra cualquiera.
+ */
+function isPhonish(v: string): boolean {
+    if (!/^[+(]?[\d][\d\s().+-]*$/.test(v)) return false;
+    const digits = v.replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) return false;
+    return v.startsWith('+') || v.startsWith('00') || /[\s().-]/.test(v.trim());
 }
 
 function isBoolish(v: string): boolean {

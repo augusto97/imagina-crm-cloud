@@ -96,6 +96,10 @@ const CREATABLE_TYPES: Array<{ slug: string; label: string }> = [
     { slug: 'checkbox', label: __('Checkbox') },
     { slug: 'url', label: __('URL') },
     { slug: 'email', label: __('Email') },
+    { slug: 'phone', label: __('Teléfono') },
+    { slug: 'rating', label: __('Calificación') },
+    { slug: 'percent', label: __('Porcentaje') },
+    { slug: 'duration', label: __('Duración') },
 ];
 
 type Step = 'upload' | 'map' | 'done';

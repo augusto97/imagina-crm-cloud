@@ -15,15 +15,32 @@ const MATRIX: Record<string, Record<string, TypeRisk>> = {
         long_text: 'safe',
         email: 'lossy',
         url: 'lossy',
+        phone: 'lossy',
     },
     long_text: {
         text: 'lossy',
     },
     number: {
         currency: 'safe',
+        percent: 'lossy',
+        rating: 'lossy',
+        duration: 'safe',
     },
     currency: {
         number: 'safe',
+    },
+    phone: {
+        text: 'safe',
+    },
+    percent: {
+        number: 'safe',
+    },
+    rating: {
+        number: 'safe',
+    },
+    duration: {
+        number: 'safe',
+        text: 'safe',
     },
     date: {
         datetime: 'safe',

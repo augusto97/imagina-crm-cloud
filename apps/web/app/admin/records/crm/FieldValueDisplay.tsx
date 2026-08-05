@@ -1,5 +1,10 @@
 import { Check, ExternalLink, Mail, Minus, Paperclip, User as UserIcon } from 'lucide-react';
 
+import { formatDuration, type DurationFormat } from '@imagina-base/shared';
+
+import { PercentDisplay } from '@/components/fields/PercentDisplay';
+import { PhoneDisplay } from '@/components/fields/PhoneControl';
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { useWpUser } from '@/hooks/useWpUsers';
@@ -52,6 +57,24 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
             return <LongTextDisplay value={value} />;
         case 'computed':
             return <ComputedDisplay field={field} value={value} />;
+        // v0.1.158
+        case 'phone':
+            return <PhoneDisplay value={value} />;
+        case 'rating': {
+            const cfg = field.config as { max?: number; icon?: RatingIcon };
+            return (
+                <RatingControl
+                    value={typeof value === 'number' ? value : Number(value)}
+                    max={cfg.max}
+                    icon={cfg.icon}
+                    size="md"
+                />
+            );
+        }
+        case 'percent':
+            return <PercentDisplay value={value} config={field.config} />;
+        case 'duration':
+            return <span>{formatDuration(value, (field.config as { format?: DurationFormat }).format)}</span>;
         default:
             return <span className="imcrm-truncate">{String(value)}</span>;
     }

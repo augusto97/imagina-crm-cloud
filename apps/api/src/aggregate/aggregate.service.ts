@@ -20,8 +20,10 @@ import {
 } from '../records/query-builder';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
-const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency'];
-const MINMAX_TYPES: readonly FieldType[] = ['number', 'currency', 'date', 'datetime'];
+const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration'];
+const MINMAX_TYPES: readonly FieldType[] = [
+    'number', 'currency', 'rating', 'percent', 'duration', 'date', 'datetime',
+];
 
 /**
  * Motor de agregaciones (CONTRACT.md §5): footer de tabla + widgets de
@@ -262,10 +264,10 @@ export class AggregateService {
 
     private assertMetricCompat(metric: AggregateMetric, field?: Field): void {
         if ((metric === 'sum' || metric === 'avg') && !NUMERIC_TYPES.includes(field!.type)) {
-            throw badRequest(`${metric} sólo aplica a number/currency`);
+            throw badRequest(`${metric} sólo aplica a campos numéricos`);
         }
         if ((metric === 'min' || metric === 'max') && !MINMAX_TYPES.includes(field!.type)) {
-            throw badRequest(`${metric} sólo aplica a number/currency/date/datetime`);
+            throw badRequest(`${metric} sólo aplica a campos numéricos o de fecha`);
         }
         if ((metric === 'count_true' || metric === 'count_false') && field!.type !== 'checkbox') {
             throw badRequest(`${metric} sólo aplica a checkbox`);
@@ -283,7 +285,7 @@ export interface FooterAggregates {
 
 /** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */
 function metricsFor(type: FieldType): AggregateMetric[] {
-    if (type === 'number' || type === 'currency') {
+    if (NUMERIC_TYPES.includes(type)) {
         return ['count', 'count_empty', 'count_unique', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'date' || type === 'datetime') return ['count', 'count_empty', 'min', 'max'];

@@ -11,7 +11,11 @@ import {
     ListChecks,
     Mail,
     Paperclip,
+    Percent,
+    Phone,
     Sigma,
+    Star,
+    Timer,
     Type,
     User,
     type LucideIcon,
@@ -42,6 +46,10 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     relation: GitBranch,
     file: Paperclip,
     computed: Sigma,
+    phone: Phone,
+    rating: Star,
+    percent: Percent,
+    duration: Timer,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

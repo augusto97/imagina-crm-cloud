@@ -310,7 +310,15 @@ function BulkValueInput({
             />
         );
     }
-    if (field.type === 'number' || field.type === 'currency' || field.type === 'user') {
+    if (
+        field.type === 'number'
+        || field.type === 'currency'
+        || field.type === 'user'
+        // v0.1.158 — se guardan como número (estrellas / 0-100 / minutos).
+        || field.type === 'rating'
+        || field.type === 'percent'
+        || field.type === 'duration'
+    ) {
         return (
             <Input
                 type="number"

@@ -1,3 +1,8 @@
+import { formatDuration, type DurationFormat } from '@imagina-base/shared';
+
+import { PercentDisplay } from '@/components/fields/PercentDisplay';
+import { PhoneDisplay } from '@/components/fields/PhoneControl';
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
@@ -97,6 +102,30 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
             return formatNumber(value, { maxFrac: decimals });
         }
         return String(value);
+    }
+
+    // v0.1.158 — los tipos nuevos: cada uno se LEE como lo que es (un
+    // teléfono marca, una calificación son estrellas, un avance es una
+    // barra, una duración es "1h 30m" y no 90).
+    if (field.type === 'phone') {
+        return <PhoneDisplay value={value} variant="cell" />;
+    }
+    if (field.type === 'rating') {
+        const cfg = field.config as { max?: number; icon?: RatingIcon };
+        return (
+            <RatingControl
+                value={typeof value === 'number' ? value : Number(value)}
+                max={cfg.max}
+                icon={cfg.icon}
+            />
+        );
+    }
+    if (field.type === 'percent') {
+        return <PercentDisplay value={value} config={field.config} />;
+    }
+    if (field.type === 'duration') {
+        const fmt = (field.config as { format?: DurationFormat }).format;
+        return <>{formatDuration(value, fmt)}</>;
     }
 
     if (field.type === 'url' && typeof value === 'string') {

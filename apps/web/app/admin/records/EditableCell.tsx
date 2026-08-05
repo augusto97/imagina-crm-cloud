@@ -1,5 +1,10 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import type { DurationFormat } from '@imagina-base/shared';
+
+import { DurationControl } from '@/components/fields/DurationControl';
+import { PhoneControl } from '@/components/fields/PhoneControl';
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 
 import { Input } from '@/components/ui/input';
 import { OptionPicker } from '@/components/ui/option-picker';
@@ -134,6 +139,21 @@ function EditableCellInner({
                     onChange={(v) => {
                         void commit(field.type === 'select' ? (v ?? null) : (Array.isArray(v) ? v : []));
                     }}
+                />
+            );
+        }
+
+        // v0.1.158 — la calificación se pone HACIENDO CLICK en la estrella:
+        // el mismo criterio que select/multi_select (no hay un "modo edición"
+        // aparte para algo que se resuelve en un gesto).
+        if (field.type === 'rating' && canEdit) {
+            const cfg = field.config as { max?: number; icon?: RatingIcon };
+            return (
+                <RatingControl
+                    value={typeof value === 'number' ? value : null}
+                    max={cfg.max}
+                    icon={cfg.icon}
+                    onChange={(next) => void commit(next)}
                 />
             );
         }
@@ -340,6 +360,42 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     type="datetime-local"
                     value={typeof value === 'string' ? value.replace(' ', 'T').slice(0, 16) : ''}
                     onChange={(e) => onChange(e.target.value || null)}
+                />
+            );
+        case 'percent':
+            return (
+                <Input
+                    {...commonProps}
+                    ref={ref as React.RefObject<HTMLInputElement>}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    value={value === null || value === undefined ? '' : String(value)}
+                    onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                />
+            );
+        case 'duration':
+            return (
+                <DurationControl
+                    ref={ref as React.RefObject<HTMLInputElement>}
+                    value={typeof value === 'number' ? value : null}
+                    format={(field.config as { format?: DurationFormat }).format}
+                    onCommit={onCommit}
+                    onCancel={onCancel}
+                    disabled={isPending}
+                />
+            );
+        case 'phone':
+            return (
+                <PhoneControl
+                    ref={ref as React.RefObject<HTMLInputElement>}
+                    value={typeof value === 'string' ? value : null}
+                    config={field.config}
+                    onChange={onChange}
+                    onKeyDown={handleKeyDown}
+                    onBlur={() => onCommit(value)}
+                    disabled={isPending}
                 />
             );
         case 'email':
