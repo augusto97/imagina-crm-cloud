@@ -39,6 +39,7 @@ import type { SavedViewEntity } from '@/types/view';
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { ExportButton } from './ExportButton';
 import { FieldCreateDialog } from './FieldCreateDialog';
+import { FieldsPanel } from './FieldsPanel';
 import { FiltersPanel } from './FiltersPanel';
 import { ImportDialog } from './ImportDialog';
 import { ShareDialog } from './ShareDialog';
@@ -256,10 +257,13 @@ export function RecordsPage(): JSX.Element {
     // creación (catálogo de tipos); con field = modo edición.
     const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<FieldEntity | null>(null);
+    // v0.1.160 — el ALTA pasó al panel lateral (catálogo con vista previa,
+    // estilo ClickUp); el modal queda para EDITAR un campo existente.
+    const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
 
     const openFieldCreate = (): void => {
         setEditingField(null);
-        setFieldDialogOpen(true);
+        setFieldsPanelOpen(true);
     };
     const openFieldEdit = (field: FieldEntity): void => {
         setEditingField(field);
@@ -371,6 +375,11 @@ const applyView = (view: SavedViewEntity | null): void => {
             sort: toggleSort(s.sort, fieldId, multi),
             page: 1,
         }));
+    };
+
+    /** Menú de la columna: fija la dirección pedida (no cicla). */
+    const handleSortSet = (fieldId: number, dir: 'asc' | 'desc'): void => {
+        setState((s) => ({ ...s, sort: [{ field_id: fieldId, dir }], page: 1 }));
     };
 
     // En vista plana el record vive en `records.data`. En vista agrupada
@@ -851,6 +860,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     onSelectionChange={setSelectedIds}
                                     onRowClick={(record) => setDrawerRecordId(record.id)}
                                     columnVisibility={state.columnVisibility}
+                                    onColumnVisibilityChange={(next) =>
+                                        setState((s) => ({ ...s, columnVisibility: next }))
+                                    }
                                     columnSizing={state.columnSizing}
                                     onColumnSizingChange={(next) =>
                                         setState((s) => ({ ...s, columnSizing: next }))
@@ -889,6 +901,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     records={records.data?.data ?? []}
                                     sort={state.sort}
                                     onSortChange={handleSortChange}
+                                    onSortSet={handleSortSet}
                                     selectedIds={selectedIds}
                                     onSelectionChange={setSelectedIds}
                                     onRowClick={(record) => setDrawerRecordId(record.id)}
@@ -947,6 +960,13 @@ const applyView = (view: SavedViewEntity | null): void => {
                         field={editingField}
                         open={fieldDialogOpen}
                         onOpenChange={setFieldDialogOpen}
+                    />
+
+                    <FieldsPanel
+                        listId={list.data.id}
+                        listSlug={list.data.slug}
+                        open={fieldsPanelOpen}
+                        onOpenChange={setFieldsPanelOpen}
                     />
 
                     <RecordCreateDialog

@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
     Columns3,
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { fieldsKeys, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useUpdateList } from '@/hooks/useLists';
@@ -73,7 +75,12 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<FieldEntity | null>(null);
     const [search, setSearch] = useState('');
+    // v0.1.160 — el administrador de campos: filtro por tipo y agrupado por
+    // tipo, como el "Administrador de campos personalizados" de ClickUp.
+    const [typeFilter, setTypeFilter] = useState<string>('');
+    const [groupByType, setGroupByType] = useState(false);
     const dragIndexRef = useRef<number | null>(null);
+    const [params, setParams] = useSearchParams();
 
     const typeLabels = useMemo(() => {
         const map = new Map<string, string>();
@@ -83,16 +90,34 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
     const all = fields.data ?? [];
     const term = search.trim().toLowerCase();
-    const visible = term
-        ? all.filter(
-              (f) => f.label.toLowerCase().includes(term) || f.slug.toLowerCase().includes(term),
-          )
-        : all;
+    const visible = all.filter((f) => {
+        if (typeFilter !== '' && f.type !== typeFilter) return false;
+        if (term === '') return true;
+        return f.label.toLowerCase().includes(term) || f.slug.toLowerCase().includes(term);
+    });
+
+    /** Tipos presentes en la lista, para poblar el filtro. */
+    const typesPresent = useMemo(() => {
+        const seen = new Set<string>();
+        for (const f of all) seen.add(f.type);
+        return [...seen];
+    }, [all]);
+
+    /** Filas agrupadas por tipo (el orden de los grupos es el de aparición). */
+    const groups = useMemo(() => {
+        const map = new Map<string, FieldEntity[]>();
+        for (const f of visible) {
+            const arr = map.get(f.type);
+            if (arr) arr.push(f);
+            else map.set(f.type, [f]);
+        }
+        return [...map.entries()];
+    }, [visible]);
 
     // Reordenar sólo tiene sentido sobre la lista COMPLETA: con un
     // filtro activo, soltar una fila entre otras dos no describe una
     // posición real.
-    const canReorder = term === '' && all.length > 1;
+    const canReorder = term === '' && typeFilter === '' && !groupByType && all.length > 1;
 
     const openCreate = (): void => {
         setEditingField(null);
@@ -102,6 +127,21 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         setEditingField(field);
         setDialogOpen(true);
     };
+
+    // `?field=<id>` abre ese campo — es como el panel de campos y el menú de
+    // la columna mandan a "ajustes avanzados" sin perder de vista cuál era.
+    const requestedFieldId = Number(params.get('field') ?? '');
+    useEffect(() => {
+        if (!Number.isInteger(requestedFieldId) || requestedFieldId <= 0) return;
+        const target = (fields.data ?? []).find((f) => f.id === requestedFieldId);
+        if (!target) return;
+        setEditingField(target);
+        setDialogOpen(true);
+        const next = new URLSearchParams(params);
+        next.delete('field');
+        setParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [requestedFieldId, fields.data]);
 
     const handleDrop = (targetIndex: number): void => {
         const from = dragIndexRef.current;
@@ -160,10 +200,37 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                         className="imcrm-h-9 imcrm-pl-8"
                     />
                 </div>
-                <Button onClick={openCreate} className="imcrm-gap-2">
-                    <Plus className="imcrm-h-4 imcrm-w-4" />
-                    {__('Nuevo campo')}
-                </Button>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                    {typesPresent.length > 1 && (
+                        <>
+                            <Select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                aria-label={__('Filtrar por tipo')}
+                                className="imcrm-h-9 imcrm-w-auto imcrm-text-sm"
+                            >
+                                <option value="">{__('Todos los tipos')}</option>
+                                {typesPresent.map((t) => (
+                                    <option key={t} value={t}>
+                                        {typeLabels.get(t) ?? t}
+                                    </option>
+                                ))}
+                            </Select>
+                            <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-muted-foreground">
+                                <input
+                                    type="checkbox"
+                                    checked={groupByType}
+                                    onChange={(e) => setGroupByType(e.target.checked)}
+                                />
+                                {__('Agrupar por tipo')}
+                            </label>
+                        </>
+                    )}
+                    <Button onClick={openCreate} className="imcrm-gap-2">
+                        <Plus className="imcrm-h-4 imcrm-w-4" />
+                        {__('Nuevo campo')}
+                    </Button>
+                </div>
             </div>
 
             {fields.isLoading && (
@@ -195,7 +262,40 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 </p>
             )}
 
-            {visible.length > 0 && (
+            {visible.length > 0 && groupByType && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    {groups.map(([type, rows]) => (
+                        <div key={type} className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                                {typeLabels.get(type) ?? type}
+                                <span className="imcrm-text-muted-foreground/60">{rows.length}</span>
+                            </p>
+                            <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
+                                {rows.map((field) => (
+                                    <FieldRow
+                                        key={field.id}
+                                        field={field}
+                                        typeLabel={typeLabels.get(field.type) ?? field.type}
+                                        draggable={false}
+                                        onDragStart={() => undefined}
+                                        onDragOver={() => undefined}
+                                        onDrop={() => undefined}
+                                        onEdit={() => openEdit(field)}
+                                        onDelete={() => void handleDelete(field)}
+                                        onMakeTitle={
+                                            canBeTitle(field) && !field.is_primary
+                                                ? () => makeTitle(field)
+                                                : undefined
+                                        }
+                                    />
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {visible.length > 0 && !groupByType && (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
                     {visible.map((field, i) => (
                         <FieldRow

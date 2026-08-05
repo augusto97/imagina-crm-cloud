@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import {
@@ -49,6 +50,12 @@ interface FooterAggregateCellProps {
     kind: AggregateKind | undefined;
     /** Cuando el user elige un kind o lo quita. */
     onChange: (kind: AggregateKind | undefined) => void;
+    /**
+     * Señal para ABRIR el menú desde afuera (v0.1.160): el item "Calcular"
+     * del menú de la columna manda el usuario acá, que es donde el cálculo
+     * realmente se elige. Cambia de valor en cada pedido.
+     */
+    openSignal?: number;
 }
 
 /**
@@ -74,7 +81,18 @@ export function FooterAggregateCell({
     agg,
     kind,
     onChange,
+    openSignal,
 }: FooterAggregateCellProps): JSX.Element | null {
+    const [open, setOpen] = useState(false);
+    const lastSignal = useRef(openSignal);
+
+    useEffect(() => {
+        if (openSignal !== undefined && openSignal !== lastSignal.current) {
+            lastSignal.current = openSignal;
+            setOpen(true);
+        }
+    }, [openSignal]);
+
     if (field === null) {
         // Columna fija (ID, updated_at): sin agregaciones aquí.
         return null;
@@ -83,7 +101,7 @@ export function FooterAggregateCell({
     const formatted = formatAggregate(field, agg, totalCount, kind);
 
     return (
-        <DropdownMenu>
+        <DropdownMenu open={open} onOpenChange={setOpen}>
             <DropdownMenuTrigger asChild>
                 <button
                     type="button"

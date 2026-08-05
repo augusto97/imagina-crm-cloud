@@ -74,6 +74,19 @@ export interface FieldTypeOption {
     description: string;
 }
 
+/**
+ * Los tipos que se eligen el 90% de las veces — la sección "Populares" del
+ * panel de campos (v0.1.160). El resto sigue estando, una sección más abajo.
+ */
+export const POPULAR_FIELD_TYPES: readonly FieldTypeSlug[] = [
+    'select',
+    'text',
+    'date',
+    'long_text',
+    'number',
+    'multi_select',
+];
+
 export const FIELD_TYPE_OPTIONS: FieldTypeOption[] = ENTRIES.map((e) => ({
     type: e.slug,
     label: e.label,

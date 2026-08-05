@@ -42,6 +42,8 @@ interface TableViewProps {
     records: RecordEntity[];
     sort: ActiveSort[];
     onSortChange: (fieldId: number, multi: boolean) => void;
+    /** Fija una dirección concreta (menú de la columna), sin ciclar. */
+    onSortSet?: (fieldId: number, dir: 'asc' | 'desc') => void;
     selectedIds: number[];
     onSelectionChange: (ids: number[]) => void;
     onRowClick?: (record: RecordEntity) => void;
@@ -118,6 +120,7 @@ export function TableView({
     records,
     sort,
     onSortChange,
+    onSortSet,
     selectedIds,
     onSelectionChange,
     onRowClick,
@@ -165,6 +168,9 @@ export function TableView({
     // nuevo orden y se lo pasamos al parent vía `onColumnOrderChange`.
     const [draggingColId, setDraggingColId] = useState<string | null>(null);
     const [overColId, setOverColId] = useState<string | null>(null);
+    // "Calcular" del menú de la columna: manda al usuario al selector de
+    // agregado del PIE, que es donde el cálculo se elige de verdad.
+    const [calcRequest, setCalcRequest] = useState<{ columnId: string; n: number } | null>(null);
 
     const allVisibleSelected =
         records.length > 0 && records.every((r) => selectedSet.has(r.id));
@@ -620,8 +626,34 @@ export function TableView({
                                                 && fieldsById.has(fieldId) && (
                                                 <FieldHeaderMenu
                                                     listId={listId}
+                                                    listSlug={listSlug}
                                                     field={fieldsById.get(fieldId)!}
+                                                    fields={fields}
                                                     onEdit={onEditField}
+                                                    // El click en el header CICLA (asc→desc→sin
+                                                    // orden); el menú pide una dirección concreta,
+                                                    // así que va por su propio handler.
+                                                    onSort={onSortSet ? (f, dir) => onSortSet(f.id, dir) : undefined}
+                                                    // OJO: el id de columna de TanStack es el
+                                                    // SLUG del campo, no `field_{id}` (que es el
+                                                    // formato del sort del backend).
+                                                    onHide={(f) =>
+                                                        onColumnVisibilityChange({
+                                                            ...columnVisibility,
+                                                            [f.slug]: false,
+                                                        })
+                                                    }
+                                                    onCalculate={onFooterAggregatesChange
+                                                        ? (f) => setCalcRequest({ columnId: f.slug, n: Date.now() })
+                                                        : undefined}
+                                                    onReorderColumns={(ids) => {
+                                                        const slugById = new Map(fields.map((f) => [f.id, f.slug]));
+                                                        onColumnOrderChange(
+                                                            ids
+                                                                .map((id) => slugById.get(id))
+                                                                .filter((slug): slug is string => slug !== undefined),
+                                                        );
+                                                    }}
                                                 />
                                             )}
                                         </div>
@@ -663,7 +695,11 @@ export function TableView({
                             {onAddColumn && (
                                 <th
                                     scope="col"
-                                    className="imcrm-w-12 imcrm-px-2 imcrm-py-2 imcrm-text-left"
+                                    // v0.1.160 — FIJA a la derecha (como
+                                    // ClickUp): con muchas columnas el "+"
+                                    // quedaba al final del scroll horizontal
+                                    // y había que arrastrar para encontrarlo.
+                                    className="imcrm-sticky imcrm-right-0 imcrm-z-20 imcrm-w-12 imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left"
                                 >
                                     <button
                                         type="button"
@@ -813,7 +849,9 @@ export function TableView({
                                             </td>
                                         );
                                     })}
-                                    {onAddColumn && <td className="imcrm-w-12" />}
+                                    {onAddColumn && (
+                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                    )}
                                 </tr>
                             );
                         })}
@@ -910,6 +948,9 @@ export function TableView({
                                             totalCount={totalCount ?? 0}
                                             agg={agg}
                                             kind={kind}
+                                            openSignal={
+                                                calcRequest?.columnId === col.id ? calcRequest.n : undefined
+                                            }
                                             onChange={(nextKind) => {
                                                 const next = { ...(footerAggregates ?? {}) };
                                                 if (nextKind === undefined) {
@@ -923,7 +964,9 @@ export function TableView({
                                     </td>
                                 );
                             })}
-                            {onAddColumn && <td className="imcrm-w-12" />}
+                            {onAddColumn && (
+                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                    )}
                         </tr>
                     </tfoot>
                 )}

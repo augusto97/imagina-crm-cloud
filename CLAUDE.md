@@ -2765,6 +2765,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (incluido "no se disparó ninguna llamada" y "elegir el país no cierra
         la edición") y 16/16 de los cuatro tipos.
 
+  - [x] **Gestión de campos estilo ClickUp (v0.1.160, pedido del usuario con
+        capturas)**: cinco cosas que ClickUp tiene en la interfaz de la lista
+        y nosotros teníamos a medias o repartidas en otras pantallas.
+        (a) El **"+" de agregar columna queda FIJO** a la derecha del header
+        (sticky) en la tabla plana y en la agrupada: con muchas columnas
+        estaba al final del scroll horizontal y había que arrastrar para
+        encontrarlo.
+        (b) **Panel lateral "Campos"** (`FieldsPanel`) para el alta: buscador,
+        tipos agrupados en **Populares** y **Todos**, y —lo que de verdad
+        resuelve la duda— una **vista previa** de cómo se verá la celda
+        (`FieldTypePreview`, una maqueta por tipo: chips de colores, estrellas,
+        barra de avance, bandera + número…) junto a la descripción, al pasar
+        el mouse. Al elegir el tipo, el mismo panel muestra la preview y el
+        form. El engranaje abre el **administrador de campos**.
+        La pestaña **"Copiar de otra lista"** es nuestro equivalente honesto al
+        "Agregar existente" de ClickUp: allá un campo es una entidad del
+        workspace que vive en varias listas; acá un campo pertenece a UNA
+        lista (`fields.list_id`), así que compartir la entidad sería otro
+        modelo de datos — copiar la definición (tipo + config + opciones) da
+        el resultado que la gente busca sin mentir sobre lo que hay debajo.
+        (c) **Menú de la columna completo**, y cada item cablea a algo que YA
+        existía pero sólo se alcanzaba desde otra pantalla: ordenar
+        ascendente/descendente (con un handler propio — el click en el header
+        CICLA asc→desc→sin orden, el menú fija la dirección pedida),
+        modificar, cambiar el nombre, privacidad y permisos, mover al inicio /
+        al final (reordena `position`, persistente para toda la lista, y
+        sincroniza el `columnOrder` de la vista), **calcular** (abre el
+        selector de agregado de ESA columna en el pie, vía `openSignal`),
+        automatizar, ocultar columna, duplicar, copiar ID y eliminar.
+        **OJO**: el id de columna de TanStack es el **slug** del campo, no
+        `field_{id}` (que es el formato del sort del backend) — mezclar los
+        dos dejaba "Ocultar columna" sin efecto.
+        (d) **Administrador de campos** (Ajustes → Campos): filtro por tipo y
+        **agrupar por tipo** (como el "Administrador de campos personalizados"
+        de ClickUp), y `?field=<id>` abre ese campo directo.
+        (e) El cuadro de edición del campo gana un **botón "Ajustes
+        avanzados"** (era un link de texto chico) que lleva al administrador
+        con ese campo abierto; de paso el diálogo quedó SÓLO para editar —el
+        alta se mudó al panel— y se eliminó su paso de catálogo, que había
+        quedado inalcanzable. E2E navegador 28/28 (sticky real medido al
+        scrollear, panel, preview al hover, alta end-to-end, los 12 items del
+        menú, ocultar columna, filtro/agrupado del administrador y el deep
+        link) + 4/4 del cuadro de edición y su botón.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
