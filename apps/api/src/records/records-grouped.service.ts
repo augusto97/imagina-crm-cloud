@@ -152,7 +152,8 @@ export class RecordsGroupedService {
         if (needle === '') return filterTree;
         const fields = await this.fields.list(tenantId, listKey);
         const searchable = fields.filter((f) =>
-            f.type === 'text' || f.type === 'long_text' || f.type === 'email' || f.type === 'url',
+            f.type === 'text' || f.type === 'long_text' || f.type === 'email' || f.type === 'url'
+            || f.type === 'phone',
         );
         if (searchable.length === 0) return filterTree;
         const or: FilterGroup = {

@@ -146,7 +146,12 @@ export function FooterAggregateCell({
                 </DropdownMenuSub>
 
                 {/* Categoría: Numéricos — solo number / currency */}
-                {(field.type === 'number' || field.type === 'currency') && (
+                {(field.type === 'number'
+                    || field.type === 'currency'
+                    // v0.1.158 — sumar/promediar estrellas, avance y horas.
+                    || field.type === 'rating'
+                    || field.type === 'percent'
+                    || field.type === 'duration') && (
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger>{__('Números')}</DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>

@@ -19,6 +19,14 @@ export const FIELD_TYPES = [
     'relation',
     'file',
     'computed',
+    // v0.1.158 — los que faltaban frente a ClickUp/Airtable. Se guardan en
+    // el mismo JSONB que el resto: `phone` como cadena canónica E.164,
+    // `rating`/`percent`/`duration` como números (así filtran, ordenan y
+    // agregan con el motor numérico que ya existe).
+    'phone',
+    'rating',
+    'percent',
+    'duration',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -89,6 +97,29 @@ export const fieldConfigSchemas = {
         inputs: z.array(idSchema).max(20).optional(),
         /** Solo para concat. */
         separator: z.string().max(20).optional(),
+    }),
+    phone: z.object({
+        /**
+         * País por defecto (ISO 3166-1 alfa-2) para los números que se
+         * escriben o importan SIN indicativo. Sin él, un número local se
+         * guarda tal cual: preferimos conservar el dato del cliente antes
+         * que atribuirle un país inventado.
+         */
+        default_country: z.string().length(2).optional(),
+    }),
+    rating: z.object({
+        /** Cantidad de estrellas (1-10). */
+        max: z.number().int().min(1).max(10).optional(),
+        icon: z.enum(['star', 'heart', 'flame']).optional(),
+    }),
+    percent: z.object({
+        precision: z.number().int().min(0).max(2).optional(),
+        /** Barra de progreso además del número (default: sí). */
+        show_bar: z.boolean().optional(),
+    }),
+    duration: z.object({
+        /** `hm` → `1h 30m`; `clock` → `1:30`. El valor SIEMPRE son minutos. */
+        format: z.enum(['hm', 'clock']).optional(),
     }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 

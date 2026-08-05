@@ -14,9 +14,9 @@ import type { FieldType } from '@imagina-base/shared';
  * así que es seguro interpolarla en el DDL.
  */
 
-const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency'];
+const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration'];
 /** Tipos de texto libre donde `contains` (ILIKE) es común → +índice trgm. */
-const TRGM_TYPES: readonly FieldType[] = ['text', 'long_text', 'email', 'url'];
+const TRGM_TYPES: readonly FieldType[] = ['text', 'long_text', 'email', 'url', 'phone'];
 /** Tipos escalares que solo necesitan btree de texto (eq/in). */
 const TEXT_BTREE_TYPES: readonly FieldType[] = ['select', 'checkbox', 'user', 'file'];
 

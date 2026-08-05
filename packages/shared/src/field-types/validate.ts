@@ -1,5 +1,7 @@
 import { isoDateSchema, isoDateTimeSchema } from '../schemas/common';
 import type { FieldType } from '../schemas/field';
+import { parseDuration } from './duration';
+import { normalizePhone } from './phone';
 
 /**
  * Validación + normalización de valores de campo, portada del contrato del
@@ -133,6 +135,29 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
             const id = typeof raw === 'number' ? raw : Number(raw);
             if (!Number.isInteger(id) || id < 1) return fail('Usuario inválido.');
             return ok(id);
+        }
+        case 'phone': {
+            const country = typeof config.default_country === 'string' ? config.default_country : null;
+            const norm = normalizePhone(raw, country);
+            return norm.ok ? ok(norm.value) : fail(norm.error);
+        }
+        case 'rating': {
+            const n = typeof raw === 'number' ? raw : Number(raw);
+            if (!Number.isFinite(n)) return fail('Se esperaba una calificación.');
+            const max = numericConfig(config, 'max') ?? 5;
+            const v = Math.round(n);
+            if (v < 0 || v > max) return fail(`La calificación va de 0 a ${max}.`);
+            return ok(v);
+        }
+        case 'percent': {
+            const n = typeof raw === 'number' ? raw : Number(String(raw).replace('%', '').trim());
+            if (!Number.isFinite(n)) return fail('Se esperaba un porcentaje.');
+            if (n < 0 || n > 100) return fail('El porcentaje va de 0 a 100.');
+            return ok(n);
+        }
+        case 'duration': {
+            const parsed = parseDuration(raw);
+            return parsed.ok ? ok(parsed.value) : fail(parsed.error);
         }
         case 'file': {
             if (!Array.isArray(raw)) return fail('Se esperaba una lista de archivos.');

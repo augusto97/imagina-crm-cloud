@@ -1,3 +1,4 @@
+import { formatDuration, formatPhone } from '@imagina-base/shared';
 import { Loader2, TriangleAlert } from 'lucide-react';
 
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
@@ -124,7 +125,16 @@ function formatCell(type: string, value: unknown, field?: FieldEntity): React.Re
     if (type === 'date' && typeof value === 'string') {
         return formatDateStr(value);
     }
-    if ((type === 'currency' || type === 'number') && typeof value === 'number') {
+    if (type === 'duration') {
+        return formatDuration(value);
+    }
+    if (type === 'percent' && typeof value === 'number') {
+        return `${formatNumber(value)}%`;
+    }
+    if (type === 'phone' && typeof value === 'string') {
+        return formatPhone(value) || value;
+    }
+    if ((type === 'currency' || type === 'number' || type === 'rating') && typeof value === 'number') {
         // Respeta los decimales configurados del campo si lo tenemos a mano
         // (`config.precision`); sin field cae a entero con separador de miles.
         if (field !== undefined) return formatFieldNumber(field, value);

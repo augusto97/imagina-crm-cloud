@@ -831,7 +831,7 @@ function recordNotFound(id: number): NotFoundException {
  * y con los metacaracteres de LIKE escapados (regla de oro nº 4).
  * Sin campos searchables en la lista → `false` (cero resultados, no todo).
  */
-const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url']);
+const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url', 'phone']);
 
 function compileSearch(fields: Field[], search: string | undefined): SQL | undefined {
     const needle = (search ?? '').trim();

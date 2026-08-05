@@ -1,6 +1,9 @@
 import { useRef, useState } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 
+import { DurationControl } from '@/components/fields/DurationControl';
+import { PhoneControl } from '@/components/fields/PhoneControl';
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { OptionPicker } from '@/components/ui/option-picker';
@@ -214,6 +217,53 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
                 />
             );
             break;
+        case 'percent':
+            control = (
+                <Input
+                    id={id}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    value={value === undefined || value === null ? '' : String(value)}
+                    onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                />
+            );
+            break;
+        case 'duration':
+            control = (
+                <DurationControl
+                    value={typeof value === 'number' ? value : null}
+                    format={(field.config as { format?: 'hm' | 'clock' }).format}
+                    onCommit={(next) => onChange(next)}
+                    className="imcrm-h-9"
+                />
+            );
+            break;
+        case 'phone':
+            control = (
+                <PhoneControl
+                    value={typeof value === 'string' ? value : null}
+                    config={field.config}
+                    onChange={onChange}
+                />
+            );
+            break;
+        case 'rating': {
+            const cfg = field.config as { max?: number; icon?: RatingIcon };
+            control = (
+                <span className="imcrm-flex imcrm-h-9 imcrm-items-center">
+                    <RatingControl
+                        value={typeof value === 'number' ? value : null}
+                        max={cfg.max}
+                        icon={cfg.icon}
+                        size="md"
+                        onChange={(next) => onChange(next)}
+                    />
+                </span>
+            );
+            break;
+        }
         case 'email':
             control = (
                 <Input

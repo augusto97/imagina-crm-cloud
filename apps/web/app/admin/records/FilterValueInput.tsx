@@ -129,8 +129,13 @@ export function FilterValueInput({
             );
         case 'number':
         case 'currency':
+        case 'rating':
+        case 'percent':
+        case 'duration':
         case 'user':
         case 'file':
+            // v0.1.158 — rating/percent/duration son números: el filtro
+            // compara el VALOR guardado (estrellas, 0-100, minutos).
             return (
                 <Input
                     type="number"

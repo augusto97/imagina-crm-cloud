@@ -3,6 +3,7 @@ import { asc, eq, gt, isNotNull, isNull, and, type SQL } from 'drizzle-orm';
 import {
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
+    formatDuration,
     isDataField,
     jsonbKeyForField,
     type ExportBundle,
@@ -242,6 +243,11 @@ function stringifyCell(value: unknown, type: string): string {
         return Array.isArray(value) ? value.map(String).join(', ') : String(value);
     }
     if (type === 'checkbox') return value === true || value === 1 || value === '1' ? '1' : '0';
+    // v0.1.158 — la duración se guarda en minutos: en una planilla eso no se
+    // lee. Sale como la escribió el usuario (`1h 30m`) y el import la vuelve
+    // a entender (el parser acepta ese mismo texto), así el round-trip cierra.
+    if (type === 'duration') return formatDuration(value);
+    if (type === 'percent') return `${String(value)}%`;
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
 }

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { COUNTRY_DIAL_CODES } from '@imagina-base/shared';
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,19 @@ export function FieldConfigEditor({
     }
     if (type === 'date' || type === 'datetime') {
         return <DateHighlightEditor config={config} onChange={onChange} />;
+    }
+    // v0.1.158
+    if (type === 'phone') {
+        return <PhoneEditor config={config} onChange={onChange} />;
+    }
+    if (type === 'rating') {
+        return <RatingEditor config={config} onChange={onChange} />;
+    }
+    if (type === 'percent') {
+        return <PercentEditor config={config} onChange={onChange} />;
+    }
+    if (type === 'duration') {
+        return <DurationEditor config={config} onChange={onChange} />;
     }
     // url/email/user/file: no requieren config extra en MVP.
     return null;
@@ -318,6 +332,116 @@ function CurrencyEditor({ config, onChange }: SubProps): JSX.Element {
                     <option value={4}>4</option>
                 </Select>
             </div>
+        </div>
+    );
+}
+
+/**
+ * Teléfono: qué país se le asume a un número escrito o importado SIN
+ * indicativo. Arranca con la región del navegador (un admin colombiano ve
+ * Colombia) en vez de imponer un default arbitrario.
+ */
+function PhoneEditor({ config, onChange }: SubProps): JSX.Element {
+    const current = typeof config.default_country === 'string' ? config.default_country : '';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label>{__('País por defecto')}</Label>
+            <Select
+                value={current || guessRegion()}
+                onChange={(e) => onChange({ ...config, default_country: e.target.value })}
+            >
+                {COUNTRY_DIAL_CODES.map((c) => (
+                    <option key={c.iso2} value={c.iso2}>
+                        {c.name} (+{c.dial})
+                    </option>
+                ))}
+            </Select>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Se usa cuando alguien escribe o importa un número sin indicativo. Un número con + conserva SU país.')}
+            </p>
+        </div>
+    );
+}
+
+/** Región del navegador (`es-CO` → `CO`), con EE.UU. como último recurso. */
+function guessRegion(): string {
+    try {
+        const parts = (navigator.language || '').split('-');
+        const region = parts.length > 1 ? String(parts[parts.length - 1]).toUpperCase() : '';
+        if (COUNTRY_DIAL_CODES.some((c) => c.iso2 === region)) return region;
+    } catch {
+        // sin navigator (SSR/tests): al default.
+    }
+    return 'US';
+}
+
+function RatingEditor({ config, onChange }: SubProps): JSX.Element {
+    const max = typeof config.max === 'number' ? config.max : 5;
+    const icon = typeof config.icon === 'string' ? config.icon : 'star';
+    return (
+        <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label>{__('Cantidad')}</Label>
+                <Select value={max} onChange={(e) => onChange({ ...config, max: Number(e.target.value) })}>
+                    {[3, 5, 10].map((n) => (
+                        <option key={n} value={n}>
+                            {n}
+                        </option>
+                    ))}
+                </Select>
+            </div>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label>{__('Icono')}</Label>
+                <Select value={icon} onChange={(e) => onChange({ ...config, icon: e.target.value })}>
+                    <option value="star">{__('Estrella')}</option>
+                    <option value="heart">{__('Corazón')}</option>
+                    <option value="flame">{__('Llama')}</option>
+                </Select>
+            </div>
+        </div>
+    );
+}
+
+function PercentEditor({ config, onChange }: SubProps): JSX.Element {
+    const precision = typeof config.precision === 'number' ? config.precision : 0;
+    const showBar = config.show_bar !== false;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label>{__('Decimales')}</Label>
+                <Select
+                    value={precision}
+                    onChange={(e) => onChange({ ...config, precision: Number(e.target.value) })}
+                >
+                    <option value={0}>0</option>
+                    <option value={1}>1</option>
+                    <option value={2}>2</option>
+                </Select>
+            </div>
+            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    checked={showBar}
+                    onChange={(e) => onChange({ ...config, show_bar: e.target.checked })}
+                />
+                {__('Mostrar barra de avance')}
+            </label>
+        </div>
+    );
+}
+
+function DurationEditor({ config, onChange }: SubProps): JSX.Element {
+    const format = typeof config.format === 'string' ? config.format : 'hm';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label>{__('Formato')}</Label>
+            <Select value={format} onChange={(e) => onChange({ ...config, format: e.target.value })}>
+                <option value="hm">{__('1h 30m')}</option>
+                <option value="clock">{__('1:30')}</option>
+            </Select>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Se puede escribir de cualquier forma (90, 1:30, 1h 30m): siempre se guarda en minutos.')}
+            </p>
         </div>
     );
 }

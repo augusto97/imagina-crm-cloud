@@ -12,6 +12,10 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { DurationControl } from '@/components/fields/DurationControl';
+import { PhoneControl } from '@/components/fields/PhoneControl';
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
+
 import { FieldValueDisplay } from './FieldValueDisplay';
 
 interface CompactFieldRowProps {
@@ -71,7 +75,9 @@ export function CompactFieldRow({
         // Fechas: el DateCellEditor (calendario + recurrencia, el mismo
         // de la tabla) se abre con UN click — sin modo edición nativo.
         field.type === 'date' ||
-        field.type === 'datetime';
+        field.type === 'datetime' ||
+        // v0.1.158 — la calificación se pone clickeando la estrella.
+        field.type === 'rating';
 
     // Tipos read-only (computed): nunca editables.
     const isReadOnly = field.type === 'computed';
@@ -208,6 +214,49 @@ function EditingControl({
                     className="imcrm-h-8 imcrm-text-sm imcrm-tabular-nums"
                 />
             );
+        case 'percent':
+            return (
+                <Input
+                    id={id}
+                    ref={ref as React.Ref<HTMLInputElement>}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="any"
+                    value={value === undefined || value === null ? '' : String(value)}
+                    onChange={(e) =>
+                        onChange(e.target.value === '' ? null : Number(e.target.value))
+                    }
+                    onBlur={onBlur}
+                    onKeyDown={handleKey}
+                    className="imcrm-h-8 imcrm-text-sm imcrm-tabular-nums"
+                />
+            );
+        case 'duration':
+            return (
+                <DurationControl
+                    ref={ref as React.Ref<HTMLInputElement>}
+                    value={typeof value === 'number' ? value : null}
+                    format={(field.config as { format?: 'hm' | 'clock' }).format}
+                    onCommit={(next) => {
+                        onChange(next);
+                        onBlur();
+                    }}
+                    onCancel={onBlur}
+                    className="imcrm-h-8"
+                />
+            );
+        case 'phone':
+            return (
+                <PhoneControl
+                    ref={ref as React.Ref<HTMLInputElement>}
+                    value={typeof value === 'string' ? value : null}
+                    config={field.config}
+                    onChange={onChange}
+                    onBlur={onBlur}
+                    onKeyDown={handleKey}
+                />
+            );
         case 'email':
             return (
                 <Input
@@ -316,6 +365,21 @@ function InlineControl({
                     <FieldValueDisplay field={field} value={value} />
                 </button>
             </DateCellEditor>
+        );
+    }
+
+    if (field.type === 'rating') {
+        const cfg = field.config as { max?: number; icon?: RatingIcon };
+        return (
+            <span className="imcrm-inline-flex imcrm-min-h-[24px] imcrm-items-center">
+                <RatingControl
+                    value={typeof value === 'number' ? value : null}
+                    max={cfg.max}
+                    icon={cfg.icon}
+                    size="md"
+                    onChange={(next) => onChange(next)}
+                />
+            </span>
         );
     }
 

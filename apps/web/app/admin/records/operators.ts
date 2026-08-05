@@ -69,9 +69,15 @@ export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
         case 'long_text':
         case 'email':
         case 'url':
+        case 'phone':
+            // v0.1.158 — el teléfono se guarda como texto canónico:
+            // "empieza con +57" es justo lo que se filtra en un CRM.
             return TEXT_LIKE;
         case 'number':
         case 'currency':
+        case 'rating':
+        case 'percent':
+        case 'duration':
             return NUMERIC;
         case 'date':
         case 'datetime':

@@ -701,6 +701,11 @@ function metricsForFieldType(type: string): MetricOpt[] {
     switch (type) {
         case 'number':
         case 'currency':
+        case 'rating':
+        case 'percent':
+        case 'duration':
+            // v0.1.158 — sumar las horas de un proyecto o promediar la
+            // satisfacción es justamente para lo que existen estos tipos.
             return [
                 { value: 'sum',          label: __('Suma') },
                 { value: 'avg',          label: __('Promedio') },

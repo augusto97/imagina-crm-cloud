@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import {
     fieldSlugSchema,
+    formatDuration,
+    formatPhone,
     jsonbKeyForField,
     parseFieldConfig,
     resolveTitleFieldId,
@@ -379,6 +381,11 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'relation',
     'user',
     'computed',
+    // v0.1.158 — numéricos puros: sugerir "90" no ayuda a nadie (el
+    // teléfono SÍ queda con autocomplete: buscar por prefijo es útil).
+    'rating',
+    'percent',
+    'duration',
 ]);
 
 /** Escapa los metacaracteres de LIKE/ILIKE (`%`, `_`, `\`). */
@@ -457,6 +464,9 @@ function assertConvertible(from: FieldType, to: FieldType): void {
 }
 
 const CONVERT_BATCH = 500;
+
+/** Destinos donde el valor se guarda como el TEXTO que el usuario leía. */
+const TEXTUAL_TARGETS: readonly FieldType[] = ['text', 'long_text', 'select', 'multi_select'];
 
 /**
  * Valores DISTINTOS no vacíos del campo (hasta 50) — para auto-generar las
@@ -573,6 +583,20 @@ function bridgeValue(from: FieldType, to: FieldType, raw: unknown): unknown {
     if (from === 'multi_select' && Array.isArray(raw) && to !== 'multi_select') {
         if (to === 'text' || to === 'long_text') return raw.map((x) => String(x)).join(', ');
         return raw.length > 0 ? String(raw[0]) : null;
+    }
+    // v0.1.158 — los tipos nuevos guardan valores DERIVADOS del texto que
+    // ve el usuario: un `phone` mostrado como `+57 300 111 2233` es la
+    // cadena canónica, y una `duration` mostrada como `1h 30m` son 90.
+    // Al convertir a texto hay que escribir lo que la persona LEÍA, no el
+    // valor crudo (90 no le dice nada a nadie).
+    if (from === 'phone' && TEXTUAL_TARGETS.includes(to) && typeof raw === 'string') {
+        return formatPhone(raw);
+    }
+    if (from === 'duration' && TEXTUAL_TARGETS.includes(to)) {
+        return formatDuration(raw);
+    }
+    if (from === 'percent' && TEXTUAL_TARGETS.includes(to) && typeof raw === 'number') {
+        return `${raw}%`;
     }
     if (to === 'date' && typeof raw === 'string' && raw.length > 10) return raw.slice(0, 10);
     if (to === 'datetime' && typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {

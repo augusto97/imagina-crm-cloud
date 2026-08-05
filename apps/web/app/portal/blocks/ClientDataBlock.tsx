@@ -1,3 +1,4 @@
+import { formatDuration, formatPhone } from '@imagina-base/shared';
 import { sanitizeHref } from '@/lib/sanitize';
 import {
     formatDateStr,
@@ -146,6 +147,21 @@ function renderValue(value: unknown, meta: PortalFieldMeta | undefined): JSX.Ele
             return formatNumber(value, meta.config);
         case 'checkbox':
             return value === true || value === 1 || value === '1' ? '✓' : '✗';
+        // v0.1.158 — el cliente ve el teléfono marcable y la duración en
+        // horas, no la cadena canónica ni los minutos crudos.
+        case 'phone': {
+            const phone = String(value);
+            return <a href={`tel:${phone.replace(/[^\d+]/g, '')}`}>{formatPhone(phone) || phone}</a>;
+        }
+        case 'duration':
+            return formatDuration(value, (meta.config as { format?: 'hm' | 'clock' }).format);
+        case 'percent':
+            return `${String(value)}%`;
+        case 'rating': {
+            const n = Number(value);
+            const max = typeof meta.config.max === 'number' ? meta.config.max : 5;
+            return Number.isFinite(n) ? '★'.repeat(Math.min(n, max)) + '☆'.repeat(Math.max(max - n, 0)) : '';
+        }
         case 'url': {
             const url = String(value);
             return (

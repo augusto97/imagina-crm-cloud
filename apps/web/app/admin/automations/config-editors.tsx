@@ -1309,13 +1309,29 @@ function FieldValueInput({
         );
     }
 
-    if (field.type === 'number' || field.type === 'currency') {
+    if (
+        field.type === 'number'
+        || field.type === 'currency'
+        // v0.1.158 — también los numéricos nuevos: `rating` son estrellas,
+        // `percent` va de 0 a 100 y `duration` acepta "1h 30m" (el backend
+        // lo convierte a minutos con el mismo validador compartido).
+        || field.type === 'rating'
+        || field.type === 'percent'
+        || field.type === 'duration'
+        || field.type === 'phone'
+    ) {
         return (
             <MergeTagInput
                 value={value}
                 onChange={onChange}
                 fields={availableFields ?? []}
-                placeholder={__('0 o {{campo}}')}
+                placeholder={
+                    field.type === 'duration'
+                        ? __('1h 30m o {{campo}}')
+                        : field.type === 'phone'
+                            ? __('+57300… o {{campo}}')
+                            : __('0 o {{campo}}')
+                }
                 className="imcrm-flex-1"
                 aria-label={__('Valor')}
             />

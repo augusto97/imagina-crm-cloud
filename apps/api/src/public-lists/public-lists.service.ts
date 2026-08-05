@@ -32,7 +32,7 @@ function isExpired(expiresAt: string, now: Date = new Date()): boolean {
 }
 
 /** Tipos de campo cuyo texto se busca en la búsqueda pública. */
-const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url', 'select']);
+const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url', 'select', 'phone']);
 
 @Injectable()
 export class PublicListsService {

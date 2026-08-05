@@ -1004,7 +1004,10 @@ function prefillForGroup(
             return { [field.slug]: bucketValue === '1' || bucketValue === 'true' };
         case 'number':
         case 'currency':
-        case 'user': {
+        case 'user':
+        case 'rating':
+        case 'percent':
+        case 'duration': {
             const n = Number(bucketValue);
             return Number.isFinite(n) ? { [field.slug]: n } : undefined;
         }
