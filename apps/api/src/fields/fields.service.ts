@@ -203,6 +203,7 @@ export class FieldsService {
                 isRequired: input.is_required ?? false,
                 isUnique: input.is_unique ?? false,
                 isIndexed: input.is_indexed ?? false,
+                description: input.description ?? null,
                 position,
             });
         });
@@ -262,6 +263,9 @@ export class FieldsService {
             }
             if (patch.is_indexed !== undefined) {
                 changes.isIndexed = patch.is_indexed;
+            }
+            if (patch.description !== undefined) {
+                changes.description = patch.description;
             }
             if (patch.slug !== undefined && patch.slug !== current.slug) {
                 if (await this.repo.slugExists(tx, tenantId, listId, patch.slug, current.id)) {
@@ -409,6 +413,7 @@ function toField(row: FieldRow): Field {
         is_primary: false,
         position: row.position,
         created_at: row.createdAt.toISOString(),
+        description: row.description ?? null,
     };
 }
 

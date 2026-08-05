@@ -34,6 +34,8 @@ export const fields = pgTable(
         isRequired: boolean('is_required').notNull().default(false),
         isUnique: boolean('is_unique').notNull().default(false),
         isIndexed: boolean('is_indexed').notNull().default(false),
+        /** Ayuda para el equipo (v0.1.163). Metadata pura: no valida nada. */
+        description: text('description'),
         position: integer('position').notNull().default(0),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

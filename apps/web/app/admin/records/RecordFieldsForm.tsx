@@ -350,6 +350,11 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
                 {field.is_required && <span className="imcrm-text-destructive"> *</span>}
             </Label>
             {control}
+            {/* Ayuda del campo (v0.1.163): la escribe quien administra los
+                campos, para que el resto del equipo sepa cómo se completa. */}
+            {field.description !== null && field.description !== undefined && field.description !== '' && (
+                <span className="imcrm-text-xs imcrm-text-muted-foreground">{field.description}</span>
+            )}
             {error !== undefined && (
                 <span className="imcrm-text-xs imcrm-text-destructive">{error}</span>
             )}

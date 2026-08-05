@@ -936,6 +936,7 @@ export class PortalService {
                     is_primary: f.id === titleFieldId,
                     position: f.position,
                     created_at: f.createdAt.toISOString(),
+                    description: f.description ?? null,
                 })),
                 template,
                 template_page: templatePage,
