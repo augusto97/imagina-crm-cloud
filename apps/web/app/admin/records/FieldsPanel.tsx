@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, Search, Settings2 } from 'lucide-react';
+import { ArrowLeft, Search, Settings2, X } from 'lucide-react';
 
 import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-    Sheet,
-    SheetBody,
-    SheetCloseButton,
-    SheetContent,
-    SheetHeader,
-    SheetTitle,
-} from '@/components/ui/sheet';
 import { useCreateField, useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
@@ -27,22 +19,30 @@ import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 import { FieldTypePreview } from './FieldTypePreview';
 
 /**
- * Panel de campos (v0.1.160) — el alta de columnas estilo ClickUp.
+ * Selector de campos (v0.1.160; rehecho en v0.1.162) — el alta de columnas
+ * estilo ClickUp.
  *
- * Reemplaza al paso "catálogo" del modal: en un panel lateral entra el
- * buscador, los tipos agrupados en **Populares** y **Todos**, y —lo que
- * realmente resuelve la duda al elegir— una **vista previa** de cómo se va
- * a ver la celda, con su descripción, al pasar el mouse por cada tipo.
+ * **Modal flotante al centro y a varias columnas** (pedido del usuario): a la
+ * izquierda el catálogo de tipos en dos columnas, a la derecha un panel FIJO
+ * con la vista previa del tipo bajo el mouse (o del elegido) y su
+ * descripción.
+ *
+ * v0.1.161 había puesto la vista previa en un popover POR ÍTEM y eso trajo
+ * dos problemas que el usuario reportó: el mismo tipo aparece en "Populares"
+ * y en "Todos", así que hoverear uno abría DOS popovers a la vez; y los
+ * tipos cerca del borde quedaban con la tarjeta fuera de lugar. Un panel
+ * único no puede duplicarse ni salirse: la preview es una región del modal,
+ * no un flotante por fila.
  *
  * La pestaña **"Copiar de otra lista"** es nuestro equivalente honesto al
- * "Agregar existente" de ClickUp: allá un campo es una entidad del
- * workspace que vive en varias listas; acá un campo pertenece a UNA lista
- * (`fields.list_id`), así que compartir la misma entidad sería otro modelo
- * de datos. Copiar la definición (tipo + configuración + opciones) da el
+ * "Agregar existente" de ClickUp: allá un campo es una entidad del workspace
+ * que vive en varias listas; acá un campo pertenece a UNA lista
+ * (`fields.list_id`), así que compartir la misma entidad sería otro modelo de
+ * datos. Copiar la definición (tipo + configuración + opciones) da el
  * resultado que la gente busca sin mentir sobre lo que hay debajo.
  *
- * El engranaje abre el **administrador de campos** (Ajustes → Campos), que
- * es donde viven el slug, el índice, la unicidad y la conversión de tipo.
+ * El engranaje abre el **administrador de campos** (Ajustes → Campos), que es
+ * donde viven el nombre interno, el índice, la unicidad y la conversión.
  */
 interface FieldsPanelProps {
     listId: number;
@@ -62,7 +62,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
     const [isRequired, setIsRequired] = useState(false);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
-    /** Tipo bajo el mouse — su vista previa se muestra al costado. */
+    /** Tipo bajo el mouse — manda sobre el elegido en el panel de preview. */
     const [hovered, setHovered] = useState<FieldTypeSlug | null>(null);
 
     useEffect(() => {
@@ -74,6 +74,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         setIsRequired(false);
         setConfig({});
         setError(null);
+        setHovered(null);
     }, [open]);
 
     const filtered = useMemo(() => {
@@ -111,157 +112,200 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         }
     };
 
-    const selected = type !== '' ? FIELD_TYPE_OPTIONS.find((o) => o.type === type) : undefined;
+    /** Lo que muestra el panel derecho: el hover manda; si no, el elegido. */
+    const shown: FieldTypeSlug | null = hovered ?? (type !== '' ? type : null);
+    const shownOption = shown !== null ? FIELD_TYPE_OPTIONS.find((o) => o.type === shown) : undefined;
     const SelectedIcon = type !== '' ? fieldTypeIcon(type) : null;
+    const selected = type !== '' ? FIELD_TYPE_OPTIONS.find((o) => o.type === type) : undefined;
 
     return (
-        <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md">
-                <SheetHeader className="imcrm-flex imcrm-flex-row imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                    <SheetTitle>{__('Campos')}</SheetTitle>
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            title={__('Abrir el administrador de campos')}
-                            aria-label={__('Abrir el administrador de campos')}
-                            onClick={() => {
-                                onOpenChange(false);
-                                navigate(`/lists/${listSlug}/edit?s=campos`);
-                            }}
-                        >
-                            <Settings2 className="imcrm-h-4 imcrm-w-4" />
-                        </Button>
-                        <SheetCloseButton />
+        <Dialog.Root open={open} onOpenChange={onOpenChange}>
+            <Dialog.Portal>
+                <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />
+                <Dialog.Content
+                    className={cn(
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50',
+                        'imcrm-flex imcrm-h-[min(620px,86vh)] imcrm-w-[min(900px,94vw)] imcrm-flex-col',
+                        'imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-lg',
+                    )}
+                    style={{ transform: 'translate(-50%, -50%)' }}
+                >
+                    <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-5 imcrm-py-3">
+                        <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
+                            {__('Campos')}
+                        </Dialog.Title>
+                        <Dialog.Description className="imcrm-sr-only">
+                            {__('Elegí el tipo de la columna nueva.')}
+                        </Dialog.Description>
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                title={__('Abrir el administrador de campos')}
+                                aria-label={__('Abrir el administrador de campos')}
+                                onClick={() => {
+                                    onOpenChange(false);
+                                    navigate(`/lists/${listSlug}/edit?s=campos`);
+                                }}
+                            >
+                                <Settings2 className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                            <Dialog.Close asChild>
+                                <Button variant="ghost" size="icon" aria-label={__('Cerrar')}>
+                                    <X className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                            </Dialog.Close>
+                        </div>
                     </div>
-                </SheetHeader>
 
-                <SheetBody className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                    {type === '' ? (
-                        <>
-                            <div className="imcrm-relative">
-                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2.5 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                <Input
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder={__('Buscar campos')}
-                                    className="imcrm-pl-8"
-                                    autoFocus
-                                />
-                            </div>
-
-                            <div className="imcrm-flex imcrm-gap-4 imcrm-border-b imcrm-border-border">
-                                {([
-                                    ['new', __('Crear nuevo')],
-                                    ['copy', __('Copiar de otra lista')],
-                                ] as const).map(([id, text]) => (
-                                    <button
-                                        key={id}
-                                        type="button"
-                                        onClick={() => setTab(id)}
-                                        className={cn(
-                                            'imcrm--mb-px imcrm-border-b-2 imcrm-px-0.5 imcrm-pb-1.5 imcrm-text-sm',
-                                            tab === id
-                                                ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground'
-                                                : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                                        )}
-                                    >
-                                        {text}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {tab === 'new' ? (
+                    <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1">
+                        {/* ── Columna principal ─────────────────────────── */}
+                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto imcrm-px-5 imcrm-py-4">
+                            {type === '' ? (
                                 <>
-                                    {popular.length > 0 && (
-                                        <TypeSection
-                                            title={__('Populares')}
-                                            options={popular}
-                                            onPick={pick}
-                                            hovered={hovered}
-                                            onHover={setHovered}
+                                    <div className="imcrm-relative">
+                                        <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2.5 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                        <Input
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                            placeholder={__('Buscar campos')}
+                                            className="imcrm-pl-8"
+                                            autoFocus
                                         />
-                                    )}
-                                    {filtered.length === 0 ? (
-                                        <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
-                                            {__('Ningún tipo coincide con la búsqueda.')}
-                                        </p>
+                                    </div>
+
+                                    <div className="imcrm-flex imcrm-gap-4 imcrm-border-b imcrm-border-border">
+                                        {([
+                                            ['new', __('Crear nuevo')],
+                                            ['copy', __('Copiar de otra lista')],
+                                        ] as const).map(([id, text]) => (
+                                            <button
+                                                key={id}
+                                                type="button"
+                                                onClick={() => setTab(id)}
+                                                className={cn(
+                                                    'imcrm--mb-px imcrm-border-b-2 imcrm-px-0.5 imcrm-pb-1.5 imcrm-text-sm',
+                                                    tab === id
+                                                        ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground'
+                                                        : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                                                )}
+                                            >
+                                                {text}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {tab === 'new' ? (
+                                        <>
+                                            {popular.length > 0 && (
+                                                <TypeSection
+                                                    title={__('Populares')}
+                                                    options={popular}
+                                                    onPick={pick}
+                                                    onHover={setHovered}
+                                                />
+                                            )}
+                                            {filtered.length === 0 ? (
+                                                <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
+                                                    {__('Ningún tipo coincide con la búsqueda.')}
+                                                </p>
+                                            ) : (
+                                                <TypeSection
+                                                    title={__('Todos')}
+                                                    options={filtered}
+                                                    onPick={pick}
+                                                    onHover={setHovered}
+                                                />
+                                            )}
+                                        </>
                                     ) : (
-                                        <TypeSection
-                                            title={__('Todos')}
-                                            options={filtered}
-                                            onPick={pick}
-                                            hovered={hovered}
-                                            onHover={setHovered}
-                                        />
+                                        <CopyFromList currentListId={listId} search={search} onPick={pick} />
                                     )}
                                 </>
                             ) : (
-                                <CopyFromList currentListId={listId} search={search} onPick={pick} />
+                                <form onSubmit={submit} className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="imcrm-gap-1.5"
+                                            onClick={() => setType('')}
+                                        >
+                                            <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Volver')}
+                                        </Button>
+                                        <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
+                                            {SelectedIcon !== null && <SelectedIcon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />}
+                                            {selected?.label ?? type}
+                                        </span>
+                                    </div>
+
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                        <Label htmlFor="fields-panel-name">{__('Nombre')}</Label>
+                                        <Input
+                                            id="fields-panel-name"
+                                            value={label}
+                                            onChange={(e) => setLabel(e.target.value)}
+                                            placeholder={__('Ej. Estado')}
+                                            autoFocus
+                                        />
+                                    </div>
+
+                                    <FieldConfigEditor
+                                        type={type}
+                                        config={config}
+                                        onChange={setConfig}
+                                        listId={listId}
+                                    />
+
+                                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={isRequired}
+                                            onChange={(e) => setIsRequired(e.target.checked)}
+                                        />
+                                        {__('Obligatorio')}
+                                    </label>
+
+                                    {error !== null && (
+                                        <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    <Button type="submit" disabled={label.trim() === '' || create.isPending}>
+                                        {create.isPending ? __('Creando…') : __('Crear campo')}
+                                    </Button>
+                                </form>
                             )}
-                        </>
-                    ) : (
-                        <form onSubmit={submit} className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-                            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="imcrm-gap-1.5"
-                                    onClick={() => setType('')}
-                                >
-                                    <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Volver')}
-                                </Button>
-                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
-                                    {SelectedIcon !== null && <SelectedIcon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />}
-                                    {selected?.label ?? type}
-                                </span>
-                            </div>
+                        </div>
 
-                            <FieldTypePreview type={type} />
-
-                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                <Label htmlFor="fields-panel-name">{__('Nombre')}</Label>
-                                <Input
-                                    id="fields-panel-name"
-                                    value={label}
-                                    onChange={(e) => setLabel(e.target.value)}
-                                    placeholder={__('Ej. Estado')}
-                                    autoFocus
-                                />
-                            </div>
-
-                            <FieldConfigEditor
-                                type={type}
-                                config={config}
-                                onChange={setConfig}
-                                listId={listId}
-                            />
-
-                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                <input
-                                    type="checkbox"
-                                    checked={isRequired}
-                                    onChange={(e) => setIsRequired(e.target.checked)}
-                                />
-                                {__('Obligatorio')}
-                            </label>
-
-                            {error !== null && (
-                                <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                                    {error}
-                                </div>
+                        {/* ── Panel de vista previa (fijo, una sola región) ─ */}
+                        <aside className="imcrm-hidden imcrm-w-72 imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-l imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-4 md:imcrm-flex">
+                            <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                {__('Vista previa')}
+                            </p>
+                            {shown === null || shownOption === undefined ? (
+                                <p className="imcrm-text-sm imcrm-leading-relaxed imcrm-text-muted-foreground">
+                                    {__('Pasá el mouse por un tipo para ver cómo se vería la celda en la tabla.')}
+                                </p>
+                            ) : (
+                                <>
+                                    <FieldTypePreview type={shown} />
+                                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                        <p className="imcrm-text-sm imcrm-font-medium">{shownOption.label}</p>
+                                        <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
+                                            {shownOption.description}
+                                        </p>
+                                    </div>
+                                </>
                             )}
-
-                            <Button type="submit" disabled={label.trim() === '' || create.isPending}>
-                                {create.isPending ? __('Creando…') : __('Crear campo')}
-                            </Button>
-                        </form>
-                    )}
-                </SheetBody>
-            </SheetContent>
-        </Sheet>
+                        </aside>
+                    </div>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 }
 
@@ -271,72 +315,43 @@ function TypeSection({
     title,
     options,
     onPick,
-    hovered,
     onHover,
 }: {
     title: string;
     options: typeof FIELD_TYPE_OPTIONS;
     onPick: PickFn;
-    hovered: FieldTypeSlug | null;
     onHover: (type: FieldTypeSlug | null) => void;
 }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-            <p className="imcrm-px-1 imcrm-pb-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <p className="imcrm-px-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                 {title}
             </p>
-            {options.map((opt) => {
-                const Icon = fieldTypeIcon(opt.type);
-                return (
-                    // v0.1.161 — la vista previa va en un POPOVER portaleado al
-                    // body. Como tarjeta absoluta dentro del panel quedaba
-                    // recortada por el overflow del sheet y tapada por su
-                    // overlay: existía en el DOM pero no se veía (reporte del
-                    // usuario). `pointer-events-none` para que el mouse siga
-                    // siendo del item, no de la tarjeta.
-                    <Popover
-                        key={opt.type}
-                        open={hovered === opt.type}
-                        // Controlado por el hover, pero Radix también cierra
-                        // con Escape/click afuera: sin este handler el estado
-                        // quedaba abierto y el Escape se consumía sin cerrar
-                        // NADA (ni la preview ni el panel).
-                        onOpenChange={(next) => {
-                            if (!next) onHover(null);
-                        }}
-                    >
-                        <PopoverTrigger asChild>
-                            <button
-                                type="button"
-                                onMouseEnter={() => onHover(opt.type)}
-                                onMouseLeave={() => onHover(null)}
-                                onFocus={() => onHover(opt.type)}
-                                onBlur={() => onHover(null)}
-                                onClick={() => onPick(opt.type)}
-                                className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
-                            >
-                                <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{opt.label}</span>
-                                <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 group-hover/type:imcrm-opacity-100">
-                                    {__('Crear')}
-                                </span>
-                            </button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                            side="left"
-                            align="start"
-                            sideOffset={12}
-                            onOpenAutoFocus={(e) => e.preventDefault()}
-                            className="imcrm-pointer-events-none imcrm-w-60"
+            {/* Dos columnas de tipos: con 19 tipos, una sola tira obliga a
+                scrollear para ver el catálogo completo. */}
+            <div className="imcrm-grid imcrm-gap-0.5 sm:imcrm-grid-cols-2">
+                {options.map((opt) => {
+                    const Icon = fieldTypeIcon(opt.type);
+                    return (
+                        <button
+                            key={opt.type}
+                            type="button"
+                            onMouseEnter={() => onHover(opt.type)}
+                            onMouseLeave={() => onHover(null)}
+                            onFocus={() => onHover(opt.type)}
+                            onBlur={() => onHover(null)}
+                            onClick={() => onPick(opt.type)}
+                            className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
                         >
-                            <FieldTypePreview type={opt.type} />
-                            <p className="imcrm-mt-2 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
-                                {opt.description}
-                            </p>
-                        </PopoverContent>
-                    </Popover>
-                );
-            })}
+                            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{opt.label}</span>
+                            <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 group-hover/type:imcrm-opacity-100">
+                                {__('Crear')}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -399,28 +414,30 @@ function CopyFromList({
                     {__('Esa lista no tiene campos que coincidan.')}
                 </p>
             ) : (
-                rows.map((f: FieldEntity) => {
-                    const Icon = fieldTypeIcon(f.type);
-                    return (
-                        <button
-                            key={f.id}
-                            type="button"
-                            onClick={() => onPick(f.type, f.label, f.config ?? {})}
-                            className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent"
-                            title={sprintf(
-                                /* translators: %s: nombre del campo */
-                                __('Copiar la definición de "%s"'),
-                                f.label,
-                            )}
-                        >
-                            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{f.label}</span>
-                            <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Copiar')}
-                            </span>
-                        </button>
-                    );
-                })
+                <div className="imcrm-grid imcrm-gap-0.5 sm:imcrm-grid-cols-2">
+                    {rows.map((f: FieldEntity) => {
+                        const Icon = fieldTypeIcon(f.type);
+                        return (
+                            <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => onPick(f.type, f.label, f.config ?? {})}
+                                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent"
+                                title={sprintf(
+                                    /* translators: %s: nombre del campo */
+                                    __('Copiar la definición de "%s"'),
+                                    f.label,
+                                )}
+                            >
+                                <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{f.label}</span>
+                                <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">
+                                    {__('Copiar')}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );

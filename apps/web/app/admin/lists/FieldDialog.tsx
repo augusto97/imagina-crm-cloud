@@ -1,18 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
 
 import { FieldConfigEditor } from '@/admin/lists/FieldConfigEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    Sheet,
-    SheetBody,
-    SheetCloseButton,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-} from '@/components/ui/sheet';
 import { useCreateField, useUpdateField } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { ApiError } from '@/lib/api';
@@ -178,139 +171,179 @@ export function FieldDialog({
     const canSubmit = label.trim() !== '' && type !== '' && !isPending;
 
     return (
-        // v0.1.161 — PANEL LATERAL, no modal centrado: en el administrador de
-        // campos se edita uno tras otro, y un panel deja la tabla a la vista
-        // mientras se trabaja (es lo que hace ClickUp).
-        <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md">
-                <SheetHeader className="imcrm-flex imcrm-flex-row imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                    <div>
-                        <SheetTitle>{isEdit ? __('Editar campo') : __('Añadir campo')}</SheetTitle>
-                        <SheetDescription>
-                            {isEdit
-                                ? __('El tipo se puede convertir; los datos existentes se migran.')
-                                : __('Define el label, tipo, slug y configuración del nuevo campo.')}
-                        </SheetDescription>
+        // v0.1.162 — MODAL FLOTANTE AL CENTRO y a DOS COLUMNAS, como el
+        // administrador de campos de ClickUp (pedido del usuario: el panel
+        // lateral de v0.1.161 dejaba el formulario en una tira angosta con
+        // scroll). Izquierda: identidad del campo (nombre, tipo, nombre
+        // interno). Derecha: su configuración y las opciones avanzadas.
+        <Dialog.Root open={open} onOpenChange={onOpenChange}>
+            <Dialog.Portal>
+                <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />
+                <Dialog.Content
+                    className={cn(
+                        'imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50',
+                        'imcrm-flex imcrm-max-h-[86vh] imcrm-w-[min(880px,94vw)] imcrm-flex-col',
+                        'imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-lg',
+                    )}
+                    // Centrado con transform inline (las utilities negativas
+                    // imcrm--translate-* están prohibidas para código nuevo).
+                    style={{ transform: 'translate(-50%, -50%)' }}
+                >
+                    <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-5 imcrm-py-3.5">
+                        <div>
+                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
+                                {isEdit ? __('Editar campo') : __('Añadir campo')}
+                            </Dialog.Title>
+                            <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
+                                {isEdit
+                                    ? __('El tipo se puede convertir: los datos existentes se migran.')
+                                    : __('Definí el nombre, el tipo y la configuración del campo nuevo.')}
+                            </Dialog.Description>
+                        </div>
+                        <Dialog.Close asChild>
+                            <Button variant="ghost" size="icon" aria-label={__('Cerrar')}>
+                                <X className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        </Dialog.Close>
                     </div>
-                    <SheetCloseButton />
-                </SheetHeader>
 
-                <SheetBody>
-                    <form onSubmit={handleSubmit} className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label htmlFor="field-label">{__('Label')}</Label>
-                            <Input
-                                id="field-label"
-                                value={label}
-                                onChange={(e) => setLabel(e.target.value)}
-                                placeholder={__('Ej. Email')}
-                                autoFocus
-                            />
-                        </div>
+                    <form onSubmit={handleSubmit} className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col">
+                        <div className="imcrm-grid imcrm-min-h-0 imcrm-flex-1 imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-5 imcrm-py-4 md:imcrm-grid-cols-2">
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                                <ColumnTitle>{__('Identidad')}</ColumnTitle>
 
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label>{__('Tipo')}</Label>
-                            <FieldTypeSelect
-                                value={type}
-                                onChange={handleTypeChange}
-                                editingFromType={isEdit && field ? field.type : undefined}
-                            />
-                            {isEdit && field && type !== '' && type !== field.type && (
-                                <TypeChangeWarning fromType={field.type} toType={type} />
-                            )}
-                        </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label htmlFor="field-label">{__('Nombre')}</Label>
+                                    <Input
+                                        id="field-label"
+                                        value={label}
+                                        onChange={(e) => setLabel(e.target.value)}
+                                        placeholder={__('Ej. Email')}
+                                        autoFocus
+                                    />
+                                </div>
 
-                        <SlugEditor
-                            type="field"
-                            sourceText={label}
-                            listId={listId}
-                            value={slug}
-                            onChange={setSlug}
-                            isDirty={slugDirty}
-                            onDirty={() => setSlugDirty(true)}
-                        />
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                    <Label>{__('Tipo')}</Label>
+                                    <FieldTypeSelect
+                                        value={type}
+                                        onChange={handleTypeChange}
+                                        editingFromType={isEdit && field ? field.type : undefined}
+                                    />
+                                    {isEdit && field && type !== '' && type !== field.type && (
+                                        <TypeChangeWarning fromType={field.type} toType={type} />
+                                    )}
+                                </div>
 
-                        <FieldConfigEditor
-                            type={type}
-                            config={config}
-                            onChange={setConfig}
-                            listId={listId}
-                            currentFieldId={field?.id}
-                        />
-
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                <input
-                                    type="checkbox"
-                                    checked={isRequired}
-                                    onChange={(e) => setIsRequired(e.target.checked)}
+                                {/* `currentSlug` en edición: sin él se consultaba el
+                                    slug PROPIO del campo y volvía "ocupado" — el
+                                    aviso salía con sólo abrir el campo (v0.1.162). */}
+                                <SlugEditor
+                                    type="field"
+                                    label={__('Nombre interno')}
+                                    sourceText={label}
+                                    currentSlug={isEdit && field ? field.slug : undefined}
+                                    listId={listId}
+                                    value={slug}
+                                    onChange={setSlug}
+                                    isDirty={slugDirty}
+                                    onDirty={() => setSlugDirty(true)}
                                 />
-                                {__('Obligatorio')}
-                            </label>
-                            <label
-                                className={cn(
-                                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                                    !supportsUnique && 'imcrm-opacity-50',
-                                )}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={isUnique}
-                                    onChange={(e) => setIsUnique(e.target.checked)}
-                                    disabled={!supportsUnique}
-                                />
-                                {__('Único')}
-                                {!supportsUnique && type !== '' && ' ' + __('(no soportado por este tipo)')}
-                            </label>
-                            {/* `is_indexed` (0.28.0): el user marca los
-                                campos por los que filtra/ordena seguido
-                                para que el plugin agregue un índice
-                                MySQL. Vital a 50k+ filas. Tooltip explica
-                                el tradeoff. UNIQUE ya provee índice así
-                                que cuando isUnique está on, este se
-                                deshabilita. */}
-                            <label
-                                className={cn(
-                                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                                    isUnique && 'imcrm-opacity-50',
-                                )}
-                                title={__('Crea un índice MySQL no-único sobre la columna. Acelera filtros y sort en listas grandes (50k+ registros). Tradeoff: ~10% más storage y writes ~5% más lentos. Activa solo en campos por los que filtras a menudo.')}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={isIndexed}
-                                    onChange={(e) => setIsIndexed(e.target.checked)}
-                                    disabled={isUnique}
-                                />
-                                {__('Indexar')}
-                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    {__('(rápido a gran escala)')}
-                                </span>
-                            </label>
-                        </div>
-
-                        {submitError !== null && (
-                            <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
-                                {submitError}
                             </div>
-                        )}
 
-                        <div className="imcrm-flex imcrm-justify-end imcrm-gap-2">
-                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                                {__('Cancelar')}
-                            </Button>
-                            <Button type="submit" disabled={!canSubmit}>
-                                {isPending
-                                    ? __('Guardando…')
-                                    : isEdit
-                                      ? __('Guardar cambios')
-                                      : __('Crear campo')}
-                            </Button>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+                                <ColumnTitle>{__('Configuración')}</ColumnTitle>
+
+                                <FieldConfigEditor
+                                    type={type}
+                                    config={config}
+                                    onChange={setConfig}
+                                    listId={listId}
+                                    currentFieldId={field?.id}
+                                />
+
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
+                                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={isRequired}
+                                            onChange={(e) => setIsRequired(e.target.checked)}
+                                        />
+                                        {__('Obligatorio')}
+                                    </label>
+                                    <label
+                                        className={cn(
+                                            'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
+                                            !supportsUnique && 'imcrm-opacity-50',
+                                        )}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={isUnique}
+                                            onChange={(e) => setIsUnique(e.target.checked)}
+                                            disabled={!supportsUnique}
+                                        />
+                                        {__('Sin repetidos')}
+                                        {!supportsUnique && type !== '' && ' ' + __('(no aplica a este tipo)')}
+                                    </label>
+                                    {/* `is_indexed`: el usuario marca los campos
+                                        por los que filtra/ordena seguido para que
+                                        se cree el índice. Vital a 50k+ filas.
+                                        UNIQUE ya provee índice, así que con
+                                        "sin repetidos" activo este se deshabilita. */}
+                                    <label
+                                        className={cn(
+                                            'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
+                                            isUnique && 'imcrm-opacity-50',
+                                        )}
+                                        title={__('Crea un índice sobre la columna: acelera filtros y orden en listas grandes (50k+ registros), a cambio de algo más de espacio y escrituras un poco más lentas. Activalo sólo en los campos por los que filtrás a menudo.')}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={isIndexed}
+                                            onChange={(e) => setIsIndexed(e.target.checked)}
+                                            disabled={isUnique}
+                                        />
+                                        {__('Indexar')}
+                                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                            {__('(rápido a gran escala)')}
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-px-5 imcrm-py-3">
+                            {submitError !== null && (
+                                <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
+                                    {submitError}
+                                </div>
+                            )}
+                            <div className="imcrm-flex imcrm-justify-end imcrm-gap-2">
+                                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                    {__('Cancelar')}
+                                </Button>
+                                <Button type="submit" disabled={!canSubmit}>
+                                    {isPending
+                                        ? __('Guardando…')
+                                        : isEdit
+                                          ? __('Guardar cambios')
+                                          : __('Crear campo')}
+                                </Button>
+                            </div>
                         </div>
                     </form>
-                </SheetBody>
-            </SheetContent>
-        </Sheet>
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
+    );
+}
+
+function ColumnTitle({ children }: { children: React.ReactNode }): JSX.Element {
+    return (
+        <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+            {children}
+        </p>
     );
 }
 
