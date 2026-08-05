@@ -935,6 +935,7 @@ export class PortalService {
                     is_indexed: f.isIndexed,
                     is_primary: f.id === titleFieldId,
                     position: f.position,
+                    created_at: f.createdAt.toISOString(),
                 })),
                 template,
                 template_page: templatePage,

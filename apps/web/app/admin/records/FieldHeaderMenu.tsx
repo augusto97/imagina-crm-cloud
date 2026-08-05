@@ -254,7 +254,18 @@ export function FieldHeaderMenu({
                     </DropdownMenuItem>
                 )}
                 {listSlug !== undefined && (
-                    <DropdownMenuItem onSelect={() => navigate(`/lists/${listSlug}/automations/new`)}>
+                    <DropdownMenuItem
+                        onSelect={() =>
+                            // Con el campo en la URL, el editor abre con la
+                            // acción "Actualizar campo" ya armada para ESA
+                            // columna — llegar al editor vacío no servía de
+                            // nada (reporte del usuario, v0.1.161).
+                            navigate(
+                                `/lists/${listSlug}/automations/new`
+                                + `?action=update_field&field=${field.id}`,
+                            )
+                        }
+                    >
                         <Zap className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                         {__('Automatizar')}
                     </DropdownMenuItem>

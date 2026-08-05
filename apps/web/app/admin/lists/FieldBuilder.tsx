@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
     Columns3,
     GripVertical,
+    Hash,
     Heading1,
     KeyRound,
     Loader2,
@@ -32,6 +33,7 @@ import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useUpdateList } from '@/hooks/useLists';
 import { invalidateForList } from '@/hooks/useRecords';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { formatDateStr } from '@/lib/tenantFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -95,6 +97,9 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         if (term === '') return true;
         return f.label.toLowerCase().includes(term) || f.slug.toLowerCase().includes(term);
     });
+
+    const requiredCount = all.filter((f) => f.is_required).length;
+    const indexedCount = all.filter((f) => f.is_indexed).length;
 
     /** Tipos presentes en la lista, para poblar el filtro. */
     const typesPresent = useMemo(() => {
@@ -186,6 +191,37 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            {/* Resumen de la lista de campos (v0.1.161): con 15 campos, saber
+                de una cuántos hay y cuántos se están viendo con el filtro
+                puesto es la diferencia entre un administrador y una lista. */}
+            {all.length > 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {visible.length === all.length
+                        ? sprintf(
+                            /* translators: %d: cantidad de campos */
+                            __('%d campos'),
+                            all.length,
+                        )
+                        : sprintf(
+                            /* translators: 1: campos visibles, 2: total */
+                            __('%1$d de %2$d campos'),
+                            visible.length,
+                            all.length,
+                        )}
+                    {requiredCount > 0
+                        && ` · ${sprintf(
+                            /* translators: %d: cantidad de campos obligatorios */
+                            __('%d obligatorios'),
+                            requiredCount,
+                        )}`}
+                    {indexedCount > 0
+                        && ` · ${sprintf(
+                            /* translators: %d: cantidad de campos indexados */
+                            __('%d indexados'),
+                            indexedCount,
+                        )}`}
+                </p>
+            )}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <div className="imcrm-relative imcrm-min-w-[180px] imcrm-flex-1 sm:imcrm-max-w-xs">
                     <Search
@@ -266,11 +302,20 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                     {groups.map(([type, rows]) => (
                         <div key={type} className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
-                                {typeLabels.get(type) ?? type}
-                                <span className="imcrm-text-muted-foreground/60">{rows.length}</span>
+                            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-foreground imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
+                                    {(() => {
+                                        const GroupIcon = fieldTypeIcon(type);
+                                        return <GroupIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />;
+                                    })()}
+                                    {typeLabels.get(type) ?? type}
+                                </span>
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{rows.length}</span>
                             </p>
                             <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
+                                <li>
+                                    <FieldsTableHeader />
+                                </li>
                                 {rows.map((field) => (
                                     <FieldRow
                                         key={field.id}
@@ -297,6 +342,9 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
             {visible.length > 0 && !groupByType && (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
+                    <li>
+                        <FieldsTableHeader />
+                    </li>
                     {visible.map((field, i) => (
                         <FieldRow
                             key={field.id}
@@ -357,6 +405,33 @@ interface FieldRowProps {
     onMakeTitle?: () => void;
 }
 
+/**
+ * v0.1.161 — grilla de COLUMNAS alineadas (Nombre · Tipo · Propiedades ·
+ * Creado), como el administrador de campos de ClickUp: con 15 campos, una
+ * lista de tarjetas no deja comparar nada. Las mismas columnas que el
+ * encabezado de abajo — de ahí que compartan `FIELD_GRID`.
+ */
+const FIELD_GRID = 'imcrm-grid imcrm-grid-cols-[20px_minmax(0,1fr)_150px_150px_110px_36px] imcrm-items-center imcrm-gap-2';
+
+function FieldsTableHeader(): JSX.Element {
+    return (
+        <div
+            className={cn(
+                FIELD_GRID,
+                'imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5',
+                'imcrm-text-[11px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground',
+            )}
+        >
+            <span aria-hidden />
+            <span>{__('Nombre')}</span>
+            <span>{__('Tipo')}</span>
+            <span>{__('Propiedades')}</span>
+            <span>{__('Creado')}</span>
+            <span aria-hidden />
+        </div>
+    );
+}
+
 function FieldRow({
     field,
     typeLabel,
@@ -375,7 +450,7 @@ function FieldRow({
             onDragStart={onDragStart}
             onDragOver={onDragOver}
             onDrop={onDrop}
-            className="imcrm-group imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-2 imcrm-py-2 hover:imcrm-bg-accent/30"
+            className={cn(FIELD_GRID, 'imcrm-group imcrm-px-2 imcrm-py-1.5 hover:imcrm-bg-accent/30')}
         >
             <span
                 aria-hidden
@@ -392,30 +467,29 @@ function FieldRow({
             <button
                 type="button"
                 onClick={onEdit}
-                className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-px-1 imcrm-py-1 imcrm-text-left focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary"
+                className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-1 imcrm-py-1 imcrm-text-left focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary"
             >
-                <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
-                    <Icon className="imcrm-h-4 imcrm-w-4" aria-hidden />
-                </span>
-                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
-                    <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
-                        <span className="imcrm-truncate imcrm-text-sm imcrm-font-medium">
-                            {field.label}
-                        </span>
-                        {field.is_primary && (
-                            <Badge variant="secondary" className="imcrm-gap-1">
-                                <KeyRound className="imcrm-h-3 imcrm-w-3" />
-                                {__('Título')}
-                            </Badge>
-                        )}
-                        {field.is_required && <Badge variant="outline">{__('Obligatorio')}</Badge>}
-                        {field.is_unique && <Badge variant="outline">{__('Sin repetidos')}</Badge>}
-                    </span>
-                    <span className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
-                        {typeLabel}
-                    </span>
-                </span>
+                <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                <span className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{field.label}</span>
+                {field.is_primary && (
+                    <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1">
+                        <KeyRound className="imcrm-h-3 imcrm-w-3" />
+                        {__('Título')}
+                    </Badge>
+                )}
             </button>
+
+            <span className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{typeLabel}</span>
+
+            <span className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                {field.is_required && <Badge variant="outline">{__('Obligatorio')}</Badge>}
+                {field.is_unique && <Badge variant="outline">{__('Sin repetidos')}</Badge>}
+                {field.is_indexed && <Badge variant="outline">{__('Indexado')}</Badge>}
+            </span>
+
+            <span className="imcrm-truncate imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground">
+                {field.created_at ? formatDateStr(field.created_at.slice(0, 10)) : '—'}
+            </span>
 
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -443,6 +517,14 @@ function FieldRow({
                             {__('Usar como título')}
                         </DropdownMenuItem>
                     )}
+                    <DropdownMenuItem
+                        onSelect={() => {
+                            void navigator.clipboard.writeText(String(field.id));
+                        }}
+                    >
+                        <Hash className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Copiar ID de campo')}
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem danger onSelect={onDelete}>
                         <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
