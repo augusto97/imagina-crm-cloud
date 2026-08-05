@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
 
 import { api } from '@/lib/api';
+import { __ } from '@/lib/i18n';
 
+/**
+ * Respuesta REAL de `/slugs/check` en la nube: `{available, reason}`.
+ *
+ * v0.1.162 — este hook esperaba `{slug, available, errors}`, el shape del
+ * plugin WordPress. Con un slug NO disponible leía `errors` (que no existe)
+ * y el `Object.values(undefined)` explotaba dentro del `.then`, así que el
+ * `.catch` mostraba "Error verificando el slug." — o sea: el mensaje de
+ * error genérico tapaba SIEMPRE el motivo real (ocupado / reservado /
+ * formato). Reporte del usuario.
+ */
 interface SlugCheckResponse {
-    slug: string;
     available: boolean;
-    errors: Record<string, string>;
+    reason?: 'format' | 'reserved' | 'taken';
 }
 
 interface UseSlugCheckParams {
@@ -21,6 +31,23 @@ interface UseSlugCheckParams {
 interface SlugCheckState {
     state: 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
     message?: string;
+}
+
+/** Motivo del backend → estado + texto que el usuario puede accionar. */
+function fromReason(reason: SlugCheckResponse['reason']): SlugCheckState {
+    switch (reason) {
+        case 'taken':
+            return { state: 'taken', message: __('Ya hay otro con ese nombre interno.') };
+        case 'reserved':
+            return { state: 'invalid', message: __('Ese nombre interno está reservado por el sistema.') };
+        case 'format':
+            return {
+                state: 'invalid',
+                message: __('Sólo minúsculas, números y guion bajo; tiene que empezar con una letra.'),
+            };
+        default:
+            return { state: 'taken', message: __('No disponible.') };
+    }
 }
 
 /**
@@ -43,8 +70,10 @@ export function useSlugCheck({
             return;
         }
 
+        // Modo edición sin tocar el slug: es el suyo, no hay nada que
+        // preguntar (y el backend lo reportaría como "ocupado" por sí mismo).
         if (currentSlug !== undefined && slug === currentSlug) {
-            setResult({ state: 'available' });
+            setResult({ state: 'idle' });
             return;
         }
 
@@ -58,22 +87,12 @@ export function useSlugCheck({
             api.get<SlugCheckResponse>('/slugs/check', { query, signal: controller.signal })
                 .then((res) => {
                     if (controller.signal.aborted) return;
-                    if (res.data.available) {
-                        setResult({ state: 'available' });
-                    } else {
-                        const firstError = Object.values(res.data.errors)[0];
-                        setResult({
-                            state: firstError?.includes('reservado') || firstError?.includes('Formato')
-                                ? 'invalid'
-                                : 'taken',
-                            message: firstError,
-                        });
-                    }
+                    setResult(res.data.available ? { state: 'available' } : fromReason(res.data.reason));
                 })
                 .catch((err: unknown) => {
                     if (controller.signal.aborted) return;
                     if (err instanceof Error && err.name === 'AbortError') return;
-                    setResult({ state: 'invalid', message: 'Error verificando el slug.' });
+                    setResult({ state: 'invalid', message: __('No se pudo verificar el nombre interno.') });
                 });
         }, debounceMs);
 

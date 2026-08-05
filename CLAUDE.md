@@ -2836,6 +2836,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         constructores (`fields`, `bootstrap`, `portal.me`). E2E navegador
         19/19.
 
+  - [x] **Campos: modales flotantes multi-columna + fix del aviso de slug
+        (v0.1.162, 4 reportes del usuario)**:
+        (a) **La vista previa salía DOBLE**: v0.1.161 la puso en un popover
+        POR ÍTEM, y el mismo tipo aparece en «Populares» y en «Todos» — un
+        solo `hovered` abría las DOS instancias a la vez. Además a varios
+        tipos no se les veía. Se eliminó el popover: la preview es ahora una
+        **región fija** del modal (panel derecho) alimentada por el tipo bajo
+        el mouse (o el elegido) — no puede duplicarse ni salirse de lugar, y
+        cubre los 18 tipos por construcción.
+        (b) **El selector de campos pasa a MODAL FLOTANTE AL CENTRO y
+        multi-columna** (900px): catálogo de tipos en dos columnas a la
+        izquierda + panel de vista previa con descripción a la derecha. El
+        panel lateral angosto de v0.1.160 obligaba a scrollear para ver el
+        catálogo.
+        (c) **El editor de campo del administrador también** (880px, dos
+        columnas: Identidad —nombre, tipo, nombre interno— y Configuración
+        —config del tipo + obligatorio/sin repetidos/indexar—). El usuario
+        pidió explícitamente la interfaz de ClickUp, flotante y a varias
+        columnas, en vez del panel lateral de v0.1.161.
+        (d) **"Error verificando el slug" al abrir CUALQUIER campo**: dos
+        bugs encadenados. `useSlugCheck` esperaba `{slug, available, errors}`
+        —el shape del plugin WordPress— pero la nube responde
+        `{available, reason}`; con un slug NO disponible, el
+        `Object.values(undefined)` explotaba dentro del `.then` y el `.catch`
+        mostraba el error genérico: **el motivo real (ocupado / reservado /
+        formato) no se veía NUNCA**. Y `FieldDialog` no le pasaba
+        `currentSlug`, así que al editar se consultaba el slug PROPIO del
+        campo → "ocupado" → el aviso aparecía con sólo abrirlo, sin tocar
+        nada. Ahora el hook habla el shape real, con mensajes accionables, y
+        en edición el slug propio no se consulta. E2E navegador 12/12
+        (ambos modales centrados y medidos, los 18 tipos con preview, cero
+        popovers, sin aviso al abrir, y los motivos reales al tipear un
+        nombre interno ocupado o reservado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
