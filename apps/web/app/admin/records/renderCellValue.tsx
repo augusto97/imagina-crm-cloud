@@ -108,7 +108,7 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
     // teléfono marca, una calificación son estrellas, un avance es una
     // barra, una duración es "1h 30m" y no 90).
     if (field.type === 'phone') {
-        return <PhoneDisplay value={value} variant="cell" />;
+        return <PhoneDisplay value={value} />;
     }
     if (field.type === 'rating') {
         const cfg = field.config as { max?: number; icon?: RatingIcon };

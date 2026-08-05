@@ -2732,6 +2732,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         feature propia (necesita resolver la relación en el motor de lectura),
         no un tipo más, y merece su release.
 
+  - [x] **Selector de país del teléfono, estilo ClickUp (v0.1.159, reporte del
+        usuario con captura)**: la v0.1.158 puso un `<select>` nativo y tenía
+        tres problemas, todos reales: (a) **era imposible cambiar el país** —
+        al abrir el desplegable el navegador le saca el foco al input, y el
+        `onBlur` de la celda cerraba el modo edición, así que se cerraba solo;
+        (b) **clickear el valor abría la app de llamadas** en vez de editar,
+        porque el número entero era un `<a href="tel:">` (en la ficha del
+        registro seguía siéndolo); (c) ocupaba **104 px** de ancho.
+        Ahora es lo que hace ClickUp: **una bandera de 28 px** que abre un
+        popover con **buscador**, y el número al lado. El foco se maneja para
+        TODO el control (`onBlur` en el contenedor, con guard de "el popover
+        está abierto" y chequeo de `relatedTarget`) — el popover está
+        portaleado al `<body>`, así que sin eso elegir el país cancelaba la
+        edición. El valor sigue siendo la MISMA cadena canónica: la bandera y
+        el número son dos controles de un solo dato.
+        En lectura: bandera + número nacional (el país ya lo dice la bandera,
+        así ocupa menos) y el `tel:` se mudó a un **icono aparte** que aparece
+        al pasar el mouse — nadie llama sin querer y la celda se puede editar
+        como cualquier otra. El portal del cliente (sólo lectura) conserva el
+        número entero como enlace.
+        De paso el catálogo pasó de 58 países curados a los **233** con
+        indicativo asignado (con buscador, una lista larga no molesta, y
+        cortarla obligaba a escribir el `+` a mano justo a quien tenía el
+        cliente en el país que faltaba): banderas DERIVADAS del ISO2 (los
+        indicadores regionales son las letras desplazadas — cero emojis que
+        mantener), búsqueda por nombre sin acentos, por ISO2 y por indicativo,
+        y el país actual primero con su check. Los indicativos compartidos
+        (+1 EE.UU./Canadá, +44 Reino Unido/Jersey/Man) tienen dueño canónico
+        explícito: antes lo decidía el orden alfabético de la lista.
+        6 tests nuevos en shared (66) + E2E navegador 15/15 del control
+        (incluido "no se disparó ninguna llamada" y "elegir el país no cierra
+        la edición") y 16/16 de los cuatro tipos.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateFieldValue } from './validate';
-import { formatPhone, normalizePhone, splitPhone } from './phone';
+import {
+    COUNTRY_DIAL_CODES,
+    flagEmoji,
+    formatPhone,
+    formatPhoneNational,
+    normalizePhone,
+    searchCountries,
+    splitPhone,
+} from './phone';
 
 /**
  * v0.1.158 — el teléfono se guarda en UNA cadena canónica. Estos tests
@@ -72,5 +80,50 @@ describe('validateFieldValue(phone)', () => {
 
     it('vacío queda en null si el campo no es obligatorio', () => {
         expect(validateFieldValue(field(), '')).toEqual({ ok: true, value: null });
+    });
+});
+
+/**
+ * v0.1.159 — el selector pasó de un `<select>` de 58 países a un popover con
+ * buscador sobre el catálogo COMPLETO (reporte del usuario). Lo que hay que
+ * fijar es el material del que vive ese selector.
+ */
+describe('catálogo de países', () => {
+    it('cubre el mundo y no tiene ISO2 repetidos', () => {
+        expect(COUNTRY_DIAL_CODES.length).toBeGreaterThan(200);
+        const isos = new Set(COUNTRY_DIAL_CODES.map((c) => c.iso2));
+        expect(isos.size).toBe(COUNTRY_DIAL_CODES.length);
+        expect(COUNTRY_DIAL_CODES.every((c) => /^\d{1,4}$/.test(c.dial))).toBe(true);
+    });
+
+    it('la bandera se DERIVA del ISO2 (no hay 240 emojis que mantener)', () => {
+        expect(flagEmoji('CO')).toBe('🇨🇴');
+        expect(flagEmoji('us')).toBe('🇺🇸');
+        expect(flagEmoji('XX!')).toBe('');
+    });
+});
+
+describe('searchCountries', () => {
+    it('busca por nombre ignorando acentos', () => {
+        expect(searchCountries('peru').map((c) => c.iso2)).toContain('PE');
+        expect(searchCountries('MEXICO').map((c) => c.iso2)).toContain('MX');
+    });
+
+    it('busca por indicativo (con o sin +) y por ISO2', () => {
+        expect(searchCountries('+52').map((c) => c.iso2)).toContain('MX');
+        expect(searchCountries('57').map((c) => c.iso2)).toContain('CO');
+        expect(searchCountries('ar').map((c) => c.iso2)).toContain('AR');
+    });
+
+    it('sin texto devuelve todo; sin match devuelve vacío', () => {
+        expect(searchCountries('').length).toBe(COUNTRY_DIAL_CODES.length);
+        expect(searchCountries('zzzzz').length).toBe(0);
+    });
+});
+
+describe('formatPhoneNational', () => {
+    it('devuelve sólo el número: el país ya lo dice la bandera', () => {
+        expect(formatPhoneNational('+573001112233')).toBe('300 111 2233');
+        expect(formatPhoneNational('+12025551234')).toBe('202 555 1234');
     });
 });
