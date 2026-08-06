@@ -2915,6 +2915,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         del body, desaparece al salir, un solo Escape cierra, y los 8 tipos
         probados con exactamente una tarjeta).
 
+  - [x] **La gestión de campos, en celular (v0.1.165, reporte del usuario)**:
+        las tres últimas versiones se diseñaron mirando el escritorio y en
+        pantalla angosta quedaban rotas — medido en un viewport de 390px:
+        (a) la tarjeta de vista previa se dibujaba ENCIMA del panel (que en
+        celular ocupa todo el ancho, así que no hay costado libre) y además
+        el hover no existe en táctil; (b) en el administrador de campos la
+        navegación por tipo (`hidden lg:flex`) y la columna de ajustes
+        (`hidden xl:block`) simplemente no se renderizaban, así que sólo se
+        veía la tabla y **tocar una fila no hacía nada**: no había forma de
+        editar un campo desde el teléfono.
+        Ahora: la **descripción del tipo va en la propia fila** bajo `sm` (y
+        el flotante sólo aparece cuando hay lugar al costado), el **filtro
+        por tipo se vuelve una tira de chips** horizontal, y **tocar una
+        fila abre el MISMO panel de ajustes en un sheet** a pantalla
+        completa. Hook nuevo `useMediaQuery` (`useSyncExternalStore`, sin
+        parpadeo en el primer paint) porque acá la diferencia no es de
+        estilo sino de ESTRUCTURA: con clases responsive solas el sheet
+        quedaría montado e invisible robándose el foco. E2E navegador 14/14
+        (10 en 390×844 + 4 confirmando que el escritorio conserva sus tres
+        columnas y no abre sheet).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

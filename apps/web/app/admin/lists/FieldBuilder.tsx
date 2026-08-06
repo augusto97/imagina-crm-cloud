@@ -29,10 +29,19 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import {
+    Sheet,
+    SheetBody,
+    SheetCloseButton,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+} from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/toast';
 import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useList, useLists, useUpdateList } from '@/hooks/useLists';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { invalidateForList } from '@/hooks/useRecords';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { formatDateStr } from '@/lib/tenantFormat';
@@ -90,6 +99,8 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const updateList = useUpdateList(listId);
     const confirm = useConfirm();
     const toast = useToast();
+    /** ¿Entra la columna de ajustes? (`xl` de Tailwind = 1280px.) */
+    const wideEnough = useMediaQuery('(min-width: 1280px)');
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<FieldEntity | null>(null);
@@ -300,6 +311,31 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
             )}
 
             {all.length > 0 && (
+                <>
+                {/* Bajo `lg` no hay lugar para la columna de navegación: los
+                    mismos filtros van como CHIPS horizontales arriba de la
+                    tabla (v0.1.165 — en celular sólo se veía la primera
+                    columna, reporte del usuario). */}
+                <div className="imcrm-flex imcrm-gap-1.5 imcrm-overflow-x-auto imcrm-pb-1 lg:imcrm-hidden">
+                    <TypeChip
+                        active={typeFilter === ''}
+                        onClick={() => setTypeFilter('')}
+                        icon={Layers}
+                        label={__('Todos')}
+                        count={all.length}
+                    />
+                    {typeCounts.map(([type, count]) => (
+                        <TypeChip
+                            key={type}
+                            active={typeFilter === type}
+                            onClick={() => setTypeFilter(type)}
+                            icon={fieldTypeIcon(type)}
+                            label={typeLabels.get(type) ?? type}
+                            count={count}
+                        />
+                    ))}
+                </div>
+
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-4">
                     {/* ── Columna 1: navegación ───────────────────────── */}
                     <nav className="imcrm-hidden imcrm-w-52 imcrm-shrink-0 imcrm-flex-col imcrm-gap-4 lg:imcrm-flex">
@@ -436,7 +472,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
                     {/* ── Columna 3: ajustes del campo elegido ────────── */}
                     <div className="imcrm-hidden imcrm-w-[340px] imcrm-shrink-0 xl:imcrm-block">
-                        {selected ? (
+                        {selected && wideEnough ? (
                             <FieldSettingsPanel
                                 key={selected.id}
                                 listId={listId}
@@ -455,7 +491,41 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                         )}
                     </div>
                 </div>
+                </>
             )}
+
+            {/* Bajo `xl` la columna de ajustes no entra: tocar una fila abre
+                el MISMO panel en un sheet lateral (v0.1.165 — antes tocarla
+                no hacía nada visible en celular, así que no había forma de
+                editar un campo). */}
+            <Sheet
+                open={selected !== null && !wideEnough}
+                onOpenChange={(next) => {
+                    if (!next) setSelectedId(null);
+                }}
+            >
+                <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md xl:imcrm-hidden">
+                    <SheetHeader className="imcrm-flex imcrm-flex-row imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                        <SheetTitle>{selected?.label ?? __('Campo')}</SheetTitle>
+                        <SheetCloseButton />
+                    </SheetHeader>
+                    <SheetBody>
+                        {selected && (
+                            <FieldSettingsPanel
+                                key={selected.id}
+                                listId={listId}
+                                field={selected}
+                                onDelete={() => void handleDelete(selected)}
+                                onMakeTitle={
+                                    canBeTitle(selected) && !selected.is_primary
+                                        ? () => makeTitle(selected)
+                                        : undefined
+                                }
+                            />
+                        )}
+                    </SheetBody>
+                </SheetContent>
+            </Sheet>
 
             <FieldDialog
                 listId={listId}
@@ -464,6 +534,38 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 onOpenChange={setDialogOpen}
             />
         </div>
+    );
+}
+
+/** Filtro por tipo en pantallas angostas: chips en una tira horizontal. */
+function TypeChip({
+    active,
+    onClick,
+    icon: Icon,
+    label,
+    count,
+}: {
+    active: boolean;
+    onClick: () => void;
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    count: number;
+}): JSX.Element {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-px-2.5 imcrm-py-1 imcrm-text-xs',
+                active
+                    ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary'
+                    : 'imcrm-border-border imcrm-text-muted-foreground',
+            )}
+        >
+            <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+            {label}
+            <span className="imcrm-tabular-nums imcrm-opacity-70">{count}</span>
+        </button>
     );
 }
 

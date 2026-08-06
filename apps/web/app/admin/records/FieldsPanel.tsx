@@ -289,7 +289,12 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                 && createPortal(
                     <div
                         role="presentation"
-                        className="imcrm-pointer-events-none imcrm-fixed imcrm-z-[60] imcrm-w-64 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-3 imcrm-shadow-imcrm-lg"
+                        // En celular el panel ocupa TODO el ancho: no hay lugar
+                        // al costado y la tarjeta terminaba encima de la lista
+                        // (v0.1.165). Ahí la descripción va como segunda línea
+                        // de cada fila —que además no depende del hover, que en
+                        // táctil no existe— y este flotante no se dibuja.
+                        className="imcrm-pointer-events-none imcrm-fixed imcrm-z-[60] imcrm-hidden imcrm-w-64 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-3 imcrm-shadow-imcrm-lg sm:imcrm-block"
                         style={{ top: hovered.top, left: hovered.left }}
                     >
                         <FieldTypePreview type={hoveredOption.type} />
@@ -356,7 +361,14 @@ function TypeSection({
                         className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
                     >
                         <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm">{opt.label}</span>
+                        <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
+                            <span className="imcrm-truncate imcrm-text-sm">{opt.label}</span>
+                            {/* En celular no hay hover ni lugar para el flotante:
+                                la descripción va acá, en la fila (v0.1.165). */}
+                            <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground sm:imcrm-hidden">
+                                {opt.description}
+                            </span>
+                        </span>
                         <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground imcrm-opacity-0 group-hover/type:imcrm-opacity-100">
                             {__('Crear')}
                         </span>
