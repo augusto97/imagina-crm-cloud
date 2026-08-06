@@ -2897,6 +2897,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Campos pasa a ancho completo (el resto de Ajustes sigue contenido:
         son formularios). E2E navegador 18/18.
 
+  - [x] **La vista previa del tipo vuelve a estar junto al tipo (v0.1.164,
+        reporte del usuario)**: la franja al PIE del panel que dejó v0.1.163
+        confundía — cambiaba sola, lejos del ítem señalado y sin
+        diferenciarse del contenido, así que no se entendía qué la
+        disparaba. Ahora es una **tarjeta flotante anclada a la altura de la
+        fila** bajo el mouse, a la izquierda del panel (el panel vive pegado
+        al borde derecho), con borde y sombra propios: se lee como un
+        flotante, no como contenido. Va por **portal al `<body>`** —dentro
+        del panel el `overflow` la recorta, que fue el bug de v0.1.161— y es
+        un div presentacional, NO un Popover de Radix: un popover se llevaba
+        el primer Escape y había que apretarlo dos veces para cerrar el
+        panel. Una sola tarjeta por definición (un estado, un nodo), así que
+        tampoco puede duplicarse cuando el mismo tipo está en «Populares» y
+        en «Todos». E2E navegador 10/10 (posición medida contra la fila y
+        contra el borde del panel, `position: fixed` + sombra + borde, cuelga
+        del body, desaparece al salir, un solo Escape cierra, y los 8 tipos
+        probados con exactamente una tarjeta).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

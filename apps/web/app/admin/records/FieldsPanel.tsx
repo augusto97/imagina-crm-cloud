@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { ArrowLeft, Search, Settings2 } from 'lucide-react';
 
@@ -61,8 +62,16 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
     const [isRequired, setIsRequired] = useState(false);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [error, setError] = useState<string | null>(null);
-    /** Tipo bajo el mouse — su vista previa se muestra al costado. */
-    const [hovered, setHovered] = useState<FieldTypeSlug | null>(null);
+    /**
+     * Tipo bajo el mouse + la posición de SU fila: la vista previa flota
+     * pegada a ese ítem (v0.1.164).
+     *
+     * En v0.1.163 la preview era una franja al PIE del panel y el usuario la
+     * reportó como confusa: cambiaba sola, lejos del tipo señalado y sin
+     * diferenciarse del contenido. Acá se guarda el rect de la fila para
+     * anclarla a su altura, como el catálogo de ClickUp.
+     */
+    const [hovered, setHovered] = useState<{ type: FieldTypeSlug; top: number; left: number } | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -112,7 +121,15 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
 
     const selected = type !== '' ? FIELD_TYPE_OPTIONS.find((o) => o.type === type) : undefined;
     const SelectedIcon = type !== '' ? fieldTypeIcon(type) : null;
-    const hoveredOption = hovered !== null ? FIELD_TYPE_OPTIONS.find((o) => o.type === hovered) : undefined;
+    const hoveredOption = hovered !== null ? FIELD_TYPE_OPTIONS.find((o) => o.type === hovered.type) : undefined;
+
+    const showPreview = (next: FieldTypeSlug | null, el?: HTMLElement): void => {
+        if (next === null || el === undefined) {
+            setHovered(null);
+            return;
+        }
+        setHovered({ type: next, ...previewAnchor(el) });
+    };
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -178,7 +195,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                             title={__('Populares')}
                                             options={popular}
                                             onPick={pick}
-                                            onHover={setHovered}
+                                            onHover={showPreview}
                                         />
                                     )}
                                     {filtered.length === 0 ? (
@@ -190,7 +207,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                             title={__('Todos')}
                                             options={filtered}
                                             onPick={pick}
-                                            onHover={setHovered}
+                                            onHover={showPreview}
                                         />
                                     )}
                                 </>
@@ -198,26 +215,8 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                 <CopyFromList currentListId={listId} search={search} onPick={pick} />
                             )}
 
-                            {/* v0.1.163 — UNA sola vista previa, fija al pie
-                                del panel. En v0.1.161 vivía en un popover POR
-                                ÍTEM y el mismo tipo aparece en "Populares" y
-                                en "Todos": un solo `hovered` abría las DOS a
-                                la vez (reporte del usuario). Como región del
-                                panel no puede duplicarse ni quedar recortada. */}
-                            {tab === 'new' && hoveredOption !== undefined && (
-                                <div className="imcrm-sticky imcrm-bottom-0 imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-bg-card imcrm-pb-1 imcrm-pt-3">
-                                    <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                                        {__('Vista previa')}
-                                    </p>
-                                    <FieldTypePreview type={hoveredOption.type} />
-                                    <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
-                                        <strong className="imcrm-text-foreground">{hoveredOption.label}</strong>
-                                        {' · '}
-                                        {hoveredOption.description}
-                                    </p>
-                                </div>
-                            )}
                         </>
+
                     ) : (
                         <form onSubmit={submit} className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
@@ -279,8 +278,50 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                     )}
                 </SheetBody>
             </SheetContent>
+
+            {/* Vista previa FLOTANTE, anclada a la altura del tipo señalado
+                (v0.1.164). Va por portal al `<body>`: dentro del panel el
+                `overflow` la recorta. Es puramente presentacional —ni foco ni
+                Escape—, así que NO usa Popover de Radix: un popover se lleva
+                el primer Escape y el usuario tenía que apretarlo dos veces
+                para cerrar el panel. */}
+            {open && type === '' && tab === 'new' && hovered !== null && hoveredOption !== undefined
+                && createPortal(
+                    <div
+                        role="presentation"
+                        className="imcrm-pointer-events-none imcrm-fixed imcrm-z-[60] imcrm-w-64 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-3 imcrm-shadow-imcrm-lg"
+                        style={{ top: hovered.top, left: hovered.left }}
+                    >
+                        <FieldTypePreview type={hoveredOption.type} />
+                        <p className="imcrm-mt-2 imcrm-text-sm imcrm-font-medium">{hoveredOption.label}</p>
+                        <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
+                            {hoveredOption.description}
+                        </p>
+                    </div>,
+                    document.body,
+                )}
         </Sheet>
     );
+}
+
+/** Ancho de la tarjeta flotante (w-64) + su separación del panel. */
+const PREVIEW_WIDTH = 256;
+const PREVIEW_GAP = 12;
+
+/**
+ * Posición de la tarjeta a partir de la fila señalada: a su IZQUIERDA (el
+ * panel vive pegado al borde derecho) y a su misma altura, con clamp para
+ * que no se salga por arriba ni por abajo.
+ */
+function previewAnchor(el: HTMLElement): { top: number; left: number } {
+    const r = el.getBoundingClientRect();
+    // El borde de referencia es el del PANEL, no el del ítem (que está
+    // indentado): si no, la tarjeta se solapa unos píxeles con el panel.
+    const panel = el.closest('[role="dialog"]')?.getBoundingClientRect();
+    const anchorLeft = panel?.left ?? r.left;
+    const left = Math.max(8, anchorLeft - PREVIEW_WIDTH - PREVIEW_GAP);
+    const top = Math.min(Math.max(8, r.top - 24), window.innerHeight - 190);
+    return { top, left };
 }
 
 type PickFn = (type: FieldTypeSlug, label?: string, config?: Record<string, unknown>) => void;
@@ -294,7 +335,7 @@ function TypeSection({
     title: string;
     options: typeof FIELD_TYPE_OPTIONS;
     onPick: PickFn;
-    onHover: (type: FieldTypeSlug | null) => void;
+    onHover: (type: FieldTypeSlug | null, el?: HTMLElement) => void;
 }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -307,9 +348,9 @@ function TypeSection({
                     <button
                         key={opt.type}
                         type="button"
-                        onMouseEnter={() => onHover(opt.type)}
+                        onMouseEnter={(e) => onHover(opt.type, e.currentTarget)}
                         onMouseLeave={() => onHover(null)}
-                        onFocus={() => onHover(opt.type)}
+                        onFocus={(e) => onHover(opt.type, e.currentTarget)}
                         onBlur={() => onHover(null)}
                         onClick={() => onPick(opt.type)}
                         className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
