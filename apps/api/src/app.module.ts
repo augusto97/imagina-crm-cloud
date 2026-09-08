@@ -31,6 +31,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
+import { TemplatesModule } from './templates/templates.module';
 import { SlugsModule } from './slugs/slugs.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ViewsModule } from './views/views.module';
@@ -74,6 +75,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ImportModule,
         BootstrapModule,
         SlugsModule,
+        TemplatesModule,
         HealthModule,
         UpdateModule,
     ],

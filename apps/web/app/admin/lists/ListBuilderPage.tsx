@@ -10,6 +10,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { AppearancePanel } from './AppearancePanel';
+import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
 import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
 import { FieldBuilder } from './FieldBuilder';
 import { PermissionsPanel } from './PermissionsPanel';
@@ -199,6 +200,7 @@ export function ListBuilderPage(): JSX.Element {
                                 <GeneralPanel list={data} />
                             </CardContent>
                         </Card>
+                        <DuplicateTemplatePanel list={data} />
                         <DangerZonePanel list={data} />
                     </>
                 )}
