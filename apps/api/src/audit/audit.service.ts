@@ -35,7 +35,11 @@ export type AuditAction =
     | 'billing.plan_change'
     | 'workspace.smtp_change'
     | 'workspace.domain_change'
-    | 'import.run';
+    | 'import.run'
+    | 'list.duplicate'
+    | 'template.create'
+    | 'template.delete'
+    | 'template.apply';
 
 export interface AuditEntryDto {
     id: number;

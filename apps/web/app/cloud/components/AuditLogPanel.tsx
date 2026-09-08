@@ -22,6 +22,10 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
 const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'list.create': { text: 'creó la lista' },
     'list.delete': { text: 'borró la lista', danger: true },
+    'list.duplicate': { text: 'duplicó una lista como' },
+    'template.create': { text: 'guardó la plantilla' },
+    'template.delete': { text: 'borró la plantilla', danger: true },
+    'template.apply': { text: 'creó desde una plantilla la lista' },
     'list.permissions': { text: 'cambió los permisos de' },
     'list.public_enable': { text: 'publicó al público la lista', danger: true },
     'list.public_disable': { text: 'despublicó la lista' },

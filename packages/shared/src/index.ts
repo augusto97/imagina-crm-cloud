@@ -8,6 +8,7 @@ export * from './schemas/auth';
 export * from './schemas/field';
 export * from './schemas/list';
 export * from './schemas/list-permissions';
+export * from './schemas/list-template';
 export * from './schemas/public-list';
 export * from './schemas/filter';
 export * from './schemas/saved-filter';

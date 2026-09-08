@@ -2936,6 +2936,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (10 en 390×844 + 4 confirmando que el escritorio conserva sus tres
         columnas y no abre sheet).
 
+  - [x] **Duplicar listas + galería de plantillas (v0.1.166, pedido del
+        usuario mirando ClickUp)**: dos funciones que ClickUp resuelve con
+        "Duplicate" y el "Template Center", y Airtable con "duplicate base" +
+        su galería — acá salen de UN solo motor. **Blueprint** (shared,
+        `listBlueprintSchema` v1): la descripción portable de una o varias
+        listas —campos, vistas, automatizaciones, ajustes y hasta 500
+        registros de muestra— donde toda referencia por id se **tokeniza**
+        (`{"$field": slug}` para cualquier clave `*_field_id`/`*_field_ids`
+        y los `inputs` de los computed; `{"$list": key}` para
+        `list_id`/`target_list_id`) y se **re-resuelve** al materializar:
+        por eso un kanban agrupado, un computed o una relation entre dos
+        listas del pack apuntan a los ids NUEVOS, no a los viejos. Lo que
+        NUNCA viaja: la publicación pública (`settings.public`, el token es
+        de esa lista) y el token del webhook entrante (la copia recibe su
+        propia URL por `syncHook`); los archivos tampoco (apuntan a
+        attachments ajenos). `BlueprintService.serialize/materialize` +
+        `TemplatesService`: `POST /lists/:l/duplicate` (nombre, `include`
+        de vistas/automatizaciones/ajustes/registros; conserva la carpeta),
+        `GET/POST/DELETE /list-templates` (galería = plantillas del
+        **workspace** en la tabla `list_templates` —migración 0045, RLS— +
+        **8 del sistema** en código con ids `sys:*`: CRM de clientes,
+        Pipeline de ventas, Facturación —pack de DOS listas con relation y
+        aviso `due_date_reached`—, Proyectos y tareas —con subtareas de
+        muestra—, Soporte, Inventario, Reclutamiento, Eventos) y
+        `POST /list-templates/:id/apply` (con o sin registros de ejemplo).
+        Todo bajo `manage_lists`, con bitácora (`list.duplicate`,
+        `template.*`); una automatización que no valide en destino se salta
+        y llega como **warning**, no como fallo de toda la operación. Front:
+        "Nueva lista" pasa a tener TRES caminos —En blanco / **Plantilla**
+        (galería de dos columnas con buscador, chips de categoría y "Mis
+        plantillas", vista previa con icono por tipo de campo, vistas,
+        automatizaciones y registros de muestra; en celular apila y
+        scrollea como un solo bloque) / **Duplicar** (selector de origen +
+        qué incluir)— y en Ajustes → General de cada lista la card
+        "Duplicar o guardar como plantilla" (nombre, descripción, categoría,
+        qué incluir). 9 tests de API (tokens puros, catálogo válido,
+        re-mapeo de ids/computed/vistas/ACL, webhook con token nuevo,
+        `settings.public` que no viaja, galería round-trip con aislamiento
+        por empresa, pack de dos listas con relación y registros, subtareas
+        que conservan su padre) — 454 API, 111 front y 66 shared en verde —
+        + E2E navegador 31/31 (galería → Facturación crea 2 listas
+        vinculadas con datos y automatización; duplicar desde Ajustes y
+        desde "Nueva lista"; guardar como plantilla → aparece con "Mis
+        plantillas" → borrar; móvil sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
