@@ -1,15 +1,20 @@
-import { LogOut, Menu, Moon, Settings, Sun } from 'lucide-react';
+import { LogOut, Menu, Moon, Settings, Sparkles, Sun } from 'lucide-react';
 
 import { NotificationBell } from '@/admin/layout/NotificationBell';
+import { useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
+import { useBrandingData } from '@/hooks/useBranding';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 
 /**
  * Topbar:
- *  - Izquierda: hamburger del drawer (sólo mobile). El nombre del workspace
- *    vive ahora en el panel interno del sidebar doble.
+ *  - Izquierda: hamburger del drawer (sólo mobile) + logo y nombre del
+ *    workspace (sólo mobile, v0.1.169: en el teléfono el panel del sidebar
+ *    está cerrado casi siempre, así que sin esto la barra quedaba vacía y
+ *    no se sabía en qué empresa estabas). En escritorio el nombre vive en
+ *    el panel interno del sidebar doble.
  *  - Derecha: notif bell (menciones), settings + logout
  *
  * El logout va contra el backend (`POST /auth/logout`), limpia la sesión
@@ -18,6 +23,12 @@ import { useTheme } from '@/lib/theme';
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.Element {
     const theme = useTheme();
     const isDark = theme.resolved === 'dark';
+    const branding = useBrandingData();
+    const activeTenantId = useSession((s) => s.activeTenantId);
+    const memberships = useSession((s) => s.memberships);
+    const membership = memberships.find((m) => m.tenant_id === activeTenantId);
+    const workspaceTitle = branding.data?.app_name ?? membership?.tenant_name ?? 'Imagina Base';
+    const logoUrl = branding.data?.logo_url ?? null;
     const logout = async (e: React.MouseEvent): Promise<void> => {
         e.preventDefault();
         const { api, useSession } = await import('@/cloud/session');
@@ -31,17 +42,33 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
     };
 
     return (
-        <header className="imcrm-admin-topbar imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-4 sm:imcrm-gap-4 sm:imcrm-px-6">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
+        <header className="imcrm-admin-topbar imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-background imcrm-px-2 sm:imcrm-gap-4 sm:imcrm-px-6 lg:imcrm-h-10 lg:imcrm-px-6">
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1">
                 {/* Hamburguesa: abre el sidebar (riel+panel) como drawer (sólo mobile). */}
                 <button
                     type="button"
                     onClick={onMenuClick}
                     aria-label={__('Abrir menú')}
-                    className="imcrm-inline-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
+                    className="imcrm-inline-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-text-foreground/80 imcrm-transition-colors hover:imcrm-bg-accent lg:imcrm-hidden"
                 >
                     <Menu className="imcrm-h-5 imcrm-w-5" />
                 </button>
+                {/* Marca del workspace (sólo mobile). */}
+                <span
+                    className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 lg:imcrm-hidden"
+                    data-testid="imcrm-topbar-brand"
+                >
+                    {logoUrl ? (
+                        <img src={logoUrl} alt="" className="imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-rounded-md imcrm-object-contain" />
+                    ) : (
+                        <span className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar imcrm-text-white">
+                            <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </span>
+                    )}
+                    <span className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">
+                        {workspaceTitle}
+                    </span>
+                </span>
             </div>
 
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">

@@ -18,6 +18,18 @@ export function AdminShell(): JSX.Element {
         setMobileNavOpen(false);
     }, [location.pathname]);
 
+    // v0.1.169 — Escape cierra el drawer (teclado físico en tablet / lector
+    // de pantalla). El velo tapa el contenido; el shell es h-screen con
+    // overflow-hidden, así que no hay scroll de documento que bloquear.
+    useEffect(() => {
+        if (!mobileNavOpen) return;
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key === 'Escape') setMobileNavOpen(false);
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [mobileNavOpen]);
+
     // Cmd/Ctrl+K abre el global command palette. Se desactiva
     // cuando estamos dentro del editor de plantilla (esa ruta tiene
     // su propio Cmd+K via EditorCommandPalette) o cuando el foco
@@ -54,6 +66,7 @@ export function AdminShell(): JSX.Element {
                 <div
                     className="imcrm-fixed imcrm-inset-0 imcrm-z-40 imcrm-bg-black/40 lg:imcrm-hidden"
                     aria-hidden
+                    data-testid="imcrm-drawer-backdrop"
                     onClick={() => setMobileNavOpen(false)}
                 />
             )}

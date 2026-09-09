@@ -205,9 +205,9 @@ export function ListsTree({
                             setDraftName('');
                             setCreating(true);
                         }}
-                        className="imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        className="imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground lg:imcrm-p-0.5"
                     >
-                        <FolderPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                        <FolderPlus className="imcrm-h-4 imcrm-w-4 lg:imcrm-h-3.5 lg:imcrm-w-3.5" />
                     </button>
                 )}
             </div>
@@ -246,7 +246,9 @@ export function ListsTree({
                             onDragLeave={() => setDropTarget((t) => (t === group.id ? null : t))}
                             onDrop={dropOn(group.id)}
                             className={cn(
-                                'imcrm-group/gr imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1',
+                                // v0.1.169 — cabecera de carpeta a 40px en
+                                // mobile (objetivo táctil), compacta en lg.
+                                'imcrm-group/gr imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1 lg:imcrm-min-h-0',
                                 dropTarget === group.id
                                     ? 'imcrm-bg-primary/10 imcrm-ring-1 imcrm-ring-primary/40'
                                     : 'hover:imcrm-bg-accent/40',
@@ -286,7 +288,7 @@ export function ListsTree({
                                                 !isCollapsed && 'imcrm-rotate-90',
                                             )}
                                         />
-                                        <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-medium">
+                                        <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-medium lg:imcrm-text-[13px]">
                                             {group.name}
                                         </span>
                                         <span className="imcrm-shrink-0 imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground">
@@ -304,9 +306,11 @@ export function ListsTree({
                                                         group.name,
                                                     )}
                                                     onClick={(e) => e.stopPropagation()}
-                                                    className="imcrm-shrink-0 imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground imcrm-opacity-0 hover:imcrm-bg-accent hover:imcrm-text-foreground group-hover/gr:imcrm-opacity-100"
+                                                    // En táctil no hay hover: el menú
+                                                    // queda visible tenue (v0.1.169).
+                                                    className="imcrm-shrink-0 imcrm-rounded imcrm-p-1.5 imcrm-text-muted-foreground imcrm-opacity-50 hover:imcrm-bg-accent hover:imcrm-text-foreground group-hover/gr:imcrm-opacity-100 lg:imcrm-p-0.5 lg:imcrm-opacity-0"
                                                 >
-                                                    <MoreHorizontal className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                    <MoreHorizontal className="imcrm-h-4 imcrm-w-4 lg:imcrm-h-3.5 lg:imcrm-w-3.5" />
                                                 </button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="start">

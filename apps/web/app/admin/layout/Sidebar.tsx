@@ -12,6 +12,7 @@ import {
     ShieldAlert,
     Pin,
     Sparkles,
+    X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -21,6 +22,7 @@ import { useBrandingData } from '@/hooks/useBranding';
 import { useDashboards } from '@/hooks/useDashboards';
 import { toggledFavorites, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
 import { useLists, useReorderLists } from '@/hooks/useLists';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
@@ -74,7 +76,12 @@ function railSectionFromPath(pathname: string): RailSection {
  *  - Colapsado → el panel se oculta (sólo escritorio) y queda el riel; la
  *    navegación NO lo re-expande.
  *  - Mobile (<lg): el conjunto riel+panel es un drawer off-canvas
- *    (`mobileOpen`/`onClose`, mismo mecanismo de siempre).
+ *    (`mobileOpen`/`onClose`). v0.1.169 — en el drawer el riel NO navega:
+ *    tocar "Listas"/"Dashboards"/… sólo CAMBIA el panel (estado local
+ *    `mobileSection`), y el drawer se cierra únicamente al activar un
+ *    enlace del panel (o con la X / el velo). Antes cada toque del riel
+ *    navegaba y cerraba el drawer en el mismo gesto, así que nunca se
+ *    llegaba a elegir una lista (reporte del usuario).
  */
 export function Sidebar({
     mobileOpen = false,
@@ -110,7 +117,35 @@ export function Sidebar({
 
     const { pathname } = useLocation();
     const [params] = useSearchParams();
-    const section = railSectionFromPath(pathname);
+    const routeSection = railSectionFromPath(pathname);
+
+    // v0.1.169 — modo drawer: sólo cuando el drawer está abierto Y el
+    // viewport es angosto (si el usuario ensancha la ventana con el drawer
+    // abierto, el sidebar vuelve a ser estático y el riel debe navegar).
+    const isNarrow = useMediaQuery('(max-width: 1023px)');
+    const mobileMode = mobileOpen && isNarrow;
+    const [mobileSection, setMobileSection] = useState<RailSection | null>(null);
+    // Al cerrar el drawer, el panel vuelve a seguir la ruta.
+    useEffect(() => {
+        if (!mobileOpen) setMobileSection(null);
+    }, [mobileOpen]);
+    const section: RailSection = mobileMode && mobileSection !== null ? mobileSection : routeSection;
+    /** Toque en un item del riel dentro del drawer: cambia el panel, no navega. */
+    const handleRailSelect = (e: React.MouseEvent, s: RailSection): void => {
+        if (!mobileMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setMobileSection(s);
+    };
+    /** El drawer se cierra sólo cuando se ACTIVA un enlace del panel (no al
+     *  plegar una carpeta, anclar un favorito o abrir un menú). El cambio de
+     *  ruta ya lo cierra desde AdminShell; esto cubre los enlaces que sólo
+     *  cambian el query (`?s=`, `?tab=`) o repiten la ruta actual. */
+    const closeOnLinkActivation = (e: React.MouseEvent): void => {
+        if (!mobileMode) return;
+        const target = e.target instanceof Element ? e.target : null;
+        if (target?.closest('a[href]')) onClose?.();
+    };
 
     // v0.1.145 — al pasar el mouse por un item del riel, su contenido
     // aparece FLOTANDO (lo que hace ClickUp): con el panel cerrado es la
@@ -127,6 +162,9 @@ export function Sidebar({
         closeTimer.current = null;
     };
     const peek = (s: RailSection): void => {
+        // En el drawer no hay hover real (el táctil lo emula al tocar) y el
+        // flotante es de escritorio: no lo armamos.
+        if (mobileMode) return;
         clearTimers();
         openTimer.current = window.setTimeout(() => setHovered(s), 120);
     };
@@ -193,6 +231,16 @@ export function Sidebar({
         <>
             {sec === 'home' && (
                 <>
+                    {/* v0.1.169 — en el drawer el riel ya no navega, así que
+                        "todas las listas" necesita su propio enlace. */}
+                    {mobileMode && (
+                        <PanelNavItem
+                            to="/lists"
+                            icon={ListIcon}
+                            label={__('Todas las listas')}
+                            active={pathname === '/lists'}
+                        />
+                    )}
                     {lists.data && lists.data.length > 0 && (
                         <ListsTree
                             lists={lists.data}
@@ -241,12 +289,22 @@ export function Sidebar({
             )}
 
             {sec === 'favorites' && (
-                <FavoritesSection
-                    favs={favs}
-                    lists={lists.data ?? []}
-                    dashboards={dashboards.data ?? []}
-                    onToggle={toggleFav}
-                />
+                <>
+                    {mobileMode && (
+                        <PanelNavItem
+                            to="/favorites"
+                            icon={Pin}
+                            label={__('Página de favoritos')}
+                            active={pathname === '/favorites'}
+                        />
+                    )}
+                    <FavoritesSection
+                        favs={favs}
+                        lists={lists.data ?? []}
+                        dashboards={dashboards.data ?? []}
+                        onToggle={toggleFav}
+                    />
+                </>
             )}
 
             {sec === 'settings' && (
@@ -275,21 +333,25 @@ export function Sidebar({
                 // `imcrm-admin-sidebar`: el modo fullscreen del template editor
                 // oculta este chrome (globals.css) — riel + panel juntos.
                 'imcrm-admin-sidebar imcrm-flex imcrm-shrink-0 imcrm-transition-transform imcrm-duration-200',
-                // Mobile: drawer off-canvas (fixed, se desliza con translate-x).
+                // Mobile: drawer off-canvas (fixed, se desliza con translate-x)
+                // que ocupa casi todo el ancho del teléfono (v0.1.169: antes
+                // era riel + panel de 240px fijos, con filas de 13px).
                 // lg+: estático inline (comportamiento de escritorio).
-                'imcrm-fixed imcrm-inset-y-0 imcrm-left-0 imcrm-z-50 lg:imcrm-static lg:imcrm-z-auto lg:imcrm-translate-x-0',
+                'imcrm-fixed imcrm-inset-y-0 imcrm-left-0 imcrm-z-50 imcrm-w-[min(88vw,380px)] lg:imcrm-static lg:imcrm-z-auto lg:imcrm-w-auto lg:imcrm-translate-x-0',
                 mobileOpen ? 'imcrm-translate-x-0 imcrm-shadow-imcrm-xl' : '-imcrm-translate-x-full lg:imcrm-translate-x-0',
             )}
+            data-mobile-open={mobileOpen ? 'true' : undefined}
         >
             {/* ── Riel oscuro de iconos ─────────────────────────────────── */}
             <nav
                 aria-label={__('Navegación principal')}
-                onClick={onClose}
                 // En escritorio el riel FLOTA: esquinas redondeadas y un
                 // respiro de 6px contra los bordes de la ventana y contra el
                 // panel (v0.1.128, estilo ClickUp). En mobile es un drawer a
                 // pantalla completa, así que ahí va pegado y sin redondear.
-                className="imcrm-scroll-on-dark imcrm-flex imcrm-w-[68px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-bg-sidebar imcrm-px-2 imcrm-py-3 imcrm-text-sidebar-foreground lg:imcrm-my-1.5 lg:imcrm-ml-1.5 lg:imcrm-mr-1.5 lg:imcrm-rounded-xl"
+                // Mobile: 84px para que "Dashboards"/"Favoritos" entren a 11px
+                // sin truncarse (v0.1.169); escritorio: los 68px de siempre.
+                className="imcrm-scroll-on-dark imcrm-flex imcrm-w-[84px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-bg-sidebar imcrm-px-1.5 imcrm-py-3 imcrm-text-sidebar-foreground lg:imcrm-my-1.5 lg:imcrm-ml-1.5 lg:imcrm-mr-1.5 lg:imcrm-w-[68px] lg:imcrm-rounded-xl lg:imcrm-px-2"
             >
                 {/* Marca: sólo el cuadrado/logo (el nombre vive en el panel). */}
                 <div className="imcrm-mb-1 imcrm-flex imcrm-shrink-0 imcrm-justify-center">
@@ -339,6 +401,7 @@ export function Sidebar({
                     label={__('Listas')}
                     onPeek={() => peek('home')}
                     onUnpeek={unpeek}
+                    onSelect={(e) => handleRailSelect(e, 'home')}
                 />
                 <RailItem
                     to="/favorites"
@@ -347,6 +410,7 @@ export function Sidebar({
                     label={__('Favoritos')}
                     onPeek={() => peek('favorites')}
                     onUnpeek={unpeek}
+                    onSelect={(e) => handleRailSelect(e, 'favorites')}
                 />
                 {canSeeDashboards && (
                     <RailItem
@@ -356,6 +420,7 @@ export function Sidebar({
                         label={__('Dashboards')}
                         onPeek={() => peek('dashboards')}
                         onUnpeek={unpeek}
+                        onSelect={(e) => handleRailSelect(e, 'dashboards')}
                     />
                 )}
                 {canSeeSettings && (
@@ -366,6 +431,7 @@ export function Sidebar({
                         label={__('Ajustes')}
                         onPeek={() => peek('settings')}
                         onUnpeek={unpeek}
+                        onSelect={(e) => handleRailSelect(e, 'settings')}
                     />
                 )}
                 {isSuperadmin.data === true && (
@@ -376,6 +442,7 @@ export function Sidebar({
                         label={__('Plataforma')}
                         onPeek={() => peek('platform')}
                         onUnpeek={unpeek}
+                        onSelect={(e) => handleRailSelect(e, 'platform')}
                     />
                 )}
 
@@ -421,16 +488,34 @@ export function Sidebar({
             {/* ── Panel interno claro (contextual según el riel) ────────── */}
             <div
                 className={cn(
-                    'imcrm-flex imcrm-w-[240px] imcrm-shrink-0 imcrm-flex-col imcrm-border-r imcrm-border-border imcrm-bg-canvas',
+                    // Mobile: el panel se lleva todo el ancho que deja el
+                    // riel; escritorio: 240px fijos.
+                    'imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-border-r imcrm-border-border imcrm-bg-canvas lg:imcrm-w-[240px] lg:imcrm-flex-none',
                     // Colapsado → sólo en escritorio (en mobile el drawer
                     // siempre muestra el conjunto completo).
                     collapsed && 'lg:imcrm-hidden',
                 )}
             >
-                <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pl-4 imcrm-pr-2">
-                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[14px] imcrm-font-semibold imcrm-text-foreground">
+                <div className="imcrm-flex imcrm-h-12 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pl-4 imcrm-pr-2 lg:imcrm-h-10">
+                    <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground lg:imcrm-text-[14px]">
                         {titleFor(section)}
                     </span>
+                    {/* v0.1.169 — X de cierre del drawer (sólo mobile): antes
+                        la única salida era tocar el velo, que en un drawer
+                        de casi toda la pantalla queda como una franja. */}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClose?.();
+                        }}
+                        className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-hidden"
+                        aria-label={__('Cerrar menú')}
+                        title={__('Cerrar menú')}
+                        data-testid="imcrm-drawer-close"
+                    >
+                        <X className="imcrm-h-5 imcrm-w-5" />
+                    </button>
                     {/* Cerrar el panel se hace DESDE el panel (v0.1.145,
                         como ClickUp): el botón vive en su cabecera, no
                         perdido al fondo del riel. Sólo escritorio: en
@@ -452,7 +537,7 @@ export function Sidebar({
 
                 <nav
                     aria-label={__('Contenido del workspace')}
-                    onClick={onClose}
+                    onClick={closeOnLinkActivation}
                     className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
                 >
                     {panelBody(section)}
@@ -526,6 +611,7 @@ function RailItem({
     active,
     onPeek,
     onUnpeek,
+    onSelect,
 }: {
     to: string;
     icon: LucideIcon;
@@ -534,6 +620,8 @@ function RailItem({
     /** Hover: abre el panel flotante de esta sección (v0.1.145). */
     onPeek?: () => void;
     onUnpeek?: () => void;
+    /** Click: en el drawer móvil cancela la navegación y cambia el panel. */
+    onSelect?: (e: React.MouseEvent) => void;
 }): JSX.Element {
     return (
         <Link
@@ -541,16 +629,19 @@ function RailItem({
             title={label}
             onMouseEnter={onPeek}
             onMouseLeave={onUnpeek}
+            onClick={onSelect}
             aria-current={active ? 'page' : undefined}
             className={cn(
-                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1 imcrm-py-2 imcrm-transition-colors imcrm-duration-100',
+                // Mobile: objetivo táctil más alto y etiqueta legible; lg:
+                // las medidas compactas del escritorio.
+                'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-1 lg:imcrm-py-2',
                 active
                     ? 'imcrm-bg-white/10 imcrm-text-white'
                     : 'imcrm-text-sidebar-foreground/80 hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
             )}
         >
             <Icon className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0" />
-            <span className="imcrm-max-w-full imcrm-truncate imcrm-text-[10px] imcrm-font-medium imcrm-leading-none">
+            <span className="imcrm-max-w-full imcrm-truncate imcrm-text-[11px] imcrm-font-medium imcrm-leading-none lg:imcrm-text-[10px]">
                 {label}
             </span>
         </Link>
@@ -668,7 +759,9 @@ function PanelNavItem({
             to={to}
             aria-current={active ? 'page' : undefined}
             className={cn(
-                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[13px] imcrm-transition-colors imcrm-duration-100',
+                // v0.1.169 — filas de 40px y 14px en mobile (objetivo táctil);
+                // en escritorio las medidas compactas de siempre.
+                'imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[14px] imcrm-transition-colors imcrm-duration-100 lg:imcrm-min-h-0 lg:imcrm-text-[13px]',
                 active
                     ? 'imcrm-bg-background imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
                     : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
