@@ -3062,6 +3062,30 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         viejo del entorno: `find` por nombre agarra la Facturas de la corrida
         anterior, que ya tiene 2 automatizaciones).
 
+  - [x] **Menú de celular que se puede usar (v0.1.169, reporte del usuario:
+        "abre listas y se cierra de una sin poder seleccionar ninguna")**: en
+        el drawer móvil el riel envolvía sus enlaces en un `<nav
+        onClick={onClose}>` y `AdminShell` además cierra al cambiar la ruta —
+        tocar "Listas" o "Dashboards" navegaba Y cerraba el drawer en el
+        mismo gesto, así que el árbol nunca llegaba a verse; y el panel
+        también cerraba con CUALQUIER toque (plegar carpeta, anclar,
+        "Nueva carpeta"). Ahora, sólo con el drawer abierto en viewport
+        angosto (`useMediaQuery`, así ensanchar la ventana con el drawer
+        abierto devuelve el riel navegable): (a) tocar un item del riel
+        **cambia el panel** (estado local `mobileSection`, `preventDefault`)
+        sin navegar ni cerrar, y el panel gana "Todas las listas" / "Página de
+        favoritos" porque el riel ya no lleva ahí; (b) el drawer se cierra
+        **sólo al activar un enlace** del panel (`closest('a[href]')` — cubre
+        también los que sólo cambian `?s=`/`?tab=`), con la X, Escape o el
+        velo; al cerrarse el panel vuelve a seguir la ruta. (c) Forma: el
+        drawer ocupa `min(88vw, 380px)` con riel de 84px (etiquetas a 11px
+        sin truncar) y panel a todo el resto; filas de 40px/14px, pins y menú
+        de carpeta visibles tenues (en táctil no hay hover) y con 32px de
+        objetivo; X de cierre de 36px en la cabecera del panel; la barra
+        superior muestra logo + nombre del workspace (antes, sólo la
+        hamburguesa). Escritorio intacto (medidas `lg:`). E2E navegador 33/33
+        en 390×844 táctil + escritorio.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
