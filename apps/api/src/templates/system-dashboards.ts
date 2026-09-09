@@ -21,6 +21,9 @@ export interface SystemDashboardTemplate {
     name: string;
     description: string;
     category: TemplateCategory;
+    /** Icono + color del catálogo de listas (v0.1.168). */
+    icon: string;
+    color: string;
     template: DashboardTemplate;
 }
 
@@ -51,6 +54,8 @@ const dash = (
     name: string,
     description: string,
     category: TemplateCategory,
+    icon: string,
+    color: string,
     fields: TemplateRoleField[],
     widgets: BlueprintWidget[],
 ): SystemDashboardTemplate => ({
@@ -58,6 +63,8 @@ const dash = (
     name,
     description,
     category,
+    icon,
+    color,
     template: {
         version: BLUEPRINT_VERSION,
         lists: [{ key: 'main', label: 'Lista', fields }],
@@ -77,6 +84,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Resumen por estado',
         'Cuántos registros hay, cómo se reparten por estado y por responsable, y cómo evolucionan en el tiempo.',
         'operaciones',
+        'pie_chart',
+        '#0ea5e9',
         [ESTADO, RESPONSABLE, role('fecha', 'Fecha (para la tendencia)', ['date', 'datetime'], false)],
         [
             kpi('Total de registros', { icon: 'list' }, 0, 0),
@@ -93,6 +102,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Embudo de ventas',
         'Pipeline por etapa con monto total, ticket promedio, embudo y cierres del mes. Para una lista de oportunidades.',
         'ventas',
+        'target',
+        '#a855f7',
         [role('etapa', 'Etapa', ['select']), MONTO, role('cierre', 'Fecha de cierre', ['date', 'datetime'], false), RESPONSABLE],
         [
             kpi('Oportunidades', { icon: 'target' }, 0, 0),
@@ -111,6 +122,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Cartera y cobros',
         'Cuánto hay facturado, cómo se reparte por estado de pago y qué vence cuándo. Para una lista de facturas o cuotas.',
         'finanzas',
+        'receipt',
+        '#22c55e',
         [ESTADO, MONTO, role('vencimiento', 'Fecha de vencimiento', ['date', 'datetime'])],
         [
             kpi('Documentos', { icon: 'receipt' }, 0, 0),
@@ -127,6 +140,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Carga de trabajo',
         'Qué tiene cada persona entre manos, por estado y prioridad, y lo que vence pronto. Para tareas, tickets o pedidos.',
         'proyectos',
+        'users',
+        '#eab308',
         [role('responsable', 'Responsable', ['user']), ESTADO, role('prioridad', 'Prioridad', ['select'], false), role('fecha', 'Fecha límite', ['date', 'datetime'], false)],
         [
             kpi('Pendientes en total', { icon: 'clipboard' }, 0, 0),
@@ -143,6 +158,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Actividad en el tiempo',
         'Cuántos registros entran por día, semana y mes, y cómo se compara con el período anterior.',
         'otros',
+        'clock',
+        '#64748b',
         [FECHA],
         [
             kpi('Total', { icon: 'database' }, 0, 0, 4),
@@ -157,6 +174,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Satisfacción',
         'Promedio de calificación, meta y distribución. Para encuestas, tickets con calificación o evaluaciones.',
         'clientes',
+        'star',
+        '#ec4899',
         [role('calificacion', 'Calificación', ['rating', 'number', 'percent']), role('estado', 'Estado o categoría', ['select', 'multi_select'], false)],
         [
             w('gauge', 'Promedio vs. meta', { metric: 'avg', metric_field_id: ref('calificacion'), goal: 4.5 }, 0, 0, 4, 4),
@@ -171,6 +190,8 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'Inventario',
         'Unidades en stock por categoría, valor del inventario y productos con poco stock.',
         'operaciones',
+        'package',
+        '#f97316',
         [role('stock', 'Stock', ['number']), role('categoria', 'Categoría', ['select', 'multi_select']), role('precio', 'Precio', ['currency', 'number'], false), role('minimo', 'Stock mínimo', ['number'], false)],
         [
             kpi('Productos', { icon: 'package' }, 0, 0),

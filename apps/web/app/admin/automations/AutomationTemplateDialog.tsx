@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowRight, Check, LayoutTemplate, Loader2, Trash2, X, Zap } from 'lucide-react';
+import { ArrowRight, LayoutTemplate, Loader2, Search, Trash2, X, Zap } from 'lucide-react';
 import { remapAutomationSlugs, type AutomationTemplateCategory, type AutomationTemplateSummary } from '@imagina-base/shared';
 
 import { RoleFieldMapper } from '@/admin/templates/RoleFieldMapper';
+import { TEMPLATE_CATEGORY_COLORS, TemplateCard } from '@/admin/templates/TemplateCard';
 import { suggestRoleMapping } from '@/admin/templates/roleMapping';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { useAutomationTemplates, useDeleteAutomationTemplate } from '@/hooks/useAutomationTemplates';
-import { __ } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
@@ -48,6 +50,7 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
     const confirm = useConfirm();
     const toast = useToast();
 
+    const [search, setSearch] = useState('');
     const [category, setCategory] = useState<AutomationTemplateCategory | 'all' | 'mine'>('all');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [mapping, setMapping] = useState<Record<string, number>>({});
@@ -57,19 +60,20 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
             setSelectedId(null);
             setMapping({});
             setCategory('all');
+            setSearch('');
         }
     }, [open]);
 
     const all = templates.data ?? NO_TEMPLATES;
-    const visible = useMemo(
-        () =>
-            all.filter((t) => {
-                if (category === 'mine') return t.source === 'workspace';
-                if (category === 'all') return true;
-                return t.category === category;
-            }),
-        [all, category],
-    );
+    const visible = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return all.filter((t) => {
+            if (category === 'mine' && t.source !== 'workspace') return false;
+            if (category !== 'all' && category !== 'mine' && t.category !== category) return false;
+            if (q === '') return true;
+            return t.name.toLowerCase().includes(q) || (t.description ?? '').toLowerCase().includes(q);
+        });
+    }, [all, category, search]);
     const hasMine = all.some((t) => t.source === 'workspace');
     const categoriesPresent = useMemo(() => {
         const set = new Set(all.map((t) => t.category));
@@ -148,7 +152,17 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
                     </div>
 
                     <div className="imcrm-mt-4 imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto md:imcrm-flex-row md:imcrm-gap-0 md:imcrm-overflow-visible">
-                        <div className="imcrm-flex imcrm-min-w-0 imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 md:imcrm-min-h-0 md:imcrm-w-1/2 md:imcrm-shrink md:imcrm-pr-4">
+                        <div className="imcrm-flex imcrm-min-w-0 imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 md:imcrm-min-h-0 md:imcrm-flex-1 md:imcrm-shrink md:imcrm-pr-4">
+                            <div className="imcrm-relative">
+                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2.5 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                <Input
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder={__('Buscar recetas')}
+                                    className="imcrm-pl-8"
+                                    autoFocus
+                                />
+                            </div>
                             <div className="imcrm-flex imcrm-shrink-0 imcrm-gap-1.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-px-0.5 imcrm-py-1">
                                 <Chip active={category === 'all'} onClick={() => setCategory('all')}>{__('Todas')}</Chip>
                                 {hasMine && <Chip active={category === 'mine'} onClick={() => setCategory('mine')}>{__('Mis plantillas')}</Chip>}
@@ -161,49 +175,34 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
                                     <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
                                     {__('Cargando plantillas…')}
                                 </p>
+                            ) : visible.length === 0 ? (
+                                <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">{__('Ninguna plantilla coincide.')}</p>
                             ) : (
-                                <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-col imcrm-gap-2 md:imcrm-overflow-y-auto">
+                                <div className="imcrm-grid imcrm-min-h-0 imcrm-gap-2 sm:imcrm-grid-cols-2 md:imcrm-overflow-y-auto">
                                     {visible.map((t) => {
-                                        const active = t.id === selectedId;
-                                        const trigger = triggerMetaFor(t.template.trigger_type);
+                                        const actions = t.template.actions as Array<{ type: string }>;
                                         return (
-                                            <button
+                                            <TemplateCard
                                                 key={t.id}
-                                                type="button"
+                                                icon={triggerMetaFor(t.template.trigger_type).icon}
+                                                color={TEMPLATE_CATEGORY_COLORS[t.category]}
+                                                name={t.name}
+                                                subtitle={t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
+                                                description={t.description}
+                                                meta={`${triggerMetaFor(t.template.trigger_type).title} · ${sprintf(
+                                                    _n('%d acción', '%d acciones', actions.length),
+                                                    actions.length,
+                                                )}`}
+                                                active={t.id === selectedId}
                                                 onClick={() => pick(t)}
-                                                className={cn(
-                                                    'imcrm-flex imcrm-items-start imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-p-3 imcrm-text-left imcrm-transition-colors',
-                                                    active
-                                                        ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary'
-                                                        : 'imcrm-border-border imcrm-bg-card hover:imcrm-border-primary/40 hover:imcrm-bg-accent/30',
-                                                )}
-                                            >
-                                                <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
-                                                    <trigger.icon className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                                </span>
-                                                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
-                                                    <span className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                                        <span className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">{t.name}</span>
-                                                        {active && <Check className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />}
-                                                    </span>
-                                                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                                        {t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
-                                                    </span>
-                                                    {t.description && (
-                                                        <span className="imcrm-line-clamp-2 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">{t.description}</span>
-                                                    )}
-                                                </span>
-                                            </button>
+                                            />
                                         );
                                     })}
-                                    {visible.length === 0 && (
-                                        <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">{__('Ninguna plantilla coincide.')}</p>
-                                    )}
                                 </div>
                             )}
                         </div>
 
-                        <aside className="imcrm-flex imcrm-w-full imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3 md:imcrm-min-h-0 md:imcrm-w-1/2 md:imcrm-border-l md:imcrm-border-t-0 md:imcrm-pl-4 md:imcrm-pt-0">
+                        <aside className="imcrm-flex imcrm-w-full imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3 md:imcrm-min-h-0 md:imcrm-w-[22rem] md:imcrm-border-l md:imcrm-border-t-0 md:imcrm-pl-4 md:imcrm-pt-0">
                             {!selected ? (
                                 <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-py-10 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                                     <Zap className="imcrm-h-6 imcrm-w-6 imcrm-opacity-50" />

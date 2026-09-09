@@ -3045,6 +3045,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `changed_fields` y merge tags re-escritos; guardar/borrar plantilla
         de automatización; móvil).
 
+  - [x] **Galerías unificadas + la plantilla primero (v0.1.168, feedback del
+        usuario con capturas)**: le gustó la galería de LISTAS (dos columnas,
+        icono con color, buscador + chips) y no las de dashboards y
+        automatizaciones de v0.1.167, a UNA columna y planas. Ahora las tres
+        comparten el formato: `TemplateCard` (icono con color —el del
+        catálogo de listas para los dashboards, que ganan `icon`/`color` en
+        el summary y en las 7 del sistema; el icono del disparador con color
+        por categoría para las recetas—, nombre a dos líneas, categoría,
+        descripción y conteos), buscador, chips y grilla de dos columnas con
+        el panel de detalle/mapeo a 22rem. Y **la plantilla es la primera
+        opción y la que se abre por defecto** en "Nueva lista" (Plantilla ·
+        En blanco · Duplicar) y "Nuevo dashboard" (Plantilla · En blanco); en
+        Automatizaciones "Desde plantilla" pasa a botón principal y "En
+        blanco" a secundario. E2E navegador 28/28 + 30/31 (el ✗ es un dato
+        viejo del entorno: `find` por nombre agarra la Facturas de la corrida
+        anterior, que ya tiene 2 automatizaciones).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
