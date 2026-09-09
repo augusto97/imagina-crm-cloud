@@ -14,8 +14,11 @@ import { getBootData } from '@/lib/boot';
 import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 
+import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
+
 import { DateCellEditor } from './DateCellEditor';
 import { CompactFieldRow } from './crm/CompactFieldRow';
+import { FieldValueDisplay } from './crm/FieldValueDisplay';
 
 interface RecordFieldsFormProps {
     /**
@@ -75,6 +78,9 @@ export function RecordFieldsForm({
 }: RecordFieldsFormProps): JSX.Element {
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
+        // v0.1.170 — los derivados (computed/lookup/rollup) no tienen nada que
+        // cargar en el alta: aparecen sólo al editar, como lectura.
+        .filter((f) => !(recordId === undefined && isDerivedFieldType(f.type)))
         .sort((a, b) => a.position - b.position);
 
     const setValue = (slug: string, value: unknown): void => {
@@ -322,6 +328,16 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             );
             break;
         }
+        case 'computed':
+        case 'lookup':
+        case 'rollup':
+            // Solo lectura: el backend los deriva en cada lectura.
+            control = (
+                <div id={id} className="imcrm-min-h-[36px] imcrm-py-1.5 imcrm-text-sm">
+                    <FieldValueDisplay field={field} value={value} />
+                </div>
+            );
+            break;
         default:
             control = (
                 <Input

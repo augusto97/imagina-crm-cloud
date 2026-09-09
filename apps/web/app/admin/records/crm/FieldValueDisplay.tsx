@@ -11,6 +11,7 @@ import { useWpUser } from '@/hooks/useWpUsers';
 import { fieldPrecision, formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
+import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
 
 interface FieldValueDisplayProps {
@@ -26,6 +27,25 @@ interface FieldValueDisplayProps {
  * como una página de detalle y no una fila de tabla disfrazada.
  */
 export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX.Element {
+    // v0.1.170 — a través de una relación: se pinta con el campo destino.
+    if (field.type === 'lookup') {
+        const display = lookupDisplayField(field);
+        const values = lookupValues(value);
+        if (!display || values.length === 0) {
+            return <span className="imcrm-text-muted-foreground/60">—</span>;
+        }
+        return (
+            <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1">
+                {values.map((v, i) => (
+                    <FieldValueDisplay key={i} field={display} value={v} />
+                ))}
+            </span>
+        );
+    }
+    if (field.type === 'rollup') {
+        return <FieldValueDisplay field={rollupDisplayField(field)} value={value} />;
+    }
+
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground/60">—</span>;
     }

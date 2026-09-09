@@ -17,7 +17,30 @@ export type FieldTypeSlug =
     | 'phone'
     | 'rating'
     | 'percent'
-    | 'duration';
+    | 'duration'
+    // v0.1.170 — a través de una relación (lookup / rollup, ADR-S19).
+    | 'lookup'
+    | 'rollup';
+
+/**
+ * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend
+ * en cada listado de campos: dirección, lista del otro lado y el campo
+ * destino con su config — lo que hace falta para formatear el valor
+ * (moneda, opciones con color, fecha) sin otra request. `null` si la
+ * config apunta a algo que ya no existe.
+ */
+export interface ThroughInfo {
+    direction: 'forward' | 'reverse';
+    relation_label: string;
+    other_list_id: number;
+    other_list_name: string;
+    target_field: {
+        id: number;
+        label: string;
+        type: FieldTypeSlug;
+        config: Record<string, unknown>;
+    } | null;
+}
 
 export interface FieldTypeMeta {
     slug: FieldTypeSlug;
@@ -50,6 +73,8 @@ export interface FieldEntity {
     /** Ayuda para el equipo (v0.1.163): "cómo se usa este campo". */
     description?: string | null;
     column_name?: string;
+    /** Sólo lookup/rollup (v0.1.170). */
+    through?: ThroughInfo | null;
 }
 
 export interface CreateFieldInput {

@@ -11,9 +11,14 @@ import {
     fieldSlugSchema,
     formatDuration,
     formatPhone,
+    isDataField,
+    isThroughField,
     jsonbKeyForField,
+    LOOKUP_TARGET_TYPES,
     parseFieldConfig,
     resolveTitleFieldId,
+    ROLLUP_MINMAX_TYPES,
+    ROLLUP_NUMERIC_TYPES,
     slugify,
     validateFieldValue,
     type CreateFieldInput,
@@ -27,12 +32,29 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
+import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
 import { FieldsRepository, type FieldRow } from './fields.repository';
 import { createIndexStatements, dropIndexStatements } from './record-indexes';
+
+/** Un camino posible para un lookup/rollup de una lista (v0.1.170). */
+export interface RelationPath {
+    relation_field_id: number;
+    relation_label: string;
+    direction: 'forward' | 'reverse';
+    /** Lista donde VIVE el campo relation. */
+    list_id: number;
+    list_name: string;
+    /** Lista del otro lado (de donde se leen los campos). */
+    other_list_id: number;
+    other_list_name: string;
+}
 
 @Injectable()
 export class FieldsService {
     private readonly logger = new Logger(FieldsService.name);
+    /** Motor de lookup/rollup (v0.1.170): plain class, sin DI, así los specs
+     *  que instancian este service a mano no cambian. */
+    readonly through = new ThroughEngine(this);
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -44,6 +66,109 @@ export class FieldsService {
         // service a mano queda undefined → el DDL es no-op.
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
+
+    /** Campo por id en cualquier lista del tenant (para resolver relaciones cruzadas). */
+    async findAnyByIdWithinTx(tx: Tx, tenantId: number, fieldId: number): Promise<Field | null> {
+        const row = await this.repo.findAnyById(tx, tenantId, fieldId);
+        return row ? toField(row) : null;
+    }
+
+    /**
+     * Planes de los lookup/rollup de una lista (v0.1.170). Camino rápido sin
+     * transacción cuando la lista no tiene ninguno — el caso del 99% de las
+     * listas no paga nada.
+     */
+    async throughPlansFor(tenantId: number, listId: number, fields: Field[]): Promise<ThroughPlan[]> {
+        if (!ThroughEngine.hasThrough(fields)) return [];
+        return this.tenantDb.withTenant(tenantId, (tx) => this.through.plans(tx, tenantId, listId, fields));
+    }
+
+    /**
+     * Caminos disponibles para un lookup/rollup de la lista: sus propias
+     * relaciones (hacia afuera) y las relaciones de otras listas que apuntan
+     * a ella (hacia adentro). Es lo que ofrece el editor de config.
+     */
+    async relationPaths(tenantId: number, listIdOrSlug: string): Promise<RelationPath[]> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const [rows, lists] = await Promise.all([
+            this.tenantDb.withTenant(tenantId, (tx) => this.repo.relationFieldsTouching(tx, tenantId, list.id)),
+            this.lists.list(tenantId),
+        ]);
+        const names = new Map(lists.map((l) => [l.id, l.name]));
+        const out: RelationPath[] = [];
+        for (const r of rows) {
+            const targetListId = Number((r.config as { target_list_id?: unknown }).target_list_id ?? 0);
+            if (!Number.isInteger(targetListId) || targetListId <= 0) continue;
+            const direction = r.listId === list.id ? 'forward' : 'reverse';
+            const otherListId = direction === 'forward' ? targetListId : r.listId;
+            out.push({
+                relation_field_id: r.id,
+                relation_label: r.label,
+                direction,
+                list_id: r.listId,
+                list_name: names.get(r.listId) ?? `#${r.listId}`,
+                other_list_id: otherListId,
+                other_list_name: names.get(otherListId) ?? `#${otherListId}`,
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Valida la config de un lookup/rollup contra el estado real (v0.1.170):
+     * la relación existe, es `relation` y toca esta lista; el campo destino
+     * es de la lista del otro lado y de un tipo compatible con la operación.
+     * Sólo se valida lo PRESENTE: una config a medias (sin relación todavía)
+     * se acepta y el campo sale vacío — igual que un relation sin destino.
+     */
+    private async assertThroughConfig(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        type: FieldType,
+        config: Record<string, unknown>,
+    ): Promise<void> {
+        if (!isThroughField(type)) return;
+        const fail = (field: string, message: string): never => {
+            throw new BadRequestException({
+                code: 'invalid_field_config',
+                message,
+                data: { status: 400, errors: { [field]: message } },
+            });
+        };
+        const relId = Number(config.relation_field_id ?? 0);
+        if (!(Number.isInteger(relId) && relId > 0)) return;
+        const rel = await this.repo.findAnyById(tx, tenantId, relId);
+        if (!rel || rel.type !== 'relation') {
+            return fail('relation_field_id', 'La relación elegida no existe o no es un campo de tipo relación');
+        }
+        const targetListId = Number((rel.config as { target_list_id?: unknown }).target_list_id ?? 0);
+        let otherListId: number;
+        if (rel.listId === listId && targetListId > 0) otherListId = targetListId;
+        else if (targetListId === listId) otherListId = rel.listId;
+        else return fail('relation_field_id', 'La relación elegida no conecta con esta lista');
+
+        const targetId = Number(config.target_field_id ?? 0);
+        const operation = typeof config.operation === 'string' ? config.operation : '';
+        if (type === 'rollup' && operation === 'count') return;
+        if (!(Number.isInteger(targetId) && targetId > 0)) return;
+        const target = await this.repo.findAnyById(tx, tenantId, targetId);
+        if (!target || target.listId !== otherListId) {
+            return fail('target_field_id', 'El campo elegido no pertenece a la lista del otro lado de la relación');
+        }
+        const tType = target.type as FieldType;
+        if (type === 'lookup' && !LOOKUP_TARGET_TYPES.includes(tType)) {
+            return fail('target_field_id', `Un lookup no puede traer un campo de tipo '${tType}'`);
+        }
+        if (type === 'rollup') {
+            if ((operation === 'sum' || operation === 'avg') && !ROLLUP_NUMERIC_TYPES.includes(tType)) {
+                return fail('target_field_id', 'Sumar o promediar requiere un campo numérico');
+            }
+            if ((operation === 'min' || operation === 'max') && !ROLLUP_MINMAX_TYPES.includes(tType)) {
+                return fail('target_field_id', 'Mínimo y máximo requieren un campo numérico o de fecha');
+            }
+        }
+    }
 
     /**
      * Sincroniza los índices de expresión de un campo (PERF-01). `CREATE/DROP
@@ -105,7 +230,24 @@ export class FieldsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.listByListId(tenantId, list.id);
         const titleId = resolveTitleFieldId(fields, list.settings);
-        return fields.map((f) => (f.id === titleId ? { ...f, is_primary: true } : f));
+        // v0.1.170 — los lookup/rollup viajan con su relación RESUELTA
+        // (`through`): la UI formatea el valor con el campo del otro lado
+        // (moneda, opciones con color, fecha) sin otra request. Derivado en
+        // cada lectura, nunca persistido — no puede quedar viejo.
+        let throughById = new Map<number, Field['through']>();
+        if (ThroughEngine.hasThrough(fields)) {
+            const [plans, lists] = await Promise.all([
+                this.throughPlansFor(tenantId, list.id, fields),
+                this.lists.list(tenantId),
+            ]);
+            const names = new Map(lists.map((l) => [l.id, l.name]));
+            throughById = new Map(plans.map((p) => [p.field.id, ThroughEngine.info(p, names)]));
+        }
+        return fields.map((f) => ({
+            ...f,
+            ...(f.id === titleId ? { is_primary: true } : {}),
+            ...(isThroughField(f.type) ? { through: throughById.get(f.id) ?? null } : {}),
+        }));
     }
 
     /**
@@ -191,6 +333,7 @@ export class FieldsService {
         if (input.is_indexed === true) await this.assertIndexBudget(tenantId, listId);
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId, listId);
             return this.repo.insert(tx, {
@@ -208,6 +351,10 @@ export class FieldsService {
             });
         });
         this.realtime.fields(tenantId, listId);
+        // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
+        // cómo se leen los records: sin esto la tabla mostraba "—" en la
+        // columna nueva hasta recargar.
+        if (!isDataField(input.type)) this.realtime.records(tenantId, listId);
         return toField(row);
     }
 
@@ -260,6 +407,7 @@ export class FieldsService {
                 typeChanged = true;
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
+                await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
             }
             if (patch.is_indexed !== undefined) {
                 changes.isIndexed = patch.is_indexed;
@@ -385,6 +533,8 @@ const NO_AUTOCOMPLETE_TYPES: ReadonlySet<string> = new Set([
     'relation',
     'user',
     'computed',
+    'lookup',
+    'rollup',
     // v0.1.158 — numéricos puros: sugerir "90" no ayuda a nadie (el
     // teléfono SÍ queda con autocomplete: buscar por prefijo es útil).
     'rating',
@@ -457,13 +607,13 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
  * (relation vive en la tabla `relations`, computed jamás se persiste, file
  * son IDs de attachments que dejarían huérfanos silenciosos).
  */
-const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file'];
+const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup'];
 
 function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',
-            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo y calculado no admiten conversión.`,
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup y rollup no admiten conversión.`,
             data: { status: 400 },
         });
     }

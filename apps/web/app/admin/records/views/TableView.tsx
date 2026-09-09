@@ -286,7 +286,9 @@ export function TableView({
     // calculan aparte).
     const aggregatableFieldIds = useMemo(
         () => fields
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed')
+            // v0.1.170 — rollup SÍ (el backend lo suma por su subconsulta);
+            // lookup no (es una lista de valores).
+            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
             .filter((f) => columnVisibility[f.slug] !== false)
             .map((f) => f.id),
         [fields, columnVisibility],

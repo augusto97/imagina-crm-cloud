@@ -3086,6 +3086,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         hamburguesa). Escritorio intacto (medidas `lg:`). E2E navegador 33/33
         en 390×844 táctil + escritorio.
 
+  - [x] **Campos `lookup` y `rollup` a través de una relación (v0.1.170,
+        ADR-S19, pedido del usuario)**: el hueco que quedaba desde v0.1.158
+        —traer o agregar un valor cruzando un campo `relation`, como en
+        Airtable/ClickUp—. `lookup` muestra un campo de los registros
+        vinculados (lista de valores) y `rollup` los cuenta/suma/promedia/
+        mín/máx con **filtro opcional sobre la otra lista** ("deuda = suma de
+        las facturas pendientes"). La relación sirve **en las dos
+        direcciones** y el backend deduce cuál (hacia afuera: la relation
+        vive acá; hacia adentro: vive en la otra lista y apunta acá — así
+        Clientes resume Facturas sin duplicar la relación). Nada se persiste:
+        motor `ThroughEngine` (`records/through-fields.ts`) que resuelve
+        planes y adjunta valores en batch por página (1 query por relación
+        para lookups, tope 50 vinculados/registro; 1 query agregada por
+        rollup) — los rollups **nunca cargan en memoria** el otro lado: se
+        compilan a SQL con el QueryBuilder whitelisteado contra el alias
+        `rr` (el builder ganó `dataRef`), y la misma agregación como
+        subconsulta correlacionada hace que un rollup **filtre, ordene y se
+        sume en el pie/widgets** (`FilterableField.expr`). Un `computed`
+        puede usar un rollup como entrada. Validación al guardar (relación
+        que toca la lista, destino de la lista del otro lado, tipo
+        compatible con la operación; config a medias se acepta y sale
+        vacía), `GET /lists/:l/fields/relation-paths` (caminos disponibles)
+        y el DTO de campos adjunta `through` (relación resuelta + campo
+        destino con config) para que la UI formatee sin otra request. Front:
+        catálogo/iconos/preview, editores de config (selector de relación en
+        ambas direcciones, campo destino filtrado por compatibilidad,
+        operación, filtro EMBEBIDO con el mismo `FilterGroupView` sobre la
+        otra lista), celda y ficha de solo lectura pintadas con el tipo del
+        destino (moneda, chips, teléfono, fecha), operadores numéricos del
+        rollup en filtros, el alta no los pide. **Dos bugs atrapados en el
+        E2E**: drizzle serializa un array JS como JSON (no como array de
+        Postgres) → `= ANY($n)` rompía, ahora `IN (…)` bindeado; y crear un
+        campo derivado dejaba la columna en "—" hasta recargar (los records
+        seguían en cache) → invalidación + evento realtime de records al
+        crear computed/lookup/rollup. Pendiente: export CSV de los through
+        (hoy el CSV sólo lleva campos de datos) y rollups en la agrupación de
+        la vista agrupada. 5 tests de integración (465 API en verde, 111
+        front, 66 shared) + E2E navegador 23/23 (alta por UI de rollup y
+        lookup, formato, filtro "Deuda > 0", orden, ficha, alta sin
+        derivados, cambio en Facturas reflejado en Clientes).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

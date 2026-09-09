@@ -31,7 +31,7 @@ export function FilterRow({
     onChange,
     onRemove,
 }: FilterRowProps): JSX.Element {
-    const filterableFields = fields.filter((f) => f.type !== 'relation');
+    const filterableFields = fields.filter((f) => f.type !== 'relation' && f.type !== 'lookup');
     const selected = fields.find((f) => f.id === condition.field_id) ?? null;
     const operators = selected ? operatorsForType(selected.type) : [];
 

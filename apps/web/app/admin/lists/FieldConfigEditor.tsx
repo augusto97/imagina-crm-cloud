@@ -1,7 +1,14 @@
 import { useMemo } from 'react';
-import { COUNTRY_DIAL_CODES } from '@imagina-base/shared';
+import {
+    COUNTRY_DIAL_CODES,
+    LOOKUP_TARGET_TYPES,
+    ROLLUP_MINMAX_TYPES,
+    ROLLUP_NUMERIC_TYPES,
+} from '@imagina-base/shared';
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 
+import { FilterGroupView } from '@/admin/records/FilterGroupView';
+import { makeGroup } from '@/admin/records/filterTree';
 import { Button } from '@/components/ui/button';
 import {
     ColorPicker,
@@ -14,8 +21,10 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
-import { __ } from '@/lib/i18n';
+import { useRelationPaths, type RelationPath } from '@/hooks/useRelationPaths';
+import { __, sprintf } from '@/lib/i18n';
 import type { FieldTypeSlug } from '@/types/field';
+import type { FilterTree } from '@/types/record';
 
 /**
  * Editor de la propiedad `config` de un campo. Cambia su contenido
@@ -75,6 +84,13 @@ export function FieldConfigEditor({
     }
     if (type === 'date' || type === 'datetime') {
         return <DateHighlightEditor config={config} onChange={onChange} />;
+    }
+    // v0.1.170 — a través de una relación.
+    if (type === 'lookup') {
+        return <LookupEditor config={config} onChange={onChange} listId={listId} />;
+    }
+    if (type === 'rollup') {
+        return <RollupEditor config={config} onChange={onChange} listId={listId} />;
     }
     // v0.1.158
     if (type === 'phone') {
@@ -470,6 +486,245 @@ function RelationEditor({ config, onChange }: SubProps): JSX.Element {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Lookup / Rollup — a través de una relación (v0.1.170, ADR-S19)
+// ─────────────────────────────────────────────────────────────────────
+
+interface ThroughEditorProps extends SubProps {
+    listId?: number;
+}
+
+/**
+ * Config sin los "vacíos" (0 / ''): el backend valida los ids como enteros
+ * positivos, así que "sin elegir" se representa OMITIENDO la clave.
+ */
+function cleanThrough(next: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...next };
+    for (const k of ['relation_field_id', 'target_field_id']) {
+        const v = out[k];
+        if (v === 0 || v === '' || v === null || v === undefined) delete out[k];
+    }
+    return out;
+}
+
+/** Etiqueta humana de un camino: hacia afuera o hacia adentro. */
+function pathLabel(p: RelationPath): string {
+    return p.direction === 'forward'
+        ? sprintf(
+              /* translators: 1: relation field label, 2: other list name */
+              __('%1$s → %2$s'),
+              p.relation_label,
+              p.other_list_name,
+          )
+        : sprintf(
+              /* translators: 1: other list name, 2: relation field label */
+              __('%1$s que apuntan acá (por «%2$s»)'),
+              p.other_list_name,
+              p.relation_label,
+          );
+}
+
+/**
+ * Selector de la relación (las propias y las que apuntan a esta lista).
+ * Cambiar la relación resetea el campo destino: es de OTRA lista.
+ */
+function RelationPathSelect({
+    listId,
+    value,
+    onChange,
+}: {
+    listId?: number;
+    value: number;
+    onChange: (path: RelationPath | null) => void;
+}): JSX.Element {
+    const paths = useRelationPaths(listId);
+    const options = paths.data ?? [];
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label className="imcrm-text-xs">{__('Relación')}</Label>
+            <Select
+                value={value}
+                onChange={(e) => {
+                    const id = Number(e.target.value);
+                    onChange(options.find((p) => p.relation_field_id === id) ?? null);
+                }}
+                data-testid="through-relation"
+            >
+                <option value={0}>{__('— Selecciona —')}</option>
+                {options.map((p) => (
+                    <option key={p.relation_field_id} value={p.relation_field_id}>
+                        {pathLabel(p)}
+                    </option>
+                ))}
+            </Select>
+            {paths.isSuccess && options.length === 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Esta lista no tiene relaciones todavía: creá primero un campo de tipo Relación (acá o en la lista que quieras conectar).')}
+                </p>
+            )}
+        </div>
+    );
+}
+
+function LookupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Element {
+    const paths = useRelationPaths(listId);
+    const relId = typeof config.relation_field_id === 'number' ? config.relation_field_id : 0;
+    const path = (paths.data ?? []).find((p) => p.relation_field_id === relId) ?? null;
+    const otherFields = useFields(path?.other_list_id);
+    const targetId = typeof config.target_field_id === 'number' ? config.target_field_id : 0;
+    const eligible = (otherFields.data ?? []).filter((f) => LOOKUP_TARGET_TYPES.includes(f.type));
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            <RelationPathSelect
+                listId={listId}
+                value={relId}
+                onChange={(p) => onChange(cleanThrough({ ...config, relation_field_id: p?.relation_field_id ?? 0, target_field_id: 0 }))}
+            />
+            {path && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label className="imcrm-text-xs">
+                        {sprintf(
+                            /* translators: %s: other list name */
+                            __('Campo de %s a mostrar'),
+                            path.other_list_name,
+                        )}
+                    </Label>
+                    <Select
+                        value={targetId}
+                        onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
+                        data-testid="through-target"
+                    >
+                        <option value={0}>{__('— Selecciona —')}</option>
+                        {eligible.map((f) => (
+                            <option key={f.id} value={f.id}>
+                                {f.label}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+            )}
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Se lee del registro vinculado en cada consulta: si allá cambia, acá cambia. No se puede editar.')}
+            </p>
+        </div>
+    );
+}
+
+const ROLLUP_OPS: Array<{ slug: string; label: string; needsTarget: boolean }> = [
+    { slug: 'count', label: __('Contar registros'), needsTarget: false },
+    { slug: 'sum', label: __('Sumar'), needsTarget: true },
+    { slug: 'avg', label: __('Promediar'), needsTarget: true },
+    { slug: 'min', label: __('Mínimo (o fecha más antigua)'), needsTarget: true },
+    { slug: 'max', label: __('Máximo (o fecha más reciente)'), needsTarget: true },
+];
+
+function RollupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Element {
+    const paths = useRelationPaths(listId);
+    const relId = typeof config.relation_field_id === 'number' ? config.relation_field_id : 0;
+    const path = (paths.data ?? []).find((p) => p.relation_field_id === relId) ?? null;
+    const otherFields = useFields(path?.other_list_id);
+    const operation = typeof config.operation === 'string' ? config.operation : 'count';
+    const opDef = ROLLUP_OPS.find((o) => o.slug === operation) ?? ROLLUP_OPS[0]!;
+    const targetId = typeof config.target_field_id === 'number' ? config.target_field_id : 0;
+    const allowed = operation === 'sum' || operation === 'avg' ? ROLLUP_NUMERIC_TYPES : ROLLUP_MINMAX_TYPES;
+    const eligible = (otherFields.data ?? []).filter((f) => allowed.includes(f.type));
+    const filterTree = (config.filter_tree as FilterTree | undefined) ?? null;
+    const hasFilter = filterTree !== null;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            <RelationPathSelect
+                listId={listId}
+                value={relId}
+                onChange={(p) => {
+                    const next: Record<string, unknown> = {
+                        ...config,
+                        relation_field_id: p?.relation_field_id ?? 0,
+                        target_field_id: 0,
+                    };
+                    delete next.filter_tree; // el filtro es sobre la OTRA lista
+                    onChange(cleanThrough(next));
+                }}
+            />
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                <Label className="imcrm-text-xs">{__('Operación')}</Label>
+                <Select
+                    value={operation}
+                    onChange={(e) => onChange(cleanThrough({ ...config, operation: e.target.value, target_field_id: 0 }))}
+                    data-testid="through-operation"
+                >
+                    {ROLLUP_OPS.map((o) => (
+                        <option key={o.slug} value={o.slug}>
+                            {o.label}
+                        </option>
+                    ))}
+                </Select>
+            </div>
+            {path && opDef.needsTarget && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <Label className="imcrm-text-xs">
+                        {sprintf(
+                            /* translators: %s: other list name */
+                            __('Campo de %s'),
+                            path.other_list_name,
+                        )}
+                    </Label>
+                    <Select
+                        value={targetId}
+                        onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
+                        data-testid="through-target"
+                    >
+                        <option value={0}>{__('— Selecciona —')}</option>
+                        {eligible.map((f) => (
+                            <option key={f.id} value={f.id}>
+                                {f.label}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+            )}
+            {path && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                        <input
+                            type="checkbox"
+                            checked={hasFilter}
+                            data-testid="through-filter-toggle"
+                            onChange={(e) => {
+                                if (e.target.checked) {
+                                    onChange({ ...config, filter_tree: makeGroup('and', []) });
+                                } else {
+                                    const next = { ...config };
+                                    delete next.filter_tree;
+                                    onChange(next);
+                                }
+                            }}
+                        />
+                        {sprintf(
+                            /* translators: %s: other list name */
+                            __('Solo los registros de %s que cumplan…'),
+                            path.other_list_name,
+                        )}
+                    </label>
+                    {hasFilter && filterTree && (
+                        <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
+                            <FilterGroupView
+                                root={filterTree}
+                                path={[]}
+                                fields={otherFields.data ?? []}
+                                listId={path.other_list_id}
+                                onRootChange={(next) => onChange({ ...config, filter_tree: next })}
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Se calcula en cada consulta sobre los registros vinculados. Sirve para filtrar y ordenar ("deuda > 0") y se suma en el pie de la tabla.')}
+            </p>
+        </div>
+    );
+}
+
 function CheckboxDefaultEditor({ config, onChange }: SubProps): JSX.Element {
     const def = config.default === true;
     return (
@@ -550,28 +805,28 @@ const COMPUTED_OPS: ComputedOpDef[] = [
         slug: 'sum',
         label: __('Suma'),
         arity: [2, 10],
-        inputTypes: ['number', 'currency', 'computed'],
+        inputTypes: ['number', 'currency', 'computed', 'rollup'],
         hint: __('Suma de todos los inputs numéricos.'),
     },
     {
         slug: 'product',
         label: __('Producto'),
         arity: [2, 10],
-        inputTypes: ['number', 'currency', 'computed'],
+        inputTypes: ['number', 'currency', 'computed', 'rollup'],
         hint: __('Multiplica todos los inputs.'),
     },
     {
         slug: 'subtract',
         label: __('Resta'),
         arity: 2,
-        inputTypes: ['number', 'currency', 'computed'],
+        inputTypes: ['number', 'currency', 'computed', 'rollup'],
         hint: __('A − B.'),
     },
     {
         slug: 'divide',
         label: __('División'),
         arity: 2,
-        inputTypes: ['number', 'currency', 'computed'],
+        inputTypes: ['number', 'currency', 'computed', 'rollup'],
         hint: __('A / B. Si B es 0, el campo queda vacío.'),
     },
     {
@@ -585,7 +840,7 @@ const COMPUTED_OPS: ComputedOpDef[] = [
         slug: 'abs',
         label: __('Valor absoluto'),
         arity: 1,
-        inputTypes: ['number', 'currency', 'computed'],
+        inputTypes: ['number', 'currency', 'computed', 'rollup'],
         hint: __('Valor absoluto (siempre positivo) del input.'),
     },
 ];
@@ -687,6 +942,7 @@ function ComputedEditor({
                                         <option key={f.id} value={f.id}>
                                             {f.label}
                                             {f.type === 'computed' ? ` (${__('calculado')})` : ''}
+                                            {f.type === 'rollup' ? ` (${__('rollup')})` : ''}
                                         </option>
                                     ))}
                                 </Select>

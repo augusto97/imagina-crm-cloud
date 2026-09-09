@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import { invalidateForList } from '@/hooks/useRecords';
+import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
+import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/field';
 
 export const fieldsKeys = {
@@ -77,9 +78,13 @@ export function useCreateField(listId: string | number) {
             const res = await api.post<FieldEntity>(`/lists/${listId}/fields`, input);
             return res.data;
         },
-        onSuccess: () => {
+        onSuccess: (created) => {
             // 0.57.41 — scope a id+slug de la lista actual.
             invalidateForList(qc, fieldsKeys.all, listId);
+            // v0.1.170 — un campo derivado (computed/lookup/rollup) cambia lo
+            // que devuelve el listado: la columna nueva salía en "—" hasta
+            // recargar porque los records seguían en cache.
+            if (isDerivedFieldType(created.type)) invalidateForList(qc, recordsKeys.all, listId);
         },
     });
 }

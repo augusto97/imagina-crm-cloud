@@ -27,7 +27,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { AuditService } from '../audit/audit.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { FieldsService } from './fields.service';
+import { FieldsService, type RelationPath } from './fields.service';
 
 /**
  * CRUD de campos por lista (CONTRACT.md §1). Rutas anidadas bajo la lista;
@@ -63,6 +63,20 @@ export class FieldsController {
         return this.fields
             .distinctValues(tenantId(req), list, field, search ?? '', Number(limit ?? 50))
             .then((data) => ({ data }));
+    }
+
+    /**
+     * v0.1.170 — caminos disponibles para un lookup/rollup de la lista (sus
+     * relaciones y las que apuntan a ella). Metadata de schema, sin datos de
+     * registros: la ve quien ve los campos. Va ANTES de `:field` para que la
+     * ruta literal no se interprete como slug.
+     */
+    @Get('relation-paths')
+    relationPaths(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+    ): Promise<{ data: RelationPath[] }> {
+        return this.fields.relationPaths(tenantId(req), list).then((data) => ({ data }));
     }
 
     @Get(':field')

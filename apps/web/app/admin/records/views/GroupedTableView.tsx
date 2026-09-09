@@ -178,7 +178,7 @@ export function GroupedTableView({
     // todos los buckets agregan las mismas columnas.
     const aggregateFieldIds = useMemo(
         () => fields
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed')
+            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
             .map((f) => f.id),
         [fields],
     );

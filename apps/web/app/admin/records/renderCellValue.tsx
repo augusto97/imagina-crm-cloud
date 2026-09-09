@@ -7,6 +7,7 @@ import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
+import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
 
 import { extractFieldOptions, type FieldOption } from './fieldOptions';
@@ -45,6 +46,32 @@ export function OptionChip({ opt, fallback }: { opt?: FieldOption; fallback: str
  * entre TableView (modo lectura) y EditableCell (cuando NO está en edit).
  */
 export function renderCellValue(field: FieldEntity, value: unknown): React.ReactNode {
+    // v0.1.170 — lookup: cada valor vinculado se pinta con el TIPO del campo
+    // destino (chips de select con su color, moneda, fecha…); rollup: un
+    // número con la precisión/moneda del destino (o fecha en min/max).
+    if (field.type === 'lookup') {
+        const display = lookupDisplayField(field);
+        const values = lookupValues(value);
+        if (!display || values.length === 0) {
+            return <span className="imcrm-text-muted-foreground">—</span>;
+        }
+        return (
+            <div className="imcrm-cell-chips imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-gap-y-1">
+                {values.map((v, i) => (
+                    <span key={i} className="imcrm-inline-flex imcrm-min-w-0 imcrm-items-center">
+                        {renderCellValue(display, v)}
+                        {i < values.length - 1 && display.type !== 'select' && display.type !== 'multi_select' && (
+                            <span className="imcrm-text-muted-foreground">,</span>
+                        )}
+                    </span>
+                ))}
+            </div>
+        );
+    }
+    if (field.type === 'rollup') {
+        return renderCellValue(rollupDisplayField(field), value);
+    }
+
     if (value === null || value === undefined || value === '') {
         return <span className="imcrm-text-muted-foreground">—</span>;
     }

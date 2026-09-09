@@ -1167,7 +1167,7 @@ function CreateRecordConfig({
                             >
                                 <option value="">{__('— Campo —')}</option>
                                 {tf
-                                    .filter((field) => field.type !== 'computed')
+                                    .filter((field) => field.type !== 'computed' && field.type !== 'lookup' && field.type !== 'rollup')
                                     .map((field) => (
                                         <option key={field.id} value={field.slug}>
                                             {field.label}

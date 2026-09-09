@@ -156,5 +156,19 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(calculado)')}</span>
                 </Row>
             );
+        case 'lookup':
+            return (
+                <Row>
+                    <span>+57 300 111 2233</span>
+                    <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(del cliente)')}</span>
+                </Row>
+            );
+        case 'rollup':
+            return (
+                <Row>
+                    <span className="imcrm-tabular-nums">$ 1.250.000</span>
+                    <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(3 facturas)')}</span>
+                </Row>
+            );
     }
 }

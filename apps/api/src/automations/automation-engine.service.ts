@@ -380,8 +380,8 @@ export class AutomationEngine {
                         skipped.push(`${k} (campo inexistente en la lista destino)`);
                         continue;
                     }
-                    if (field.type === 'computed') {
-                        skipped.push(`${k} (computed es solo lectura)`);
+                    if (field.type === 'computed' || field.type === 'lookup' || field.type === 'rollup') {
+                        skipped.push(`${k} (${field.type} es solo lectura)`);
                         continue;
                     }
                     const resolved = typeof v === 'string' ? merge(v) : v;

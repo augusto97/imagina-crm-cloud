@@ -15,10 +15,26 @@ import { records } from '../db/schema';
 export interface FilterableField {
     id: number;
     type: FieldType;
+    /**
+     * v0.1.170 — expresión SQL YA tipada que reemplaza a la del JSONB. La
+     * usan los campos `rollup`: su valor no vive en `data`, es una
+     * subconsulta correlacionada sobre `relations` (ver through-fields.ts).
+     * Sin `expr`, un rollup no es filtrable ni ordenable y se descarta.
+     */
+    expr?: SQL;
+    /** Cómo comparar `expr`: numérico (count/sum/…) o texto (min/max de fecha). */
+    valueKind?: 'numeric' | 'text';
 }
 
+/**
+ * Referencia a la columna JSONB. Por defecto `records.data` (la tabla del
+ * listado); los rollups compilan su filtro contra los registros del OTRO
+ * lado, aliasados como `rr` en la subconsulta (v0.1.170).
+ */
+export type DataRef = SQL | typeof records.data;
+
 /** Tipos que no admiten WHERE (viven fuera de `data`) — CONTRACT.md §4. */
-const NON_FILTERABLE: readonly FieldType[] = ['relation', 'computed'];
+const NON_FILTERABLE: readonly FieldType[] = ['relation', 'computed', 'lookup'];
 
 /**
  * La clave JSONB (`f{id}`, id numérico validado) se inyecta como LITERAL, no
@@ -43,45 +59,53 @@ export function compileFilterTree(
     fieldsById: Map<number, FilterableField>,
     tree: FilterNode | undefined,
     now: Date,
+    dataRef: DataRef = records.data,
 ): SQL | undefined {
     if (!tree) return undefined;
-    return compileNode(fieldsById, tree, now);
+    return compileNode(fieldsById, tree, now, dataRef);
 }
 
 function compileNode(
     fieldsById: Map<number, FilterableField>,
     node: FilterNode,
     now: Date,
+    dataRef: DataRef,
 ): SQL | undefined {
     if (node.type === 'group') {
         const parts = node.children
-            .map((c) => compileNode(fieldsById, c, now))
+            .map((c) => compileNode(fieldsById, c, now, dataRef))
             .filter((c): c is SQL => c !== undefined);
         if (parts.length === 0) return undefined;
         return node.logic === 'or' ? or(...parts) : and(...parts);
     }
-    return compileCondition(fieldsById, node, now);
+    return compileCondition(fieldsById, node, now, dataRef);
 }
 
 function compileCondition(
     fieldsById: Map<number, FilterableField>,
     cond: FilterCondition,
     now: Date,
+    dataRef: DataRef,
 ): SQL | undefined {
     const field = fieldsById.get(cond.field_id);
-    if (!field || !isDataField(field.type) || NON_FILTERABLE.includes(field.type)) {
-        return undefined; // whitelist: campo desconocido / no filtrable → se descarta
+    if (!field) return undefined; // whitelist: campo desconocido → se descarta
+    // v0.1.170 — un rollup filtra por su subconsulta (si el motor la armó).
+    if (field.type === 'rollup') {
+        return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
+    }
+    if (!isDataField(field.type) || NON_FILTERABLE.includes(field.type)) {
+        return undefined; // no filtrable → se descarta
     }
 
     const key = jsonbKeyForField(field.id);
     const op = cond.op;
 
     if (field.type === 'multi_select') {
-        return compileMultiSelect(key, op, cond.value);
+        return compileMultiSelect(key, op, cond.value, dataRef);
     }
 
     // Expresión de texto base y expresión tipada según el tipo del campo.
-    const asText = sql`(${records.data} ->> ${keyLit(key)})`;
+    const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
 
     switch (op) {
         case 'is_null':
@@ -104,7 +128,7 @@ function compileCondition(
             return op === 'in' ? membership : sql`(${asText} IS NULL OR NOT (${membership}))`;
         }
         case 'between_relative': {
-            const expr = typedExpr(key, field.type);
+            const expr = typedExpr(key, field.type, dataRef);
             // v0.1.105 — además del preset relativo, el value acepta un rango
             // FIJO `{from, to}` (YYYY-MM-DD) para el período personalizado de
             // dashboards. Para datetime el día "to" incluye hasta las
@@ -124,7 +148,7 @@ function compileCondition(
         case 'gte':
         case 'lt':
         case 'lte':
-            return compileComparison(key, field.type, op, cond.value);
+            return compileComparison(typedExpr(key, field.type, dataRef), field.type, op, cond.value);
         default: {
             const _exhaustive: never = op;
             throw new BadRequestException(`Operador no soportado: ${String(_exhaustive)}`);
@@ -132,13 +156,40 @@ function compileCondition(
     }
 }
 
+/**
+ * Condición sobre una expresión inyectada (rollup). Sólo los operadores
+ * escalares: comparar, nulo / no nulo. El resto no aplica a un agregado y
+ * se descarta.
+ */
+function compileOverride(
+    expr: SQL,
+    kind: 'numeric' | 'text',
+    cond: FilterCondition,
+): SQL | undefined {
+    const type: FieldType = kind === 'numeric' ? 'number' : 'text';
+    switch (cond.op) {
+        case 'is_null':
+            return sql`${expr} IS NULL`;
+        case 'is_not_null':
+            return sql`${expr} IS NOT NULL`;
+        case 'eq':
+        case 'neq':
+        case 'gt':
+        case 'gte':
+        case 'lt':
+        case 'lte':
+            return compileComparison(expr, type, cond.op, cond.value);
+        default:
+            return undefined;
+    }
+}
+
 function compileComparison(
-    key: string,
+    expr: SQL,
     type: FieldType,
     op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte',
     rawValue: unknown,
 ): SQL {
-    const expr = typedExpr(key, type);
     const value = castValue(type, rawValue);
     switch (op) {
         case 'eq':
@@ -162,14 +213,18 @@ export function fieldTextExpr(fieldId: number): SQL {
     return sql`(${records.data} ->> ${keyLit(jsonbKeyForField(fieldId))})`;
 }
 
-/** Expresión JSONB tipada de un campo (numeric/date/timestamptz/text). */
-export function fieldTypedExpr(field: FilterableField): SQL {
-    return typedExpr(jsonbKeyForField(field.id), field.type);
+/**
+ * Expresión JSONB tipada de un campo (numeric/date/timestamptz/text). Un
+ * campo con `expr` inyectada (rollup) devuelve esa expresión tal cual.
+ */
+export function fieldTypedExpr(field: FilterableField, dataRef: DataRef = records.data): SQL {
+    if (field.expr) return field.expr;
+    return typedExpr(jsonbKeyForField(field.id), field.type, dataRef);
 }
 
 /** Expresión JSONB tipada por tipo de campo (STANDALONE.md §3.3). */
-function typedExpr(key: string, type: FieldType): SQL {
-    const asText = sql`(${records.data} ->> ${keyLit(key)})`;
+function typedExpr(key: string, type: FieldType, dataRef: DataRef): SQL {
+    const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
     switch (type) {
         case 'number':
         case 'currency':
@@ -204,8 +259,13 @@ function castValue(type: FieldType, value: unknown): number | string {
     return str(value);
 }
 
-function compileMultiSelect(key: string, op: FilterOperator, value: unknown): SQL | undefined {
-    const arr = sql`(${records.data} -> ${keyLit(key)})`;
+function compileMultiSelect(
+    key: string,
+    op: FilterOperator,
+    value: unknown,
+    dataRef: DataRef,
+): SQL | undefined {
+    const arr = sql`(${dataRef} -> ${keyLit(key)})`;
     switch (op) {
         case 'is_null':
             return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;
