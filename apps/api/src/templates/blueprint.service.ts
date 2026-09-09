@@ -10,16 +10,19 @@ import {
     resolveListRefs,
     tokenizeFieldRefs,
     tokenizeListRefs,
+    widgetTypeSchema,
     type BlueprintInclude,
     type BlueprintList,
     type BlueprintRecord,
     type Field,
     type List,
     type ListBlueprint,
+    type WidgetSpec,
 } from '@imagina-base/shared';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { AutomationsService } from '../automations/automations.service';
 import { BillingService } from '../billing/billing.service';
+import { DashboardsService } from '../dashboards/dashboards.service';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -73,6 +76,7 @@ export class BlueprintService {
         private readonly relationsRepo: RelationsRepository,
         private readonly billing: BillingService,
         private readonly realtime: RealtimeService,
+        private readonly dashboards: DashboardsService,
     ) {}
 
     // ── Serializar ───────────────────────────────────────────────────────
@@ -155,7 +159,7 @@ export class BlueprintService {
 
             out.push(bp);
         }
-        return { version: BLUEPRINT_VERSION, lists: out };
+        return { version: BLUEPRINT_VERSION, lists: out, dashboards: [] };
     }
 
     /**
@@ -346,6 +350,44 @@ export class BlueprintService {
             await this.materializeRecords(tenantId, actorId, blueprint, created, slugMaps, keyToListId, warnings);
         }
 
+        // G) Tableros del pack (v0.1.167): cada widget apunta a una lista del
+        //    pack y sus campos se resuelven contra ESA lista.
+        for (const d of blueprint.dashboards) {
+            const widgets: WidgetSpec[] = [];
+            for (const wd of d.widgets) {
+                const type = widgetTypeSchema.safeParse(wd.type);
+                if (!type.success) continue;
+                if (wd.list === 0) {
+                    widgets.push({ id: newWidgetId(), type: type.data, list_id: 0, title: wd.title, config: wd.config, layout: wd.layout });
+                    continue;
+                }
+                const listId = keyToListId.get(wd.list.$list);
+                const slugToId = slugMaps.get(wd.list.$list);
+                if (listId === undefined || !slugToId) {
+                    warnings.push(`Widget «${wd.title}» de «${d.name}»: lista «${wd.list.$list}» fuera del pack`);
+                    continue;
+                }
+                widgets.push({
+                    id: newWidgetId(),
+                    type: type.data,
+                    list_id: listId,
+                    title: wd.title,
+                    config: resolveLists(resolveFieldRefs(wd.config, slugToId)) as Record<string, unknown>,
+                    layout: wd.layout,
+                });
+            }
+            try {
+                await this.dashboards.create(tenantId, actorId, {
+                    name: d.name,
+                    description: d.description,
+                    widgets,
+                    settings: d.settings,
+                });
+            } catch (err) {
+                warnings.push(`Tablero «${d.name}»: ${message(err)}`);
+            }
+        }
+
         this.realtime.lists(tenantId);
         return { lists: created, warnings };
     }
@@ -489,6 +531,10 @@ export class BlueprintService {
         }
         return target;
     }
+}
+
+function newWidgetId(): string {
+    return `w-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function message(err: unknown): string {

@@ -15,5 +15,7 @@ import { DashboardsService } from './dashboards.service';
     imports: [AggregateModule, AuthModule, FieldsModule, RecordsModule],
     controllers: [DashboardsController],
     providers: [DashboardsService],
+    // v0.1.167 — las plantillas (TemplatesModule) crean dashboards.
+    exports: [DashboardsService],
 })
 export class DashboardsModule {}

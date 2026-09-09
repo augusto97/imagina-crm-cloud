@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     ArrowRight,
     History,
+    LayoutTemplate,
     Plus,
     Trash2,
     Zap,
@@ -30,6 +31,8 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { AutomationRunsDrawer } from './AutomationRunsDrawer';
+import { AutomationTemplateDialog } from './AutomationTemplateDialog';
+import { SaveAutomationTemplateDialog } from './SaveAutomationTemplateDialog';
 import {
     actionMetaFor,
     summarizeAction,
@@ -54,6 +57,9 @@ export function AutomationsPage(): JSX.Element {
     const lists = useLists();
 
     const [runsFor, setRunsFor] = useState<AutomationEntity | null>(null);
+    // v0.1.167 — recetas: galería (crear desde plantilla) y guardar una como plantilla.
+    const [templatesOpen, setTemplatesOpen] = useState(false);
+    const [saveTemplateFor, setSaveTemplateFor] = useState<AutomationEntity | null>(null);
 
     const deleteMutation = useDeleteAutomation(list.data?.id ?? 0);
     const toast = useToast();
@@ -119,12 +125,18 @@ export function AutomationsPage(): JSX.Element {
                         </p>
                     </div>
                 </div>
-                <Button asChild className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start">
-                    <Link to={newHref}>
-                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                        {__('Nueva automatización')}
-                    </Link>
-                </Button>
+                <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-gap-2 imcrm-self-start">
+                    <Button variant="outline" className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
+                        <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                        {__('Desde plantilla')}
+                    </Button>
+                    <Button asChild className="imcrm-gap-2">
+                        <Link to={newHref}>
+                            <Plus className="imcrm-h-4 imcrm-w-4" />
+                            {__('Nueva automatización')}
+                        </Link>
+                    </Button>
+                </div>
             </header>
 
             {automations.isError && (
@@ -154,6 +166,7 @@ export function AutomationsPage(): JSX.Element {
                             onOpen={() => navigate(`/lists/${list.data!.slug}/automations/${a.id}`)}
                             onDelete={handleDelete}
                             onShowRuns={setRunsFor}
+                            onSaveTemplate={setSaveTemplateFor}
                         />
                     ))}
                 </ul>
@@ -163,13 +176,33 @@ export function AutomationsPage(): JSX.Element {
                     title={__('Aún no hay automatizaciones')}
                     description={__('Crea reglas que reaccionen a cambios en tus registros: enviar correos, actualizar campos, crear registros en otras listas, llamar webhooks…')}
                     action={
-                        <Button asChild className="imcrm-gap-2">
-                            <Link to={newHref}>
-                                <Plus className="imcrm-h-4 imcrm-w-4" />
-                                {__('Nueva automatización')}
-                            </Link>
-                        </Button>
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-2">
+                            <Button variant="outline" className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
+                                <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                                {__('Elegir una plantilla')}
+                            </Button>
+                            <Button asChild className="imcrm-gap-2">
+                                <Link to={newHref}>
+                                    <Plus className="imcrm-h-4 imcrm-w-4" />
+                                    {__('Nueva automatización')}
+                                </Link>
+                            </Button>
+                        </div>
                     }
+                />
+            )}
+
+            <AutomationTemplateDialog
+                open={templatesOpen}
+                onOpenChange={setTemplatesOpen}
+                list={list.data}
+                fields={fields.data ?? []}
+            />
+            {saveTemplateFor !== null && (
+                <SaveAutomationTemplateDialog
+                    automation={saveTemplateFor}
+                    open={saveTemplateFor !== null}
+                    onOpenChange={(open) => !open && setSaveTemplateFor(null)}
                 />
             )}
 
@@ -192,6 +225,7 @@ interface AutomationCardProps {
     onOpen: () => void;
     onDelete: (id: number) => void;
     onShowRuns: (a: AutomationEntity) => void;
+    onSaveTemplate: (a: AutomationEntity) => void;
 }
 
 function AutomationCard({
@@ -202,6 +236,7 @@ function AutomationCard({
     onOpen,
     onDelete,
     onShowRuns,
+    onSaveTemplate,
 }: AutomationCardProps): JSX.Element {
     const update = useUpdateAutomation(list.id);
     const toast = useToast();
@@ -271,6 +306,16 @@ function AutomationCard({
                         title={__('Historial')}
                     >
                         <History className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        onClick={() => onSaveTemplate(automation)}
+                        aria-label={__('Guardar como plantilla')}
+                        title={__('Guardar como plantilla')}
+                    >
+                        <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                     </Button>
                     <Button
                         variant="ghost"

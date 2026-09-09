@@ -39,7 +39,12 @@ export type AuditAction =
     | 'list.duplicate'
     | 'template.create'
     | 'template.delete'
-    | 'template.apply';
+    | 'template.apply'
+    | 'dashboard_template.create'
+    | 'dashboard_template.delete'
+    | 'dashboard_template.apply'
+    | 'automation_template.create'
+    | 'automation_template.delete';
 
 export interface AuditEntryDto {
     id: number;

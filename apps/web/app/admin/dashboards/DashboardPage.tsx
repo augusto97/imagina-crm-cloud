@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, BarChart3, CalendarRange, Copy, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, LayoutTemplate, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { BarChartWidget } from '@/admin/dashboards/widgets/BarChartWidget';
 import {
@@ -57,6 +57,7 @@ import { cn } from '@/lib/utils';
 import { isContentWidget, type WidgetSpec } from '@/types/dashboard';
 
 import { DashboardSettingsDialog } from './DashboardSettingsDialog';
+import { SaveDashboardTemplateDialog } from './SaveDashboardTemplateDialog';
 import { WidgetFormDialog } from './WidgetFormDialog';
 
 /**
@@ -82,6 +83,8 @@ export function DashboardPage(): JSX.Element {
     const [widgetDialogOpen, setWidgetDialogOpen] = useState(false);
     const [editingWidget, setEditingWidget] = useState<WidgetSpec | null>(null);
     const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+    // v0.1.167 — "Guardar como plantilla" (galería de Nuevo dashboard).
+    const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
     const qc = useQueryClient();
 
     // v0.1.100 — período GLOBAL del tablero (persistido por dashboard).
@@ -452,6 +455,15 @@ export function DashboardPage(): JSX.Element {
                     {! tvMode && (
                         <>
                             <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => setSaveTemplateOpen(true)}
+                                aria-label={__('Guardar como plantilla')}
+                                title={__('Guardar como plantilla')}
+                            >
+                                <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
                             <Button onClick={handleAddWidget} className="imcrm-gap-2">
                                 <Plus className="imcrm-h-4 imcrm-w-4" />
                                 {__('Añadir widget')}
@@ -466,6 +478,7 @@ export function DashboardPage(): JSX.Element {
                 open={settingsDialogOpen}
                 onOpenChange={setSettingsDialogOpen}
             />
+            <SaveDashboardTemplateDialog dashboard={d} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
 
             <div style={canvasStyle}>
             {d.widgets.length === 0 ? (
