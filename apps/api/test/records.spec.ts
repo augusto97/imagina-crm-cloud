@@ -214,6 +214,27 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         expect(page.data.map((r) => r.data[key('nombre')]).sort()).toEqual(['Beta', 'Gamma']);
     });
 
+    /**
+     * v0.1.171 — `in`/`nin` no tenían cobertura y compilaban a `= ANY($n)`
+     * con un array JS: drizzle lo expande como lista de placeholders, así que
+     * la condición reventaba al reusarse dentro de la subconsulta de un
+     * rollup. Ahora es `IN (…)` con un parámetro por valor.
+     */
+    it('filtro: in / nin sobre select y multi_select', async () => {
+        await seed();
+        const listWith = async (node: ReturnType<typeof cond>) =>
+            (await service.list(tenantA, admin, 'clientes', {
+                limit: 50,
+                sort_dir: 'asc',
+                filter_tree: filter([node]),
+            })).data.map((r) => r.data[key('nombre')]).sort();
+
+        expect(await listWith(cond('estado', 'in', ['activo', 'baja']))).toEqual(['Alpha', 'Beta', 'Gamma']);
+        expect(await listWith(cond('estado', 'in', ['baja']))).toEqual(['Gamma']);
+        expect(await listWith(cond('estado', 'nin', ['baja']))).toEqual(['Alpha', 'Beta']);
+        expect(await listWith(cond('tags', 'in', ['hosting']))).toEqual(['Beta', 'Gamma']);
+    });
+
     it('filtro: OR anidado', async () => {
         await seed();
         const page = await service.list(tenantA, admin, 'clientes', {

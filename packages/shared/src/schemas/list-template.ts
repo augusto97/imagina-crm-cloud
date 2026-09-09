@@ -222,32 +222,41 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * pertenece al mapa se deja tal cual — puede ser un campo de OTRA lista
  * (widgets del portal), y ahí el id numérico sigue siendo la referencia.
  */
+/**
+ * Campo de OTRA lista del pack (v0.1.171): un lookup/rollup en Clientes
+ * apunta a `Facturas.cliente` y a `Facturas.monto`. El token lleva la key de
+ * la lista además del slug: `{ $field: 'monto', $list: 'facturas' }`.
+ */
+export interface CrossListFieldRef {
+    slug: string;
+    list: string;
+}
+
 export function tokenizeFieldRefs(
     value: unknown,
     idToSlug: ReadonlyMap<number, string>,
     extraArrayKeys: readonly string[] = [],
+    /** Ids de campos de las OTRAS listas del pack → token calificado. */
+    crossList: ReadonlyMap<number, CrossListFieldRef> = new Map(),
 ): unknown {
+    const token = (id: number): unknown => {
+        const slug = idToSlug.get(id);
+        if (slug !== undefined) return { $field: slug };
+        const x = crossList.get(id);
+        return x === undefined ? id : { $field: x.slug, $list: x.list };
+    };
     const walk = (v: unknown, key: string | null): unknown => {
         if (Array.isArray(v)) {
             const arrayOfIds =
                 key !== null && (FIELD_IDS_KEY.test(key) || extraArrayKeys.includes(key));
-            return v.map((item) => {
-                if (arrayOfIds && typeof item === 'number') {
-                    const slug = idToSlug.get(item);
-                    return slug === undefined ? item : { $field: slug };
-                }
-                return walk(item, null);
-            });
+            return v.map((item) => (arrayOfIds && typeof item === 'number' ? token(item) : walk(item, null)));
         }
         if (isPlainObject(v)) {
             const out: Record<string, unknown> = {};
             for (const [k, inner] of Object.entries(v)) out[k] = walk(inner, k);
             return out;
         }
-        if (key !== null && FIELD_ID_KEY.test(key) && typeof v === 'number') {
-            const slug = idToSlug.get(v);
-            return slug === undefined ? v : { $field: slug };
-        }
+        if (key !== null && FIELD_ID_KEY.test(key) && typeof v === 'number') return token(v);
         return v;
     };
     return walk(value, null);
@@ -256,9 +265,15 @@ export function tokenizeFieldRefs(
 /**
  * Inversa de `tokenizeFieldRefs`: `{ $field: slug }` → id. Un slug que no
  * existe en la lista destino se DESCARTA (null en un valor, se quita de un
- * array): una referencia rota es peor que ninguna.
+ * array): una referencia rota es peor que ninguna. Un token calificado
+ * `{ $field, $list }` se resuelve contra la lista indicada del pack
+ * (`packMaps`, key → slug → id); sin el pack, también se descarta.
  */
-export function resolveFieldRefs(value: unknown, slugToId: ReadonlyMap<string, number>): unknown {
+export function resolveFieldRefs(
+    value: unknown,
+    slugToId: ReadonlyMap<string, number>,
+    packMaps: ReadonlyMap<string, ReadonlyMap<string, number>> = new Map(),
+): unknown {
     const walk = (v: unknown): unknown => {
         if (Array.isArray(v)) {
             return v
@@ -268,6 +283,10 @@ export function resolveFieldRefs(value: unknown, slugToId: ReadonlyMap<string, n
         if (isPlainObject(v)) {
             if (typeof v.$field === 'string' && Object.keys(v).length === 1) {
                 const id = slugToId.get(v.$field);
+                return id === undefined ? undefined : id;
+            }
+            if (typeof v.$field === 'string' && typeof v.$list === 'string' && Object.keys(v).length === 2) {
+                const id = packMaps.get(v.$list)?.get(v.$field);
                 return id === undefined ? undefined : id;
             }
             const out: Record<string, unknown> = {};

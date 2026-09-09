@@ -76,7 +76,9 @@ const dash = (
 const ESTADO = role('estado', 'Estado', ['select', 'multi_select']);
 const RESPONSABLE = role('responsable', 'Responsable', ['user'], false);
 const FECHA = role('fecha', 'Fecha', ['date', 'datetime']);
-const MONTO = role('monto', 'Monto', ['currency', 'number']);
+// v0.1.171 — un `rollup` numérico (saldo, total facturado) también sirve de
+// métrica: el motor de agregación lo suma por su subconsulta.
+const MONTO = role('monto', 'Monto', ['currency', 'number', 'rollup']);
 
 export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
     dash(
@@ -192,7 +194,7 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
         'operaciones',
         'package',
         '#f97316',
-        [role('stock', 'Stock', ['number']), role('categoria', 'Categoría', ['select', 'multi_select']), role('precio', 'Precio', ['currency', 'number'], false), role('minimo', 'Stock mínimo', ['number'], false)],
+        [role('stock', 'Stock', ['number', 'rollup']), role('categoria', 'Categoría', ['select', 'multi_select']), role('precio', 'Precio', ['currency', 'number'], false), role('minimo', 'Stock mínimo', ['number'], false)],
         [
             kpi('Productos', { icon: 'package' }, 0, 0),
             kpi('Unidades en stock', { metric: 'sum', metric_field_id: ref('stock'), icon: 'layers' }, 3, 0),

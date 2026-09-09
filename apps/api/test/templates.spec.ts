@@ -165,15 +165,32 @@ describe('Tokens del blueprint (puros)', () => {
                     }
                 }
             }
+            const slugsOf = new Map(t.blueprint.lists.map((l) => [l.key, new Set(l.fields.map((f) => f.slug))]));
             for (const l of t.blueprint.lists) {
-                const slugs = new Set(l.fields.map((f) => f.slug));
-                const json = JSON.stringify([l.settings, l.views, l.automations, l.fields.map((f) => f.config)]);
-                for (const m of json.matchAll(/"\$field":"([^"]+)"/g)) {
-                    expect(slugs.has(m[1]!), `${t.key}/${l.key}: campo ${m[1]}`).toBe(true);
-                }
-                for (const m of json.matchAll(/"\$list":"([^"]+)"/g)) {
-                    expect(keys.has(m[1]!), `${t.key}: lista ${m[1]}`).toBe(true);
-                }
+                const slugs = slugsOf.get(l.key)!;
+                // Tokens: `{$field}` apunta a la propia lista; `{$field,$list}`
+                // (lookup/rollup, v0.1.171) a otra lista del pack; `{$list}` a
+                // una lista del pack.
+                const walk = (v: unknown, where: string): void => {
+                    if (Array.isArray(v)) return v.forEach((x) => walk(x, where));
+                    if (v === null || typeof v !== 'object') return;
+                    const o = v as Record<string, unknown>;
+                    if (typeof o.$field === 'string') {
+                        if (typeof o.$list === 'string') {
+                            expect(keys.has(o.$list), `${where}: lista ${o.$list}`).toBe(true);
+                            expect(slugsOf.get(o.$list)?.has(o.$field), `${where}: campo ${o.$list}.${o.$field}`).toBe(true);
+                        } else {
+                            expect(slugs.has(o.$field), `${where}: campo ${o.$field}`).toBe(true);
+                        }
+                        return;
+                    }
+                    if (typeof o.$list === 'string') {
+                        expect(keys.has(o.$list), `${where}: lista ${o.$list}`).toBe(true);
+                        return;
+                    }
+                    for (const inner of Object.values(o)) walk(inner, where);
+                };
+                walk([l.settings, l.views, l.automations, l.fields.map((f) => f.config)], `${t.key}/${l.key}`);
                 for (const r of l.records) {
                     for (const slug of Object.keys(r.data)) {
                         expect(slugs.has(slug), `${t.key}/${l.key}: registro con campo ${slug}`).toBe(true);
@@ -421,6 +438,35 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
         // La automatización "Marcar vencida" quedó con el trigger sobre el slug.
         const [auto] = await automationsService.list(tenantB, String(facturas!.id));
         expect(auto!.trigger_config.due_field).toBe('vencimiento');
+
+        // v0.1.171 — los lookup/rollup del pack apuntan a los campos NUEVOS de
+        // la otra lista (token calificado `{$field,$list}`) y resuelven.
+        const cf = await fieldsService.list(tenantB, String(clientes!.id));
+        const saldo = cf.find((f) => f.slug === 'saldo_pendiente')!;
+        expect(saldo.type).toBe('rollup');
+        expect(saldo.config.relation_field_id).toBe(rel.id);
+        expect(saldo.config.target_field_id).toBe(ff.find((f) => f.slug === 'monto')!.id);
+        expect(saldo.through?.direction).toBe('reverse');
+        expect(saldo.through?.target_field?.type).toBe('currency');
+        const estadoId = ff.find((f) => f.slug === 'estado')!.id;
+        expect(JSON.stringify(saldo.config.filter_tree)).toContain(`"field_id":${estadoId}`);
+        const fl = await fieldsService.list(tenantB, String(facturas!.id));
+        const emailLk = fl.find((f) => f.slug === 'email_cliente')!;
+        expect(emailLk.through?.direction).toBe('forward');
+        expect(emailLk.through?.target_field?.type).toBe('email');
+        // Y los valores salen de los registros de muestra: Acme (F-0001 pagada
+        // 250) no debe nada; Globex (F-0002 pendiente 480) debe 480.
+        const enriched = await withTenant(pg.db, tenantB, async (tx) => {
+            const plans = await fieldsService.through.plans(tx, tenantB, clientes!.id, cf);
+            return fieldsService.through.attach(tx, tenantB, plans, clientesRows.map((r) => ({ id: r.id, data: r.data as Record<string, unknown> })), cf);
+        });
+        const byName = new Map(enriched.map((r) => [r.data[`f${cf.find((f) => f.slug === 'razon_social')!.id}`], r.data]));
+        const nFact = cf.find((f) => f.slug === 'facturas')!.id;
+        const total = cf.find((f) => f.slug === 'total_facturado')!.id;
+        expect(byName.get('Acme S.A.')![`f${nFact}`]).toBe(1);
+        expect(byName.get('Acme S.A.')![`f${saldo.id}`]).toBe(0);
+        expect(byName.get('Globex')![`f${total}`]).toBe(480);
+        expect(byName.get('Globex')![`f${saldo.id}`]).toBe(480);
     });
 
     it('aplicar sin registros deja la lista vacía; las subtareas de muestra conservan su padre', async () => {

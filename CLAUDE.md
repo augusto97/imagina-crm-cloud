@@ -3127,6 +3127,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         lookup, formato, filtro "Deuda > 0", orden, ficha, alta sin
         derivados, cambio en Facturas reflejado en Clientes).
 
+  - [x] **Las plantillas usan lookup y rollup donde aportan (v0.1.171, pedido
+        del usuario)**: un lookup/rollup necesita una RELACIÓN, así que sólo
+        tiene sentido en los packs de dos listas — el resto del catálogo queda
+        igual a propósito. El blueprint aprendió a llevar esas referencias:
+        un campo de Clientes apunta a campos de Facturas, o sea CRUZA la
+        lista, y el token de un solo slug no alcanzaba. Ahora hay un token
+        **calificado** `{$field, $list}` (`tokenizeFieldRefs` recibe el mapa
+        de las otras listas del pack; `resolveFieldRefs` resuelve contra
+        `slugMaps`) y la materialización de campos pasa a dos pasadas
+        GLOBALES: primero todos los campos de TODAS las listas, después la
+        config de los derivados — antes la segunda pasada corría por lista y
+        un rollup de la primera no encontraba los campos de la segunda. Una
+        referencia que no resuelve se limpia (`dropDeadListRefs` ahora
+        también quita los `*_field_id` en null): el campo nace a medias y
+        sale vacío, en vez de rebotar con 400.
+        Dónde se pusieron: **Facturación** (Clientes gana Facturas, Total
+        facturado, Saldo pendiente —suma filtrada por estado pendiente o
+        vencida— y Última factura; Facturas gana el email y el NIT del
+        cliente, para emitir sin abrir su ficha; el KPI del tablero "Clientes
+        con saldo" **filtra por el rollup**), **Proveedores y compras**
+        (Órdenes, Total comprado, Pendiente de pago, Última compra; la orden
+        muestra el email y la categoría del proveedor) y dos plantillas que
+        se REDISEÑARON como pack porque el rollup es su razón de ser:
+        **Reclutamiento** (Vacantes ← Candidatos: candidatos, en proceso,
+        contratados y evaluación media por vacante; el candidato ve el área y
+        el salario de su vacante) y **Eventos e invitados** (Eventos ←
+        Invitados: invitados, confirmados, acompañantes y un CALCULADO sobre
+        dos rollups —"personas esperadas"—; el invitado ve fecha y lugar),
+        ambas con tablero propio. Los roles numéricos de las plantillas de
+        dashboard aceptan `rollup` como métrica.
+        **Bug real atrapado por el test**: el operador `in`/`nin` compilaba a
+        `= ANY($n)` con un array JS — drizzle lo expande como lista de
+        placeholders y ANY exige un array de Postgres, así que la condición
+        reventaba al reusarse dentro de la subconsulta de un rollup (el
+        filtro "estado in [pendiente, vencida]"). Ahora es `IN (…)` con un
+        parámetro por valor y `?| ARRAY[…]::text[]` en multi_select; el
+        operador no tenía NI UN test y ahora lo tiene. 466 tests API en verde
+        + E2E navegador 21/21 (las tres plantillas aplicadas calculan solas
+        con sus registros de muestra, el lookup trae el dato del otro lado, el
+        computed suma dos rollups y el KPI filtra por el saldo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

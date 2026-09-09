@@ -124,7 +124,12 @@ function compileCondition(
         case 'nin': {
             const values = toArray(cond.value).map(str);
             if (values.length === 0) return op === 'in' ? sql`false` : undefined;
-            const membership = sql`${asText} = ANY(${values})`;
+            // `IN (…)` con un parámetro por valor, no `= ANY($n)`: drizzle
+            // expande un array JS del template como lista de placeholders, y
+            // ANY exige un array de Postgres del otro lado — rompía al
+            // compilar esta condición dentro de la subconsulta de un rollup
+            // (v0.1.171). `IN` es correcto en los dos contextos.
+            const membership = sql`${asText} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})`;
             return op === 'in' ? membership : sql`(${asText} IS NULL OR NOT (${membership}))`;
         }
         case 'between_relative': {
@@ -279,18 +284,27 @@ function compileMultiSelect(
             return sql`(${arr} IS NULL OR NOT (${arr} @> to_jsonb(${str(value)}::text)))`;
         case 'in': {
             const values = toArray(value).map(str);
-            return values.length === 0 ? sql`false` : sql`${arr} ?| ${values}::text[]`;
+            return values.length === 0 ? sql`false` : sql`${arr} ?| ${textArray(values)}`;
         }
         case 'nin': {
             const values = toArray(value).map(str);
             return values.length === 0
                 ? undefined
-                : sql`(${arr} IS NULL OR NOT (${arr} ?| ${values}::text[]))`;
+                : sql`(${arr} IS NULL OR NOT (${arr} ?| ${textArray(values)}))`;
         }
         default:
             // starts_with/ends_with/gt/… no aplican a multi_select → se descartan.
             return undefined;
     }
+}
+
+/**
+ * `ARRAY[$1, $2, …]::text[]` — un array de Postgres CONSTRUIDO con un
+ * parámetro por valor. Interpolar el array JS directo funciona en el
+ * builder de drizzle pero no dentro de una subconsulta cruda (rollup).
+ */
+function textArray(values: string[]): SQL {
+    return sql`ARRAY[${sql.join(values.map((v) => sql`${v}`), sql`, `)}]::text[]`;
 }
 
 // --- Presets de rango relativo (se resuelven contra `now` en cada query) ---
