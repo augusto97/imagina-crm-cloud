@@ -63,6 +63,8 @@ export class DashboardTemplatesService {
                 name: r.name,
                 description: r.description,
                 category: r.category as TemplateCategory,
+                icon: r.icon,
+                color: r.color,
                 template: dashboardTemplateSchema.parse(r.blueprint),
                 created_at: r.createdAt.toISOString(),
             }),
@@ -133,6 +135,8 @@ export class DashboardTemplatesService {
                     kind: 'dashboard',
                     name: input.name,
                     description: input.description ?? null,
+                    icon: 'pie_chart',
+                    color: null,
                     category: input.category ?? 'otros',
                     blueprint: template,
                     createdBy: viewer.userId,
@@ -155,6 +159,8 @@ export class DashboardTemplatesService {
             name: row.name,
             description: row.description,
             category: row.category as TemplateCategory,
+            icon: row.icon,
+            color: row.color,
             template,
             created_at: row.createdAt.toISOString(),
         });
@@ -310,6 +316,8 @@ export class DashboardTemplatesService {
             name: row.name,
             description: row.description,
             category: row.category as TemplateCategory,
+            icon: row.icon,
+            color: row.color,
             template: dashboardTemplateSchema.parse(row.blueprint),
             created_at: row.createdAt.toISOString(),
         };
@@ -322,6 +330,8 @@ interface Resolved {
     name: string;
     description: string | null;
     category: TemplateCategory;
+    icon: string | null;
+    color: string | null;
     template: DashboardTemplate;
     created_at: string | null;
 }
@@ -333,6 +343,8 @@ function fromSystem(t: SystemDashboardTemplate): Resolved {
         name: t.name,
         description: t.description,
         category: t.category,
+        icon: t.icon,
+        color: t.color,
         template: t.template,
         created_at: null,
     };
@@ -345,6 +357,8 @@ function summarize(t: Resolved): DashboardTemplateSummary {
         name: t.name,
         description: t.description,
         category: t.category,
+        icon: t.icon,
+        color: t.color,
         lists: t.template.lists,
         widgets: t.template.widgets.map((w) => ({ type: w.type, title: w.title })),
         created_at: t.created_at,

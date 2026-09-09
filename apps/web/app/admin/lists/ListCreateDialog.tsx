@@ -32,12 +32,14 @@ type Mode = 'blank' | 'template' | 'duplicate';
  * plantillas y la vista previa al lado, un modal angosto no sirve.
  */
 export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps): JSX.Element {
-    const [mode, setMode] = useState<Mode>('blank');
+    // v0.1.168 — la plantilla es la PRIMERA opción y la que se abre por
+    // defecto (pedido del usuario); "En blanco" queda segunda.
+    const [mode, setMode] = useState<Mode>('template');
     const navigate = useNavigate();
     const toast = useToast();
 
     useEffect(() => {
-        if (!open) setMode('blank');
+        if (!open) setMode('template');
     }, [open]);
 
     return (
@@ -77,8 +79,8 @@ export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps):
 
                     {/* Selector de camino */}
                     <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-3 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1">
-                        <ModeButton active={mode === 'blank'} onClick={() => setMode('blank')} icon={FilePlus2} label={__('En blanco')} />
                         <ModeButton active={mode === 'template'} onClick={() => setMode('template')} icon={LayoutTemplate} label={__('Plantilla')} />
+                        <ModeButton active={mode === 'blank'} onClick={() => setMode('blank')} icon={FilePlus2} label={__('En blanco')} />
                         <ModeButton active={mode === 'duplicate'} onClick={() => setMode('duplicate')} icon={Copy} label={__('Duplicar')} />
                     </div>
 

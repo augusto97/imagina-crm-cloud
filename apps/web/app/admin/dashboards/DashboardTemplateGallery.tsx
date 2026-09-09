@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Check, LayoutTemplate, Loader2, Trash2 } from 'lucide-react';
+import { LayoutTemplate, Loader2, PieChart, Search, Trash2 } from 'lucide-react';
 import type { DashboardTemplateSummary, TemplateCategory, TemplateRoleList } from '@imagina-base/shared';
 
 import { RoleFieldMapper } from '@/admin/templates/RoleFieldMapper';
+import { TEMPLATE_CATEGORY_COLORS, TemplateCard } from '@/admin/templates/TemplateCard';
 import { suggestRoleMapping } from '@/admin/templates/roleMapping';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -15,6 +16,7 @@ import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { __, _n, sprintf } from '@/lib/i18n';
+import { listColor, listIcon } from '@/lib/listIcons';
 import { cn } from '@/lib/utils';
 import type { DashboardEntity, DashboardVisibility } from '@/types/dashboard';
 
@@ -54,12 +56,12 @@ interface Props {
 }
 
 /**
- * Galería de plantillas de dashboard (v0.1.167). A la izquierda las
- * plantillas (del workspace + del sistema) con filtro por categoría; a la
- * derecha, la elegida: qué widgets trae y el paso que las hace posibles —
- * elegir la LISTA y qué campo cumple cada rol (con sugerencia automática
- * por nombre y tipo). Es lo que ClickUp pide al usar una plantilla de
- * dashboard: "¿sobre qué ubicación?".
+ * Galería de plantillas de dashboard (v0.1.167; v0.1.168 con el MISMO
+ * formato que la galería de listas: dos columnas, icono con color, buscador
+ * y chips de categoría). A la derecha, la elegida: qué widgets trae y el
+ * paso que las hace posibles — elegir la LISTA y qué campo cumple cada rol
+ * (sugerido por nombre y tipo). Es lo que ClickUp pide al usar una
+ * plantilla de dashboard: "¿sobre qué ubicación?".
  */
 export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
     const templates = useDashboardTemplates();
@@ -68,6 +70,7 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
     const confirm = useConfirm();
     const toast = useToast();
 
+    const [search, setSearch] = useState('');
     const [category, setCategory] = useState<TemplateCategory | 'all' | 'mine'>('all');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [name, setName] = useState('');
@@ -77,15 +80,19 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
     const [error, setError] = useState<string | null>(null);
 
     const all = templates.data ?? NO_TEMPLATES;
-    const visible = useMemo(
-        () =>
-            all.filter((t) => {
-                if (category === 'mine') return t.source === 'workspace';
-                if (category === 'all') return true;
-                return t.category === category;
-            }),
-        [all, category],
-    );
+    const visible = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return all.filter((t) => {
+            if (category === 'mine' && t.source !== 'workspace') return false;
+            if (category !== 'all' && category !== 'mine' && t.category !== category) return false;
+            if (q === '') return true;
+            return (
+                t.name.toLowerCase().includes(q)
+                || (t.description ?? '').toLowerCase().includes(q)
+                || t.widgets.some((w) => w.title.toLowerCase().includes(q))
+            );
+        });
+    }, [all, category, search]);
     const categoriesPresent = useMemo(() => {
         const set = new Set(all.map((t) => t.category));
         return (Object.keys(CATEGORY_LABELS) as TemplateCategory[]).filter((c) => set.has(c));
@@ -150,7 +157,17 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto md:imcrm-flex-row md:imcrm-gap-0 md:imcrm-overflow-visible">
             {/* ── Catálogo ─────────────────────────────────────────────── */}
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 md:imcrm-min-h-0 md:imcrm-w-[46%] md:imcrm-shrink md:imcrm-pr-4">
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 md:imcrm-min-h-0 md:imcrm-flex-1 md:imcrm-shrink md:imcrm-pr-4">
+                <div className="imcrm-relative">
+                    <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2.5 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                    <Input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder={__('Buscar plantillas')}
+                        className="imcrm-pl-8"
+                        autoFocus
+                    />
+                </div>
                 <div className="imcrm-flex imcrm-shrink-0 imcrm-gap-1.5 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-px-0.5 imcrm-py-1">
                     <Chip active={category === 'all'} onClick={() => setCategory('all')}>{__('Todas')}</Chip>
                     {hasMine && <Chip active={category === 'mine'} onClick={() => setCategory('mine')}>{__('Mis plantillas')}</Chip>}
@@ -163,51 +180,32 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
                         <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
                         {__('Cargando plantillas…')}
                     </p>
+                ) : visible.length === 0 ? (
+                    <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">{__('Ninguna plantilla coincide.')}</p>
                 ) : (
-                    <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-col imcrm-gap-2 md:imcrm-overflow-y-auto">
-                        {visible.map((t) => {
-                            const active = t.id === selectedId;
-                            return (
-                                <button
-                                    key={t.id}
-                                    type="button"
-                                    onClick={() => pick(t)}
-                                    className={cn(
-                                        'imcrm-flex imcrm-items-start imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-p-3 imcrm-text-left imcrm-transition-colors',
-                                        active
-                                            ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary'
-                                            : 'imcrm-border-border imcrm-bg-card hover:imcrm-border-primary/40 hover:imcrm-bg-accent/30',
-                                    )}
-                                >
-                                    <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted imcrm-ring-1 imcrm-ring-inset imcrm-ring-border">
-                                        <BarChart3 className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                    </span>
-                                    <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
-                                        <span className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                            <span className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">{t.name}</span>
-                                            {active && <Check className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />}
-                                        </span>
-                                        <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                            {t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
-                                            {' · '}
-                                            {sprintf(_n('%d widget', '%d widgets', t.widgets.length), t.widgets.length)}
-                                        </span>
-                                        {t.description && (
-                                            <span className="imcrm-line-clamp-2 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">{t.description}</span>
-                                        )}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                        {visible.length === 0 && (
-                            <p className="imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">{__('Ninguna plantilla coincide.')}</p>
-                        )}
+                    <div className="imcrm-grid imcrm-min-h-0 imcrm-gap-2 sm:imcrm-grid-cols-2 md:imcrm-overflow-y-auto">
+                        {visible.map((t) => (
+                            <TemplateCard
+                                key={t.id}
+                                icon={listIcon(t.icon) ?? PieChart}
+                                color={listColor(t.color) ?? TEMPLATE_CATEGORY_COLORS[t.category]}
+                                name={t.name}
+                                subtitle={t.source === 'workspace' ? __('Del workspace') : CATEGORY_LABELS[t.category]}
+                                description={t.description}
+                                meta={`${sprintf(_n('%d widget', '%d widgets', t.widgets.length), t.widgets.length)} · ${sprintf(
+                                    _n('%d campo a mapear', '%d campos a mapear', t.lists[0]?.fields.length ?? 0),
+                                    t.lists[0]?.fields.length ?? 0,
+                                )}`}
+                                active={t.id === selectedId}
+                                onClick={() => pick(t)}
+                            />
+                        ))}
                     </div>
                 )}
             </div>
 
             {/* ── Detalle + mapeo ──────────────────────────────────────── */}
-            <aside className="imcrm-flex imcrm-w-full imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3 md:imcrm-min-h-0 md:imcrm-w-[54%] md:imcrm-border-l md:imcrm-border-t-0 md:imcrm-pl-4 md:imcrm-pt-0">
+            <aside className="imcrm-flex imcrm-w-full imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3 md:imcrm-min-h-0 md:imcrm-w-[22rem] md:imcrm-border-l md:imcrm-border-t-0 md:imcrm-pl-4 md:imcrm-pt-0">
                 {!selected ? (
                     <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-py-10 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                         <LayoutTemplate className="imcrm-h-6 imcrm-w-6 imcrm-opacity-50" />
@@ -233,16 +231,16 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
                                 </Button>
                             )}
                         </div>
-                        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
-                            {selected.widgets.map((wd, i) => (
-                                <span key={i} className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[11px]">
-                                    <span className="imcrm-text-muted-foreground">{WIDGET_LABELS[wd.type] ?? wd.type}</span>
-                                    {wd.title && ` · ${wd.title}`}
-                                </span>
-                            ))}
-                        </div>
 
                         <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-col imcrm-gap-3 md:imcrm-overflow-y-auto">
+                            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                                {selected.widgets.map((wd, i) => (
+                                    <span key={i} className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[11px]">
+                                        <span className="imcrm-text-muted-foreground">{WIDGET_LABELS[wd.type] ?? wd.type}</span>
+                                        {wd.title && ` · ${wd.title}`}
+                                    </span>
+                                ))}
+                            </div>
                             {selected.lists.map((roleList) => (
                                 <RoleListMapping
                                     key={`${selected.id}:${roleList.key}`}
@@ -254,24 +252,26 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
                             ))}
                         </div>
 
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                            <Label htmlFor="tpl-dash-name">{__('Nombre del dashboard')}</Label>
-                            <Input id="tpl-dash-name" value={name} onChange={(e) => setName(e.target.value)} />
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                <Label htmlFor="tpl-dash-name">{__('Nombre del dashboard')}</Label>
+                                <Input id="tpl-dash-name" value={name} onChange={(e) => setName(e.target.value)} />
+                            </div>
+                            <DashboardVisibilityFields
+                                idPrefix="tpl-dash"
+                                visibility={visibility}
+                                allowedRoles={allowedRoles}
+                                onVisibilityChange={setVisibility}
+                                onAllowedRolesChange={setAllowedRoles}
+                            />
+                            {error !== null && (
+                                <p className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-2 imcrm-text-xs imcrm-text-destructive">{error}</p>
+                            )}
+                            <Button onClick={() => void create()} disabled={apply.isPending || name.trim() === '' || missingList} className="imcrm-gap-2">
+                                {apply.isPending ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />}
+                                {apply.isPending ? __('Creando…') : __('Crear dashboard')}
+                            </Button>
                         </div>
-                        <DashboardVisibilityFields
-                            idPrefix="tpl-dash"
-                            visibility={visibility}
-                            allowedRoles={allowedRoles}
-                            onVisibilityChange={setVisibility}
-                            onAllowedRolesChange={setAllowedRoles}
-                        />
-                        {error !== null && (
-                            <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">{error}</div>
-                        )}
-                        <Button onClick={() => void create()} disabled={apply.isPending || name.trim() === '' || missingList} className="imcrm-gap-2">
-                            {apply.isPending ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />}
-                            {apply.isPending ? __('Creando…') : __('Crear dashboard')}
-                        </Button>
                     </>
                 )}
             </aside>

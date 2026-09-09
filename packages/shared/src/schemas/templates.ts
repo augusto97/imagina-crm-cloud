@@ -56,6 +56,9 @@ export const dashboardTemplateSummarySchema = z.object({
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
     category: templateCategorySchema.default('otros'),
+    /** Icono del catálogo de listas (v0.1.168; null = genérico de tablero). */
+    icon: z.string().max(64).nullable().default(null),
+    color: z.string().max(32).nullable().default(null),
     /** Los roles: es lo que la UI necesita para el paso de mapeo. */
     lists: z.array(templateRoleListSchema),
     widgets: z.array(z.object({ type: z.string(), title: z.string() })),

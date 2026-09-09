@@ -125,15 +125,16 @@ export function AutomationsPage(): JSX.Element {
                         </p>
                     </div>
                 </div>
+                {/* v0.1.168 — la plantilla es la opción principal; "En blanco" la segunda. */}
                 <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-gap-2 imcrm-self-start">
-                    <Button variant="outline" className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
+                    <Button className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
                         <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                         {__('Desde plantilla')}
                     </Button>
-                    <Button asChild className="imcrm-gap-2">
+                    <Button asChild variant="outline" className="imcrm-gap-2">
                         <Link to={newHref}>
                             <Plus className="imcrm-h-4 imcrm-w-4" />
-                            {__('Nueva automatización')}
+                            {__('En blanco')}
                         </Link>
                     </Button>
                 </div>
@@ -177,14 +178,14 @@ export function AutomationsPage(): JSX.Element {
                     description={__('Crea reglas que reaccionen a cambios en tus registros: enviar correos, actualizar campos, crear registros en otras listas, llamar webhooks…')}
                     action={
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-2">
-                            <Button variant="outline" className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
+                            <Button className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>
                                 <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
                                 {__('Elegir una plantilla')}
                             </Button>
-                            <Button asChild className="imcrm-gap-2">
+                            <Button asChild variant="outline" className="imcrm-gap-2">
                                 <Link to={newHref}>
                                     <Plus className="imcrm-h-4 imcrm-w-4" />
-                                    {__('Nueva automatización')}
+                                    {__('En blanco')}
                                 </Link>
                             </Button>
                         </div>
