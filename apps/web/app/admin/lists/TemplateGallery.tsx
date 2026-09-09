@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, LayoutTemplate, Loader2, Search, Trash2, Zap } from 'lucide-react';
+import { BarChart3, Check, LayoutTemplate, Loader2, Search, Trash2, Zap } from 'lucide-react';
 import type { ListTemplateSummary, TemplateCategory } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -219,6 +219,10 @@ export function TemplateGallery({ onCreated }: Props): JSX.Element {
                                                 _n('%d automatización', '%d automatizaciones', first.automations.length),
                                                 first.automations.length,
                                             )}`}
+                                            {t.dashboards.length > 0 && ` · ${sprintf(
+                                                _n('%d tablero', '%d tableros', t.dashboards.length),
+                                                t.dashboards.length,
+                                            )}`}
                                         </span>
                                     )}
                                 </button>
@@ -308,6 +312,18 @@ export function TemplateGallery({ onCreated }: Props): JSX.Element {
                                     )}
                                 </div>
                             ))}
+                            {selected.dashboards.length > 0 && (
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+                                    <PreviewSection title={__('Tableros')}>
+                                        {selected.dashboards.map((d, i) => (
+                                            <span key={i} className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
+                                                <BarChart3 className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                                                {d}
+                                            </span>
+                                        ))}
+                                    </PreviewSection>
+                                </div>
+                            )}
                         </div>
 
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">

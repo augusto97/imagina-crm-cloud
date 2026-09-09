@@ -2981,6 +2981,70 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         desde "Nueva lista"; guardar como plantilla → aparece con "Mis
         plantillas" → borrar; móvil sin desborde).
 
+  - [x] **Plantillas de dashboards y de automatizaciones + más plantillas de
+        listas (v0.1.167, pedido del usuario)**: la diferencia de fondo con
+        las plantillas de lista es que un tablero o una automatización se
+        aplican SOBRE una lista que ya existe, con sus propios campos. Por eso
+        estas plantillas no hablan de campos concretos sino de **roles**
+        ("el estado: un select", "el monto: moneda o número", "la fecha de
+        vencimiento") y al usarlas se elige la lista y qué campo cumple cada
+        rol —lo que ClickUp pregunta al usar una plantilla de dashboard: "¿en
+        qué ubicación?"—, con sugerencia automática por nombre y tipo
+        (`suggestRoleMapping`: mismo slug > etiqueta parecida > mismo tipo,
+        sin repetir campo) y selects que sólo ofrecen campos COMPATIBLES.
+        (a) **Dashboards**: `dashboardTemplateSchema` (roles por lista +
+        widgets con `{ $field: rol }`, los mismos tokens del blueprint);
+        `POST /dashboard-templates/:id/apply` valida el mapeo (lista del
+        tenant, campo de esa lista y de un tipo aceptado — si no, aviso y no
+        se asigna) y OMITE con aviso sólo los widgets que dependen de un rol
+        obligatorio sin mapear; 7 del sistema (Resumen por estado, Embudo de
+        ventas, Cartera y cobros, Carga de trabajo, Actividad en el tiempo,
+        Satisfacción, Inventario) + **"Guardar como plantilla"** desde el
+        header del dashboard (los roles se EXTRAEN de los campos que usan
+        sus widgets, con su tipo). "Nuevo dashboard" gana la pestaña
+        Plantilla (galería + mapeo + visibilidad). (b) **Automatizaciones**:
+        recetas con roles cuyo cuerpo usa la key del rol como si fuera el
+        slug; se aplican EN EL CLIENTE — `remapAutomationSlugs` (shared, puro)
+        re-escribe condiciones, `changed_fields`, `due_field`, las claves de
+        `values` y los merge tags `{{x}}`/`{{before.x}}`/`{{x|+1m}}` (los de
+        sistema con punto no se tocan; `if_else` anidado incluido) y el
+        editor abre PRE-CARGADO por el state de la navegación para revisar
+        destinatarios y valores antes de guardar (una receta trae `to` o el
+        valor de estado VACÍOS a propósito: inventarlos sería peor). 11 del
+        sistema en `shared` (bienvenida, aviso al equipo, cambio de estado,
+        encuesta al cerrar, recordatorio 3 días antes —offset negativo—,
+        recordatorio de pago a 20 días, escalar prioridad al vencer, próximo
+        contacto a 7 días, avance 100 % al cerrar, webhook al cambiar estado,
+        WhatsApp al crear) + "Guardar como plantilla" en cada tarjeta del
+        índice (`collectAutomationSlugs` saca los roles; el token del webhook
+        entrante no viaja) + botón "Desde plantilla". (c) **Listas**: el
+        blueprint gana `dashboards[]` (widgets con `{ $list }` + `{ $field }`
+        resueltos contra la lista del propio widget al materializar) y el
+        catálogo pasa de 8 a **17** —Control de gastos, Contratos y
+        suscripciones, Calendario de contenidos, Incidencias/Bugs, Activos y
+        equipos, Proveedores y compras (pack de 2 con relation), Inmobiliaria,
+        Agenda de citas (con recordatorio por correo la víspera) y OKR—, y 9
+        packs traen su TABLERO (Ventas, Cartera, Avance del proyecto, Salud
+        del soporte, Stock, Gastos, Contratos, Incidencias, Compras,
+        Portafolio, OKRs). Storage: la tabla `list_templates` pasa a
+        `templates` con `kind` (migración 0046; RLS e índice viajan con el
+        rename).
+        **Bug atrapado**: en dev, `vite --strictPort` con un vite viejo vivo
+        (cuya cmdline `vite.js --config` no matcheaba el pkill) seguía
+        sirviendo el `@imagina-base/shared` pre-bundleado ANTES de la
+        rebuild → `remapAutomationSlugs is not a function` en el navegador;
+        el script de arranque ahora usa `--force`. 6 tests de API nuevos
+        (remap/collect puros, catálogos válidos, pack con tablero apunta a
+        ids nuevos, apply con rol faltante/tipo incompatible, guardar
+        dashboard → roles → aplicar en otra lista + aislamiento, guardar
+        automatización sin token) — 460 API, 111 front, 66 shared en verde —
+        + E2E navegador 28/28 (OKR crea lista + tablero con el medidor sobre
+        Avance; Cartera sobre Facturas con roles sugeridos y donut por
+        Estado; guardar/borrar plantilla de dashboard; receta sin campo
+        compatible bloqueada; receta → editor pre-cargado → guardada con
+        `changed_fields` y merge tags re-escritos; guardar/borrar plantilla
+        de automatización; móvil).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

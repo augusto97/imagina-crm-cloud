@@ -38,3 +38,5 @@ export * from './field-types/validate';
 export * from './field-types/computed';
 export * from './field-types/phone';
 export * from './field-types/duration';
+export * from './schemas/templates';
+export * from './templates/automation-recipes';

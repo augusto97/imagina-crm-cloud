@@ -11,7 +11,7 @@ import {
 } from '@imagina-base/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
-import { listTemplates } from '../db/schema';
+import { templates } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService, type MaterializeResult } from './blueprint.service';
@@ -24,8 +24,8 @@ const SYSTEM_PREFIX = 'sys:';
  *
  * Dos fuentes de plantillas con UN solo formato: las del sistema (código,
  * `system-catalog.ts`, id `sys:<key>`) y las del workspace (tabla
- * `list_templates`, id numérico). La galería las lista juntas; aplicar
- * cualquiera es materializar su blueprint.
+ * `templates` con `kind = 'list'`, id numérico). La galería las lista
+ * juntas; aplicar cualquiera es materializar su blueprint.
  */
 @Injectable()
 export class TemplatesService {
@@ -70,9 +70,9 @@ export class TemplatesService {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select()
-                .from(listTemplates)
-                .where(eq(listTemplates.tenantId, tenantId))
-                .orderBy(desc(listTemplates.createdAt)),
+                .from(templates)
+                .where(and(eq(templates.tenantId, tenantId), eq(templates.kind, 'list')))
+                .orderBy(desc(templates.createdAt)),
         );
         const own = rows.map((r) =>
             summarize({
@@ -105,9 +105,10 @@ export class TemplatesService {
         const blueprint = await this.blueprints.serialize(tenantId, [source.id], input.include);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
-                .insert(listTemplates)
+                .insert(templates)
                 .values({
                     tenantId,
+                    kind: 'list',
                     name: input.name,
                     description: input.description ?? null,
                     icon: source.icon,
@@ -152,9 +153,9 @@ export class TemplatesService {
         const numeric = Number(id);
         const [deleted] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
-                .delete(listTemplates)
-                .where(and(eq(listTemplates.tenantId, tenantId), eq(listTemplates.id, numeric)))
-                .returning({ id: listTemplates.id, name: listTemplates.name }),
+                .delete(templates)
+                .where(and(eq(templates.tenantId, tenantId), eq(templates.kind, 'list'), eq(templates.id, numeric)))
+                .returning({ id: templates.id, name: templates.name }),
         );
         if (!deleted) throw notFound(id);
         void this.audit.log({
@@ -202,8 +203,8 @@ export class TemplatesService {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select()
-                .from(listTemplates)
-                .where(and(eq(listTemplates.tenantId, tenantId), eq(listTemplates.id, numeric)))
+                .from(templates)
+                .where(and(eq(templates.tenantId, tenantId), eq(templates.kind, 'list'), eq(templates.id, numeric)))
                 .limit(1),
         );
         if (!row) throw notFound(id);
@@ -265,6 +266,7 @@ function summarize(t: ResolvedTemplate): ListTemplateSummary {
             automations: l.automations.map((a) => a.name),
             records_count: l.records.length,
         })),
+        dashboards: t.blueprint.dashboards.map((d) => d.name),
     };
 }
 

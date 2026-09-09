@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
     AlertCircle,
     ArrowDown,
@@ -106,6 +106,11 @@ export function AutomationEditorPage(): JSX.Element {
     // arma la acción con ese campo, como el "Establecer campo personalizado"
     // de ClickUp.
     const [searchParams] = useSearchParams();
+    // v0.1.167 — una receta de la galería llega YA armada por el state de la
+    // navegación (los roles ya mapeados a los slugs de esta lista): el
+    // editor arranca con ella y la persona la revisa antes de guardar.
+    const location = useLocation();
+    const statePreset = (location.state as { preset?: AutomationFormState } | null)?.preset ?? null;
     const isNew = automationId === undefined;
     const editId = isNew ? undefined : Number(automationId);
 
@@ -164,7 +169,7 @@ export function AutomationEditorPage(): JSX.Element {
             lists={lists.data ?? []}
             preset={
                 isNew
-                    ? presetFromQuery(searchParams, fields.data ?? [])
+                    ? statePreset ?? presetFromQuery(searchParams, fields.data ?? [])
                     : null
             }
         />

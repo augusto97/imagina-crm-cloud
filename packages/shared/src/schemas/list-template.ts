@@ -95,9 +95,35 @@ export const blueprintListSchema = z.object({
 });
 export type BlueprintList = z.infer<typeof blueprintListSchema>;
 
+/**
+ * Widget dentro de un blueprint (v0.1.167). `list` es `{ $list: key }` (una
+ * lista del pack) o `0` para los bloques de contenido; los campos de su
+ * config van como `{ $field: slug }` y se resuelven contra la lista del
+ * propio widget. El `id` se genera al materializar.
+ */
+export const blueprintWidgetSchema = z.object({
+    type: z.string().min(1),
+    list: z.union([listRefSchema, z.literal(0)]),
+    title: z.string().default(''),
+    config: z.record(z.unknown()).default({}),
+    layout: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }),
+});
+export type BlueprintWidget = z.infer<typeof blueprintWidgetSchema>;
+
+/** Dashboard que viaja con un pack de listas (v0.1.167). */
+export const blueprintDashboardSchema = z.object({
+    name: z.string().min(1).max(190),
+    description: z.string().max(2000).nullable().default(null),
+    widgets: z.array(blueprintWidgetSchema).default([]),
+    settings: z.record(z.unknown()).default({}),
+});
+export type BlueprintDashboard = z.infer<typeof blueprintDashboardSchema>;
+
 export const listBlueprintSchema = z.object({
     version: z.literal(BLUEPRINT_VERSION),
     lists: z.array(blueprintListSchema).min(1).max(10),
+    /** v0.1.167 — tableros del pack (opcional; las plantillas del sistema los traen). */
+    dashboards: z.array(blueprintDashboardSchema).default([]),
 });
 export type ListBlueprint = z.infer<typeof listBlueprintSchema>;
 
@@ -152,6 +178,8 @@ export const listTemplateSummarySchema = z.object({
             records_count: z.number().int().nonnegative(),
         }),
     ),
+    /** v0.1.167 — nombres de los tableros que trae el pack. */
+    dashboards: z.array(z.string()).default([]),
     created_at: isoDateTimeSchema.nullable().default(null),
 });
 export type ListTemplateSummary = z.infer<typeof listTemplateSummarySchema>;
