@@ -55,6 +55,54 @@ const select = (label: string, slug: string, options: Array<ReturnType<typeof op
     f(label, slug, 'select', { config: { options } });
 const ref = (slug: string) => ({ $field: slug });
 const listRef = (key: string) => ({ $list: key });
+/** Campo de OTRA lista del pack (lookup/rollup a través de una relación, v0.1.171). */
+const xref = (listKey: string, slug: string) => ({ $field: slug, $list: listKey });
+/**
+ * Lookup: muestra `otherKey.targetSlug` a través de la relación
+ * `relKey.relSlug`. Las dos keys son distintas cuando la relación vive en la
+ * propia lista (hacia afuera): el campo destino está del OTRO lado.
+ */
+const lookup = (
+    label: string,
+    slug: string,
+    relKey: string,
+    relSlug: string,
+    otherKey: string,
+    targetSlug: string,
+    description: string,
+) =>
+    f(label, slug, 'lookup', {
+        config: { relation_field_id: xref(relKey, relSlug), target_field_id: xref(otherKey, targetSlug) },
+        description,
+    });
+/** Rollup hacia adentro: agrega `targetSlug` de los registros de `relKey` que apuntan acá por `relSlug`. */
+const rollup = (
+    label: string,
+    slug: string,
+    relKey: string,
+    relSlug: string,
+    operation: 'count' | 'sum' | 'avg' | 'min' | 'max',
+    targetSlug: string | null,
+    description: string,
+    filter?: { slug: string; op: string; value: unknown },
+) =>
+    f(label, slug, 'rollup', {
+        config: {
+            relation_field_id: xref(relKey, relSlug),
+            operation,
+            ...(targetSlug ? { target_field_id: xref(relKey, targetSlug) } : {}),
+            ...(filter
+                ? {
+                      filter_tree: {
+                          type: 'group',
+                          logic: 'and',
+                          children: [{ type: 'condition', field_id: xref(relKey, filter.slug), op: filter.op, value: filter.value }],
+                      },
+                  }
+                : {}),
+        },
+        description,
+    });
 
 const table = (name = 'Tabla', is_default = true) => ({ name, type: 'table' as const, config: {}, is_default });
 const kanban = (name: string, bySlug: string) => ({
@@ -251,6 +299,17 @@ const facturacion: SystemTemplate = {
                     ]),
                     f('Monto mensual', 'monto_mensual', 'currency', { config: { currency: 'USD', precision: 2 } }),
                     f('Próximo cobro', 'proximo_cobro', 'date'),
+                    // v0.1.171 — el estado de cuenta del cliente, a través de
+                    // Facturas.cliente: se recalcula en cada lectura.
+                    rollup('Facturas', 'facturas', 'facturas', 'cliente', 'count', null,
+                        'Cantidad de facturas emitidas a este cliente.'),
+                    rollup('Total facturado', 'total_facturado', 'facturas', 'cliente', 'sum', 'monto',
+                        'Suma del monto de todas sus facturas.'),
+                    rollup('Saldo pendiente', 'saldo_pendiente', 'facturas', 'cliente', 'sum', 'monto',
+                        'Lo que debe: suma de las facturas pendientes o vencidas.',
+                        { slug: 'estado', op: 'in', value: ['pendiente', 'vencida'] }),
+                    rollup('Última factura', 'ultima_factura', 'facturas', 'cliente', 'max', 'emision',
+                        'Fecha de emisión de la factura más reciente.'),
                 ],
                 {
                     settings: { title_field_id: ref('razon_social') },
@@ -278,6 +337,12 @@ const facturacion: SystemTemplate = {
                         opt('anulada', 'Anulada', 'slate'),
                     ]),
                     f('Período', 'periodo', 'text'),
+                    // v0.1.171 — datos del cliente a la vista en la factura
+                    // (para el envío y el recibo), sin abrir su ficha.
+                    lookup('Email del cliente', 'email_cliente', 'facturas', 'cliente', 'clientes', 'email_facturacion',
+                        'El email de facturación del cliente vinculado.'),
+                    lookup('NIT del cliente', 'nit_cliente', 'facturas', 'cliente', 'clientes', 'identificacion',
+                        'La identificación del cliente vinculado.'),
                 ],
                 {
                     settings: { title_field_id: ref('numero') },
@@ -308,7 +373,9 @@ const facturacion: SystemTemplate = {
                 kpi('facturas', 'Facturas', { icon: 'receipt' }, 0),
                 kpi('facturas', 'Facturado', { metric: 'sum', metric_field_id: ref('monto'), prefix: '$', icon: 'wallet' }, 3),
                 kpi('facturas', 'Pendiente de cobro', { metric: 'sum', metric_field_id: ref('monto'), prefix: '$', icon: 'flag', filter_tree: { type: 'condition', field_id: ref('estado'), op: 'eq', value: 'pendiente' } }, 6),
-                kpi('clientes', 'Clientes', { icon: 'users' }, 9),
+                // v0.1.171 — el KPI filtra por el ROLLUP de la otra lista:
+                // "clientes que deben" sale del saldo, no de una marca a mano.
+                kpi('clientes', 'Clientes con saldo', { icon: 'users', filter_tree: { type: 'condition', field_id: ref('saldo_pendiente'), op: 'gt', value: 0 } }, 9),
                 widget('chart_pie', 'facturas', 'Por estado de pago', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('estado'), center_label: 'Total' }, 0, 2, 6, 4),
                 widget('chart_bar', 'facturas', 'Vencimientos por mes', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('vencimiento'), time_bucket: 'month' }, 6, 2, 6, 4),
                 widget('table', 'facturas', 'Próximos vencimientos', { limit: 8, sort_field_id: ref('vencimiento'), sort_dir: 'asc' }, 0, 6, 12, 4),
@@ -478,86 +545,212 @@ const inventario: SystemTemplate = {
 const reclutamiento: SystemTemplate = {
     key: 'reclutamiento',
     name: 'Reclutamiento',
-    description: 'Candidatos por etapa de selección, con cargo, fuente, evaluación y fecha de entrevista.',
+    description: 'Vacantes con sus candidatos vinculados: cada vacante muestra cuántos postulan, cuántos avanzan y su evaluación media.',
     icon: 'briefcase',
     color: '#14b8a6',
     category: 'personas',
-    blueprint: single(
-        list(
-            'candidatos',
-            'Candidatos',
-            'briefcase',
-            '#14b8a6',
-            [
-                f('Candidato', 'candidato', 'text', { is_required: true }),
-                f('Cargo', 'cargo', 'text'),
-                f('Email', 'email', 'email'),
-                f('Teléfono', 'telefono', 'phone'),
-                select('Etapa', 'etapa', [
-                    opt('recibido', 'CV recibido', 'slate'),
-                    opt('entrevista', 'Entrevista', 'sky'),
-                    opt('prueba', 'Prueba técnica', 'violet'),
-                    opt('oferta', 'Oferta', 'amber'),
-                    opt('contratado', 'Contratado', 'emerald'),
-                    opt('descartado', 'Descartado', 'rose'),
-                ]),
-                select('Fuente', 'fuente', [
-                    opt('linkedin', 'LinkedIn', 'blue'),
-                    opt('referido', 'Referido', 'emerald'),
-                    opt('portal', 'Portal de empleo', 'amber'),
-                ]),
-                f('Evaluación', 'evaluacion', 'rating', { config: { max: 5 } }),
-                f('Entrevista', 'entrevista', 'datetime'),
-                f('Entrevistador', 'entrevistador', 'user'),
-                f('CV', 'cv', 'file'),
-                f('Notas', 'notas', 'long_text'),
-            ],
-            {
-                settings: { title_field_id: ref('candidato') },
-                views: [kanban('Proceso', 'etapa'), table('Tabla', false), calendar('Entrevistas', 'entrevista')],
-                records: [
-                    { data: { candidato: 'Laura Martínez', cargo: 'Diseñadora UX', etapa: 'entrevista', fuente: 'linkedin', evaluacion: 4 } },
-                    { data: { candidato: 'Jorge Herrera', cargo: 'Desarrollador', etapa: 'recibido', fuente: 'portal' } },
+    blueprint: {
+        version: BLUEPRINT_VERSION,
+        lists: [
+            list(
+                'vacantes',
+                'Vacantes',
+                'briefcase',
+                '#14b8a6',
+                [
+                    f('Vacante', 'vacante', 'text', { is_required: true }),
+                    select('Área', 'area', [
+                        opt('producto', 'Producto', 'violet'),
+                        opt('tecnologia', 'Tecnología', 'sky'),
+                        opt('comercial', 'Comercial', 'amber'),
+                        opt('operaciones', 'Operaciones', 'emerald'),
+                    ]),
+                    select('Estado', 'estado', [
+                        opt('abierta', 'Abierta', 'emerald'),
+                        opt('en_proceso', 'En proceso', 'sky'),
+                        opt('cerrada', 'Cerrada', 'slate'),
+                    ]),
+                    f('Apertura', 'apertura', 'date'),
+                    f('Responsable', 'responsable', 'user'),
+                    f('Salario ofrecido', 'salario', 'currency', { config: { currency: 'USD', precision: 0 } }),
+                    f('Descripción', 'descripcion', 'long_text'),
+                    // v0.1.171 — el estado del proceso se lee de los candidatos.
+                    rollup('Candidatos', 'candidatos', 'candidatos', 'vacante', 'count', null,
+                        'Cuántas personas postularon a esta vacante.'),
+                    rollup('En proceso', 'en_proceso', 'candidatos', 'vacante', 'count', null,
+                        'Candidatos en entrevista, prueba técnica u oferta.',
+                        { slug: 'etapa', op: 'in', value: ['entrevista', 'prueba', 'oferta'] }),
+                    rollup('Contratados', 'contratados', 'candidatos', 'vacante', 'count', null,
+                        'Candidatos ya contratados para esta vacante.',
+                        { slug: 'etapa', op: 'eq', value: 'contratado' }),
+                    rollup('Evaluación media', 'evaluacion_media', 'candidatos', 'vacante', 'avg', 'evaluacion',
+                        'Promedio de la evaluación de sus candidatos.'),
                 ],
-            },
-        ),
-    ),
+                {
+                    settings: { title_field_id: ref('vacante') },
+                    views: [table(), kanban('Por estado', 'estado')],
+                    records: [
+                        { key: 'v1', data: { vacante: 'Diseñador/a UX', area: 'producto', estado: 'en_proceso', salario: 2200 } },
+                        { key: 'v2', data: { vacante: 'Desarrollador/a backend', area: 'tecnologia', estado: 'abierta', salario: 3000 } },
+                    ],
+                },
+            ),
+            list(
+                'candidatos',
+                'Candidatos',
+                'users',
+                '#0ea5e9',
+                [
+                    f('Candidato', 'candidato', 'text', { is_required: true }),
+                    f('Vacante', 'vacante', 'relation', { config: { target_list_id: listRef('vacantes') } }),
+                    f('Email', 'email', 'email'),
+                    f('Teléfono', 'telefono', 'phone'),
+                    select('Etapa', 'etapa', [
+                        opt('recibido', 'CV recibido', 'slate'),
+                        opt('entrevista', 'Entrevista', 'sky'),
+                        opt('prueba', 'Prueba técnica', 'violet'),
+                        opt('oferta', 'Oferta', 'amber'),
+                        opt('contratado', 'Contratado', 'emerald'),
+                        opt('descartado', 'Descartado', 'rose'),
+                    ]),
+                    select('Fuente', 'fuente', [
+                        opt('linkedin', 'LinkedIn', 'blue'),
+                        opt('referido', 'Referido', 'emerald'),
+                        opt('portal', 'Portal de empleo', 'amber'),
+                    ]),
+                    f('Evaluación', 'evaluacion', 'rating', { config: { max: 5 } }),
+                    f('Entrevista', 'entrevista', 'datetime'),
+                    f('Entrevistador', 'entrevistador', 'user'),
+                    f('CV', 'cv', 'file'),
+                    f('Notas', 'notas', 'long_text'),
+                    // El área y el salario viven en la vacante: acá se leen.
+                    lookup('Área', 'area_vacante', 'candidatos', 'vacante', 'vacantes', 'area',
+                        'El área de la vacante a la que postula.'),
+                    lookup('Salario de la vacante', 'salario_vacante', 'candidatos', 'vacante', 'vacantes', 'salario',
+                        'Lo que ofrece la vacante, para la conversación con el candidato.'),
+                ],
+                {
+                    settings: { title_field_id: ref('candidato') },
+                    views: [kanban('Proceso', 'etapa'), table('Tabla', false), calendar('Entrevistas', 'entrevista')],
+                    records: [
+                        { data: { candidato: 'Laura Martínez', etapa: 'entrevista', fuente: 'linkedin', evaluacion: 4 }, relations: { vacante: ['v1'] } },
+                        { data: { candidato: 'Jorge Herrera', etapa: 'recibido', fuente: 'portal' }, relations: { vacante: ['v2'] } },
+                        { data: { candidato: 'Sofía Ruiz', etapa: 'oferta', fuente: 'referido', evaluacion: 5 }, relations: { vacante: ['v1'] } },
+                    ],
+                },
+            ),
+        ],
+        dashboards: [
+            dashboard('Selección', 'Vacantes abiertas, embudo de candidatos y contrataciones.', [
+                kpi('vacantes', 'Vacantes abiertas', { icon: 'briefcase', filter_tree: { type: 'condition', field_id: ref('estado'), op: 'neq', value: 'cerrada' } }, 0),
+                kpi('candidatos', 'Candidatos', { icon: 'users' }, 3),
+                kpi('candidatos', 'Contratados', { icon: 'check', filter_tree: { type: 'condition', field_id: ref('etapa'), op: 'eq', value: 'contratado' } }, 6),
+                kpi('candidatos', 'Evaluación media', { metric: 'avg', metric_field_id: ref('evaluacion'), icon: 'star' }, 9),
+                widget('chart_funnel', 'candidatos', 'Embudo de selección', { metric: 'count', group_by_field_id: ref('etapa') }, 0, 2, 6, 4),
+                widget('chart_pie', 'candidatos', 'Por fuente', { metric: 'count', group_by_field_id: ref('fuente') }, 6, 2, 6, 4),
+                widget('table', 'vacantes', 'Vacantes y su avance', { limit: 8, sort_field_id: ref('apertura'), sort_dir: 'desc' }, 0, 6, 12, 4),
+            ]),
+        ],
+    },
 };
 
 const eventos: SystemTemplate = {
     key: 'eventos',
     name: 'Eventos e invitados',
-    description: 'Invitados con confirmación, mesa y restricciones. Calendario de fechas y tablero por confirmación.',
+    description: 'Eventos con su lista de invitados vinculada: confirmados y personas esperadas se cuentan solos.',
     icon: 'calendar',
     color: '#ec4899',
     category: 'otros',
-    blueprint: single(
-        list(
-            'invitados',
-            'Invitados',
-            'calendar',
-            '#ec4899',
-            [
-                f('Invitado', 'invitado', 'text', { is_required: true }),
-                f('Email', 'email', 'email'),
-                f('Teléfono', 'telefono', 'phone'),
-                select('Confirmación', 'confirmacion', [
-                    opt('pendiente', 'Pendiente', 'slate'),
-                    opt('confirmado', 'Confirmado', 'emerald'),
-                    opt('no_asiste', 'No asiste', 'rose'),
-                ]),
-                f('Acompañantes', 'acompanantes', 'number', { config: { precision: 0 } }),
-                f('Mesa', 'mesa', 'text'),
-                f('Evento', 'evento', 'text'),
-                f('Fecha del evento', 'fecha', 'date'),
-                f('Restricciones', 'restricciones', 'long_text'),
-            ],
-            {
-                settings: { title_field_id: ref('invitado') },
-                views: [table(), kanban('Confirmaciones', 'confirmacion'), calendar('Fechas', 'fecha')],
-            },
-        ),
-    ),
+    blueprint: {
+        version: BLUEPRINT_VERSION,
+        lists: [
+            list(
+                'eventos',
+                'Eventos',
+                'calendar',
+                '#ec4899',
+                [
+                    f('Evento', 'evento', 'text', { is_required: true }),
+                    f('Fecha', 'fecha', 'date'),
+                    f('Lugar', 'lugar', 'text'),
+                    f('Capacidad', 'capacidad', 'number', { config: { precision: 0 } }),
+                    select('Estado', 'estado', [
+                        opt('planificado', 'Planificado', 'slate'),
+                        opt('confirmado', 'Confirmado', 'sky'),
+                        opt('realizado', 'Realizado', 'emerald'),
+                        opt('cancelado', 'Cancelado', 'rose'),
+                    ]),
+                    f('Notas', 'notas', 'long_text'),
+                    // v0.1.171 — la asistencia se cuenta sola desde Invitados.
+                    rollup('Invitados', 'invitados', 'invitados', 'evento', 'count', null,
+                        'Cuántas personas están invitadas a este evento.'),
+                    rollup('Confirmados', 'confirmados', 'invitados', 'evento', 'count', null,
+                        'Invitados que confirmaron asistencia.',
+                        { slug: 'confirmacion', op: 'eq', value: 'confirmado' }),
+                    rollup('Acompañantes', 'acompanantes', 'invitados', 'evento', 'sum', 'acompanantes',
+                        'Acompañantes que traen los que ya confirmaron.',
+                        { slug: 'confirmacion', op: 'eq', value: 'confirmado' }),
+                    // Un calculado SOBRE dos rollups: personas a sentar.
+                    f('Personas esperadas', 'personas', 'computed', {
+                        config: { operation: 'sum', inputs: [ref('confirmados'), ref('acompanantes')] },
+                        description: 'Confirmados + sus acompañantes: lo que hay que sentar.',
+                    }),
+                ],
+                {
+                    settings: { title_field_id: ref('evento') },
+                    views: [table(), calendar('Calendario', 'fecha'), kanban('Por estado', 'estado')],
+                    records: [
+                        { key: 'e1', data: { evento: 'Lanzamiento de producto', lugar: 'Auditorio central', capacidad: 120, estado: 'confirmado' } },
+                        { key: 'e2', data: { evento: 'Cena de fin de año', lugar: 'Salón Norte', capacidad: 80, estado: 'planificado' } },
+                    ],
+                },
+            ),
+            list(
+                'invitados',
+                'Invitados',
+                'users',
+                '#a855f7',
+                [
+                    f('Invitado', 'invitado', 'text', { is_required: true }),
+                    f('Evento', 'evento', 'relation', { config: { target_list_id: listRef('eventos') } }),
+                    f('Email', 'email', 'email'),
+                    f('Teléfono', 'telefono', 'phone'),
+                    select('Confirmación', 'confirmacion', [
+                        opt('pendiente', 'Pendiente', 'slate'),
+                        opt('confirmado', 'Confirmado', 'emerald'),
+                        opt('no_asiste', 'No asiste', 'rose'),
+                    ]),
+                    f('Acompañantes', 'acompanantes', 'number', { config: { precision: 0 } }),
+                    f('Mesa', 'mesa', 'text'),
+                    f('Restricciones', 'restricciones', 'long_text'),
+                    // La fecha y el lugar viven en el evento: no se re-tipean.
+                    lookup('Fecha del evento', 'fecha_evento', 'invitados', 'evento', 'eventos', 'fecha',
+                        'La fecha del evento al que está invitado.'),
+                    lookup('Lugar', 'lugar_evento', 'invitados', 'evento', 'eventos', 'lugar',
+                        'El lugar del evento al que está invitado.'),
+                ],
+                {
+                    settings: { title_field_id: ref('invitado') },
+                    views: [table(), kanban('Confirmaciones', 'confirmacion')],
+                    records: [
+                        { data: { invitado: 'María Salas', confirmacion: 'confirmado', acompanantes: 1, mesa: '3' }, relations: { evento: ['e1'] } },
+                        { data: { invitado: 'Pedro Lima', confirmacion: 'pendiente' }, relations: { evento: ['e1'] } },
+                        { data: { invitado: 'Ana Duarte', confirmacion: 'confirmado', acompanantes: 2 }, relations: { evento: ['e2'] } },
+                    ],
+                },
+            ),
+        ],
+        dashboards: [
+            dashboard('Asistencia', 'Confirmaciones y personas esperadas por evento.', [
+                kpi('eventos', 'Eventos', { icon: 'calendar' }, 0),
+                kpi('invitados', 'Invitados', { icon: 'users' }, 3),
+                kpi('invitados', 'Confirmados', { icon: 'check', filter_tree: { type: 'condition', field_id: ref('confirmacion'), op: 'eq', value: 'confirmado' } }, 6),
+                kpi('eventos', 'Personas esperadas', { metric: 'sum', metric_field_id: ref('confirmados'), icon: 'users' }, 9),
+                widget('chart_pie', 'invitados', 'Estado de las confirmaciones', { metric: 'count', group_by_field_id: ref('confirmacion') }, 0, 2, 6, 4),
+                widget('table', 'eventos', 'Próximos eventos', { limit: 8, sort_field_id: ref('fecha'), sort_dir: 'asc' }, 6, 2, 6, 4),
+            ]),
+        ],
+    },
 };
 
 // ── Más plantillas (v0.1.167) ────────────────────────────────────────────
@@ -871,6 +1064,18 @@ const compras: SystemTemplate = {
                         opt('logistica', 'Logística', 'emerald'),
                     ]),
                     f('Calificación', 'calificacion', 'rating', { config: { max: 5 } }),
+                    // v0.1.171 — historial de compras del proveedor, a través
+                    // de Órdenes.proveedor.
+                    rollup('Órdenes', 'ordenes', 'ordenes', 'proveedor', 'count', null,
+                        'Cantidad de órdenes de compra a este proveedor.'),
+                    rollup('Total comprado', 'total_comprado', 'ordenes', 'proveedor', 'sum', 'monto',
+                        'Suma de las órdenes recibidas o pagadas.',
+                        { slug: 'estado', op: 'in', value: ['recibida', 'pagada'] }),
+                    rollup('Pendiente de pago', 'pendiente_pago', 'ordenes', 'proveedor', 'sum', 'monto',
+                        'Órdenes recibidas que todavía no se pagaron.',
+                        { slug: 'estado', op: 'eq', value: 'recibida' }),
+                    rollup('Última compra', 'ultima_compra', 'ordenes', 'proveedor', 'max', 'fecha',
+                        'Fecha de la orden más reciente.'),
                 ],
                 {
                     settings: { title_field_id: ref('nombre') },
@@ -899,6 +1104,11 @@ const compras: SystemTemplate = {
                         opt('cancelada', 'Cancelada', 'rose'),
                     ]),
                     f('Detalle', 'detalle', 'long_text'),
+                    // v0.1.171 — contacto y categoría del proveedor en la orden.
+                    lookup('Email del proveedor', 'email_proveedor', 'ordenes', 'proveedor', 'proveedores', 'email',
+                        'Para mandar la orden sin buscar el contacto.'),
+                    lookup('Categoría del proveedor', 'categoria_proveedor', 'ordenes', 'proveedor', 'proveedores', 'categoria',
+                        'La categoría del proveedor vinculado.'),
                 ],
                 {
                     settings: { title_field_id: ref('numero') },
@@ -915,7 +1125,7 @@ const compras: SystemTemplate = {
                 kpi('ordenes', 'Órdenes', { icon: 'shopping_cart' }, 0),
                 kpi('ordenes', 'Monto comprado', { metric: 'sum', metric_field_id: ref('monto'), prefix: '$', icon: 'wallet' }, 3),
                 kpi('proveedores', 'Proveedores', { icon: 'truck' }, 6),
-                kpi('proveedores', 'Calificación media', { metric: 'avg', metric_field_id: ref('calificacion'), icon: 'star' }, 9),
+                kpi('proveedores', 'Pendiente de pago', { metric: 'sum', metric_field_id: ref('pendiente_pago'), prefix: '$', icon: 'flag' }, 9),
                 widget('chart_bar', 'ordenes', 'Monto por estado', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('estado') }, 0, 2, 6, 4),
                 widget('chart_pie', 'proveedores', 'Proveedores por categoría', { metric: 'count', group_by_field_id: ref('categoria') }, 6, 2, 6, 4),
                 widget('table', 'ordenes', 'Próximas entregas', { limit: 8, sort_field_id: ref('entrega'), sort_dir: 'asc' }, 0, 6, 12, 4),

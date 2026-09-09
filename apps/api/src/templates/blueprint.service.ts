@@ -14,6 +14,7 @@ import {
     type BlueprintInclude,
     type BlueprintList,
     type BlueprintRecord,
+    type CrossListFieldRef,
     type Field,
     type List,
     type ListBlueprint,
@@ -89,13 +90,22 @@ export class BlueprintService {
         const sources = await Promise.all(listIds.map((id) => this.lists.get(tenantId, String(id))));
         // key del pack = slug de la lista (único en el workspace).
         const listIdToKey = new Map(sources.map((l) => [l.id, l.slug]));
+        // Campos de TODAS las listas del pack (v0.1.171): un lookup/rollup
+        // referencia campos de la otra lista → token calificado `{$field,$list}`.
+        const fieldsByList = new Map<number, Field[]>();
+        const crossList = new Map<number, CrossListFieldRef>();
+        for (const list of sources) {
+            const fields = await this.fields.listByListId(tenantId, list.id);
+            fieldsByList.set(list.id, fields);
+            for (const f of fields) crossList.set(f.id, { slug: f.slug, list: list.slug });
+        }
 
         const out: BlueprintList[] = [];
         for (const list of sources) {
-            const fields = await this.fields.listByListId(tenantId, list.id);
+            const fields = fieldsByList.get(list.id) ?? [];
             const idToSlug = new Map(fields.map((f) => [f.id, f.slug]));
             const tokenize = (v: unknown, extra: readonly string[] = []): unknown =>
-                tokenizeListRefs(tokenizeFieldRefs(v, idToSlug, extra), listIdToKey);
+                tokenizeListRefs(tokenizeFieldRefs(v, idToSlug, extra, crossList), listIdToKey);
 
             const settings: Record<string, unknown> = {};
             if (include.settings) {
@@ -252,10 +262,13 @@ export class BlueprintService {
         }
         const resolveLists = (v: unknown): unknown => resolveListRefs(v, keyToListId);
 
-        // B) Campos, en dos pasadas: primero todos (los `computed` sin
-        //    `inputs`, porque referencian campos que quizá no existen aún),
-        //    después la config completa de los que referencian otros.
+        // B) Campos, en dos pasadas: primero todos los de TODAS las listas
+        //    (los `computed`/`lookup`/`rollup` sin su config, porque
+        //    referencian campos que quizá no existen aún — incluso de otra
+        //    lista del pack, v0.1.171), después la config completa de los
+        //    que referencian otros.
         const slugMaps = new Map<string, Map<string, number>>();
+        const pendingByList: Array<{ list: List; bl: BlueprintList; pending: Array<{ id: number; config: unknown }> }> = [];
         for (const [i, bl] of blueprint.lists.entries()) {
             const list = created[i]!;
             const slugToId = new Map<string, number>();
@@ -280,24 +293,28 @@ export class BlueprintService {
                     warnings.push(`Campo «${f.label}» de «${bl.name}»: ${message(err)}`);
                 }
             }
+            slugMaps.set(bl.key, slugToId);
+            pendingByList.push({ list, bl, pending });
+        }
+        for (const { list, bl, pending } of pendingByList) {
+            const slugToId = slugMaps.get(bl.key)!;
             for (const p of pending) {
                 const config = this.dropDeadListRefs(
-                    resolveLists(resolveFieldRefs(p.config, slugToId)) as Record<string, unknown>,
+                    resolveLists(resolveFieldRefs(p.config, slugToId, slugMaps)) as Record<string, unknown>,
                 );
                 try {
                     await this.fields.update(tenantId, String(list.id), String(p.id), { config });
                 } catch (err) {
-                    warnings.push(`Configuración de un campo calculado de «${bl.name}»: ${message(err)}`);
+                    warnings.push(`Configuración de un campo derivado de «${bl.name}»: ${message(err)}`);
                 }
             }
-            slugMaps.set(bl.key, slugToId);
         }
 
         // C) Ajustes, D) vistas, E) automatizaciones.
         for (const [i, bl] of blueprint.lists.entries()) {
             const list = created[i]!;
             const slugToId = slugMaps.get(bl.key)!;
-            const resolve = (v: unknown): unknown => resolveLists(resolveFieldRefs(v, slugToId));
+            const resolve = (v: unknown): unknown => resolveLists(resolveFieldRefs(v, slugToId, slugMaps));
 
             if (Object.keys(bl.settings).length > 0) {
                 const settings = resolve(bl.settings) as Record<string, unknown>;
@@ -396,10 +413,18 @@ export class BlueprintService {
      * Una relation cuyo `$list` no se pudo resolver (lista fuera del pack y
      * de otro workspace) queda SIN destino: el campo existe, el usuario elige
      * la lista después. Idem `list_id` de un create_record.
+     *
+     * v0.1.171 — lo mismo con las referencias a CAMPOS de un lookup/rollup
+     * (`relation_field_id`/`target_field_id`): una referencia que no resolvió
+     * llega como `null` y el schema del tipo la rechazaría con un 400; se
+     * quita, así el campo nace a medias (sale vacío) en vez de perderse.
      */
     private dropDeadListRefs(config: Record<string, unknown>): Record<string, unknown> {
         const out = { ...config };
         if (out.target_list_id === null) delete out.target_list_id;
+        for (const k of Object.keys(out)) {
+            if (out[k] === null && /(^|_)field_id$/.test(k)) delete out[k];
+        }
         return out;
     }
 
