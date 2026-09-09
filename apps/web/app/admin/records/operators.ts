@@ -99,6 +99,14 @@ export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
             // cualquier filtro contra este field por whitelist de
             // columnas físicas.
             return [];
+        case 'lookup':
+            // Un lookup es una lista de valores del otro lado: no se filtra
+            // (filtrá por el campo original en la otra lista).
+            return [];
+        case 'rollup':
+            // v0.1.170 — el backend compila el rollup a una subconsulta
+            // correlacionada: "deuda > 0" funciona de verdad.
+            return NUMERIC;
     }
 }
 

@@ -49,10 +49,24 @@ const ENTRIES: CatalogEntry[] = [
     { slug: 'percent', label: 'Porcentaje', description: 'Avance de 0 a 100 con barra.', supportsUnique: false },
     { slug: 'duration', label: 'Duración', description: 'Tiempo en horas y minutos.', supportsUnique: false },
     { slug: 'computed', label: 'Calculado', description: 'Se calcula a partir de otros campos.', supportsUnique: false },
+    // v0.1.170 — a través de una relación (ADR-S19).
+    { slug: 'lookup', label: 'Buscar en relación (lookup)', description: 'Muestra un campo del registro vinculado, siempre al día.', supportsUnique: false },
+    { slug: 'rollup', label: 'Resumen de relación (rollup)', description: 'Cuenta, suma o promedia los registros vinculados.', supportsUnique: false },
 ];
 
 /** Tipos que NO viven en la columna de datos (referencias / derivados). */
-const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>(['relation', 'computed']);
+const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>(['relation', 'computed', 'lookup', 'rollup']);
+
+/**
+ * Tipos de SOLO LECTURA: su valor lo deriva el backend en cada lectura y
+ * el usuario no lo escribe (v0.1.170 — antes cada superficie repetía
+ * `type === 'computed'` y los tipos nuevos se le escapaban a alguna).
+ */
+export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup']);
+
+export function isDerivedFieldType(type: string): boolean {
+    return DERIVED_FIELD_TYPES.has(type);
+}
 
 export const FIELD_TYPE_CATALOG: FieldTypeMeta[] = ENTRIES.map((e) => ({
     slug: e.slug,

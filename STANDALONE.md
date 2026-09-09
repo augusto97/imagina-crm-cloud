@@ -634,4 +634,43 @@ operador (columna por plan + fila en el detalle de cada empresa).
 
 ---
 
-**Versión del documento:** 1.12.0 (cuota de correo por plan — ADR-S18)
+**ADR-S19 — Campos a través de una relación: `lookup` y `rollup`.**
+Un campo `relation` vincula dos filas pero la fila no "sabe" nada del otro
+lado: para ver el teléfono del cliente desde la factura, o cuánto debe un
+cliente, había que abrir la otra ficha. Decisión: dos tipos de campo que se
+resuelven **en cada lectura** cruzando la tabla `relations` (nunca se
+persisten — misma regla que `computed`): `lookup` trae un campo de los
+registros vinculados (una lista de valores, uno por vínculo) y `rollup` los
+cuenta o agrega (`count`/`sum`/`avg`/`min`/`max`) con un **filtro opcional
+sobre la otra lista** ("deuda = suma del monto de las facturas con estado
+pendiente"). Son el Lookup/Rollup de Airtable y el Relationship+Rollup de
+ClickUp.
+
+La relación sirve **en las dos direcciones**, y el backend deduce cuál: si
+el campo `relation` vive en esta lista es "hacia afuera" (ancla
+`source_record_id`); si vive en otra lista y apunta a esta, "hacia adentro"
+(ancla `target_record_id`) — así Clientes resume Facturas sin tener que
+duplicar la relación del otro lado. La config guarda ids
+(`relation_field_id`, `target_field_id` — nombres que el blueprint de
+plantillas tokeniza solo) y el DTO de campos adjunta la relación
+**resuelta** (`through`: dirección, lista del otro lado y el campo destino
+con su config) para que la UI formatee el valor sin otra request.
+
+Costo por página (regla de oro nº 8): UNA query por relación para los
+lookups —con tope de 50 vinculados por registro, porque una relación inversa
+no tiene límite natural— y UNA query agregada por rollup, ambas con la lista
+de ids de la página. Los rollups **nunca cargan en memoria** los registros
+del otro lado: la agregación y su filtro se compilan a SQL con el MISMO
+QueryBuilder whitelisteado de la app (regla de oro nº 4), contra el alias
+`rr`. Y como la misma agregación se expresa como subconsulta correlacionada
+con `records.id`, un rollup **filtra, ordena y se suma en el pie** de la
+tabla y en los widgets ("clientes con deuda > 0"). Un lookup no filtra ni
+ordena (es una lista). Lo que no resuelve —relación borrada, config a
+medias— sale vacío en vez de tumbar el listado. No se encadenan (un lookup
+no puede apuntar a otro lookup/rollup): obligaría a resolver grafos en cada
+lectura. Un `computed` sí puede usar un rollup como entrada ("cobrado =
+total − deuda"), porque los valores through se inyectan antes de evaluar.
+
+---
+
+**Versión del documento:** 1.13.0 (lookup y rollup a través de relación — ADR-S19)

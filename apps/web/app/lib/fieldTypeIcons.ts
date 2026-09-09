@@ -1,9 +1,11 @@
 import {
     AlignLeft,
+    Calculator,
     Calendar,
     CalendarClock,
     CheckSquare,
     CircleDollarSign,
+    Eye,
     GitBranch,
     Hash,
     Link2,
@@ -50,6 +52,8 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     rating: Star,
     percent: Percent,
     duration: Timer,
+    lookup: Eye,
+    rollup: Calculator,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

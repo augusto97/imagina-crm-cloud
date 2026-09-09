@@ -16,6 +16,8 @@ import { DurationControl } from '@/components/fields/DurationControl';
 import { PhoneControl } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 
+import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
+
 import { FieldValueDisplay } from './FieldValueDisplay';
 
 interface CompactFieldRowProps {
@@ -79,8 +81,8 @@ export function CompactFieldRow({
         // v0.1.158 — la calificación se pone clickeando la estrella.
         field.type === 'rating';
 
-    // Tipos read-only (computed): nunca editables.
-    const isReadOnly = field.type === 'computed';
+    // Tipos read-only (computed / lookup / rollup): nunca editables.
+    const isReadOnly = isDerivedFieldType(field.type);
 
     return (
         <div

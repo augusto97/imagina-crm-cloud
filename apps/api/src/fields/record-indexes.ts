@@ -39,7 +39,7 @@ export function isIndexableType(type: FieldType): boolean {
     if (TRGM_TYPES.includes(type)) return true;
     if (TEXT_BTREE_TYPES.includes(type)) return true;
     // multi_select ya lo cubre el GIN global jsonb_path_ops sobre `data`;
-    // relation/computed no son filtrables.
+    // relation/computed/lookup/rollup no viven en `data`: nada que indexar.
     return false;
 }
 

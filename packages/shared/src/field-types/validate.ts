@@ -165,9 +165,11 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
             if (max !== null && raw.length > max) return fail(`Máximo ${max} archivos.`);
             return ok(raw);
         }
-        // relation/computed no viven en `data` — no deberían llegar acá.
+        // relation/computed/lookup/rollup no viven en `data` — no deberían llegar acá.
         case 'relation':
         case 'computed':
+        case 'lookup':
+        case 'rollup':
             return fail(`El tipo '${type}' no se escribe en los datos del registro.`);
         default: {
             const _exhaustive: never = type;

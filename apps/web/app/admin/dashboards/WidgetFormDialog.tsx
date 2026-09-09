@@ -132,7 +132,7 @@ export function WidgetFormDialog({
     // según tipo. El picker filtra qué cálculos se ofrecen.
     const aggregatableFields = useMemo<FieldOpt[]>(
         () => (fields.data ?? [])
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed')
+            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
             .map((f) => ({ id: f.id, label: f.label, type: f.type })),
         [fields.data],
     );

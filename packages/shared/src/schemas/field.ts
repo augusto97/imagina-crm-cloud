@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { idSchema, isoDateTimeSchema } from './common';
+import { filterTreeSchema } from './filter';
 import { fieldSlugSchema } from './slug';
 
 /** Tipos de campo del plugin (CONTRACT.md §3). */
@@ -27,9 +28,20 @@ export const FIELD_TYPES = [
     'rating',
     'percent',
     'duration',
+    // v0.1.170 (ADR-S19) — campos "a través de una relación", como el
+    // lookup/rollup de Airtable: NO se persisten, se resuelven en cada
+    // lectura cruzando la tabla `relations`. `lookup` trae un campo de los
+    // registros vinculados; `rollup` los cuenta o agrega (sum/avg/min/max).
+    'lookup',
+    'rollup',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
+
+/** Operaciones del rollup (`count` no necesita campo destino). */
+export const ROLLUP_OPERATIONS = ['count', 'sum', 'avg', 'min', 'max'] as const;
+export const rollupOperationSchema = z.enum(ROLLUP_OPERATIONS);
+export type RollupOperation = z.infer<typeof rollupOperationSchema>;
 
 /**
  * Presets de color nombrados (CONTRACT.md §3). El color de la opción es la
@@ -121,6 +133,32 @@ export const fieldConfigSchemas = {
         /** `hm` → `1h 30m`; `clock` → `1:30`. El valor SIEMPRE son minutos. */
         format: z.enum(['hm', 'clock']).optional(),
     }),
+    /**
+     * v0.1.170 — Lookup: "mostrá el campo X de los registros vinculados por
+     * la relación R". `relation_field_id` puede ser una relación de ESTA
+     * lista (hacia afuera) o una relación de OTRA lista que apunta a esta
+     * (hacia adentro: "las facturas que me apuntan"); el backend deduce la
+     * dirección. `target_field_id` es un campo de la lista del otro lado.
+     * Los nombres terminan en `_field_id` a propósito: así el blueprint de
+     * plantillas los tokeniza y re-resuelve solos (list-template.ts).
+     */
+    lookup: z.object({
+        relation_field_id: idSchema.optional(),
+        target_field_id: idSchema.optional(),
+    }),
+    /**
+     * Rollup: "contá / sumá / promediá el campo X de los registros
+     * vinculados", con un filtro opcional sobre ESOS registros (el mismo
+     * filter tree de las vistas, compilado por el QueryBuilder contra la
+     * lista del otro lado — "deuda = suma del monto de las facturas con
+     * estado pendiente").
+     */
+    rollup: z.object({
+        relation_field_id: idSchema.optional(),
+        target_field_id: idSchema.optional(),
+        operation: rollupOperationSchema.optional(),
+        filter_tree: filterTreeSchema.optional(),
+    }),
 } satisfies Record<FieldType, z.ZodTypeAny>;
 
 /** Valida la config de un campo contra el schema de su tipo. */
@@ -132,12 +170,62 @@ export function parseFieldConfig(type: FieldType, config: unknown): Record<strin
  * Tipos que NO viven en `records.data`:
  * - `relation`: sus valores viven en la tabla `relations` (CONTRACT.md §3).
  * - `computed`: solo lectura, se evalúa server-side.
+ * - `lookup` / `rollup`: solo lectura, se resuelven cruzando `relations`.
  */
-export const NON_DATA_FIELD_TYPES: readonly FieldType[] = ['relation', 'computed'];
+export const NON_DATA_FIELD_TYPES: readonly FieldType[] = ['relation', 'computed', 'lookup', 'rollup'];
 
 export function isDataField(type: FieldType): boolean {
     return !NON_DATA_FIELD_TYPES.includes(type);
 }
+
+/** Tipos que leen A TRAVÉS de una relación (v0.1.170, ADR-S19). */
+export const THROUGH_FIELD_TYPES: readonly FieldType[] = ['lookup', 'rollup'];
+
+export function isThroughField(type: FieldType): boolean {
+    return THROUGH_FIELD_TYPES.includes(type);
+}
+
+/**
+ * Tipos que un lookup puede traer del otro lado: cualquier dato del JSONB
+ * más los computed (se evalúan sobre la fila vinculada). Quedan afuera los
+ * que son referencias a OTRAS entidades (relation, file) y los propios
+ * through (encadenar lookups obliga a resolver grafos en cada lectura).
+ */
+export const LOOKUP_TARGET_TYPES: readonly FieldType[] = [
+    'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
+    'checkbox', 'url', 'email', 'user', 'computed', 'phone', 'rating', 'percent', 'duration',
+];
+
+/** Campos que un rollup puede sumar/promediar. */
+export const ROLLUP_NUMERIC_TYPES: readonly FieldType[] = [
+    'number', 'currency', 'rating', 'percent', 'duration',
+];
+/** Campos que admiten mínimo/máximo (numéricos + fechas). */
+export const ROLLUP_MINMAX_TYPES: readonly FieldType[] = [
+    ...ROLLUP_NUMERIC_TYPES, 'date', 'datetime',
+];
+
+/**
+ * Resolución (derivada, nunca persistida) de un campo lookup/rollup que el
+ * backend adjunta al DTO en el listado de campos: hacia dónde va la
+ * relación y cómo es el campo del otro lado — lo que la UI necesita para
+ * formatear el valor (moneda, opciones con color, fecha) sin otra request.
+ */
+export const throughInfoSchema = z.object({
+    direction: z.enum(['forward', 'reverse']),
+    relation_label: z.string(),
+    other_list_id: idSchema,
+    other_list_name: z.string(),
+    target_field: z
+        .object({
+            id: idSchema,
+            label: z.string(),
+            type: fieldTypeSchema,
+            config: z.record(z.unknown()).default({}),
+        })
+        .nullable(),
+});
+export type ThroughInfo = z.infer<typeof throughInfoSchema>;
 
 export const fieldSchema = z.object({
     id: idSchema,
@@ -170,6 +258,12 @@ export const fieldSchema = z.object({
      * administrador; no participa de la validación del valor.
      */
     description: z.string().max(500).nullable().default(null),
+    /**
+     * Sólo en lookup/rollup (v0.1.170): la relación resuelta. `null` si la
+     * config apunta a algo que ya no existe (el campo se muestra vacío).
+     * Ausente en las lecturas internas.
+     */
+    through: throughInfoSchema.nullable().optional(),
 });
 export type Field = z.infer<typeof fieldSchema>;
 

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, max, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, max, ne, or, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { fields } from '../db/schema';
 
@@ -37,6 +37,38 @@ export class FieldsRepository {
             )
             .limit(1);
         return row ?? null;
+    }
+
+    /** Campo por id en CUALQUIER lista del tenant (relaciones cruzadas, v0.1.170). */
+    async findAnyById(tx: Tx, tenantId: number, id: number): Promise<FieldRow | null> {
+        const [row] = await tx
+            .select()
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), eq(fields.id, id)))
+            .limit(1);
+        return row ?? null;
+    }
+
+    /**
+     * Campos `relation` que TOCAN una lista: los que viven en ella (hacia
+     * afuera) y los de otras listas que apuntan a ella (hacia adentro) —
+     * los caminos posibles de un lookup/rollup (v0.1.170).
+     */
+    relationFieldsTouching(tx: Tx, tenantId: number, listId: number): Promise<FieldRow[]> {
+        return tx
+            .select()
+            .from(fields)
+            .where(
+                and(
+                    eq(fields.tenantId, tenantId),
+                    eq(fields.type, 'relation'),
+                    or(
+                        eq(fields.listId, listId),
+                        sql`(${fields.config} ->> 'target_list_id') = ${String(listId)}`,
+                    ),
+                ),
+            )
+            .orderBy(asc(fields.listId), asc(fields.position), asc(fields.id));
     }
 
     async findBySlug(

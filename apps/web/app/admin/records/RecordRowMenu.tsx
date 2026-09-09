@@ -94,7 +94,7 @@ export function RecordRowMenu({
     const duplicate = async (): Promise<void> => {
         const values: Record<string, unknown> = {};
         for (const f of fields) {
-            if (f.type === 'computed' || f.type === 'relation' || f.type === 'file') continue;
+            if (f.type === 'computed' || f.type === 'lookup' || f.type === 'rollup' || f.type === 'relation' || f.type === 'file') continue;
             const v = record.fields[f.slug];
             if (v !== undefined && v !== null && v !== '') values[f.slug] = v;
         }

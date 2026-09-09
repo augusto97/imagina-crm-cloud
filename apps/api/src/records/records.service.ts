@@ -97,7 +97,7 @@ export class RecordsService {
         const rel = splitRelationValues(fields, input.data);
         const data = this.validateData(fields, rel.data, { partial: false });
 
-        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { row, enriched } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
             // lista y ser de primer nivel — un solo nivel de anidado.
             const parentId = input.parent_id ?? null;
@@ -128,7 +128,9 @@ export class RecordsService {
                 action: 'record_created',
                 diff: computeDiff({}, inserted.data),
             });
-            return inserted;
+            // v0.1.170 — lookup/rollup sólo para el DTO (la actividad y las
+            // automatizaciones ven los datos persistidos).
+            return { row: inserted, enriched: await this.withThrough(tx, tenantId, listId, fields, [inserted]) };
         });
         this.realtime.records(tenantId, listId);
         this.automations.dispatch({
@@ -139,7 +141,7 @@ export class RecordsService {
             after: row.data,
         });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-        return toRecord(withComputed(fields, row), {
+        return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
             ...relationsToMap(rel.values),
         });
@@ -148,8 +150,9 @@ export class RecordsService {
     async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const { row, fields, hiddenKeys, relMap, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const r = await this.repo.findById(tx, tenantId, list.id, id);
+            const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
             const rels = r
                 ? await this.relationsRepo.batchTargets(
                       tx,
@@ -186,9 +189,13 @@ export class RecordsService {
         const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
-            const fieldsById = new Map<number, FilterableField>(
-                fields.map((f) => [f.id, { id: f.id, type: f.type }]),
-            );
+            // v0.1.170 — los rollups filtran y ordenan por su subconsulta
+            // correlacionada (el motor la arma; sin plan, se descartan).
+            const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
+            const fieldsById = new Map<number, FilterableField>([
+                ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                ...this.fields.through.filterableFor(plans, tenantId),
+            ]);
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
             // ILIKE sobre los campos searchables, AND con filtros y scope.
@@ -213,7 +220,7 @@ export class RecordsService {
                     : query.include_subtasks === true
                         ? ('any' as const)
                         : ('roots' as const);
-            const result = await this.repo.list(tx, tenantId, list.id, {
+            const listed = await this.repo.list(tx, tenantId, list.id, {
                 parent,
                 where,
                 // Con sort por campo el keyset por id no aplica: el cursor
@@ -224,6 +231,8 @@ export class RecordsService {
                 limit: query.limit,
                 dir: query.sort_dir,
             });
+            // Lookups/rollups de la página entera en batch (regla de oro nº 8).
+            const result = await this.fields.through.attach(tx, tenantId, plans, listed, fields);
             // Relations de la página entera en UNA query (regla de oro nº 8).
             const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
             const rels = await this.relationsRepo.batchTargets(
@@ -314,7 +323,10 @@ export class RecordsService {
             const rels = updated
                 ? await this.relationsRepo.batchTargets(tx, tenantId, [id], relFieldIds)
                 : new Map<number, Map<number, number[]>>();
-            return { updated, before: current.data, rels };
+            const enriched = updated
+                ? (await this.withThrough(tx, tenantId, listId, fields, [updated]))[0] ?? updated
+                : null;
+            return { updated, enriched, before: current.data, rels };
         });
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
@@ -335,12 +347,27 @@ export class RecordsService {
                 this.logger.error(`Recurrencias post-update de record ${row.id}: ${String(err)}`),
             );
         return toRecord(
-            withComputed(fields, row),
+            withComputed(fields, result.enriched ?? row),
             byFieldToKeys(
                 fields.filter((f) => f.type === 'relation').map((f) => f.id),
                 result.rels.get(row.id),
             ),
         );
+    }
+
+    /**
+     * v0.1.170 — adjunta lookups/rollups a las filas (dentro del tx de la
+     * lectura). Camino rápido: sin campos through no consulta nada.
+     */
+    private async withThrough<T extends { id: number; data: Record<string, unknown> }>(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        fields: Field[],
+        rows: T[],
+    ): Promise<T[]> {
+        const plans = await this.fields.through.plans(tx, tenantId, listId, fields);
+        return this.fields.through.attach(tx, tenantId, plans, rows, fields);
     }
 
     /**
@@ -867,7 +894,7 @@ function withComputed<T extends { data: Record<string, unknown> }>(fields: Field
  * se descarta en silencio (mismo criterio que el filter tree). NULLS LAST en
  * ambas direcciones — las celdas vacías siempre al final, estilo hoja.
  */
-const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed'];
+const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup'];
 
 function parseFieldSort(
     raw: string | undefined,
@@ -880,6 +907,8 @@ function parseFieldSort(
         if (!m) continue;
         const field = fieldsById.get(Number(m[1]));
         if (!field || NON_SORTABLE.includes(field.type)) continue;
+        // Un rollup sin subconsulta (config sin resolver) no ordena.
+        if (field.type === 'rollup' && !field.expr) continue;
         const expr = fieldTypedExpr(field);
         out.push(m[2] === 'desc' ? sql`${expr} DESC NULLS LAST` : sql`${expr} ASC NULLS LAST`);
     }

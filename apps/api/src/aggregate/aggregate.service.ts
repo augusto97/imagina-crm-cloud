@@ -51,11 +51,9 @@ export class AggregateService {
         if (req.field_id !== undefined && !field) {
             throw badRequest('field_id no pertenece a la lista');
         }
-        this.assertMetricCompat(req.metric, field);
+        const fieldsById = await this.filterableFields(tenantId, list.id, fields);
+        this.assertMetricCompat(req.metric, field, fieldsById);
 
-        const fieldsById = new Map<number, FilterableField>(
-            fields.map((f) => [f.id, { id: f.id, type: f.type }]),
-        );
         const filterWhere = compileFilterTree(fieldsById, req.filter_tree, new Date());
         const baseWhere = and(
             eq(records.tenantId, tenantId),
@@ -64,7 +62,7 @@ export class AggregateService {
             filterWhere,
         );
 
-        const aggExpr = this.metricExpr(req.metric, field);
+        const aggExpr = this.metricExpr(req.metric, field, fieldsById);
 
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
@@ -175,9 +173,7 @@ export class AggregateService {
         const byId = new Map(fields.map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
-        const fieldsById = new Map<number, FilterableField>(
-            fields.map((f) => [f.id, { id: f.id, type: f.type }]),
-        );
+        const fieldsById = await this.filterableFields(tenantId, list.id, fields);
         const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, new Date());
         const baseWhere = and(
             eq(records.tenantId, tenantId),
@@ -189,9 +185,9 @@ export class AggregateService {
         const cols: Record<string, SQL> = {};
         const plan: Array<{ slug: string; metric: AggregateMetric; key: string }> = [];
         for (const f of targets) {
-            for (const metric of metricsFor(f.type)) {
+            for (const metric of metricsFor(f.type, fieldsById.get(f.id))) {
                 const key = `a${f.id}_${metric}`;
-                cols[key] = this.metricExpr(metric, f);
+                cols[key] = this.metricExpr(metric, f, fieldsById);
                 plan.push({ slug: f.slug, metric, key });
             }
         }
@@ -235,10 +231,33 @@ export class AggregateService {
         return { totals, groups };
     }
 
+    /**
+     * v0.1.170 — mapa de campos filtrables con las subconsultas de los
+     * rollups (así un widget/footer filtra por "deuda > 0" y el pie suma la
+     * columna rollup). Sin campos through no abre transacción.
+     */
+    private async filterableFields(
+        tenantId: number,
+        listId: number,
+        fields: Field[],
+    ): Promise<Map<number, FilterableField>> {
+        const plans = await this.fields.throughPlansFor(tenantId, listId, fields);
+        return new Map<number, FilterableField>([
+            ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+            ...this.fields.through.filterableFor(plans, tenantId),
+        ]);
+    }
+
     /** Expresión SQL de la métrica (opcionalmente sobre un campo tipado). */
-    private metricExpr(metric: AggregateMetric, field?: Field): SQL {
-        const text = field ? fieldTextExpr(field.id) : undefined;
-        const typed = field ? fieldTypedExpr({ id: field.id, type: field.type }) : undefined;
+    private metricExpr(
+        metric: AggregateMetric,
+        field: Field | undefined,
+        fieldsById: Map<number, FilterableField>,
+    ): SQL {
+        const ff = field ? fieldsById.get(field.id) : undefined;
+        // Un rollup no tiene texto JSONB: su "texto" es la propia subconsulta.
+        const text = field ? (ff?.expr ?? fieldTextExpr(field.id)) : undefined;
+        const typed = field ? fieldTypedExpr(ff ?? { id: field.id, type: field.type }) : undefined;
         switch (metric) {
             case 'count':
                 return sql`count(*)`;
@@ -262,11 +281,19 @@ export class AggregateService {
         }
     }
 
-    private assertMetricCompat(metric: AggregateMetric, field?: Field): void {
-        if ((metric === 'sum' || metric === 'avg') && !NUMERIC_TYPES.includes(field!.type)) {
+    private assertMetricCompat(
+        metric: AggregateMetric,
+        field: Field | undefined,
+        fieldsById: Map<number, FilterableField>,
+    ): void {
+        // Un rollup resuelto cuenta como numérico (o texto de fecha en min/max).
+        const ff = field ? fieldsById.get(field.id) : undefined;
+        const numeric = field ? NUMERIC_TYPES.includes(field.type) || (ff?.expr !== undefined && ff.valueKind !== 'text') : false;
+        const minmax = field ? MINMAX_TYPES.includes(field.type) || ff?.expr !== undefined : false;
+        if ((metric === 'sum' || metric === 'avg') && !numeric) {
             throw badRequest(`${metric} sólo aplica a campos numéricos`);
         }
-        if ((metric === 'min' || metric === 'max') && !MINMAX_TYPES.includes(field!.type)) {
+        if ((metric === 'min' || metric === 'max') && !minmax) {
             throw badRequest(`${metric} sólo aplica a campos numéricos o de fecha`);
         }
         if ((metric === 'count_true' || metric === 'count_false') && field!.type !== 'checkbox') {
@@ -284,7 +311,16 @@ export interface FooterAggregates {
 }
 
 /** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */
-function metricsFor(type: FieldType): AggregateMetric[] {
+function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
+    if (type === 'rollup') {
+        // v0.1.170 — sólo si el motor resolvió la subconsulta; un rollup de
+        // fecha (min/max) es texto ISO: no se suma ni promedia.
+        if (!ff?.expr) return [];
+        return ff.valueKind === 'text'
+            ? ['count', 'count_empty', 'min', 'max']
+            : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
+    }
+    if (type === 'lookup') return [];
     if (NUMERIC_TYPES.includes(type)) {
         return ['count', 'count_empty', 'count_unique', 'sum', 'avg', 'min', 'max'];
     }

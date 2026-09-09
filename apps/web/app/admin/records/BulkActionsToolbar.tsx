@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { useBulkRecords, useCreateRecord } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
+import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -152,7 +153,7 @@ function UpdateFieldAction({
     const [value, setValue] = useState<unknown>('');
 
     const editableFields = (fields.data ?? []).filter(
-        (f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'file',
+        (f) => f.type !== 'relation' && !isDerivedFieldType(f.type) && f.type !== 'file',
     );
     const selected = editableFields.find((f) => f.slug === fieldSlug) ?? null;
 
