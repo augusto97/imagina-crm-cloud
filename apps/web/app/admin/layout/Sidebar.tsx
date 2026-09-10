@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
@@ -25,15 +25,17 @@ import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
-import { dashboardColor, dashboardIcon } from '@/lib/dashboardIcon';
-import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import type { DashboardEntity } from '@/types/dashboard';
+import type { ListSummary } from '@/types/list';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
 
+import { DashboardPanelItem } from './DashboardPanelItem';
+import { ListPanelItem } from './ListPanelItem';
 import { ListsTree } from './ListsTree';
-import { PanelListLink } from './PanelListLink';
+import { PeekHoldContext } from './peekHold';
 
 /** Preferencia de colapso del panel interno (persistida por navegador). */
 const PANEL_COLLAPSED_KEY = 'imcrm-panel-collapsed';
@@ -181,6 +183,22 @@ export function Sidebar({
     }, [pathname]);
     // Sólo flota lo que NO estás viendo ya en el panel acoplado.
     const peeking = hovered !== null && (collapsed || hovered !== section) ? hovered : null;
+    // v0.1.172 — un menú contextual o un diálogo abierto DESDE el flotante
+    // lo sostiene abierto (el menú va por portal: en el DOM el mouse "sale"
+    // del flotante al entrar al menú, y cada click adentro burbujea hasta
+    // acá). Al soltarlo, el flotante se va: el mouse ya está en otro lado.
+    const holdRef = useRef(false);
+    const peekHold = useCallback((held: boolean): void => {
+        if (holdRef.current === held) return;
+        holdRef.current = held;
+        if (!held) {
+            clearTimers();
+            setHovered(null);
+        }
+    }, []);
+    const unpeekUnlessHeld = (): void => {
+        if (!holdRef.current) unpeek();
+    };
 
     // Branding white-label del tenant (logo + nombre). Lee del query cache
     // que puebla `useBranding` en AdminCloudApp; nulls → marca por defecto.
@@ -268,14 +286,10 @@ export function Sidebar({
                             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                                 {dashboards.data.map((d) => (
                                     <li key={d.id}>
-                                        <PanelListLink
-                                            to={`/dashboards/${d.id}`}
-                                            name={d.name}
-                                            // v0.1.145 — su icono, nunca el
-                                            // puntito genérico (el usuario ya
-                                            // lo había pedido para las listas).
-                                            icon={dashboardIcon(d.settings)}
-                                            iconColor={dashboardColor(d.settings)}
+                                        {/* v0.1.145 — su icono; v0.1.172 —
+                                            con menú contextual. */}
+                                        <DashboardPanelItem
+                                            dashboard={d}
                                             starred={favs.dashboards.includes(d.id)}
                                             onToggleStar={() => toggleFav('dashboards', d.id)}
                                         />
@@ -459,12 +473,13 @@ export function Sidebar({
                 <div
                     data-testid="imcrm-peek-panel"
                     onMouseEnter={clearTimers}
-                    onMouseLeave={unpeek}
+                    onMouseLeave={unpeekUnlessHeld}
                     // Al elegir algo, el flotante se va. No alcanza con
                     // reaccionar al cambio de ruta: clickear el item en el
                     // que YA estás no cambia el pathname y el panel quedaba
                     // abierto tapando el contenido.
                     onClick={() => {
+                        if (holdRef.current) return;
                         clearTimers();
                         setHovered(null);
                     }}
@@ -479,7 +494,7 @@ export function Sidebar({
                         aria-label={titleFor(peeking)}
                         className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-5 imcrm-overflow-y-auto imcrm-px-3 imcrm-py-4"
                     >
-                        {panelBody(peeking)}
+                        <PeekHoldContext.Provider value={peekHold}>{panelBody(peeking)}</PeekHoldContext.Provider>
                     </nav>
                 </div>,
                 document.body,
@@ -678,39 +693,23 @@ function FavoritesSection({
     onToggle,
 }: {
     favs: Favorites;
-    lists: Array<{ id: number; slug: string; name: string; icon?: string | null; color?: string | null }>;
-    dashboards: Array<{ id: number; name: string; settings?: Record<string, unknown> }>;
+    lists: ListSummary[];
+    dashboards: DashboardEntity[];
     onToggle: (kind: keyof Favorites, id: number) => void;
 }): JSX.Element | null {
     const listById = new Map(lists.map((l) => [l.id, l]));
     const dashById = new Map(dashboards.map((d) => [d.id, d]));
-    // Cada anclado con SU icono (v0.1.145): el de la lista o el del
-    // dashboard, nunca el puntito genérico.
+    // Cada anclado con SU icono (v0.1.145) y su menú contextual
+    // (v0.1.172): la misma fila que en los árboles de Listas/Dashboards.
     const items = [
         ...favs.lists
             .map((id) => listById.get(id))
-            .filter((l): l is (typeof lists)[number] => l !== undefined)
-            .map((l) => ({
-                key: `l-${l.id}`,
-                to: `/lists/${l.slug}/records`,
-                name: l.name,
-                kind: 'lists' as const,
-                id: l.id,
-                icon: listIcon(l.icon) ?? DEFAULT_LIST_ICON,
-                iconColor: listColor(l.color),
-            })),
+            .filter((l): l is ListSummary => l !== undefined)
+            .map((l) => ({ key: `l-${l.id}`, list: l, dashboard: undefined })),
         ...favs.dashboards
             .map((id) => dashById.get(id))
-            .filter((d): d is (typeof dashboards)[number] => d !== undefined)
-            .map((d) => ({
-                key: `d-${d.id}`,
-                to: `/dashboards/${d.id}`,
-                name: d.name,
-                kind: 'dashboards' as const,
-                id: d.id,
-                icon: dashboardIcon(d.settings),
-                iconColor: dashboardColor(d.settings),
-            })),
+            .filter((d): d is DashboardEntity => d !== undefined)
+            .map((d) => ({ key: `d-${d.id}`, list: undefined, dashboard: d })),
     ];
     if (items.length === 0) {
         return (
@@ -724,14 +723,15 @@ function FavoritesSection({
             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                 {items.map((it) => (
                     <li key={it.key}>
-                        <PanelListLink
-                            to={it.to}
-                            name={it.name}
-                            starred
-                            icon={it.icon}
-                            iconColor={it.iconColor}
-                            onToggleStar={() => onToggle(it.kind, it.id)}
-                        />
+                        {it.list !== undefined ? (
+                            <ListPanelItem list={it.list} starred onToggleStar={() => onToggle('lists', it.list.id)} />
+                        ) : (
+                            <DashboardPanelItem
+                                dashboard={it.dashboard}
+                                starred
+                                onToggleStar={() => onToggle('dashboards', it.dashboard.id)}
+                            />
+                        )}
                     </li>
                 ))}
             </ul>

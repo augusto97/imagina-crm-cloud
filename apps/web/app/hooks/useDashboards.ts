@@ -80,6 +80,30 @@ export function useUpdateDashboard(id: number) {
     });
 }
 
+/**
+ * v0.1.98 — duplicar un dashboard completo: widgets con ids nuevos (copia
+ * profunda de la config) + settings + visibilidad. Lo usan el índice y el
+ * menú contextual del panel (v0.1.172).
+ */
+export function useDuplicateDashboard() {
+    const create = useCreateDashboard();
+    return useMutation({
+        mutationFn: async (src: DashboardEntity) =>
+            create.mutateAsync({
+                name: `${src.name} (copia)`,
+                description: src.description,
+                widgets: src.widgets.map((w) => ({
+                    ...w,
+                    id: `w-${Math.random().toString(36).slice(2, 10)}`,
+                    config: JSON.parse(JSON.stringify(w.config)) as typeof w.config,
+                })),
+                settings: src.settings,
+                visibility: src.visibility,
+                allowed_roles: src.allowed_roles,
+            }),
+    });
+}
+
 export function useDeleteDashboard() {
     const qc = useQueryClient();
     return useMutation({

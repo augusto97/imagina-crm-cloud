@@ -13,14 +13,14 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/components/ui/toast';
-import { useCreateDashboard, useDashboards } from '@/hooks/useDashboards';
+import { useDashboards, useDuplicateDashboard } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
 
 import { DashboardCreateDialog } from './DashboardCreateDialog';
 
 export function DashboardsIndexPage(): JSX.Element {
     const dashboards = useDashboards();
-    const create = useCreateDashboard();
+    const duplicate = useDuplicateDashboard();
     const toast = useToast();
     const [createOpen, setCreateOpen] = useState(false);
 
@@ -31,18 +31,7 @@ export function DashboardsIndexPage(): JSX.Element {
         const src = dashboards.data?.find((d) => d.id === id);
         if (!src) return;
         try {
-            await create.mutateAsync({
-                name: `${src.name} (${__('copia')})`,
-                description: src.description,
-                widgets: src.widgets.map((w) => ({
-                    ...w,
-                    id: `w-${Math.random().toString(36).slice(2, 10)}`,
-                    config: JSON.parse(JSON.stringify(w.config)) as typeof w.config,
-                })),
-                settings: src.settings,
-                visibility: src.visibility,
-                allowed_roles: src.allowed_roles,
-            });
+            await duplicate.mutateAsync(src);
             toast.success(__('Dashboard duplicado'));
         } catch (err) {
             if (err instanceof Error) toast.error(__('No se pudo duplicar'), err.message);

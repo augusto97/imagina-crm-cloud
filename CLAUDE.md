@@ -3168,6 +3168,42 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con sus registros de muestra, el lookup trae el dato del otro lado, el
         computed suma dos rollups y el KPI filtra por el saldo).
 
+  - [x] **Menú contextual del panel lateral (v0.1.172, pedido del usuario
+        con captura del menú de ClickUp)**: cada lista y cada dashboard del
+        panel gana un menú "…" (aparece al hover; en táctil, visible tenue)
+        que también se abre con **click derecho** sobre la fila. Sólo entran
+        acciones que existen de verdad, cada una cableada a lo que YA hacía
+        en otra pantalla: **listas** → anclar/quitar de favoritos, cambiar el
+        nombre **inline** (la fila se vuelve input; Enter guarda, Escape
+        cancela), copiar vínculo, **color e ícono ›** (submenú con el MISMO
+        catálogo del selector de Ajustes; elegir aplica al instante y el menú
+        queda abierto para elegir color y después icono), **mover a carpeta ›**
+        (las carpetas de v0.1.130 + "Sin carpeta"), nuevo registro e importar
+        (deep links `?new=1` / `?import=1` que la página de registros consume
+        y limpia), compartir (el mismo `ShareDialog` de la cabecera), campos,
+        automatizaciones, uso compartido y permisos, ajustes, duplicar,
+        guardar como plantilla y eliminar (confirmación; si estabas parado en
+        esa lista, vuelve al índice). **Dashboards** → anclar, renombrar
+        inline, vínculo, color e ícono, duplicar (el `useDuplicateDashboard`
+        se extrajo del índice y lo comparten), configuración (el diálogo del
+        lápiz) y eliminar. Lo de ClickUp sin equivalente (ClickApps, estados,
+        etiquetas, archivar, ocultar) no aparece: un item apagado es peor que
+        ninguno. Los favoritos usan las mismas filas, así el menú sale ahí
+        también. Gates por capability (`manage_lists`, `manage_automations`,
+        `create/import_records`, `manage_dashboards`). Dos cuidados: (a) los
+        diálogos se montan SÓLO mientras están abiertos — `ShareDialog` trae
+        sus propias queries y montarlo por fila sería N requests por abrir el
+        panel; (b) el **flotante del riel** (v0.1.145) se cerraba al entrar
+        al menú (va por portal: en el DOM el mouse "sale" del flotante) y al
+        clickear un item (burbujea por el árbol de React) — ahora un menú o
+        un diálogo abierto DESDE el flotante lo **sostiene** (`PeekHoldContext`)
+        y al soltarlo el flotante se va. E2E navegador 27/27 (15 acciones,
+        vínculo al portapapeles, click derecho, rename persistido, color e
+        icono persistidos y pintados, mover a carpeta, compartir, alta por
+        deep link, duplicar, menú del dashboard con rename/duplicar/eliminar,
+        el flotante sostenido con menú y diálogo, eliminar la lista abierta
+        redirige, y mobile con "…" visible sin cerrar el drawer).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
