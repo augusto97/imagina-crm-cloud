@@ -1,6 +1,4 @@
-import { ChartBarIcon } from '@heroicons/react/20/solid';
-
-import { listColor, listIcon, type ListIconComponent } from './listIcons';
+import { DEFAULT_DASHBOARD_ICON, listColor, listIcon, type ListIconComponent } from './listIcons';
 
 /**
  * Icono de un dashboard (v0.1.145).
@@ -9,11 +7,11 @@ import { listColor, listIcon, type ListIconComponent } from './listIcons';
  * las listas antes de v0.1.137 — el usuario lo marcó otra vez. Ahora llevan
  * icono: el que eligió quien lo creó (`settings.icon`, del MISMO catálogo
  * que las listas, así no hay dos vocabularios de iconos en la app) o el
- * genérico de tablero (sólido desde v0.1.174, como el resto del catálogo).
+ * genérico de tablero (sólido, del mismo catálogo).
  */
 export function dashboardIcon(settings: Record<string, unknown> | undefined): ListIconComponent {
     const key = settings?.['icon'];
-    return (typeof key === 'string' ? listIcon(key) : undefined) ?? ChartBarIcon;
+    return (typeof key === 'string' ? listIcon(key) : undefined) ?? DEFAULT_DASHBOARD_ICON;
 }
 
 /** Color del icono, si eligió uno. */

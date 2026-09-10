@@ -17,7 +17,6 @@
         "test:watch": "vitest"
     },
     "dependencies": {
-        "@heroicons/react": "^2.2.0",
         "@hookform/resolvers": "^3.9.0",
         "@imagina-base/shared": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.2",
@@ -60,6 +59,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.12.0",
+        "@phosphor-icons/core": "^2.1.1",
         "@testing-library/jest-dom": "^6.5.0",
         "@testing-library/react": "^16.0.1",
         "@types/dompurify": "^3.2.0",
