@@ -357,6 +357,27 @@ const applyView = (view: SavedViewEntity | null): void => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [viewApplied, list.data?.id, searchParams]);
 
+    // v0.1.172 — deep links del menú contextual del panel: `?new=1` abre el
+    // alta y `?import=1` el importador, y el param se limpia para que no se
+    // re-abra al navegar dentro de la página.
+    useEffect(() => {
+        if (!list.data) return;
+        const wantsNew = searchParams.get('new') === '1';
+        const wantsImport = searchParams.get('import') === '1';
+        if (!wantsNew && !wantsImport) return;
+        if (wantsNew) {
+            setCreateDefaults(undefined);
+            setCreateParentId(null);
+            setCreateOpen(true);
+        }
+        if (wantsImport) setImportOpen(true);
+        const next = new URLSearchParams(searchParams);
+        next.delete('new');
+        next.delete('import');
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [list.data?.id, searchParams]);
+
     const setFilterTree = (filterTree: import('@/types/record').FilterTree): void => {
         setState((s) => ({ ...s, filterTree, page: 1 }));
     };
