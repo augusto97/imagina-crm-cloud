@@ -22,6 +22,8 @@ export interface CreateListInput {
     icon?: string | null;
     color?: string | null;
     settings?: Record<string, unknown>;
+    /** Nacer dentro de una carpeta (v0.1.173). */
+    group_id?: number | null;
 }
 
 export interface UpdateListInput {
@@ -40,5 +42,8 @@ export interface UpdateListInput {
 export interface ListGroup {
     id: number;
     name: string;
+    /** Icono y color de la carpeta (v0.1.173), mismo catálogo que las listas. */
+    icon: string | null;
+    color: string | null;
     position: number;
 }

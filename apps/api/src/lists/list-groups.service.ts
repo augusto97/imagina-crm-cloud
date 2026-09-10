@@ -16,8 +16,19 @@ import { TenantDb } from '../tenancy/tenant-db.service';
  * ClickUp, que agrega dos niveles de navegación para el mismo resultado.
  *
  * Borrar una carpeta NUNCA borra listas: la FK es ON DELETE SET NULL y las
- * listas vuelven a la raíz del menú.
+ * listas vuelven a la raíz.
+ *
+ * v0.1.173 — la carpeta tiene icono y color propios (mismo catálogo que las
+ * listas), como los espacios de ClickUp.
  */
+const GROUP_COLUMNS = {
+    id: listGroups.id,
+    name: listGroups.name,
+    icon: listGroups.icon,
+    color: listGroups.color,
+    position: listGroups.position,
+} as const;
+
 @Injectable()
 export class ListGroupsService {
     constructor(private readonly tenantDb: TenantDb) {}
@@ -25,7 +36,7 @@ export class ListGroupsService {
     async list(tenantId: number): Promise<ListGroup[]> {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const rows = await tx
-                .select({ id: listGroups.id, name: listGroups.name, position: listGroups.position })
+                .select(GROUP_COLUMNS)
                 .from(listGroups)
                 .where(eq(listGroups.tenantId, tenantId))
                 .orderBy(asc(listGroups.position), asc(listGroups.id));
@@ -42,22 +53,30 @@ export class ListGroupsService {
             const position = (maxRow?.max ?? -1) + 1;
             const [row] = await tx
                 .insert(listGroups)
-                .values({ tenantId, name: input.name, position })
-                .returning({ id: listGroups.id, name: listGroups.name, position: listGroups.position });
+                .values({
+                    tenantId,
+                    name: input.name,
+                    icon: input.icon ?? null,
+                    color: input.color ?? null,
+                    position,
+                })
+                .returning(GROUP_COLUMNS);
             return row!;
         });
     }
 
     async update(tenantId: number, id: number, patch: UpdateListGroupInput): Promise<ListGroup> {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
-            const changes: { name?: string; position?: number } = {};
+            const changes: { name?: string; icon?: string | null; color?: string | null; position?: number } = {};
             if (patch.name !== undefined) changes.name = patch.name;
+            if (patch.icon !== undefined) changes.icon = patch.icon;
+            if (patch.color !== undefined) changes.color = patch.color;
             if (patch.position !== undefined) changes.position = patch.position;
             const [row] = await tx
                 .update(listGroups)
                 .set(changes)
                 .where(and(eq(listGroups.tenantId, tenantId), eq(listGroups.id, id)))
-                .returning({ id: listGroups.id, name: listGroups.name, position: listGroups.position });
+                .returning(GROUP_COLUMNS);
             if (!row) throw new NotFoundException(notFound());
             return row;
         });

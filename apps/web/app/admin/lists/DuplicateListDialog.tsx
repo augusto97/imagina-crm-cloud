@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { useMoveListToGroup } from '@/hooks/useListGroups';
 import { useDuplicateList } from '@/hooks/useListTemplates';
 import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
@@ -72,15 +73,19 @@ export function DuplicateListDialog({ open, onOpenChange, sourceId }: Props): JS
  */
 export function DuplicateListForm({
     sourceId,
+    groupId,
     onDone,
     className,
 }: {
     sourceId?: number;
+    /** v0.1.173 — la copia va a esta carpeta (si no, conserva la del origen). */
+    groupId?: number;
     onDone: () => void;
     className?: string;
 }): JSX.Element {
     const lists = useLists();
     const duplicate = useDuplicateList();
+    const move = useMoveListToGroup();
     const navigate = useNavigate();
     const toast = useToast();
 
@@ -113,6 +118,9 @@ export function DuplicateListForm({
                 input: { name: name.trim() || undefined, include: { views, automations, settings, records } },
             });
             const copy = res.lists[0];
+            if (copy && groupId !== undefined && copy.group_id !== groupId) {
+                await move.mutateAsync({ listId: copy.id, groupId });
+            }
             toast.success(__('Lista duplicada'), copy?.name);
             for (const w of res.warnings) toast.error(__('Algo no se pudo copiar'), w);
             onDone();

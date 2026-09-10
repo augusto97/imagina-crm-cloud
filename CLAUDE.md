@@ -3204,6 +3204,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el flotante sostenido con menú y diálogo, eliminar la lista abierta
         redirige, y mobile con "…" visible sin cerrar el drawer).
 
+  - [x] **Carpetas con icono, color y menú contextual (v0.1.173, reporte del
+        usuario con capturas de ClickUp)**: faltaba el menú de la carpeta y
+        el icono. (a) **Icono y color por carpeta** — `list_groups.icon` /
+        `color` (migración 0047, mismo catálogo y reglas que las listas:
+        clave del icono, hex del color, nullable), en el schema compartido, el
+        service (select/create/update) y el DTO del front. La cabecera dibuja
+        un **cuadrado de color con el icono** que **al pasar el mouse se
+        convierte en el chevron** de plegar (lo que hace ClickUp con los
+        espacios; en táctil no hay hover, queda el icono y el toque pliega
+        igual); sin elección, icono de carpeta neutro. (b) **Menú contextual
+        de la carpeta** ("…" al hover y **click derecho**; en táctil visible
+        tenue): cambiar el nombre (inline), color e ícono › (el mismo
+        submenú de las listas), nueva lista en esta carpeta, nueva carpeta,
+        plegar/desplegar y eliminar (confirmación que avisa que las listas
+        vuelven al nivel de arriba). Más un **"+" al hover** que crea una
+        lista adentro. (c) **Nacer dentro de la carpeta**: `createListSchema`
+        gana `group_id` (validado contra el tenant con el mismo `assertGroup`
+        del PATCH → 404, no FK violation) y `ListCreateDialog` recibe
+        `groupId`/`groupName` — el título dice «Nueva lista en «X»» y las
+        TRES rutas lo respetan: en blanco (`group_id` en el POST), plantilla
+        (el `group_id` que `apply` ya aceptaba) y duplicar (mueve la copia si
+        el origen estaba en otra carpeta). El flotante del riel se sostiene
+        con el menú o el diálogo de la carpeta abiertos, igual que las filas.
+        2 tests de API nuevos (icono/color alta-cambio-limpieza; nacer en
+        carpeta propia y rechazo de la ajena) + E2E navegador 22/22 (cuadrado
+        de 20px, icono→chevron medido por `display`, menú de 6 acciones,
+        rename, color e icono persistidos y pintados, alta en blanco con
+        `group_id`, "+", plegar/desplegar, flotante sostenido, borrar con la
+        lista de vuelta a la raíz, mobile con icono en color y "…"/"+"
+        visibles) y el E2E de v0.1.172 re-verificado 27/27. **OJO en dev**:
+        el API no aplica migraciones al arrancar — tras una migración nueva
+        hay que correr `pnpm db:migrate` en `apps/api` (el E2E lo detectó:
+        columnas ausentes con el API ya reiniciado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

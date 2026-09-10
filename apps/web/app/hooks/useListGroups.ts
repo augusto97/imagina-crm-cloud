@@ -44,9 +44,17 @@ export function useCreateListGroup() {
     });
 }
 
+/** Nombre, icono y/o color (v0.1.173) — cualquier subconjunto. */
+export interface UpdateListGroupVars {
+    id: number;
+    name?: string;
+    icon?: string | null;
+    color?: string | null;
+}
+
 export function useUpdateListGroup() {
-    return useGroupMutation(async ({ id, name }: { id: number; name: string }) => {
-        const res = await api.patch<ListGroup>(`/list-groups/${id}`, { name });
+    return useGroupMutation(async ({ id, ...patch }: UpdateListGroupVars) => {
+        const res = await api.patch<ListGroup>(`/list-groups/${id}`, patch);
         return res.data;
     });
 }

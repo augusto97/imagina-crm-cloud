@@ -50,6 +50,34 @@ describe('Carpetas de listas (v0.1.130)', () => {
         expect((await groups.list(tenantA)).map((g) => g.name)).toEqual(['Ventas', 'Soporte']);
     });
 
+    it('v0.1.173 — icono y color de la carpeta: alta, cambio y limpieza', async () => {
+        const g = await groups.create(tenantA, { name: 'Ventas', icon: 'briefcase', color: '#22c55e' });
+        expect(g.icon).toBe('briefcase');
+        expect(g.color).toBe('#22c55e');
+        // Sin elegir → null (el front muestra el icono genérico de carpeta).
+        const plain = await groups.create(tenantA, { name: 'Soporte' });
+        expect(plain.icon).toBeNull();
+        expect(plain.color).toBeNull();
+        // Cambiar sólo el icono conserva el color; `null` limpia.
+        const changed = await groups.update(tenantA, g.id, { icon: 'rocket' });
+        expect(changed.icon).toBe('rocket');
+        expect(changed.color).toBe('#22c55e');
+        const cleared = await groups.update(tenantA, g.id, { icon: null, color: null });
+        expect(cleared.icon).toBeNull();
+        expect(cleared.color).toBeNull();
+        expect((await groups.list(tenantA)).map((x) => x.icon)).toEqual([null, null]);
+    });
+
+    it('v0.1.173 — una lista puede NACER dentro de una carpeta (y no de una ajena)', async () => {
+        const g = await groups.create(tenantA, { name: 'Ventas' });
+        const inside = await listsSvc.create(tenantA, { name: 'Clientes', group_id: g.id });
+        expect(inside.group_id).toBe(g.id);
+        const ajena = await groups.create(tenantB, { name: 'De Globex' });
+        await expect(
+            listsSvc.create(tenantA, { name: 'Intrusa', group_id: ajena.id }),
+        ).rejects.toThrow(NotFoundException);
+    });
+
     it('una lista entra y sale de la carpeta', async () => {
         const g = await groups.create(tenantA, { name: 'Ventas' });
         const list = await listsSvc.create(tenantA, { name: 'Clientes' });
