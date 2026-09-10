@@ -149,6 +149,10 @@ export class ListsService {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const slug = await this.resolveNewSlug(tx, tenantId, input.name, input.slug);
             const position = await this.repo.nextPosition(tx, tenantId);
+            // v0.1.173 — nacer dentro de una carpeta (menú contextual de la
+            // carpeta). Misma verificación que al mover: carpeta del tenant.
+            const groupId = input.group_id ?? null;
+            if (groupId !== null) await this.assertGroup(tx, tenantId, groupId);
             return this.repo.insert(tx, {
                 tenantId,
                 slug,
@@ -156,10 +160,27 @@ export class ListsService {
                 icon: input.icon ?? null,
                 color: input.color ?? null,
                 position,
+                groupId,
             });
         });
         this.realtime.lists(tenantId);
         return toList(row);
+    }
+
+    /** La carpeta existe y es de este tenant; si no, 404 (no una FK violation con 500). */
+    private async assertGroup(tx: Tx, tenantId: number, groupId: number): Promise<void> {
+        const [g] = await tx
+            .select({ id: listGroups.id })
+            .from(listGroups)
+            .where(and(eq(listGroups.tenantId, tenantId), eq(listGroups.id, groupId)))
+            .limit(1);
+        if (!g) {
+            throw new NotFoundException({
+                code: 'list_group_not_found',
+                message: 'Carpeta no encontrada',
+                data: { status: 404 },
+            });
+        }
     }
 
     /**
@@ -200,20 +221,7 @@ export class ListsService {
                 // Mover a una carpeta: se verifica que sea del MISMO tenant
                 // (la RLS ya lo garantiza, pero un id ajeno debe dar 404 y no
                 // una FK violation con 500).
-                if (patch.group_id !== null) {
-                    const [g] = await tx
-                        .select({ id: listGroups.id })
-                        .from(listGroups)
-                        .where(and(eq(listGroups.tenantId, tenantId), eq(listGroups.id, patch.group_id)))
-                        .limit(1);
-                    if (!g) {
-                        throw new NotFoundException({
-                            code: 'list_group_not_found',
-                            message: 'Carpeta no encontrada',
-                            data: { status: 404 },
-                        });
-                    }
-                }
+                if (patch.group_id !== null) await this.assertGroup(tx, tenantId, patch.group_id);
                 changes.groupId = patch.group_id;
             }
             if (patch.settings !== undefined) {

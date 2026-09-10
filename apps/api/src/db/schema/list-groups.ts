@@ -12,6 +12,9 @@ export const listGroups = pgTable('list_groups', {
         .notNull()
         .references(() => tenants.id),
     name: text('name').notNull(),
+    /** v0.1.173 — icono y color de la carpeta (mismo catálogo que las listas). */
+    icon: text('icon'),
+    color: text('color'),
     position: integer('position').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

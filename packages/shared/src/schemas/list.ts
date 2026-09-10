@@ -22,6 +22,8 @@ export const createListSchema = z.object({
     slug: listSlugSchema.optional(),
     icon: z.string().max(64).optional(),
     color: z.string().max(32).optional(),
+    /** v0.1.173 — nacer DENTRO de una carpeta (menú contextual de la carpeta). */
+    group_id: idSchema.nullable().optional(),
 });
 export type CreateListInput = z.infer<typeof createListSchema>;
 
@@ -60,18 +62,26 @@ export type ReorderListsInput = z.infer<typeof reorderListsSchema>;
 export const listGroupSchema = z.object({
     id: idSchema,
     name: z.string().min(1).max(190),
+    /** v0.1.173 — icono y color de la carpeta (mismo catálogo que las listas). */
+    icon: z.string().max(64).nullable().default(null),
+    color: z.string().max(32).nullable().default(null),
     position: z.number().int().nonnegative().default(0),
 });
 export type ListGroup = z.infer<typeof listGroupSchema>;
 
 export const createListGroupSchema = z.object({
     name: z.string().trim().min(1).max(190),
+    icon: z.string().max(64).nullable().optional(),
+    color: z.string().max(32).nullable().optional(),
 });
 export type CreateListGroupInput = z.infer<typeof createListGroupSchema>;
 
 export const updateListGroupSchema = z
     .object({
         name: z.string().trim().min(1).max(190),
+        /** `null` limpia el icono/color; ausente = sin cambio. */
+        icon: z.string().max(64).nullable(),
+        color: z.string().max(32).nullable(),
         position: z.number().int().nonnegative(),
     })
     .partial()

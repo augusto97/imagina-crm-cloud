@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useCreateList } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { DuplicateListForm } from './DuplicateListDialog';
@@ -20,6 +20,12 @@ import { TemplateGallery } from './TemplateGallery';
 interface ListCreateDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /**
+     * v0.1.173 — la lista nace DENTRO de esta carpeta (menú contextual de la
+     * carpeta): en blanco, desde plantilla o duplicando, las tres la respetan.
+     */
+    groupId?: number;
+    groupName?: string;
 }
 
 type Mode = 'blank' | 'template' | 'duplicate';
@@ -31,7 +37,7 @@ type Mode = 'blank' | 'template' | 'duplicate';
  * existe. El diálogo se ensancha en la galería: con dos columnas de
  * plantillas y la vista previa al lado, un modal angosto no sirve.
  */
-export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps): JSX.Element {
+export function ListCreateDialog({ open, onOpenChange, groupId, groupName }: ListCreateDialogProps): JSX.Element {
     // v0.1.168 — la plantilla es la PRIMERA opción y la que se abre por
     // defecto (pedido del usuario); "En blanco" queda segunda.
     const [mode, setMode] = useState<Mode>('template');
@@ -62,7 +68,13 @@ export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps):
                     <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
                         <div>
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">
-                                {__('Nueva lista')}
+                                {groupName !== undefined
+                                    ? sprintf(
+                                          /* translators: %s: folder name */
+                                          __('Nueva lista en «%s»'),
+                                          groupName,
+                                      )
+                                    : __('Nueva lista')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {mode === 'blank' && __('Define el nombre y los campos llegarán después.')}
@@ -85,9 +97,10 @@ export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps):
                     </div>
 
                     <div className="imcrm-mt-4 imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col">
-                        {mode === 'blank' && <BlankForm open={open} onDone={() => onOpenChange(false)} />}
+                        {mode === 'blank' && <BlankForm open={open} groupId={groupId} onDone={() => onOpenChange(false)} />}
                         {mode === 'template' && (
                             <TemplateGallery
+                                groupId={groupId}
                                 onCreated={(lists, warnings) => {
                                     const first = lists[0];
                                     toast.success(
@@ -100,7 +113,7 @@ export function ListCreateDialog({ open, onOpenChange }: ListCreateDialogProps):
                                 }}
                             />
                         )}
-                        {mode === 'duplicate' && <DuplicateListForm onDone={() => onOpenChange(false)} />}
+                        {mode === 'duplicate' && <DuplicateListForm groupId={groupId} onDone={() => onOpenChange(false)} />}
                     </div>
                 </Dialog.Content>
             </Dialog.Portal>
@@ -138,7 +151,7 @@ function ModeButton({
 }
 
 /** El alta en blanco de siempre (nombre, dirección web, descripción). */
-function BlankForm({ open, onDone }: { open: boolean; onDone: () => void }): JSX.Element {
+function BlankForm({ open, groupId, onDone }: { open: boolean; groupId?: number; onDone: () => void }): JSX.Element {
     const navigate = useNavigate();
     const create = useCreateList();
     const { reset: resetCreate } = create;
@@ -170,6 +183,7 @@ function BlankForm({ open, onDone }: { open: boolean; onDone: () => void }): JSX
                 name: name.trim(),
                 slug: slug || undefined,
                 description: description.trim() || null,
+                ...(groupId !== undefined ? { group_id: groupId } : {}),
             });
             onDone();
             navigate(`/lists/${list.slug}/edit`);

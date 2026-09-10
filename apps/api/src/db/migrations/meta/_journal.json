@@ -330,6 +330,13 @@
       "when": 1784200000015,
       "tag": "0046_templates_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784200000016,
+      "tag": "0047_list_group_icon",
+      "breakpoints": true
     }
   ]
 }

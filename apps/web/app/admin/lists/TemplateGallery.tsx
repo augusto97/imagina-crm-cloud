@@ -42,9 +42,11 @@ const CATEGORY_LABELS: Record<TemplateCategory, string> = {
 
 interface Props {
     onCreated: (lists: ListSummary[], warnings: string[]) => void;
+    /** v0.1.173 — las listas del pack nacen dentro de esta carpeta. */
+    groupId?: number;
 }
 
-export function TemplateGallery({ onCreated }: Props): JSX.Element {
+export function TemplateGallery({ onCreated, groupId }: Props): JSX.Element {
     const templates = useListTemplates();
     const apply = useApplyListTemplate();
     const remove = useDeleteListTemplate();
@@ -94,7 +96,11 @@ export function TemplateGallery({ onCreated }: Props): JSX.Element {
         try {
             const res = await apply.mutateAsync({
                 id: selected.id,
-                input: { name: name.trim() || undefined, include_records: withRecords },
+                input: {
+                    name: name.trim() || undefined,
+                    include_records: withRecords,
+                    ...(groupId !== undefined ? { group_id: groupId } : {}),
+                },
             });
             onCreated(res.lists, res.warnings);
         } catch (err) {
