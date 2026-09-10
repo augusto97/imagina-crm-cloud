@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
     ChevronDown,
     ChevronRight,
-    Folder,
     FolderPlus,
     MoreHorizontal,
     Pencil,
@@ -26,7 +25,7 @@ import {
     useMoveListToGroup,
     useUpdateListGroup,
 } from '@/hooks/useListGroups';
-import { listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_FOLDER_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ListGroup, ListSummary } from '@/types/list';
@@ -319,7 +318,7 @@ function FolderHeader({
     }, [held, peekHold]);
     useEffect(() => () => peekHold(false), [peekHold]);
 
-    const Icon = listIcon(group.icon) ?? Folder;
+    const Icon = listIcon(group.icon) ?? DEFAULT_FOLDER_ICON;
     const color = listColor(group.color);
 
     const submitRename = (): void => {

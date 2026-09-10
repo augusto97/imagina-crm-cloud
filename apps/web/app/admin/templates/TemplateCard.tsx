@@ -1,9 +1,12 @@
-import { Check, type LucideIcon } from 'lucide-react';
+import { Check } from 'lucide-react';
+
+import type { ListIconComponent } from '@/lib/listIcons';
 
 import { cn } from '@/lib/utils';
 
 interface Props {
-    icon: LucideIcon;
+    /** Sólido del catálogo o de trazo (lucide): ambos aceptan className/style. */
+    icon: ListIconComponent;
     /** Hex del icono (el mismo tratamiento que los iconos de lista). */
     color?: string;
     name: string;

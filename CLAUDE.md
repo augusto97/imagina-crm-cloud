@@ -3238,6 +3238,30 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         hay que correr `pnpm db:migrate` en `apps/api` (el E2E lo detectó:
         columnas ausentes con el API ya reiniciado).
 
+  - [x] **Iconos SÓLIDOS para listas, carpetas y dashboards (v0.1.174,
+        reporte del usuario con capturas de ClickUp: "iconos muy delgados que
+        casi ni se entiende qué son")**: el catálogo de `listIcons` usaba los
+        iconos de trazo de lucide (1.5px de línea) y a 14px en el menú apenas
+        se distinguían; ClickUp usa glifos macizos justamente por eso. El
+        catálogo pasa a **heroicons 20/solid** (dependencia nueva
+        `@heroicons/react`, MIT, tree-shakeable — sólo entran los 37 que se
+        importan) con las MISMAS 36 claves (`briefcase`, `receipt`,
+        `rocket`…): lo guardado en `lists.icon`, `list_groups.icon` y
+        `dashboards.settings.icon` sigue valiendo, sólo cambia el dibujo.
+        `ListIconComponent` (`ComponentType<SVGProps>`) reemplaza a
+        `LucideIcon` en las props del panel, `TemplateCard` y `dashboardIcon`,
+        así conviven sólidos del catálogo y trazos de lucide donde haga
+        falta. Fallbacks también sólidos: lista sin icono → `ListBullet`,
+        carpeta → `Folder`, dashboard → `ChartBar`. El glifo de las filas
+        sube de 14 a 16px (como ClickUp); el de la carpeta sigue a 12px
+        dentro del cuadrado de color. Aplica en el panel (acoplado y
+        flotante), favoritos, galerías de plantillas, el selector de Ajustes
+        y el submenú "Color e ícono". El resto de la UI (riel, botones,
+        tipos de campo) conserva lucide a propósito: son iconos de acción a
+        16-20px sobre fondo claro, donde el trazo se lee bien. Verificado en
+        navegador en claro y oscuro (`fill="currentColor"`, un path por
+        glifo) + E2E de v0.1.172 (27/27) y v0.1.173 (22/22) re-verificados.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

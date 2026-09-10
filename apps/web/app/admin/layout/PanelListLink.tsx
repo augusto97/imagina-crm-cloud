@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router';
-import { MoreHorizontal, Pin, type LucideIcon } from 'lucide-react';
+import { MoreHorizontal, Pin } from 'lucide-react';
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { __, sprintf } from '@/lib/i18n';
+import type { ListIconComponent } from '@/lib/listIcons';
 import { cn } from '@/lib/utils';
 
 import { usePeekHold } from './peekHold';
@@ -42,7 +43,7 @@ export function PanelListLink({
     to: string;
     name: string;
     starred: boolean;
-    icon?: LucideIcon;
+    icon?: ListIconComponent;
     /** Color del icono (hex). v0.1.137 — icono propio por lista. */
     iconColor?: string;
     onToggleStar: () => void;
@@ -129,8 +130,10 @@ export function PanelListLink({
             >
                 {Icon !== undefined ? (
                     <Icon
+                        // v0.1.174 — glifo sólido a 16px (como ClickUp); a
+                        // 14px un sólido se lee, pero pierde detalle.
                         className={cn(
-                            'imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0',
+                            'imcrm-h-4 imcrm-w-4 imcrm-shrink-0',
                             iconColor === undefined && 'imcrm-opacity-60',
                         )}
                         style={iconColor !== undefined ? { color: iconColor } : undefined}

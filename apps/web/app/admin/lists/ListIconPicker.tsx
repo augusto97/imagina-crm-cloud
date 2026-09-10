@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Check, List as ListFallback } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { LIST_ICONS, LIST_ICON_COLORS, listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_LIST_ICON, LIST_ICONS, LIST_ICON_COLORS, listColor, listIcon } from '@/lib/listIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -23,7 +23,7 @@ interface ListIconPickerProps {
  */
 export function ListIconPicker({ icon, color, onChange }: ListIconPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
-    const Current = listIcon(icon) ?? ListFallback;
+    const Current = listIcon(icon) ?? DEFAULT_LIST_ICON;
     const hex = listColor(color);
 
     return (
