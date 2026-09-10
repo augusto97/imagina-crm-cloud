@@ -17,6 +17,7 @@
         "test:watch": "vitest"
     },
     "dependencies": {
+        "@heroicons/react": "^2.2.0",
         "@hookform/resolvers": "^3.9.0",
         "@imagina-base/shared": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.2",
