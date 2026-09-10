@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { DEFAULT_LIST_ICON, LIST_ICONS, LIST_ICON_COLORS, listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+
+import { IconCatalogPicker } from './IconCatalogPicker';
 
 interface ListIconPickerProps {
     icon: string | null;
@@ -19,7 +20,9 @@ interface ListIconPickerProps {
  * `lists.icon` y `lists.color` existían en el backend desde F1 pero nunca
  * tuvieron interfaz: el menú pintaba el mismo punto para todas las listas.
  * El usuario lo pidió mirando ClickUp, donde el icono es lo que hace
- * escaneable un menú con muchas listas.
+ * escaneable un menú con muchas listas. v0.1.175 — el catálogo (324 sólidos
+ * por categoría + buscador) vive en `IconCatalogPicker`, compartido con el
+ * submenú del panel.
  */
 export function ListIconPicker({ icon, color, onChange }: ListIconPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
@@ -44,72 +47,8 @@ export function ListIconPicker({ icon, color, onChange }: ListIconPickerProps): 
                     </span>
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="imcrm-w-[320px] imcrm-p-3">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                        <p className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
-                            {__('Color')}
-                        </p>
-                        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">
-                            {LIST_ICON_COLORS.map((c) => (
-                                <button
-                                    key={c.hex}
-                                    type="button"
-                                    title={c.label}
-                                    aria-label={c.label}
-                                    aria-pressed={hex === c.hex}
-                                    onClick={() => onChange({ icon: icon ?? 'list', color: c.hex })}
-                                    className={cn(
-                                        'imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-ring-1 imcrm-ring-border',
-                                        hex === c.hex && 'imcrm-ring-2 imcrm-ring-primary',
-                                    )}
-                                    style={{ backgroundColor: c.hex }}
-                                >
-                                    {hex === c.hex && (
-                                        <Check className="imcrm-h-3 imcrm-w-3 imcrm-text-white" aria-hidden />
-                                    )}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                        <p className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
-                            {__('Icono')}
-                        </p>
-                        <div className="imcrm-grid imcrm-max-h-56 imcrm-grid-cols-9 imcrm-gap-1 imcrm-overflow-y-auto">
-                            {LIST_ICONS.map(({ key, icon: Icon, label }) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    title={label}
-                                    aria-label={label}
-                                    aria-pressed={icon === key}
-                                    onClick={() => onChange({ icon: key, color })}
-                                    className={cn(
-                                        'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground',
-                                        icon === key && 'imcrm-bg-primary/10 imcrm-text-primary imcrm-ring-1 imcrm-ring-primary/40',
-                                    )}
-                                >
-                                    <Icon className="imcrm-h-4 imcrm-w-4" aria-hidden />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {icon !== null && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onChange({ icon: null, color: null });
-                                setOpen(false);
-                            }}
-                            className="imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline"
-                        >
-                            {__('Quitar el icono')}
-                        </button>
-                    )}
-                </div>
+            <PopoverContent align="start" className="imcrm-w-[340px] imcrm-p-3">
+                <IconCatalogPicker icon={icon} color={color} onChange={onChange} gridMaxHeight={300} />
             </PopoverContent>
         </Popover>
     );

@@ -3262,6 +3262,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador en claro y oscuro (`fill="currentColor"`, un path por
         glifo) + E2E de v0.1.172 (27/27) y v0.1.173 (22/22) re-verificados.
 
+  - [x] **Catálogo de 324 iconos sólidos + selector con buscador (v0.1.175,
+        feedback del usuario: "siguen sin convencerme… son muy poquitos,
+        ClickUp tiene muchos más y se ven mejor")**: heroicons (v0.1.174) se
+        quedaba corto en cantidad (36) y en dibujo. Ahora el catálogo son los
+        glifos **fill de Phosphor** (el estilo macizo y redondeado que usa
+        ClickUp), **324** organizados en 8 categorías (Trabajo, Personas,
+        Finanzas, Comunicación, Tiempo, Objetos, Tecnología, Lugares, Formas).
+        Cómo se empaqueta: `scripts/gen-list-icons.mjs` lee los SVG de
+        `@phosphor-icons/core` (devDependency, MIT) y **extrae sólo el
+        `path`** de cada uno a `listIconPaths.generated.ts`; `listIcons.ts`
+        arma un componente por entrada (`<svg viewBox="0 0 256 256"
+        fill="currentColor"><path d/>`). Cero librería de iconos en runtime:
+        `@phosphor-icons/react` mete los seis pesos de cada icono en cada
+        módulo, y `@heroicons/react` se quitó. El catálogo va en su propio
+        chunk `icon-catalog` (44 KB gz, cambia mucho menos que la app →
+        sobrevive a los deploys como los vendors). Las **36 claves
+        históricas se conservan** con el mismo nombre; las nuevas usan el
+        nombre de Phosphor. `IconCatalogPicker` compartido (popover de Ajustes
+        y submenú "Color e ícono" del panel, 340px): fila de colores,
+        **buscador sin acentos** (por etiqueta o clave, con `stopPropagation`
+        del teclado porque el submenú de Radix se lo roba), grilla de 8
+        columnas agrupada por categoría con cabeceras sticky y "Quitar el
+        icono". Fallbacks del propio catálogo (`list`, `folder`, `chart_bar`).
+        Regenerar tras editar el catálogo: `node scripts/gen-list-icons.mjs`
+        (falla en voz alta si un nombre de Phosphor no existe). Verificado en
+        navegador (claro/oscuro, picker con categorías y búsqueda) + E2E de
+        v0.1.172 (27/27) y v0.1.173 (22/22) re-verificados.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

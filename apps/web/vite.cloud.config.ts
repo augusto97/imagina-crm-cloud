@@ -97,6 +97,10 @@ export default defineConfig({
                  * el chunk de la app y el resto sale del cache del navegador.
                  */
                 manualChunks: (id: string) => {
+                    // v0.1.175 — el catálogo de iconos (324 paths, ~45 KB gz)
+                    // cambia con los releases MUCHO menos que la app: en su
+                    // propio chunk sobrevive a los deploys, como los vendors.
+                    if (id.includes('listIconPaths.generated')) return 'icon-catalog';
                     if (!id.includes('node_modules')) return undefined;
                     if (/[\\/]node_modules[\\/](react|react-dom|react-router|scheduler)[\\/]/.test(id)) {
                         return 'vendor-react';

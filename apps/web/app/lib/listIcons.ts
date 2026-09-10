@@ -1,118 +1,88 @@
-import type { ComponentType, SVGProps } from 'react';
-import {
-    BookmarkIcon,
-    BriefcaseIcon,
-    BugAntIcon,
-    BuildingOffice2Icon,
-    CalendarDaysIcon,
-    ChartPieIcon,
-    CircleStackIcon,
-    ClipboardDocumentCheckIcon,
-    ClipboardDocumentListIcon,
-    ClockIcon,
-    CubeIcon,
-    DocumentTextIcon,
-    EnvelopeIcon,
-    FlagIcon,
-    FolderIcon,
-    GlobeAltIcon,
-    HeartIcon,
-    HomeIcon,
-    InboxIcon,
-    LifebuoyIcon,
-    LightBulbIcon,
-    ListBulletIcon,
-    MegaphoneIcon,
-    PhoneIcon,
-    ReceiptPercentIcon,
-    RocketLaunchIcon,
-    ShoppingCartIcon,
-    Square3Stack3DIcon,
-    Squares2X2Icon,
-    StarIcon,
-    TagIcon,
-    TruckIcon,
-    UsersIcon,
-    ViewfinderCircleIcon,
-    WalletIcon,
-    WrenchScrewdriverIcon,
-} from '@heroicons/react/20/solid';
+import { createElement, type ComponentType, type SVGProps } from 'react';
+
+import { LIST_ICON_PATHS, type ListIconPath } from './listIconPaths.generated';
 
 /**
  * Componente de icono del catálogo: cualquier SVG que acepte `className` y
- * `style` (los sólidos de heroicons y los de lucide cumplen los dos).
+ * `style` (los del catálogo y los de lucide cumplen los dos).
  */
 export type ListIconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
+export interface ListIconEntry {
+    key: string;
+    icon: ListIconComponent;
+    label: string;
+    category: string;
+}
+
 /**
- * Catálogo de iconos para las listas (v0.1.137).
+ * Catálogo de iconos para listas, carpetas y dashboards (v0.1.137).
  *
  * El usuario pidió lo que hace ClickUp: cada lista con su icono en vez de
- * un punto igual para todas. Se guarda la CLAVE (`lists.icon`, que ya
- * existía en el backend sin usarse), nunca el componente — así el set de
- * iconos puede cambiar sin romper los datos del cliente. Lista corta y
- * curada a propósito: un buscador con 1.500 iconos no ayuda a elegir.
+ * un punto igual para todas. Se guarda la CLAVE (`lists.icon`), nunca el
+ * componente — así el set de iconos puede cambiar sin romper los datos.
  *
- * v0.1.174 — el set pasa de los trazos finos de lucide a los **sólidos** de
- * heroicons (20px, diseñados para tamaños chicos): a 14px un icono de línea
- * de 1.5px casi no se distingue en el menú, y los de ClickUp son macizos por
- * esa razón. Las CLAVES se conservan tal cual (lo guardado sigue valiendo);
- * sólo cambia el dibujo. Un icono de trazo (lucide) sigue sirviendo como
- * fallback donde el catálogo no tiene entrada.
+ * v0.1.175 — el catálogo pasa a **324 glifos SÓLIDOS** (Phosphor "fill",
+ * generados a `listIconPaths.generated.ts` por `scripts/gen-list-icons.mjs`):
+ * a 14-16px un icono de trazo casi no se distingue y 36 opciones eran pocas
+ * (feedback del usuario mirando ClickUp). Cada glifo es un `<svg>` con su
+ * `path` embebido — sin librería en runtime, ~30 KB gz en total. Las 36
+ * claves históricas se conservan con el MISMO nombre: lo guardado sigue
+ * valiendo, sólo cambia el dibujo. El selector agrupa por categoría y busca
+ * sin acentos.
  */
-export const LIST_ICONS: Array<{ key: string; icon: ListIconComponent; label: string }> = [
-    { key: 'list', icon: ListBulletIcon, label: 'Lista' },
-    { key: 'folder', icon: FolderIcon, label: 'Carpeta' },
-    { key: 'users', icon: UsersIcon, label: 'Personas' },
-    { key: 'building', icon: BuildingOffice2Icon, label: 'Empresas' },
-    { key: 'briefcase', icon: BriefcaseIcon, label: 'Negocios' },
-    { key: 'receipt', icon: ReceiptPercentIcon, label: 'Facturas' },
-    { key: 'wallet', icon: WalletIcon, label: 'Pagos' },
-    { key: 'shopping_cart', icon: ShoppingCartIcon, label: 'Ventas' },
-    { key: 'package', icon: CubeIcon, label: 'Productos' },
-    { key: 'truck', icon: TruckIcon, label: 'Envíos' },
-    { key: 'check_square', icon: ClipboardDocumentCheckIcon, label: 'Tareas' },
-    { key: 'clipboard', icon: ClipboardDocumentListIcon, label: 'Pendientes' },
-    { key: 'calendar', icon: CalendarDaysIcon, label: 'Agenda' },
-    { key: 'clock', icon: ClockIcon, label: 'Tiempos' },
-    { key: 'flag', icon: FlagIcon, label: 'Prioridades' },
-    { key: 'target', icon: ViewfinderCircleIcon, label: 'Objetivos' },
-    { key: 'rocket', icon: RocketLaunchIcon, label: 'Proyectos' },
-    { key: 'lightbulb', icon: LightBulbIcon, label: 'Ideas' },
-    { key: 'bug', icon: BugAntIcon, label: 'Incidencias' },
-    { key: 'lifebuoy', icon: LifebuoyIcon, label: 'Soporte' },
-    { key: 'inbox', icon: InboxIcon, label: 'Entradas' },
-    { key: 'mail', icon: EnvelopeIcon, label: 'Correos' },
-    { key: 'phone', icon: PhoneIcon, label: 'Llamadas' },
-    { key: 'megaphone', icon: MegaphoneIcon, label: 'Campañas' },
-    { key: 'globe', icon: GlobeAltIcon, label: 'Sitios web' },
-    { key: 'file_text', icon: DocumentTextIcon, label: 'Documentos' },
-    { key: 'pie_chart', icon: ChartPieIcon, label: 'Reportes' },
-    { key: 'database', icon: CircleStackIcon, label: 'Datos' },
-    { key: 'layers', icon: Square3Stack3DIcon, label: 'Categorías' },
-    { key: 'blocks', icon: Squares2X2Icon, label: 'Módulos' },
-    { key: 'wrench', icon: WrenchScrewdriverIcon, label: 'Servicios' },
-    { key: 'tag', icon: TagIcon, label: 'Etiquetas' },
-    { key: 'bookmark', icon: BookmarkIcon, label: 'Guardados' },
-    { key: 'star', icon: StarIcon, label: 'Destacados' },
-    { key: 'heart', icon: HeartIcon, label: 'Favoritos' },
-    { key: 'home', icon: HomeIcon, label: 'General' },
-];
+function pathIcon(entry: ListIconPath): ListIconComponent {
+    const Icon: ListIconComponent = (props) =>
+        createElement(
+            'svg',
+            { viewBox: '0 0 256 256', fill: 'currentColor', 'aria-hidden': true, ...props },
+            createElement('path', { d: entry.d }),
+        );
+    Icon.displayName = `ListIcon(${entry.key})`;
+    return Icon;
+}
+
+export const LIST_ICONS: readonly ListIconEntry[] = LIST_ICON_PATHS.map((p) => ({
+    key: p.key,
+    icon: pathIcon(p),
+    label: p.label,
+    category: p.category,
+}));
+
+const BY_KEY = new Map(LIST_ICONS.map((e) => [e.key, e]));
+
+/** Categorías en el orden del selector (el del generador). */
+export const LIST_ICON_CATEGORIES: readonly string[] = [...new Set(LIST_ICONS.map((e) => e.category))];
+
+/** Sin acentos y en minúsculas, para buscar "camion" y encontrar "Camión". */
+function fold(s: string): string {
+    return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** Filtra el catálogo por etiqueta o clave (sin acentos); vacío = todo. */
+export function searchListIcons(query: string): readonly ListIconEntry[] {
+    const q = fold(query.trim());
+    if (q === '') return LIST_ICONS;
+    return LIST_ICONS.filter((e) => fold(e.label).includes(q) || e.key.replace(/_/g, ' ').includes(q));
+}
 
 /**
  * Icono de las listas que no eligieron uno (v0.1.139). Antes caían a un
  * puntito gris igual para todas — el usuario lo pidió explícitamente: toda
  * lista se ve con icono, elija o no.
  */
-export const DEFAULT_LIST_ICON: ListIconComponent = ListBulletIcon;
+export const DEFAULT_LIST_ICON: ListIconComponent = BY_KEY.get('list')!.icon;
 
 /** Icono de las carpetas sin elección (v0.1.173), sólido como el resto. */
-export const DEFAULT_FOLDER_ICON: ListIconComponent = FolderIcon;
+export const DEFAULT_FOLDER_ICON: ListIconComponent = BY_KEY.get('folder')!.icon;
+
+/** Icono de los dashboards sin elección (v0.1.145). */
+export const DEFAULT_DASHBOARD_ICON: ListIconComponent = BY_KEY.get('chart_bar')!.icon;
 
 /** El icono de una lista, o `undefined` si no eligió ninguno (o es viejo). */
 export function listIcon(key: string | null | undefined): ListIconComponent | undefined {
     if (typeof key !== 'string' || key === '') return undefined;
-    return LIST_ICONS.find((o) => o.key === key)?.icon;
+    return BY_KEY.get(key)?.icon;
 }
 
 /**
