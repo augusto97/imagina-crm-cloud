@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
+import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { useTheme, type ResolvedTheme } from '@/lib/theme';
 
@@ -260,6 +261,19 @@ export function useBranding() {
         }
         return clear;
     }, [primaryColor, sidebarColor, resolved]);
+
+    // v0.1.177 — favicon y título de la pestaña con la marca del tenant (logo
+    // por URL firmada + app_name). Pre-login manda el tenant del dominio, con
+    // sesión el branding del workspace activo; sin logo vuelve el icono de la
+    // app (así cambiar de workspace nunca deja el logo del anterior).
+    const domainLogo = useSession((s) => s.domainTenant?.logo_url ?? null);
+    const domainName = useSession((s) => s.domainTenant?.app_name ?? null);
+    const logoUrl = query.data !== undefined ? (query.data.logo_url ?? null) : domainLogo;
+    const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
+    useEffect(() => {
+        applyFavicon(logoUrl);
+        applyDocumentTitle(appName);
+    }, [logoUrl, appName]);
 
     return query;
 }

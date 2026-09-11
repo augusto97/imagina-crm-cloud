@@ -3322,6 +3322,34 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el pre-bundle viejo hizo que el schema del cliente DESCARTARA la clave
         nueva en silencio (mismo síntoma que v0.1.167).
 
+  - [x] **Favicon + título de pestaña con la marca (v0.1.177, reporte del
+        usuario: "la app no tiene favicon")**: los dos SPAs (admin y portal)
+        no declaraban ningún `<link rel=icon>` — la pestaña salía con el
+        globo genérico del navegador. (a) **Favicon por defecto**: `public/
+        favicon.svg` (cuadrado redondeado en el teal del tema con la chispa
+        del logo del riel) + PNG de respaldo rasterizados desde ese SVG
+        (`favicon-32.png`, `apple-touch-icon.png` 180, `favicon-192.png`) —
+        Safari no lee favicons SVG. Vite copia `public/` a la raíz de
+        `dist-cloud`, y los dos proxies ya sirven archivos de la raíz antes
+        del fallback SPA (`try_files {path} /cloud/index.html`), así que no
+        hubo que tocar el deploy. (b) **White-label**: `lib/favicon.ts`
+        (`applyFavicon` / `applyDocumentTitle`, DOM puro) pisa el favicon con
+        el LOGO del tenant y el título con su `app_name` — como el icono de
+        workspace de ClickUp/Notion. El logo ya viaja por URL FIRMADA (v0.1.85)
+        justo porque un `<link>`/`<img>` no manda sesión ni `X-Tenant-Id`.
+        Lo llama `useBranding` (admin: pre-login el tenant del dominio, con
+        sesión el workspace activo; sin logo restaura el default para no
+        arrastrar el logo del workspace anterior) y `PortalContent` (portal:
+        "Portal — Acme"). Los links del HTML llevan `data-imcrm-default` y
+        los de marca `data-imcrm-brand`: el helper sabe cuáles quitar y
+        nunca acumula `<link>`. 5 tests con jsdom (`@vitest-environment` por
+        archivo — la suite sigue en `node`) → 121 front en verde; E2E
+        navegador 14/14 (login con el default y los 3 archivos en 200, subir
+        logo desde Marca → un solo icon al logo firmado que descarga 200 sin
+        sesión + apple-touch + título, persiste al recargar, quitar logo →
+        default sin recargar, quitar nombre → "Imagina Base"); build de
+        producción con los 4 archivos en la raíz.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

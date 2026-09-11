@@ -5,6 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
 import { hexLuminance, PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
+import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
@@ -100,6 +101,16 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
             root.style.removeProperty('--imcrm-ring');
         };
     }, [branding.primary_color]);
+    // v0.1.177 — favicon y título de la pestaña con la marca de la empresa
+    // (el logo ya viene por URL firmada: un <link rel=icon> no manda sesión).
+    useEffect(() => {
+        applyFavicon(branding.logo_url ?? null);
+        applyDocumentTitle(branding.app_name ?? boot.list_name ?? null, 'Portal');
+        return () => {
+            applyFavicon(null);
+            applyDocumentTitle(null, 'Portal');
+        };
+    }, [branding.logo_url, branding.app_name, boot.list_name]);
     // Los bloques del portal leen el record por SLUG (herencia del plugin);
     // el backend keyea por f{id} → traducimos acá una sola vez.
     const rendererData = useMemo<PortalRendererData>(() => {

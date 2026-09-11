@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Imagina Base — favicon por defecto (v0.1.177). Cuadrado redondeado en el
+       teal del tema (--imcrm-primary 191 85% 32%) con la chispa del logo del
+       riel (lucide Sparkles), en blanco. Un tenant con logo propio lo pisa en
+       runtime (lib/favicon.ts). -->
+  <rect width="64" height="64" rx="14" fill="#0c7e97"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 14c1.2 8.6 4.6 12.7 14 14-9.4 1.3-12.8 5.4-14 14-1.2-8.6-4.6-12.7-14-14 9.4-1.3 12.8-5.4 14-14z"/>
+    <path d="M46 40c.5 3.6 2 5.4 6 6-4 .6-5.5 2.4-6 6-.5-3.6-2-5.4-6-6 4-.6 5.5-2.4 6-6z"/>
+    <path d="M18 42c.4 2.6 1.5 3.9 4 4.3-2.5.4-3.6 1.7-4 4.3-.4-2.6-1.5-3.9-4-4.3 2.5-.4 3.6-1.7 4-4.3z"/>
+  </g>
+</svg>
