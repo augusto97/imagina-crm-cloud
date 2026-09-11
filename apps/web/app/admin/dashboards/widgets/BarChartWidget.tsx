@@ -5,7 +5,7 @@ import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -37,6 +37,8 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const data = useWidgetData(dashboardId, widget.id);
     const showAvg = widget.config.show_average_line !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
+    // v0.1.178 — las barras muestran la ETIQUETA de la opción, no el value.
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en una barra → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
@@ -74,7 +76,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
                         {__('Error')}
                     </div>
                 ) : rows.length > 0 ? (
-                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} onSegment={onSegment} />
+                    <BarRows rows={rows} showAvg={showAvg} colorMap={colorMap} labelMap={labelMap} onSegment={onSegment} />
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
                         {__('Sin datos.')}
@@ -101,11 +103,14 @@ function BarRows({
     rows,
     showAvg,
     colorMap,
+    labelMap,
     onSegment,
 }: {
     rows: Array<{ label: string; value: number }>;
     showAvg: boolean;
     colorMap: Map<string, string>;
+    /** v0.1.178 — value → etiqueta de la opción (sólo display). */
+    labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => r.value), 1);
@@ -125,12 +130,12 @@ function BarRows({
                             key={row.label}
                             className={`imcrm-group/bar imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-text-xs${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40' : ''}`}
                             title={onSegment !== null
-                                ? `${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} — ${__('click para ver los registros')}`
-                                : `${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${sharePct.toFixed(1)}%)`}
+                                ? `${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} — ${__('click para ver los registros')}`
+                                : `${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} (${sharePct.toFixed(1)}%)`}
                             onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                         >
                             <span className="imcrm-w-28 imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
-                                {prettyGroupLabel(row.label)}
+                                {displayGroupLabel(row.label, labelMap)}
                             </span>
                             <div className="imcrm-relative imcrm-h-5 imcrm-flex-1 imcrm-overflow-hidden imcrm-rounded imcrm-bg-muted/40">
                                 <div

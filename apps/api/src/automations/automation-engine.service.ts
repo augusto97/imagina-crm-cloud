@@ -22,7 +22,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import type { TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
-import { applyMergeTags } from './merge-tags';
+import { applyMergeTags, labelResolverFor, type LabelFieldLike } from './merge-tags';
 
 const SYSTEM_USER = 0;
 const MAX_IF_ELSE_DEPTH = 5;
@@ -41,6 +41,12 @@ interface RunContext {
     before?: Record<string, unknown>;
     /** slug → f{id} */
     slugToKey: Map<string, string>;
+    /**
+     * v0.1.178 — slug → {type, config} de la lista del trigger: lo que el
+     * modificador `{{campo|label}}` necesita para traducir el value a la
+     * etiqueta de la opción (Sí/No en checkbox).
+     */
+    fieldsBySlug: Map<string, LabelFieldLike>;
     /** v0.1.110 — payload crudo del webhook entrante ({{payload.x}}). */
     payload?: Record<string, unknown>;
 }
@@ -74,7 +80,7 @@ export class AutomationEngine {
                 triggerTypes,
             );
             if (autos.length === 0) return;
-            const slugToKey = await this.slugMap(tx, event.tenantId, event.listId);
+            const maps = await this.fieldMaps(tx, event.tenantId, event.listId);
             for (const auto of autos) {
                 const ctx: RunContext = {
                     tenantId: event.tenantId,
@@ -82,7 +88,7 @@ export class AutomationEngine {
                     recordId: event.recordId,
                     data: event.after,
                     before: event.before,
-                    slugToKey,
+                    ...maps,
                 };
                 if (!this.triggerMatches(auto, ctx)) continue;
                 await this.runOne(tx, ctx, auto);
@@ -95,8 +101,8 @@ export class AutomationEngine {
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive) return;
-            const slugToKey = await this.slugMap(tx, tenantId, auto.listId);
-            await this.runOne(tx, { tenantId, listId: auto.listId, recordId: null, data: {}, slugToKey }, auto);
+            const maps = await this.fieldMaps(tx, tenantId, auto.listId);
+            await this.runOne(tx, { tenantId, listId: auto.listId, recordId: null, data: {}, ...maps }, auto);
         });
     }
 
@@ -115,13 +121,13 @@ export class AutomationEngine {
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return;
-            const slugToKey = await this.slugMap(tx, tenantId, auto.listId);
+            const maps = await this.fieldMaps(tx, tenantId, auto.listId);
             const data: Record<string, unknown> = {};
             for (const [k, v] of Object.entries(payload)) {
-                const key = slugToKey.get(k);
+                const key = maps.slugToKey.get(k);
                 if (key !== undefined) data[key] = v;
             }
-            const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, slugToKey, payload };
+            const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, ...maps, payload };
             if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
                 return;
             }
@@ -140,6 +146,9 @@ export class AutomationEngine {
 
             const fieldRows = await this.fields.listByList(tx, tenantId, auto.listId);
             const slugToKey = new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)]));
+            const fieldsBySlug = new Map<string, LabelFieldLike>(
+                fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }]),
+            );
             const fieldId = resolveDateFieldId(auto.triggerConfig, fieldRows);
             if (fieldId === null) return;
             const offset = Number(auto.triggerConfig.offset_minutes ?? 0) || 0;
@@ -173,6 +182,7 @@ export class AutomationEngine {
                     recordId: rec.id,
                     data: rec.data,
                     slugToKey,
+                    fieldsBySlug,
                 };
                 // Los field_filters del trigger se evalúan AL DISPARAR (no
                 // solo en process()): "recordar a los 20 días SI la factura
@@ -186,9 +196,17 @@ export class AutomationEngine {
         });
     }
 
-    private async slugMap(tx: Tx, tenantId: number, listId: number): Promise<Map<string, string>> {
+    /** slug → f{id} y slug → {type, config} de la lista, en UNA query. */
+    private async fieldMaps(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug'>> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
-        return new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)]));
+        return {
+            slugToKey: new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)])),
+            fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }])),
+        };
     }
 
     /** ¿La automatización matchea el trigger? (field_filters + changed_fields). */
@@ -335,10 +353,13 @@ export class AutomationEngine {
 
     private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec): Promise<ActionLogEntry> {
         const fv = this.accessor(ctx);
-        const merge = (s: unknown): string => applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId);
+        // v0.1.178 — `{{campo|label}}` traduce el value a la etiqueta de la opción.
+        const labels = labelResolverFor(ctx.fieldsBySlug);
+        const merge = (s: unknown): string =>
+            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, undefined, labels);
         // SEC-08: variante que escapa los valores interpolados para contexto HTML.
         const mergeHtml = (s: unknown): string =>
-            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeHtml);
+            applyMergeTags(typeof s === 'string' ? s : '', fv, ctx.recordId, escapeHtml, labels);
         const cfg = spec.config ?? {};
 
         switch (spec.type) {

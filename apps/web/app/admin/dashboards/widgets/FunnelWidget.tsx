@@ -5,7 +5,7 @@ import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap, useGroupOptionOrder } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, useGroupOptionOrder } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -33,6 +33,8 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const data = useWidgetData(dashboardId, widget.id);
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const orderMap = useGroupOptionOrder(widget.list_id, widget.config.group_by_field_id);
+    // v0.1.178 — las etapas muestran la ETIQUETA de la opción, no el value.
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en una etapa → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
@@ -69,6 +71,7 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
                             orderMap,
                         )}
                         colorMap={colorMap}
+                        labelMap={labelMap}
                         onSegment={onSegment}
                     />
                 ) : (
@@ -106,10 +109,13 @@ function sortByPipeline(
 function FunnelRows({
     rows,
     colorMap,
+    labelMap,
     onSegment,
 }: {
     rows: Array<{ label: string; value: number }>;
     colorMap: Map<string, string>;
+    /** v0.1.178 — value → etiqueta de la opción (sólo display). */
+    labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
 }): JSX.Element {
     const max = Math.max(...rows.map((r) => r.value), 1);
@@ -127,11 +133,11 @@ function FunnelRows({
                     <div
                         key={row.label}
                         className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${onSegment !== null ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={`${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
+                        title={`${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}
                         onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
-                            {prettyGroupLabel(row.label)}
+                            {displayGroupLabel(row.label, labelMap)}
                         </span>
                         <div className="imcrm-relative imcrm-flex imcrm-h-7 imcrm-flex-1 imcrm-items-center imcrm-justify-center">
                             {/* Barra centrada — la forma del embudo emerge del

@@ -1,7 +1,67 @@
 import { describe, expect, it } from 'vitest';
-import { applyMergeTags } from '../src/automations/merge-tags';
+import { applyMergeTags, labelForFieldValue, labelResolverFor } from '../src/automations/merge-tags';
 
 const fv = (values: Record<string, unknown>) => (slug: string) => values[slug];
+
+describe('applyMergeTags — modificador |label (v0.1.178)', () => {
+    const fieldsBySlug = new Map([
+        [
+            'servicio',
+            {
+                type: 'multi_select',
+                config: {
+                    options: [
+                        { value: 'gestion_sitio_web', label: 'Gestión sitio web', color: 'amber' },
+                        { value: 'vps_en_hetzner', label: 'VPS en Hetzner' },
+                    ],
+                },
+            },
+        ],
+        ['estado', { type: 'select', config: { options: [{ value: 'pendiente', label: 'Pendiente de pago' }] } }],
+        ['pagado', { type: 'checkbox', config: {} }],
+        ['monto', { type: 'currency', config: {} }],
+    ]);
+    const labels = labelResolverFor(fieldsBySlug);
+    const v = fv({
+        servicio: ['gestion_sitio_web', 'vps_en_hetzner'],
+        estado: 'pendiente',
+        'before.estado': 'pendiente',
+        pagado: false,
+        monto: 5100000,
+    });
+
+    it('sin modificador sigue saliendo el VALUE (lo que espera otro sistema / un select destino)', () => {
+        expect(applyMergeTags('{{estado}} · {{servicio}}', v, null, undefined, labels)).toBe(
+            'pendiente · gestion_sitio_web, vps_en_hetzner',
+        );
+        expect(applyMergeTags('{{estado|value}}', v, null, undefined, labels)).toBe('pendiente');
+    });
+
+    it('|label devuelve la etiqueta legible: select, multi_select (unido por coma), checkbox Sí/No y before.', () => {
+        expect(applyMergeTags('{{estado|label}}', v, null, undefined, labels)).toBe('Pendiente de pago');
+        expect(applyMergeTags('{{servicio|label}}', v, null, undefined, labels)).toBe('Gestión sitio web, VPS en Hetzner');
+        expect(applyMergeTags('{{pagado|label}} / {{pagado}}', v, null, undefined, labels)).toBe('No / false');
+        expect(applyMergeTags('{{before.estado|label}}', v, null, undefined, labels)).toBe('Pendiente de pago');
+    });
+
+    it('|label es inofensivo donde no aplica: tipos no-opción, opción borrada, sin resolver', () => {
+        expect(applyMergeTags('{{monto|label}}', v, null, undefined, labels)).toBe('5100000');
+        expect(applyMergeTags('{{estado|label}}', fv({ estado: 'viejo' }), null, undefined, labels)).toBe('viejo');
+        // Sin resolver (llamador que no pasa catálogo) el tag no se rompe ni queda literal.
+        expect(applyMergeTags('{{estado|label}}', v, null)).toBe('pendiente');
+        // Escape HTML se aplica también a la etiqueta.
+        const esc = (s: string): string => s.replace(/</g, '&lt;');
+        const evil = labelResolverFor(new Map([['x', { type: 'select', config: { options: [{ value: 'a', label: '<b>' }] } }]]));
+        expect(applyMergeTags('{{x|label}}', fv({ x: 'a' }), null, esc, evil)).toBe('&lt;b>');
+    });
+
+    it('labelForFieldValue: puro, tolerante a config sin options y a valores nulos', () => {
+        expect(labelForFieldValue(undefined, 'a')).toBe('a');
+        expect(labelForFieldValue({ type: 'select', config: null }, 'a')).toBe('a');
+        expect(labelForFieldValue({ type: 'select', config: {} }, null)).toBeNull();
+        expect(labelForFieldValue({ type: 'checkbox', config: {} }, true)).toBe('Sí');
+    });
+});
 
 describe('applyMergeTags — modificadores de fecha (|+1m|-1d)', () => {
     it('el caso de facturación: período anticipado y vencido', () => {

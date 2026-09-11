@@ -3350,6 +3350,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         default sin recargar, quitar nombre → "Imagina Base"); build de
         producción con los 4 archivos en la raíz.
 
+  - [x] **Etiqueta en vez de value en gráficos y merge tags (v0.1.178,
+        reporte del usuario con capturas de donuts: "aparece el value y no
+        el label… me gustaría poder decidir")**: dos frentes.
+        (a) **Gráficos**: el backend agrupa por el VALUE crudo de la columna
+        (`gestion_sitio_web`, y en multi_select el JSON del set) y el front
+        lo pintaba tal cual. `useChartColors` gana `useGroupOptions` (las
+        opciones del campo agrupado indexadas por value Y por etiqueta) y
+        `displayGroupLabel(raw, labelMap)`: donut, barras y embudo muestran
+        la ETIQUETA ("Gestión sitio web, VPS en Hetzner" para un combo de
+        multi_select; una opción borrada cae al value crudo, nunca se
+        pierde). La CLAVE del dato sigue siendo el value: click-through
+        (`gv=pendiente`), ocultar categorías y colores no cambian. De paso
+        salió un bug latente: el mapa de colores estaba indexado SÓLO por
+        etiqueta, así que toda opción cuyo value no coincidía con su label
+        salía con el color de la paleta en vez del suyo (por eso el donut
+        del reporte tenía naranja/azul genéricos) — ahora usa el color real
+        de la opción.
+        (b) **Automatizaciones**: modificador **`{{campo|label}}`** en
+        `applyMergeTags` (encadenable con los de fecha; `|value` explícito
+        también existe): select → etiqueta, multi_select → etiquetas unidas
+        por coma, checkbox → Sí/No, `before.campo|label` igual; tipos sin
+        opciones pasan intactos y un llamador sin catálogo no rompe el
+        template. **El default sigue siendo el value a propósito**: es lo que
+        otro sistema espera como clave y lo que `create_record`/
+        `update_field` necesita para escribir en un select destino — el
+        autor decide por tag. `RunContext` lleva `fieldsBySlug` (misma query
+        que `slugToKey`, ahora `fieldMaps`) y `labelResolverFor` lo sirve al
+        motor y al probador de webhooks (lo que se prueba es lo que sale).
+        Editor: sección **"Etiqueta de la opción (texto legible)"** en el
+        picker de variables con un chip por campo con opciones, y el botón
+        del picker ("Más variables") aparece SIEMPRE — antes sólo con más de
+        5 campos, así que en listas chicas los valores anteriores y los tags
+        de sistema eran inalcanzables. (c) De paso, el E2E atrapó que en un
+        widget de 6 columnas (≈458px) la LEYENDA del donut quedaba sin
+        espacio y los nombres se recortaban hasta desaparecer (el aro iba
+        fijo a 260px y se llevaba todo): ahora el aro se acota por el ancho
+        real del card reservando ~250px para la leyenda, la leyenda toma el
+        espacio libre (hasta 320px) y el nombre completo va en el tooltip
+        para los combos largos. 4 tests de API (8 en el spec, 15 en el de
+        automatizaciones) + 1 front (122 en verde) + E2E navegador 17/17
+        (tablero sin values, combo traducido, swatch con el color de la
+        opción, nombres de la leyenda legibles en 6 columnas, click-through
+        por value con 2 filas, probador con `{{estado}}`=pendiente y
+        `{{estado|label}}`="Pendiente de pago", picker con 3 chips e
+        inserción de `{{servicio|label}}`).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

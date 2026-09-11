@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyHideZero, prettyGroupLabel } from './useChartColors';
+import { applyHideZero, displayGroupLabel, prettyGroupLabel } from './useChartColors';
 
 describe('chart helpers', () => {
+    it('v0.1.178 — displayGroupLabel traduce value → etiqueta (simple, multi y combos)', () => {
+        const labels = new Map([
+            ['gestion_sitio_web', 'Gestión sitio web'],
+            ['vps_en_hetzner', 'VPS en Hetzner'],
+        ]);
+        expect(displayGroupLabel('gestion_sitio_web', labels)).toBe('Gestión sitio web');
+        expect(displayGroupLabel('["gestion_sitio_web"]', labels)).toBe('Gestión sitio web');
+        expect(displayGroupLabel('["gestion_sitio_web","vps_en_hetzner"]', labels)).toBe('Gestión sitio web, VPS en Hetzner');
+        // Opción borrada / dato legacy: cae al value crudo, nunca se pierde.
+        expect(displayGroupLabel('["gestion_sitio_web","viejo"]', labels)).toBe('Gestión sitio web, viejo');
+        expect(displayGroupLabel('[]', labels)).toBe('(sin valor)');
+        // Sin mapa (campo no-select, fechas) se comporta como prettyGroupLabel.
+        expect(displayGroupLabel('2026-07', undefined)).toBe('2026-07');
+    });
+
     it('v0.1.101 — prettyGroupLabel convierte JSON de multi_select a texto', () => {
         expect(prettyGroupLabel('["hosting_2gb"]')).toBe('hosting_2gb');
         expect(prettyGroupLabel('["vip","promo"]')).toBe('vip, promo');

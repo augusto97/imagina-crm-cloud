@@ -7,7 +7,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
-import { applyHideZero, categoryColor, prettyGroupLabel, useGroupColorMap } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap } from './useChartColors';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -38,9 +38,17 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     // leyenda lateral aplasta los nombres → labels off + layout apilado.
     const [measureRef, cardWidth] = useContainerWidth<HTMLDivElement>();
     const narrow = cardWidth > 0 && cardWidth < 420;
+    // v0.1.178 — en escritorio el aro se ACOTA por el ancho del card para
+    // que la leyenda conserve ≥ ~210px: con el aro fijo a 260px, un widget
+    // de 6 columnas (≈458px) dejaba 140px a la leyenda y los nombres se
+    // recortaban hasta desaparecer (sólo se veía el valor). Sin medida
+    // todavía (primer paint) queda el máximo histórico.
+    const ringMax = cardWidth > 0 ? Math.min(260, Math.max(140, cardWidth - 32 - 24 - 250)) : 260;
     const showLabels = widget.config.show_data_labels !== false && ! narrow;
     const showLegend = widget.config.show_legend !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
+    // v0.1.178 — la leyenda muestra la ETIQUETA de la opción, no el value.
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en un sector → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
@@ -69,7 +77,9 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                         showLabels={showLabels}
                         showLegend={showLegend}
                         narrow={narrow}
+                        ringMax={ringMax}
                         colorMap={colorMap}
+                        labelMap={labelMap}
                         onSegment={onSegment}
                         centerLabel={
                             typeof (widget.config as { center_label?: unknown }).center_label === 'string'
@@ -92,13 +102,17 @@ interface DonutProps {
     showLegend: boolean;
     /** Card angosto: aro arriba (chico) + leyenda debajo a lo ancho. */
     narrow: boolean;
+    /** v0.1.178 — tope del aro en escritorio (px), derivado del ancho del card. */
+    ringMax: number;
     colorMap: Map<string, string>;
+    /** v0.1.178 — value → etiqueta de la opción (sólo display). */
+    labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
     /** v0.1.105 — texto bajo la cifra del centro (config.center_label). */
     centerLabel: string;
 }
 
-function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, centerLabel }: DonutProps): JSX.Element {
+function Donut({ rows, showLabels, showLegend, narrow, ringMax, colorMap, labelMap, onSegment, centerLabel }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -149,8 +163,9 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, cent
             <div
                 className={cn(
                     'imcrm-relative imcrm-flex imcrm-aspect-square imcrm-shrink-0 imcrm-items-center imcrm-justify-center',
-                    narrow ? 'imcrm-h-[130px]' : 'imcrm-h-full imcrm-max-h-[260px]',
+                    narrow ? 'imcrm-h-[130px]' : 'imcrm-h-full',
                 )}
+                style={narrow ? undefined : { maxHeight: ringMax }}
             >
                 <svg
                     viewBox={`0 0 ${viewSize} ${viewSize}`}
@@ -187,7 +202,7 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, cent
                                 onClick={onSegment !== null ? () => onSegment(row.label) : undefined}
                                 style={onSegment !== null ? { cursor: 'pointer' } : undefined}
                             >
-                                <title>{`${prettyGroupLabel(row.label)}: ${formatNumber(row.value)} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
+                                <title>{`${displayGroupLabel(row.label, labelMap)}: ${formatNumber(row.value)} (${(pct * 100).toFixed(1)}%)${onSegment !== null ? ` — ${__('click para ver los registros')}` : ''}`}</title>
                             </circle>
                         );
                         offset += len;
@@ -268,8 +283,9 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, cent
                         'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5 imcrm-text-xs',
                         narrow
                             ? 'imcrm-w-full imcrm-shrink-0'
-                            // Ancho acotado: nombre, valor y % quedan juntos.
-                            : 'imcrm-w-[320px] imcrm-max-w-[55%] imcrm-shrink imcrm-max-h-full imcrm-overflow-y-auto',
+                            // Ancho acotado (≤320px): nombre, valor y % quedan
+                            // juntos; toma el espacio que el aro deja libre.
+                            : 'imcrm-min-w-0 imcrm-flex-1 imcrm-max-w-[320px] imcrm-max-h-full imcrm-overflow-y-auto',
                     )}
                 >
                     {(legendExpanded ? legendRows : legendRows.slice(0, 8)).map((row) => {
@@ -300,8 +316,11 @@ function Donut({ rows, showLabels, showLegend, narrow, colorMap, onSegment, cent
                                             'imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-muted-foreground',
                                             isHidden && 'imcrm-line-through',
                                         )}
+                                        // Un combo largo de multi_select puede truncar: el
+                                        // nombre completo queda en el tooltip.
+                                        title={displayGroupLabel(row.label, labelMap)}
                                     >
-                                        {prettyGroupLabel(row.label)}
+                                        {displayGroupLabel(row.label, labelMap)}
                                     </span>
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
                                         {formatNumber(row.value)}

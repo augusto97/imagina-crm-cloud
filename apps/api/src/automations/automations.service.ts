@@ -18,7 +18,7 @@ import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
-import { applyMergeTags } from './merge-tags';
+import { applyMergeTags, labelResolverFor } from './merge-tags';
 import { buildWebhookRequest } from './webhook-request';
 import {
     AutomationsRepository,
@@ -178,7 +178,7 @@ export class AutomationsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const sample = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const fieldRows = await tx
-                .select({ id: fields.id, slug: fields.slug })
+                .select({ id: fields.id, slug: fields.slug, type: fields.type, config: fields.config })
                 .from(fields)
                 .where(eq(fields.listId, list.id));
             const where = input.record_id
@@ -197,6 +197,7 @@ export class AutomationsService {
                 .limit(1);
             return {
                 slugToKey: new Map(fieldRows.map((f) => [f.slug, `f${f.id}`])),
+                fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }])),
                 record: row ?? null,
             };
         });
@@ -208,8 +209,16 @@ export class AutomationsService {
             const key = sample.slugToKey.get(token.replace(/^before\./, ''));
             return key !== undefined ? data[key] : undefined;
         };
+        // v0.1.178 — el probador resuelve `|label` igual que el motor: lo que
+        // se prueba es lo que después sale.
         const merge = (raw: unknown): string =>
-            applyMergeTags(typeof raw === 'string' ? raw : '', accessor, sample.record?.id ?? null);
+            applyMergeTags(
+                typeof raw === 'string' ? raw : '',
+                accessor,
+                sample.record?.id ?? null,
+                undefined,
+                labelResolverFor(sample.fieldsBySlug),
+            );
 
         const req = buildWebhookRequest(input.config, merge, {
             recordId: sample.record?.id ?? null,
