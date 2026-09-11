@@ -199,7 +199,10 @@
         --imcrm-sidebar-foreground: 0 0% 90%;
         --imcrm-sidebar-border: 0 0% 15%;
         --imcrm-sidebar-accent: 0 0% 13%;
-        --imcrm-sidebar-accent-foreground: 190 80% 60%;
+        /* v0.1.176 — el item activo/hover del riel pasa de `text-white`
+         * cableado a este token (así un riel CLARO elegido por el tenant
+         * puede llevar tinta oscura). Blanco = el look que ya tenía. */
+        --imcrm-sidebar-accent-foreground: 0 0% 100%;
 
         /* v0.1.112 — faltaban en el bloque dark heredado del plugin (el canvas
          * es el más grave: el ÁREA DE TRABAJO entera quedaba gris claro sobre
@@ -872,14 +875,16 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
    tema claro sería invisible, así que el thumb va en blanco translúcido. */
 @supports not selector(::-webkit-scrollbar) {
     .imcrm-scroll-on-dark {
-        scrollbar-color: hsl(0 0% 100% / 0.25) transparent;
+        scrollbar-color: hsl(var(--imcrm-sidebar-foreground) / 0.25) transparent;
     }
 }
+/* v0.1.176 — el thumb sale de la tinta del riel (no de blanco fijo): con un
+ * riel claro elegido por el tenant, un thumb blanco sería invisible. */
 .imcrm-scroll-on-dark::-webkit-scrollbar-thumb {
-    background-color: hsl(0 0% 100% / 0.25);
+    background-color: hsl(var(--imcrm-sidebar-foreground) / 0.25);
 }
 .imcrm-scroll-on-dark::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(0 0% 100% / 0.45);
+    background-color: hsl(var(--imcrm-sidebar-foreground) / 0.45);
 }
 
 /* ─── Tabla de records ──────────────────────────────────────────────── */

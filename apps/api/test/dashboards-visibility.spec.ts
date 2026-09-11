@@ -184,4 +184,24 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
         await branding.update(tenantId, { app_name: 'Acme CRM' });
         expect(await branding.getFormat(tenantId)).toEqual(set2);
     });
+
+    it('sidebar_color (v0.1.176): independiente del primario, persiste y vuelve a seguir al primario con null', async () => {
+        // Default: null = el riel sigue al color primario (comportamiento histórico).
+        expect((await branding.get(tenantId)).sidebar_color).toBeNull();
+
+        // Primario verde + riel gris: dos claves separadas.
+        const set = await branding.update(tenantId, { primary_color: '#16a34a', sidebar_color: '#e5e7eb' });
+        expect(set.primary_color).toBe('#16a34a');
+        expect(set.sidebar_color).toBe('#e5e7eb');
+        expect((await branding.get(tenantId)).sidebar_color).toBe('#e5e7eb');
+
+        // PATCH parcial: cambiar sólo el primario NO toca el riel.
+        await branding.update(tenantId, { primary_color: '#0f766e' });
+        expect((await branding.get(tenantId)).sidebar_color).toBe('#e5e7eb');
+
+        // Quitar el riel propio → null (el primario queda).
+        const cleared = await branding.update(tenantId, { sidebar_color: null });
+        expect(cleared.sidebar_color).toBeNull();
+        expect(cleared.primary_color).toBe('#0f766e');
+    });
 });

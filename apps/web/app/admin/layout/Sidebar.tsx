@@ -376,7 +376,7 @@ export function Sidebar({
                             className="imcrm-h-9 imcrm-w-9 imcrm-rounded-md imcrm-object-contain"
                         />
                     ) : (
-                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-white/15 imcrm-text-white imcrm-ring-1 imcrm-ring-white/20">
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar-foreground/15 imcrm-text-sidebar-accent-foreground imcrm-ring-1 imcrm-ring-sidebar-foreground/20">
                             <Sparkles className="imcrm-h-4 imcrm-w-4" />
                         </span>
                     )}
@@ -394,7 +394,7 @@ export function Sidebar({
                                 e.stopPropagation();
                                 toggleCollapsed();
                             }}
-                            className="imcrm-hidden imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-py-1.5 imcrm-text-sidebar-foreground/70 imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-white lg:imcrm-flex"
+                            className="imcrm-hidden imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-py-1.5 imcrm-text-sidebar-foreground/70 imcrm-transition-colors hover:imcrm-bg-sidebar-accent hover:imcrm-text-sidebar-accent-foreground lg:imcrm-flex"
                             aria-label={__('Expandir panel')}
                             title={__('Expandir panel')}
                             aria-expanded={false}
@@ -403,7 +403,7 @@ export function Sidebar({
                         </button>
                         <span
                             aria-hidden
-                            className="imcrm-mx-auto imcrm-mb-1 imcrm-hidden imcrm-h-px imcrm-w-6 imcrm-bg-white/20 lg:imcrm-block"
+                            className="imcrm-mx-auto imcrm-mb-1 imcrm-hidden imcrm-h-px imcrm-w-6 imcrm-bg-sidebar-foreground/20 lg:imcrm-block"
                         />
                     </>
                 )}
@@ -650,9 +650,12 @@ function RailItem({
                 // Mobile: objetivo táctil más alto y etiqueta legible; lg:
                 // las medidas compactas del escritorio.
                 'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-0.5 imcrm-py-3 imcrm-transition-colors imcrm-duration-100 lg:imcrm-px-1 lg:imcrm-py-2',
+                // v0.1.176 — velo y tinta salen de los tokens del riel (no de
+                // blanco fijo): un riel CLARO elegido en Marca lleva tinta
+                // oscura y velo oscuro; el default oscuro se ve igual que antes.
                 active
-                    ? 'imcrm-bg-white/10 imcrm-text-white'
-                    : 'imcrm-text-sidebar-foreground/80 hover:imcrm-bg-sidebar-accent hover:imcrm-text-white',
+                    ? 'imcrm-bg-sidebar-foreground/10 imcrm-text-sidebar-accent-foreground'
+                    : 'imcrm-text-sidebar-foreground/80 hover:imcrm-bg-sidebar-accent hover:imcrm-text-sidebar-accent-foreground',
             )}
         >
             <Icon className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0" />
