@@ -4,6 +4,12 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Imagina Base</title>
+        <!-- Favicon por defecto (v0.1.177). `lib/favicon.ts` lo pisa en
+             runtime con el logo del tenant (white-label) y lo restaura sin él;
+             `data-imcrm-default` es la marca que usa para reconocerlos. -->
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" data-imcrm-default="1" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" data-imcrm-default="1" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" data-imcrm-default="1" />
         <script>
             /* Tema (v0.1.112): se pinta ANTES de que monte React para que una
              * sesión en oscuro no arranque con un flash blanco. Misma clave y
