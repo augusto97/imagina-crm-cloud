@@ -144,18 +144,22 @@ export function MergeTagInput({
                 {inlineFields.map((f) => (
                     <TagChip key={f.id} label={f.label} onClick={() => insertTag(f.slug)} />
                 ))}
-                {overflow > 0 || filterableFields.length === 0 ? (
-                    <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                        <PopoverTrigger asChild>
-                            <button
-                                type="button"
-                                className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card/50 imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-border-primary/40 hover:imcrm-text-foreground"
-                            >
-                                <Plus className="imcrm-h-3 imcrm-w-3" />
-                                {overflow > 0 ? `+${overflow}` : __('Insertar variable')}
-                                <ChevronDown className="imcrm-h-3 imcrm-w-3" />
-                            </button>
-                        </PopoverTrigger>
+                {/* v0.1.178 — el picker se ofrece SIEMPRE: además de los campos
+                    que no entraron en los chips, trae las etiquetas de las
+                    opciones, los valores anteriores y los tags de sistema, que
+                    antes eran inalcanzables en una lista de 5 campos o menos. */}
+                <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                    <PopoverTrigger asChild>
+                        <button
+                            type="button"
+                            data-testid="merge-tag-picker"
+                            className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card/50 imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-border-primary/40 hover:imcrm-text-foreground"
+                        >
+                            <Plus className="imcrm-h-3 imcrm-w-3" />
+                            {overflow > 0 ? `+${overflow}` : __('Más variables')}
+                            <ChevronDown className="imcrm-h-3 imcrm-w-3" />
+                        </button>
+                    </PopoverTrigger>
                         <PopoverContent className="imcrm-w-[360px] imcrm-p-0" align="start">
                             <MergeTagPicker
                                 fields={filterableFields}
@@ -166,7 +170,6 @@ export function MergeTagInput({
                             />
                         </PopoverContent>
                     </Popover>
-                ) : null}
 
                 {showSignatureButton && onInsertSignature && (
                     <button
@@ -216,6 +219,16 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
         (f) => matches(`before.${f.slug}`) || matches(f.label) || matches(__('Valor anterior')),
     );
 
+    // v0.1.178 — "Etiqueta": `{{campo|label}}` devuelve el TEXTO legible de
+    // la opción (Gestión sitio web) en vez del value interno
+    // (gestion_sitio_web). Para un correo o un WhatsApp casi siempre se
+    // quiere la etiqueta; el value queda para integraciones y para escribir
+    // en un select de otra lista. Sólo tiene sentido en campos con opciones.
+    const labelable = fields.filter((f) => f.type === 'select' || f.type === 'multi_select' || f.type === 'checkbox');
+    const visibleLabels = labelable.filter(
+        (f) => matches(`${f.slug}|label`) || matches(f.label) || matches(__('Etiqueta')),
+    );
+
     const systemTags: Array<{ tag: string; label: string; hint?: string }> = [
         { tag: 'record.id', label: __('ID del registro'), hint: '#42' },
         { tag: 'date.now', label: __('Fecha y hora del disparo'), hint: 'YYYY-MM-DD HH:MM:SS' },
@@ -245,6 +258,17 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
                             tag: f.slug,
                             label: f.label,
                             hint: f.slug,
+                        }))}
+                        onPick={onPick}
+                    />
+                )}
+                {visibleLabels.length > 0 && (
+                    <Section
+                        title={__('Etiqueta de la opción (texto legible)')}
+                        items={visibleLabels.map((f) => ({
+                            tag: `${f.slug}|label`,
+                            label: `${f.label} · ${__('etiqueta')}`,
+                            hint: `{{${f.slug}|label}} → ${__('la etiqueta de la opción, no su valor interno')}`,
                         }))}
                         onPick={onPick}
                     />

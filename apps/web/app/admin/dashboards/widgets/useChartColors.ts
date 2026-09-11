@@ -17,8 +17,52 @@ export function paletteColor(i: number): string {
     return `hsl(var(--imcrm-opt-${CHART_PALETTE[i % CHART_PALETTE.length]}))`;
 }
 
+interface GroupOption {
+    value: string;
+    label: string;
+    color: string | undefined;
+    index: number;
+}
+
 /**
- * Mapa label→color CSS para las categorías de un chart agrupado.
+ * Opciones del campo select/multi_select por el que agrupa el widget,
+ * indexadas por VALUE (la clave con la que el backend devuelve los
+ * buckets: agrupa por el valor crudo de la columna, nunca por la
+ * etiqueta) y también por etiqueta, para datos legacy donde value y label
+ * coincidían. Vacío si el campo no es select.
+ */
+function useGroupOptions(listId: number | undefined, groupByFieldId: number | undefined): Map<string, GroupOption> {
+    const fields = useFields(listId && listId > 0 ? listId : undefined);
+
+    return useMemo(() => {
+        const map = new Map<string, GroupOption>();
+        if (! groupByFieldId || ! fields.data) return map;
+        const field = fields.data.find((f) => f.id === groupByFieldId);
+        if (! field) return map;
+        if (field.type !== 'select' && field.type !== 'multi_select') return map;
+        const options = (field.config as { options?: unknown }).options;
+        if (! Array.isArray(options)) return map;
+        options.forEach((opt, index) => {
+            if (typeof opt !== 'object' || opt === null) return;
+            const o = opt as { label?: unknown; value?: unknown; color?: unknown };
+            const value = typeof o.value === 'string' ? o.value : '';
+            const label = typeof o.label === 'string' && o.label !== '' ? o.label : value;
+            if (value === '' && label === '') return;
+            const entry: GroupOption = {
+                value,
+                label,
+                color: typeof o.color === 'string' ? colorVar(o.color) : undefined,
+                index,
+            };
+            if (value !== '' && ! map.has(value)) map.set(value, entry);
+            if (label !== '' && ! map.has(label)) map.set(label, entry);
+        });
+        return map;
+    }, [fields.data, groupByFieldId]);
+}
+
+/**
+ * Mapa clave→color CSS para las categorías de un chart agrupado.
  *
  * Si el campo `groupByFieldId` es select/multi_select, usa los colores
  * REALES que el usuario definió en las opciones del campo — los mismos
@@ -29,42 +73,45 @@ export function paletteColor(i: number): string {
  * Para labels sin color (campo no-select, opción sin color, buckets de
  * fecha) el consumidor cae a `paletteColor(i)`.
  *
- * El backend de widgets devuelve los buckets por LABEL de la opción
- * (no por value), así que el mapa se indexa por label.
+ * v0.1.178 — indexado por VALUE (lo que devuelve el backend) además de
+ * por etiqueta: antes sólo por etiqueta, así que una opción cuyo value no
+ * coincidía con su label salía siempre con el color de la paleta.
  */
 export function useGroupColorMap(
     listId: number | undefined,
     groupByFieldId: number | undefined,
 ): Map<string, string> {
-    const fields = useFields(listId && listId > 0 ? listId : undefined);
-
+    const options = useGroupOptions(listId, groupByFieldId);
     return useMemo(() => {
         const map = new Map<string, string>();
-        if (! groupByFieldId || ! fields.data) return map;
-        const field = fields.data.find((f) => f.id === groupByFieldId);
-        if (! field) return map;
-        if (field.type !== 'select' && field.type !== 'multi_select') return map;
-        const options = (field.config as { options?: unknown }).options;
-        if (! Array.isArray(options)) return map;
-        for (const opt of options) {
-            if (typeof opt !== 'object' || opt === null) continue;
-            const o = opt as { label?: unknown; value?: unknown; color?: unknown };
-            const label = typeof o.label === 'string' && o.label !== ''
-                ? o.label
-                : typeof o.value === 'string' ? o.value : '';
-            if (label === '') continue;
-            const css = typeof o.color === 'string' ? colorVar(o.color) : undefined;
-            if (css) map.set(label, css);
-        }
+        for (const [key, o] of options) if (o.color) map.set(key, o.color);
         return map;
-    }, [fields.data, groupByFieldId]);
+    }, [options]);
+}
+
+/**
+ * v0.1.178 — Mapa value→ETIQUETA de las opciones del campo agrupado. Es lo
+ * que se MUESTRA en leyenda, barras, etapas y tooltips: el usuario lee
+ * "Gestión sitio web", no `gestion_sitio_web`. La clave del dato sigue
+ * siendo el value crudo (click-through, colores, ocultar categorías).
+ */
+export function useGroupLabelMap(
+    listId: number | undefined,
+    groupByFieldId: number | undefined,
+): Map<string, string> {
+    const options = useGroupOptions(listId, groupByFieldId);
+    return useMemo(() => {
+        const map = new Map<string, string>();
+        for (const [key, o] of options) map.set(key, o.label);
+        return map;
+    }, [options]);
 }
 
 /**
  * Resuelve el color de una categoría: color real de la opción si
  * existe, sino el i-ésimo de la paleta de fallback. Prueba también el
  * label "bonito" (multi_select agrupado devuelve JSON crudo `["a"]` —
- * la opción está registrada por su label plano).
+ * la opción está registrada por su value plano).
  */
 export function categoryColor(
     map: Map<string, string>,
@@ -82,22 +129,34 @@ export function categoryColor(
  * (click-through filtra por el valor real).
  */
 export function prettyGroupLabel(label: string): string {
+    return displayGroupLabel(label, undefined);
+}
+
+/**
+ * v0.1.178 — Texto a mostrar para la clave de un grupo: traduce cada
+ * value a su ETIQUETA con el mapa del campo (`useGroupLabelMap`) — un
+ * multi_select `["a","b"]` sale como "Etiqueta A, Etiqueta B" — y cae al
+ * value crudo cuando la opción ya no existe (datos legacy) o el campo no
+ * es select (buckets de fecha, textos). `[]` / vacío → "(sin valor)".
+ */
+export function displayGroupLabel(label: string, labels: Map<string, string> | undefined): string {
+    const one = (v: string): string => labels?.get(v) ?? v;
     if (label.startsWith('[') && label.endsWith(']')) {
         try {
             const arr: unknown = JSON.parse(label);
             if (Array.isArray(arr)) {
-                const joined = arr.map((v) => String(v)).join(', ');
+                const joined = arr.map((v) => one(String(v))).join(', ');
                 return joined === '' ? '(sin valor)' : joined;
             }
         } catch {
             // no era JSON — se muestra tal cual
         }
     }
-    return label;
+    return one(label);
 }
 
 /**
- * Orden de las opciones del select agrupado: label → índice.
+ * Orden de las opciones del select agrupado: value (o label) → índice.
  *
  * El funnel lo usa para ordenar las etapas según el orden que el
  * usuario definió en las opciones del campo (el orden del pipeline),
@@ -108,26 +167,12 @@ export function useGroupOptionOrder(
     listId: number | undefined,
     groupByFieldId: number | undefined,
 ): Map<string, number> {
-    const fields = useFields(listId && listId > 0 ? listId : undefined);
-
+    const options = useGroupOptions(listId, groupByFieldId);
     return useMemo(() => {
         const map = new Map<string, number>();
-        if (! groupByFieldId || ! fields.data) return map;
-        const field = fields.data.find((f) => f.id === groupByFieldId);
-        if (! field) return map;
-        if (field.type !== 'select' && field.type !== 'multi_select') return map;
-        const options = (field.config as { options?: unknown }).options;
-        if (! Array.isArray(options)) return map;
-        options.forEach((opt, i) => {
-            if (typeof opt !== 'object' || opt === null) return;
-            const o = opt as { label?: unknown; value?: unknown };
-            const label = typeof o.label === 'string' && o.label !== ''
-                ? o.label
-                : typeof o.value === 'string' ? o.value : '';
-            if (label !== '') map.set(label, i);
-        });
+        for (const [key, o] of options) map.set(key, o.index);
         return map;
-    }, [fields.data, groupByFieldId]);
+    }, [options]);
 }
 
 /**

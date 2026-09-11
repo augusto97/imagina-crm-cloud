@@ -1126,7 +1126,7 @@ function CreateRecordConfig({
                 {__('Crea un registro en la lista elegida. Los valores aceptan merge tags del registro que disparó el trigger ({{slug}}, {{record.id}}); en un campo de relación, {{record.id}} lo vincula a ese registro.')}
             </p>
             <p className="imcrm-rounded-md imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
-                {__('Fechas con aritmética: |+1m suma un mes, |-1d resta un día — ej. {{before.proximo_cobro|+1m|-1d}} = fin del período anticipado.')}
+                {__('Fechas con aritmética: |+1m suma un mes, |-1d resta un día — ej. {{before.proximo_cobro|+1m|-1d}} = fin del período anticipado. Etiquetas: {{campo|label}} escribe el texto de la opción en vez de su valor interno (acá, para un select destino, conviene el valor).')}
             </p>
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                 <Label className="imcrm-shrink-0 imcrm-text-xs">{__('Lista destino')}</Label>
