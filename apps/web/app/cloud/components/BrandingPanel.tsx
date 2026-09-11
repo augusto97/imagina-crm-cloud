@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 /** Hex ≈ del token default (`--imcrm-primary: 191 85% 32%`) para el picker. */
 const DEFAULT_PICKER_HEX = '#0c7e97';
+/** Hex ≈ del riel default (`--imcrm-sidebar: 192 55% 26%`) para el picker. */
+const DEFAULT_SIDEBAR_PICKER_HEX = '#1e5a67';
 
 /**
  * Card "Marca" de Ajustes: branding white-label del workspace (sólo admin —
@@ -30,6 +32,9 @@ export function BrandingPanel(): JSX.Element {
 
     const [appName, setAppName] = useState('');
     const [colorHex, setColorHex] = useState('');
+    // v0.1.176 — color del RIEL del menú, independiente del primario.
+    // Vacío = el riel sigue al primario (comportamiento histórico).
+    const [sidebarHex, setSidebarHex] = useState('');
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
     // Rehidratar el form cuando llega (o cambia) el branding del tenant.
@@ -38,6 +43,7 @@ export function BrandingPanel(): JSX.Element {
         if (!b) return;
         setAppName(b.app_name ?? '');
         setColorHex(b.primary_color ?? '');
+        setSidebarHex(b.sidebar_color ?? '');
     }, [brandingQ.data]);
 
     const invalidate = () => qc.invalidateQueries({ queryKey: brandingQueryKey(tenantId) });
@@ -75,10 +81,12 @@ export function BrandingPanel(): JSX.Element {
     });
 
     const restore = useMutation({
-        mutationFn: () => api.updateBranding({ primary_color: null, logo_file_id: null, app_name: null }),
+        mutationFn: () =>
+            api.updateBranding({ primary_color: null, sidebar_color: null, logo_file_id: null, app_name: null }),
         onSuccess: () => {
             setAppName('');
             setColorHex('');
+            setSidebarHex('');
             setNotice({ kind: 'ok', text: 'Marca restaurada a los valores por defecto.' });
             void invalidate();
         },
@@ -91,8 +99,13 @@ export function BrandingPanel(): JSX.Element {
         const b = brandingQ.data;
         const nextName = appName.trim() === '' ? null : appName.trim();
         const nextColor = colorHex.trim() === '' ? null : colorHex.trim();
+        const nextSidebar = sidebarHex.trim() === '' ? null : sidebarHex.trim();
         if (nextColor !== null && !HEX_RE.test(nextColor)) {
-            setNotice({ kind: 'err', text: 'Color inválido: usá el formato #RRGGBB.' });
+            setNotice({ kind: 'err', text: 'Color primario inválido: usá el formato #RRGGBB.' });
+            return;
+        }
+        if (nextSidebar !== null && !HEX_RE.test(nextSidebar)) {
+            setNotice({ kind: 'err', text: 'Color de la barra lateral inválido: usá el formato #RRGGBB.' });
             return;
         }
         // PATCH parcial: sólo los campos que cambiaron respecto de lo guardado.
@@ -101,6 +114,10 @@ export function BrandingPanel(): JSX.Element {
         const savedColor = b?.primary_color ?? null;
         if ((nextColor?.toLowerCase() ?? null) !== (savedColor?.toLowerCase() ?? null)) {
             patch.primary_color = nextColor;
+        }
+        const savedSidebar = b?.sidebar_color ?? null;
+        if ((nextSidebar?.toLowerCase() ?? null) !== (savedSidebar?.toLowerCase() ?? null)) {
+            patch.sidebar_color = nextSidebar;
         }
         if (Object.keys(patch).length === 0) {
             setNotice({ kind: 'ok', text: 'No hay cambios para guardar.' });
@@ -111,6 +128,9 @@ export function BrandingPanel(): JSX.Element {
 
     const logoUrl = brandingQ.data?.logo_url ?? null;
     const pickerValue = HEX_RE.test(colorHex.trim()) ? colorHex.trim() : DEFAULT_PICKER_HEX;
+    // Sin riel propio el picker muestra el riel por defecto (teal-tinta
+    // `192 55% 26%` ≈ #1e5a67) — el color que se ve en pantalla.
+    const sidebarPickerValue = HEX_RE.test(sidebarHex.trim()) ? sidebarHex.trim() : DEFAULT_SIDEBAR_PICKER_HEX;
 
     return (
         <Card>
@@ -122,14 +142,15 @@ export function BrandingPanel(): JSX.Element {
                     <div>
                         <CardTitle>Marca</CardTitle>
                         <CardDescription>
-                            Personalizá el nombre, el color primario y el logo que ve tu equipo en este workspace.
+                            Personalizá el nombre, el color primario, el color de la barra lateral y el logo que ve
+                            tu equipo en este workspace.
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
                 <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
-                    <label className="imcrm-block imcrm-space-y-1">
+                    <label className="imcrm-block imcrm-space-y-1 sm:imcrm-col-span-2">
                         <span className="imcrm-text-xs imcrm-text-muted-foreground">Nombre de la app</span>
                         <Input
                             value={appName}
@@ -156,6 +177,46 @@ export function BrandingPanel(): JSX.Element {
                                 className="imcrm-font-mono"
                             />
                         </div>
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            Botones, enlaces y acentos de toda la app.
+                        </p>
+                    </div>
+                    <div className="imcrm-space-y-1" data-testid="branding-sidebar-color">
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">Color de la barra lateral</span>
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <input
+                                type="color"
+                                aria-label="Selector de color de la barra lateral"
+                                value={sidebarPickerValue}
+                                onChange={(e) => setSidebarHex(e.target.value)}
+                                className="imcrm-h-9 imcrm-w-12 imcrm-shrink-0 imcrm-cursor-pointer imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-p-1"
+                            />
+                            <Input
+                                value={sidebarHex}
+                                onChange={(e) => setSidebarHex(e.target.value)}
+                                placeholder="Sigue al color primario"
+                                spellCheck={false}
+                                className="imcrm-font-mono"
+                                aria-label="Color de la barra lateral (hex)"
+                            />
+                            {sidebarHex.trim() !== '' && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="imcrm-shrink-0 imcrm-text-muted-foreground"
+                                    onClick={() => setSidebarHex('')}
+                                    title="Volver a seguir al color primario"
+                                    data-testid="branding-sidebar-clear"
+                                >
+                                    Quitar
+                                </Button>
+                            )}
+                        </div>
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            El fondo del menú de la izquierda. Vacío: se tiñe con el color primario. El texto se
+                            ajusta solo (claro sobre un fondo oscuro, oscuro sobre uno claro).
+                        </p>
                     </div>
                 </div>
 
@@ -221,7 +282,7 @@ export function BrandingPanel(): JSX.Element {
                 )}
 
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-4">
-                    <Button type="button" size="sm" disabled={busy} onClick={handleSave}>
+                    <Button type="button" size="sm" disabled={busy} onClick={handleSave} data-testid="branding-save">
                         {save.isPending ? 'Guardando…' : 'Guardar'}
                     </Button>
                     <Button

@@ -35,6 +35,13 @@ export const hexColorSchema = z
 
 export const brandingSchema = z.object({
     primary_color: hexColorSchema.nullable().default(null),
+    /**
+     * v0.1.176 — color de fondo del RIEL del menú, independiente del
+     * primario. null = el riel sigue al color primario (comportamiento
+     * histórico: se tiñe con su hue). Con valor, el riel toma ESE color tal
+     * cual y el front deriva la tinta (clara u oscura) de su luminancia.
+     */
+    sidebar_color: hexColorSchema.nullable().default(null),
     logo_file_id: idSchema.nullable().default(null),
     app_name: z.string().trim().min(1).max(60).nullable().default(null),
 });
@@ -44,6 +51,7 @@ export type Branding = z.infer<typeof brandingSchema>;
 export const updateBrandingSchema = z
     .object({
         primary_color: hexColorSchema.nullable(),
+        sidebar_color: hexColorSchema.nullable(),
         logo_file_id: idSchema.nullable(),
         app_name: z.string().trim().min(1).max(60).nullable(),
     })

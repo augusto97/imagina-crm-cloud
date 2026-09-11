@@ -3290,6 +3290,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador (claro/oscuro, picker con categorías y búsqueda) + E2E de
         v0.1.172 (27/27) y v0.1.173 (22/22) re-verificados.
 
+  - [x] **Color de la barra lateral independiente del primario (v0.1.176,
+        pedido del usuario con captura: "primario verde pero el riel gris")**:
+        hasta acá el riel del menú se TEÑÍA siempre con el hue del color
+        primario (v0.1.59/v0.1.112) — no había forma de tener acentos verdes
+        y un menú gris. Ahora `branding.sidebar_color` (shared + PATCH
+        `/workspaces/current/branding`, sin migración: vive en
+        `tenants.settings.branding`) es un color de fondo PROPIO del riel;
+        `null` = sigue al primario como siempre. En el front `sidebarVars`
+        pinta el riel con ese color **tal cual en los dos temas** (es una
+        elección explícita, no una derivación — a diferencia del riel que
+        sigue al primario, que en oscuro se hunde) y deriva TODO lo que va
+        encima: borde y velo de hover un escalón más claros u oscuros según el
+        fondo, y la tinta por **luminancia WCAG** (no por la L de HSL: un
+        amarillo al 50% es claro, un azul al 50% es oscuro) — gris claro →
+        texto oscuro, carbón → texto claro. Para que eso funcione hubo que
+        sacar el `text-white`/`bg-white/10` CABLEADO del riel (logo, item
+        activo, hover, separador, thumb del scroll y el cuadrado de marca del
+        topbar móvil): ahora salen de `--imcrm-sidebar-foreground` /
+        `--imcrm-sidebar-accent-foreground` (el dark pasa de teal a blanco en
+        ese token, que estaba sin uso — el look por defecto no cambia). Card
+        Marca: fila "Color de la barra lateral" (picker + hex + "Quitar" para
+        volver a seguir al primario, con explicación), validación propia y
+        PATCH parcial sólo si cambió. 1 test de API (round-trip, PATCH parcial
+        no pisa, null vuelve) + 5 unitarios del front (116 front en verde) +
+        E2E navegador 24/24 (verde+gris → riel `#e5e7eb` con tinta oscura y
+        contraste 9.1:1, persistencia, oscuro respeta el gris y sube el
+        primario, carbón → tinta clara, hex inválido rebota, Quitar limpia las
+        variables de tinta y el riel vuelve al hue del primario, topbar móvil).
+        **OJO en dev**: tras `pnpm build` de shared hay que reiniciar vite —
+        el pre-bundle viejo hizo que el schema del cliente DESCARTARA la clave
+        nueva en silencio (mismo síntoma que v0.1.167).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

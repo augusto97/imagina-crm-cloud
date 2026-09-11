@@ -61,7 +61,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
                     {logoUrl ? (
                         <img src={logoUrl} alt="" className="imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-rounded-md imcrm-object-contain" />
                     ) : (
-                        <span className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar imcrm-text-white">
+                        <span className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-sidebar imcrm-text-sidebar-accent-foreground">
                             <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" />
                         </span>
                     )}
