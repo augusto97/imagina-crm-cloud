@@ -671,6 +671,52 @@ no puede apuntar a otro lookup/rollup): obligaría a resolver grafos en cada
 lectura. Un `computed` sí puede usar un rollup como entrada ("cobrado =
 total − deuda"), porque los valores through se inyectan antes de evaluar.
 
+### ADR-S20 — Copias completas, restauración y migración de servidor (v0.1.179)
+
+**Contexto.** El backup lógico (§14, `scripts/backup.sh`) y el PITR protegen
+la BASE. Pero levantar la app en otro servidor, o volver a un estado anterior
+tras una falla, necesita más que la base: los **archivos subidos** (logos,
+adjuntos — `shared/uploads`), los **ajustes de plataforma** que viven en Redis
+(`platform:*`: SMTP de plataforma) y, sobre todo, los **secretos del `.env`**
+(`SECRETS_KEY`, `FILES_SIGNING_SECRET`): sin ellos las contraseñas SMTP y los
+secretos 2FA del dump son ilegibles y las URLs firmadas no validan. Y el
+restore tiene que respetar la relación código↔esquema (migraciones
+forward-only, ADR-S13).
+
+**Decisión.** Un único artefacto, el **snapshot completo**
+(`imagina-snapshot-<UTC>-v<versión>.tar[.gpg]`): `manifest.json` (versión,
+migraciones aplicadas, partes con sha256) + `db.dump` (pg_dump custom **con**
+privilegios) + `uploads.tar.gz` + `redis-platform.json` + `env.production` +
+`checksums.sha256`. Tres scripts que viajan en cada release y son la ÚNICA
+implementación (la consola los orquesta, no los duplica):
+
+- `snapshot.sh` — lo produce; retención por cantidad; GPG opcional; usa
+  `pg_dump`/`redis-cli` del host o por `docker exec`.
+- `snapshot-restore.sh` — verifica checksums, **rechaza un snapshot más nuevo
+  que el código** (esquema con migraciones desconocidas; uno más viejo es
+  normal: las pendientes se aplican al final), guarda una copia previa de la
+  base actual, `DROP SCHEMA` + `pg_restore` (no `--clean` objeto por objeto,
+  así un snapshot viejo sobre código nuevo no deja tablas huérfanas que choquen
+  con las migraciones), uploads, Redis, `.env` (en servidor nuevo se instala;
+  en uno existente NUNCA se pisa en silencio si los secretos difieren),
+  migraciones, arranque y health-check.
+- `bootstrap-server.sh` — servidor nuevo en un comando: layout de releases,
+  `.env` del snapshot, bundle de la MISMA versión desde GitHub Releases
+  (sha256 verificado), restore y (opcional) systemd.
+
+La consola (Plataforma → Copias de seguridad) crea, programa (diaria a una
+hora UTC, N conservadas, tick horario en la cola del updater — una operación
+a la vez), descarga, restaura (confirmación escrita; el restore corre
+desacoplado como el `finalize.sh` del updater porque reinicia el API) y borra.
+Los ajustes viven en `platform:backups` → viajan en el snapshot.
+
+**Consecuencias.** RTO de migración de servidor: minutos, sin pasos manuales
+de base/archivos/secretos. Las sesiones (Redis) no viajan a propósito: son
+efímeras y re-crearlas es un login. Con `STORAGE_DRIVER=s3` los archivos no
+viajan (el bucket es la fuente). Un snapshot incluye secretos: se guarda como
+tal (permisos 600) o cifrado. Migrar UNA empresa entre instancias (con
+re-mapeo de ids) es un problema distinto y queda para un release aparte.
+
 ---
 
-**Versión del documento:** 1.13.0 (lookup y rollup a través de relación — ADR-S19)
+**Versión del documento:** 1.14.0 (copias completas y migración de servidor — ADR-S20)

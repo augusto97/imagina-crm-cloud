@@ -22,6 +22,7 @@ import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
+import { BackupsPanel } from '@/cloud/components/BackupsPanel';
 
 /**
  * Consola de PLATAFORMA (operador SaaS). Sólo la ve el superadmin. Header de
@@ -176,6 +177,7 @@ export function PlatformPage(): JSX.Element {
             {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
             {tab === 'correo' && <SmtpSettingsPanel />}
             {tab === 'updates' && <SystemUpdatesPanel />}
+            {tab === 'backups' && <BackupsPanel />}
         </div>
     );
 }
