@@ -97,14 +97,29 @@ echo "  snapshot: versión $SNAP_VERSION · $SNAP_DATE · migraciones $SNAP_MIGR
 # ── env: de dónde salen DATABASE_URL & co ───────────────────────────────────
 # En un servidor NUEVO no hay env todavía: se toma el del snapshot para poder
 # conectarse (y más abajo se instala). En uno existente manda el instalado.
+# Lee un .env estilo dotenv SIN `source`: un valor sin comillas con espacios o
+# `<>` (MAIL_FROM=Imagina Base <no-reply@…>, como trae el .env.production.example)
+# hace que bash lo interprete como comando + redirección y aborte. Acepta
+# comillas simples/dobles, `export KEY=`, comentarios y CRLF.
+load_env_file() {
+    local line key val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]] || continue
+        key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        if [[ "$val" =~ ^\"(.*)\"[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        else val="${val%"${val##*[![:space:]]}"}"; fi
+        export "$key=$val"
+    done < "$1"
+}
 if [[ -z "${DATABASE_URL:-}" ]]; then
     if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-        # shellcheck disable=SC1090
-        set -a; . "$ENV_FILE"; set +a
+        load_env_file "$ENV_FILE"
     elif [[ -f "$PARTS/env.production" ]]; then
         echo "  · sin env instalado: uso el del snapshot para conectarme"
-        # shellcheck disable=SC1090
-        set -a; . "$PARTS/env.production"; set +a
+        load_env_file "$PARTS/env.production"
     fi
 fi
 : "${DATABASE_URL:?Falta DATABASE_URL (ni env instalado ni env en el snapshot)}"
@@ -263,7 +278,7 @@ if [[ $NO_MIGRATE -eq 0 ]]; then
     fi
     if [[ -n "$MIGRATE_CMD" ]]; then
         echo "→ migraciones pendientes"
-        if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then set -a; . "$ENV_FILE"; set +a; fi
+        if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then load_env_file "$ENV_FILE"; fi
         ( eval "$MIGRATE_CMD" )
     else
         echo "→ migraciones: sin MIGRATE_CMD ni release instalado — se omiten"

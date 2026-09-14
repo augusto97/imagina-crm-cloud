@@ -57,8 +57,9 @@ restart
 LAST_DUMP="$(ls -1t "${SHARED}/backups/"*.dump 2>/dev/null | head -1 || true)"
 if [ -n "${LAST_DUMP}" ]; then
     echo "→ restaurando dump ${LAST_DUMP}"
-    set -a; # shellcheck disable=SC1091
-    . "${SHARED}/.env.production"; set +a
+    # Sin `source` (un MAIL_FROM sin comillas con `<>` rompe a bash): sólo se
+    # necesita DATABASE_URL, se lee como dotenv.
+    DATABASE_URL="$(grep -E '^[[:space:]]*(export[[:space:]]+)?DATABASE_URL[[:space:]]*=' "${SHARED}/.env.production" | head -1 | sed -E 's/^[^=]*=[[:space:]]*//; s/^"(.*)"[[:space:]]*$/\1/; s/^'"'"'(.*)'"'"'[[:space:]]*$/\1/')"
     TARGET_DATABASE_URL="${DATABASE_URL}" "${CURRENT}/deploy/restore.sh" "${LAST_DUMP}" || true
 fi
 wait_healthy && echo "✓ rollback saludable" || echo "✗ rollback aún no saludable — revisar manualmente"

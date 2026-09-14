@@ -96,9 +96,16 @@ docker compose -f <ruta>/docker-compose.prod.yml --env-file shared/.env.producti
 BASE_PATH=/opt/imagina-base ./bootstrap-server.sh --snapshot /tmp/imagina-snapshot-<ts>-v<ver>.tar --install-service --yes
 ```
 
-> `bootstrap-server.sh` está en el snapshot's release (`current/deploy/`) y en
-> el repo (`scripts/`). Repo privado: `UPDATER_GITHUB_TOKEN=...`. Otra versión:
-> `--version x.y.z` (nunca más vieja que la del snapshot).
+> `bootstrap-server.sh` está en el release (`current/deploy/`) y en el repo
+> (`scripts/`); usa el `snapshot-restore.sh` y el `redis-kv.mjs` que estén
+> **junto a él**, así que copiá los tres juntos. Repo privado:
+> `UPDATER_GITHUB_TOKEN=...`. Otra versión: `--version x.y.z` (nunca más vieja
+> que la del snapshot).
+>
+> Este escenario se ensayó completo en v0.1.180 (snapshot → servidor limpio →
+> bundle real de GitHub → restore → API arriba con los mismos datos). Antes de
+> una migración de verdad, hacé el mismo ensayo en una VM descartable con TU
+> snapshot: es la única forma de saber que tu `.env` y tus datos pasan.
 
 Después: Caddy/nginx (`docs/runbook-deploy.md` §6, una vez por servidor),
 `sudoers` para el updater, y **apuntar el DNS** al servidor nuevo. Como el

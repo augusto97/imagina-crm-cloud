@@ -88,8 +88,10 @@ ln -sfn "$REL" "$BASE_PATH/current"
 echo "→ release $VERSION instalado y activo ($REL)"
 
 # ── 4. restaurar el snapshot ────────────────────────────────────────────────
-RESTORE="$REL/deploy/snapshot-restore.sh"
-[[ -f "$RESTORE" ]] || RESTORE="$HERE/snapshot-restore.sh"
+# Se prefiere el restore que está JUNTO a este script (vienen del mismo origen
+# y son la versión que la persona eligió correr); el del bundle es el respaldo.
+RESTORE="$HERE/snapshot-restore.sh"
+[[ -f "$RESTORE" ]] || RESTORE="$REL/deploy/snapshot-restore.sh"
 BASE_PATH="$BASE_PATH" APP_VERSION="$VERSION" bash "$RESTORE" "$SNAPSHOT" --no-service --no-safety --skip-env $YES
 
 # ── 5. servicio ─────────────────────────────────────────────────────────────

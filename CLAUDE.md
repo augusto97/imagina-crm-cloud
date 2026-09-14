@@ -3457,6 +3457,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Pendiente (siguiente release)**: exportar/importar UNA empresa entre
         instancias con re-mapeo de ids (escenario 3 del runbook).
 
+  - [x] **Simulacro de migración real + fix del `.env` (v0.1.180, pregunta del
+        usuario: "¿entonces ya se puede migrar fácil y sin errores?")**: en vez
+        de contestar de memoria se corrió el escenario 2 del runbook DE VERDAD
+        en el sandbox — snapshot de la base de desarrollo con versión 0.1.179
+        (68 listas / 527 campos / 141 registros, 1 archivo, claves `platform:*`,
+        `.env` con secretos), directorio vacío como "servidor nuevo",
+        `bootstrap-server.sh --snapshot … --yes` descargando el bundle REAL del
+        release v0.1.179 desde GitHub (sha256 verificado), restore, migraciones,
+        y el API arrancado desde `current/apps/api` con el env de `shared/` como
+        lo haría systemd: `/health/ready` 200, login, 68 listas, registros,
+        descarga del adjunto (200, 6.422 bytes), panel de copias leyendo los
+        ajustes de Redis; base migrada IDÉNTICA (mismo md5 de los 141 registros,
+        23 policies, 120 grants a `imagina_app`, 48 migraciones).
+        **Bug real atrapado a la primera**: los cuatro scripts de operación
+        (`snapshot.sh`, `snapshot-restore.sh`, `deploy/deploy.sh` y
+        `deploy/finalize.sh`) cargaban el `.env` con `source`, y un valor SIN
+        comillas con espacios o `<>` — exactamente `MAIL_FROM=Imagina Base
+        <no-reply@…>`, como lo trae `deploy/.env.production.example` — bash lo
+        lee como comando + redirección y aborta con "syntax error near
+        unexpected token newline". O sea: el restore moría a mitad de camino y,
+        peor, el `deploy.sh` de la **auto-actualización** también habría
+        fallado en cualquier servidor que copió el ejemplo tal cual (a los que
+        ya andan no les pasó porque tienen ese valor entre comillas). Ahora los
+        cuatro usan `load_env_file`, un lector estilo dotenv (sin comillas con
+        espacios/`<>`, comillas simples o dobles, `export KEY=`, comentarios,
+        CRLF; `finalize.sh` sólo extrae `DATABASE_URL`), el ejemplo lleva el
+        valor entre comillas y `bootstrap-server.sh` prefiere el restore que
+        está JUNTO a él (mismo origen que la persona eligió) antes que el del
+        bundle. El otro tropiezo del simulacro no fue bug: el `.env` de dev
+        tiene `SECRETS_KEY`/`FILES_SIGNING_SECRET` vacíos y el release de
+        producción se negó a migrar (v0.1.113) — con secretos reales pasó.
+        Test de regresión (restore `--dry-run` tomando `DATABASE_URL` de un env
+        con el `MAIL_FROM` sin comillas; verificado que el script viejo falla y
+        el nuevo pasa) — 9/9 del spec, 482 API en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

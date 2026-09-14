@@ -167,6 +167,31 @@ describe('Copias de seguridad completas (v0.1.179) — snapshot real (Postgres +
         expect(code).toBe(3);
     });
 
+    it('lee el .env como dotenv, no con `source`: un MAIL_FROM sin comillas con <> no aborta el restore (v0.1.180)', async () => {
+        // Regresión atrapada en el simulacro de migración: `.env.production.example`
+        // trae `MAIL_FROM=Imagina Base <no-reply@…>` sin comillas y `source` lo
+        // interpretaba como comando + redirección → "syntax error near newline".
+        const [snap] = await svc.list();
+        const file = svc.resolve(snap!.name);
+        const envFile = path.join(dir, 'tricky.env');
+        writeFileSync(envFile, [
+            '# comentario',
+            'NODE_ENV=production',
+            'MAIL_FROM=Imagina Base <no-reply@acme.test>',
+            `DATABASE_URL=${pg.container.getConnectionUri()}`,
+            "SMTP_PASS='p#ss=w0rd'",
+            '',
+        ].join('\n'));
+        const { DATABASE_URL: _drop, ...envWithoutDb } = process.env;
+        void _drop;
+        const out = execFileSync('bash', [path.join(SCRIPTS, 'snapshot-restore.sh'), file, '--dry-run'], {
+            env: { ...envWithoutDb, ENV_FILE: envFile, APP_VERSION: '9.9.9' },
+            stdio: 'pipe',
+        }).toString();
+        expect(out).toContain('dry-run: no se cambió nada');
+        expect(out).toContain(`SE REEMPLAZA por la del snapshot (${pg.container.getConnectionUri()})`);
+    });
+
     it('settings: defaults, PATCH parcial persiste en Redis (platform:*), y el tick respeta la hora', async () => {
         expect(await svc.getSettings()).toEqual({ enabled: false, hour_utc: 3, keep: 14, include_env: true });
         const set = await svc.setSettings({ enabled: true, hour_utc: 22 });

@@ -44,9 +44,25 @@ set -euo pipefail
 
 BASE_PATH="${BASE_PATH:-}"
 ENV_FILE="${ENV_FILE:-${BASE_PATH:+$BASE_PATH/shared/.env.production}}"
+# Lee un .env estilo dotenv SIN `source`: un valor sin comillas con espacios o
+# `<>` (MAIL_FROM=Imagina Base <no-reply@…>, como trae el .env.production.example)
+# hace que bash lo interprete como comando + redirección y aborte. Acepta
+# comillas simples/dobles, `export KEY=`, comentarios y CRLF.
+load_env_file() {
+    local line key val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]] || continue
+        key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        if [[ "$val" =~ ^\"(.*)\"[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        else val="${val%"${val##*[![:space:]]}"}"; fi
+        export "$key=$val"
+    done < "$1"
+}
 if [[ -z "${DATABASE_URL:-}" && -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-    # shellcheck disable=SC1090
-    set -a; . "$ENV_FILE"; set +a
+    load_env_file "$ENV_FILE"
 fi
 : "${DATABASE_URL:?Falta DATABASE_URL (o BASE_PATH con shared/.env.production)}"
 REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
