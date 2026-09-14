@@ -133,5 +133,5 @@ instancia completa (escenario 2).
 | `BACKUPS_DIR` | guardar las copias en otro disco (el panel también lo usa) |
 | `BACKUP_GPG_RECIPIENT` | cifrar cada snapshot (`.tar.gpg`; se restaura por CLI con la clave) |
 | `SNAPSHOT_KEEP` / `SNAPSHOT_INCLUDE_ENV` | retención y si viaja el `.env` (CLI; el panel usa sus ajustes) |
-| `PG_CONTAINER` / `REDIS_CONTAINER` | sin `pg_dump`/`redis-cli` en el host, se usan por `docker exec` |
+| `PG_CONTAINER` | sin `pg_dump`/`psql` en el host, se usan por `docker exec`. Redis no necesita CLI: los scripts hablan RESP con `redis-kv.mjs` (Node puro, viaja junto a ellos) |
 | `STOP_CMD` / `START_CMD` / `SERVICE` | otro supervisor que no sea systemd (`pm2 stop …`) |

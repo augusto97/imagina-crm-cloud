@@ -691,7 +691,9 @@ privilegios) + `uploads.tar.gz` + `redis-platform.json` + `env.production` +
 implementación (la consola los orquesta, no los duplica):
 
 - `snapshot.sh` — lo produce; retención por cantidad; GPG opcional; usa
-  `pg_dump`/`redis-cli` del host o por `docker exec`.
+  `pg_dump` del host o por `docker exec`, y para Redis un cliente RESP
+  propio en Node (`redis-kv.mjs`, sin dependencias) — `redis-cli` no está
+  en todos los hosts y el único requisito real de la app es Node.
 - `snapshot-restore.sh` — verifica checksums, **rechaza un snapshot más nuevo
   que el código** (esquema con migraciones desconocidas; uno más viejo es
   normal: las pendientes se aplican al final), guarda una copia previa de la

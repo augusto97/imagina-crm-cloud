@@ -43,7 +43,8 @@
 # Variables:
 #   BASE_PATH, DATABASE_URL, REDIS_URL, UPLOADS_DIR, ENV_FILE, BACKUP_DIR, APP_VERSION
 #   SERVICE (default imagina-api), STOP_CMD / START_CMD, HEALTH_URL, MIGRATE_CMD
-#   PG_CONTAINER / REDIS_CONTAINER (docker exec si no hay CLI en el PATH)
+#   PG_CONTAINER (docker exec si no hay psql/pg_restore en el PATH). Redis va
+#   por redis-kv.mjs (Node puro): no hace falta redis-cli.
 set -euo pipefail
 
 SNAPSHOT="${1:?Falta la ruta al snapshot (.tar o .tar.gpg)}"; shift || true
@@ -128,7 +129,6 @@ fi
 
 # ── herramientas ────────────────────────────────────────────────────────────
 PG_CONTAINER="${PG_CONTAINER:-imagina-base-prod-postgres-1}"
-REDIS_CONTAINER="${REDIS_CONTAINER:-imagina-base-prod-redis-1}"
 if command -v psql >/dev/null 2>&1; then
     psql_cmd() { psql "$@"; }; pg_restore_cmd() { pg_restore "$@"; }; pg_dump_cmd() { pg_dump "$@"; }
 elif docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
@@ -138,13 +138,9 @@ elif docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
 else
     echo "✗ no hay psql/pg_restore en el PATH ni contenedor '$PG_CONTAINER'" >&2; exit 1
 fi
-if command -v redis-cli >/dev/null 2>&1; then
-    redis_cmd() { redis-cli -u "$REDIS_URL" "$@"; }
-elif docker inspect "$REDIS_CONTAINER" >/dev/null 2>&1; then
-    redis_cmd() { docker exec -i "$REDIS_CONTAINER" redis-cli -u "$REDIS_URL" "$@"; }
-else
-    redis_cmd() { return 99; }
-fi
+# Redis por redis-kv.mjs (Node puro, junto a este script): sin redis-cli.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+redis_kv() { node "$HERE/redis-kv.mjs" "$@"; }
 
 # ── 3. plan + confirmación ──────────────────────────────────────────────────
 echo "→ plan:"
@@ -223,24 +219,9 @@ fi
 
 # ── 8. redis platform:* ─────────────────────────────────────────────────────
 if [[ "$HAS_REDIS" == "true" && $SKIP_REDIS -eq 0 && -f "$PARTS/redis-platform.json" ]]; then
-    if redis_cmd ping >/dev/null 2>&1; then
+    if redis_kv ping "$REDIS_URL" >/dev/null 2>&1; then
         echo "→ redis (platform:*)"
-        mkdir -p "$WORK/redis"
-        node -e '
-            const fs = require("fs");
-            const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-            let i = 0;
-            for (const [k, v] of Object.entries(data)) {
-                fs.writeFileSync(`${process.argv[2]}/${i}.key`, k);
-                fs.writeFileSync(`${process.argv[2]}/${i}.val`, String(v));
-                i++;
-            }
-            process.stdout.write(String(i));
-        ' "$PARTS/redis-platform.json" "$WORK/redis" > "$WORK/redis/count"
-        n="$(cat "$WORK/redis/count")"
-        for ((i = 0; i < n; i++)); do
-            redis_cmd -x SET "$(cat "$WORK/redis/$i.key")" < "$WORK/redis/$i.val" >/dev/null
-        done
+        n="$(redis_kv load "$REDIS_URL" "$PARTS/redis-platform.json")"
         echo "  ✓ $n clave(s) repuestas"
     else
         echo "  ⚠ Redis no accesible ($REDIS_URL): no se repuso el SMTP de plataforma" >&2

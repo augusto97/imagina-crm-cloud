@@ -3412,8 +3412,11 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         restore dejaba al API sin permisos — + `uploads.tar.gz` +
         `redis-platform.json` + `env.production` + checksums), y tres scripts
         que viajan en cada release y son la ÚNICA implementación:
-        `snapshot.sh` (retención por cantidad, GPG opcional, `pg_dump`/
-        `redis-cli` del host o por `docker exec`), `snapshot-restore.sh`
+        `snapshot.sh` (retención por cantidad, GPG opcional, `pg_dump` del
+        host o por `docker exec`; Redis va por `redis-kv.mjs`, un cliente
+        RESP propio en Node sin dependencias — lo atrapó el CI: el runner no
+        tiene `redis-cli` y el snapshot salía SIN las claves de plataforma,
+        lo mismo que le pasaría a un VPS sin el CLI), `snapshot-restore.sh`
         (verifica checksums; **rechaza un snapshot más nuevo que el código**
         —esquema con migraciones desconocidas— y acepta uno más viejo aplicando
         las pendientes al final; copia previa de la base actual; `DROP SCHEMA`

@@ -37,8 +37,9 @@
 #   BACKUP_GPG_RECIPIENT    si está, cifra el .tar → .tar.gpg y borra el plano.
 #   SNAPSHOT_KEEP           conserva los N snapshots más nuevos (default 14; 0 = no podar)
 #   SNAPSHOT_INCLUDE_ENV    1 (default) incluye el env; 0 lo omite
-#   PG_CONTAINER / REDIS_CONTAINER   si no hay pg_dump/redis-cli en el PATH, se
-#                           usan por `docker exec` (defaults imagina-base-prod-*)
+#   PG_CONTAINER            si no hay pg_dump en el PATH, se usa por `docker exec`
+#                           (default imagina-base-prod-postgres-1). Redis NO
+#                           necesita CLI: va por redis-kv.mjs (Node puro).
 set -euo pipefail
 
 BASE_PATH="${BASE_PATH:-}"
@@ -65,7 +66,6 @@ fi
 
 # ── herramientas: PATH o docker exec ────────────────────────────────────────
 PG_CONTAINER="${PG_CONTAINER:-imagina-base-prod-postgres-1}"
-REDIS_CONTAINER="${REDIS_CONTAINER:-imagina-base-prod-redis-1}"
 if command -v pg_dump >/dev/null 2>&1; then
     pg_dump_cmd() { pg_dump "$@"; }
     psql_cmd() { psql "$@"; }
@@ -77,13 +77,11 @@ else
     echo "✗ no hay pg_dump en el PATH ni contenedor '$PG_CONTAINER' (setéa PG_CONTAINER)" >&2
     exit 1
 fi
-if command -v redis-cli >/dev/null 2>&1; then
-    redis_cmd() { redis-cli -u "$REDIS_URL" "$@"; }
-elif docker inspect "$REDIS_CONTAINER" >/dev/null 2>&1; then
-    redis_cmd() { docker exec -i "$REDIS_CONTAINER" redis-cli -u "$REDIS_URL" "$@"; }
-else
-    redis_cmd() { return 99; }
-fi
+# Redis: cliente propio en Node (redis-kv.mjs, junto a este script) — no
+# depende de redis-cli, que falta en muchos hosts (y en el runner de CI).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REDIS_KV="$HERE/redis-kv.mjs"
+redis_kv() { node "$REDIS_KV" "$@"; }
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="imagina-snapshot-${STAMP}-v${APP_VERSION}"
@@ -119,22 +117,9 @@ fi
 
 # 3. Claves platform:* de Redis → JSON {clave: valor-string}.
 REDIS_INCLUDED=false
-if redis_cmd ping >/dev/null 2>&1; then
+if redis_kv ping "$REDIS_URL" >/dev/null 2>&1; then
     echo "  · redis (platform:*)"
-    {
-        printf '{'
-        first=1
-        while IFS= read -r key; do
-            [[ -z "$key" ]] && continue
-            val="$(redis_cmd --json GET "$key")"
-            [[ "$val" == "null" ]] && continue
-            [[ $first -eq 0 ]] && printf ','
-            first=0
-            # --json ya devuelve la clave/valor como cadenas JSON válidas.
-            printf '%s:%s' "$(redis_cmd --json ECHO "$key")" "$val"
-        done < <(redis_cmd --scan --pattern 'platform:*')
-        printf '}\n'
-    } > "$PARTS/redis-platform.json"
+    redis_kv dump "$REDIS_URL" 'platform:*' > "$PARTS/redis-platform.json"
     REDIS_INCLUDED=true
 else
     echo "  · redis: no accesible ($REDIS_URL) — se omite (sólo afecta SMTP de plataforma)"
