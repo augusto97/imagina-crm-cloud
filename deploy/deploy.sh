@@ -39,10 +39,23 @@ rm -rf "${RELEASE_DIR}/apps/api/data/uploads"
 ln -sfn "${SHARED}/uploads" "${RELEASE_DIR}/apps/api/data/uploads"
 
 echo "→ migraciones (forward-only)"
-set -a
-# shellcheck disable=SC1091
-. "${SHARED}/.env.production"
-set +a
+# Lee el .env estilo dotenv SIN `source`: un valor sin comillas con espacios o
+# `<>` (MAIL_FROM=Imagina Base <no-reply@…>, como trae el .env.production.example)
+# hace que bash lo interprete como comando + redirección y aborte el deploy.
+load_env_file() {
+    local line key val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]] || continue
+        key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        if [[ "$val" =~ ^\"(.*)\"[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
+        else val="${val%"${val##*[![:space:]]}"}"; fi
+        export "$key=$val"
+    done < "$1"
+}
+load_env_file "${SHARED}/.env.production"
 ( cd "${RELEASE_DIR}/apps/api" && node dist/db/migrate.js )
 
 echo "→ FLIP atómico: current → ${RELEASE_DIR}"
