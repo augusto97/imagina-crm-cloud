@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ENV, type Env } from '../config/env';
+import { BackupsController } from './backups.controller';
+import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
 import { ReleasesRepository } from './releases.repository';
 import { SmtpController } from './smtp.controller';
@@ -18,12 +20,13 @@ import { DEPLOYER } from './update.types';
  */
 @Module({
     imports: [AuthModule],
-    controllers: [UpdateController, SmtpController],
+    controllers: [UpdateController, SmtpController, BackupsController],
     providers: [
         SuperadminGuard,
         ReleasesRepository,
         CheckUpdatesService,
         UpdateManager,
+        BackupsService,
         UpdateQueue,
         {
             provide: DEPLOYER,

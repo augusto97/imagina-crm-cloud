@@ -4,6 +4,13 @@
 > ADR-S09 (los datos del cliente nunca se pierden) y STANDALONE §14
 > ("backups cifrados; restore drill mensual").
 
+> **v0.1.179**: además del dump lógico de este runbook existe el **snapshot
+> completo** (base + archivos subidos + ajustes de plataforma + `.env`), que es
+> lo que se usa para volver a un estado anterior o migrar de servidor, y se
+> crea/programa/restaura desde Plataforma → Copias de seguridad. Ver
+> **`docs/runbook-migration.md`**. Este runbook sigue vigente para el dump
+> lógico y el drill.
+
 ## Objetivos (RPO / RTO)
 
 - **RPO** (pérdida máxima aceptable): ≤ 24 h con backup lógico diario; ≤ 5 min

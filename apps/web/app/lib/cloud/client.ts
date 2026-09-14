@@ -59,6 +59,9 @@ import {
     tenantDomainSchema,
     updateMemberRoleSchema,
     updateStatusSchema,
+    backupsStatusSchema,
+    backupsSettingsSchema,
+    updateBackupsSettingsSchema,
     workspaceMemberSchema,
     registerInputSchema,
     slugCheckResultSchema,
@@ -118,6 +121,9 @@ import {
     type TenantDomain,
     type UpdateMemberRoleInput,
     type UpdateStatus,
+    type BackupsStatus,
+    type BackupsSettings,
+    type UpdateBackupsSettingsInput,
     type WorkspaceMember,
     type RegisterInput,
     type SlugCheckQuery,
@@ -623,6 +629,34 @@ export class CloudClient {
         return this.request('POST', '/system/update/rollback', {
             schema: z.object({ ok: z.boolean(), message: z.string() }),
         });
+    }
+
+    // --- copias de seguridad completas (v0.1.179, ADR-S20, sólo superadmin) ---
+    backupsStatus(): Promise<BackupsStatus> {
+        return this.request('GET', '/system/backups', { schema: backupsStatusSchema });
+    }
+    backupsCreate(): Promise<{ queued: boolean; message: string }> {
+        return this.request('POST', '/system/backups', {
+            schema: z.object({ queued: z.boolean(), message: z.string() }),
+        });
+    }
+    backupsSetSettings(patch: UpdateBackupsSettingsInput): Promise<BackupsSettings> {
+        return this.request('PATCH', '/system/backups/settings', {
+            body: updateBackupsSettingsSchema.parse(patch),
+            schema: backupsSettingsSchema,
+        });
+    }
+    backupsRemove(name: string): Promise<void> {
+        return this.request('DELETE', `/system/backups/${encodeURIComponent(name)}`, {});
+    }
+    backupsRestore(name: string): Promise<{ ok: boolean; message: string }> {
+        return this.request('POST', `/system/backups/${encodeURIComponent(name)}/restore`, {
+            schema: z.object({ ok: z.boolean(), message: z.string() }),
+        });
+    }
+    /** URL de descarga (misma origin, sesión por cookie): sirve para un <a href>. */
+    backupDownloadUrl(name: string): string {
+        return `${this.baseUrl}/system/backups/${encodeURIComponent(name)}/download`;
     }
 
     // --- SMTP de plataforma (ADR-S11, sólo superadmin) ---

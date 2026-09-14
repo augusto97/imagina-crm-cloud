@@ -121,6 +121,13 @@ const envSchema = z.object({
     // (releases/<ts>_<ver>/apps/api → base). En dev queda vacío = updater off.
     UPDATER_BASE_PATH: z.string().default(''),
     UPDATER_KEEP_RELEASES: z.coerce.number().int().positive().default(5),
+
+    // --- Copias de seguridad completas (v0.1.179, ADR-S20). En producción
+    // ambos se derivan de UPDATER_BASE_PATH (shared/backups y current/deploy);
+    // estos overrides sirven para dev/tests o para guardar las copias en
+    // otro disco.
+    BACKUPS_DIR: z.string().default(''),
+    BACKUPS_SCRIPTS_DIR: z.string().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

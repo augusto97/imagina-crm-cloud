@@ -96,6 +96,8 @@ jobs:
           # scripts + config que el release necesita para instalar/rollback/servir
           cp deploy/deploy.sh deploy/finalize.sh "$OUT/deploy/"
           cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"
+          # v0.1.179 — copias completas + migración de servidor (ADR-S20)
+          cp scripts/snapshot.sh scripts/snapshot-restore.sh scripts/bootstrap-server.sh scripts/redis-kv.mjs "$OUT/deploy/"
           cp deploy/docker-compose.prod.yml deploy/.env.production.example \
              deploy/nginx.conf deploy/imagina-api.service "$OUT/deploy/"
           chmod +x "$OUT"/deploy/*.sh

@@ -3396,6 +3396,67 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `{{estado|label}}`="Pendiente de pago", picker con 3 chips e
         inserción de `{{servicio|label}}`).
 
+- [ ] **F9 — Copias de seguridad y migración** (pedido del usuario: "migrar
+      un cliente o toda la app de servidor, o restaurar a una versión
+      anterior, de forma robusta, eficiente y fácil"):
+  - [x] **Snapshot completo + restauración + migración de servidor (v0.1.179,
+        ADR-S20)**: el backup lógico de F5 sólo guardaba la BASE — para
+        levantar la app en otro servidor faltaban los archivos subidos, los
+        ajustes de plataforma de Redis (`platform:*`, el SMTP) y, sobre todo,
+        los secretos del `.env` (sin `SECRETS_KEY` las contraseñas SMTP y los
+        secretos 2FA del dump son ilegibles; sin `FILES_SIGNING_SECRET` no
+        valida ninguna URL firmada). Ahora UN artefacto,
+        `imagina-snapshot-<UTC>-v<versión>.tar[.gpg]` (manifest con versión y
+        nº de migraciones + `db.dump` **con privilegios** — los GRANT al rol
+        `imagina_app` viajan; el `backup.sh` viejo usaba `--no-privileges` y un
+        restore dejaba al API sin permisos — + `uploads.tar.gz` +
+        `redis-platform.json` + `env.production` + checksums), y tres scripts
+        que viajan en cada release y son la ÚNICA implementación:
+        `snapshot.sh` (retención por cantidad, GPG opcional, `pg_dump` del
+        host o por `docker exec`; Redis va por `redis-kv.mjs`, un cliente
+        RESP propio en Node sin dependencias — lo atrapó el CI: el runner no
+        tiene `redis-cli` y el snapshot salía SIN las claves de plataforma,
+        lo mismo que le pasaría a un VPS sin el CLI), `snapshot-restore.sh`
+        (verifica checksums; **rechaza un snapshot más nuevo que el código**
+        —esquema con migraciones desconocidas— y acepta uno más viejo aplicando
+        las pendientes al final; copia previa de la base actual; `DROP SCHEMA`
+        + `pg_restore` en vez de `--clean` objeto por objeto para que un
+        snapshot viejo sobre código nuevo no deje tablas huérfanas; uploads
+        apartados en `.pre-restore-<ts>`; Redis; el `.env` se instala en
+        servidor nuevo y NUNCA se pisa en silencio en uno existente si los
+        secretos difieren; `--dry-run`, confirmación escrita RESTAURAR) y
+        `bootstrap-server.sh` (servidor nuevo en un comando: layout, `.env`
+        del snapshot, bundle de la MISMA versión desde GitHub Releases con
+        sha256 verificado, restore, `--install-service`). Consola →
+        **Plataforma → Copias de seguridad**: crear ahora (job en la cola del
+        updater: una operación a la vez, nunca un snapshot pisando un deploy),
+        **copias automáticas** diarias a una hora UTC con N conservadas (tick
+        horario; si el servidor estaba apagado a esa hora sale en el próximo
+        tick del día; ajustes en `platform:backups` → viajan en el snapshot),
+        listado con manifest leído del tar (versión, migraciones, contenido,
+        cifrada), descarga por enlace (`content-encoding: identity` para que
+        el compress no se coma el content-length), **restaurar** con
+        confirmación escrita (detached como `finalize.sh`: el script detiene
+        y rearranca el API; al bootear el service reconcilia el run) y
+        borrar. Nombres estrictos (sin traversal) y restore por panel sólo
+        con layout de releases (en dev: 409 con la instrucción por CLI).
+        Docs: `docs/runbook-migration.md` (los 3 escenarios paso a paso),
+        nota en `runbook-backups.md`, ADR-S20 en STANDALONE, CI copia los
+        scripts al bundle. 8 tests de API — 3 puros (parse de nombres,
+        `isSnapshotDue`, `nextRunAt`) + 5 de integración con Postgres y Redis
+        REALES en contenedores: `createSnapshot` produce el tar con manifest
+        (sesiones NO viajan), `snapshot-restore.sh` deja base/uploads/Redis
+        iguales en una base scratch (grants y policies incluidos), snapshot
+        más nuevo rechazado con código 3, settings y tick, traversal/borrado —
+        481 API y 122 front en verde; verificación manual del ciclo completo
+        contra la base de desarrollo (68 listas, 527 campos, 141 registros
+        idénticos tras restaurar) y E2E navegador 19/19 (crear → Listo con
+        nombre → fila con contenido → descarga con bytes exactos → traversal
+        404 → Restaurar deshabilitado + 409 → ajustes persistidos + próxima
+        automática → eliminar → sección de migración → link en el panel).
+        **Pendiente (siguiente release)**: exportar/importar UNA empresa entre
+        instancias con re-mapeo de ids (escenario 3 del runbook).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
