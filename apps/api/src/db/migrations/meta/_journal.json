@@ -351,6 +351,13 @@
       "when": 1784200000018,
       "tag": "0049_personal_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784200000019,
+      "tag": "0050_oauth_clients",
+      "breakpoints": true
     }
   ]
 }

@@ -37,6 +37,50 @@ límites de plan, realtime y bitácora (`ai.apply`).
 
 ## Conectar
 
+### Con "Autorizar" (claude.ai, Claude Desktop, celular, Claude Code, Cursor) — v0.1.184
+
+La app es **servidor OAuth 2.1** del MCP: el cliente descubre la metadata,
+se registra solo y te manda a una pantalla de Imagina Base donde elegís el
+workspace y el alcance. No hay nada que copiar.
+
+- **claude.ai / Claude Desktop / app móvil**: Ajustes → Conectores →
+  *Agregar conector personalizado* → URL `https://<tu-dominio>/api/v1/mcp` →
+  Conectar → iniciás sesión en la app (si no la tenías abierta) → *Autorizar*.
+  (Requiere un plan de Claude que admita conectores personalizados — el
+  modelo lo paga tu suscripción, no la app.)
+- **Claude Code**: `claude mcp add --transport http imagina-base
+  https://<tu-dominio>/api/v1/mcp` (sin `--header`) y `/mcp` → *Authenticate*:
+  abre el navegador en la misma pantalla.
+- **Cursor**: `{"mcpServers": {"imagina-base": {"url": "https://<tu-dominio>/api/v1/mcp"}}}`
+  y el botón *Connect* del panel MCP.
+
+La conexión aparece en Ajustes → Cuenta → Seguridad → *Conexión MCP* como
+"Conexión autorizada · se renueva solo" (acceso de 1 h con refresh token
+rotativo de 30 días) y se revoca con el mismo botón que un token pegado.
+
+Detalle del protocolo (para clientes propios):
+
+| Qué | Dónde |
+|---|---|
+| Authorization server metadata (RFC 8414) | `GET /.well-known/oauth-authorization-server` |
+| Protected resource metadata (RFC 9728) | `GET /.well-known/oauth-protected-resource[/api/v1/mcp]` (también anunciada en el `WWW-Authenticate` del 401) |
+| Registro dinámico (RFC 7591) | `POST /api/v1/oauth/register` — `redirect_uris` https, `http://localhost`/`127.0.0.1` o esquema de app nativa; `token_endpoint_auth_method` `none` (default), `client_secret_basic` o `client_secret_post` |
+| Autorización | `GET /api/v1/oauth/authorize?response_type=code&client_id&redirect_uri&state&code_challenge&code_challenge_method=S256[&scope=read|full][&resource=…/api/v1/mcp]` |
+| Token | `POST /api/v1/oauth/token` (`x-www-form-urlencoded` o JSON): `grant_type=authorization_code` + `code` + `code_verifier` [+ `redirect_uri`], o `grant_type=refresh_token` + `refresh_token` |
+| Revocación (RFC 7009) | `POST /api/v1/oauth/revoke` con `token` (acceso o refresh) |
+
+PKCE S256 es obligatorio siempre; el `code` dura 5 min y es de un solo uso;
+el refresh token rota en cada canje (el anterior deja de servir). `scope`
+acepta `read` y/o `full`; sin `scope` la pantalla propone `full` y la persona
+decide. Si el `resource` viene, tiene que ser exactamente el MCP de ese host.
+
+**Servidores existentes**: la metadata vive en la raíz del host, así que el
+proxy tiene que mandar `/.well-known/oauth-*` al API — la regla está en
+`deploy/Caddyfile` y `deploy/nginx.conf`; la auto-actualización NO toca el
+proxy, hay que agregarla a mano una vez.
+
+### Con un token pegado a mano (Claude Code, Cursor y otros)
+
 **Claude Code**
 
 ```bash
@@ -82,7 +126,12 @@ Sin token o con uno inválido/vencido/revocado → `401` con
 ## Seguridad
 
 - El secreto **no se guarda**: sólo su SHA-256 y un prefijo para reconocerlo.
-  Se muestra una vez al crearlo.
+  Se muestra una vez al crearlo. Los tokens emitidos por OAuth son filas de
+  la misma tabla (con `client_id` y el hash del refresh): mismas reglas.
+- OAuth: un cliente desconocido o una `redirect_uri` no registrada se
+  responden en texto y NUNCA por redirect (no hay open redirect); el registro
+  dinámico es abierto a propósito (así funcionan claude.ai y Cursor) y va
+  bajo el rate limit por IP.
 - Tabla `personal_access_tokens` sin RLS a propósito (la búsqueda es por hash
   antes de conocer el tenant; mismo patrón que los webhooks entrantes). Todo
   lo que el token habilita corre dentro del scope del tenant resuelto.

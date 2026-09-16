@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ENV, type Env } from '../config/env';
 import { McpService } from './mcp.service';
+import { OauthService } from './oauth.service';
+import { requestOrigin } from './oauth.util';
 import { PersonalTokensService } from './tokens.service';
 import type { AiToolContext } from './tools/registry';
 
@@ -34,6 +36,7 @@ export class McpController {
     constructor(
         private readonly tokens: PersonalTokensService,
         private readonly mcp: McpService,
+        private readonly oauth: OauthService,
         @Inject(ENV) private readonly env: Env,
     ) {}
 
@@ -50,7 +53,9 @@ export class McpController {
         const secret = header?.startsWith('Bearer ') ? header.slice(7).trim() : '';
         const resolved = secret ? await this.tokens.resolve(secret) : null;
         if (!resolved) {
-            raw.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="imagina-base", error="invalid_token"' });
+            // `resource_metadata` (RFC 9728) es lo que un cliente MCP usa para
+            // descubrir el servidor OAuth y ofrecer "Autorizar" (v0.1.184).
+            raw.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': this.oauth.wwwAuthenticate(requestOrigin(req)) });
             raw.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Token de acceso inválido, vencido o revocado' }, id: null }));
             return;
         }

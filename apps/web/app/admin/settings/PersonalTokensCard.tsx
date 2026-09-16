@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreatedPersonalToken, PersonalTokenScope } from '@imagina-base/shared';
-import { Check, Copy, KeyRound, Loader2, Plug, Trash2 } from 'lucide-react';
+import { Check, Copy, KeyRound, Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react';
 
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -72,7 +72,7 @@ export function PersonalTokensCard(): JSX.Element {
                         {__('Conexión MCP (Claude, Cursor y otros)')}
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Un token de acceso personal deja que tu asistente de IA favorito lea este workspace y te proponga cambios, con tu mismo rol y permisos. El secreto se muestra una sola vez.')}
+                        {__('Dejá que tu asistente de IA favorito lea este workspace y te proponga cambios, con tu mismo rol y permisos. Dos formas: "Autorizar" desde la app de Claude (sin copiar nada) o un token para pegar a mano.')}
                     </p>
                 </div>
                 {!creating && !created && (
@@ -80,6 +80,24 @@ export function PersonalTokensCard(): JSX.Element {
                         <KeyRound className="imcrm-mr-2 imcrm-h-3.5 imcrm-w-3.5" /> {__('Nuevo token')}
                     </Button>
                 )}
+            </div>
+
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-oauth-howto">
+                <p className="imcrm-text-sm imcrm-font-medium">{__('Conectar desde claude.ai, Claude Desktop o el celular (sin token)')}</p>
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('En Claude: Ajustes → Conectores → "Agregar conector personalizado", pegá esta URL y tocá Conectar. Claude te trae a una pantalla de esta app donde elegís el workspace y el alcance, y listo — el acceso se renueva solo y aparece abajo como una conexión, con el mismo botón Revocar.')}
+                </p>
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-select-all imcrm-overflow-x-auto imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-1.5 imcrm-font-mono imcrm-text-xs imcrm-ring-1 imcrm-ring-border" data-testid="imcrm-oauth-url">
+                        {mcpUrl}
+                    </code>
+                    <Button size="sm" variant="outline" onClick={() => void copy(mcpUrl, 'url')} aria-label={__('Copiar URL')}>
+                        {copied === 'url' ? <Check className="imcrm-h-3.5 imcrm-w-3.5" /> : <Copy className="imcrm-h-3.5 imcrm-w-3.5" />}
+                    </Button>
+                </div>
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('También sirve con "claude mcp add --transport http imagina-base <URL>" sin cabecera (Claude Code abre el navegador para autorizar) y con Cursor.')}
+                </p>
             </div>
 
             {creating && (
@@ -169,7 +187,7 @@ export function PersonalTokensCard(): JSX.Element {
                     {list.map((t) => (
                         <li key={t.id} className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-3" data-testid="imcrm-token-row">
                             <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted imcrm-text-muted-foreground imcrm-ring-1 imcrm-ring-border">
-                                <KeyRound className="imcrm-h-4 imcrm-w-4" />
+                                {t.client_name ? <Plug className="imcrm-h-4 imcrm-w-4" /> : <KeyRound className="imcrm-h-4 imcrm-w-4" />}
                             </span>
                             <div className="imcrm-min-w-0 imcrm-flex-1">
                                 <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
@@ -177,13 +195,20 @@ export function PersonalTokensCard(): JSX.Element {
                                     <Badge variant={t.scope === 'full' ? 'warning' : 'secondary'} className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">
                                         {__(SCOPE_LABEL[t.scope])}
                                     </Badge>
+                                    {t.client_name && (
+                                        <Badge variant="outline" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]" data-testid="imcrm-token-connector">
+                                            {__('Conexión autorizada')}
+                                        </Badge>
+                                    )}
                                 </p>
                                 <p className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
                                     <span className="imcrm-font-mono">{t.prefix}</span>
                                     {' · '}
                                     {t.last_used_at ? `${__('Último uso')} ${formatDateTimeStr(t.last_used_at)}` : __('Sin usar todavía')}
                                     {' · '}
-                                    {t.expires_at ? `${__('Vence')} ${formatDateTimeStr(t.expires_at)}` : __('No vence')}
+                                    {t.client_name ? (
+                                        <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><RefreshCw className="imcrm-h-3 imcrm-w-3" />{__('se renueva solo')}</span>
+                                    ) : t.expires_at ? `${__('Vence')} ${formatDateTimeStr(t.expires_at)}` : __('No vence')}
                                 </p>
                             </div>
                             <Button

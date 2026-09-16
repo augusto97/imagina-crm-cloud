@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 
 import { AdminCloudApp } from '@/cloud/AdminCloudApp';
 import { initDomainBoot } from '@/cloud/domainBoot';
+import { getOauthRequestId, OauthConsentPage } from '@/cloud/pages/OauthConsentPage';
 import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
@@ -49,6 +50,7 @@ const container = document.getElementById('root');
 if (container) {
     const resetToken = getResetToken();
     const verifyToken = getVerifyToken();
+    const oauthRequestId = getOauthRequestId();
     createRoot(container).render(
         <StrictMode>
             <QueryClientProvider client={queryClient}>
@@ -58,6 +60,8 @@ if (container) {
                             <ResetPasswordPage token={resetToken} />
                         ) : verifyToken ? (
                             <VerifyEmailPage token={verifyToken} />
+                        ) : oauthRequestId ? (
+                            <OauthConsentPage requestId={oauthRequestId} />
                         ) : (
                             <AdminCloudApp />
                         )}

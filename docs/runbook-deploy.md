@@ -131,6 +131,11 @@ sudo nano /etc/caddy/Caddyfile        # reemplazá app.tu-dominio.com (root ya =
 sudo systemctl reload caddy
 ```
 
+> **Servidor que ya existía (antes de v0.1.184)**: el Caddyfile ganó la regla
+> `handle /.well-known/oauth-*` (descubrimiento OAuth del MCP, para conectar
+> claude.ai / Claude Desktop con "Autorizar"). La auto-actualización NO toca
+> `/etc/caddy/Caddyfile`: copiá esa regla a mano una vez y recargá Caddy.
+
 Abrí `https://app.tu-dominio.com` → cae en el login. Registrá el primer usuario:
 ese registro crea el **workspace y su admin**. Para operar la auto-actualización,
 poné ese email (u otro) en `PLATFORM_SUPERADMINS`.

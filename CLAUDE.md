@@ -3630,6 +3630,65 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         acceso MCP externo, con la clave/cuenta como decisión del operador
         (compartida con cuota por plan y/o propia por empresa).**
 
+  - [x] **Fase 4 — OAuth 2.1 para el MCP: "Autorizar" en vez de pegar un token
+        (v0.1.184, pregunta del usuario: "¿puedo conectar directamente mi
+        suscripción de Claude, como en VS Code?")**: la app NO puede usar la
+        suscripción (Anthropic prohíbe los tokens OAuth de Free/Pro/Max en
+        productos de terceros desde febrero de 2026 — el asistente ✨ sigue con
+        API key), pero el camino inverso sí: que Claude, pagado por la
+        suscripción, se conecte a la app. claude.ai, Claude Desktop y el
+        celular sólo admiten conectores remotos por **OAuth** (no una cabecera
+        fija), así que Imagina Base es ahora **servidor de autorización OAuth
+        2.1** del MCP (ADR-S21 fase 4). Backend (`ai/oauth.*`,
+        `well-known.controller`): metadata RFC 8414/9728 en la RAÍZ del host
+        (`/.well-known/oauth-authorization-server`,
+        `/.well-known/oauth-protected-resource[/api/v1/mcp]`, excluidas del
+        prefijo `/api/v1`; el 401 del MCP anuncia `resource_metadata`),
+        **registro dinámico** abierto (RFC 7591, tabla `oauth_clients`,
+        migración 0050; redirect URIs sólo https / http en loopback / esquema
+        de app nativa; `none` o secreto hasheado), `GET /api/v1/oauth/
+        authorize` que valida (cliente y redirect desconocidos → 400 en TEXTO,
+        nunca redirect) y manda a la **pantalla "Autorizar"** del SPA
+        (`/oauth/authorize?req=…`, fuera del hash router como /reset y
+        /verify: sin sesión aparece el login y después la MISMA pantalla;
+        elige workspace de sus membresías —verificado en el backend— y
+        alcance read/full), `approve`/`deny` con sesión (GETDEL: el pedido se
+        consume), `POST /oauth/token` (form-urlencoded o JSON; **PKCE S256
+        obligatorio**, `resource` RFC 8707 = nuestro MCP, code de un solo uso
+        que se quema aunque el PKCE falle, `redirect_uri` igual a la del
+        pedido) y `POST /oauth/revoke` (RFC 7009). **El token emitido es una
+        fila de `personal_access_tokens`** (`client_id`, `refresh_token_hash`,
+        `refresh_expires_at`): acceso 1 h + **refresh rotativo** de 30 días
+        (rotación con `WHERE` del hash viejo → dos canjes concurrentes, uno
+        gana; el par viejo muere), resuelto por el MCP igual que un token
+        pegado (rol en vivo, fail-closed), listado en Ajustes como "Conexión
+        autorizada · se renueva solo" con el MISMO Revocar (mata acceso y
+        refresh) y en la bitácora (`token.create`, `via: oauth`). Issuer =
+        origen de la request (`X-Forwarded-*`; vite en dev pasa `xfwd`): cada
+        dominio propio (ADR-S17) es su propio servidor OAuth. CORS `*`
+        acotado a `/.well-known/oauth-*`, `/api/v1/oauth/*` y `/api/v1/mcp`
+        (Bearer, sin cookies). **Proxies**: regla nueva `/.well-known/oauth-*`
+        → API en Caddyfile y nginx.conf — la auto-actualización NO toca el
+        proxy, en un servidor existente se agrega a mano (runbooks
+        actualizados). Card de tokens: bloque "Conectar desde claude.ai…"
+        con la URL a pegar; los tokens pegados a mano siguen valiendo.
+        **Dos tropiezos**: Nest responde 201 a todo POST → el token endpoint
+        fija 200 (OAuth lo exige); y `@nestjs/platform-fastify` YA registra
+        el parser de `x-www-form-urlencoded` (agregar otro tumba el boot con
+        FST_ERR_CTP_ALREADY_PRESENT). 12 tests (5 puros de redirect/PKCE/
+        scope/resource/credenciales + 7 con Postgres y Redis reales: metadata,
+        DCR, authorize con cada error, approve/deny, canje con code quemado y
+        cliente intruso, refresh rotativo + revocación, cliente confidencial
+        con Basic) — 522 API, 125 front y 66 shared en verde — + E2E 27/27
+        (descubrimiento por el host público, DCR, authorize → login → consent
+        → code+state en un callback loopback real, canje form-urlencoded,
+        replay rechazado, MCP con el token, refresh, fila en la card, revocar,
+        cancelar, pedido vencido, cliente desconocido sin redirect).
+        **Límite de la verificación**: claude.ai no alcanza el sandbox; el
+        flujo se probó con un cliente OAuth propio que sigue las mismas RFC
+        que usa Claude (DCR + PKCE + resource); la prueba con el conector
+        real queda para el servidor del usuario.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,4 +1,5 @@
 import { bigint, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { oauthClients } from './oauth-clients';
 import { tenants } from './tenants';
 import { users } from './users';
 
@@ -30,7 +31,12 @@ export const personalAccessTokens = pgTable(
         lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
         expiresAt: timestamp('expires_at', { withTimezone: true }),
         revokedAt: timestamp('revoked_at', { withTimezone: true }),
+        // v0.1.184 — emitido por OAuth: cliente conectado + refresh token
+        // rotativo (hash; el secreto no se guarda, como el de acceso).
+        clientId: varchar('client_id', { length: 64 }).references(() => oauthClients.clientId, { onDelete: 'cascade' }),
+        refreshTokenHash: varchar('refresh_token_hash', { length: 64 }),
+        refreshExpiresAt: timestamp('refresh_expires_at', { withTimezone: true }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     },
-    (t) => [uniqueIndex('personal_access_tokens_hash_ux').on(t.tokenHash)],
+    (t) => [uniqueIndex('personal_access_tokens_hash_ux').on(t.tokenHash), uniqueIndex('personal_access_tokens_refresh_ux').on(t.refreshTokenHash)],
 );

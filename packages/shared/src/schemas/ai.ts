@@ -286,8 +286,39 @@ export const personalTokenSchema = z.object({
     created_at: z.string(),
     last_used_at: z.string().nullable(),
     expires_at: z.string().nullable(),
+    /**
+     * v0.1.184 — si el token lo emitió el flujo OAuth (claude.ai / Claude
+     * Desktop / Cursor con "Autorizar"), el nombre del cliente conectado. Un
+     * token de este tipo se RENUEVA solo (refresh token rotativo) y `expires_at`
+     * es el vencimiento del acceso corriente, no de la conexión.
+     */
+    client_name: z.string().nullable().default(null),
 });
 export type PersonalToken = z.infer<typeof personalTokenSchema>;
+
+// --- OAuth 2.1 para el MCP (v0.1.184) -------------------------------------
+
+/** Lo que la pantalla "Autorizar" necesita mostrar sobre el pedido pendiente. */
+export const oauthAuthorizationRequestSchema = z.object({
+    id: z.string(),
+    client_name: z.string(),
+    /** Alcance que pidió el cliente (o el default si no pidió ninguno). */
+    scope: personalTokenScopeSchema,
+    /** Host del cliente (dominio del redirect) para que la persona sepa a quién autoriza. */
+    redirect_host: z.string(),
+    expires_at: z.string(),
+});
+export type OauthAuthorizationRequest = z.infer<typeof oauthAuthorizationRequestSchema>;
+
+export const oauthApproveInputSchema = z.object({
+    tenant_id: z.number().int().positive(),
+    scope: personalTokenScopeSchema,
+});
+export type OauthApproveInput = z.infer<typeof oauthApproveInputSchema>;
+
+/** Adónde mandar al navegador después de aprobar o rechazar. */
+export const oauthDecisionSchema = z.object({ redirect_to: z.string() });
+export type OauthDecision = z.infer<typeof oauthDecisionSchema>;
 
 export const createPersonalTokenSchema = z.object({
     name: z.string().trim().min(1).max(80),

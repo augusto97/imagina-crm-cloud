@@ -105,9 +105,12 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
 
 1. Applications → tu app → poné **Document Root** = `/opt/imagina-base/current/web`.
 2. Abrí la **config Nginx** de la app y pegá los bloques `location` de
-   `deploy/nginx.conf` (API, socket.io, /assets, /portal, /). ServerAvatar ya
-   pone el `server{}`, `listen 443 ssl` y `server_name`; vos sólo agregás los
-   `location`. Guardá → recarga Nginx.
+   `deploy/nginx.conf` (API, `/.well-known/oauth-` —descubrimiento OAuth del
+   MCP, v0.1.184—, socket.io, /assets, /portal, /). ServerAvatar ya pone el
+   `server{}`, `listen 443 ssl` y `server_name`; vos sólo agregás los
+   `location`. Guardá → recarga Nginx. (Si el server ya existía, agregá el
+   `location ^~ /.well-known/oauth-` nuevo: la auto-actualización no toca la
+   config de Nginx.)
 
 Abrí `https://app.tu-dominio.com` → login. Registrá el primer usuario (crea el
 workspace y su admin). Si su email está en `PLATFORM_SUPERADMINS`, ve **Ajustes →

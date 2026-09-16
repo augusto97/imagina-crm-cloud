@@ -32,6 +32,12 @@
     handle /api/* {
         reverse_proxy 127.0.0.1:3001
     }
+    # Metadata de descubrimiento OAuth del MCP (v0.1.184, RFC 8414/9728): vive
+    # en la RAÍZ del host por definición del protocolo — sin esta regla caería
+    # al fallback del SPA y claude.ai no podría ofrecer "Autorizar".
+    handle /.well-known/oauth-* {
+        reverse_proxy 127.0.0.1:3001
+    }
     handle /socket.io/* {
         reverse_proxy 127.0.0.1:3001
     }
@@ -75,7 +81,7 @@
     #     descripción sabe embeber (la lista vive en `EMBED_FRAME_HOSTS`
     #     de packages/shared — si se agrega uno allá, va también acá).
     # Por eso el matcher excluye el API.
-    @spa not path /api/*
+    @spa not path /api/* /.well-known/oauth-*
     header @spa {
         X-Frame-Options "SAMEORIGIN"
         # CSP (v0.1.113) — defensa en profundidad; ver deploy/nginx.conf para
