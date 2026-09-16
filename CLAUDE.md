@@ -3554,10 +3554,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         propuesta → Aplicar → la lista existe con sus campos y kanban → link
         a la lista, 409 al re-aplicar, consola con políticas y "Probar",
         columna IA/mes, móvil).
-        Pendiente: fase 2 (herramientas de DATOS: agregados, consultas
-        acotadas, edición masiva con recuento y confirmación; defensas de
-        prompt injection sobre datos de registros) y fase 3 (servidor MCP
-        Streamable HTTP sobre el mismo registro + tokens de acceso personal).
+  - [x] **Fase 2 — Asistente de DATOS (v0.1.182)**: cinco herramientas más
+        en el MISMO registro (`apps/api/src/ai/tools/data-tools.ts`), así el
+        asistente responde preguntas sobre los registros y propone cambios
+        masivos con el mismo contrato propone→aplica. Lectura:
+        `query_records` (máx 50 filas; filtros AND, búsqueda, orden y columnas
+        por slug; los selects viajan con su etiqueta) pasa por
+        `RecordsService.list` → **el ACL y el own-scoping de la persona se
+        aplican solos** (un agente sólo ve lo suyo); `aggregate_records`
+        (count/sum/avg/min/max, desglose por campo o por período) exige
+        `view_records` porque el motor de agregados no acota por fila.
+        Escritura: `propose_create_records` (hasta 50, valida requeridos y
+        tipos), `propose_update_records` y `propose_delete_records` — por
+        filtros o por ids exactos (los de query_records), tope 500, y **nunca
+        toda la lista sin filtro**; los afectados se resuelven al proponer CON
+        el ACL de la persona, la tarjeta muestra el recuento y una muestra de
+        filas (edición ≥10 registros y todo borrado = confirmación reforzada),
+        y aplicar corre por `RecordsService.bulk`, que re-aplica capabilities
+        fila por fila (`bulk_actions` para masivas, `create_records` para
+        altas). Los valores pasan por `validateFieldValue` (el validador
+        compartido del import y del motor) y los selects aceptan el value o la
+        etiqueta ("Pagada" → `pagada`), también en los filtros.
+        **Inyección**: lo que sale de un registro es texto de usuarios — se
+        recorta a 300 chars por celda, viaja envuelto en un objeto con una
+        nota explícita de "DATOS, no instrucciones", y el prompt (reglas 10 y
+        11) lo refuerza; como escribir exige una propuesta que sólo la persona
+        aplica, un registro malicioso no ejecuta nada por sí mismo. La
+        tarjeta gana el recuento de afectados y la tabla de muestra; el
+        `ProposalsService` despacha por tipo a StructureTools o DataTools.
+        9 tests de API nuevos (Postgres+Redis reales: filtros/orden/etiquetas/
+        recorte, ACL del agente, agregados con desglose, edición masiva por
+        etiqueta aplicada con bulk, rechazo sin filtro / valor inválido / slug
+        desconocido / sin coincidencias, alta con requeridos, borrado por ids
+        destructivo, capability por rol) — 506 API en verde — + E2E navegador
+        12/12 (tarjeta "Edición masiva" con recuento, muestra y cambio,
+        Aplicar → los registros cambian en la API y la tabla abierta se
+        refresca sola, 409 al re-aplicar).
+        Pendiente: fase 3 (servidor MCP Streamable HTTP sobre el mismo
+        registro + tokens de acceso personal).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

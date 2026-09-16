@@ -769,12 +769,28 @@ Sonnet/Haiku como palanca de costo).
 **Consecuencias.** El asistente no puede hacer NADA que la persona no pueda
 hacer desde la interfaz, y todo lo que hace queda como una acción de esa
 persona. Las propuestas expiran: no hay estado a medias. Lo que devuelven las
-herramientas es DATO del workspace, nunca instrucciones (regla en el prompt;
-fase 2 suma defensas para los datos de registros). Fase 2: herramientas de
-DATOS (agregados, consultas acotadas por filter tree, edición masiva con
-recuento y confirmación). Fase 3: servidor MCP (Streamable HTTP) + tokens de
-acceso personal, para pedirle lo mismo desde Claude/Cursor/etc.
+herramientas es DATO del workspace, nunca instrucciones (regla en el prompt).
+
+**Fase 2 (v0.1.182) — datos.** Cinco herramientas más sobre el mismo
+registro: `query_records` (máx 50 filas, filtros/búsqueda/orden por slug,
+pasa por `RecordsService.list` → el ACL y el own-scoping de la persona se
+aplican solos), `aggregate_records` (count/sum/avg/min/max con desglose,
+exige `view_records` porque el motor de agregados no acota por fila),
+`propose_create_records`, `propose_update_records` y `propose_delete_records`
+(por filtros o ids exactos, tope 500, NUNCA toda la lista sin filtro). Las de
+escritura resuelven los afectados CON el ACL de la persona al proponer, la
+tarjeta muestra recuento + muestra de filas, y al aplicar corren por
+`RecordsService.bulk`, que re-aplica capabilities fila por fila. Los valores
+pasan por `validateFieldValue` (el mismo validador del import y del motor) y
+los selects aceptan la etiqueta. **Inyección**: lo que sale de un registro es
+texto de usuarios — se recorta (300 chars por celda), viaja envuelto en un
+objeto con una nota explícita de "datos, no instrucciones", y el prompt lo
+refuerza; y como escribir exige una propuesta que sólo la persona aplica, un
+registro malicioso no puede ejecutar nada por sí mismo.
+
+Fase 3: servidor MCP (Streamable HTTP) + tokens de acceso personal, para
+pedirle lo mismo desde Claude/Cursor/etc.
 
 ---
 
-**Versión del documento:** 1.15.0 (asistente IA de estructura — ADR-S21)
+**Versión del documento:** 1.15.1 (asistente IA: herramientas de datos — ADR-S21 fase 2)

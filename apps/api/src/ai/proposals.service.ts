@@ -1,8 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { roleHasCapability, type AiProposal } from '@imagina-base/shared';
 import { AuditService } from '../audit/audit.service';
 import { ConversationsStore } from './conversations.store';
 import { ProposalsStore } from './proposals.store';
+import { DataTools } from './tools/data-tools';
 import { StructureTools } from './tools/structure-tools';
 import type { AiToolContext } from './tools/registry';
 
@@ -18,8 +19,10 @@ export class ProposalsService {
     constructor(
         private readonly store: ProposalsStore,
         private readonly conversations: ConversationsStore,
-        private readonly applier: StructureTools,
+        private readonly structure: StructureTools,
         private readonly audit: AuditService,
+        // Fase 2 — herramientas de datos (opcional para los specs que arman el service a mano).
+        @Optional() private readonly data?: DataTools,
     ) {}
 
     async get(ctx: AiToolContext, id: string): Promise<AiProposal> {
@@ -42,7 +45,9 @@ export class ProposalsService {
                 data: { status: 403 },
             });
         }
-        const outcome = await this.applier.apply(ctx, stored);
+        const applier = DataTools.KINDS.has(stored.kind) ? this.data : this.structure;
+        if (!applier) throw new NotFoundException({ code: 'ai_proposal_not_found', message: 'Tipo de propuesta no disponible', data: { status: 404 } });
+        const outcome = await applier.apply(ctx, stored);
         const applied: AiProposal = {
             ...stored.proposal,
             applied: true,

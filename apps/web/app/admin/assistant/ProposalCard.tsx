@@ -20,6 +20,9 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     create_dashboard: 'Tablero nuevo',
     create_automation: 'Automatización nueva',
     update_list: 'Cambio de lista',
+    create_records: 'Registros nuevos',
+    update_records: 'Edición masiva',
+    delete_records: 'Eliminar registros',
 };
 
 /**
@@ -229,6 +232,48 @@ function Preview({ p, Icon }: { p: AiProposal; Icon: typeof fieldTypeIcon }): JS
                     ))}
                 </tbody>
             </table>,
+        );
+    }
+    if (pv.affected_count > 0) {
+        blocks.push(
+            <div key="count" className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs" data-testid="imcrm-ai-affected">
+                <span className={cn('imcrm-rounded-md imcrm-px-1.5 imcrm-py-0.5 imcrm-font-semibold imcrm-tabular-nums', p.destructive ? 'imcrm-bg-destructive/10 imcrm-text-destructive' : 'imcrm-bg-primary/10 imcrm-text-primary')}>
+                    {pv.affected_count}
+                </span>
+                <span className="imcrm-text-muted-foreground">
+                    {p.kind === 'create_records' ? __('registros a crear') : __('registros afectados')}
+                </span>
+            </div>,
+        );
+    }
+    if (pv.rows.length > 0) {
+        const cols = [...new Set(pv.rows.flatMap((r) => Object.keys(r)))].slice(0, 4);
+        blocks.push(
+            <div key="rows" className="imcrm-overflow-x-auto imcrm-rounded-lg imcrm-border imcrm-border-border/70" data-testid="imcrm-ai-rows">
+                <table className="imcrm-w-full imcrm-text-[11px]">
+                    <thead>
+                        <tr className="imcrm-bg-muted/40 imcrm-text-left imcrm-text-muted-foreground">
+                            {cols.map((c) => (
+                                <th key={c} className="imcrm-px-2 imcrm-py-1 imcrm-font-medium">{c}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {pv.rows.map((r, i) => (
+                            <tr key={i} className="imcrm-border-t imcrm-border-border/60">
+                                {cols.map((c) => (
+                                    <td key={c} className="imcrm-max-w-[140px] imcrm-truncate imcrm-px-2 imcrm-py-1">{r[c] ?? ''}</td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {pv.affected_count > pv.rows.length && (
+                    <div className="imcrm-px-2 imcrm-py-1 imcrm-text-[10px] imcrm-text-muted-foreground">
+                        {__('Muestra de')} {pv.rows.length} {__('de')} {pv.affected_count}
+                    </div>
+                )}
+            </div>,
         );
     }
     if (blocks.length === 0) return null;

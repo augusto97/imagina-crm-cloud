@@ -143,6 +143,10 @@ export const AI_PROPOSAL_KINDS = [
     'create_dashboard',
     'create_automation',
     'update_list',
+    // Fase 2 (v0.1.182) — DATOS: alta, edición y borrado masivo de registros.
+    'create_records',
+    'update_records',
+    'delete_records',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;
@@ -166,8 +170,12 @@ export const aiProposalPreviewSchema = z.object({
         .object({ name: z.string(), trigger: z.string(), actions: z.array(z.string()) })
         .nullable()
         .default(null),
-    /** Cambios campo → valor (update_field / update_list). */
+    /** Cambios campo → valor (update_field / update_list / update_records). */
     changes: z.array(z.object({ label: z.string(), from: z.string().nullable(), to: z.string() })).default([]),
+    /** Fase 2 — cuántos registros toca (update/delete) o crea. */
+    affected_count: z.number().int().nonnegative().default(0),
+    /** Fase 2 — muestra de filas (etiqueta → valor legible), cap 5. */
+    rows: z.array(z.record(z.string())).default([]),
 });
 export type AiProposalPreview = z.infer<typeof aiProposalPreviewSchema>;
 
@@ -248,5 +256,11 @@ export const AI_TOOL_NAMES = [
     'propose_create_dashboard',
     'propose_create_automation',
     'propose_update_list',
+    // Fase 2 — datos.
+    'query_records',
+    'aggregate_records',
+    'propose_create_records',
+    'propose_update_records',
+    'propose_delete_records',
 ] as const;
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
