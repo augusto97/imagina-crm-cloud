@@ -25,6 +25,7 @@
         "@fastify/multipart": "^10.1.0",
         "@fastify/rate-limit": "^10.3.0",
         "@imagina-base/shared": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.30.0",
         "@nestjs/common": "^11.1.3",
         "@nestjs/core": "^11.1.3",
         "@nestjs/platform-fastify": "^11.1.3",

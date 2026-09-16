@@ -5,6 +5,9 @@ import {
     aiChatEventSchema,
     aiConversationSchema,
     aiStatusSchema,
+    createPersonalTokenSchema,
+    createdPersonalTokenSchema,
+    personalTokenSchema,
     platformAiSettingsSchema,
     tenantAiSettingsSchema,
     updatePlatformAiSettingsSchema,
@@ -14,6 +17,9 @@ import {
     type AiChatRequest,
     type AiConversation,
     type AiStatus,
+    type CreatePersonalTokenInput,
+    type CreatedPersonalToken,
+    type PersonalToken,
     type PlatformAiSettings,
     type TenantAiSettings,
     type UpdatePlatformAiSettingsInput,
@@ -686,6 +692,22 @@ export class CloudClient {
             for (const d of parser.push(decoder.decode(value, { stream: true }))) deliver(d);
         }
         for (const d of parser.flush()) deliver(d);
+    }
+
+    // --- tokens de acceso personal (MCP, ADR-S21 fase 3) ---
+    personalTokens(): Promise<PersonalToken[]> {
+        return this.unwrap(this.request('GET', '/me/tokens', { schema: dataArray(personalTokenSchema) }));
+    }
+    createPersonalToken(input: CreatePersonalTokenInput): Promise<CreatedPersonalToken> {
+        return this.request('POST', '/me/tokens', { body: createPersonalTokenSchema.parse(input), schema: createdPersonalTokenSchema });
+    }
+    revokePersonalToken(id: number): Promise<PersonalToken> {
+        return this.request('DELETE', `/me/tokens/${id}`, { schema: personalTokenSchema });
+    }
+    /** URL absoluta del endpoint MCP (para el snippet de configuración). */
+    mcpUrl(): string {
+        const base = this.baseUrl.startsWith('http') ? this.baseUrl : `${window.location.origin}${this.baseUrl}`;
+        return `${base}/mcp`;
     }
 
     // --- asistente IA: consola de plataforma (superadmin) ---

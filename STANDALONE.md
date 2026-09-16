@@ -788,9 +788,22 @@ objeto con una nota explícita de "datos, no instrucciones", y el prompt lo
 refuerza; y como escribir exige una propuesta que sólo la persona aplica, un
 registro malicioso no puede ejecutar nada por sí mismo.
 
-Fase 3: servidor MCP (Streamable HTTP) + tokens de acceso personal, para
-pedirle lo mismo desde Claude/Cursor/etc.
+**Fase 3 (v0.1.183) — MCP.** El MISMO registro se expone a clientes externos
+(Claude, Cursor…) por Model Context Protocol, transporte Streamable HTTP
+**sin estado** (`POST /api/v1/mcp`, un servidor por request; no hay sesiones
+MCP que sincronizar entre nodos). La credencial es un **token de acceso
+personal** (`ib_pat_…`): de UNA persona en UN workspace, con el rol resuelto
+EN VIVO contra `memberships` en cada uso (sacarla del workspace o desactivar
+su cuenta lo mata al instante), con vencimiento opcional y revocación
+inmediata; el secreto se muestra una vez y sólo se guarda su SHA-256 (tabla
+`personal_access_tokens`, sin RLS como los webhooks entrantes: la búsqueda
+es por hash antes de conocer el tenant). Dos alcances: `read` (sólo lectura)
+y `full` (además `propose_*` + `apply_proposal`): como acá no hay tarjeta, el
+cliente MCP muestra la propuesta y, cuando la persona confirma, la aplica
+por id — el contrato propone→aplica no cambia y un token nunca amplía
+permisos. Crear/revocar quedan en la bitácora. El MCP no consume la cuota
+IA del plan: el modelo lo aporta el cliente. Docs: `docs/mcp.md`.
 
 ---
 
-**Versión del documento:** 1.15.1 (asistente IA: herramientas de datos — ADR-S21 fase 2)
+**Versión del documento:** 1.15.2 (asistente IA: servidor MCP + tokens personales — ADR-S21 fase 3)

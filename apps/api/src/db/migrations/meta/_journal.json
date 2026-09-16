@@ -344,6 +344,13 @@
       "when": 1784200000017,
       "tag": "0048_ai_assistant",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784200000018,
+      "tag": "0049_personal_tokens",
+      "breakpoints": true
     }
   ]
 }

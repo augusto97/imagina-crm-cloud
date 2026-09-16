@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Loader2, LogOut, MailCheck, MailWarning, Monitor, Smartphone } from 'lucide-react';
 
+import { PersonalTokensCard } from '@/admin/settings/PersonalTokensCard';
 import { TwoFactorCard } from '@/admin/settings/TwoFactorCard';
 import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
@@ -207,6 +208,9 @@ export function SecurityCard(): JSX.Element {
 
             {/* ── Verificación en dos pasos (v0.1.120) ───────────────── */}
             <TwoFactorCard />
+
+            {/* ── Tokens de acceso personal / MCP (v0.1.183) ─────────── */}
+            <PersonalTokensCard />
 
             {/* ── Dispositivos ───────────────────────────────────────── */}
             <section className="imcrm-flex imcrm-flex-col imcrm-gap-3">
