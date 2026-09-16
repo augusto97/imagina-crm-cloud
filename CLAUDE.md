@@ -3689,6 +3689,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         que usa Claude (DCR + PKCE + resource); la prueba con el conector
         real queda para el servidor del usuario.
 
+  - [x] **El rol `client` no conecta asistentes (v0.1.185, salió de la
+        pregunta del usuario "¿cada cliente puede hacer esto o sólo el
+        admin?")**: la respuesta era "cualquier miembro del equipo con su
+        rol", pero al revisarla apareció un hueco: el usuario del PORTAL
+        (rol `client`, "solo portal" por definición) tiene sesión y
+        membresía, y nada le impedía crear un token (`POST /me/tokens`) ni
+        aprobar un conector OAuth — y como `list_lists` / `get_list_schema`
+        no filtran por rol (el ACL vive en records), habría visto nombres y
+        campos de TODAS las listas de la empresa. Cierre en tres capas:
+        `assertNotClient` al crear el token (el controller pasa el rol del
+        TenantGuard) y al aprobar en OAuth (se lee el rol de la membresía),
+        y `resolve` devuelve `null` para una fila cuyo rol EN VIVO sea
+        client (cubre el caso "le bajaron el rol después de emitir"). La
+        pantalla "Autorizar" filtra las membresías client y, si no queda
+        ninguna, explica que la cuenta sólo tiene acceso al portal. 1 test de
+        integración (approve 403, create 403, fila colada no resuelve) —
+        523 API en verde; `docs/mcp.md` aclara quién puede conectar.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

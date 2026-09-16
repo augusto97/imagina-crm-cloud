@@ -130,7 +130,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
     }
 
     it('token: secreto con prefijo que sólo se ve al crear; la fila guarda el hash; el listado no lo expone', async () => {
-        const created = await tokens.create(adminId, tenantId, { name: 'Claude notebook', scope: 'full', expires_in_days: 90 });
+        const created = await tokens.create(adminId, tenantId, { name: 'Claude notebook', scope: 'full', expires_in_days: 90 }, 'admin');
         expect(created.secret.startsWith(TOKEN_PREFIX)).toBe(true);
         expect(created.secret.length).toBeGreaterThan(40);
         expect(created.token).toMatchObject({ name: 'Claude notebook', scope: 'full', tenant_id: tenantId });
@@ -159,13 +159,13 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
     });
 
     it('token vencido, usuario desactivado o sin membresía → inválido (fail-closed)', async () => {
-        const exp = await tokens.create(adminId, tenantId, { name: 'viejo', scope: 'read', expires_in_days: 7 });
+        const exp = await tokens.create(adminId, tenantId, { name: 'viejo', scope: 'read', expires_in_days: 7 }, 'admin');
         await pg.db.update(personalAccessTokens).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(personalAccessTokens.id, exp.token.id));
         expect(await tokens.resolve(exp.secret)).toBeNull();
 
         const [u] = await pg.db.insert(users).values({ email: 'temp@mcp.local', name: 'Temp', passwordHash: 'x' }).returning();
         await pg.db.insert(memberships).values({ tenantId, userId: u!.id, role: 'manager' });
-        const tk = await tokens.create(u!.id, tenantId, { name: 'temp', scope: 'read', expires_in_days: null });
+        const tk = await tokens.create(u!.id, tenantId, { name: 'temp', scope: 'read', expires_in_days: null }, 'manager');
         expect((await tokens.resolve(tk.secret))?.role).toBe('manager');
         // Cambio de rol → el token lo refleja (no queda congelado).
         await pg.db.update(memberships).set({ role: 'agent' }).where(eq(memberships.userId, u!.id));

@@ -55,7 +55,21 @@ export function OauthConsentPage({ requestId }: { requestId: string }): JSX.Elem
 
     if (!ready) return <Centered><Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" /></Centered>;
     if (!user) return <LoginPage />;
-    return <Consent requestId={requestId} memberships={memberships} defaultTenantId={activeTenantId} userEmail={user.email} />;
+    // v0.1.185 — el rol client (portal) es "solo portal": no conecta asistentes.
+    const eligible = memberships.filter((m) => m.role !== 'client');
+    if (eligible.length === 0) {
+        return (
+            <Centered>
+                <Card>
+                    <h1 className="imcrm-text-lg imcrm-font-semibold">{__('Esta cuenta no puede conectar asistentes')}</h1>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-oauth-client-only">
+                        {__('El acceso por MCP es para miembros del equipo de una empresa. Tu cuenta sólo tiene acceso al portal del cliente.')}
+                    </p>
+                </Card>
+            </Centered>
+        );
+    }
+    return <Consent requestId={requestId} memberships={eligible} defaultTenantId={activeTenantId} userEmail={user.email} />;
 }
 
 function Consent({
