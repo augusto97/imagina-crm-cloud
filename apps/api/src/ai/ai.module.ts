@@ -1,10 +1,12 @@
 import { Global, Module } from '@nestjs/common';
+import { AggregateModule } from '../aggregate/aggregate.module';
 import { AuthModule } from '../auth/auth.module';
 import { AutomationsModule } from '../automations/automations.module';
 import { BillingModule } from '../billing/billing.module';
 import { DashboardsModule } from '../dashboards/dashboards.module';
 import { FieldsModule } from '../fields/fields.module';
 import { ListsModule } from '../lists/lists.module';
+import { RecordsModule } from '../records/records.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ViewsModule } from '../views/views.module';
 import { AiQuotaService } from './ai-quota.service';
@@ -15,6 +17,7 @@ import { ConversationsStore } from './conversations.store';
 import { PlatformAiController } from './platform-ai.controller';
 import { ProposalsService } from './proposals.service';
 import { ProposalsStore } from './proposals.store';
+import { DataTools } from './tools/data-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
 
@@ -29,7 +32,7 @@ import { StructureTools } from './tools/structure-tools';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule],
+    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule],
     controllers: [AiController, PlatformAiController],
     providers: [
         AiSettingsService,
@@ -37,12 +40,14 @@ import { StructureTools } from './tools/structure-tools';
         ProposalsStore,
         ConversationsStore,
         StructureTools,
+        DataTools,
         {
             provide: AiToolRegistry,
-            inject: [StructureTools],
-            useFactory: (structure: StructureTools): AiToolRegistry => {
+            inject: [StructureTools, DataTools],
+            useFactory: (structure: StructureTools, data: DataTools): AiToolRegistry => {
                 const registry = new AiToolRegistry();
                 structure.registerInto(registry);
+                data.registerInto(registry);
                 return registry;
             },
         },

@@ -27,7 +27,7 @@ import {
     type CreateViewInput,
     type Field,
     type FieldType,
-    type FilterNode,
+    type FilterGroup,
     type List,
     type ListBlueprint,
     type UpdateFieldInput,
@@ -88,12 +88,27 @@ const fieldSpec = z.object({
 });
 type FieldSpec = z.infer<typeof fieldSpec>;
 
-const filterRuleSpec = z.object({
+/** Condición en el vocabulario del modelo (slug + operador). Compartido con las herramientas de datos (fase 2). */
+export const filterRuleSpec = z.object({
     field: fieldSlugSchema.describe('Slug del campo'),
     op: filterOperatorSchema,
-    value: z.unknown().optional().describe('Para select usar el `value` de la opción; para in/nin un array'),
+    value: z.unknown().optional().describe('Para select usar el `value` de la opción; para in/nin un array; fechas AAAA-MM-DD'),
 });
-type FilterRuleSpec = z.infer<typeof filterRuleSpec>;
+export type FilterRuleSpec = z.infer<typeof filterRuleSpec>;
+
+/** Reglas AND del modelo → filter tree del motor (ids resueltos por el llamador). */
+export function rulesToFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterGroup {
+    return {
+        type: 'group',
+        logic: 'and',
+        children: rules.map((r) => ({
+            type: 'condition' as const,
+            field_id: resolveId(r.field) as number,
+            op: r.op,
+            ...(r.value !== undefined ? { value: r.value } : {}),
+        })),
+    };
+}
 
 const viewSpec = z.object({
     name: z.string().min(1).max(190),
@@ -202,7 +217,10 @@ type Payload =
     | { kind: 'create_automation'; listId: number; listSlug: string; input: CreateAutomationInput }
     | { kind: 'update_list'; listId: number; listSlug: string; patch: UpdateListInput };
 
-const CAPABILITY_BY_KIND: Record<AiProposalKind, Capability> = {
+/** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
+type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records'>;
+
+const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     create_list: 'manage_lists',
     update_list: 'manage_lists',
     add_fields: 'manage_fields',
@@ -485,7 +503,7 @@ export class StructureTools implements AiProposalApplier {
 
         const blueprint: ListBlueprint = { version: BLUEPRINT_VERSION, lists: packLists, dashboards: [] };
         const includeRecords = packLists.some((l) => l.records.length > 0);
-        const preview: AiProposalPreview = {
+        const preview: Partial<AiProposalPreview> = {
             lists: packLists.map((l) => ({
                 name: l.name,
                 fields: l.fields.map((f) => ({ label: f.label, type: f.type })),
@@ -964,12 +982,12 @@ export class StructureTools implements AiProposalApplier {
     private async saveProposal(
         ctx: AiToolContext,
         p: {
-            kind: AiProposalKind;
+            kind: StructureKind;
             title: string;
             summary: string;
             destructive: boolean;
             listSlug: string | null;
-            preview: AiProposalPreview;
+            preview: Partial<AiProposalPreview>;
             payload: Payload;
         },
     ): Promise<AiToolResult> {
@@ -980,7 +998,7 @@ export class StructureTools implements AiProposalApplier {
             summary: p.summary,
             destructive: p.destructive,
             list_slug: p.listSlug,
-            preview: p.preview,
+            preview: { lists: [], fields: [], widgets: [], automation: null, changes: [], affected_count: 0, rows: [], ...p.preview },
             applied: false,
             result: null,
             created_at: new Date().toISOString(),
@@ -1159,17 +1177,8 @@ export class StructureTools implements AiProposalApplier {
         return config;
     }
 
-    private buildFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterNode {
-        return {
-            type: 'group',
-            logic: 'and',
-            children: rules.map((r) => ({
-                type: 'condition' as const,
-                field_id: resolveId(r.field) as number,
-                op: r.op,
-                ...(r.value !== undefined ? { value: r.value } : {}),
-            })),
-        };
+    private buildFilterTree(rules: FilterRuleSpec[], resolveId: (slug: string) => unknown): FilterGroup {
+        return rulesToFilterTree(rules, resolveId);
     }
 
     /**
