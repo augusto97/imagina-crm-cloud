@@ -13,10 +13,14 @@ import { AiQuotaService } from './ai-quota.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiController } from './ai.controller';
 import { AssistantService } from './assistant.service';
+import { McpController } from './mcp.controller';
+import { McpService } from './mcp.service';
 import { ConversationsStore } from './conversations.store';
 import { PlatformAiController } from './platform-ai.controller';
 import { ProposalsService } from './proposals.service';
 import { ProposalsStore } from './proposals.store';
+import { PersonalTokensController } from './tokens.controller';
+import { PersonalTokensService } from './tokens.service';
 import { DataTools } from './tools/data-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
@@ -33,7 +37,7 @@ import { StructureTools } from './tools/structure-tools';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule],
-    controllers: [AiController, PlatformAiController],
+    controllers: [AiController, PlatformAiController, PersonalTokensController, McpController],
     providers: [
         AiSettingsService,
         AiQuotaService,
@@ -53,6 +57,8 @@ import { StructureTools } from './tools/structure-tools';
         },
         ProposalsService,
         AssistantService,
+        PersonalTokensService,
+        McpService,
     ],
     exports: [AiSettingsService, AiQuotaService, AiToolRegistry, AssistantService, ProposalsService],
 })

@@ -48,7 +48,10 @@ export type AuditAction =
     // v0.1.181 (ADR-S21) — el asistente IA: aplicar una propuesta y cambiar
     // la configuración del asistente de la empresa.
     | 'ai.apply'
-    | 'workspace.ai_change';
+    | 'workspace.ai_change'
+    // v0.1.183 (ADR-S21 fase 3) — tokens de acceso personal (MCP).
+    | 'token.create'
+    | 'token.revoke';
 
 export interface AuditEntryDto {
     id: number;

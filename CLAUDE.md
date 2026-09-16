@@ -3590,8 +3590,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         12/12 (tarjeta "Edición masiva" con recuento, muestra y cambio,
         Aplicar → los registros cambian en la API y la tabla abierta se
         refresca sola, 409 al re-aplicar).
-        Pendiente: fase 3 (servidor MCP Streamable HTTP sobre el mismo
-        registro + tokens de acceso personal).
+  - [x] **Fase 3 — Servidor MCP + tokens de acceso personal (v0.1.183)**:
+        el mismo registro de herramientas, para Claude/Cursor/cualquier
+        cliente MCP. `POST /api/v1/mcp` (Streamable HTTP **sin estado**: un
+        `McpServer` por request sobre `reply.hijack()`; GET/DELETE → 405) con
+        `Authorization: Bearer ib_pat_…`. **Tokens** (`personal_access_tokens`,
+        migración 0049, sin RLS como los webhooks entrantes — la búsqueda es
+        por hash antes de conocer el tenant): de UNA persona en UN workspace,
+        secreto de 32 bytes mostrado UNA vez y guardado sólo como SHA-256 +
+        prefijo, vencimiento 7/30/90/365/nunca, revocación inmediata, y el
+        **rol se resuelve en vivo** contra `memberships` en cada uso (sacar a
+        la persona, desactivar su cuenta o cambiarle el rol se refleja al
+        instante — test). Alcances: `read` (list_lists, get_list_schema,
+        query_records, aggregate_records) y `full` (además las `propose_*` del
+        rol + `apply_proposal`, porque acá no hay tarjeta: el cliente muestra
+        la propuesta y la aplica por id cuando la persona confirma — el
+        contrato propone→aplica no cambia y el token nunca amplía permisos: un
+        viewer con `full` sigue sin `propose_*`). Endpoints `GET/POST /me/
+        tokens`, `DELETE /me/tokens/:id` con bitácora `token.create`/
+        `token.revoke` (sin el secreto). Front: sección **"Conexión MCP"** en
+        Ajustes → Cuenta → Seguridad (crear con nombre/alcance/vencimiento →
+        secreto una vez + snippets listos de Claude Code y JSON para Claude
+        Desktop/Cursor con la URL real, lista con prefijo/último uso/
+        vencimiento, revocar). `docs/mcp.md` (conexión, contrato, prueba con
+        curl, seguridad, límites). **OJO SDK**: `registerTool` con un shape
+        Zod dinámico dispara "Type instantiation is excessively deep" — se
+        castea (`as never`); el registro valida el input con su propio
+        schema al ejecutar. 4 tests de API (tokens: secreto/hash/listado/
+        revocación, vencido/desactivado/sin membresía/cambio de rol; MCP con
+        el `Client` del SDK por transporte en memoria: herramientas por
+        scope y rol, propose→apply crea la lista, re-aplicar e id inválido
+        como isError) — 510 API en verde — + E2E (card: crear → secreto y
+        snippets → fila sin secreto → revocar; HTTP real: initialize sin
+        sesión, tools/list por scope, list_lists/query_records, propose →
+        apply crea la lista, 401 sin/mal token, 405 GET, token revocado →
+        401 al instante, bitácora).
+
+        **Con esto F10 queda completa: asistente de estructura, de datos y
+        acceso MCP externo, con la clave/cuenta como decisión del operador
+        (compartida con cuota por plan y/o propia por empresa).**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

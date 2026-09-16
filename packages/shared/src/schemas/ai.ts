@@ -264,3 +264,42 @@ export const AI_TOOL_NAMES = [
     'propose_delete_records',
 ] as const;
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
+
+// ── Tokens de acceso personal (fase 3, MCP) ──────────────────────────────
+
+/**
+ * `read`: sólo herramientas de lectura (listas, esquema, registros,
+ * agregados). `full`: además propone y aplica (siempre dentro de lo que el
+ * rol de la persona permite — el token nunca amplía permisos).
+ */
+export const PERSONAL_TOKEN_SCOPES = ['read', 'full'] as const;
+export const personalTokenScopeSchema = z.enum(PERSONAL_TOKEN_SCOPES);
+export type PersonalTokenScope = z.infer<typeof personalTokenScopeSchema>;
+
+export const personalTokenSchema = z.object({
+    id: z.number().int().positive(),
+    name: z.string(),
+    /** Primeros caracteres del secreto, para reconocerlo (`ib_pat_ab12…`). */
+    prefix: z.string(),
+    scope: personalTokenScopeSchema,
+    tenant_id: z.number().int().positive(),
+    created_at: z.string(),
+    last_used_at: z.string().nullable(),
+    expires_at: z.string().nullable(),
+});
+export type PersonalToken = z.infer<typeof personalTokenSchema>;
+
+export const createPersonalTokenSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    scope: personalTokenScopeSchema.default('read'),
+    /** Vencimiento en días; `null` = no vence. */
+    expires_in_days: z.union([z.literal(7), z.literal(30), z.literal(90), z.literal(365)]).nullable().default(90),
+});
+export type CreatePersonalTokenInput = z.infer<typeof createPersonalTokenSchema>;
+
+/** El secreto se muestra UNA sola vez, al crearlo. */
+export const createdPersonalTokenSchema = z.object({
+    token: personalTokenSchema,
+    secret: z.string(),
+});
+export type CreatedPersonalToken = z.infer<typeof createdPersonalTokenSchema>;
