@@ -15,6 +15,10 @@ externos por [Model Context Protocol](https://modelcontextprotocol.io)
 - URL: `https://<tu-dominio>/api/v1/mcp` (sólo `POST`).
 - Auth: `Authorization: Bearer ib_pat_…` — un **token de acceso personal**
   (Ajustes → Cuenta → Seguridad → *Conexión MCP*).
+- Quién puede conectar: cualquier **miembro del equipo** de una empresa
+  (admin, manager, agent o viewer), cada uno con su propio rol. Los usuarios
+  del **portal del cliente** (rol `client`) no: ni token ni "Autorizar"
+  (v0.1.185).
 - Identidad: el token es de UNA persona en UN workspace, con el rol que ella
   tiene **en vivo** (sacarla del workspace o desactivar su cuenta mata el
   token al instante). Un token nunca amplía permisos.

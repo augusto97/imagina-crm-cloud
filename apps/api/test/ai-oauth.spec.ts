@@ -183,6 +183,20 @@ describe('Servidor OAuth 2.1 del MCP (v0.1.184, Postgres + Redis reales)', () =>
         await expect(oauth.getRequest('no-existe-0000000000')).rejects.toMatchObject({ status: 404 });
     });
 
+    it('el rol client (usuario del portal) NO autoriza conectores ni crea tokens; un token suyo jamás resuelve', async () => {
+        const [cu] = await pg.db.insert(users).values({ email: 'cliente@oauth.local', name: 'Cliente', passwordHash: 'x' }).returning();
+        await pg.db.insert(memberships).values({ tenantId, userId: cu!.id, role: 'client' });
+        const reg = await oauth.registerClient({ client_name: 'Claude', redirect_uris: [REDIRECT] });
+        const { challenge } = pkce();
+        const start = (await oauth.startAuthorization(ORIGIN, { response_type: 'code', client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256' })) as { requestId: string };
+        await expect(oauth.approve(start.requestId, cu!.id, { tenant_id: tenantId, scope: 'read' })).rejects.toMatchObject({ status: 403 });
+        await expect(tokens.create(cu!.id, tenantId, { name: 'x', scope: 'read', expires_in_days: 7 }, 'client')).rejects.toMatchObject({ status: 403 });
+        // Defensa en profundidad: aunque una fila existiera (p.ej. el rol bajó a client DESPUÉS de emitir), no entra.
+        const [row] = await pg.db.insert(personalAccessTokens).values({ userId: cu!.id, tenantId, name: 'colado', prefix: 'ib_pat_xxxxxx', tokenHash: createHash('sha256').update('ib_pat_colado').digest('hex'), scope: 'full' }).returning();
+        expect(row).toBeDefined();
+        expect(await tokens.resolve('ib_pat_colado')).toBeNull();
+    });
+
     it('approve: sólo un workspace propio; el pedido se consume (segundo approve → 404); deny → access_denied', async () => {
         const reg = await oauth.registerClient({ client_name: 'Claude', redirect_uris: [REDIRECT] });
         const { challenge } = pkce();

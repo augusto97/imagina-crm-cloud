@@ -32,7 +32,7 @@ export class PersonalTokensController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(createPersonalTokenSchema)) input: CreatePersonalTokenInput,
     ): Promise<CreatedPersonalToken> {
-        const created = await this.tokens.create(req.authUserId!, req.tenant!.tenantId, input);
+        const created = await this.tokens.create(req.authUserId!, req.tenant!.tenantId, input, req.tenant!.role);
         await this.audit.log({
             tenantId: req.tenant!.tenantId,
             userId: req.authUserId!,

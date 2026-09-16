@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { CreatePersonalTokenInput, CreatedPersonalToken, PersonalToken, PersonalTokenScope, Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
@@ -136,7 +136,8 @@ export class PersonalTokensService {
         return rows.length > 0;
     }
 
-    async create(userId: number, tenantId: number, input: CreatePersonalTokenInput): Promise<CreatedPersonalToken> {
+    async create(userId: number, tenantId: number, input: CreatePersonalTokenInput, role: Role): Promise<CreatedPersonalToken> {
+        assertNotClient(role);
         const secret = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;
         const expiresAt = input.expires_in_days === null ? null : new Date(Date.now() + input.expires_in_days * 86_400_000);
         const [row] = await this.db
@@ -194,6 +195,10 @@ export class PersonalTokensService {
             .where(eq(personalAccessTokens.tokenHash, hashToken(secret)))
             .limit(1);
         if (!row || row.revokedAt || row.disabledAt || !row.role) return null;
+        // v0.1.185 — el rol `client` (portal) es "solo portal": aunque una
+        // fila existiera, jamás entra al MCP (defensa en profundidad del
+        // bloqueo de crear/autorizar).
+        if (row.role === 'client') return null;
         if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
         void this.touch(row.id);
         return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope: row.scope as PersonalTokenScope };
@@ -204,6 +209,18 @@ export class PersonalTokensService {
         if (Date.now() - last < TOUCH_INTERVAL_MS) return;
         this.touched.set(id, Date.now());
         await this.db.update(personalAccessTokens).set({ lastUsedAt: new Date() }).where(eq(personalAccessTokens.id, id)).catch(() => undefined);
+    }
+}
+
+/**
+ * v0.1.185 — El rol `client` es el usuario del PORTAL: sólo ve su registro
+ * por magic link. Un token (pegado u OAuth) le daría `list_lists` /
+ * `get_list_schema`, que no filtran por rol → vería nombres y campos de
+ * TODAS las listas de la empresa. Se rechaza en la puerta.
+ */
+export function assertNotClient(role: Role): void {
+    if (role === 'client') {
+        throw new ForbiddenException({ code: 'client_role_not_allowed', message: 'El acceso por MCP es para miembros del equipo, no para usuarios del portal', data: { status: 403 } });
     }
 }
 
