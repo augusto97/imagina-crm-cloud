@@ -804,6 +804,42 @@ por id — el contrato propone→aplica no cambia y un token nunca amplía
 permisos. Crear/revocar quedan en la bitácora. El MCP no consume la cuota
 IA del plan: el modelo lo aporta el cliente. Docs: `docs/mcp.md`.
 
+**Fase 4 (v0.1.184) — OAuth 2.1: "Autorizar" en vez de pegar un token.**
+La pregunta del usuario fue si la app podía usar SU suscripción de Claude.
+No puede (Anthropic prohíbe los tokens OAuth de Free/Pro/Max en productos de
+terceros desde febrero de 2026; el asistente ✨ sigue con API key), pero el
+camino inverso sí: que Claude —pagado por la suscripción— se conecte a la
+app. claude.ai, Claude Desktop y el celular sólo aceptan conectores remotos
+por **OAuth** (no admiten una cabecera fija), así que Imagina Base es ahora
+**servidor de autorización OAuth 2.1** del MCP: metadata de descubrimiento en
+la raíz del host (`/.well-known/oauth-authorization-server` y
+`/.well-known/oauth-protected-resource[/api/v1/mcp]`, RFC 8414/9728; el
+proxy tiene que mandar `/.well-known/oauth-*` al API — regla nueva en
+Caddyfile y nginx.conf), **registro dinámico de clientes** abierto (RFC 7591,
+tabla `oauth_clients` sin RLS; redirect URIs sólo https, http en loopback o
+esquema de app nativa; con o sin secreto), `authorize` que valida y manda a
+la **pantalla "Autorizar" del SPA** (`/oauth/authorize?req=…`, fuera del
+hash router como /reset y /verify: sin sesión aparece el login normal y
+después la misma pantalla; ahí la persona elige **workspace y alcance**), y
+`token`/`revoke` con **PKCE S256 obligatorio**, `resource` (RFC 8707) que
+tiene que ser nuestro MCP, code de un solo uso (GETDEL) y refresh token
+**rotativo** (la rotación se hace con `WHERE` del hash viejo: dos canjes
+concurrentes → uno solo gana). **El token emitido es una fila de
+`personal_access_tokens`** (columnas `client_id`, `refresh_token_hash`,
+`refresh_expires_at`): acceso de 1 h + refresh de 30 días que se estira en
+cada renovación; el MCP la resuelve igual que a un token personal (rol en
+vivo, fail-closed), en Ajustes aparece como "Conexión autorizada · se renueva
+solo" con el mismo botón Revocar (mata acceso Y refresh) y queda en la
+bitácora (`token.create` con `via: oauth`). El issuer es el **origen de la
+request** (`X-Forwarded-*` con `trustProxy`): cada dominio —plataforma o
+dominio propio de una empresa (ADR-S17)— es su propio servidor OAuth y la
+cookie de sesión de la pantalla es de ese mismo host. CORS `*` sólo en
+`/.well-known/oauth-*`, `/api/v1/oauth/*` y `/api/v1/mcp` (auth por Bearer,
+sin cookies → no expone la sesión) para clientes MCP que corren en el
+navegador. Un cliente desconocido o una redirect no registrada se responden
+en texto, NUNCA por redirect (open redirect). Los tokens pegados a mano
+(fase 3) siguen valiendo para Claude Code y Cursor.
+
 ---
 
-**Versión del documento:** 1.15.2 (asistente IA: servidor MCP + tokens personales — ADR-S21 fase 3)
+**Versión del documento:** 1.15.3 (asistente IA: OAuth 2.1 para el MCP — ADR-S21 fase 4)

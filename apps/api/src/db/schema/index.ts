@@ -26,3 +26,4 @@ export * from './plans';
 export * from './impersonation-log';
 export * from './ai-usage';
 export * from './personal-tokens';
+export * from './oauth-clients';

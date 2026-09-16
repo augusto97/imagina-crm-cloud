@@ -120,6 +120,15 @@ export default defineConfig({
             '/api': {
                 target: process.env.API_URL ?? 'http://localhost:3001',
                 changeOrigin: true,
+                // X-Forwarded-Host/Proto (v0.1.184): el servidor OAuth deriva su
+                // issuer del host público de la request — en dev es vite, no :3001.
+                xfwd: true,
+            },
+            // Metadata de descubrimiento OAuth (RFC 8414/9728) en la raíz del host.
+            '/.well-known': {
+                target: process.env.API_URL ?? 'http://localhost:3001',
+                changeOrigin: true,
+                xfwd: true,
             },
             // WebSocket del realtime (socket.io) → backend.
             '/socket.io': {

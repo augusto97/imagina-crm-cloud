@@ -7,6 +7,9 @@ import {
     aiStatusSchema,
     createPersonalTokenSchema,
     createdPersonalTokenSchema,
+    oauthApproveInputSchema,
+    oauthAuthorizationRequestSchema,
+    oauthDecisionSchema,
     personalTokenSchema,
     platformAiSettingsSchema,
     tenantAiSettingsSchema,
@@ -19,6 +22,9 @@ import {
     type AiStatus,
     type CreatePersonalTokenInput,
     type CreatedPersonalToken,
+    type OauthApproveInput,
+    type OauthAuthorizationRequest,
+    type OauthDecision,
     type PersonalToken,
     type PlatformAiSettings,
     type TenantAiSettings,
@@ -708,6 +714,17 @@ export class CloudClient {
     mcpUrl(): string {
         const base = this.baseUrl.startsWith('http') ? this.baseUrl : `${window.location.origin}${this.baseUrl}`;
         return `${base}/mcp`;
+    }
+
+    // --- OAuth 2.1 del MCP (v0.1.184): la pantalla "Autorizar" ---
+    oauthRequest(id: string): Promise<OauthAuthorizationRequest> {
+        return this.request('GET', `/oauth/authorize/${encodeURIComponent(id)}`, { schema: oauthAuthorizationRequestSchema });
+    }
+    oauthApprove(id: string, input: OauthApproveInput): Promise<OauthDecision> {
+        return this.request('POST', `/oauth/authorize/${encodeURIComponent(id)}/approve`, { body: oauthApproveInputSchema.parse(input), schema: oauthDecisionSchema });
+    }
+    oauthDeny(id: string): Promise<OauthDecision> {
+        return this.request('POST', `/oauth/authorize/${encodeURIComponent(id)}/deny`, { schema: oauthDecisionSchema });
     }
 
     // --- asistente IA: consola de plataforma (superadmin) ---

@@ -67,7 +67,38 @@ async function bootstrap(): Promise<void> {
     await app.register(fastifyMultipart, {
         limits: { files: 1, fileSize: env.MAX_UPLOAD_BYTES },
     });
-    app.setGlobalPrefix('api/v1');
+    // (El token endpoint OAuth recibe `x-www-form-urlencoded`: el adapter de
+    // Nest ya registra @fastify/formbody, no hace falta otro parser.)
+    const fastify = app.getHttpAdapter().getInstance();
+    // CORS acotado a las superficies OAuth/MCP (v0.1.184): un cliente MCP que
+    // corre EN el navegador (MCP Inspector, apps web) descubre la metadata y
+    // canjea tokens con fetch cross-origin. No lleva cookies (auth por Bearer),
+    // así que `*` no expone la sesión. El resto del API sigue same-origin.
+    fastify.addHook('onRequest', (req, reply, done) => {
+        const url = req.url.split('?')[0] ?? '';
+        if (url.startsWith('/.well-known/oauth-') || url.startsWith('/api/v1/oauth/') || url === '/api/v1/mcp') {
+            reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+            reply.raw.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            reply.raw.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id');
+            reply.raw.setHeader('Access-Control-Expose-Headers', 'WWW-Authenticate, Mcp-Session-Id');
+            reply.raw.setHeader('Access-Control-Max-Age', '600');
+            if (req.method === 'OPTIONS') {
+                void reply.code(204).send();
+                return;
+            }
+        }
+        done();
+    });
+    // La metadata de descubrimiento OAuth (RFC 8414/9728) vive en la RAÍZ del
+    // host por definición — fuera del prefijo del API.
+    app.setGlobalPrefix('api/v1', {
+        exclude: [
+            '.well-known/oauth-authorization-server',
+            '.well-known/oauth-authorization-server/api/v1/mcp',
+            '.well-known/oauth-protected-resource',
+            '.well-known/oauth-protected-resource/api/v1/mcp',
+        ],
+    });
     app.useGlobalFilters(new ApiExceptionFilter());
 
     // Socket.io con Redis adapter (realtime multi-nodo — STANDALONE §12).

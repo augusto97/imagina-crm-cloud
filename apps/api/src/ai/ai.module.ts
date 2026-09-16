@@ -15,6 +15,9 @@ import { AiController } from './ai.controller';
 import { AssistantService } from './assistant.service';
 import { McpController } from './mcp.controller';
 import { McpService } from './mcp.service';
+import { OauthController } from './oauth.controller';
+import { OauthService } from './oauth.service';
+import { WellKnownController } from './well-known.controller';
 import { ConversationsStore } from './conversations.store';
 import { PlatformAiController } from './platform-ai.controller';
 import { ProposalsService } from './proposals.service';
@@ -37,7 +40,7 @@ import { StructureTools } from './tools/structure-tools';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule],
-    controllers: [AiController, PlatformAiController, PersonalTokensController, McpController],
+    controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
         AiSettingsService,
         AiQuotaService,
@@ -59,6 +62,7 @@ import { StructureTools } from './tools/structure-tools';
         AssistantService,
         PersonalTokensService,
         McpService,
+        OauthService,
     ],
     exports: [AiSettingsService, AiQuotaService, AiToolRegistry, AssistantService, ProposalsService],
 })
