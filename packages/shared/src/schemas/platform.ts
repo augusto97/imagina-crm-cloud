@@ -71,11 +71,16 @@ export interface PlatformTenantDetail {
         max_automations: number | null;
         max_storage_mb: number | null;
         max_emails_month: number | null;
+        max_ai_requests_month: number | null;
     };
     /** Correos por el SMTP de la plataforma en el mes en curso (ADR-S18). */
     emails_month?: number;
     /** La empresa tiene SMTP propio → no consume la cuota de correo. */
     own_smtp?: boolean;
+    /** Pedidos al asistente IA con la clave de plataforma en el mes (ADR-S21). */
+    ai_requests_month?: number;
+    /** La empresa tiene clave IA propia → no consume la cuota. */
+    own_ai_key?: boolean;
 }
 
 /**
@@ -157,6 +162,7 @@ export const platformPlanSchema = z.object({
     max_automations: z.number().int().nullable(),
     max_storage_mb: z.number().int().nullable(),
     max_emails_month: z.number().int().nullable(),
+    max_ai_requests_month: z.number().int().nullable(),
     price_usd: z.number().int().nullable(),
     price_cop: z.number().int().nullable(),
     is_active: z.boolean(),
@@ -189,6 +195,7 @@ export const createPlanSchema = z.object({
     max_automations: nullableLimit.default(null),
     max_storage_mb: nullableLimit.default(null),
     max_emails_month: nullableLimit.default(null),
+    max_ai_requests_month: nullableLimit.default(null),
     price_usd: nullablePrice.default(null),
     price_cop: nullablePrice.default(null),
     is_active: z.boolean().default(true),
@@ -204,6 +211,7 @@ export const updatePlanSchema = z
         max_automations: nullableLimit,
         max_storage_mb: nullableLimit,
         max_emails_month: nullableLimit,
+        max_ai_requests_month: nullableLimit,
         price_usd: nullablePrice,
         price_cop: nullablePrice,
         is_active: z.boolean(),

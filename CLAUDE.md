@@ -3492,6 +3492,73 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con el `MAIL_FROM` sin comillas; verificado que el script viejo falla y
         el nuevo pasa) — 9/9 del spec, 482 API en verde.
 
+- [ ] **F10 — Asistente IA** (pedido del usuario: "que un cliente le pueda
+      pedir a la app una lista, un tablero o una automatización en lenguaje
+      natural"; plan acordado en tres fases: estructura → datos → MCP; el
+      usuario sumó la decisión comercial: clave global con restricciones Y/O
+      claves propias por cliente desde el inicio):
+  - [x] **Fase 1 — Asistente de ESTRUCTURA (v0.1.181, ADR-S21)**: un chat
+        dentro de la app (botón ✨ en el Topbar → drawer a la derecha) que
+        convierte pedidos en lenguaje natural en propuestas sobre listas,
+        campos, vistas, tableros y automatizaciones — con vista previa y un
+        botón "Aplicar". **El modelo nunca escribe**: las diez herramientas
+        (`apps/api/src/ai/tools/`: `list_lists`, `get_list_schema` y ocho
+        `propose_*`) validan el pedido contra el esquema real (slugs, tipos y
+        config con los schemas compartidos; slugs inexistentes vuelven al
+        modelo como error corregible con la lista de válidos), lo resuelven a
+        ids y lo guardan como PROPUESTA en Redis (2 h); `POST
+        /ai/proposals/:id/apply` ejecuta el payload ya validado llamando a los
+        MISMOS services de la interfaz (`BlueprintService.materialize` para
+        listas —incluidos packs con relation entre sí—, Fields/Views/
+        Dashboards/Automations) con su ACL, límites de plan, realtime y
+        bitácora (`ai.apply`). Cada herramienta declara la **capability** que
+        exige: al modelo sólo se le ofrecen las del rol de la persona
+        (un manager no ve `propose_create_list`) y aplicar la re-chequea
+        (403 si el rol bajó). Un solo registro de herramientas, pensado para
+        que el MCP de la fase 3 lo consuma igual. Motor: SDK oficial,
+        `messages.stream` con pensamiento adaptativo + `effort medium`,
+        `cache_control` en system y tools, hasta 8 vueltas por mensaje,
+        conversación en Redis por usuario+empresa (24 h; el historial se
+        recorta sin partir pares tool_use/tool_result), SSE por
+        `reply.hijack()`; el cliente inyectable (`AI_CLIENT_FACTORY`) permite
+        testear el bucle con un modelo falso con guion.
+        **Clave y cuenta (lo que pidió el usuario)**: dos niveles, mismo
+        patrón que el SMTP. Plataforma → pestaña **"Asistente IA"** (superadmin):
+        interruptor general, clave cifrada con `SECRETS_KEY` (`platform:ai`;
+        respaldo `AI_API_KEY` por env), modelo por defecto (Opus 5 / Sonnet 5 /
+        Haiku 4.5), **"Compartir la clave"** (las empresas la usan con la cuota
+        mensual de su plan: columna "IA/mes" en Planes, `max_ai_requests_month`
+        —semilla trial 20 / starter 100 / pro 500 / enterprise ∞—, contador
+        `ai_usage` por tenant+período con tokens reales; migración 0048) y
+        **"Permitir claves propias"** (BYOK). Ajustes → **Asistente IA** (admin
+        de la empresa): **opt-in explícito** (se explica qué viaja al
+        proveedor: la estructura, no los registros), modelo, clave propia
+        cifrada en `tenants.settings.ai` (nunca vuelve; hint …1234; ilegible
+        con otra SECRETS_KEY se avisa como el SMTP) → sin cuota. Sin acceso,
+        el panel dice exactamente qué falta y linkea a la config. Uso visible
+        en Plan y uso, en el detalle de empresa de la consola y en la grilla.
+        Front: `AssistantPanel` (streaming, indicador de herramienta en
+        curso, tarjetas `ProposalCard` con preview por tipo, confirmación
+        reforzada en destructivas, links al resultado, recupera la
+        conversación al reabrir, "Nueva conversación", Stop), parser SSE
+        propio (`lib/sse.ts`, 3 tests). 15 tests de API (unitarios + Postgres
+        y Redis reales con modelo falso: cifrado y política de claves, bucle
+        completo propone→aplica con bitácora y cuota, error corregible,
+        campos/opciones/vista/automatización sobre lista existente, slug
+        inválido rechazado, tablero con layout automático, capability por rol
+        y 403 al aplicar, borrado destructivo, cuota que corta y BYOK que no
+        cuenta) — 497 API, 125 front y 66 shared en verde — + E2E navegador
+        41/41 (panel, chat SSE
+        con error legible, transcript recuperado, no-disponible → link →
+        activar desde la card, BYOK hint/sin exponer/quitar, tarjeta de
+        propuesta → Aplicar → la lista existe con sus campos y kanban → link
+        a la lista, 409 al re-aplicar, consola con políticas y "Probar",
+        columna IA/mes, móvil).
+        Pendiente: fase 2 (herramientas de DATOS: agregados, consultas
+        acotadas, edición masiva con recuento y confirmación; defensas de
+        prompt injection sobre datos de registros) y fase 3 (servidor MCP
+        Streamable HTTP sobre el mismo registro + tokens de acceso personal).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

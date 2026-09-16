@@ -1,6 +1,23 @@
 import {
     accountExportSchema,
     activeSessionsResponseSchema,
+    aiApplyResultSchema,
+    aiChatEventSchema,
+    aiConversationSchema,
+    aiStatusSchema,
+    platformAiSettingsSchema,
+    tenantAiSettingsSchema,
+    updatePlatformAiSettingsSchema,
+    updateTenantAiSettingsSchema,
+    type AiApplyResult,
+    type AiChatEvent,
+    type AiChatRequest,
+    type AiConversation,
+    type AiStatus,
+    type PlatformAiSettings,
+    type TenantAiSettings,
+    type UpdatePlatformAiSettingsInput,
+    type UpdateTenantAiSettingsInput,
     auditFeedSchema,
     backupCodesSchema,
     changePasswordSchema,
@@ -143,6 +160,7 @@ import {
     type View,
 } from '@imagina-base/shared';
 import { z } from 'zod';
+import { createSseParser } from '@/lib/sse';
 
 /**
  * Cliente del API de Imagina Base (reemplaza al transporte wp-json/nonce del
@@ -606,6 +624,85 @@ export class CloudClient {
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok) throw toApiError(payload, response.status);
         return z.object({ id: z.number().int().positive() }).parse(payload);
+    }
+
+    // --- asistente IA (ADR-S21, v0.1.181) ---
+    aiStatus(): Promise<AiStatus> {
+        return this.request('GET', '/ai/status', { schema: aiStatusSchema });
+    }
+    aiConversation(id: string): Promise<AiConversation> {
+        return this.request('GET', `/ai/conversations/${encodeURIComponent(id)}`, { schema: aiConversationSchema });
+    }
+    aiApply(proposalId: string): Promise<AiApplyResult> {
+        return this.request('POST', `/ai/proposals/${encodeURIComponent(proposalId)}/apply`, { schema: aiApplyResultSchema });
+    }
+    aiSettingsGet(): Promise<TenantAiSettings> {
+        return this.request('GET', '/ai/settings', { schema: tenantAiSettingsSchema });
+    }
+    aiSettingsSet(input: UpdateTenantAiSettingsInput): Promise<TenantAiSettings> {
+        return this.request('PATCH', '/ai/settings', {
+            body: updateTenantAiSettingsSchema.parse(input),
+            schema: tenantAiSettingsSchema,
+        });
+    }
+    /**
+     * Un turno de chat por SSE. `fetch` + lectura del body a mano (EventSource
+     * no hace POST ni manda headers); cada `data:` es un `AiChatEvent` que se
+     * valida con el schema compartido antes de entregarlo. Un error HTTP
+     * ANTES del stream (401/403/400) se lanza como `CloudApiError`; los
+     * errores del asistente llegan como evento `error` dentro del stream.
+     */
+    async aiChat(input: AiChatRequest, onEvent: (ev: AiChatEvent) => void, signal?: AbortSignal): Promise<void> {
+        const headers: Record<string, string> = { Accept: 'text/event-stream', 'Content-Type': 'application/json' };
+        const tenantId = this.getTenantId();
+        if (tenantId !== null && tenantId !== undefined) headers['X-Tenant-Id'] = String(tenantId);
+        const response = await fetch(`${this.baseUrl}/ai/chat`, {
+            method: 'POST',
+            headers,
+            credentials: 'include',
+            body: JSON.stringify(input),
+            signal,
+        });
+        if (!response.ok || !response.body) {
+            const payload: unknown = await response.json().catch(() => null);
+            throw toApiError(payload, response.status);
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const parser = createSseParser();
+        const deliver = (data: string): void => {
+            let json: unknown;
+            try {
+                json = JSON.parse(data);
+            } catch {
+                return;
+            }
+            const parsed = aiChatEventSchema.safeParse(json);
+            if (parsed.success) onEvent(parsed.data);
+        };
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            for (const d of parser.push(decoder.decode(value, { stream: true }))) deliver(d);
+        }
+        for (const d of parser.flush()) deliver(d);
+    }
+
+    // --- asistente IA: consola de plataforma (superadmin) ---
+    platformAiGet(): Promise<PlatformAiSettings> {
+        return this.request('GET', '/platform/ai', { schema: platformAiSettingsSchema });
+    }
+    platformAiSet(input: UpdatePlatformAiSettingsInput): Promise<PlatformAiSettings> {
+        return this.request('PATCH', '/platform/ai', {
+            body: updatePlatformAiSettingsSchema.parse(input),
+            schema: platformAiSettingsSchema,
+        });
+    }
+    platformAiTest(apiKey?: string): Promise<{ ok: boolean; model: string; message: string }> {
+        return this.request('POST', '/platform/ai/test', {
+            body: { api_key: apiKey ?? '' },
+            schema: z.object({ ok: z.boolean(), model: z.string(), message: z.string() }),
+        });
     }
 
     // --- billing ---

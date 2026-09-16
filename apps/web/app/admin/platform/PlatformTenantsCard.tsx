@@ -671,6 +671,17 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                         {__('Esta empresa tiene SMTP propio: sus correos no salen por la plataforma.')}
                                     </p>
                                 )}
+                                {/* Pedidos al asistente con la clave de la PLATAFORMA (ADR-S21). */}
+                                <UsageRow
+                                    label={__('Pedidos IA este mes')}
+                                    used={detail.data.ai_requests_month ?? 0}
+                                    limit={detail.data.own_ai_key ? null : detail.data.limits.max_ai_requests_month}
+                                />
+                                {detail.data.own_ai_key && (
+                                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        {__('Esta empresa usa su propia clave IA: sus pedidos no consumen la de la plataforma.')}
+                                    </p>
+                                )}
                             </section>
 
                             {/* Miembros */}

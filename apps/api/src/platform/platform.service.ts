@@ -1,4 +1,6 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { AiQuotaService } from '../ai/ai-quota.service';
+import { AiSettingsService } from '../ai/ai-settings.service';
 import { BadRequestException } from '@nestjs/common';
 import {
     BILLING_STATUSES,
@@ -32,6 +34,7 @@ import {
     comments,
     dashboards,
     emailUsage,
+    aiUsage,
     fields,
     impersonationLog,
     lists,
@@ -66,6 +69,9 @@ export class PlatformService {
         private readonly plans: PlansService,
         private readonly emailQuota: EmailQuotaService,
         private readonly tenantSmtp: TenantSmtpService,
+        // v0.1.181 (ADR-S21) — opcionales: los specs arman el service a mano.
+        @Optional() private readonly aiQuota?: AiQuotaService,
+        @Optional() private readonly aiSettings?: AiSettingsService,
     ) {}
 
     /**
@@ -109,7 +115,7 @@ export class PlatformService {
             return { data: [], meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset } };
         }
 
-        const [recMap, userMap, autoMap, storageMap, emailMap, ownerMap] = await Promise.all([
+        const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(inArray(memberships.tenantId, ids)).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
@@ -123,6 +129,14 @@ export class PlatformService {
                     .where(and(inArray(emailUsage.tenantId, ids), eq(emailUsage.period, periodOf())))
                     .groupBy(emailUsage.tenantId),
             ),
+            // Pedidos al asistente con la clave de la plataforma (ADR-S21).
+            this.countByTenant(
+                this.db
+                    .select({ tid: aiUsage.tenantId, n: sql<number>`coalesce(sum(${aiUsage.requests}), 0)::int` })
+                    .from(aiUsage)
+                    .where(and(inArray(aiUsage.tenantId, ids), eq(aiUsage.period, periodOf())))
+                    .groupBy(aiUsage.tenantId),
+            ),
             this.ownersByTenant(),
         ]);
 
@@ -134,6 +148,7 @@ export class PlatformService {
                     automations: autoMap.get(t.id) ?? 0,
                     storage_bytes: Number(storageMap.get(t.id) ?? 0),
                     emails_month: Number(emailMap.get(t.id) ?? 0),
+                    ai_requests_month: Number(aiMap.get(t.id) ?? 0),
                 }),
             ),
             meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset },
@@ -189,12 +204,15 @@ export class PlatformService {
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(eq(memberships.tenantId, id))
             .orderBy(memberships.createdAt);
-        const [limits, emails, smtp] = await Promise.all([
+        const [limits, emails, smtp, aiUsed, ownAiKey] = await Promise.all([
             this.plans.limits(tenant.plan),
             // Consumo de correo de plataforma del mes (ADR-S18): es lo que le
             // cuesta al operador. Con SMTP propio, el cliente no consume nada.
             this.emailQuota.usedThisMonth(id),
             this.tenantSmtp.get(id),
+            // Ídem pedidos al asistente con la clave de la plataforma (ADR-S21).
+            this.aiQuota ? this.aiQuota.usedThisMonth(id) : Promise.resolve(0),
+            this.aiSettings ? this.aiSettings.tenantHasOwnKey(id) : Promise.resolve(false),
         ]);
         return {
             tenant,
@@ -202,6 +220,8 @@ export class PlatformService {
             limits,
             emails_month: emails,
             own_smtp: smtp.configured,
+            ai_requests_month: aiUsed,
+            own_ai_key: ownAiKey,
         };
     }
 

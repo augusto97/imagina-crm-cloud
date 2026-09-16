@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import {
     isEffectivelyReadOnly,
     type BillingStatus,
@@ -8,6 +8,8 @@ import {
     type Usage,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { AiQuotaService } from '../ai/ai-quota.service';
+import { AiSettingsService } from '../ai/ai-settings.service';
 import type { Tx } from '../db/client';
 import { attachments, automations, memberships, records, tenants } from '../db/schema';
 import { EmailQuotaService } from '../mail/email-quota.service';
@@ -22,19 +24,28 @@ export class BillingService {
         private readonly plans: PlansService,
         private readonly emailQuota: EmailQuotaService,
         private readonly tenantSmtp: TenantSmtpService,
+        // v0.1.181 (ADR-S21) — opcionales para que los specs que arman el
+        // service a mano sigueran compilando; en la app siempre están.
+        @Optional() private readonly aiQuota?: AiQuotaService,
+        @Optional() private readonly aiSettings?: AiSettingsService,
     ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
         const { plan, status, archivedAt, subscriptionEndsAt } = await this.planStatus(tenantId);
-        const [usage, emails, smtp] = await Promise.all([
+        const [usage, emails, smtp, aiUsed, ownAiKey] = await Promise.all([
             this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId)),
             this.emailQuota.usedThisMonth(tenantId),
             // Con SMTP propio los correos salen por el servidor del cliente:
             // no consumen la cuota de la plataforma (ADR-S18).
             this.tenantSmtp.get(tenantId),
+            // Ídem con la clave IA propia (ADR-S21).
+            this.aiQuota ? this.aiQuota.usedThisMonth(tenantId) : Promise.resolve(0),
+            this.aiSettings ? this.aiSettings.tenantHasOwnKey(tenantId) : Promise.resolve(false),
         ]);
         usage.emails_month = emails;
+        usage.ai_requests_month = aiUsed;
         return {
+            own_ai_key: ownAiKey,
             plan,
             status,
             read_only: isEffectivelyReadOnly({
@@ -148,6 +159,7 @@ export class BillingService {
             // Lo completa `summary` (vive fuera del scope del tenant: el
             // contador lo escribe el worker de correo por la conexión base).
             emails_month: 0,
+            ai_requests_month: 0,
         };
     }
 

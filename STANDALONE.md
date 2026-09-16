@@ -719,6 +719,62 @@ viajan (el bucket es la fuente). Un snapshot incluye secretos: se guarda como
 tal (permisos 600) o cifrado. Migrar UNA empresa entre instancias (con
 re-mapeo de ids) es un problema distinto y queda para un release aparte.
 
+### ADR-S21 — Asistente IA de estructura: propone, la persona aplica (v0.1.181)
+
+**Contexto.** La app ya ofrece todo lo que un cliente necesita para armar su
+base (listas, campos, vistas, tableros, automatizaciones, plantillas), pero
+cada pieza exige conocer la interfaz. El pedido del usuario fue poder decirle
+a la app, en lenguaje natural, "armame una lista de proveedores con…" o "un
+tablero de esta lista" y que salga hecho — sin que eso sea una puerta trasera
+que se salte permisos, límites de plan o la bitácora, y sin que el operador
+pague la cuenta de IA de todos sus clientes sin control.
+
+**Decisión.** Un asistente DENTRO de la app con tres reglas de arquitectura:
+
+1. **Un solo registro de herramientas, dos transportes.** Cada herramienta
+   (`apps/api/src/ai/tools/`) declara su schema Zod (→ JSON Schema para el
+   modelo), la **capability** que exige y su ejecución. El chat de la app
+   (fase 1) y el servidor MCP (fase 3) consumen el MISMO registro: no hay una
+   segunda lista de "cosas que la IA puede hacer". Al modelo sólo se le
+   ofrecen las herramientas que el rol de la persona puede usar, y cada
+   ejecución las re-chequea.
+2. **El modelo PROPONE; la persona APLICA.** Ninguna herramienta escribe.
+   Las `propose_*` validan el pedido contra el esquema real (slugs, tipos,
+   config con los schemas compartidos), lo resuelven a ids y lo guardan como
+   **propuesta** en Redis (`aiprop:*`, 2 h) con una vista previa declarativa.
+   `POST /ai/proposals/:id/apply` ejecuta el payload YA validado llamando a
+   los mismos services que usa la interfaz (`BlueprintService.materialize`,
+   `FieldsService`, `ViewsService`, `DashboardsService`, `AutomationsService`)
+   — con su ACL, sus límites de plan, su realtime y su bitácora (`ai.apply`).
+   El cliente nunca manda el payload: dibuja la preview y aplica por id.
+3. **La clave y la cuenta son una decisión comercial del operador.** Dos
+   niveles, mismo patrón que el SMTP (ADR-S11/S18): la PLATAFORMA carga su
+   clave (cifrada con `SECRETS_KEY`, `platform:ai` en Redis) y decide si la
+   **comparte** con las empresas —entonces rige la cuota mensual del plan
+   (`plans.max_ai_requests_month`, contador `ai_usage` por tenant y período,
+   con tokens reales para conocer el costo)— y/o si **permite claves propias**
+   (BYOK en `tenants.settings.ai`, cifrada; sin cuota porque no pasa por la
+   cuenta del operador). Cada empresa además hace **opt-in** explícito: sus
+   esquemas viajan a un proveedor externo. Sin acceso, la UI dice exactamente
+   qué falta (`AiUnavailableError.reason`).
+
+Implementación: SDK oficial `@anthropic-ai/sdk`, `messages.stream` con
+pensamiento adaptativo y `effort: medium`, system prompt + definiciones de
+herramientas con `cache_control`, bucle de hasta 8 vueltas por mensaje,
+conversación en Redis por usuario y empresa (24 h) con historial para el
+modelo y transcript para la UI. SSE por `reply.hijack()` de Fastify. El
+modelo se elige por plataforma con override por empresa (Opus 5 default;
+Sonnet/Haiku como palanca de costo).
+
+**Consecuencias.** El asistente no puede hacer NADA que la persona no pueda
+hacer desde la interfaz, y todo lo que hace queda como una acción de esa
+persona. Las propuestas expiran: no hay estado a medias. Lo que devuelven las
+herramientas es DATO del workspace, nunca instrucciones (regla en el prompt;
+fase 2 suma defensas para los datos de registros). Fase 2: herramientas de
+DATOS (agregados, consultas acotadas por filter tree, edición masiva con
+recuento y confirmación). Fase 3: servidor MCP (Streamable HTTP) + tokens de
+acceso personal, para pedirle lo mismo desde Claude/Cursor/etc.
+
 ---
 
-**Versión del documento:** 1.14.0 (copias completas y migración de servidor — ADR-S20)
+**Versión del documento:** 1.15.0 (asistente IA de estructura — ADR-S21)

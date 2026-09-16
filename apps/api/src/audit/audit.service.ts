@@ -44,7 +44,11 @@ export type AuditAction =
     | 'dashboard_template.delete'
     | 'dashboard_template.apply'
     | 'automation_template.create'
-    | 'automation_template.delete';
+    | 'automation_template.delete'
+    // v0.1.181 (ADR-S21) — el asistente IA: aplicar una propuesta y cambiar
+    // la configuración del asistente de la empresa.
+    | 'ai.apply'
+    | 'workspace.ai_change';
 
 export interface AuditEntryDto {
     id: number;

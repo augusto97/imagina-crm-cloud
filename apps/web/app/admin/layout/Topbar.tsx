@@ -1,5 +1,6 @@
 import { LogOut, Menu, Moon, Settings, Sparkles, Sun } from 'lucide-react';
 
+import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import { useTheme } from '@/lib/theme';
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.Element {
     const theme = useTheme();
     const isDark = theme.resolved === 'dark';
+    const assistantOpen = useAssistantPanelOpen();
     const branding = useBrandingData();
     const activeTenantId = useSession((s) => s.activeTenantId);
     const memberships = useSession((s) => s.memberships);
@@ -72,6 +74,20 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
             </div>
 
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                {/* v0.1.181 — asistente IA (ADR-S21). */}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={__('Asistente IA')}
+                    title={__('Asistente IA')}
+                    aria-pressed={assistantOpen}
+                    data-testid="imcrm-ai-toggle"
+                    className={assistantOpen ? 'imcrm-bg-accent imcrm-text-primary' : 'imcrm-text-primary'}
+                    onClick={assistantPanel.toggle}
+                >
+                    <Sparkles className="imcrm-h-4 imcrm-w-4" />
+                </Button>
+
                 {moduleEnabled('mentions') && <NotificationBell />}
 
                 {/* v0.1.112 — claro ⇄ oscuro. La preferencia se guarda por

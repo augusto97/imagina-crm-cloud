@@ -112,6 +112,7 @@ export function PlatformPlansCard(): JSX.Element {
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Automat.')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Storage')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Correos/mes')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('IA/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('USD/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('COP/mes')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium" />
@@ -144,6 +145,9 @@ export function PlatformPlansCard(): JSX.Element {
                                         {/* Cuota de correo por el SMTP de la plataforma (ADR-S18):
                                             con SMTP propio el cliente no consume nada de esto. */}
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_emails_month)}</td>
+                                        {/* Pedidos al asistente con la clave de la plataforma (ADR-S21):
+                                            con clave propia la empresa no consume nada de esto. */}
+                                        <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_ai_requests_month)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
                                             {p.price_usd === null ? <span className="imcrm-text-muted-foreground">—</span> : USD.format(p.price_usd)}
                                         </td>
@@ -199,6 +203,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
     const [aut, setAut] = useState('');
     const [sto, setSto] = useState('');
     const [eml, setEml] = useState('');
+    const [ai, setAi] = useState('');
     const [usd, setUsd] = useState('');
     const [cop, setCop] = useState('');
     const [active, setActive] = useState(true);
@@ -212,6 +217,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
         setAut(limitStr(plan?.max_automations ?? null));
         setSto(limitStr(plan?.max_storage_mb ?? null));
         setEml(limitStr(plan?.max_emails_month ?? null));
+        setAi(limitStr(plan?.max_ai_requests_month ?? null));
         setUsd(limitStr(plan?.price_usd ?? null));
         setCop(limitStr(plan?.price_cop ?? null));
         setActive(plan?.is_active ?? true);
@@ -229,6 +235,7 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
             max_automations: toLimit(aut),
             max_storage_mb: toLimit(sto),
             max_emails_month: toLimit(eml),
+            max_ai_requests_month: toLimit(ai),
             price_usd: toLimit(usd),
             price_cop: toLimit(cop),
             is_active: active,
@@ -299,6 +306,13 @@ function PlanSheet({ open, plan, onClose }: { open: boolean; plan: PlatformPlan 
                                 <Input id="ps-eml" type="number" min={0} value={eml} onChange={(e) => setEml(e.target.value)} placeholder="∞" />
                                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
                                     {__('Sólo los que salen por el SMTP de la plataforma; con SMTP propio no hay límite.')}
+                                </span>
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <Label htmlFor="ps-ai" className="imcrm-text-xs">{__('Pedidos IA / mes')}</Label>
+                                <Input id="ps-ai" type="number" min={0} value={ai} onChange={(e) => setAi(e.target.value)} placeholder="∞" />
+                                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    {__('Mensajes al asistente con la clave de la plataforma; con clave propia no hay límite.')}
                                 </span>
                             </div>
                         </div>

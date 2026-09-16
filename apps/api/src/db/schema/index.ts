@@ -24,3 +24,4 @@ export * from './dashboards';
 export * from './public-lists';
 export * from './plans';
 export * from './impersonation-log';
+export * from './ai-usage';
