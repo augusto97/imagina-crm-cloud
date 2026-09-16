@@ -12,7 +12,14 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { plans, tenants } from '../db/schema';
 
-const UNLIMITED: PlanLimits = { max_records: null, max_users: null, max_automations: null, max_storage_mb: null, max_emails_month: null };
+const UNLIMITED: PlanLimits = {
+    max_records: null,
+    max_users: null,
+    max_automations: null,
+    max_storage_mb: null,
+    max_emails_month: null,
+    max_ai_requests_month: null,
+};
 
 /**
  * Planes de suscripción (ADR-S15 F3). La fuente viva de los límites es la tabla
@@ -38,6 +45,7 @@ export class PlansService {
             max_automations: r.maxAutomations,
             max_storage_mb: r.maxStorageMb,
             max_emails_month: r.maxEmailsMonth,
+            max_ai_requests_month: r.maxAiRequestsMonth,
             price_usd: r.priceUsd,
             price_cop: r.priceCop,
             is_active: r.isActive,
@@ -52,6 +60,7 @@ export class PlansService {
                     max_automations: p.max_automations,
                     max_storage_mb: p.max_storage_mb,
                     max_emails_month: p.max_emails_month,
+                    max_ai_requests_month: p.max_ai_requests_month,
                 },
             ]),
         );
@@ -110,6 +119,7 @@ export class PlansService {
             maxAutomations: input.max_automations,
             maxStorageMb: input.max_storage_mb,
             maxEmailsMonth: input.max_emails_month,
+            maxAiRequestsMonth: input.max_ai_requests_month,
             priceUsd: input.price_usd,
             priceCop: input.price_cop,
             isActive: input.is_active,
@@ -127,6 +137,7 @@ export class PlansService {
         if (input.max_automations !== undefined) changes.maxAutomations = input.max_automations;
         if (input.max_storage_mb !== undefined) changes.maxStorageMb = input.max_storage_mb;
         if (input.max_emails_month !== undefined) changes.maxEmailsMonth = input.max_emails_month;
+        if (input.max_ai_requests_month !== undefined) changes.maxAiRequestsMonth = input.max_ai_requests_month;
         if (input.price_usd !== undefined) changes.priceUsd = input.price_usd;
         if (input.price_cop !== undefined) changes.priceCop = input.price_cop;
         if (input.is_active !== undefined) changes.isActive = input.is_active;

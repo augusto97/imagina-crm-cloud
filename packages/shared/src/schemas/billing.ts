@@ -32,14 +32,19 @@ export interface PlanLimits {
      * correos salen por el servidor del cliente y no cuestan nada acá.
      */
     max_emails_month: number | null;
+    /**
+     * Pedidos al asistente IA por mes CON LA CLAVE DE LA PLATAFORMA (ADR-S21).
+     * `null` = ilimitado. Con clave propia de la empresa no aplica.
+     */
+    max_ai_requests_month: number | null;
 }
 
 /** Semilla + fallback de límites de los planes built-in (la fuente viva es la DB). */
 export const PLAN_LIMITS: Record<BuiltinPlan, PlanLimits> = {
-    trial: { max_records: 500, max_users: 3, max_automations: 3, max_storage_mb: 100, max_emails_month: 100 },
-    starter: { max_records: 10_000, max_users: 10, max_automations: 20, max_storage_mb: 1_024, max_emails_month: 1_000 },
-    pro: { max_records: 200_000, max_users: 50, max_automations: 200, max_storage_mb: 10_240, max_emails_month: 10_000 },
-    enterprise: { max_records: null, max_users: null, max_automations: null, max_storage_mb: null, max_emails_month: null },
+    trial: { max_records: 500, max_users: 3, max_automations: 3, max_storage_mb: 100, max_emails_month: 100, max_ai_requests_month: 20 },
+    starter: { max_records: 10_000, max_users: 10, max_automations: 20, max_storage_mb: 1_024, max_emails_month: 1_000, max_ai_requests_month: 100 },
+    pro: { max_records: 200_000, max_users: 50, max_automations: 200, max_storage_mb: 10_240, max_emails_month: 10_000, max_ai_requests_month: 500 },
+    enterprise: { max_records: null, max_users: null, max_automations: null, max_storage_mb: null, max_emails_month: null, max_ai_requests_month: null },
 };
 
 /** Un status con acceso de escritura (los demás → solo-lectura). */
@@ -77,6 +82,8 @@ export const usageSchema = z.object({
     storage_bytes: z.number().int().nonnegative().default(0),
     /** Correos enviados por el SMTP de la plataforma en el mes en curso (ADR-S18). */
     emails_month: z.number().int().nonnegative().default(0),
+    /** Pedidos al asistente IA con la clave de la plataforma en el mes (ADR-S21). */
+    ai_requests_month: z.number().int().nonnegative().default(0),
 });
 export type Usage = z.infer<typeof usageSchema>;
 
@@ -90,6 +97,7 @@ export const billingSummarySchema = z.object({
         max_automations: z.number().int().nullable(),
         max_storage_mb: z.number().int().nullable(),
         max_emails_month: z.number().int().nullable(),
+        max_ai_requests_month: z.number().int().nullable().default(null),
     }),
     usage: usageSchema,
     /**
@@ -98,6 +106,8 @@ export const billingSummarySchema = z.object({
      * una barra.
      */
     own_smtp: z.boolean().default(false),
+    /** La empresa tiene clave IA propia → sus pedidos no consumen cuota (ADR-S21). */
+    own_ai_key: z.boolean().default(false),
 });
 export type BillingSummary = z.infer<typeof billingSummarySchema>;
 

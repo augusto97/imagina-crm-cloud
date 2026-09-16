@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from './activity/activity.module';
 import { AggregateModule } from './aggregate/aggregate.module';
+import { AiModule } from './ai/ai.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
@@ -76,6 +77,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         BootstrapModule,
         SlugsModule,
         TemplatesModule,
+        AiModule,
         HealthModule,
         UpdateModule,
     ],

@@ -8,6 +8,7 @@ import {
     ShieldCheck,
     DatabaseZap,
     PenLine,
+    Sparkles,
     SunMoon,
     Users,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export type SettingsSectionId =
     | 'marca'
     | 'formato'
     | 'correo'
+    | 'asistente'
     | 'firma'
     | 'apariencia'
     | 'auditoria'
@@ -50,6 +52,8 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
+                          // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.
+                          { id: 'asistente', label: 'Asistente IA', icon: Sparkles },
                           // v0.1.114 — quién cambió qué en el workspace.
                           { id: 'auditoria', label: 'Registro de actividad', icon: History },
                       ] satisfies SettingsSectionItem[])

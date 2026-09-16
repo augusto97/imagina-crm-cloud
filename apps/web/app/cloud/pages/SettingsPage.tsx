@@ -18,6 +18,7 @@ import { DomainPanel } from '@/cloud/components/DomainPanel';
 import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
+import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
 import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -150,6 +151,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'formato' && isAdmin && <RegionalFormatPanel />}
 
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
+
+                {active === 'asistente' && isAdmin && <AiSettingsPanel />}
                 {/* Bitácora de acciones administrativas (v0.1.114). */}
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
                 {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}
@@ -215,6 +218,20 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                             : summary.limits.max_emails_month === null
                               ? undefined
                               : 'Incluye automatizaciones y accesos al portal. ¿Necesitás más? Configurá tu propio SMTP en Ajustes → Correo (SMTP) y no hay límite.'
+                    }
+                />
+                {/* Cuota del asistente IA (ADR-S21): sólo cuentan los pedidos
+                    hechos con la clave de la plataforma. Con clave propia no hay límite. */}
+                <UsageBar
+                    label="Pedidos al asistente este mes"
+                    used={summary.usage.ai_requests_month}
+                    limit={summary.own_ai_key ? null : summary.limits.max_ai_requests_month}
+                    note={
+                        summary.own_ai_key
+                            ? 'Sin límite: el asistente usa la clave IA de tu empresa.'
+                            : summary.limits.max_ai_requests_month === null
+                              ? undefined
+                              : 'Cada mensaje al asistente cuenta como un pedido. ¿Necesitás más? Cargá tu propia clave en Ajustes → Asistente IA y no hay límite.'
                     }
                 />
             </CardContent>

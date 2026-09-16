@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router';
 
+import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
 import { Sidebar } from '@/admin/layout/Sidebar';
@@ -88,6 +89,8 @@ export function AdminShell(): JSX.Element {
             {! isInTemplateEditor && (
                 <GlobalCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
             )}
+            {/* v0.1.181 — asistente IA (ADR-S21): drawer a la derecha, se abre desde el Topbar. */}
+            <AssistantPanel />
         </div>
     );
 }
