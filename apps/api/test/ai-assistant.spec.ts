@@ -72,7 +72,7 @@ function fakeClient(script: Turn[], seen: MessageParam[][] = []): { factory: AiC
                     const content: Message['content'] = [];
                     const text = 'text' in turn ? turn.text : undefined;
                     if (text) content.push({ type: 'text', text, citations: null });
-                    if ('tool' in turn) content.push({ type: 'tool_use', id: `tu_${calls.n}`, name: turn.tool, input: turn.input });
+                    if ('tool' in turn) content.push({ type: 'tool_use', id: `tu_${calls.n}`, name: turn.tool, input: turn.input } as never);
                     const final: Message = {
                         id: `msg_${calls.n}`,
                         type: 'message',
@@ -82,7 +82,7 @@ function fakeClient(script: Turn[], seen: MessageParam[][] = []): { factory: AiC
                         stop_reason: 'tool' in turn ? 'tool_use' : 'end_turn',
                         stop_sequence: null,
                         usage: { input_tokens: 100, output_tokens: 20 } as Message['usage'],
-                    };
+                    } as unknown as Message;
                     const events = text ? [{ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }] : [];
                     return {
                         async *[Symbol.asyncIterator]() {
