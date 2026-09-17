@@ -31,6 +31,13 @@ export const OAUTH_PATHS = {
     consentPage: '/oauth/authorize',
     asMetadata: '/.well-known/oauth-authorization-server',
     prMetadata: '/.well-known/oauth-protected-resource',
+    /**
+     * v0.1.186 — la metadata del recurso también bajo el prefijo del API
+     * (`/api/v1/oauth/.well-known/…`): ese path SÍ pasa por la regla
+     * `/api/*` de cualquier proxy, así el `WWW-Authenticate` del MCP apunta a
+     * algo que responde aunque nadie haya enrutado la raíz del host.
+     */
+    prMetadataApi: '/api/v1/oauth/.well-known/oauth-protected-resource',
 } as const;
 
 const SCOPES = ['read', 'full'] as const;
@@ -143,7 +150,7 @@ export class OauthService {
 
     /** Lo que va en el `WWW-Authenticate` del 401 del MCP para que el cliente descubra el servidor. */
     wwwAuthenticate(origin: string): string {
-        return `Bearer realm="imagina-base", error="invalid_token", resource_metadata="${origin}${OAUTH_PATHS.prMetadata}${OAUTH_PATHS.mcp}"`;
+        return `Bearer realm="imagina-base", error="invalid_token", resource_metadata="${origin}${OAUTH_PATHS.prMetadataApi}"`;
     }
 
     // ── Registro dinámico de clientes (RFC 7591) ──────────────────────────

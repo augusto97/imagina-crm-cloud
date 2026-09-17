@@ -76,12 +76,19 @@ Detalle del protocolo (para clientes propios):
 PKCE S256 es obligatorio siempre; el `code` dura 5 min y es de un solo uso;
 el refresh token rota en cada canje (el anterior deja de servir). `scope`
 acepta `read` y/o `full`; sin `scope` la pantalla propone `full` y la persona
-decide. Si el `resource` viene, tiene que ser exactamente el MCP de ese host.
+decide. Si el `resource` viene, su path tiene que ser `/api/v1/mcp` (el host puede ser el dominio propio de la empresa).
 
-**Servidores existentes**: la metadata vive en la raíz del host, así que el
-proxy tiene que mandar `/.well-known/oauth-*` al API — la regla está en
-`deploy/Caddyfile` y `deploy/nginx.conf`; la auto-actualización NO toca el
-proxy, hay que agregarla a mano una vez.
+**Descubrimiento en la raíz del host (v0.1.186)**: los clientes piden
+`/.well-known/oauth-authorization-server` en la RAÍZ. Funciona de dos formas:
+(a) el deploy escribe los documentos como **archivos estáticos** en
+`web/.well-known/` con el `APP_BASE_URL` del `.env` — el proxy sirve un archivo
+real antes del fallback del SPA, así que no hay que tocar nada en el servidor;
+(b) opcionalmente, la regla `/.well-known/oauth-*` → API de `deploy/Caddyfile`
+y `deploy/nginx.conf`, que responde por host (dominios propios de cada
+empresa). El `WWW-Authenticate` del MCP apunta siempre a
+`/api/v1/oauth/.well-known/oauth-protected-resource`, bajo el prefijo del API,
+que cualquier proxy ya enruta. La card de Ajustes muestra un autodiagnóstico:
+verde si Claude puede descubrir el servidor, y si no, qué falta.
 
 ### Con un token pegado a mano (Claude Code, Cursor y otros)
 

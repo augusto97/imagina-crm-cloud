@@ -56,7 +56,8 @@ describe('OAuth util (puro)', () => {
         expect(resourceMatches(MCP, undefined)).toBe(true);
         expect(resourceMatches(MCP, MCP)).toBe(true);
         expect(resourceMatches(MCP, `${MCP}/`)).toBe(true);
-        expect(resourceMatches(MCP, 'https://otro.local/api/v1/mcp')).toBe(false);
+        // Otro host con el MISMO path vale (v0.1.186: dominio propio + descubrimiento estático).
+        expect(resourceMatches(MCP, 'https://otro.local/api/v1/mcp')).toBe(true);
         expect(resourceMatches(MCP, `${ORIGIN}/api/v1/otro`)).toBe(false);
         expect(resourceMatches(MCP, 'basura')).toBe(false);
     });
@@ -134,7 +135,8 @@ describe('Servidor OAuth 2.1 del MCP (v0.1.184, Postgres + Redis reales)', () =>
         });
         const pr = oauth.protectedResourceMetadata(ORIGIN);
         expect(pr).toMatchObject({ resource: MCP, authorization_servers: [ORIGIN], scopes_supported: ['read', 'full'] });
-        expect(oauth.wwwAuthenticate(ORIGIN)).toContain(`resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/api/v1/mcp"`);
+        // v0.1.186: apunta BAJO /api/v1 (pasa por el proxy aunque nadie enrute la raíz).
+        expect(oauth.wwwAuthenticate(ORIGIN)).toContain(`resource_metadata="${ORIGIN}/api/v1/oauth/.well-known/oauth-protected-resource"`);
     });
 
     it('registro dinámico: público sin secreto, confidencial con secreto hasheado, redirect inválida rechazada', async () => {
@@ -170,7 +172,7 @@ describe('Servidor OAuth 2.1 del MCP (v0.1.184, Postgres + Redis reales)', () =>
         expect(new URL((noPkce as { to: string }).to).searchParams.get('error')).toBe('invalid_request');
         const plain = await oauth.startAuthorization(ORIGIN, { ...base, code_challenge_method: 'plain' });
         expect(new URL((plain as { to: string }).to).searchParams.get('error')).toBe('invalid_request');
-        const badResource = await oauth.startAuthorization(ORIGIN, { ...base, resource: 'https://otro.local/api/v1/mcp' });
+        const badResource = await oauth.startAuthorization(ORIGIN, { ...base, resource: 'https://otro.local/api/v1/otro' });
         expect(new URL((badResource as { to: string }).to).searchParams.get('error')).toBe('invalid_target');
         const badScope = await oauth.startAuthorization(ORIGIN, { ...base, scope: 'openid' });
         expect(new URL((badScope as { to: string }).to).searchParams.get('error')).toBe('invalid_scope');

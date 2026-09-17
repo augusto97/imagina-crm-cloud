@@ -95,6 +95,7 @@ async function bootstrap(): Promise<void> {
         exclude: [
             '.well-known/oauth-authorization-server',
             '.well-known/oauth-authorization-server/api/v1/mcp',
+            '.well-known/openid-configuration',
             '.well-known/oauth-protected-resource',
             '.well-known/oauth-protected-resource/api/v1/mcp',
         ],

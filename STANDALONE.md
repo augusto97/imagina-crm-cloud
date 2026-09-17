@@ -839,7 +839,19 @@ sin cookies → no expone la sesión) para clientes MCP que corren en el
 navegador. Un cliente desconocido o una redirect no registrada se responden
 en texto, NUNCA por redirect (open redirect). Los tokens pegados a mano
 (fase 3) siguen valiendo para Claude Code y Cursor.
+**v0.1.186 — descubrimiento sin tocar el proxy.** En producción la regla
+`/.well-known/oauth-*` no estaba y la raíz devolvía el SPA (HTML 200): el
+cliente MCP rompe ahí al parsear JSON y no prueba alternativas (verificado con
+el SDK). Fix en tres capas: (a) `deploy.sh` genera los documentos como
+**archivos estáticos** en `web/.well-known/` con `APP_BASE_URL`
+(`deploy/oauth-discovery-static.sh`) — `try_files` los sirve antes del
+fallback; (b) el `WWW-Authenticate` apunta a
+`/api/v1/oauth/.well-known/oauth-protected-resource` (bajo el prefijo del
+API, que todo proxy enruta) y el API sirve ahí también la metadata del
+servidor; (c) `resource` (RFC 8707) se valida por PATH y no por host, porque
+con el estático el issuer es el dominio de la plataforma aunque el MCP se use
+por un dominio propio. La card de Ajustes autodiagnostica el descubrimiento.
 
 ---
 
-**Versión del documento:** 1.15.3 (asistente IA: OAuth 2.1 para el MCP — ADR-S21 fase 4)
+**Versión del documento:** 1.15.4 (OAuth del MCP: descubrimiento estático sin tocar el proxy — ADR-S21 fase 4)

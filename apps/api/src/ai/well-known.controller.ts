@@ -17,7 +17,7 @@ import { requestOrigin } from './oauth.util';
 export class WellKnownController {
     constructor(private readonly oauth: OauthService) {}
 
-    @Get(['oauth-authorization-server', 'oauth-authorization-server/api/v1/mcp'])
+    @Get(['oauth-authorization-server', 'oauth-authorization-server/api/v1/mcp', 'openid-configuration'])
     authorizationServer(@Req() req: FastifyRequest, @Res() reply: FastifyReply): void {
         void reply.header('Cache-Control', 'public, max-age=300').send(this.oauth.authorizationServerMetadata(requestOrigin(req)));
     }
