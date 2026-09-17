@@ -21,6 +21,24 @@ export class OauthController {
         private readonly audit: AuditService,
     ) {}
 
+    /**
+     * v0.1.186 — Descubrimiento bajo el prefijo del API (`/api/v1/oauth/
+     * .well-known/…`): pasa por la regla `/api/*` de cualquier proxy. Es lo
+     * que anuncia el `WWW-Authenticate` del MCP; los clientes que además
+     * prueban la RAÍZ del host encuentran los archivos estáticos que genera
+     * el deploy (deploy/oauth-discovery-static.sh) o la ruta del API si el
+     * proxy enruta `/.well-known/oauth-*`.
+     */
+    @Get(['.well-known/oauth-authorization-server', '.well-known/openid-configuration'])
+    asMetadata(@Req() req: FastifyRequest, @Res() reply: FastifyReply): void {
+        void reply.header('Cache-Control', 'public, max-age=300').send(this.oauth.authorizationServerMetadata(requestOrigin(req)));
+    }
+
+    @Get('.well-known/oauth-protected-resource')
+    prMetadata(@Req() req: FastifyRequest, @Res() reply: FastifyReply): void {
+        void reply.header('Cache-Control', 'public, max-age=300').send(this.oauth.protectedResourceMetadata(requestOrigin(req)));
+    }
+
     /** RFC 7591 — registro dinámico. Abierto a propósito (así funcionan claude.ai y Cursor); rate-limit por IP. */
     @Post('register')
     @HttpCode(201)

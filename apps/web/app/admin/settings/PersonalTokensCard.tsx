@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreatedPersonalToken, PersonalTokenScope } from '@imagina-base/shared';
-import { Check, Copy, KeyRound, Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Copy, KeyRound, Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react';
 
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -98,6 +98,7 @@ export function PersonalTokensCard(): JSX.Element {
                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                     {__('También sirve con "claude mcp add --transport http imagina-base <URL>" sin cabecera (Claude Code abre el navegador para autorizar) y con Cursor.')}
                 </p>
+                <DiscoveryCheck />
             </div>
 
             {creating && (
@@ -228,6 +229,58 @@ export function PersonalTokensCard(): JSX.Element {
                 </ul>
             )}
         </section>
+    );
+}
+
+/**
+ * v0.1.186 — Autodiagnóstico del descubrimiento OAuth: lo que Claude consulta
+ * al tocar "Conectar" es `/.well-known/oauth-authorization-server` en la RAÍZ
+ * del host. Si el proxy no la enruta al API y el deploy no dejó el archivo
+ * estático, ahí sale el HTML de la app y Claude falla con "Failed to start
+ * MCP authorization". Se prueba desde el navegador (mismo origen) y se dice
+ * en criollo qué pasa.
+ */
+function DiscoveryCheck(): JSX.Element | null {
+    const [state, setState] = useState<'checking' | 'ok' | 'bad' | 'api-bad'>('checking');
+    useEffect(() => {
+        let cancelled = false;
+        const probe = async (url: string): Promise<boolean> => {
+            try {
+                const r = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' });
+                if (!r.ok) return false;
+                const j = (await r.json()) as { issuer?: unknown; resource?: unknown };
+                return typeof j.issuer === 'string' || typeof j.resource === 'string';
+            } catch {
+                return false;
+            }
+        };
+        void (async () => {
+            const base = api.mcpUrl().replace(/\/mcp$/, '');
+            const apiOk = await probe(`${base}/oauth/.well-known/oauth-protected-resource`);
+            const rootOk = apiOk && (await probe(`${window.location.origin}/.well-known/oauth-authorization-server`));
+            if (!cancelled) setState(!apiOk ? 'api-bad' : rootOk ? 'ok' : 'bad');
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+    if (state === 'checking') return null;
+    if (state === 'ok') {
+        return (
+            <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[11px] imcrm-text-success" data-testid="imcrm-oauth-discovery-ok">
+                <CheckCircle2 className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Descubrimiento OAuth verificado: Claude puede conectarse a este servidor.')}
+            </p>
+        );
+    }
+    return (
+        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-warning/10 imcrm-p-2 imcrm-text-[11px] imcrm-text-foreground" data-testid="imcrm-oauth-discovery-bad">
+            <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+            <span>
+                {state === 'api-bad'
+                    ? __('El API de este servidor todavía no responde el descubrimiento OAuth: hace falta actualizar la app a la versión 0.1.184 o superior (Plataforma → Actualizaciones).')
+                    : __('La dirección /.well-known/oauth-authorization-server de este servidor devuelve la app en vez del JSON de descubrimiento, así que Claude no puede iniciar la autorización. Se corrige solo al instalar la próxima actualización (0.1.186 o superior) o agregando la regla de proxy "/.well-known/oauth-*" → API (ver deploy/Caddyfile o deploy/nginx.conf).')}
+            </span>
+        </p>
     );
 }
 

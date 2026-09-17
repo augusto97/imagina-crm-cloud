@@ -80,13 +80,20 @@ export function parseRequestedScope(scope: string | undefined): PersonalTokenSco
     return known.includes('full') ? 'full' : 'read';
 }
 
-/** El `resource` (RFC 8707) tiene que ser NUESTRO recurso MCP (sin barra final, sin fragmento). */
+/**
+ * El `resource` (RFC 8707) tiene que ser NUESTRO recurso MCP: mismo path
+ * (`/api/v1/mcp`, sin barra final ni fragmento) y esquema http(s). El HOST
+ * puede diferir del de la request a propósito (v0.1.186): con el
+ * descubrimiento estático, una empresa que entra por su dominio propio
+ * (ADR-S17) autoriza en el dominio de la plataforma y usa el MCP en el suyo —
+ * el token es de la app, no del host.
+ */
 export function resourceMatches(mcpUrl: string, resource: string | undefined): boolean {
     if (resource === undefined) return true;
     try {
         const r = new URL(resource);
         const m = new URL(mcpUrl);
-        return r.origin === m.origin && r.pathname.replace(/\/+$/, '') === m.pathname.replace(/\/+$/, '') && r.hash === '';
+        return (r.protocol === 'https:' || r.protocol === 'http:') && r.pathname.replace(/\/+$/, '') === m.pathname.replace(/\/+$/, '') && r.hash === '';
     } catch {
         return false;
     }

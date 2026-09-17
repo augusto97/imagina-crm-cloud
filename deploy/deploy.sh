@@ -58,6 +58,14 @@ load_env_file() {
 load_env_file "${SHARED}/.env.production"
 ( cd "${RELEASE_DIR}/apps/api" && node dist/db/migrate.js )
 
+echo "→ descubrimiento OAuth del MCP (archivos estáticos en web/.well-known)"
+# v0.1.186 — claude.ai / Claude Desktop piden /.well-known/oauth-* en la RAÍZ
+# del host; sin regla de proxy caían al SPA (HTML 200 → "Failed to start MCP
+# authorization"). Los archivos reales se sirven antes del fallback. Best-
+# effort: si APP_BASE_URL no está, se avisa y el deploy sigue.
+WEB_DIR="${RELEASE_DIR}/web" APP_BASE_URL="${APP_BASE_URL:-}" \
+    bash "$(dirname "$0")/oauth-discovery-static.sh" || echo "  (aviso: no se pudieron generar los archivos de descubrimiento OAuth)"
+
 echo "→ FLIP atómico: current → ${RELEASE_DIR}"
 ln -sfn "${RELEASE_DIR}" "${CURRENT}"
 

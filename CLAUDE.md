@@ -3707,6 +3707,42 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         integración (approve 403, create 403, fila colada no resuelve) —
         523 API en verde; `docs/mcp.md` aclara quién puede conectar.
 
+  - [x] **Descubrimiento OAuth sin tocar el proxy (v0.1.186, reporte del
+        usuario con captura: "Failed to start MCP authorization" en la app
+        de Claude, y `/.well-known/oauth-authorization-server` lo mandaba al
+        login)**: el proxy de producción sirve `/api/*` al API y TODO lo
+        demás al SPA con fallback a `index.html`, así que la metadata OAuth
+        en la raíz del host devolvía un 200 con HTML. Leyendo el SDK del
+        cliente MCP: ante un 200 intenta `response.json()`, revienta y NO
+        prueba las URLs alternativas (sólo sigue con 4xx) — o sea, sin regla
+        de proxy no había forma de que Claude descubriera el servidor, y el
+        usuario pidió con razón que se corrigiera desde un release, no a
+        mano. Tres capas: (a) **archivos estáticos** — `deploy.sh` (que la
+        auto-actualización SÍ ejecuta) corre `deploy/oauth-discovery-static.sh`
+        y deja `web/.well-known/oauth-authorization-server`,
+        `openid-configuration` y `oauth-protected-resource/api/v1/mcp` (forma
+        path-aware, por eso ése es directorio) con el `APP_BASE_URL` del
+        `.env` — `try_files` sirve un archivo real antes del fallback; sin
+        `APP_BASE_URL` válido avisa y el deploy sigue. (b) El
+        `WWW-Authenticate` del MCP apunta a
+        `/api/v1/oauth/.well-known/oauth-protected-resource` (bajo el prefijo
+        del API, que cualquier proxy enruta) y el API sirve también ahí
+        `oauth-authorization-server` y `openid-configuration`; la raíz gana
+        `openid-configuration`. (c) `resource` (RFC 8707) se valida por PATH
+        (`/api/v1/mcp`) y no por host: con el estático el issuer es el
+        dominio de la plataforma aunque una empresa use el MCP por su dominio
+        propio. La card de Ajustes gana un **autodiagnóstico** (prueba desde
+        el navegador `/api/v1/oauth/.well-known/…` y la raíz: verde si Claude
+        puede conectarse; si no, dice si falta actualizar o si el proxy sirve
+        la app en vez del JSON). Runbooks y `docs/mcp.md`: la regla de proxy
+        pasa a OPCIONAL (responde por host). 2 tests del generador (bash real
+        en tmp: los tres documentos con issuer sin barra final; sin
+        `APP_BASE_URL` no escribe nada) + expectativas actualizadas — 525 API
+        en verde; E2E navegador 29/29 y **simulación del proxy de producción
+        con el SDK MCP real** 6/6: sin estáticos falla igual que Claude, con
+        los archivos del deploy descubre PRM + servidor, el 401 lleva a /api,
+        y con la regla de proxy responde por host.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

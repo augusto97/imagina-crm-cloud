@@ -108,9 +108,9 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
    `deploy/nginx.conf` (API, `/.well-known/oauth-` —descubrimiento OAuth del
    MCP, v0.1.184—, socket.io, /assets, /portal, /). ServerAvatar ya pone el
    `server{}`, `listen 443 ssl` y `server_name`; vos sólo agregás los
-   `location`. Guardá → recarga Nginx. (Si el server ya existía, agregá el
-   `location ^~ /.well-known/oauth-` nuevo: la auto-actualización no toca la
-   config de Nginx.)
+   `location`. Guardá → recarga Nginx. (El `location ^~ /.well-known/oauth-`
+   es opcional desde v0.1.186: el deploy deja esos documentos como archivos
+   estáticos en `web/.well-known/`, que Nginx sirve antes del fallback.)
 
 Abrí `https://app.tu-dominio.com` → login. Registrá el primer usuario (crea el
 workspace y su admin). Si su email está en `PLATFORM_SUPERADMINS`, ve **Ajustes →
