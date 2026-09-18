@@ -13,7 +13,7 @@ import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
 import type { RowDensity, RowFontSize } from '../recordsState';
 import { useWrapText, WrapTextContext } from '../wrapText';
-import { __, sprintf } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -408,10 +408,16 @@ export function GroupedTableView({
             {/* v0.1.125 — el resumen va al FINAL: arriba le comía altura a la
                 tabla sin aportar nada al escanear los grupos. */}
             <div className="imcrm-pt-1 imcrm-text-xs imcrm-text-muted-foreground">
+                {/* v0.1.189 — plural de verdad ("1 grupo · 1 registro"). */}
                 {sprintf(
-                    /* translators: %1$d total groups, %2$d total records */
-                    __('%1$d grupos · %2$d registros'),
+                    /* translators: %d total groups */
+                    _n('%d grupo', '%d grupos', bundle.data?.meta.total_groups ?? 0),
                     bundle.data?.meta.total_groups ?? 0,
+                )}
+                {' · '}
+                {sprintf(
+                    /* translators: %d total records */
+                    _n('%d registro', '%d registros', bundle.data?.meta.total_records ?? 0),
                     bundle.data?.meta.total_records ?? 0,
                 )}
             </div>
@@ -672,8 +678,11 @@ function GroupBucketSection({
     const useOptionChip = groupByField.type === 'select' || groupByField.type === 'multi_select';
     const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
 
+    // v0.1.189 — con cero filas `every` da true y la casilla del grupo
+    // aparecía MARCADA en un grupo vacío.
     const allRecordsSelected =
-        records.data?.data.every((r) => selectedIds.includes(r.id)) ?? false;
+        (records.data?.data.length ?? 0) > 0
+        && (records.data?.data.every((r) => selectedIds.includes(r.id)) ?? false);
     const selectedSet = new Set(selectedIds);
 
     const toggleAllInGroup = (): void => {

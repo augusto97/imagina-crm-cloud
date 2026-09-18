@@ -117,6 +117,40 @@ describe('AggregateService (Postgres real)', () => {
         ]);
     });
 
+    it('group_by multi_select: por combinación (default) o por OPCIÓN (v0.1.189, vista agrupada)', async () => {
+        const tags = await fieldsService.create(tenantId, 'ventas', {
+            label: 'Etiquetas',
+            type: 'multi_select',
+            slug: 'etiquetas',
+            config: { options: [{ value: 'vip', label: 'VIP' }, { value: 'promo', label: 'Promo' }] },
+        });
+        const key = `f${tags.id}`;
+        const listId = f.monto!.list_id;
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(records).values([
+                { tenantId, listId, createdBy: 1, data: { [key]: ['vip', 'promo'] } },
+                { tenantId, listId, createdBy: 1, data: { [key]: ['vip'] } },
+                { tenantId, listId, createdBy: 1, data: { [key]: [] } },
+            ]),
+        );
+        // Default (dashboards): un bucket por combinación, JSON crudo del set.
+        const combo = await service.run(tenantId, 'ventas', { metric: 'count', group_by_field_id: tags.id });
+        expect(combo.groups?.find((g) => g.group === '["vip", "promo"]')?.value).toBe(1);
+        // 'each' (vista agrupada): un bucket por opción, el registro cuenta en
+        // cada una; los que no tienen ninguna (array vacío o sin clave) → null.
+        const each = await service.run(
+            tenantId,
+            'ventas',
+            { metric: 'count', group_by_field_id: tags.id },
+            { multiSelect: 'each' },
+        );
+        expect(each.groups).toEqual([
+            { group: 'promo', value: 1 },
+            { group: 'vip', value: 2 },
+            { group: null, value: 4 }, // [] + los 3 del seed sin la clave
+        ]);
+    });
+
     it('respeta el filter_tree', async () => {
         const res = await service.run(tenantId, 'ventas', {
             metric: 'sum',

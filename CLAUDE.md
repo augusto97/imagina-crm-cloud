@@ -3809,6 +3809,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         encuentra por cuerpo/columna/título, agrupada 1 grupo · 1 registro,
         lista sin descripciones filtra en el navegador con cero requests).
 
+  - [x] **Agrupar por multi_select: un grupo por OPCIÓN, con sus filas,
+        etiqueta y color (v0.1.189, reporte del usuario con captura: grupos
+        `["astra_pro", "starter_templates"]` sin color, con contador pero
+        sin registros, y la casilla del grupo marcada)**: tres bugs de una
+        misma causa. El motor de agregados agrupaba un multi_select por el
+        JSON crudo del set (`data->>'fN'`), así que cada COMBINACIÓN era un
+        bucket; el front, en cambio, ya estaba escrito para un valor por
+        grupo (`formatBucketLabel` busca UNA opción, `filterOpForBucket` usa
+        `contains`) — y el propio bundle pedía las filas del grupo con `eq`
+        contra ese JSON, que en multi_select compila a `@>` con el set
+        entero como elemento: cero filas. La casilla marcada era `every`
+        sobre cero filas. Ahora: (a) `AggregateService.run` gana la opción
+        `multiSelect: 'each'` — desanida el array con `LEFT JOIN LATERAL
+        jsonb_array_elements_text` (SQL crudo dentro del tx del tenant): un
+        bucket por opción, el registro cuenta en cada una de las suyas (como
+        las etiquetas de ClickUp) y los sin opciones caen al bucket null;
+        los dashboards conservan el bucket por combinación a propósito
+        (v0.1.103/v0.1.178 —click-through con `gvs`, etiquetas compuestas—
+        lo dan por hecho). (b) `RecordsGroupedService` la usa para los
+        buckets, filtra cada grupo con `contains` y el resumen "N grupos ·
+        M registros" cuenta registros DISTINTOS (la suma de los grupos
+        repetiría los que tienen varias opciones). (c) La casilla del grupo
+        sólo se marca con filas, y el resumen pluraliza de verdad ("1 grupo
+        · 1 registro", antes "1 grupos · 1 registros"). Con el valor por
+        opción, el chip del grupo toma solo la etiqueta y el color reales.
+        2 tests de integración (aggregate: combo vs each con null; bundle:
+        buckets, el mismo registro en dos grupos, null, total distinto —
+        531 API, 132 front en verde) + E2E navegador 11/11
+        (etiquetas sin JSON, contadores por opción, "(Sin valor)", resumen
+        4 · 4, Cliente A en dos grupos, chip con el color de la opción,
+        casillas sin marcar, búsqueda en agrupada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
