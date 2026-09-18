@@ -125,9 +125,13 @@ const CLOUD_RECORDS_MAX_LIMIT = 200; // espejo de MAX_RECORDS_LIMIT del backend.
 
 /**
  * Traduce la query de listado de records de la UI (por página: `per_page`/`page`)
- * a la del backend (por cursor: `limit`, máx 200). Deja pasar el resto de la
- * query (filter_tree, sort, search…). `page` se descarta: la paginación es por
- * cursor keyset, no por offset.
+ * a la del backend (`limit`, máx 200, + `page`). Deja pasar el resto de la
+ * query (filter_tree, sort, search…).
+ *
+ * v0.1.187 — `page` VIAJA: el backend pagina por offset y devuelve el total
+ * real. Antes se descartaba ("la paginación cursor completa llega en una
+ * etapa posterior", que nunca llegó): la tabla mostraba sólo la primera
+ * tanda de 200 y decía "200 registros" con 2.500 importados.
  */
 export function cloudRecordsQuery(query?: Record<string, unknown>): Record<string, unknown> | undefined {
     if (!query) return query;
@@ -137,8 +141,36 @@ export function cloudRecordsQuery(query?: Record<string, unknown>): Record<strin
     if (Number.isFinite(desired) && desired > 0) {
         out.limit = Math.min(desired, CLOUD_RECORDS_MAX_LIMIT);
     }
-    void page;
+    const pageNum = Number(page ?? 0);
+    if (Number.isInteger(pageNum) && pageNum > 0) out.page = pageNum;
     return out;
+}
+
+/**
+ * Meta de paginación para la UI a partir de la respuesta del backend. Con
+ * `page` el backend manda el total real; sin él (subtareas, pickers) se sirve
+ * la tanda tal cual como una sola página.
+ */
+export function cloudRecordsMeta(
+    backendMeta: Record<string, unknown> | undefined,
+    rowCount: number,
+): { page: number; per_page: number; total: number; total_pages: number; next_cursor: unknown } {
+    const total = typeof backendMeta?.total === 'number' ? backendMeta.total : null;
+    if (total !== null) {
+        const perPage = typeof backendMeta?.per_page === 'number' && backendMeta.per_page > 0
+            ? backendMeta.per_page
+            : Math.max(1, rowCount);
+        return {
+            page: typeof backendMeta?.page === 'number' ? backendMeta.page : 1,
+            per_page: perPage,
+            total,
+            total_pages: typeof backendMeta?.total_pages === 'number'
+                ? backendMeta.total_pages
+                : Math.max(1, Math.ceil(total / perPage)),
+            next_cursor: backendMeta?.next_cursor ?? null,
+        };
+    }
+    return { page: 1, per_page: rowCount, total: rowCount, total_pages: 1, next_cursor: backendMeta?.next_cursor ?? null };
 }
 
 /**
@@ -272,19 +304,9 @@ async function normalizeCloudResponse<T>(
         }
         const env = (payload ?? {}) as { data?: unknown; meta?: Record<string, unknown> };
         const rows = Array.isArray(env.data) ? env.data.map((r) => mapRecord(r, map)) : [];
-        // La UI pagina por páginas; el backend por cursor keyset. En esta etapa
-        // servimos la tanda tal cual con total_pages=1 (sin waterfalls); la
-        // paginación cursor completa llega en una etapa posterior.
-        return {
-            data: rows as T,
-            meta: {
-                page: 1,
-                per_page: rows.length,
-                total: rows.length,
-                total_pages: 1,
-                next_cursor: env.meta?.next_cursor ?? null,
-            },
-        };
+        // v0.1.187 — con `page` el backend devuelve el total real y la UI
+        // pagina de verdad; sin `page` la tanda se sirve como una sola página.
+        return { data: rows as T, meta: cloudRecordsMeta(env.meta, rows.length) };
     }
 
     // Widget data de dashboards: el payload ES la WidgetData y puede tener un

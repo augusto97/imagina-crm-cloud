@@ -968,6 +968,22 @@ const applyView = (view: SavedViewEntity | null): void => {
                     {meta && !isAlternativeView && !isTableGrouped && (
                         <Pagination meta={meta} onPageChange={setPage} />
                     )}
+                    {/* v0.1.187 — kanban/tarjetas/calendario traen UNA tanda
+                        (máx 200): si la lista es más grande, decirlo en vez
+                        de dejar que parezca que faltan registros. */}
+                    {meta && isAlternativeView && meta.total > (records.data?.data.length ?? 0) && (
+                        <p
+                            className="imcrm-text-xs imcrm-text-muted-foreground"
+                            data-testid="imcrm-view-partial-notice"
+                        >
+                            {sprintf(
+                                /* translators: 1: records shown, 2: total records */
+                                __('Mostrando %1$d de %2$d registros — usá filtros para acotar la vista.'),
+                                records.data?.data.length ?? 0,
+                                meta.total,
+                            )}
+                        </p>
+                    )}
 
                     <BulkActionsToolbar
                         listId={list.data.id}

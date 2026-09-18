@@ -98,6 +98,16 @@ export const listRecordsQuerySchema = z.object({
      */
     parent: z.coerce.number().int().positive().optional(),
     include_subtasks: z.coerce.boolean().optional(),
+    /**
+     * Paginación por PÁGINA (v0.1.187): `page` (desde 1) reinterpreta el
+     * listado como OFFSET `(page-1)*limit` y la respuesta trae `meta.total`
+     * (+ `page`/`per_page`/`total_pages`) contado con el MISMO where. Es lo
+     * que necesita una tabla con "Página 3 de 11"; los clientes de API que
+     * recorren todo siguen usando el cursor keyset (más barato). `with_total`
+     * pide sólo el total sin cambiar la paginación.
+     */
+    page: z.coerce.number().int().positive().max(100_000).optional(),
+    with_total: z.coerce.boolean().optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 

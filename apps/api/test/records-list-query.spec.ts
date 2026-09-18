@@ -35,6 +35,20 @@ describe('parseListQuery (query del listado de records)', () => {
     });
 });
 
+describe('paginación por página (v0.1.187)', () => {
+    it('`page` y `with_total` llegan al service (el whitelist los copia)', () => {
+        const q = parseListQuery({ page: '3', limit: '200', with_total: '1' });
+        expect(q.page).toBe(3);
+        expect(q.limit).toBe(200);
+        expect(q.with_total).toBe(true);
+    });
+
+    it('page inválida → 400', () => {
+        expect(() => parseListQuery({ page: '0' })).toThrow();
+        expect(() => parseListQuery({ page: 'x' })).toThrow();
+    });
+});
+
 describe('subtareas en la query (v0.1.132)', () => {
     it('`parent` e `include_subtasks` llegan al service', () => {
         const q = parseListQuery({ parent: '42', include_subtasks: '1' });
