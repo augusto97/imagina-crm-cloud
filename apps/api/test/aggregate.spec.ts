@@ -117,7 +117,7 @@ describe('AggregateService (Postgres real)', () => {
         ]);
     });
 
-    it('group_by multi_select: por combinación (default) o por OPCIÓN (v0.1.189, vista agrupada)', async () => {
+    it('group_by multi_select: un bucket por COMBINACIÓN con clave normalizada (v0.1.190, como ClickUp)', async () => {
         const tags = await fieldsService.create(tenantId, 'ventas', {
             label: 'Etiquetas',
             type: 'multi_select',
@@ -129,24 +129,18 @@ describe('AggregateService (Postgres real)', () => {
         await withTenant(pg.db, tenantId, (tx) =>
             tx.insert(records).values([
                 { tenantId, listId, createdBy: 1, data: { [key]: ['vip', 'promo'] } },
+                // El MISMO conjunto en otro orden: mismo grupo.
+                { tenantId, listId, createdBy: 1, data: { [key]: ['promo', 'vip'] } },
                 { tenantId, listId, createdBy: 1, data: { [key]: ['vip'] } },
                 { tenantId, listId, createdBy: 1, data: { [key]: [] } },
             ]),
         );
-        // Default (dashboards): un bucket por combinación, JSON crudo del set.
         const combo = await service.run(tenantId, 'ventas', { metric: 'count', group_by_field_id: tags.id });
-        expect(combo.groups?.find((g) => g.group === '["vip", "promo"]')?.value).toBe(1);
-        // 'each' (vista agrupada): un bucket por opción, el registro cuenta en
-        // cada una; los que no tienen ninguna (array vacío o sin clave) → null.
-        const each = await service.run(
-            tenantId,
-            'ventas',
-            { metric: 'count', group_by_field_id: tags.id },
-            { multiSelect: 'each' },
-        );
-        expect(each.groups).toEqual([
-            { group: 'promo', value: 1 },
-            { group: 'vip', value: 2 },
+        // Cada registro cae en UN grupo (los grupos son disjuntos); la clave es
+        // el set ORDENADO; sin opciones (array vacío o sin clave) → null.
+        expect(combo.groups).toEqual([
+            { group: '["promo", "vip"]', value: 2 },
+            { group: '["vip"]', value: 1 },
             { group: null, value: 4 }, // [] + los 3 del seed sin la clave
         ]);
     });

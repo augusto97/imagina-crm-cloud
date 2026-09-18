@@ -29,6 +29,7 @@ import { useList } from '@/hooks/useLists';
 import { useRecord, useRecords } from '@/hooks/useRecords';
 import { useSavedViews } from '@/hooks/useSavedViews';
 import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
+import { parseMultiBucket } from '@/lib/multiBucket';
 import { __, sprintf } from '@/lib/i18n';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { CAP, useCan } from '@/lib/permissions';
@@ -1061,7 +1062,9 @@ function prefillForGroup(
     if (bucketValue === null) return undefined;
     switch (field.type) {
         case 'multi_select':
-            return { [field.slug]: [bucketValue] };
+            // v0.1.190 — el grupo es la COMBINACIÓN de opciones (JSON del
+            // set normalizado): el alta dentro del grupo nace con todas.
+            return { [field.slug]: parseMultiBucket(bucketValue) ?? [bucketValue] };
         case 'checkbox':
             return { [field.slug]: bucketValue === '1' || bucketValue === 'true' };
         case 'number':

@@ -157,10 +157,11 @@ describe('Descripción del registro (v0.1.133)', () => {
         expect(bundle.expanded.b?.records.data).toEqual([]);
     });
 
-    it('vista agrupada por multi_select (v0.1.189): un grupo por opción CON sus filas', async () => {
-        // Regresión del reporte: los grupos salían como JSON crudo del set
-        // (`["a","b"]`), sin color, y con contador pero SIN filas — el
-        // filtro `eq` del grupo comparaba contra el JSON y no matcheaba.
+    it('vista agrupada por multi_select (v0.1.190): un grupo por COMBINACIÓN con sus filas, sin duplicar', async () => {
+        // Regresión del reporte: los grupos venían con contador pero SIN
+        // filas (el `eq` del grupo comparaba la cadena JSON contra los
+        // elementos). Y la v0.1.189 (un grupo por opción) duplicaba registros
+        // — el usuario mostró que ClickUp agrupa por la combinación exacta.
         const tags = await fields_.create(tenantId, 'tareas', {
             label: 'Etiquetas',
             type: 'multi_select',
@@ -169,12 +170,13 @@ describe('Descripción del registro (v0.1.133)', () => {
         });
         const k = `f${tags.id}`;
         const ambos = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ambos', [k]: ['vip', 'promo'] } });
+        const ambosAlReves = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ambos 2', [k]: ['promo', 'vip'] } });
         const soloVip = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Solo VIP', [k]: ['vip'] } });
         const ninguna = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ninguna' } });
         const grouped = new RecordsGroupedService(recs, new AggregateService(new TenantDb(pg.db), lists_, fields_), lists_, fields_);
         const bundle = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
             groupBy: tags.id,
-            expanded: ['vip', 'promo', '__null__'],
+            expanded: ['["promo", "vip"]', '["vip"]', '__null__'],
             perPage: 50,
             aggregateFieldIds: [],
         })) as {
@@ -182,17 +184,18 @@ describe('Descripción del registro (v0.1.133)', () => {
             meta: { total_groups: number; total_records: number };
             expanded: Record<string, { records: { data: Array<{ id: number }>; meta: { total: number } } }>;
         };
+        // Un grupo por combinación EXACTA, clave normalizada (set ordenado).
         expect(bundle.buckets).toEqual([
-            { value: 'promo', count: 1 },
-            { value: 'vip', count: 2 },
+            { value: '["promo", "vip"]', count: 2 },
+            { value: '["vip"]', count: 1 },
             { value: null, count: 1 },
         ]);
-        // Un registro con dos opciones aparece en los DOS grupos.
-        expect(bundle.expanded.vip?.records.data.map((r) => r.id).sort()).toEqual([ambos.id, soloVip.id].sort());
-        expect(bundle.expanded.promo?.records.data.map((r) => r.id)).toEqual([ambos.id]);
+        // Las filas del grupo son las que tienen exactamente ese conjunto —
+        // "Solo VIP" NO aparece en el grupo de dos opciones y nadie se repite.
+        expect(bundle.expanded['["promo", "vip"]']?.records.data.map((r) => r.id).sort()).toEqual([ambos.id, ambosAlReves.id].sort());
+        expect(bundle.expanded['["vip"]']?.records.data.map((r) => r.id)).toEqual([soloVip.id]);
         expect(bundle.expanded.__null__?.records.data.map((r) => r.id)).toEqual([ninguna.id]);
-        // El resumen cuenta registros DISTINTOS, no la suma de los grupos.
-        expect(bundle.meta.total_records).toBe(3);
+        expect(bundle.meta.total_records).toBe(4);
         expect(bundle.meta.total_groups).toBe(3);
     });
 

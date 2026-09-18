@@ -315,10 +315,18 @@ function compileMultiSelect(
             return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;
         case 'is_not_null':
             return sql`(${arr} IS NOT NULL AND ${arr} <> '[]'::jsonb)`;
+        // v0.1.190 — `eq`/`neq` con un ARRAY comparan el CONJUNTO exacto
+        // (sin importar el orden ni duplicados): es lo que necesita la vista
+        // agrupada, cuyo grupo es la combinación de opciones, como en
+        // ClickUp. Con un valor escalar siguen siendo "contiene".
         case 'eq':
+            if (Array.isArray(value)) return exactSet(arr, toArray(value).map(str));
+            return sql`${arr} @> to_jsonb(${str(value)}::text)`;
         case 'contains':
             return sql`${arr} @> to_jsonb(${str(value)}::text)`;
         case 'neq':
+            if (Array.isArray(value)) return sql`(${arr} IS NULL OR NOT ${exactSet(arr, toArray(value).map(str))})`;
+            return sql`(${arr} IS NULL OR NOT (${arr} @> to_jsonb(${str(value)}::text)))`;
         case 'not_contains':
             return sql`(${arr} IS NULL OR NOT (${arr} @> to_jsonb(${str(value)}::text)))`;
         case 'in': {
@@ -335,6 +343,13 @@ function compileMultiSelect(
             // starts_with/ends_with/gt/… no aplican a multi_select → se descartan.
             return undefined;
     }
+}
+
+/** Igualdad de conjuntos: `arr ⊇ set AND arr ⊆ set`; el set vacío = sin opciones. */
+function exactSet(arr: SQL, values: string[]): SQL {
+    if (values.length === 0) return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;
+    const set = sql`to_jsonb(${textArray(values)})`;
+    return sql`(${arr} @> ${set} AND ${arr} <@ ${set})`;
 }
 
 /**
