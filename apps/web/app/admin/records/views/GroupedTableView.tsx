@@ -35,6 +35,7 @@ import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
+import { usePinToTop } from './usePinToTop';
 
 interface GroupedTableViewProps {
     listId: number;
@@ -714,8 +715,24 @@ function GroupBucketSection({
     const total = records.data?.meta.total ?? 0;
     const hasMore = isOpen && total > page * perPage;
 
+    // v0.1.192 — el encabezado del grupo y la cabecera de columnas quedan
+    // FIJOS mientras se recorre ESE grupo y los reemplaza el del siguiente
+    // (como ClickUp). El recorrido del encabezado lo limita la sección; el
+    // de la cabecera, su tabla, que se pega DEBAJO del encabezado.
+    const sectionRef = useRef<HTMLElement>(null);
+    const headerRef = useRef<HTMLButtonElement>(null);
+    const tableRef = useRef<HTMLTableElement>(null);
+    const theadRef = useRef<HTMLTableSectionElement>(null);
+    const headerPinned = usePinToTop(headerRef, { boundsRef: sectionRef });
+    const theadPinned = usePinToTop(theadRef, {
+        boundsRef: tableRef,
+        extraTop: () => headerRef.current?.offsetHeight ?? 0,
+        enabled: isOpen && !records.isLoading && !records.isError,
+    });
+
     return (
         <section
+            ref={sectionRef}
             // Grupo PLANO (estilo ClickUp): sin card (border/rounded/
             // shadow/bg-card) alrededor — header del grupo (chip +
             // contador) directo sobre el canvas, filas debajo separadas
@@ -725,10 +742,18 @@ function GroupBucketSection({
             aria-expanded={isOpen}
         >
             <button
+                ref={headerRef}
                 type="button"
                 onClick={onToggle}
-                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40"
+                data-testid="imcrm-group-header"
+                className={cn(
+                    'imcrm-relative imcrm-z-30 imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40',
+                    headerPinned && 'imcrm-rounded-none imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
+                )}
             >
+              {/* El contenido va pegado a la IZQUIERDA del viewport al
+                  scrollear en horizontal (el botón mide lo que la tabla). */}
+              <span className="imcrm-sticky imcrm-left-0 imcrm-flex imcrm-items-center imcrm-gap-3">
                 {isOpen ? (
                     <ChevronDown className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                 ) : (
@@ -763,6 +788,7 @@ function GroupBucketSection({
                               bucket.count,
                           )}
                 </span>
+              </span>
             </button>
 
             {isOpen && (
@@ -781,6 +807,7 @@ function GroupBucketSection({
                         </p>
                     ) : (
                         <table
+                            ref={tableRef}
                             className={cn(
                                 'imcrm-records-table imcrm-w-full imcrm-text-sm',
                                 wrapText && 'imcrm-wrap-cells',
@@ -806,7 +833,13 @@ function GroupBucketSection({
                                 ))}
                                 {onAddColumn && <col />}
                             </colgroup>
-                            <thead>
+                            <thead
+                                ref={theadRef}
+                                className={cn(
+                                    'imcrm-relative imcrm-z-20 imcrm-bg-background',
+                                    theadPinned && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.08)]',
+                                )}
+                            >
                                 <tr className="imcrm-group/head">
                                     <th
                                         scope="col"

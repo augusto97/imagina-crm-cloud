@@ -3910,6 +3910,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         estrellas ≥ 3, archivos tiene/sin, edición masiva con picker y
         persistida).
 
+  - [x] **Fecha del picker en el formato de la empresa + cabeceras fijas al
+        scrollear (v0.1.192, dos reportes del usuario con capturas)**:
+        (a) **El picker de fecha hablaba otro idioma que la tabla**: la celda
+        decía `30/07/2026` (formato regional dmy, v0.1.104) y el cuadro
+        "escribir fecha" del picker `2026-07-30`, con el calendario en
+        "September 2026 / su mo tu" — y encima abría en el mes de HOY, no en
+        el de la fecha del registro (la captura del usuario: 30/07 en la celda
+        y septiembre en el calendario). Ahora el cuadro muestra y LEE la fecha
+        en el formato de la empresa (`manualDate.ts`, puro y con tests:
+        `formatManualDate` / `parseManualDate(text, format)` — con `mdy`,
+        `07/30/2026` es el 30 de julio y `30/07/2026` es inválida en vez de
+        adivinar; el ISO se acepta siempre; placeholder `DD/MM/AAAA` /
+        `MM/DD/AAAA` / `AAAA-MM-DD`), el calendario va en español
+        (`locale={es}` de react-day-picker, semana desde el lunes como la
+        vista Calendario) y abre en el mes de la fecha elegida
+        (`defaultMonth`); los atajos ("Hoy vie", "26 sept") también fuerzan
+        `es` en vez del locale del navegador.
+        (b) **Cabeceras fijas, como ClickUp**: al scrollear la lista se
+        quedan arriba las tres filas de cabecera de la página (breadcrumb,
+        pestañas de vistas y toolbar — `position: sticky` con `-top-2` para
+        pegarse al borde del área de trabajo, no 8px abajo por el padding del
+        `<main>`, y una línea inferior sólo mientras está pegada, por un
+        centinela con IntersectionObserver), la **cabecera de columnas** de
+        la tabla y, en la agrupada, el **encabezado del grupo** que se está
+        recorriendo con su cabecera de columnas debajo — y al terminar el
+        grupo se va con su sección y lo reemplaza el del siguiente. El
+        `<thead sticky>` que había desde F1 nunca funcionó: `position:
+        sticky` se pega al scroll container MÁS CERCANO, y el wrapper
+        `overflow-x-auto` de la tabla lo es aunque sólo scrollee en
+        horizontal (el vertical es el del `<main>`, v0.1.70) — se pegaba a
+        un contenedor que no scrollea en vertical, o sea, a nada. Partir la
+        tabla (thead afuera) rompía la alineación de columnas y hacer que
+        el main scrollee en horizontal se llevaba el chrome de la página;
+        el hook `usePinToTop` DESPLAZA el elemento con `transform:
+        translateY` contra el scroll del main lo justo para quedar bajo la
+        cabecera fija (`[data-imcrm-sticky-top]`) mientras su caja (la
+        tabla / la sección del grupo) siga en pantalla, con lecturas de
+        layout primero y una sola escritura de transform por frame (es
+        propiedad compuesta: no invalida el layout). La primera columna
+        sigue sticky-left dentro del wrapper y el contenido del encabezado
+        del grupo va `sticky left-0` para no irse al scrollear en
+        horizontal. Sigue habiendo UN solo scroll vertical (el del main).
+        4 tests unitarios (146 front en verde) + E2E navegador 24/24
+        (cuadro `30/07/2026` con dmy y `07/30/2026` con mdy, guardado
+        correcto en ambos, "julio 2026 / lu ma mi", scroll 900 → cabecera
+        pegada al borde del main y thead pegado justo debajo con
+        `data-pinned` y tapando las filas; agrupada: encabezado del grupo 1
+        y su thead pegados, al pasar al grupo 2 se pega el suyo y el 1 se
+        va con su sección sin superponerse; el único scroller del área de
+        trabajo sigue siendo el main).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

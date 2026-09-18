@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DayPicker } from 'react-day-picker';
+import { es } from 'react-day-picker/locale';
 import 'react-day-picker/style.css';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 
@@ -21,7 +22,10 @@ import {
 } from '@/hooks/useRecurrences';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
+import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
+
+import { formatManualDate, manualDatePlaceholder, parseManualDate } from './manualDate';
 import type { FieldEntity } from '@/types/field';
 import type {
     Recurrence,
@@ -132,16 +136,21 @@ export function DateCellEditor({
     };
 
     // ── Entrada manual (estilo ClickUp): tipear la fecha y Enter ──
-    // Acepta AAAA-MM-DD, DD/MM/AAAA y DD/MM/AA (también con "-" o ".").
+    // v0.1.192 — se muestra y se lee en el formato REGIONAL de la empresa
+    // (el mismo que la tabla: `30/07/2026` con dmy); el ISO se acepta
+    // siempre. Antes el cuadro decía `2026-07-30` con la celda en
+    // `30/07/2026` y no se entendía cuál era el orden.
+    const dateFormat = getTenantFormat().date_format;
+    const manualFor = (d: Date | undefined): string => (d ? formatManualDate(d, dateFormat) : '');
     const [manual, setManual] = useState('');
     const [manualError, setManualError] = useState(false);
     useEffect(() => {
-        setManual(pickedDate ? toIsoDay(pickedDate) : '');
+        setManual(manualFor(pickedDate));
         setManualError(false);
-    }, [pickedDate?.getTime()]);
+    }, [pickedDate?.getTime(), dateFormat]);
 
     const commitManual = (): void => {
-        const parsed = parseManualDate(manual);
+        const parsed = parseManualDate(manual, dateFormat);
         if (parsed === undefined) {
             setManualError(manual.trim() !== '');
             if (manual.trim() === '') clear();
@@ -185,11 +194,12 @@ export function DateCellEditor({
                                 }
                             }}
                             onBlur={() => {
-                                if (manual.trim() !== '' && manual !== (pickedDate ? toIsoDay(pickedDate) : '')) {
+                                if (manual.trim() !== '' && manual !== manualFor(pickedDate)) {
                                     commitManual();
                                 }
                             }}
-                            placeholder={__('AAAA-MM-DD o DD/MM/AAAA')}
+                            placeholder={manualDatePlaceholder(dateFormat)}
+                            data-testid="imcrm-date-manual-input"
                             aria-label={__('Escribir fecha')}
                             className={cn(
                                 'imcrm-h-8 imcrm-text-sm',
@@ -200,6 +210,17 @@ export function DateCellEditor({
                             mode="single"
                             selected={pickedDate}
                             onSelect={handleSelect}
+                            // v0.1.192 — meses y días en español y la semana
+                            // arranca en lunes (como la vista Calendario,
+                            // v0.1.125). Antes salía "September 2026 / su mo
+                            // tu" del locale por defecto, en inglés.
+                            locale={es}
+                            weekStartsOn={1}
+                            // El calendario abre en el MES de la fecha del
+                            // registro (antes: el mes de hoy — con 30/07 en la
+                            // celda se veía "September 2026", justo la captura
+                            // del usuario).
+                            defaultMonth={pickedDate ?? new Date()}
                             modifiers={{
                                 recurrence: existingRecurrence
                                     ? computeUpcomingOccurrences(
@@ -388,12 +409,13 @@ function nextMonday(): Date {
     return nextWeekday(1, 0); // lunes desde hoy
 }
 
+// Siempre en español (la app lo es), no en el locale del navegador.
 function weekdayShort(d: Date): string {
-    return d.toLocaleDateString(undefined, { weekday: 'short' });
+    return d.toLocaleDateString('es', { weekday: 'short' });
 }
 
 function dayShort(d: Date): string {
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return d.toLocaleDateString('es', { day: 'numeric', month: 'short' });
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -771,34 +793,7 @@ interface ParsedDateValue {
     time: string;
 }
 
-/** Date → `YYYY-MM-DD` (componentes locales, sin timezone). */
-function toIsoDay(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/**
- * Parsea la fecha tipeada a mano: `AAAA-MM-DD`, `DD/MM/AAAA` o `DD/MM/AA`
- * (separadores `/`, `-` o `.`). Devuelve undefined si no es una fecha real.
- */
-function parseManualDate(text: string): Date | undefined {
-    const t = text.trim();
-    if (t === '') return undefined;
-    let y: number, m: number, d: number;
-    let match = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(t);
-    if (match) {
-        y = Number(match[1]); m = Number(match[2]); d = Number(match[3]);
-    } else {
-        match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(t);
-        if (!match) return undefined;
-        d = Number(match[1]); m = Number(match[2]); y = Number(match[3]);
-        if (y < 100) y += 2000;
-    }
-    if (m < 1 || m > 12 || d < 1 || d > 31) return undefined;
-    const date = new Date(y, m - 1, d);
-    // Rechazar overflow (31/02 → 03/03).
-    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return undefined;
-    return date;
-}
+// `toIsoDay` / `parseManualDate` viven en ./manualDate (v0.1.192, con tests).
 
 function parseDateValue(value: string | null): ParsedDateValue {
     if (value === null || value === '') return { date: undefined, time: '' };
