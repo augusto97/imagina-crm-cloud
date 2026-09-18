@@ -33,6 +33,7 @@ import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
+import { usePinToTop } from './usePinToTop';
 
 interface TableViewProps {
     listId: number;
@@ -428,11 +429,14 @@ export function TableView({
         return undefined;
     };
 
-    // El `<thead sticky>` solo proyecta sombra cuando el contenedor
-    // tiene scroll vertical activo. Sin scroll, el header se ve plano
-    // (estilo ClickUp). On scroll, sombra suave indica que hay
-    // contenido pasando por debajo.
-    const [scrolled, setScrolled] = useState(false);
+    // v0.1.192 — la cabecera de columnas queda FIJA bajo la cabecera de la
+    // página al scrollear (como ClickUp). `position: sticky` no servía:
+    // el wrapper `overflow-x-auto` es el scroll container más cercano y
+    // no scrollea en vertical; el hook la desplaza con transform contra
+    // el scroll del <main>. Sombra suave sólo mientras está pegada.
+    const tableRef = useRef<HTMLTableElement>(null);
+    const theadRef = useRef<HTMLTableSectionElement>(null);
+    const pinned = usePinToTop(theadRef, { boundsRef: tableRef });
 
     // IDs visibles: alimenta el batch fetch de recurrencias para la
     // página actual de records. UNA sola query reemplaza el N+1 que
@@ -454,12 +458,9 @@ export function TableView({
             className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden"
             role="region"
             aria-label={__('Tabla de registros')}
-            onScroll={(e) => {
-                const top = (e.currentTarget as HTMLDivElement).scrollTop > 0;
-                if (top !== scrolled) setScrolled(top);
-            }}
         >
             <table
+                ref={tableRef}
                 className={cn(
                     'imcrm-records-table imcrm-w-full imcrm-text-sm',
                     // Manda sobre los chips de select/multi_select (globals.css).
@@ -491,9 +492,10 @@ export function TableView({
                     {onAddColumn && <col />}
                 </colgroup>
                 <thead
+                    ref={theadRef}
                     className={cn(
-                        'imcrm-sticky imcrm-top-0 imcrm-z-20 imcrm-bg-background imcrm-transition-shadow imcrm-duration-150',
-                        scrolled && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.06)]',
+                        'imcrm-relative imcrm-z-20 imcrm-bg-background',
+                        pinned && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.08)]',
                     )}
                 >
                     {table.getHeaderGroups().map((hg) => (

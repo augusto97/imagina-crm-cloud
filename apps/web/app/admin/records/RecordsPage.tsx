@@ -31,6 +31,7 @@ import { useSavedViews } from '@/hooks/useSavedViews';
 import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
 import { parseMultiBucket } from '@/lib/multiBucket';
 import { __, sprintf } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { CAP, useCan } from '@/lib/permissions';
 import type { FieldEntity } from '@/types/field';
@@ -83,6 +84,7 @@ import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
 import { ViewSettingsSheet } from './views/ViewSettingsSheet';
 import { ViewsTabs } from './views/ViewsTabs';
+import { useStuckSentinel } from './views/usePinToTop';
 import {
     hasChangesVsView,
     stateToViewConfig,
@@ -116,6 +118,9 @@ export function RecordsPage(): JSX.Element {
     const [state, setState] = useState<RecordsState>(INITIAL_STATE);
     const [activeViewId, setActiveViewId] = useState<number | null>(null);
     const initialViewAppliedRef = useRef<number | null>(null);
+    // v0.1.192 — cabecera fija: centinela que avisa cuando está pegada.
+    const stickySentinelRef = useRef<HTMLDivElement>(null);
+    const headerStuck = useStuckSentinel(stickySentinelRef);
     /**
      * 0.57.41 — flag para deferir el primer fetch de records hasta que
      * la vista default haya sido aplicada (o se confirmó que no hay).
@@ -509,6 +514,26 @@ const applyView = (view: SavedViewEntity | null): void => {
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
+            {/* Centinela del bloque fijo: cuando sale por arriba, el bloque
+                está pegado y dibuja su línea inferior. */}
+            <div ref={stickySentinelRef} aria-hidden className="imcrm-h-px imcrm--mb-px" />
+            {/*
+              v0.1.192 — las TRES filas de cabecera (breadcrumb, pestañas de
+              vistas y toolbar) quedan FIJAS arriba al scrollear la página,
+              como en ClickUp: el atributo marca la línea bajo la que se
+              pegan las cabeceras de columnas y los encabezados de grupo
+              (ver usePinToTop). El único scroll sigue siendo el del <main>.
+            */}
+            <div
+                data-imcrm-sticky-top
+                className={cn(
+                    // `-top-2` = el `py-2` del <main>: el bloque se pega al
+                    // BORDE del área de trabajo, no 8px más abajo (sticky
+                    // respeta el padding del scroller).
+                    'imcrm-sticky imcrm--top-2 imcrm-z-30 imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem] imcrm-bg-background',
+                    headerStuck && 'imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
+                )}
+            >
             {/*
               Fila 1 — breadcrumb (patrón ClickUp): fila DELGADA (~36px)
               con "Listas / {nombre}" a 13-14px. A la derecha, las
@@ -638,6 +663,103 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </div>
             </header>
 
+            {fields.data && fields.data.length > 0 && (
+                <>
+                    <ViewsTabs
+                        listId={list.data.id}
+                        views={views.data ?? []}
+                        activeViewId={activeViewId}
+                        onSelectView={applyView}
+                        isDirty={isDirty}
+                        currentConfig={stateToViewConfig(state)}
+                        onAskCreateView={() => setSaveViewOpen(true)}
+                    />
+
+                    {/*
+                      Fila 3 — toolbar compacta (~40px): a la izquierda el
+                      chip de la vista/filtro guardado activo ("Todos" si
+                      no hay) + los controles de Filtrar/Columnas/Agrupar
+                      (sm, h-8); a la derecha la búsqueda angosta y la
+                      acción primaria "+ Nuevo registro" (sm).
+                    */}
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-pb-1">
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
+                            <span className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                                <Filter aria-hidden className="imcrm-h-3 imcrm-w-3" />
+                                {activeView?.name ?? __('Todos')}
+                            </span>
+                            <FiltersPanel
+                                listId={list.data?.id}
+                                fields={fields.data}
+                                tree={state.filterTree}
+                                onChange={setFilterTree}
+                            />
+                        </div>
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            {records.isFetching && !records.isLoading && (
+                                <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
+                            )}
+                            {/* Búsqueda angosta (200px) que crece al enfocar. */}
+                            <div className="imcrm-relative imcrm-w-[200px] imcrm-transition-[width] imcrm-duration-150 focus-within:imcrm-w-[240px]">
+                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                                <Input
+                                    value={state.search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    placeholder={__('Buscar…')}
+                                    className="imcrm-h-8 imcrm-rounded-md imcrm-pl-8 imcrm-pr-8 imcrm-text-[13px]"
+                                />
+                                {/*
+                                  Spinner in-input mientras la query
+                                  está en vuelo (tras el debounce).
+                                  isFetching también es true en otros
+                                  fetches (paginación, sort), pero
+                                  visualmente todos se ven igual de
+                                  reactivos — no es problema.
+                                */}
+                                {(records.isFetching || state.search !== debouncedSearch) && (
+                                    <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
+                                )}
+                            </div>
+                            {/*
+                              Engranaje "Personalizar vista" (v0.1.127,
+                              patrón ClickUp): columnas, agrupación, ajustar
+                              texto y las acciones de la vista y de la lista
+                              viven en UN panel. v0.1.145 — sólo el icono y
+                              a la DERECHA, después del buscador (pedido del
+                              usuario): es un ajuste ocasional, no compite
+                              con Filtrar, que sí se usa a diario.
+                            */}
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => setViewSettingsOpen(true)}
+                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
+                                aria-label={__('Personalizar vista')}
+                                title={__('Personalizar vista')}
+                            >
+                                <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                            {canCreateRecords && (
+                                <Button
+                                    size="sm"
+                                    onClick={() => {
+                                        setCreateDefaults(undefined);
+                                        setCreateParentId(null);
+                                        setCreateOpen(true);
+                                    }}
+                                    disabled={!fields.data || fields.data.length === 0}
+                                    className="imcrm-gap-1.5"
+                                >
+                                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Nuevo registro')}
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                </>
+            )}
+            </div>
+
             {/*
               Dialog de export sin trigger propio — lo abren los botones
               del breadcrumb / menú "···" via `exportOpen`.
@@ -735,98 +857,6 @@ const applyView = (view: SavedViewEntity | null): void => {
 
             {fields.data && fields.data.length > 0 && (
                 <>
-                    <ViewsTabs
-                        listId={list.data.id}
-                        views={views.data ?? []}
-                        activeViewId={activeViewId}
-                        onSelectView={applyView}
-                        isDirty={isDirty}
-                        currentConfig={stateToViewConfig(state)}
-                        onAskCreateView={() => setSaveViewOpen(true)}
-                    />
-
-                    {/*
-                      Fila 3 — toolbar compacta (~40px): a la izquierda el
-                      chip de la vista/filtro guardado activo ("Todos" si
-                      no hay) + los controles de Filtrar/Columnas/Agrupar
-                      (sm, h-8); a la derecha la búsqueda angosta y la
-                      acción primaria "+ Nuevo registro" (sm).
-                    */}
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
-                            <span className="imcrm-inline-flex imcrm-h-6 imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
-                                <Filter aria-hidden className="imcrm-h-3 imcrm-w-3" />
-                                {activeView?.name ?? __('Todos')}
-                            </span>
-                            <FiltersPanel
-                                listId={list.data?.id}
-                                fields={fields.data}
-                                tree={state.filterTree}
-                                onChange={setFilterTree}
-                            />
-                        </div>
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                            {records.isFetching && !records.isLoading && (
-                                <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
-                            )}
-                            {/* Búsqueda angosta (200px) que crece al enfocar. */}
-                            <div className="imcrm-relative imcrm-w-[200px] imcrm-transition-[width] imcrm-duration-150 focus-within:imcrm-w-[240px]">
-                                <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                <Input
-                                    value={state.search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder={__('Buscar…')}
-                                    className="imcrm-h-8 imcrm-rounded-md imcrm-pl-8 imcrm-pr-8 imcrm-text-[13px]"
-                                />
-                                {/*
-                                  Spinner in-input mientras la query
-                                  está en vuelo (tras el debounce).
-                                  isFetching también es true en otros
-                                  fetches (paginación, sort), pero
-                                  visualmente todos se ven igual de
-                                  reactivos — no es problema.
-                                */}
-                                {(records.isFetching || state.search !== debouncedSearch) && (
-                                    <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
-                                )}
-                            </div>
-                            {/*
-                              Engranaje "Personalizar vista" (v0.1.127,
-                              patrón ClickUp): columnas, agrupación, ajustar
-                              texto y las acciones de la vista y de la lista
-                              viven en UN panel. v0.1.145 — sólo el icono y
-                              a la DERECHA, después del buscador (pedido del
-                              usuario): es un ajuste ocasional, no compite
-                              con Filtrar, que sí se usa a diario.
-                            */}
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => setViewSettingsOpen(true)}
-                                className="imcrm-h-8 imcrm-w-8 imcrm-shrink-0"
-                                aria-label={__('Personalizar vista')}
-                                title={__('Personalizar vista')}
-                            >
-                                <SlidersHorizontal className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
-                            {canCreateRecords && (
-                                <Button
-                                    size="sm"
-                                    onClick={() => {
-                                        setCreateDefaults(undefined);
-                                        setCreateParentId(null);
-                                        setCreateOpen(true);
-                                    }}
-                                    disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-gap-1.5"
-                                >
-                                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Nuevo registro')}
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-
                     {records.isLoading ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
