@@ -78,8 +78,11 @@ export class RecordsRepository {
      */
     async list(tx: Tx, tenantId: number, listId: number, opts: ListRecordsOpts): Promise<RecordListRow[]> {
         const sorted = opts.orderBy !== undefined && opts.orderBy.length > 0;
+        // v0.1.187 — un `offset` explícito (paginación por página) manda
+        // también sin sort por campo: el keyset por id no aplica ahí.
+        const byOffset = sorted || opts.offset !== undefined;
         const cursorClause =
-            !sorted && opts.cursor !== undefined
+            !byOffset && opts.cursor !== undefined
                 ? opts.dir === 'asc'
                     ? gt(records.id, opts.cursor)
                     : lt(records.id, opts.cursor)
@@ -114,7 +117,40 @@ export class RecordsRepository {
                 opts.dir === 'asc' ? asc(records.id) : desc(records.id),
             )
             .limit(opts.limit + 1);
-        return sorted ? base.offset(opts.offset ?? 0) : base;
+        return byOffset ? base.offset(opts.offset ?? 0) : base;
+    }
+
+    /**
+     * Cuántos registros matchean el MISMO where/scope del listado (v0.1.187,
+     * para `meta.total` de la paginación por página). Una query aparte a
+     * propósito: sumarle `count(*) over()` a la página encarecería CADA
+     * listado por cursor, que no lo necesita.
+     */
+    async count(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        opts: Pick<ListRecordsOpts, 'where' | 'parent'>,
+    ): Promise<number> {
+        const parentClause =
+            opts.parent === undefined || opts.parent === 'roots'
+                ? isNull(records.parentId)
+                : opts.parent === 'any'
+                    ? undefined
+                    : eq(records.parentId, opts.parent);
+        const [row] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(records)
+            .where(
+                and(
+                    eq(records.tenantId, tenantId),
+                    eq(records.listId, listId),
+                    isNull(records.deletedAt),
+                    parentClause,
+                    opts.where,
+                ),
+            );
+        return row?.n ?? 0;
     }
 
     /**

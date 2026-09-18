@@ -3743,6 +3743,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         los archivos del deploy descubre PRM + servidor, el 401 lleva a /api,
         y con la regla de proxy responde por host.
 
+  - [x] **Paginación real del listado (v0.1.187, reporte del usuario: "un
+        CSV de más de 2.000 registros sólo me importa 200")**: el importador
+        NO era el problema — inserta hasta 5.000 filas por corrida y el
+        resultado lo decía ("2.500 registros importados"). Lo que mentía era
+        la TABLA: el adaptador del front descartaba `page` ("la paginación
+        por cursor completa llega en una etapa posterior", que nunca llegó),
+        capaba `limit` a 200 y devolvía `total = filas recibidas` con
+        `total_pages = 1` — así que la lista mostraba la primera tanda de
+        200, decía "200 registros" y no ofrecía ninguna página siguiente.
+        Fix end-to-end: (a) el listado acepta `page` (offset
+        `(page-1)*limit`, también sin sort por campo) y devuelve
+        `meta.total`/`page`/`per_page`/`total_pages`, contado con el MISMO
+        where (filtros, búsqueda, scope ACL, subtareas) en una query aparte
+        — el camino por cursor de los clientes de API no cambia ni cuenta
+        nada (`with_total` lo pide sin paginar); `parseListQuery` copia los
+        dos parámetros (es whitelist: la trampa de v0.1.68 y v0.1.132);
+        (b) `cloudRecordsQuery` deja viajar `page` y `cloudRecordsMeta`
+        arma la meta de la UI desde el total real (sin `page` —subtareas,
+        pickers— la tanda sigue siendo una sola página); (c) con eso la
+        `Pagination` existente funciona ("1–200 de 2500 · Página 1 de 13"),
+        el buscador pasa a server-side cuando la lista supera una página
+        (antes creía que TODA lista era chica) y kanban/tarjetas/calendario
+        avisan "Mostrando 200 de 2500 registros — usá filtros" en vez de
+        callar. Tests: 1 de integración (páginas sin solapar, total con
+        búsqueda, página vacía más allá del final, cursor intacto) + 2 del
+        whitelist + 4 del adaptador (528 API, 129 front en verde) y E2E
+        navegador 13/13 con un CSV REAL de 2.500 filas (import completo,
+        páginas 1→2→1 con las filas correctas, búsqueda, aviso en kanban).
+        OJO: en el entorno de dev el tenant 1 está en plan `trial` (500
+        registros) y el import de 2.500 rebota con `plan_limit_reached` —
+        comportamiento correcto (SEC-09): para la prueba se subió el plan a
+        mano y se restauró al terminar.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

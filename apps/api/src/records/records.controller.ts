@@ -177,6 +177,9 @@ export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         // v0.1.68 con `filter_tree`).
         parent: raw.parent,
         include_subtasks: raw.include_subtasks,
+        // Paginación por página (v0.1.187) — mismo whitelist, misma trampa.
+        page: raw.page,
+        with_total: raw.with_total,
     };
     const rawTree = typeof raw.filter_tree === 'string' ? raw.filter_tree : raw.filter;
     if (typeof rawTree === 'string' && rawTree.trim() !== '') {

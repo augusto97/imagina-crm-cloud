@@ -54,7 +54,14 @@ export interface Actor {
 
 export interface RecordsPage {
     data: RecordDto[];
-    meta: { next_cursor: string | null };
+    meta: {
+        next_cursor: string | null;
+        /** v0.1.187 — sólo con `page` o `with_total`: total con el mismo where. */
+        total?: number;
+        page?: number;
+        per_page?: number;
+        total_pages?: number;
+    };
 }
 
 @Injectable()
@@ -186,7 +193,13 @@ export class RecordsService {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
-        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        // v0.1.187 — paginación por PÁGINA: `page` fija el offset y pide el
+        // total (lo que necesita la tabla: "1–200 de 2.500"). El cursor
+        // keyset sigue siendo el camino de los clientes que recorren todo.
+        const byPage = query.page !== undefined;
+        const pageOffset = byPage ? (query.page! - 1) * query.limit : undefined;
+        const wantTotal = byPage || query.with_total === true;
+        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts, total } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             // v0.1.170 — los rollups filtran y ordenan por su subconsulta
@@ -225,12 +238,13 @@ export class RecordsService {
                 where,
                 // Con sort por campo el keyset por id no aplica: el cursor
                 // se reinterpreta como OFFSET (opaco para el cliente).
-                cursor: sorted ? undefined : query.cursor,
-                offset: sorted ? (query.cursor ?? 0) : undefined,
+                cursor: sorted || byPage ? undefined : query.cursor,
+                offset: byPage ? pageOffset : sorted ? (query.cursor ?? 0) : undefined,
                 orderBy: sorted ? orderBy : undefined,
                 limit: query.limit,
                 dir: query.sort_dir,
             });
+            const total = wantTotal ? await this.repo.count(tx, tenantId, list.id, { parent, where }) : undefined;
             // Lookups/rollups de la página entera en batch (regla de oro nº 8).
             const result = await this.fields.through.attach(tx, tenantId, plans, listed, fields);
             // Relations de la página entera en UNA query (regla de oro nº 8).
@@ -253,6 +267,7 @@ export class RecordsService {
                 rels,
                 relFieldIds,
                 subtaskCounts,
+                total,
             };
         });
 
@@ -260,10 +275,21 @@ export class RecordsService {
         const hasMore = rows.length > query.limit;
         const page = hasMore ? rows.slice(0, query.limit) : rows;
         const nextCursor = hasMore
-            ? query.sort !== undefined && query.sort !== ''
-                ? String((query.cursor ?? 0) + page.length)
-                : String(page[page.length - 1]!.id)
+            ? byPage
+                ? String((pageOffset ?? 0) + page.length)
+                : query.sort !== undefined && query.sort !== ''
+                    ? String((query.cursor ?? 0) + page.length)
+                    : String(page[page.length - 1]!.id)
             : null;
+        const pageMeta =
+            total === undefined
+                ? {}
+                : {
+                      total,
+                      page: query.page ?? 1,
+                      per_page: query.limit,
+                      total_pages: Math.max(1, Math.ceil(total / query.limit)),
+                  };
         return {
             data: page.map((r) =>
                 stripHidden(
@@ -275,7 +301,7 @@ export class RecordsService {
                     hiddenKeys,
                 ),
             ),
-            meta: { next_cursor: nextCursor },
+            meta: { next_cursor: nextCursor, ...pageMeta },
         };
     }
 

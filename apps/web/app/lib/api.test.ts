@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     buildFieldMap,
+    cloudRecordsMeta,
     cloudRecordsQuery,
     listKeyFromPath,
     mapRecord,
@@ -97,12 +98,20 @@ describe('mapRecordBody — body de la UI → body del backend', () => {
     });
 });
 
-describe('cloudRecordsQuery — paginación por página → por cursor', () => {
-    it('per_page se traduce a limit y page se descarta (el backend es keyset)', () => {
+describe('cloudRecordsQuery — paginación por página', () => {
+    it('per_page se traduce a limit y page VIAJA (v0.1.187: antes se descartaba)', () => {
+        // Regresión: "importé 2.000 filas y sólo veo 200" — sin `page` el
+        // backend nunca devolvía la segunda tanda ni el total real.
         expect(cloudRecordsQuery({ per_page: 50, page: 3, search: 'ana' })).toEqual({
             limit: 50,
+            page: 3,
             search: 'ana',
         });
+    });
+
+    it('page inválida (0, texto) no viaja', () => {
+        expect(cloudRecordsQuery({ per_page: 50, page: 0 })).toEqual({ limit: 50 });
+        expect(cloudRecordsQuery({ per_page: 50, page: 'x' })).toEqual({ limit: 50 });
     });
 
     it('capea al máximo del backend (200) — el bug que cortaba kanban en 50', () => {
@@ -120,6 +129,33 @@ describe('cloudRecordsQuery — paginación por página → por cursor', () => {
     it('sin query o sin tamaño no inventa limit', () => {
         expect(cloudRecordsQuery(undefined)).toBeUndefined();
         expect(cloudRecordsQuery({ search: 'x' })).toEqual({ search: 'x' });
+    });
+});
+
+describe('cloudRecordsMeta — meta de paginación para la UI (v0.1.187)', () => {
+    it('con total del backend, pagina de verdad', () => {
+        expect(cloudRecordsMeta({ next_cursor: '200', total: 2500, page: 1, per_page: 200, total_pages: 13 }, 200)).toEqual({
+            page: 1,
+            per_page: 200,
+            total: 2500,
+            total_pages: 13,
+            next_cursor: '200',
+        });
+    });
+
+    it('sin total (subtareas, pickers) la tanda es una sola página, como antes', () => {
+        expect(cloudRecordsMeta({ next_cursor: null }, 7)).toEqual({
+            page: 1,
+            per_page: 7,
+            total: 7,
+            total_pages: 1,
+            next_cursor: null,
+        });
+        expect(cloudRecordsMeta(undefined, 0).total).toBe(0);
+    });
+
+    it('total sin total_pages → los calcula', () => {
+        expect(cloudRecordsMeta({ total: 401, per_page: 200 }, 200).total_pages).toBe(3);
     });
 });
 

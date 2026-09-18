@@ -271,6 +271,46 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         expect(second.meta.next_cursor).toBeNull();
     });
 
+    it('paginación por página (v0.1.187): page + total con el mismo where', async () => {
+        // Regresión del reporte "importé 2.000 filas y sólo veo 200": el
+        // listado no sabía paginar por página ni contar, y el front servía la
+        // primera tanda como si fuera todo.
+        await seed();
+        const p1 = await service.list(tenantA, admin, 'clientes', { limit: 2, sort_dir: 'asc', page: 1 });
+        expect(p1.data).toHaveLength(2);
+        expect(p1.meta).toMatchObject({ total: 3, page: 1, per_page: 2, total_pages: 2 });
+        expect(p1.meta.next_cursor).not.toBeNull();
+
+        const p2 = await service.list(tenantA, admin, 'clientes', { limit: 2, sort_dir: 'asc', page: 2 });
+        expect(p2.data).toHaveLength(1);
+        expect(p2.meta).toMatchObject({ total: 3, page: 2, total_pages: 2 });
+        expect(p2.meta.next_cursor).toBeNull();
+        // Sin solapamiento ni huecos entre páginas.
+        const ids = [...p1.data, ...p2.data].map((r) => r.id);
+        expect(new Set(ids).size).toBe(3);
+
+        // El total respeta filtros y búsqueda (mismo where que las filas).
+        const filtered = await service.list(tenantA, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            page: 1,
+            search: 'acme',
+        });
+        expect(filtered.meta.total).toBe(filtered.data.length);
+        expect(filtered.meta.total).toBeLessThan(3);
+
+        // Página más allá del final: vacía, con el total intacto.
+        const p9 = await service.list(tenantA, admin, 'clientes', { limit: 2, sort_dir: 'asc', page: 9 });
+        expect(p9.data).toHaveLength(0);
+        expect(p9.meta.total).toBe(3);
+
+        // Sin `page` el contrato por cursor no cambia (ni cuenta).
+        const cursor = await service.list(tenantA, admin, 'clientes', { limit: 2, sort_dir: 'asc' });
+        expect(cursor.meta.total).toBeUndefined();
+        const counted = await service.list(tenantA, admin, 'clientes', { limit: 2, sort_dir: 'asc', with_total: true });
+        expect(counted.meta.total).toBe(3);
+    });
+
     it('own-scoping: agent solo ve/edita/borra sus registros', async () => {
         const ana: Actor = { userId: 1, role: 'agent' };
         const beto: Actor = { userId: 2, role: 'agent' };
