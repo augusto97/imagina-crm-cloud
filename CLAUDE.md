@@ -3776,6 +3776,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         comportamiento correcto (SEC-09): para la prueba se subió el plan a
         mano y se restauró al terminar.
 
+  - [x] **El buscador de registros busca también en la DESCRIPCIÓN
+        (v0.1.188, reporte del usuario: "el buscador no está buscando en el
+        campo descripción")**: el cuerpo del registro (el documento
+        ProseMirror de v0.1.133) no era un campo, así que ni el ILIKE del
+        servidor ni el filtro in-memory del navegador lo miraban — lo escrito
+        ahí era invisible para la búsqueda. (a) **Columna generada**
+        `records.description_text` (migración 0051): Postgres concatena
+        todos los nodos de texto del árbol a cualquier profundidad
+        (`jsonb_path_query_array(doc, 'strict $.**.text')` — títulos,
+        columnas, listas, tablas) y la mantiene SOLO en cada escritura; el
+        código de la app nunca la toca y los registros existentes se
+        rellenan al aplicar la migración (la tabla se reescribe una vez:
+        segundos con cientos de miles de filas). Índice trigram, el mismo
+        que usan los campos de texto indexados. (b) `compileSearch` suma el
+        `ILIKE` sobre esa columna al OR de los campos searchables, y para la
+        **vista agrupada** —que compone la búsqueda como filter tree— hay un
+        pseudo-campo con id RESERVADO negativo (`DESCRIPTION_SEARCH_FIELD_ID`,
+        sólo operadores de texto) inyectado en el whitelist del listado y del
+        motor de agregados: buckets, filas y pie lo ven igual; un cliente no
+        puede colarlo porque Zod exige `field_id` positivo. (c) **Front**: la
+        búsqueda in-memory de las listas chicas no ve el documento (a
+        propósito no viaja en el listado), así que si alguna fila trae
+        `has_description` la búsqueda va al servidor aunque la lista sea
+        chica (`canSearchClientSide`); una lista sin descripciones sigue
+        filtrando en el navegador sin round-trip. De paso el filtro
+        in-memory suma `phone`, como el servidor desde v0.1.158. Tests: 1 de
+        integración (plana: match por el cuerpo anidado en columnas, el
+        título sigue, borrar la descripción la saca; agrupada: buckets +
+        filas) + 3 unitarios del front (529 API, 132 front en verde) y E2E
+        navegador 14/14 (lista chica con descripción busca en el servidor y
+        encuentra por cuerpo/columna/título, agrupada 1 grupo · 1 registro,
+        lista sin descripciones filtra en el navegador con cero requests).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

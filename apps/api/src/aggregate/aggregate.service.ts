@@ -14,6 +14,7 @@ import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import {
     compileFilterTree,
+    descriptionSearchFilterable,
     fieldTextExpr,
     fieldTypedExpr,
     type FilterableField,
@@ -245,6 +246,9 @@ export class AggregateService {
         return new Map<number, FilterableField>([
             ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
             ...this.fields.through.filterableFor(plans, tenantId),
+            // v0.1.188 — buckets y pie de la vista agrupada buscan también
+            // en la descripción del registro.
+            descriptionSearchFilterable(),
         ]);
     }
 

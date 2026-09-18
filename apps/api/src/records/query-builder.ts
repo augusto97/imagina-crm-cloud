@@ -89,6 +89,11 @@ function compileCondition(
 ): SQL | undefined {
     const field = fieldsById.get(cond.field_id);
     if (!field) return undefined; // whitelist: campo desconocido → se descarta
+    // v0.1.188 — la DESCRIPCIÓN del registro (texto plano generado) entra en
+    // la búsqueda como pseudo-campo; sólo lo inyecta el servidor.
+    if (field.id === DESCRIPTION_SEARCH_FIELD_ID) {
+        return compileDescriptionText(cond);
+    }
     // v0.1.170 — un rollup filtra por su subconsulta (si el motor la armó).
     if (field.type === 'rollup') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
@@ -158,6 +163,40 @@ function compileCondition(
             const _exhaustive: never = op;
             throw new BadRequestException(`Operador no soportado: ${String(_exhaustive)}`);
         }
+    }
+}
+
+/**
+ * v0.1.188 — id RESERVADO (negativo: jamás choca con un campo real) con el
+ * que la búsqueda server-side incluye el texto plano de la descripción del
+ * registro (`records.description_text`, columna generada). Los filter trees
+ * que llegan del cliente pasan por Zod (`field_id` positivo), así que sólo
+ * el servidor puede componer una condición sobre él.
+ */
+export const DESCRIPTION_SEARCH_FIELD_ID = -1;
+
+/** Entrada del whitelist para el pseudo-campo de la descripción. */
+export function descriptionSearchFilterable(): [number, FilterableField] {
+    return [
+        DESCRIPTION_SEARCH_FIELD_ID,
+        { id: DESCRIPTION_SEARCH_FIELD_ID, type: 'long_text', expr: sql`${records.descriptionText}` },
+    ];
+}
+
+/** Sólo operadores de TEXTO: la descripción se busca, no se compara. */
+function compileDescriptionText(cond: FilterCondition): SQL | undefined {
+    const col = sql`${records.descriptionText}`;
+    switch (cond.op) {
+        case 'is_null':
+            return sql`${col} IS NULL`;
+        case 'is_not_null':
+            return sql`${col} IS NOT NULL`;
+        case 'contains':
+            return sql`${col} ILIKE ${'%' + escapeLike(str(cond.value)) + '%'}`;
+        case 'not_contains':
+            return sql`(${col} IS NULL OR ${col} NOT ILIKE ${'%' + escapeLike(str(cond.value)) + '%'})`;
+        default:
+            return undefined;
     }
 }
 

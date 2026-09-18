@@ -12,6 +12,8 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { AggregateService } from '../src/aggregate/aggregate.service';
+import { RecordsGroupedService } from '../src/records/records-grouped.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
@@ -97,6 +99,62 @@ describe('Descripción del registro (v0.1.133)', () => {
         expect(await recs.getDescription(tenantId, admin, 'tareas', rec.id)).toBeNull();
         const page2 = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
         expect(page2.data.find((r) => r.id === rec.id)!.has_description).toBe(false);
+    });
+
+    it('la búsqueda encuentra lo escrito en la descripción (v0.1.188), plana y agrupada', async () => {
+        // Regresión del reporte "el buscador no busca en la descripción": el
+        // texto vivía sólo en el árbol ProseMirror y el ILIKE miraba los
+        // campos. Ahora `description_text` (columna generada) entra en el OR.
+        const conDesc = await create();
+        const sinDesc = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Compras' } });
+        await recs.updateDescription(tenantId, admin, 'tareas', conDesc.id, {
+            description: {
+                type: 'doc',
+                content: [
+                    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Checklist' }] },
+                    {
+                        type: 'columnsBlock',
+                        content: [{
+                            type: 'column',
+                            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Llamar al proveedor de zanahorias' }] }],
+                        }],
+                    },
+                ],
+            } as unknown as RichDoc,
+        });
+
+        // Plana: match por el cuerpo (anidado en columnas), no por el título.
+        const hit = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc', search: 'ZANAHORIA' });
+        expect(hit.data.map((r) => r.id)).toEqual([conDesc.id]);
+        // El título sigue buscándose como siempre.
+        const byTitle = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc', search: 'compras' });
+        expect(byTitle.data.map((r) => r.id)).toEqual([sinDesc.id]);
+        // Borrar la descripción la saca de la búsqueda (la columna generada sigue al jsonb).
+        await recs.updateDescription(tenantId, admin, 'tareas', conDesc.id, { description: null });
+        const gone = await recs.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc', search: 'zanahoria' });
+        expect(gone.data).toHaveLength(0);
+
+        // Agrupada: la búsqueda se compone como filter tree → buckets y filas.
+        await recs.updateDescription(tenantId, admin, 'tareas', conDesc.id, { description: doc('zanahorias otra vez') });
+        const estado = await fields_.create(tenantId, 'tareas', {
+            label: 'Estado',
+            type: 'select',
+            slug: 'estado',
+            config: { options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+        });
+        await recs.update(tenantId, admin, 'tareas', conDesc.id, { data: { [`f${estado.id}`]: 'a' } });
+        await recs.update(tenantId, admin, 'tareas', sinDesc.id, { data: { [`f${estado.id}`]: 'b' } });
+        const grouped = new RecordsGroupedService(recs, new AggregateService(new TenantDb(pg.db), lists_, fields_), lists_, fields_);
+        const bundle = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: estado.id,
+            expanded: ['a', 'b'],
+            search: 'zanahoria',
+            perPage: 50,
+            aggregateFieldIds: [],
+        })) as { buckets: Array<{ value: string | null; count: number }>; expanded: Record<string, { records: { data: Array<{ id: number }> } }> };
+        expect(bundle.buckets).toEqual([{ value: 'a', count: 1 }]);
+        expect(bundle.expanded.a?.records.data.map((r) => r.id)).toEqual([conDesc.id]);
+        expect(bundle.expanded.b?.records.data).toEqual([]);
     });
 
     it('lo que se persiste pasa por la whitelist (nada de `javascript:` ni nodos raros)', async () => {

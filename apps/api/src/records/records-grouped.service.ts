@@ -3,6 +3,7 @@ import type { FilterGroup, FilterNode } from '@imagina-base/shared';
 import { AggregateService } from '../aggregate/aggregate.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
+import { DESCRIPTION_SEARCH_FIELD_ID } from './query-builder';
 import { RecordsService, type Actor } from './records.service';
 
 const NULL_KEY = '__null__';
@@ -155,16 +156,20 @@ export class RecordsGroupedService {
             f.type === 'text' || f.type === 'long_text' || f.type === 'email' || f.type === 'url'
             || f.type === 'phone',
         );
-        if (searchable.length === 0) return filterTree;
         const or: FilterGroup = {
             type: 'group',
             logic: 'or',
-            children: searchable.map((f) => ({
-                type: 'condition',
-                field_id: f.id,
-                op: 'contains',
-                value: needle,
-            })),
+            children: [
+                ...searchable.map((f): FilterNode => ({
+                    type: 'condition',
+                    field_id: f.id,
+                    op: 'contains',
+                    value: needle,
+                })),
+                // v0.1.188 — la descripción del registro también se busca
+                // (pseudo-campo que sólo el servidor puede componer).
+                { type: 'condition', field_id: DESCRIPTION_SEARCH_FIELD_ID, op: 'contains', value: needle },
+            ],
         };
         return {
             type: 'group',

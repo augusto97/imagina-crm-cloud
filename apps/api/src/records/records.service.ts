@@ -41,7 +41,7 @@ import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
+import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
@@ -208,6 +208,9 @@ export class RecordsService {
             const fieldsById = new Map<number, FilterableField>([
                 ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
                 ...this.fields.through.filterableFor(plans, tenantId),
+                // v0.1.188 — la vista agrupada compone su búsqueda como
+                // filter tree y necesita el pseudo-campo de la descripción.
+                descriptionSearchFilterable(),
             ]);
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
@@ -880,9 +883,10 @@ function recordNotFound(id: number): NotFoundException {
 /**
  * WHERE de la búsqueda de texto server-side: OR de `data->>'fN' ILIKE
  * %needle%` sobre los campos "searchables" (los mismos que buscaba el
- * plugin: text, long_text, email, url). El needle viaja SIEMPRE bindeado
- * y con los metacaracteres de LIKE escapados (regla de oro nº 4).
- * Sin campos searchables en la lista → `false` (cero resultados, no todo).
+ * plugin: text, long_text, email, url) MÁS el texto plano de la
+ * DESCRIPCIÓN del registro (v0.1.188, columna generada
+ * `description_text`). El needle viaja SIEMPRE bindeado y con los
+ * metacaracteres de LIKE escapados (regla de oro nº 4).
  */
 const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url', 'phone']);
 
@@ -890,11 +894,11 @@ function compileSearch(fields: Field[], search: string | undefined): SQL | undef
     const needle = (search ?? '').trim();
     if (needle === '') return undefined;
     const targets = fields.filter((f) => SEARCHABLE_TYPES.has(f.type));
-    if (targets.length === 0) return sql`false`;
     const escaped = `%${needle.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
     const parts = targets.map(
         (f) => sql`${records.data} ->> ${jsonbKeyForField(f.id)} ILIKE ${escaped}`,
     );
+    parts.push(sql`${records.descriptionText} ILIKE ${escaped}`);
     return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
