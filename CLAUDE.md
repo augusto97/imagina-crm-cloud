@@ -3841,6 +3841,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         4 · 4, Cliente A en dos grupos, chip con el color de la opción,
         casillas sin marcar, búsqueda en agrupada).
 
+  - [x] **Corrección de rumbo: agrupar por multi_select es por COMBINACIÓN,
+        como ClickUp (v0.1.190, feedback del usuario con captura: "¿por qué
+        aparece en 2 grupos? se pierde el sentido de agrupar")**: la v0.1.189
+        eligió "un grupo por opción" y eso DUPLICA registros; ClickUp agrupa
+        por el conjunto exacto de etiquetas (63 con «Elementor pro + Astra
+        pro + Starter Templates», 1 con «Greenshift + Pixelavo + HT Easy
+        GA4»), cada registro en un solo grupo y el encabezado con TODOS los
+        chips del combo, cada uno con su color. Ahora: (a) el motor de
+        agregados agrupa un multi_select por el set **normalizado**
+        (`jsonb_agg(e ORDER BY e)::text` → `["a", "b"]`; `["b","a"]` es el
+        mismo grupo; sin opciones → null) — se quitó el modo por opción de
+        v0.1.189; (b) `eq`/`neq` de multi_select con un ARRAY compilan a
+        igualdad de conjunto (`@>` y `<@`, sin importar orden ni
+        duplicados; con escalar siguen siendo "contiene"), y el bundle pide
+        las filas del grupo así — los grupos son disjuntos, la suma vuelve a
+        ser el total; (c) front: `lib/multiBucket` parsea la clave del
+        bucket y ordena las opciones como el catálogo; el encabezado dibuja
+        UN chip por opción con su color, la etiqueta accesible une las
+        opciones con «+», el filtro de la página 2 usa `eq` con el array y
+        "+ Agregar" dentro del grupo pre-carga TODAS las opciones del combo.
+        Los dashboards ya agrupaban por combinación: ahora su clave también
+        viene normalizada (`prettyGroupLabel`/`gvs` parsean JSON, no
+        cambian). 2 tests de integración reescritos (aggregate: mismo set
+        en distinto orden = un grupo, null; bundle: filas exactas —"Solo
+        VIP" no entra al grupo de dos—, nadie repetido, total = suma) + 2
+        unitarios del front (531 API, 134 front en verde) + E2E navegador
+        11/11 (grupo «Astra Pro + Starter Templates» con Cliente A, «Astra
+        Pro» sólo con B, cada registro UNA vez, dos chips con sus colores,
+        alta desde el grupo con las dos opciones, búsqueda).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

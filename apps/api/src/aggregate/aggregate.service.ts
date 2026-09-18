@@ -44,15 +44,6 @@ export class AggregateService {
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
-        /**
-         * v0.1.189 — `multiSelect: 'each'`: al agrupar por un multi_select,
-         * un bucket POR OPCIÓN (el registro cuenta en cada una de las suyas;
-         * sin opciones → bucket null), en vez de un bucket por COMBINACIÓN
-         * (el JSON crudo del set). Lo usa la vista agrupada, que filtra cada
-         * grupo con `contains`. Los dashboards conservan el comportamiento
-         * por combinación (v0.1.103/v0.1.178 lo dan por hecho).
-         */
-        opts: { multiSelect?: 'combo' | 'each' } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
@@ -78,46 +69,32 @@ export class AggregateService {
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
             if (!groupField) throw badRequest('group_by_field_id no pertenece a la lista');
-            if (groupField.type === 'multi_select' && opts.multiSelect === 'each') {
-                // Un bucket por opción: se desanida el array con LATERAL; el
-                // LEFT JOIN conserva los registros sin opciones (elemento
-                // NULL → bucket null). La métrica se evalúa por (registro,
-                // opción): count/sum/… por opción salen bien.
-                const col = sql`${records.data} -> ${jsonbKeyForField(groupField.id)}`;
-                const arr = sql`CASE WHEN jsonb_typeof(${col}) = 'array' THEN ${col} ELSE '[]'::jsonb END`;
-                const res = await this.tenantDb.withTenant(tenantId, (tx) =>
-                    tx.execute(sql`
-                        SELECT e.value AS grp, ${aggExpr} AS val
-                        FROM ${records}
-                        LEFT JOIN LATERAL jsonb_array_elements_text(${arr}) AS e(value) ON true
-                        WHERE ${baseWhere}
-                        GROUP BY e.value
-                        ORDER BY e.value
-                    `),
-                );
-                const rows = (res as unknown as { rows: Array<{ grp: string | null; val: unknown }> }).rows;
-                return {
-                    metric: req.metric,
-                    value: null,
-                    groups: rows.map((r) => ({ group: r.grp ?? null, value: normalize(r.val) })),
-                };
-            }
             // v0.1.97 — bucketing temporal: si el campo agrupado es fecha y el
             // request trae `time_bucket`, agrupamos por bucket (día/semana/mes/
             // trimestre/año) en vez de por valor crudo. Los labels resultantes
             // ordenan cronológicamente como string.
+            // v0.1.190 — multi_select: un bucket por COMBINACIÓN exacta de
+            // opciones (como ClickUp: cada registro cae en UN solo grupo), con
+            // la clave NORMALIZADA (set ordenado) para que `["a","b"]` y
+            // `["b","a"]` sean el mismo grupo; sin opciones → bucket null.
             const groupExpr =
                 req.time_bucket !== undefined
                     && (groupField.type === 'date' || groupField.type === 'datetime')
                     ? timeBucketExpr(groupField, req.time_bucket)
-                    : fieldTextExpr(groupField.id);
+                    : groupField.type === 'multi_select'
+                        ? multiSelectSetExpr(groupField.id)
+                        : fieldTextExpr(groupField.id);
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx
                     .select({ grp: groupExpr, val: aggExpr })
                     .from(records)
                     .where(baseWhere)
-                    .groupBy(groupExpr)
-                    .orderBy(groupExpr),
+                    // Por ORDINAL: la clave del multi_select lleva la clave del
+                    // campo como parámetro bindeado, y Postgres no reconoce
+                    // como "la misma expresión" a dos copias con placeholders
+                    // distintos ($1 en el SELECT, $6 en el GROUP BY).
+                    .groupBy(sql`1`)
+                    .orderBy(sql`1`),
             );
             const groups = rows.map((r) => ({
                 group: r.grp === null || r.grp === undefined ? null : String(r.grp),
@@ -346,6 +323,17 @@ export type AggregateBag = Partial<Record<AggregateMetric, number | string | nul
 export interface FooterAggregates {
     totals: Record<string, AggregateBag>;
     groups: Array<{ value: string | null; aggregates: Record<string, AggregateBag> }>;
+}
+
+/**
+ * Clave de grupo de un multi_select: el JSON del conjunto ORDENADO
+ * (`["a", "b"]`) o NULL si no hay opciones. Es la misma forma con la que la
+ * vista agrupada pide las filas del grupo (`eq` con array = igualdad de
+ * conjunto) y que los dashboards parsean para etiquetas y click-through.
+ */
+function multiSelectSetExpr(fieldId: number): SQL {
+    const col = sql`(${records.data} -> ${jsonbKeyForField(fieldId)})`;
+    return sql`(CASE WHEN jsonb_typeof(${col}) = 'array' AND jsonb_array_length(${col}) > 0 THEN (SELECT jsonb_agg(e ORDER BY e)::text FROM jsonb_array_elements_text(${col}) AS e) ELSE NULL END)`;
 }
 
 /** Métricas base aplicables a cada tipo de campo (la UI deriva pct/range). */

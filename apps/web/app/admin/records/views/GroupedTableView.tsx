@@ -30,6 +30,7 @@ import type {
 import { EditableCell } from '@/admin/records/EditableCell';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
+import { orderByCatalog, parseMultiBucket } from '@/lib/multiBucket';
 import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
@@ -671,10 +672,16 @@ function GroupBucketSection({
     // bucket matchea una opción declarada, el chip usa el COLOR real de
     // la opción (mismo render que las celdas — estilo ClickUp). Para el
     // resto de tipos (texto, fecha, etc.) cae al chip genérico.
-    const bucketOption = bucket.value !== null
-        && (groupByField.type === 'select' || groupByField.type === 'multi_select')
-        ? extractFieldOptions(groupByField).find((o) => o.value === bucket.value)
-        : undefined;
+    // v0.1.190 — un multi_select agrupa por COMBINACIÓN: el bucket es el
+    // JSON del set y el encabezado lleva UN chip por opción, cada uno con
+    // su color, en el orden del catálogo (como la celda).
+    const fieldOptions = groupByField.type === 'select' || groupByField.type === 'multi_select'
+        ? extractFieldOptions(groupByField)
+        : [];
+    const multiValues = groupByField.type === 'multi_select' ? parseMultiBucket(bucket.value) : null;
+    const chipValues = multiValues !== null
+        ? orderByCatalog(multiValues, fieldOptions)
+        : bucket.value !== null ? [bucket.value] : [];
     const useOptionChip = groupByField.type === 'select' || groupByField.type === 'multi_select';
     const colorAccent = bucket.value === null ? 'imcrm-bg-muted' : 'imcrm-bg-primary/10';
 
@@ -728,7 +735,15 @@ function GroupBucketSection({
                     <ChevronRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                 )}
                 {useOptionChip && bucket.value !== null ? (
-                    <OptionChip opt={bucketOption} fallback={labelText} />
+                    <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
+                        {chipValues.map((v) => (
+                            <OptionChip
+                                key={v}
+                                opt={fieldOptions.find((o) => o.value === v)}
+                                fallback={fieldOptions.find((o) => o.value === v)?.label ?? v}
+                            />
+                        ))}
+                    </span>
                 ) : (
                     <span
                         className={cn(
@@ -1211,7 +1226,10 @@ function filterOpForBucket(
         return { op: 'is_null', value: true };
     }
     if (type === 'multi_select') {
-        return { op: 'contains', value };
+        // v0.1.190 — el grupo es la combinación exacta: `eq` con el array
+        // compila a igualdad de conjunto en el backend.
+        const set = parseMultiBucket(value);
+        return set !== null ? { op: 'eq', value: set } : { op: 'contains', value };
     }
     return { op: 'eq', value };
 }
@@ -1230,11 +1248,12 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
         // Buscar label en field.config.options
         const options = (field.config as { options?: Array<{ value: string; label: string }> })
             .options;
-        if (Array.isArray(options)) {
-            const match = options.find((o) => o.value === value);
-            if (match) return match.label;
-        }
-        return value;
+        const labelOf = (v: string): string =>
+            (Array.isArray(options) ? options.find((o) => o.value === v)?.label : undefined) ?? v;
+        // v0.1.190 — multi_select: la combinación, etiquetas unidas.
+        const set = field.type === 'multi_select' ? parseMultiBucket(value) : null;
+        if (set !== null) return orderByCatalog(set, Array.isArray(options) ? options : []).map(labelOf).join(' + ');
+        return labelOf(value);
     }
     if (field.type === 'date' || field.type === 'datetime') {
         // Etiqueta del grupo: solo la fecha, en el orden del workspace.
