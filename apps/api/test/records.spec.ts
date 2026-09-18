@@ -235,6 +235,31 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         expect(await listWith(cond('tags', 'in', ['hosting']))).toEqual(['Beta', 'Gamma']);
     });
 
+    /**
+     * v0.1.191 — un campo `file` guarda una lista de ids: "sin archivos"
+     * tiene que cubrir la clave ausente, `null` y `[]` (la UI vacía el
+     * campo dejando `[]`), y "tiene archivos" sólo a los que tienen alguno.
+     * Cualquier otro operador se descarta (no filtra nada).
+     */
+    it('filtro: file → tiene archivos / sin archivos (presencia del array)', async () => {
+        const adj = await fieldsService.create(tenantA, 'clientes', { label: 'Adjuntos', type: 'file', slug: 'adjuntos' });
+        const k = `f${adj.id}`;
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'ConArchivo', [k]: [1, 2] } });
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Vacio', [k]: [] } });
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'SinClave' } });
+        const names = async (op: string, value?: unknown) =>
+            (await service.list(tenantA, admin, 'clientes', {
+                limit: 50,
+                sort_dir: 'asc',
+                filter_tree: filter([{ type: 'condition', field_id: adj.id, op, value }]),
+            })).data.map((r) => r.data[key('nombre')]).sort();
+
+        expect(await names('is_not_null')).toEqual(['ConArchivo']);
+        expect(await names('is_null')).toEqual(['SinClave', 'Vacio']);
+        // `eq` contra el texto del array no significa nada → se descarta.
+        expect(await names('eq', 1)).toEqual(['ConArchivo', 'SinClave', 'Vacio']);
+    });
+
     it('filtro: OR anidado', async () => {
         await seed();
         const page = await service.list(tenantA, admin, 'clientes', {

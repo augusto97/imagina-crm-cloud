@@ -3871,6 +3871,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Pro» sólo con B, cada registro UNA vez, dos chips con sus colores,
         alta desde el grupo con las dos opciones, búsqueda).
 
+  - [x] **Filtros que se ELIGEN, no se tipean (v0.1.191, reporte del usuario
+        con captura: "es alguno de" pedía escribir `al_dia, vencido` a mano)**:
+        regla nueva del lado "valor" de un filtro — donde el campo YA sabe
+        cuáles son sus valores posibles, el usuario elige; tipear queda para
+        texto, números y fechas. `FilterOptionPicker` (nuevo): dropdown con
+        buscador, casillas y los chips con el COLOR de cada opción, en modo
+        simple (`es`/`no es`) o múltiple (`es alguno de`/`no es ninguno de`,
+        queda abierto para marcar varias; × por chip). Es un div absoluto
+        SIN portal, como el autocompletado de v0.1.85: un Popover de Radix
+        dentro del panel de Filtros se auto-descarta; y Escape cierra sólo el
+        picker — el panel escucha Escape en el `document` en fase de captura,
+        así que el picker lo intercepta en `window` (que captura antes).
+        Aplica a: **select y multi_select** (todos los operadores; el
+        multi_select ahora dice "incluye / incluye alguno de", porque `eq`
+        escalar compila a "contiene", no a igualdad del set), **usuario**
+        (`FilterUserPicker`: se busca por nombre con el endpoint del picker de
+        asignación, acceso directo "Yo (mi usuario)" y los ids elegidos se
+        resuelven a nombre — antes era un `<input type=number>` donde había
+        que saber el ID interno), **calificación** (las estrellas del
+        `RatingControl`, también para ≥/≤) y **archivos**, que pierden
+        `eq/in` contra un número (nunca matcheaban: el valor es una lista de
+        ids) y quedan con "tiene archivos / sin archivos" — el backend
+        compila ambos por PRESENCIA del array (`[]`, `null` JSON y clave
+        ausente cuentan como vacío; `(data->>'fN') IS NULL` daba falso con
+        `[]`). `valueForOperator` (puro, con tests): al cambiar de operador
+        el valor cambia de forma conservando lo elegido (`pendiente` →
+        `[pendiente]`, `[a, b]` → `a`; antes el string suelto quedaba pegado
+        a un `in` y el backend lo descartaba). Mismos pickers en la
+        **edición masiva** ("Actualizar campo": el multi_select pedía "opt1,
+        opt2" tipeado) y en las condiciones de **automatizaciones**
+        (`ConditionEditor` comparte `FilterValueInput`). 1 test de API
+        (file: is_null/is_not_null por presencia, `eq` descartado) + 8
+        unitarios del front (532 API, 142 front en verde) + E2E navegador
+        26/26 (picker con 3 chips de color, multi que no se cierra, request
+        con `"op":"in","value":["al_dia","vencido"]`, Escape sólo cierra el
+        picker, "es" conserva la primera opción, usuario por nombre y "Yo",
+        estrellas ≥ 3, archivos tiene/sin, edición masiva con picker y
+        persistida).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

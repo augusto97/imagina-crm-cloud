@@ -54,13 +54,36 @@ const SELECT_LIKE: OperatorMeta[] = [
     { op: 'is_null', label: __('no está establecido'), nullary: true },
 ];
 
-const ID_LIKE: OperatorMeta[] = [
-    { op: 'eq', label: '=' },
-    { op: 'neq', label: '≠' },
+/**
+ * v0.1.191 — multi_select con sus verbos: `eq` escalar compila a "contiene
+ * la opción" (no a igualdad del set), así que decir "es" mentía.
+ */
+const MULTI_SELECT_LIKE: OperatorMeta[] = [
+    { op: 'eq', label: __('incluye') },
+    { op: 'neq', label: __('no incluye') },
+    { op: 'in', label: __('incluye alguno de') },
+    { op: 'nin', label: __('no incluye ninguno de') },
+    { op: 'is_not_null', label: __('tiene opciones'), nullary: true },
+    { op: 'is_null', label: __('sin opciones'), nullary: true },
+];
+
+const USER_LIKE: OperatorMeta[] = [
+    { op: 'eq', label: __('es') },
+    { op: 'neq', label: __('no es') },
     { op: 'in', label: __('es alguno de') },
     { op: 'nin', label: __('no es ninguno de') },
-    { op: 'is_not_null', label: __('está establecido'), nullary: true },
-    { op: 'is_null', label: __('no está establecido'), nullary: true },
+    { op: 'is_not_null', label: __('está asignado'), nullary: true },
+    { op: 'is_null', label: __('sin asignar'), nullary: true },
+];
+
+/**
+ * v0.1.191 — un campo de archivos guarda una LISTA de ids de adjuntos:
+ * compararla con un número tipeado a mano nunca matcheaba nada. Lo único
+ * que tiene sentido filtrar es si hay archivos o no.
+ */
+const FILE_LIKE: OperatorMeta[] = [
+    { op: 'is_not_null', label: __('tiene archivos'), nullary: true },
+    { op: 'is_null', label: __('sin archivos'), nullary: true },
 ];
 
 export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
@@ -83,13 +106,15 @@ export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
         case 'datetime':
             return DATE_LIKE;
         case 'select':
-        case 'multi_select':
             return SELECT_LIKE;
+        case 'multi_select':
+            return MULTI_SELECT_LIKE;
         case 'checkbox':
-            return [{ op: 'eq', label: '=' }];
+            return [{ op: 'eq', label: __('es') }];
         case 'user':
+            return USER_LIKE;
         case 'file':
-            return ID_LIKE;
+            return FILE_LIKE;
         case 'relation':
             // No filtrable en MVP (CLAUDE.md §9.4 — relation vive en wp_imcrm_relations).
             return [];
