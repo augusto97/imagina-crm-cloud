@@ -108,6 +108,14 @@ function compileCondition(
     if (field.type === 'multi_select') {
         return compileMultiSelect(key, op, cond.value, dataRef);
     }
+    // v0.1.191 — `file` guarda una LISTA de ids de adjuntos: lo único que se
+    // filtra es "tiene archivos / no tiene". `(data->>'fN') IS NULL` daba
+    // falso con `[]` (la clave existe, su texto es "[]"), así que "sin
+    // archivos" no encontraba a los que se los quitaron; y `eq`/`in` contra
+    // el texto del array nunca matcheaban → se descartan.
+    if (field.type === 'file') {
+        return compileJsonArrayPresence(key, op, dataRef);
+    }
 
     // Expresión de texto base y expresión tipada según el tipo del campo.
     const asText = sql`(${dataRef} ->> ${keyLit(key)})`;
@@ -341,6 +349,22 @@ function compileMultiSelect(
         }
         default:
             // starts_with/ends_with/gt/… no aplican a multi_select → se descartan.
+            return undefined;
+    }
+}
+
+/**
+ * Presencia de un array JSONB: vacío = ausente, `null` JSON o `[]`.
+ * (`->` sobre `{"fN": null}` devuelve JSON null, que NO es SQL NULL.)
+ */
+function compileJsonArrayPresence(key: string, op: FilterOperator, dataRef: DataRef): SQL | undefined {
+    const arr = sql`(${dataRef} -> ${keyLit(key)})`;
+    switch (op) {
+        case 'is_null':
+            return sql`(${arr} IS NULL OR jsonb_typeof(${arr}) <> 'array' OR ${arr} = '[]'::jsonb)`;
+        case 'is_not_null':
+            return sql`(jsonb_typeof(${arr}) = 'array' AND ${arr} <> '[]'::jsonb)`;
+        default:
             return undefined;
     }
 }

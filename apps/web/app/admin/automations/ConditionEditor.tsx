@@ -14,6 +14,7 @@ import {
     type DateRangePresetId,
 } from '@/admin/records/dateRangePresets';
 import { FilterValueInput } from '@/admin/records/FilterValueInput';
+import { valueForOperator } from '@/admin/records/filterValue';
 import { isNullaryOperator, operatorsForType } from '@/admin/records/operators';
 
 /**
@@ -198,9 +199,8 @@ export function ConditionEditor({
                                     onChange={(e) =>
                                         updateRow(i, {
                                             op: e.target.value as FilterOperator,
-                                            value: isNullaryOperator(e.target.value as FilterOperator)
-                                                ? null
-                                                : rule.value,
+                                            // v0.1.191 — escalar ↔ lista según el operador.
+                                            value: valueForOperator(e.target.value as FilterOperator, rule.value),
                                         })
                                     }
                                     aria-label={__('Operador')}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Copy, Pencil, Trash2, X } from 'lucide-react';
 
+import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,9 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { extractFieldOptions } from './fieldOptions';
+import { FilterOptionPicker } from './FilterOptionPicker';
+import { FilterUserPicker } from './FilterUserPicker';
+import { toValueList } from './filterValue';
 
 interface BulkActionsToolbarProps {
     listId: number;
@@ -252,34 +256,44 @@ function BulkValueInput({
     value: unknown;
     onChange: (v: unknown) => void;
 }): JSX.Element {
-    if (field.type === 'select') {
-        const options = extractFieldOptions(field);
+    // v0.1.191 — mismos pickers que los filtros: las opciones se ELIGEN con
+    // sus chips de color (el multi_select pedía "opt1, opt2" tipeado a
+    // mano con los value internos), el usuario se busca por nombre y la
+    // calificación se pone con las estrellas.
+    if (field.type === 'select' || field.type === 'multi_select') {
+        const multi = field.type === 'multi_select';
         return (
-            <Select
-                value={typeof value === 'string' ? value : ''}
-                onChange={(e) => onChange(e.target.value)}
-            >
-                <option value="">{__('Selecciona…')}</option>
-                {options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                        {o.label}
-                    </option>
-                ))}
-            </Select>
+            <FilterOptionPicker
+                mode={multi ? 'multi' : 'single'}
+                options={extractFieldOptions(field)}
+                value={multi ? toValueList(value) : (typeof value === 'string' ? value : null)}
+                onChange={(next) => onChange(multi ? (next ?? []) : (next ?? ''))}
+                aria-label={__('Nuevo valor')}
+                data-testid="imcrm-bulk-option-picker"
+            />
         );
     }
-    if (field.type === 'multi_select') {
-        const text = Array.isArray(value)
-            ? value.join(', ')
-            : (typeof value === 'string' ? value : '');
+    if (field.type === 'user') {
         return (
-            <Input
-                value={text}
-                onChange={(e) =>
-                    onChange(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))
-                }
-                placeholder={__('opt1, opt2, …')}
+            <FilterUserPicker
+                mode="single"
+                value={value}
+                onChange={(next) => onChange(next ?? '')}
             />
+        );
+    }
+    if (field.type === 'rating') {
+        const cfg = field.config as { max?: unknown; icon?: unknown };
+        return (
+            <div className="imcrm-flex imcrm-min-h-9 imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2">
+                <RatingControl
+                    value={typeof value === 'number' ? value : null}
+                    max={typeof cfg.max === 'number' ? cfg.max : 5}
+                    icon={(typeof cfg.icon === 'string' ? cfg.icon : 'star') as RatingIcon}
+                    size="md"
+                    onChange={(next) => onChange(next ?? '')}
+                />
+            </div>
         );
     }
     if (field.type === 'checkbox') {
@@ -314,9 +328,7 @@ function BulkValueInput({
     if (
         field.type === 'number'
         || field.type === 'currency'
-        || field.type === 'user'
-        // v0.1.158 — se guardan como número (estrellas / 0-100 / minutos).
-        || field.type === 'rating'
+        // v0.1.158 — se guardan como número (0-100 / minutos).
         || field.type === 'percent'
         || field.type === 'duration'
     ) {
