@@ -3961,6 +3961,56 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         va con su sección sin superponerse; el único scroller del área de
         trabajo sigue siendo el main).
 
+  - [x] **Cabeceras fijas con sticky NATIVO + el MCP lee las automatizaciones
+        completas (v0.1.193, dos reportes del usuario)**:
+        (a) **"Los headings de las agrupaciones se superponen sobre todo y al
+        hacer scroll rebotan"**: la v0.1.192 pegaba las cabeceras por
+        JavaScript (`transform: translateY` recalculado en cada evento
+        `scroll`), y eso llega UN CUADRO TARDE respecto del scroll del
+        compositor — en el navegador real se ve como un rebote en cada
+        rueda; el E2E con `scrollTo` instantáneo no lo mostraba. Y el
+        encabezado del grupo que se iba tenía el mismo `z-30` que la
+        cabecera de la página y venía después en el DOM, así que pintaba
+        ENCIMA de ella. Se tiró `usePinToTop` y ahora todo es `position:
+        sticky` nativo (cero JS en el camino del scroll): la **tabla se
+        parte en dos** — el `<thead>` vive en su propia `<table>` dentro de
+        un wrapper sticky (con un `overflow: hidden` interno cuyo
+        `scrollLeft` se copia del scroller del cuerpo), y el cuerpo queda en
+        el `overflow-x-auto`; las dos tablas comparten `colgroup`,
+        `table-layout: fixed` y `minWidth`, así las columnas quedan
+        alineadas al pixel. Por eso funciona: el sticky se pega al scroll
+        container MÁS CERCANO, y sacando la cabecera del wrapper horizontal
+        su contenedor pasa a ser el `<main>`. En la agrupada cada grupo tiene
+        su scroller de cuerpo y su cabecera, sincronizados por un registro
+        compartido (`HScrollSyncContext`) y la barra espejo del fondo se
+        re-apunta al primer grupo montado (`retargetKey`). `stickyTop.ts`:
+        `PageStickyTopContext` (RecordsPage mide su bloque fijo y descuenta
+        el padding del main), `useElementHeight` y `useStuckSentinel` toman
+        el ELEMENTO de un callback ref con `useState` — con un RefObject el
+        efecto corría una vez con el ref vacío, porque la cabecera se monta
+        después de que carga la lista. Pila de capas explícita: bloque de la
+        página `z-[35]` > encabezado de grupo `z-30` > cabecera de columnas
+        `z-20` > celdas sticky-left. La línea de separación se dibuja sólo
+        mientras hay contenido pasando por debajo (centinela con
+        IntersectionObserver).
+        (b) **"Desde el MCP en un chat normal me dice que sólo puede ver
+        que la automatización existe, no su configuración"**: era un hueco,
+        no una decisión — `get_list_schema` devolvía de cada automatización
+        sólo id, nombre, trigger y si está activa. Ahora viaja la
+        configuración COMPLETA (`trigger_config` y `actions`, con `if_else`
+        anidado) pasada por `redactSecrets`: cualquier clave que parezca un
+        secreto (secret/token/password/api_key/authorization) sale como
+        `[oculto]` — el token del webhook entrante y el secreto HMAC no se
+        filtran por el MCP, lo demás sí. Copiar una automatización de una
+        lista a otra desde Claude ahora funciona (leer → `propose_create_
+        automation` con la misma config). 3 tests unitarios del enmascarado
+        (146 front, API completa en verde) + E2E navegador 29/29 (cabeceras
+        `position: sticky` sin transform, columnas alineadas entre la tabla
+        de cabecera y la del cuerpo, cabecera de la página SIEMPRE encima
+        por `elementFromPoint`, el encabezado del grupo 1 se va con su
+        sección y entra el del 2, scroll horizontal sincronizado entre
+        grupos, un solo scroller vertical).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -35,7 +35,21 @@ import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
-import { usePinToTop } from './usePinToTop';
+import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
+
+/**
+ * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
+ * único scroller que envolvía todos los grupos, pero eso dejaba los
+ * encabezados de grupo y las cabeceras de columnas ADENTRO de un scroll
+ * container, donde `position: sticky` no puede pegarse al scroll vertical
+ * de la página. Ahora cada grupo tiene su scroller (cuerpo) y su wrapper
+ * de cabecera (overflow hidden), y este registro copia el `scrollLeft` de
+ * cualquiera al resto — las columnas siguen alineadas entre grupos.
+ */
+interface HScrollSync {
+    register: (el: HTMLDivElement, kind: 'body' | 'head') => () => void;
+}
+const HScrollSyncContext = createContext<HScrollSync | null>(null);
 
 interface GroupedTableViewProps {
     listId: number;
@@ -167,8 +181,42 @@ export function GroupedTableView({
         [collapsedGroups],
     );
     const [openLocally, setOpenLocally] = useState<Set<string>>(new Set());
-    // Scroller horizontal compartido — target de la StickyHScrollbar.
-    const hScrollRef = useRef<HTMLDivElement>(null);
+    // Target de la StickyHScrollbar: el scroller del PRIMER grupo montado
+    // (el registro de sincronía lo mantiene al día; `retargetKey` avisa).
+    const hScrollRef = useRef<HTMLDivElement | null>(null);
+    const [retargetKey, setRetargetKey] = useState(0);
+    const syncSets = useRef({ bodies: new Set<HTMLDivElement>(), heads: new Set<HTMLDivElement>() });
+    const hScrollSync = useMemo<HScrollSync>(() => ({
+        register: (el, kind) => {
+            const s = syncSets.current;
+            const set = kind === 'body' ? s.bodies : s.heads;
+            set.add(el);
+            // Al entrar, se alinea con lo que ya está scrolleado.
+            const first = Array.from(s.bodies).find((b) => b !== el);
+            if (first && el.scrollLeft !== first.scrollLeft) el.scrollLeft = first.scrollLeft;
+            const onScroll = (): void => {
+                const x = el.scrollLeft;
+                for (const b of s.bodies) if (b !== el && b.scrollLeft !== x) b.scrollLeft = x;
+                for (const h of s.heads) if (h !== el && h.scrollLeft !== x) h.scrollLeft = x;
+            };
+            if (kind === 'body') el.addEventListener('scroll', onScroll, { passive: true });
+            const retarget = (): void => {
+                const next = Array.from(s.bodies)[0] ?? null;
+                if (hScrollRef.current !== next) {
+                    hScrollRef.current = next;
+                    setRetargetKey((k) => k + 1);
+                }
+            };
+            if (kind === 'body') retarget();
+            return () => {
+                set.delete(el);
+                if (kind === 'body') {
+                    el.removeEventListener('scroll', onScroll);
+                    retarget();
+                }
+            };
+        },
+    }), []);
 
     const isOpen = (key: string): boolean => {
         if (openLocally.has(key)) return true;
@@ -339,11 +387,8 @@ export function GroupedTableView({
                 Solo scroll HORIZONTAL acá: el vertical es el de la
                 página (pedido del usuario, v0.1.70) — los buckets crecen
                 a su alto natural. */}
-            <div ref={hScrollRef} className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden imcrm-pb-2">
-                <div
-                    className="imcrm-flex imcrm-flex-col imcrm-gap-3"
-                    style={{ minWidth: tableWidth }}
-                >
+            <HScrollSyncContext.Provider value={hScrollSync}>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-pb-2">
                     {buckets.map((bucket) => {
                         const key = bucketKey(bucket);
                         const rawKey = bucketRawKey(bucket);
@@ -401,11 +446,11 @@ export function GroupedTableView({
                         );
                     })}
                 </div>
-            </div>
+            </HScrollSyncContext.Provider>
             {/* Scrollbar horizontal fija al fondo del viewport (estilo
                 ClickUp) — la nativa del wrapper queda al fondo de la
                 lista de grupos. */}
-            <StickyHScrollbar targetRef={hScrollRef} />
+            <StickyHScrollbar targetRef={hScrollRef} retargetKey={retargetKey} />
 
             {/* v0.1.125 — el resumen va al FINAL: arriba le comía altura a la
                 tabla sin aportar nada al escanear los grupos. */}
@@ -715,24 +760,56 @@ function GroupBucketSection({
     const total = records.data?.meta.total ?? 0;
     const hasMore = isOpen && total > page * perPage;
 
-    // v0.1.192 — el encabezado del grupo y la cabecera de columnas quedan
+    // v0.1.193 — el encabezado del grupo y la cabecera de columnas quedan
     // FIJOS mientras se recorre ESE grupo y los reemplaza el del siguiente
-    // (como ClickUp). El recorrido del encabezado lo limita la sección; el
-    // de la cabecera, su tabla, que se pega DEBAJO del encabezado.
-    const sectionRef = useRef<HTMLElement>(null);
-    const headerRef = useRef<HTMLButtonElement>(null);
-    const tableRef = useRef<HTMLTableElement>(null);
-    const theadRef = useRef<HTMLTableSectionElement>(null);
-    const headerPinned = usePinToTop(headerRef, { boundsRef: sectionRef });
-    const theadPinned = usePinToTop(theadRef, {
-        boundsRef: tableRef,
-        extraTop: () => headerRef.current?.offsetHeight ?? 0,
-        enabled: isOpen && !records.isLoading && !records.isError,
-    });
+    // (como ClickUp), con `position: sticky` NATIVO: el encabezado se pega
+    // bajo la cabecera de la página y su recorrido lo limita la sección
+    // (al terminar, se va con ella); la cabecera de columnas —en su propia
+    // tabla, fuera del scroller horizontal— se pega DEBAJO del encabezado.
+    const stickyTop = usePageStickyTop();
+    const [headerEl, setHeaderEl] = useState<HTMLButtonElement | null>(null);
+    const headerHeight = useElementHeight(headerEl);
+    const [groupSentinelEl, setGroupSentinelEl] = useState<HTMLDivElement | null>(null);
+    const headerStuck = useStuckSentinel(groupSentinelEl, stickyTop);
+    const hScrollSync = useContext(HScrollSyncContext);
+    const bodyScrollRef = useRef<HTMLDivElement>(null);
+    const headScrollRef = useRef<HTMLDivElement>(null);
+    const tableMounted = isOpen && !records.isLoading && !records.isError;
+    useEffect(() => {
+        if (!hScrollSync || !tableMounted) return;
+        const body = bodyScrollRef.current;
+        const head = headScrollRef.current;
+        const offs = [body ? hScrollSync.register(body, 'body') : null, head ? hScrollSync.register(head, 'head') : null];
+        return () => offs.forEach((off) => off?.());
+    }, [hScrollSync, tableMounted]);
+
+    const tableClassName = cn(
+        'imcrm-records-table imcrm-w-full imcrm-text-sm',
+        wrapText && 'imcrm-wrap-cells',
+        `imcrm-density-${density ?? 'normal'}`,
+        `imcrm-fontsize-${fontSize ?? 'md'}`,
+    );
+    // `width: 100%` + `minWidth: tableWidth`: la tabla llena el contenedor
+    // (sin vacío a la derecha) y todos los buckets comparten el mismo
+    // min-width para que las columnas queden alineadas.
+    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: tableWidth };
+    // Ver TableView: sin `<colgroup>` la columna de la casilla se estira
+    // con el sobrante. Se rinde en las DOS tablas (cabecera y cuerpo).
+    const colGroup = (
+        <colgroup>
+            <col style={{ width: 28 }} />
+            {columns.map((c) => (
+                <col
+                    key={c.id}
+                    style={{ width: columnSizing[c.id] ?? defaultSizeForColumn(c) }}
+                />
+            ))}
+            {onAddColumn && <col />}
+        </colgroup>
+    );
 
     return (
         <section
-            ref={sectionRef}
             // Grupo PLANO (estilo ClickUp): sin card (border/rounded/
             // shadow/bg-card) alrededor — header del grupo (chip +
             // contador) directo sobre el canvas, filas debajo separadas
@@ -741,19 +818,18 @@ function GroupBucketSection({
             // containing block para el sticky que NO scrollea).
             aria-expanded={isOpen}
         >
+            <div ref={setGroupSentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
             <button
-                ref={headerRef}
+                ref={setHeaderEl}
                 type="button"
                 onClick={onToggle}
                 data-testid="imcrm-group-header"
+                style={{ top: stickyTop }}
                 className={cn(
-                    'imcrm-relative imcrm-z-30 imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40',
-                    headerPinned && 'imcrm-rounded-none imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
+                    'imcrm-sticky imcrm-z-30 imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-3 imcrm-rounded-md imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-muted/40',
+                    headerStuck && 'imcrm-rounded-none imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
                 )}
             >
-              {/* El contenido va pegado a la IZQUIERDA del viewport al
-                  scrollear en horizontal (el botón mide lo que la tabla). */}
-              <span className="imcrm-sticky imcrm-left-0 imcrm-flex imcrm-items-center imcrm-gap-3">
                 {isOpen ? (
                     <ChevronDown className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                 ) : (
@@ -788,7 +864,6 @@ function GroupBucketSection({
                               bucket.count,
                           )}
                 </span>
-              </span>
             </button>
 
             {isOpen && (
@@ -806,40 +881,16 @@ function GroupBucketSection({
                             {(records.error as Error).message}
                         </p>
                     ) : (
-                        <table
-                            ref={tableRef}
-                            className={cn(
-                                'imcrm-records-table imcrm-w-full imcrm-text-sm',
-                                wrapText && 'imcrm-wrap-cells',
-                                `imcrm-density-${density ?? 'normal'}`,
-                                `imcrm-fontsize-${fontSize ?? 'md'}`,
-                            )}
-                            // `width: 100%` + `minWidth: tableWidth`: la tabla
-                            // llena el contenedor (sin vacío a la derecha) y
-                            // todos los buckets comparten el mismo min-width
-                            // para que las columnas queden alineadas.
-                            style={{ tableLayout: 'fixed', width: '100%', minWidth: tableWidth }}
-                            aria-label={labelText}
+                        <div className="imcrm-relative">
+                        <div
+                            data-testid="imcrm-table-head"
+                            className="imcrm-sticky imcrm-z-20 imcrm-bg-background"
+                            style={{ top: stickyTop + headerHeight }}
                         >
-                            {/* Ver TableView: sin `<colgroup>` la columna de
-                                la casilla se estira con el sobrante. */}
-                            <colgroup>
-                                <col style={{ width: 28 }} />
-                                {columns.map((c) => (
-                                    <col
-                                        key={c.id}
-                                        style={{ width: columnSizing[c.id] ?? defaultSizeForColumn(c) }}
-                                    />
-                                ))}
-                                {onAddColumn && <col />}
-                            </colgroup>
-                            <thead
-                                ref={theadRef}
-                                className={cn(
-                                    'imcrm-relative imcrm-z-20 imcrm-bg-background',
-                                    theadPinned && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.08)]',
-                                )}
-                            >
+                        <div ref={headScrollRef} className="imcrm-overflow-hidden">
+                        <table className={tableClassName} style={tableStyle}>
+                            {colGroup}
+                            <thead>
                                 <tr className="imcrm-group/head">
                                     <th
                                         scope="col"
@@ -969,6 +1020,12 @@ function GroupBucketSection({
                                     )}
                                 </tr>
                             </thead>
+                        </table>
+                        </div>
+                        </div>
+                        <div ref={bodyScrollRef} className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden">
+                        <table className={tableClassName} style={tableStyle} aria-label={labelText}>
+                            {colGroup}
                             <tbody>
                                 {(records.data?.data ?? []).flatMap((r) => [
                                     { record: r, depth: 0 },
@@ -1150,6 +1207,8 @@ function GroupBucketSection({
                                 </tfoot>
                             )}
                         </table>
+                        </div>
+                        </div>
                     )}
 
                     {hasMore && (

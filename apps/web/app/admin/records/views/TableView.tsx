@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     flexRender,
     getCoreRowModel,
@@ -33,7 +33,7 @@ import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
-import { usePinToTop } from './usePinToTop';
+import { usePageStickyTop, useStuckSentinel } from './stickyTop';
 
 interface TableViewProps {
     listId: number;
@@ -429,14 +429,59 @@ export function TableView({
         return undefined;
     };
 
-    // v0.1.192 — la cabecera de columnas queda FIJA bajo la cabecera de la
-    // página al scrollear (como ClickUp). `position: sticky` no servía:
-    // el wrapper `overflow-x-auto` es el scroll container más cercano y
-    // no scrollea en vertical; el hook la desplaza con transform contra
-    // el scroll del <main>. Sombra suave sólo mientras está pegada.
-    const tableRef = useRef<HTMLTableElement>(null);
-    const theadRef = useRef<HTMLTableSectionElement>(null);
-    const pinned = usePinToTop(theadRef, { boundsRef: tableRef });
+    // v0.1.193 — la cabecera de columnas queda FIJA bajo la cabecera de la
+    // página al scrollear (como ClickUp) con `position: sticky` NATIVO.
+    // Para eso la tabla va PARTIDA: el `<thead>` vive en su propia tabla
+    // dentro de un wrapper sticky (fuera del scroller horizontal — sticky
+    // se pega al scroll container más cercano, y el wrapper `overflow-x-
+    // auto` lo es aunque no scrollee en vertical) y el cuerpo en el
+    // scroller de siempre; las dos tablas comparten `<colgroup>`, ancho y
+    // `table-layout: fixed`, así las columnas coinciden, y el wrapper de
+    // la cabecera (overflow hidden) copia el scrollLeft del cuerpo.
+    const stickyTop = usePageStickyTop();
+    const [headSentinelEl, setHeadSentinelEl] = useState<HTMLDivElement | null>(null);
+    const headScrollRef = useRef<HTMLDivElement>(null);
+    const headStuck = useStuckSentinel(headSentinelEl, stickyTop);
+    useEffect(() => {
+        const body = tableContainerRef.current;
+        if (!body) return;
+        const onScroll = (): void => {
+            const head = headScrollRef.current;
+            if (head && head.scrollLeft !== body.scrollLeft) head.scrollLeft = body.scrollLeft;
+        };
+        onScroll();
+        body.addEventListener('scroll', onScroll, { passive: true });
+        return () => body.removeEventListener('scroll', onScroll);
+    }, []);
+
+    const tableClassName = cn(
+        'imcrm-records-table imcrm-w-full imcrm-text-sm',
+        // Manda sobre los chips de select/multi_select (globals.css).
+        wrapText && 'imcrm-wrap-cells',
+        spreadsheet && 'imcrm-records-grid',
+        `imcrm-density-${density ?? (spreadsheet ? 'compact' : 'normal')}`,
+        `imcrm-fontsize-${fontSize ?? (spreadsheet ? 'sm' : 'md')}`,
+    );
+    // `width: 100%` + `minWidth: totalSize`: la tabla llena el contenedor
+    // (las columnas estiran proporcionalmente, sin vacío a la derecha) y
+    // conserva el scroll horizontal cuando la suma de anchos supera el
+    // viewport.
+    const tableStyle: React.CSSProperties = { tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() };
+    // v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el espacio
+    // sobrante ENTRE TODAS las columnas, así que la de la casilla se
+    // estiraba a ~44px por más que se le pidieran 32 (reporte del usuario,
+    // con el inspector abierto). Con un `<colgroup>` la casilla queda
+    // clavada en 32px y el sobrante se lo lleva la última columna, que es
+    // la vacía del "+". Se rinde en las DOS tablas (cabecera y cuerpo).
+    const colGroup = (
+        <colgroup>
+            <col style={{ width: 28 }} />
+            {table.getVisibleLeafColumns().map((col) => (
+                <col key={col.id} style={{ width: col.getSize() }} />
+            ))}
+            {onAddColumn && <col />}
+        </colgroup>
+    );
 
     // IDs visibles: alimenta el batch fetch de recurrencias para la
     // página actual de records. UNA sola query reemplaza el N+1 que
@@ -447,57 +492,25 @@ export function TableView({
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
        <WrapTextContext.Provider value={wrapText}>
         <div
-            // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
-            // vertical es el de la PÁGINA (main del shell) — la tabla
-            // crece a su alto natural; el usuario pidió explícitamente
-            // una sola barra al borde derecho de la ventana, sin scroll
-            // interno de la tabla.
-            // Sin card chrome (border/rounded/shadow/bg-card): la tabla
-            // va plana sobre el canvas, estilo ClickUp — solo hairlines.
-            ref={tableContainerRef}
-            className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden"
+            // Región de la tabla: la cabecera sticky se pega mientras esta
+            // caja siga en pantalla y se va con ella al terminar.
+            className="imcrm-relative"
             role="region"
             aria-label={__('Tabla de registros')}
         >
-            <table
-                ref={tableRef}
+            <div ref={setHeadSentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
+            <div
+                data-testid="imcrm-table-head"
                 className={cn(
-                    'imcrm-records-table imcrm-w-full imcrm-text-sm',
-                    // Manda sobre los chips de select/multi_select (globals.css).
-                    wrapText && 'imcrm-wrap-cells',
-                    spreadsheet && 'imcrm-records-grid',
-                    `imcrm-density-${density ?? (spreadsheet ? 'compact' : 'normal')}`,
-                    `imcrm-fontsize-${fontSize ?? (spreadsheet ? 'sm' : 'md')}`,
+                    'imcrm-sticky imcrm-z-20 imcrm-bg-background',
+                    headStuck && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.08)]',
                 )}
-                // `width: 100%` + `minWidth: totalSize`: la tabla llena el
-                // contenedor (las columnas estiran proporcionalmente, sin
-                // vacío a la derecha) y conserva el scroll horizontal
-                // cuando la suma de anchos supera el viewport.
-                style={{ tableLayout: 'fixed', width: '100%', minWidth: table.getCenterTotalSize() }}
-                aria-label={__('Registros de la lista')}
+                style={{ top: stickyTop }}
             >
-                {/*
-                  v0.1.142 — `table-layout: fixed` + `width: 100%` reparte el
-                  espacio sobrante ENTRE TODAS las columnas, así que la de la
-                  casilla se estiraba a ~44px por más que se le pidieran 32
-                  (reporte del usuario, con el inspector abierto). Con un
-                  `<colgroup>` la casilla queda clavada en 32px y el sobrante
-                  se lo lleva la última columna, que es la vacía del "+".
-                */}
-                <colgroup>
-                    <col style={{ width: 28 }} />
-                    {table.getVisibleLeafColumns().map((col) => (
-                        <col key={col.id} style={{ width: col.getSize() }} />
-                    ))}
-                    {onAddColumn && <col />}
-                </colgroup>
-                <thead
-                    ref={theadRef}
-                    className={cn(
-                        'imcrm-relative imcrm-z-20 imcrm-bg-background',
-                        pinned && 'imcrm-shadow-[0_2px_4px_-1px_rgba(0,0,0,0.08)]',
-                    )}
-                >
+            <div ref={headScrollRef} className="imcrm-overflow-hidden">
+            <table className={tableClassName} style={tableStyle} aria-hidden={false}>
+                {colGroup}
+                <thead>
                     {table.getHeaderGroups().map((hg) => (
                         <tr key={hg.id} className="imcrm-group/head">
                             <th
@@ -719,6 +732,22 @@ export function TableView({
                         </tr>
                     ))}
                 </thead>
+            </table>
+            </div>
+            </div>
+            <div
+                // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
+                // vertical es el de la PÁGINA (main del shell) — la tabla
+                // crece a su alto natural; el usuario pidió explícitamente
+                // una sola barra al borde derecho de la ventana, sin scroll
+                // interno de la tabla.
+                // Sin card chrome (border/rounded/shadow/bg-card): la tabla
+                // va plana sobre el canvas, estilo ClickUp — solo hairlines.
+                ref={tableContainerRef}
+                className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden"
+            >
+            <table className={tableClassName} style={tableStyle} aria-label={__('Registros de la lista')}>
+                {colGroup}
                 <tbody>
                     {rows.length === 0 ? (
                         <tr>
@@ -975,6 +1004,7 @@ export function TableView({
                     </tfoot>
                 )}
             </table>
+            </div>
         </div>
         {/* Scrollbar horizontal fija al fondo del viewport (estilo
             ClickUp) — la nativa del wrapper queda al fondo de la tabla,

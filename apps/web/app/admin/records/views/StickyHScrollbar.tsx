@@ -10,20 +10,29 @@ import { useEffect, useRef, useState } from 'react';
  * evento, así que no hay loop).
  *
  * Se oculta solo cuando la tabla cabe completa (sin overflow horizontal).
- * Montarlo como HERMANO inmediato del contenedor `overflow-x-auto`, dentro
- * del mismo flujo vertical que scrollea el `<main>`.
+ * Montarlo como HERMANO del contenedor `overflow-x-auto`, dentro del mismo
+ * flujo vertical que scrollea el `<main>`.
+ *
+ * `retargetKey`: cambia cuando el elemento al que apunta `targetRef` se
+ * reemplaza (la vista agrupada apunta al scroller del primer grupo
+ * montado, v0.1.193) para volver a suscribirse.
  */
 export function StickyHScrollbar({
     targetRef,
+    retargetKey = 0,
 }: {
     targetRef: React.RefObject<HTMLDivElement>;
+    retargetKey?: number;
 }): JSX.Element | null {
     const barRef = useRef<HTMLDivElement | null>(null);
     const [dims, setDims] = useState({ scrollWidth: 0, clientWidth: 0 });
 
     useEffect(() => {
         const target = targetRef.current;
-        if (!target) return;
+        if (!target) {
+            setDims({ scrollWidth: 0, clientWidth: 0 });
+            return;
+        }
 
         const update = (): void => {
             setDims((prev) => {
@@ -48,8 +57,7 @@ export function StickyHScrollbar({
             ro.disconnect();
             target.removeEventListener('scroll', onTargetScroll);
         };
-        // targetRef es un ref estable; el efecto corre al montar.
-    }, [targetRef]);
+    }, [targetRef, retargetKey]);
 
     if (dims.scrollWidth <= dims.clientWidth + 2) return null;
 

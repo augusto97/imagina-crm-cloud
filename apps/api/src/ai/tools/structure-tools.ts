@@ -265,7 +265,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'get_list_schema',
             label: 'Leyendo el esquema de la lista',
-            description: 'Devuelve los campos (slug, tipo, opciones), vistas y automatizaciones de una lista. SIEMPRE llamala antes de proponer cambios sobre una lista existente.',
+            description: 'Devuelve los campos (slug, tipo, opciones), vistas y automatizaciones de una lista — de cada automatización viaja la configuración COMPLETA (trigger_config y actions), así se puede explicar o recrear en otra lista. SIEMPRE llamala antes de proponer cambios sobre una lista existente.',
             capability: null,
             input: z.object({ list: z.string().max(63).describe('Slug de la lista') }),
             run: (ctx, input) => this.getListSchema(ctx, input as { list: string }),
@@ -387,7 +387,20 @@ export class StructureTools implements AiProposalApplier {
                 list: { slug: list.slug, name: list.name, icon: list.icon, color: list.color, records_count: count },
                 fields: fields.map((f) => describeFieldForModel(f, listById, fieldById)),
                 views: views.map((v) => ({ id: v.id, name: v.name, type: v.type, is_default: v.is_default })),
-                automations: autos.map((a) => ({ id: a.id, name: a.name, trigger_type: a.trigger_type, is_active: a.is_active })),
+                // v0.1.193 — la CONFIGURACIÓN completa (disparador + acciones),
+                // no sólo el nombre: sin esto el asistente/MCP no podía
+                // copiar ni explicar una automatización ("sólo veo que
+                // existe"). Los secretos (token del webhook entrante, HMAC
+                // de webhooks salientes, contraseñas) viajan enmascarados.
+                automations: autos.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    description: a.description ?? null,
+                    is_active: a.is_active,
+                    trigger_type: a.trigger_type,
+                    trigger_config: redactSecrets(a.trigger_config),
+                    actions: redactSecrets(a.actions),
+                })),
             },
         };
     }
@@ -1287,6 +1300,29 @@ const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
 };
 
 /** Slug snake_case desde un texto humano (sin acentos, arranca con letra). */
+const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
+
+/**
+ * v0.1.193 — copia profunda de una config enmascarando los valores cuyas
+ * claves huelen a secreto (`webhook_token` del disparador entrante, `secret`
+ * HMAC de `call_webhook`, cabeceras `Authorization`, contraseñas). Lo que
+ * se lee por el asistente o el MCP sirve para explicar o recrear la
+ * automatización, nunca para llevarse credenciales.
+ */
+export function redactSecrets<T>(value: T): T {
+    if (Array.isArray(value)) return value.map((v) => redactSecrets(v)) as unknown as T;
+    if (value !== null && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] = SECRET_KEY_RE.test(k) && v !== null && v !== undefined && v !== ''
+                ? '[oculto]'
+                : redactSecrets(v);
+        }
+        return out as T;
+    }
+    return value;
+}
+
 export function toSlug(label: string): string {
     let s = label
         .normalize('NFD')

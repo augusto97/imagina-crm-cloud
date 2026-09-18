@@ -84,7 +84,7 @@ import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
 import { ViewSettingsSheet } from './views/ViewSettingsSheet';
 import { ViewsTabs } from './views/ViewsTabs';
-import { useStuckSentinel } from './views/usePinToTop';
+import { MAIN_SCROLLER_ID, PageStickyTopContext, useElementHeight, useStuckSentinel } from './views/stickyTop';
 import {
     hasChangesVsView,
     stateToViewConfig,
@@ -119,8 +119,21 @@ export function RecordsPage(): JSX.Element {
     const [activeViewId, setActiveViewId] = useState<number | null>(null);
     const initialViewAppliedRef = useRef<number | null>(null);
     // v0.1.192 — cabecera fija: centinela que avisa cuando está pegada.
-    const stickySentinelRef = useRef<HTMLDivElement>(null);
-    const headerStuck = useStuckSentinel(stickySentinelRef);
+    // (Callback refs con estado: el bloque se monta cuando carga la lista.)
+    const [stickySentinelEl, setStickySentinelEl] = useState<HTMLDivElement | null>(null);
+    const headerStuck = useStuckSentinel(stickySentinelEl);
+    // v0.1.193 — la línea bajo la que se pegan las cabeceras de columnas y
+    // los encabezados de grupo (sticky nativo): el alto del bloque menos el
+    // padding superior del <main>, porque el bloque va con `-top-2` para
+    // pegarse al borde del área de trabajo.
+    const [stickyBlockEl, setStickyBlockEl] = useState<HTMLDivElement | null>(null);
+    const stickyBlockHeight = useElementHeight(stickyBlockEl);
+    const [mainPadTop, setMainPadTop] = useState(8);
+    useEffect(() => {
+        const main = document.getElementById(MAIN_SCROLLER_ID);
+        if (main) setMainPadTop(parseFloat(getComputedStyle(main).paddingTop) || 0);
+    }, []);
+    const pageStickyTop = Math.max(0, stickyBlockHeight - mainPadTop);
     /**
      * 0.57.41 — flag para deferir el primer fetch de records hasta que
      * la vista default haya sido aplicada (o se confirmó que no hay).
@@ -513,24 +526,29 @@ const applyView = (view: SavedViewEntity | null): void => {
         // tabla nunca scrollea verticalmente por su cuenta (pedido
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
+        <PageStickyTopContext.Provider value={pageStickyTop}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
             {/* Centinela del bloque fijo: cuando sale por arriba, el bloque
                 está pegado y dibuja su línea inferior. */}
-            <div ref={stickySentinelRef} aria-hidden className="imcrm-h-px imcrm--mb-px" />
+            <div ref={setStickySentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
             {/*
               v0.1.192 — las TRES filas de cabecera (breadcrumb, pestañas de
               vistas y toolbar) quedan FIJAS arriba al scrollear la página,
               como en ClickUp: el atributo marca la línea bajo la que se
               pegan las cabeceras de columnas y los encabezados de grupo
-              (ver usePinToTop). El único scroll sigue siendo el del <main>.
+              (ver stickyTop.ts). El único scroll sigue siendo el del <main>.
             */}
             <div
+                ref={setStickyBlockEl}
                 data-imcrm-sticky-top
                 className={cn(
                     // `-top-2` = el `py-2` del <main>: el bloque se pega al
                     // BORDE del área de trabajo, no 8px más abajo (sticky
-                    // respeta el padding del scroller).
-                    'imcrm-sticky imcrm--top-2 imcrm-z-30 imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem] imcrm-bg-background',
+                    // respeta el padding del scroller). z por ENCIMA de los
+                    // encabezados de grupo (z-30) y las cabeceras (z-20):
+                    // un encabezado que se va con su sección pasa por
+                    // debajo, no por encima (el reporte del usuario).
+                    'imcrm-sticky imcrm--top-2 imcrm-z-[35] imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem] imcrm-bg-background',
                     headerStuck && 'imcrm-shadow-[0_1px_0_hsl(var(--imcrm-border))]',
                 )}
             >
@@ -1074,6 +1092,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </>
             )}
         </div>
+        </PageStickyTopContext.Provider>
     );
 }
 
