@@ -28,7 +28,7 @@ import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { useRecord, useRecords } from '@/hooks/useRecords';
 import { useSavedViews } from '@/hooks/useSavedViews';
-import { clientSideSearch } from '@/lib/clientSearch';
+import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
 import { __, sprintf } from '@/lib/i18n';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { CAP, useCan } from '@/lib/permissions';
@@ -185,8 +185,13 @@ export function RecordsPage(): JSX.Element {
         ? baseRecords.data.meta.total <= baseRecords.data.meta.per_page
         : false;
 
+    // v0.1.188 — la búsqueda in-memory no ve la DESCRIPCIÓN del registro (el
+    // documento no viaja en el listado): si alguna fila la tiene, se busca en
+    // el servidor aunque la lista sea chica.
+    const clientSearchable = isSmallList && canSearchClientSide(baseRecords.data?.data ?? []);
+
     const hasSearch = state.search.trim() !== '';
-    const useServerSearch = hasSearch && ! isSmallList;
+    const useServerSearch = hasSearch && ! clientSearchable;
 
     const serverSearchQuery = useMemo(() => {
         const base = buildRecordsQuery({ ...state, search: debouncedSearch });
@@ -207,7 +212,7 @@ export function RecordsPage(): JSX.Element {
     // Records efectivos que ven todos los consumidores (vistas, paginación, etc.).
     const records = useMemo(() => {
         if (! hasSearch) return baseRecords;
-        if (isSmallList && baseRecords.data && fields.data) {
+        if (clientSearchable && baseRecords.data && fields.data) {
             const filtered = clientSideSearch(baseRecords.data.data, state.search, fields.data);
             return {
                 ...baseRecords,
@@ -219,7 +224,7 @@ export function RecordsPage(): JSX.Element {
             };
         }
         return serverSearch;
-    }, [hasSearch, isSmallList, baseRecords, serverSearch, state.search, fields.data]);
+    }, [hasSearch, clientSearchable, baseRecords, serverSearch, state.search, fields.data]);
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).

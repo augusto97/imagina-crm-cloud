@@ -23,7 +23,7 @@ const LIST_COLUMNS = {
     hasDescription: sql<boolean>`(${records.description} IS NOT NULL)`,
 } as const;
 
-export type RecordListRow = Omit<RecordRow, 'description'> & { hasDescription: boolean };
+export type RecordListRow = Omit<RecordRow, 'description' | 'descriptionText'> & { hasDescription: boolean };
 
 export interface ListRecordsOpts {
     where?: SQL;

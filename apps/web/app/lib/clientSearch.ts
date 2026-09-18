@@ -15,7 +15,18 @@ import type { RecordEntity } from '@/types/record';
  * AND-mode (todos los tokens deben matchear), igual que LIKE %a%b%.
  */
 
-const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url']);
+const SEARCHABLE_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone']);
+
+/**
+ * v0.1.188 — ¿se puede buscar esta tanda en el navegador? Sólo si NINGÚN
+ * registro tiene descripción: el documento no viaja en el listado (a
+ * propósito, pesa), así que filtrar in-memory dejaría afuera lo escrito en
+ * el cuerpo del registro. Con alguna descripción la búsqueda va al servidor,
+ * que sí la incluye.
+ */
+export function canSearchClientSide(records: ReadonlyArray<Pick<RecordEntity, 'has_description'>>): boolean {
+    return records.every((r) => r.has_description !== true);
+}
 
 const ACCENT_MAP: Record<string, string> = {
     á: 'a', à: 'a', ä: 'a', â: 'a', ã: 'a',

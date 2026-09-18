@@ -358,6 +358,13 @@
       "when": 1784200000019,
       "tag": "0050_oauth_clients",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1784200000020,
+      "tag": "0051_record_description_text",
+      "breakpoints": true
     }
   ]
 }

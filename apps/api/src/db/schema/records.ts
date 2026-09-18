@@ -1,5 +1,6 @@
 import type { RichDoc } from '@imagina-base/shared';
-import { bigint, jsonb, pgTable, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
 import { tenants } from './tenants';
 
@@ -21,6 +22,12 @@ export const records = pgTable('records', {
     parentId: bigint('parent_id', { mode: 'number' }),
     /** Descripción rica (árbol ProseMirror). null = sin descripción. */
     description: jsonb('description').$type<RichDoc>(),
+    /**
+     * v0.1.188 — texto plano de la descripción, columna GENERADA por Postgres
+     * (migración 0051) para que el buscador la vea. Nunca se escribe desde
+     * la app.
+     */
+    descriptionText: text('description_text').generatedAlwaysAs(sql`imagina_richdoc_text(description)`),
     createdBy: bigint('created_by', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
