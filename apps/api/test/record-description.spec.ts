@@ -157,6 +157,45 @@ describe('Descripción del registro (v0.1.133)', () => {
         expect(bundle.expanded.b?.records.data).toEqual([]);
     });
 
+    it('vista agrupada por multi_select (v0.1.189): un grupo por opción CON sus filas', async () => {
+        // Regresión del reporte: los grupos salían como JSON crudo del set
+        // (`["a","b"]`), sin color, y con contador pero SIN filas — el
+        // filtro `eq` del grupo comparaba contra el JSON y no matcheaba.
+        const tags = await fields_.create(tenantId, 'tareas', {
+            label: 'Etiquetas',
+            type: 'multi_select',
+            slug: 'etiquetas',
+            config: { options: [{ value: 'vip', label: 'VIP' }, { value: 'promo', label: 'Promo' }] },
+        });
+        const k = `f${tags.id}`;
+        const ambos = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ambos', [k]: ['vip', 'promo'] } });
+        const soloVip = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Solo VIP', [k]: ['vip'] } });
+        const ninguna = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ninguna' } });
+        const grouped = new RecordsGroupedService(recs, new AggregateService(new TenantDb(pg.db), lists_, fields_), lists_, fields_);
+        const bundle = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: tags.id,
+            expanded: ['vip', 'promo', '__null__'],
+            perPage: 50,
+            aggregateFieldIds: [],
+        })) as {
+            buckets: Array<{ value: string | null; count: number }>;
+            meta: { total_groups: number; total_records: number };
+            expanded: Record<string, { records: { data: Array<{ id: number }>; meta: { total: number } } }>;
+        };
+        expect(bundle.buckets).toEqual([
+            { value: 'promo', count: 1 },
+            { value: 'vip', count: 2 },
+            { value: null, count: 1 },
+        ]);
+        // Un registro con dos opciones aparece en los DOS grupos.
+        expect(bundle.expanded.vip?.records.data.map((r) => r.id).sort()).toEqual([ambos.id, soloVip.id].sort());
+        expect(bundle.expanded.promo?.records.data.map((r) => r.id)).toEqual([ambos.id]);
+        expect(bundle.expanded.__null__?.records.data.map((r) => r.id)).toEqual([ninguna.id]);
+        // El resumen cuenta registros DISTINTOS, no la suma de los grupos.
+        expect(bundle.meta.total_records).toBe(3);
+        expect(bundle.meta.total_groups).toBe(3);
+    });
+
     it('lo que se persiste pasa por la whitelist (nada de `javascript:` ni nodos raros)', async () => {
         const rec = await create();
         await recs.updateDescription(tenantId, admin, 'tareas', rec.id, {

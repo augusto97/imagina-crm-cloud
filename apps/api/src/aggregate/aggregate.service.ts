@@ -7,6 +7,7 @@ import {
     type FieldType,
     type FilterNode,
     type TimeBucket,
+    jsonbKeyForField,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
@@ -43,6 +44,15 @@ export class AggregateService {
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
+        /**
+         * v0.1.189 — `multiSelect: 'each'`: al agrupar por un multi_select,
+         * un bucket POR OPCIÓN (el registro cuenta en cada una de las suyas;
+         * sin opciones → bucket null), en vez de un bucket por COMBINACIÓN
+         * (el JSON crudo del set). Lo usa la vista agrupada, que filtra cada
+         * grupo con `contains`. Los dashboards conservan el comportamiento
+         * por combinación (v0.1.103/v0.1.178 lo dan por hecho).
+         */
+        opts: { multiSelect?: 'combo' | 'each' } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
@@ -68,6 +78,30 @@ export class AggregateService {
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
             if (!groupField) throw badRequest('group_by_field_id no pertenece a la lista');
+            if (groupField.type === 'multi_select' && opts.multiSelect === 'each') {
+                // Un bucket por opción: se desanida el array con LATERAL; el
+                // LEFT JOIN conserva los registros sin opciones (elemento
+                // NULL → bucket null). La métrica se evalúa por (registro,
+                // opción): count/sum/… por opción salen bien.
+                const col = sql`${records.data} -> ${jsonbKeyForField(groupField.id)}`;
+                const arr = sql`CASE WHEN jsonb_typeof(${col}) = 'array' THEN ${col} ELSE '[]'::jsonb END`;
+                const res = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx.execute(sql`
+                        SELECT e.value AS grp, ${aggExpr} AS val
+                        FROM ${records}
+                        LEFT JOIN LATERAL jsonb_array_elements_text(${arr}) AS e(value) ON true
+                        WHERE ${baseWhere}
+                        GROUP BY e.value
+                        ORDER BY e.value
+                    `),
+                );
+                const rows = (res as unknown as { rows: Array<{ grp: string | null; val: unknown }> }).rows;
+                return {
+                    metric: req.metric,
+                    value: null,
+                    groups: rows.map((r) => ({ group: r.grp ?? null, value: normalize(r.val) })),
+                };
+            }
             // v0.1.97 — bucketing temporal: si el campo agrupado es fecha y el
             // request trae `time_bucket`, agrupamos por bucket (día/semana/mes/
             // trimestre/año) en vez de por valor crudo. Los labels resultantes

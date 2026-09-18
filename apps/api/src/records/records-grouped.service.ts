@@ -48,7 +48,11 @@ export class RecordsGroupedService {
         const buckets = await this.buckets(tenantId, listKey, groupBy, effectiveTree);
         return {
             data: buckets,
-            meta: { ...meta, total_groups: buckets.length, total_records: buckets.reduce((s, b) => s + b.count, 0) },
+            meta: {
+                ...meta,
+                total_groups: buckets.length,
+                total_records: await this.totalRecords(tenantId, listKey, meta, buckets, effectiveTree),
+            },
         };
     }
 
@@ -71,7 +75,7 @@ export class RecordsGroupedService {
         // campos searchables → aplica igual a buckets, filas y agregados.
         const effectiveTree = await this.withSearch(tenantId, listKey, opts.filterTree, opts.search);
         const buckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree);
-        const totalRecords = buckets.reduce((s, b) => s + b.count, 0);
+        const totalRecords = await this.totalRecords(tenantId, listKey, meta, buckets, effectiveTree);
 
         const fields = await this.fields.list(tenantId, listKey);
         const toSlug = new Map(fields.map((f) => [`f${f.id}`, f.slug]));
@@ -79,9 +83,17 @@ export class RecordsGroupedService {
         const expanded: Record<string, unknown> = {};
         for (const key of opts.expanded) {
             const isNull = key === NULL_KEY;
+            // v0.1.189 — multi_select agrupa POR OPCIÓN: las filas del grupo
+            // son las que CONTIENEN la opción (antes `eq` contra el JSON del
+            // set no matcheaba nada y el grupo salía vacío con contador).
             const cond: FilterNode = isNull
                 ? { type: 'condition', field_id: opts.groupBy, op: 'is_null' }
-                : { type: 'condition', field_id: opts.groupBy, op: 'eq', value: key };
+                : {
+                      type: 'condition',
+                      field_id: opts.groupBy,
+                      op: meta.group_by_type === 'multi_select' ? 'contains' : 'eq',
+                      value: key,
+                  };
             const combined: FilterGroup = {
                 type: 'group',
                 logic: 'and',
@@ -194,12 +206,34 @@ export class RecordsGroupedService {
         groupBy: number,
         filterTree?: FilterGroup,
     ): Promise<GroupBucket[]> {
-        const agg = await this.aggregate.run(tenantId, listKey, {
-            metric: 'count',
-            group_by_field_id: groupBy,
-            filter_tree: filterTree,
-        });
+        // v0.1.189 — multi_select: un bucket por OPCIÓN (un registro con dos
+        // opciones aparece en los dos grupos, como las etiquetas de ClickUp),
+        // no por combinación — así el chip del grupo tiene etiqueta y color
+        // reales y el filtro `contains` del grupo trae sus filas.
+        const agg = await this.aggregate.run(
+            tenantId,
+            listKey,
+            { metric: 'count', group_by_field_id: groupBy, filter_tree: filterTree },
+            { multiSelect: 'each' },
+        );
         return (agg.groups ?? []).map((g) => ({ value: g.group, count: Number(g.value ?? 0) }));
+    }
+
+    /**
+     * Registros DISTINTOS que cubren los grupos. Para multi_select la suma de
+     * los buckets cuenta un registro por cada opción que tiene, así que se
+     * cuenta aparte; para el resto la suma es exacta.
+     */
+    private async totalRecords(
+        tenantId: number,
+        listKey: string,
+        meta: GroupsMeta,
+        buckets: GroupBucket[],
+        filterTree?: FilterGroup,
+    ): Promise<number> {
+        if (meta.group_by_type !== 'multi_select') return buckets.reduce((s, b) => s + b.count, 0);
+        const agg = await this.aggregate.run(tenantId, listKey, { metric: 'count', filter_tree: filterTree });
+        return Number(agg.value ?? 0);
     }
 }
 
