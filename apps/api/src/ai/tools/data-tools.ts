@@ -522,7 +522,7 @@ function actorOf(ctx: AiToolContext): Actor {
 }
 
 function emptyPreview(partial: Partial<AiProposalPreview>): AiProposalPreview {
-    return { lists: [], fields: [], widgets: [], automation: null, changes: [], affected_count: 0, rows: [], ...partial };
+    return { lists: [], fields: [], widgets: [], automation: null, changes: [], affected_count: 0, rows: [], blocks: [], ...partial };
 }
 
 type Opt = { value: string; label: string };

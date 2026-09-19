@@ -7,6 +7,7 @@ export * from './schemas/tenant';
 export * from './schemas/auth';
 export * from './schemas/field';
 export * from './schemas/list';
+export * from './schemas/list-config';
 export * from './schemas/list-permissions';
 export * from './schemas/list-template';
 export * from './schemas/public-list';

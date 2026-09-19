@@ -183,7 +183,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         const admin: AiToolContext = { tenantId, userId: adminId, role: 'admin' };
         const read = await connect(admin, 'read');
         const readNames = (await read.listTools()).tools.map((t) => t.name).sort();
-        expect(readNames).toEqual(['aggregate_records', 'get_list_schema', 'list_lists', 'query_records']);
+        expect(readNames).toEqual(['aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards', 'list_lists', 'query_records']);
         await read.close();
 
         const full = await connect(admin, 'full');
@@ -199,7 +199,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         // Un viewer con scope full: sólo lectura igual (su rol no propone nada).
         const viewer = await connect({ tenantId, userId: viewerId, role: 'viewer' }, 'full');
         const viewerNames = (await viewer.listTools()).tools.map((t) => t.name).sort();
-        expect(viewerNames).toEqual(['aggregate_records', 'apply_proposal', 'get_list_schema', 'list_lists', 'query_records']);
+        expect(viewerNames).toEqual(['aggregate_records', 'apply_proposal', 'get_list_schema', 'list_dashboards', 'list_lists', 'query_records']);
         await viewer.close();
     });
 

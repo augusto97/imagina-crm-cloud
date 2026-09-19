@@ -147,6 +147,19 @@ export const AI_PROPOSAL_KINDS = [
     'create_records',
     'update_records',
     'delete_records',
+    // v0.1.195 — configuración de la lista que vive en `settings`: portal
+    // del cliente (habilitado + listas relacionadas + plantilla de bloques)
+    // y layout de la ficha del registro (clásico / CRM por plantilla o
+    // personalizado).
+    'configure_portal',
+    'configure_record_layout',
+    // v0.1.195 — brechas de la auditoría: editar/pausar/borrar lo que ya
+    // existe, no sólo crear.
+    'update_automation',
+    'delete_automation',
+    'update_view',
+    'delete_view',
+    'delete_list',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;
@@ -176,6 +189,12 @@ export const aiProposalPreviewSchema = z.object({
     affected_count: z.number().int().nonnegative().default(0),
     /** Fase 2 — muestra de filas (etiqueta → valor legible), cap 5. */
     rows: z.array(z.record(z.string())).default([]),
+    /**
+     * v0.1.195 — bloques de una plantilla (portal del cliente o ficha del
+     * registro), en el orden en que se van a ver: tipo legible + detalle
+     * (campos que muestra, título…). La tarjeta los dibuja como una lista.
+     */
+    blocks: z.array(z.object({ type: z.string(), label: z.string(), detail: z.string().nullable().default(null) })).default([]),
 });
 export type AiProposalPreview = z.infer<typeof aiProposalPreviewSchema>;
 
@@ -262,6 +281,16 @@ export const AI_TOOL_NAMES = [
     'propose_create_records',
     'propose_update_records',
     'propose_delete_records',
+    // v0.1.195 — configuración de la lista + brechas de la auditoría.
+    'propose_configure_portal',
+    'propose_configure_record_layout',
+    'propose_update_automation',
+    'propose_delete_automation',
+    'propose_update_view',
+    'propose_delete_view',
+    'propose_delete_list',
+    'list_dashboards',
+    'list_automation_runs',
 ] as const;
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
 
