@@ -61,7 +61,7 @@ describe('buildPortalTemplate', () => {
         expect([hero!.x, hero!.y, hero!.w]).toEqual([0, 0, 12]);
         expect([kpi1!.x, kpi1!.y, kpi1!.w]).toEqual([0, 6, 4]);
         expect([kpi2!.x, kpi2!.y, kpi2!.w]).toEqual([4, 6, 4]);
-        expect(data!.y).toBeGreaterThan(kpi2!.y);
+        expect(data!.y).toBeGreaterThan(kpi2!.y!);
         expect(data!.x).toBe(0);
         // Configs con las claves que lee el portal público.
         expect(hero!.config).toMatchObject({ title: 'Hola, {{nombre}}', subtitle: 'Tu portal', variant: 'gradient' });
