@@ -35,6 +35,7 @@ import { OptionChip, renderCellValue } from '@/admin/records/renderCellValue';
 import { addNode } from '@/admin/records/filterTree';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
+import { createHScrollGroup, type HScrollGroup } from './hscrollGroup';
 import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
 
 /**
@@ -43,11 +44,14 @@ import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTo
  * encabezados de grupo y las cabeceras de columnas ADENTRO de un scroll
  * container, donde `position: sticky` no puede pegarse al scroll vertical
  * de la página. Ahora cada grupo tiene su scroller (cuerpo) y su wrapper
- * de cabecera (overflow hidden), y este registro copia el `scrollLeft` de
- * cualquiera al resto — las columnas siguen alineadas entre grupos.
+ * de cabecera, y un `HScrollGroup` (v0.1.194, con supresión de eco — ver
+ * hscrollGroup.ts) copia el `scrollLeft` de cualquiera al resto — las
+ * columnas siguen alineadas entre grupos. `registerBody` además mantiene
+ * al día el scroller que MIDE la barra espejo (el del primer grupo).
  */
 interface HScrollSync {
-    register: (el: HTMLDivElement, kind: 'body' | 'head') => () => void;
+    group: HScrollGroup;
+    registerBody: (el: HTMLDivElement) => () => void;
 }
 const HScrollSyncContext = createContext<HScrollSync | null>(null);
 
@@ -185,38 +189,30 @@ export function GroupedTableView({
     // (el registro de sincronía lo mantiene al día; `retargetKey` avisa).
     const hScrollRef = useRef<HTMLDivElement | null>(null);
     const [retargetKey, setRetargetKey] = useState(0);
-    const syncSets = useRef({ bodies: new Set<HTMLDivElement>(), heads: new Set<HTMLDivElement>() });
-    const hScrollSync = useMemo<HScrollSync>(() => ({
-        register: (el, kind) => {
-            const s = syncSets.current;
-            const set = kind === 'body' ? s.bodies : s.heads;
-            set.add(el);
-            // Al entrar, se alinea con lo que ya está scrolleado.
-            const first = Array.from(s.bodies).find((b) => b !== el);
-            if (first && el.scrollLeft !== first.scrollLeft) el.scrollLeft = first.scrollLeft;
-            const onScroll = (): void => {
-                const x = el.scrollLeft;
-                for (const b of s.bodies) if (b !== el && b.scrollLeft !== x) b.scrollLeft = x;
-                for (const h of s.heads) if (h !== el && h.scrollLeft !== x) h.scrollLeft = x;
-            };
-            if (kind === 'body') el.addEventListener('scroll', onScroll, { passive: true });
-            const retarget = (): void => {
-                const next = Array.from(s.bodies)[0] ?? null;
-                if (hScrollRef.current !== next) {
-                    hScrollRef.current = next;
-                    setRetargetKey((k) => k + 1);
-                }
-            };
-            if (kind === 'body') retarget();
-            return () => {
-                set.delete(el);
-                if (kind === 'body') {
-                    el.removeEventListener('scroll', onScroll);
+    const bodiesRef = useRef(new Set<HTMLDivElement>());
+    const hScrollSync = useMemo<HScrollSync>(() => {
+        const group = createHScrollGroup();
+        const retarget = (): void => {
+            const next = Array.from(bodiesRef.current)[0] ?? null;
+            if (hScrollRef.current !== next) {
+                hScrollRef.current = next;
+                setRetargetKey((k) => k + 1);
+            }
+        };
+        return {
+            group,
+            registerBody: (el) => {
+                const off = group.add(el);
+                bodiesRef.current.add(el);
+                retarget();
+                return () => {
+                    off();
+                    bodiesRef.current.delete(el);
                     retarget();
-                }
-            };
-        },
-    }), []);
+                };
+            },
+        };
+    }, []);
 
     const isOpen = (key: string): boolean => {
         if (openLocally.has(key)) return true;
@@ -450,7 +446,7 @@ export function GroupedTableView({
             {/* Scrollbar horizontal fija al fondo del viewport (estilo
                 ClickUp) — la nativa del wrapper queda al fondo de la
                 lista de grupos. */}
-            <StickyHScrollbar targetRef={hScrollRef} retargetKey={retargetKey} />
+            <StickyHScrollbar targetRef={hScrollRef} group={hScrollSync.group} retargetKey={retargetKey} />
 
             {/* v0.1.125 — el resumen va al FINAL: arriba le comía altura a la
                 tabla sin aportar nada al escanear los grupos. */}
@@ -779,7 +775,7 @@ function GroupBucketSection({
         if (!hScrollSync || !tableMounted) return;
         const body = bodyScrollRef.current;
         const head = headScrollRef.current;
-        const offs = [body ? hScrollSync.register(body, 'body') : null, head ? hScrollSync.register(head, 'head') : null];
+        const offs = [body ? hScrollSync.registerBody(body) : null, head ? hScrollSync.group.add(head) : null];
         return () => offs.forEach((off) => off?.());
     }, [hScrollSync, tableMounted]);
 
@@ -887,7 +883,14 @@ function GroupBucketSection({
                             className="imcrm-sticky imcrm-z-20 imcrm-bg-background"
                             style={{ top: stickyTop + headerHeight }}
                         >
-                        <div ref={headScrollRef} className="imcrm-overflow-hidden">
+                        {/* Scrollable a propósito (barra nativa oculta): en
+                            táctil la cabecera pegada también se arrastra. */}
+                        <div
+                            ref={headScrollRef}
+                            className="imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-native-hscroll-hidden"
+                            // Capa compuesta para la cabecera (ver TableView).
+                            style={{ willChange: 'scroll-position' }}
+                        >
                         <table className={tableClassName} style={tableStyle}>
                             {colGroup}
                             <thead>
