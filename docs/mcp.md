@@ -24,8 +24,40 @@ externos por [Model Context Protocol](https://modelcontextprotocol.io)
   token al instante). Un token nunca amplía permisos.
 - Alcance del token:
   - `read` — sólo herramientas de lectura (`list_lists`, `get_list_schema`,
-    `query_records`, `aggregate_records`).
+    `query_records`, `aggregate_records`, `list_dashboards`,
+    `list_automation_runs`).
   - `full` — además las `propose_*` y `apply_proposal`.
+
+## Herramientas (v0.1.195)
+
+Lectura (según el rol; `list_automation_runs` exige `manage_automations`):
+
+| Herramienta | Qué devuelve |
+|---|---|
+| `list_lists` | Todas las listas con slug, nombre, icono y slugs de campos. |
+| `get_list_schema` | Campos (tipo, opciones, relaciones), vistas, automatizaciones **con su configuración completa** (secretos enmascarados), **portal** (habilitado, listas que ve el cliente, listas vinculables, bloques de la plantilla), **layout de la ficha** (clásico / CRM + plantilla), publicación pública y carpeta. |
+| `query_records` / `aggregate_records` | Registros (máx 50, con el ACL de la persona) y agregados con desglose. |
+| `list_dashboards` | Tableros con sus widgets (tipo, título, lista). |
+| `list_automation_runs` | Últimas ejecuciones de una automatización: estado, error, registro y log de acciones. |
+
+Escritura (siempre propone → `apply_proposal`; cada una exige la capability
+del rol, p. ej. `manage_lists`):
+
+| Herramienta | Propone |
+|---|---|
+| `propose_create_list` / `propose_update_list` / `propose_delete_list` | Crear listas (con campos, vistas, automatizaciones), cambiar nombre / icono / color / campo de título / **carpeta**, eliminar una lista completa. |
+| `propose_add_fields` / `propose_update_field` / `propose_delete_field` | Campos. |
+| `propose_create_view` / `propose_update_view` / `propose_delete_view` | Vistas guardadas (filtros, orden, agrupación, columnas, por defecto). |
+| `propose_create_dashboard` | Tablero con widgets y layout automático. |
+| `propose_create_automation` / `propose_update_automation` / `propose_delete_automation` | Automatizaciones: crear, renombrar, **pausar/activar**, reemplazar disparador o acciones, eliminar. |
+| `propose_configure_portal` | **Portal del cliente**: habilitarlo, qué listas vinculadas ve el cliente y la plantilla de bloques (portada, datos, formulario editable, tabla de registros relacionados, indicadores, descargas, avisos, contacto, preguntas frecuentes, enlaces). Se valida contra el esquema real; lo que se aplica se abre después en el editor visual. |
+| `propose_configure_record_layout` | **Diseño de la ficha del registro**: formulario clásico o layout CRM con plantilla integrada (`auto`, `contact`, `deal`, `task`, `support`) o **personalizada** (cabecera, grupos de campos, lateral con cifras / vinculados / archivos / comentarios / actividad, notas). |
+| `propose_create_records` / `propose_update_records` / `propose_delete_records` | Registros (alta, edición y borrado masivo con filtros o ids). |
+
+Lo que **no** está en el MCP (a propósito o todavía): estilos por bloque
+(colores, tipografía — se ajustan en el editor), permisos por rol de una
+lista, publicación pública, comentarios, archivos, importación/exportación,
+miembros y ajustes del workspace.
 
 ## El contrato: proponer → confirmar → aplicar
 

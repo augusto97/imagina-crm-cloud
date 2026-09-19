@@ -4055,6 +4055,77 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         eco es el unitario y la del repintado es el razonamiento; el
         resultado final se comprueba en el celular del usuario.
 
+  - [x] **El MCP/asistente configura el portal del cliente y la ficha del
+        registro + auditoría de brechas (v0.1.195, pregunta del usuario "¿en
+        el MCP se puede crear portal de cliente y vista CRM?" → "hacé las 2
+        bien hechas y revisá qué más le falta")**. La auditoría (registro de
+        herramientas vs. todos los controllers) dio la causa de fondo: todo
+        lo que vive en `list.settings` —portal, plantilla del portal, layout
+        de la ficha, ACL, publicación— era a la vez INVISIBLE para el modelo
+        (`get_list_schema` no devolvía `settings`) e INESCRIBIBLE (la única
+        clave que `propose_update_list` tocaba era `title_field_id`), y
+        además ninguna de esas claves tenía schema Zod: los editores
+        visuales las escribían a ciegas.
+        (a) **Schema compartido** `list-config.ts`: `portalSettingsSchema`,
+        `portalTemplateSchema` (los 21 tipos de bloque del editor con
+        `config` passthrough — un bloque guardado trae claves de estilo que
+        no se enumeran), `recordLayoutSchema` (classic/crm),
+        `crmTemplateIdSchema` (auto/contact/deal/task/support/custom) y
+        `crmCustomConfigSchema` (V2: grid de 12 columnas, header + blocks) +
+        lectores tolerantes `readPortalConfig`/`readRecordLayout` que nunca
+        lanzan.
+        (b) **`propose_configure_portal`** (`manage_lists`): habilitar,
+        listas que ve el cliente (por slug, validadas contra el MISMO
+        criterio del scope del portal —relation hacia la lista o campo
+        user— con una sola query sobre `fields`) y la plantilla como lista
+        de bloques en el vocabulario del modelo (hero, heading, notice,
+        static_text, client_data, editable_form, related_records_table,
+        kpi_widget, download_files, comments_thread, activity_timeline,
+        external_link, contact_card, faq, quick_actions, divider, spacer).
+        `buildPortalTemplate` (PURO, `tools/list-config.ts`) valida slugs
+        por lista, tipos (file para descargas, numérico para sum/avg, nada
+        computado en el formulario editable), enlaces (https/mailto/tel),
+        arma el `config` exacto que lee el portal público y ubica en el grid
+        (a lo ancho; KPIs/enlaces/contacto comparten fila mientras quepan).
+        Una tabla de registros vinculados SUMA sola esa lista a
+        `related_lists` (si no, el bloque quedaría vacío por el fail-closed
+        del scope). (c) **`propose_configure_record_layout`**
+        (`manage_lists`): clásico, o CRM con plantilla integrada o `custom`
+        → `buildCrmCustomConfig` genera el V2 con el mismo esqueleto que las
+        integradas (header 12 cols; columna principal de 8 con grupos —icono
+        adivinado por el nombre del grupo— y notas; lateral de 4 con cifras,
+        vinculados, archivos, comentarios y actividad); los campos sin grupo
+        van a "Otros datos" salvo `include_remaining_fields: false`.
+        (d) **Aplicar mezcla en `settings` RELEYENDO la lista** y pisando
+        sólo las claves de esa propuesta — una propuesta armada contra un
+        snapshot no borra lo que otra persona cambió entre medio (hay test).
+        (e) **`get_list_schema`** ahora expone `portal` (habilitado,
+        relacionadas, VINCULABLES, resumen de bloques), `record_layout`,
+        `public_sharing` y la carpeta. (f) **Brechas de la auditoría que
+        entraron**: `propose_update_automation` (renombrar, PAUSAR/activar,
+        reemplazar disparador o acciones con la misma validación de slugs
+        que el alta), `propose_delete_automation`, `propose_update_view`
+        (nombre, por defecto, config con el mismo builder del alta),
+        `propose_delete_view`, `propose_delete_list` (destructiva, describe
+        registros/campos/vistas/automatizaciones que se lleva), `folder` en
+        `propose_update_list` (mover a carpeta por nombre), y dos lecturas:
+        `list_dashboards` y `list_automation_runs` (log con secretos
+        enmascarados). La tarjeta de propuesta dibuja la lista de bloques
+        (`preview.blocks`) y el prompt ganó la regla 12. **Quedan fuera y
+        documentadas** (`docs/mcp.md`): estilos por bloque, permisos por rol,
+        publicación pública, comentarios, archivos, import/export, miembros
+        y ajustes del workspace. 6 tests unitarios de los constructores + 8
+        de integración (Postgres+Redis con el `Client` del SDK MCP: schema
+        expuesto, portal con validación/merge/deshabilitar, layout integrado
+        → custom → clásico conservando lo del portal, automatizaciones
+        pausar/reemplazar/borrar/runs, vistas, carpeta, tableros, borrar
+        lista, scope read) — 549 API y 150 front en verde — + E2E 23/23 por el
+        MCP REAL (HTTP + token personal: proponer → aplicar) y navegador (el
+        editor del portal carga la plantilla propuesta con "Hola, Ana García",
+        la ficha del registro renderiza el layout CRM propuesto —cabecera
+        compacta con estado, grupo Contacto, nota, cifras, archivos,
+        comentarios— y Compartir muestra Facturas marcada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

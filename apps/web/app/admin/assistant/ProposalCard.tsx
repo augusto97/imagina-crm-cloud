@@ -23,6 +23,13 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     create_records: 'Registros nuevos',
     update_records: 'Edición masiva',
     delete_records: 'Eliminar registros',
+    configure_portal: 'Portal del cliente',
+    configure_record_layout: 'Diseño de la ficha',
+    update_automation: 'Cambio de automatización',
+    delete_automation: 'Eliminar automatización',
+    update_view: 'Cambio de vista',
+    delete_view: 'Eliminar vista',
+    delete_list: 'Eliminar lista',
 };
 
 /**
@@ -232,6 +239,20 @@ function Preview({ p, Icon }: { p: AiProposal; Icon: typeof fieldTypeIcon }): JS
                     ))}
                 </tbody>
             </table>,
+        );
+    }
+    if (pv.blocks.length > 0) {
+        blocks.push(
+            <ol key="blocks" className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="imcrm-ai-blocks">
+                {pv.blocks.map((b, i) => (
+                    <li key={i} className="imcrm-flex imcrm-items-baseline imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border/70 imcrm-px-2 imcrm-py-1 imcrm-text-[11px]">
+                        <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-text-muted-foreground">{i + 1}.</span>
+                        <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-font-medium">{b.type}</span>
+                        <span className="imcrm-truncate">{b.label}</span>
+                        {b.detail && <span className="imcrm-truncate imcrm-text-muted-foreground">· {b.detail}</span>}
+                    </li>
+                ))}
+            </ol>,
         );
     }
     if (pv.affected_count > 0) {
