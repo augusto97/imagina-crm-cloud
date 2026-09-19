@@ -4011,6 +4011,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sección y entra el del 2, scroll horizontal sincronizado entre
         grupos, un solo scroller vertical).
 
+  - [x] **Scroll horizontal táctil sin "pelea" (v0.1.194, reporte del
+        usuario: "en celular el scroll horizontal avanza muy poquito, se
+        siente como arrastrar con fuerza y a cuadros pegados, peor en las
+        agrupadas")**: dos causas, las dos nacidas con la tabla partida de
+        v0.1.193. (a) **El eco de las copias pisaba al dedo**: el cuerpo que
+        la persona arrastra copiaba su `scrollLeft` a la barra espejo y, en
+        la agrupada, a los otros cuerpos y cabeceras; el evento `scroll` de
+        cada copiado llega UN CUADRO DESPUÉS, cuando el dedo ya movió el
+        original unos px más, y como la barra espejo (desde v0.1.75) y el
+        registro de grupos sincronizaban en los DOS sentidos, ese eco traía
+        el valor viejo y lo escribía de vuelta sobre el scroller que se
+        estaba arrastrando — el guard `!==` no ayuda porque el valor es
+        distinto justamente por el retraso. En táctil el compositor va
+        adelante del hilo principal, así que el eco es sistemático: por eso
+        no se sentía con el mouse, y en la agrupada (N cuerpos + N cabeceras
+        + la barra devolviendo ecos) era peor. Fix: `hscrollGroup.ts` — un
+        grupo de scrollers donde cada escritura programática se RECUERDA (el
+        valor se lee tras asignar, por si el navegador lo recortó) y el
+        evento que llega con exactamente ese valor se ignora como eco; el
+        que trae otro valor lo movió la persona y se propaga. Cuerpo,
+        cabecera partida, cada grupo de la agrupada y la barra espejo son
+        miembros del MISMO grupo (la barra deja de tener su sincronía
+        propia: arrastrarla mueve a todos). (b) **Cabeceras repintadas en
+        cada cuadro**: el wrapper de la cabecera era `overflow: hidden`
+        movido por JS, y eso NO se compone como capa en móvil (Chrome sólo
+        compone los scrollers que el usuario puede scrollear) → cada cuadro
+        repintaba la tabla de cabecera (una por grupo) en el hilo principal
+        — los "frames pegados". Ahora las cabeceras son `overflow-x: auto`
+        con la barra nativa oculta + `will-change: scroll-position`, y de
+        yapa en táctil la cabecera pegada TAMBIÉN se arrastra para mover
+        las columnas. 4 tests unitarios del grupo (jsdom, reproducen el eco
+        tardío exacto: `a→100`, el dedo sigue a 105, llega el eco de `b` con
+        100 y `a` se queda en 105) — 150 front en verde — + E2E navegador
+        20/20 en 390×844 táctil con arrastres reales por CDP (250 px de
+        dedo → 253 px de scroll sin un solo retroceso en las muestras ni en
+        los eventos, tres cuerpos + cabeceras + barra alineados, arrastrar
+        otro grupo o la cabecera mueve a todos, columnas alineadas) y
+        escritorio con rueda horizontal. **Límite de la verificación**: el
+        Chromium headless del sandbox NO reproduce el retraso compositor/
+        hilo principal del teléfono — con el código viejo el mismo E2E daba
+        19/20 (sólo falló "arrastrar la cabecera"), así que la prueba del
+        eco es el unitario y la del repintado es el razonamiento; el
+        resultado final se comprueba en el celular del usuario.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -33,6 +33,7 @@ import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
+import { createHScrollGroup } from './hscrollGroup';
 import { usePageStickyTop, useStuckSentinel } from './stickyTop';
 
 interface TableViewProps {
@@ -442,17 +443,16 @@ export function TableView({
     const [headSentinelEl, setHeadSentinelEl] = useState<HTMLDivElement | null>(null);
     const headScrollRef = useRef<HTMLDivElement>(null);
     const headStuck = useStuckSentinel(headSentinelEl, stickyTop);
+    // v0.1.194 — cuerpo, cabecera y barra espejo son miembros de UN grupo
+    // de sincronía con supresión de eco (ver hscrollGroup.ts): el scroll
+    // táctil ya no pelea contra las copias que él mismo dispara.
+    const hScrollGroup = useMemo(() => createHScrollGroup(), []);
     useEffect(() => {
         const body = tableContainerRef.current;
-        if (!body) return;
-        const onScroll = (): void => {
-            const head = headScrollRef.current;
-            if (head && head.scrollLeft !== body.scrollLeft) head.scrollLeft = body.scrollLeft;
-        };
-        onScroll();
-        body.addEventListener('scroll', onScroll, { passive: true });
-        return () => body.removeEventListener('scroll', onScroll);
-    }, []);
+        const head = headScrollRef.current;
+        const offs = [body ? hScrollGroup.add(body) : null, head ? hScrollGroup.add(head) : null];
+        return () => offs.forEach((off) => off?.());
+    }, [hScrollGroup]);
 
     const tableClassName = cn(
         'imcrm-records-table imcrm-w-full imcrm-text-sm',
@@ -507,7 +507,18 @@ export function TableView({
                 )}
                 style={{ top: stickyTop }}
             >
-            <div ref={headScrollRef} className="imcrm-overflow-hidden">
+            {/* Scrollable a propósito (con la barra nativa oculta): en
+                táctil se puede arrastrar la cabecera pegada para mover las
+                columnas, no sólo el cuerpo. */}
+            <div
+                ref={headScrollRef}
+                className="imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-native-hscroll-hidden"
+                // Pista al navegador para que el scroll de la cabecera sea
+                // compuesto (capa propia) y no un repintado de la tabla en
+                // cada cuadro: un `overflow: hidden` movido por JS NO se
+                // compone en móvil, y eso se veía como cuadros pegados.
+                style={{ willChange: 'scroll-position' }}
+            >
             <table className={tableClassName} style={tableStyle} aria-hidden={false}>
                 {colGroup}
                 <thead>
@@ -1009,7 +1020,7 @@ export function TableView({
         {/* Scrollbar horizontal fija al fondo del viewport (estilo
             ClickUp) — la nativa del wrapper queda al fondo de la tabla,
             invisible en listas largas. */}
-        <StickyHScrollbar targetRef={tableContainerRef} />
+        <StickyHScrollbar targetRef={tableContainerRef} group={hScrollGroup} />
         {expandedIds.map((id) => (
             <SubtaskFetcher
                 key={id}
