@@ -20,6 +20,8 @@ import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { MailService } from '../src/mail/mail.service';
 import type { MailMessage, MailTransport } from '../src/mail/mail.types';
+import { AuditService } from '../src/audit/audit.service';
+import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 
@@ -93,7 +95,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore);
+        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
         mailbox = new CapturingMailTransport();
         const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
@@ -103,6 +105,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new RecordsRepository(),
             new RelationsRepository(),
             mail,
+            new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();

@@ -852,6 +852,65 @@ servidor; (c) `resource` (RFC 8707) se valida por PATH y no por host, porque
 con el estático el issuer es el dominio de la plataforma aunque el MCP se use
 por un dominio propio. La card de Ajustes autodiagnostica el descubrimiento.
 
+### ADR-S22 — Conectores: la credencial se guarda una vez y se referencia (v0.1.196)
+
+**Contexto.** Hasta acá una credencial de servicio externo se tipeaba DENTRO de
+la acción que la usaba: el secreto de firma HMAC en `action.config.secret` y el
+token en una cabecera `Authorization` de `action.config.headers`, ambos en
+texto plano dentro de la columna `automations.actions` (jsonb). Con N
+automatizaciones contra el mismo destino había N copias de la misma clave,
+rotarla era editarlas una por una, y no había forma de saber qué dejaría de
+funcionar al cambiarla. La evidencia más clara del error de diseño es v0.1.193:
+hubo que escribir `redactSecrets` para que el MCP no expusiera esos secretos al
+modelo, o sea enmascarar un dato que no debería haber estado ahí.
+
+**Decisión.** Una **conexión** es un objeto de primera clase (`connections`,
+migración 0052, RLS) con la credencial **cifrada** por el secret-box de SEC-20
+(la misma `SECRETS_KEY` del SMTP por empresa y del secreto TOTP). Las acciones
+la referencian por id (`config.connection_id`) y **nunca copian el secreto**.
+Es el modelo de las credenciales de n8n y de los recursos de Retool.
+
+- **Tipada y declarativa**: la conexión dice cómo se inyecta la credencial —
+  `bearer`, cabecera propia, `basic`, parámetro de la URL o **campo del
+  cuerpo** (muchas APIs de mensajería piden la clave como un campo más del
+  formulario) — más una URL base, cabeceras fijas y un secreto de firma. Con
+  eso alcanza para cualquier API HTTP sin escribir código nuevo.
+- **La resolución es PURA** (`connectionParts`), igual que `buildWebhookRequest`:
+  el motor, el probador de la acción y el botón "Probar conexión" inyectan la
+  credencial con la misma función, así lo que se prueba es lo que se ejecuta.
+  Las credenciales se le pasan al builder ya resueltas; hacer I/O adentro haría
+  divergir al probador del motor.
+- **Credenciales de la EMPRESA, no de la plataforma.** No hay conectores del
+  operador compartidos entre clientes: para un gateway de WhatsApp o un CRM
+  ajeno, la cuenta es de cada empresa. Alcance `workspace` por defecto, creado
+  por el ADMIN (misma puerta que el SMTP, el dominio y los miembros, porque la
+  credencial puede gastar plata en nombre de la empresa); alcance `private`
+  (sólo su dueño) únicamente si el admin lo habilita.
+- **El secreto no vuelve nunca**: sólo un hint de los últimos cuatro, y los
+  tres estados del SMTP (`none` / `ok` / `unreadable`). Una conexión ilegible
+  **hace fallar** la acción en vez de mandar la petición sin credencial: el
+  fallo silencioso es lo que costó el release v0.1.150.
+- **Borrar dice qué se rompe**: el ACL y el uso se calculan recorriendo las
+  acciones (incluidas las ramas de `if_else`), y borrar una conexión en uso se
+  rechaza con la lista de automatizaciones afectadas.
+
+**Conversión de lo que ya existe.** `GET /connections/inline-secrets` detecta
+las credenciales escritas dentro de las acciones y las agrupa por host **más la
+huella de la credencial** (dos claves distintas en el mismo host son dos
+conexiones: fusionarlas rompería una). `POST /connections/convert-inline` crea
+la conexión cifrada y reescribe las acciones —también las anidadas— sacando el
+secreto y dejando el `connection_id`. La URL se conserva ABSOLUTA a propósito:
+la conexión aporta credenciales, no destino, y reescribirla cambiaría adónde
+apunta una automatización que hoy funciona.
+
+**Consecuencias.** El secreto de firma inline sigue funcionando mientras
+convivan (el de la conexión manda), así que no hay migración forzada. Queda
+para la fase 2 el manifest con acciones NOMBRADAS por proveedor (hoy agregar un
+tipo de acción toca seis lugares entre backend, front y el prompt del
+asistente), y para la fase 3 OAuth2 como CLIENTE, que es la pieza que falta
+para Google o Slack: la app ya es servidor OAuth desde ADR-S21 fase 4.
+
+
 ---
 
-**Versión del documento:** 1.15.4 (OAuth del MCP: descubrimiento estático sin tocar el proxy — ADR-S21 fase 4)
+**Versión del documento:** 1.16.0 (conectores: credenciales reutilizables y cifradas — ADR-S22)

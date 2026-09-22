@@ -4126,6 +4126,92 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         compacta con estado, grupo Contacto, nota, cifras, archivos,
         comentarios— y Compartir muestra Facturas marcada).
 
+- [ ] **F11 — Conectores e integraciones** (pedido del usuario: "conectar una
+      app una vez y usarla en varios lados", con su propia app
+      `was.imagina.cloud` como caso; decisiones tomadas con él: alcance por
+      workspace con opción privada si el admin la habilita, credenciales de
+      CADA EMPRESA —nada de cuentas del operador compartidas entre clientes— y
+      conversión automática de lo que ya está escrito adentro):
+  - [x] **Fase 1 — la conexión como objeto (v0.1.196, ADR-S22)**: hasta acá la
+        credencial de un servicio externo se tipeaba DENTRO de la acción que la
+        usaba —el secreto de firma en `config.secret` y el token en una cabecera
+        `Authorization`, ambos en TEXTO PLANO dentro de `automations.actions`
+        (jsonb)—. Con cinco automatizaciones contra el mismo gateway había cinco
+        copias de la misma clave y rotarla era editarlas a mano; la prueba más
+        clara de que estaban en el lugar equivocado es que en v0.1.193 hubo que
+        escribir `redactSecrets` para que el MCP no las mostrara.
+        (a) **Tabla `connections`** (migración 0052, RLS, único por nombre) con
+        los secretos cifrados por el secret-box de SEC-20 —la misma
+        `SECRETS_KEY` del SMTP por empresa— y lo no secreto (base URL, nombre
+        de la cabecera, cabeceras fijas) en claro para poder mostrarlo.
+        (b) **Un solo proveedor genérico, "API HTTP"**, con cinco formas de
+        inyectar la credencial: `bearer`, cabecera propia, `basic`, parámetro
+        de la URL y **campo del cuerpo** —éste último porque el gateway del
+        propio usuario pide el `secret` como un campo más del formulario, y sin
+        eso el caso que motivó el release no entraba—. Más secreto de firma
+        HMAC opcional.
+        (c) **La resolución es PURA** (`connectionParts`), igual que
+        `buildWebhookRequest`: el motor, el probador de la acción y el botón
+        "Probar conexión" inyectan la credencial con la MISMA función. Las
+        partes ya resueltas se le pasan al builder como argumento; hacer I/O
+        adentro haría divergir al probador del motor, que es justo el problema
+        que el conector viene a resolver. En el motor se resuelve DENTRO de la
+        transacción que ya está abierta (abrir otra tomaría una segunda
+        conexión del pool por acción).
+        (d) **Permisos**: la conexión del EQUIPO la crea el admin —misma puerta
+        que el SMTP, el dominio y los miembros, porque la credencial puede
+        gastar plata en nombre de la empresa— y la PRIVADA (sólo su dueño)
+        existe si el admin la habilita. Ver el inventario y elegir una exige
+        `manage_automations`. Una conexión privada usada en una automatización
+        compartida sigue funcionando para todo el equipo, como en n8n: quién
+        puede EDITARLA es otra pregunta y esa sí se filtra.
+        (e) **El secreto no vuelve nunca**: sólo un hint de los últimos cuatro y
+        los tres estados del SMTP (`none`/`ok`/`unreadable`). Una conexión
+        ilegible o borrada **hace FALLAR** la acción con el motivo, en vez de
+        mandar la petición sin credencial: el fallo silencioso es lo que costó
+        el release v0.1.150. También se cubrió el borde de `SECRETS_KEY` vacía:
+        `decryptSecret` devuelve el texto cifrado tal cual, así que se detecta
+        y se reporta en vez de mandar esa basura como credencial.
+        (f) **Borrar dice qué se rompe**: el uso se calcula recorriendo las
+        acciones (incluidas las ramas de `if_else`) y borrar una conexión en uso
+        se rechaza con la lista de automatizaciones; `GET /connections/:id/usage`
+        la detalla.
+        (g) **Conversión de lo que ya existe**: `GET /connections/inline-secrets`
+        detecta las credenciales escritas adentro y las agrupa por host **más la
+        huella de la credencial** —dos claves distintas en el mismo host son DOS
+        conexiones: fusionarlas rompería una—, sin exponer el secreto (sólo el
+        hint). `POST /connections/convert-inline` crea la conexión cifrada y
+        reescribe las acciones, también las anidadas, sacando el secreto y
+        dejando el `connection_id`. La URL se conserva ABSOLUTA a propósito: la
+        conexión aporta credenciales, no destino. Con bitácora
+        (`connection.create/update/delete/convert`, nunca el secreto).
+        (h) **Front**: sección "Conectores" en Ajustes (inventario con estado,
+        uso y credencial enmascarada; alta/edición con "Probar conexión" que
+        pega a la API real y muestra lo enviado con el secreto tapado; toggle de
+        conexiones privadas para el admin) y **selector de conexión** en la
+        acción "Llamar webhook externo", que al elegir una esconde los campos de
+        secreto de la acción. La tarjeta de conversión va arriba de todo con el
+        nombre ya propuesto: convertir es un click.
+        **Pendientes de F11**: fase 2, manifest con acciones NOMBRADAS por
+        proveedor (hoy agregar un tipo de acción toca seis lugares entre
+        backend, front y el prompt del asistente); fase 3, OAuth2 como CLIENTE
+        (la app ya es servidor OAuth desde ADR-S21 fase 4).
+        29 tests nuevos (19 unitarios de las piezas puras + 10 de integración
+        con Postgres real: cifrado verificado en la fila cruda, aislamiento
+        entre empresas, permisos, rotación, credencial ilegible, borrado en uso,
+        conversión con acción anidada, dos credenciales en el mismo host, y una
+        prueba de CABLE que manda la petición por un socket real y verifica la
+        cabecera que llega) — 577 API, 150 front en verde — + E2E navegador
+        36/36 (automatización con el secreto adentro → candidato → conversión →
+        la acción queda limpia y apuntando a la conexión → el motor la resuelve
+        al ejecutar → el panel y el selector del editor lo muestran).
+        **Límite de la verificación**: el guard anti-SSRF de SEC-03 bloquea
+        loopback, así que en el sandbox la petición del motor no llega a un
+        servidor local; que la credencial viaje entera se prueba sobre un socket
+        real en el test de integración, y el E2E comprueba que el motor la
+        RESUELVE (el log del run distingue "destino bloqueado" de "la conexión
+        ya no existe").
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

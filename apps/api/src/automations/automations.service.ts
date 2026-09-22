@@ -12,6 +12,8 @@ import type {
 } from '@imagina-base/shared';
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
+import { maskHeaders, redactValues } from '../connectors/connection-parts';
+import { ConnectorsService } from '../connectors/connectors.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { automationHooks, fields, records } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
@@ -50,6 +52,7 @@ export class AutomationsService {
         private readonly lists: ListsService,
         private readonly scheduler: AutomationScheduler,
         @Inject(REDIS) private readonly captures: HookCaptureStore,
+        private readonly connectors: ConnectorsService,
     ) {}
 
     /**
@@ -220,15 +223,37 @@ export class AutomationsService {
                 labelResolverFor(sample.fieldsBySlug),
             );
 
-        const req = buildWebhookRequest(input.config, merge, {
-            recordId: sample.record?.id ?? null,
-            listId: list.id,
-        });
+        // v0.1.196 — el probador resuelve la CONEXIÓN igual que el motor: si
+        // la acción usa un conector, lo que se prueba lleva su credencial.
+        const connectionId = Number((input.config as Record<string, unknown>).connection_id);
+        let connection = null;
+        try {
+            if (Number.isFinite(connectionId) && connectionId > 0) {
+                connection = await this.connectors.resolveParts(tenantId, connectionId);
+            }
+        } catch (err) {
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: err instanceof Error ? err.message : String(err),
+                sample_record_id: sample.record?.id ?? null,
+            };
+        }
+
+        const req = buildWebhookRequest(
+            input.config,
+            merge,
+            { recordId: sample.record?.id ?? null, listId: list.id },
+            connection,
+        );
+        // Lo que se MUESTRA no puede volver a filtrar la credencial que
+        // acabamos de sacar del jsonb: se tapa dondequiera que haya quedado.
+        const hide = connection?.redact ?? [];
         const request = {
-            url: req.url,
+            url: redactValues(req.url, hide),
             method: req.method,
-            headers: req.headers,
-            body: req.body ?? null,
+            headers: connection ? maskHeaders(req.headers) : req.headers,
+            body: req.body !== undefined ? redactValues(req.body, hide) : null,
         };
         if (!req.url) {
             return {

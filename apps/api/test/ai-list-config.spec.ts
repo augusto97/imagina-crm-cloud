@@ -19,6 +19,7 @@ import { AutomationsRepository } from '../src/automations/automations.repository
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
+import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
 import { listGroups, memberships, tenants, users } from '../src/db/schema';
@@ -89,7 +90,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
         fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         views = new ViewsService(tenantDb, new ViewsRepository(), lists, rt);
-        automations = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), lists, new AutomationScheduler(), new FakeHookStore());
+        automations = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), lists, new AutomationScheduler(), new FakeHookStore(), new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
         const plans = new PlansService(pg.db);
         const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });
         const billing = new BillingService(tenantDb, plans, new EmailQuotaService(pg.db, plans), new TenantSmtpService(pg.db, env));

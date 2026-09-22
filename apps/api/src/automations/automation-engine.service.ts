@@ -10,6 +10,8 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
+import type { ConnectionParts } from '../connectors/connection-parts';
+import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
 import { automationRuns, records } from '../db/schema';
@@ -67,6 +69,7 @@ export class AutomationEngine {
         private readonly recordsRepo: RecordsRepository,
         private readonly relationsRepo: RelationsRepository,
         private readonly mail: MailService,
+        private readonly connectors: ConnectorsService,
     ) {}
 
     /** Trigger de record (record_created / record_updated). */
@@ -451,13 +454,30 @@ export class AutomationEngine {
                 return ok('create_record', `Creó registro #${row.id} en lista ${targetList}.${note}`, { record_id: row.id });
             }
             case 'call_webhook': {
+                // v0.1.196 — si la acción apunta a una CONEXIÓN, la credencial
+                // sale de ahí (cifrada) en vez de estar escrita en el config.
+                // Una conexión borrada o ilegible hace FALLAR la acción: mandar
+                // la petición sin credencial sería el fallo silencioso que ya
+                // costó caro con el SMTP (v0.1.150).
+                const connectionId = Number(cfg.connection_id);
+                let connection: ConnectionParts | null = null;
+                if (Number.isFinite(connectionId) && connectionId > 0) {
+                    connection = await this.connectors.resolvePartsInTx(tx, ctx.tenantId, connectionId);
+                    if (!connection) {
+                        throw new Error(
+                            `La conexión #${connectionId} ya no existe: revisá la acción en el editor.`,
+                        );
+                    }
+                }
                 // v0.1.155 — la petición la arma `buildWebhookRequest` (puro):
                 // el PROBADOR de la UI usa la misma función, así lo que se
                 // prueba es literalmente lo que después se ejecuta.
-                const req = buildWebhookRequest(cfg, merge, {
-                    recordId: ctx.recordId ?? null,
-                    listId: ctx.listId,
-                });
+                const req = buildWebhookRequest(
+                    cfg,
+                    merge,
+                    { recordId: ctx.recordId ?? null, listId: ctx.listId },
+                    connection,
+                );
                 if (!req.url) return skip('call_webhook', 'URL vacía.');
                 // Guard anti-SSRF (SEC-03): bloquea metadata/loopback/red interna
                 // y pinea la IP resuelta (anti DNS-rebinding) + timeout.
