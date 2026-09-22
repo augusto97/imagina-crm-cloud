@@ -1432,14 +1432,11 @@ export class StructureTools implements AiProposalApplier {
 
     private async proposeDeleteList(ctx: AiToolContext, input: { list: string }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
-        const [fields, views, autos, count, connections] = await Promise.all([
+        const [fields, views, autos, count] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
             this.views.list(ctx.tenantId, String(list.id)),
             this.automations.list(ctx.tenantId, String(list.id)),
             this.countRecords(ctx.tenantId, list.id),
-            // Las conexiones son del WORKSPACE, no de la lista, pero el
-            // asistente lee este esquema antes de proponer una automatización.
-            this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []),
         ]);
         return this.saveProposal(ctx, {
             kind: 'delete_list',

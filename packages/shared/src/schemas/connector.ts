@@ -121,7 +121,7 @@ const paramKeySchema = z
     .trim()
     .min(1)
     .max(120)
-    .regex(/^[A-Za-z0-9_.\-\[\]]+$/, 'Clave inválida');
+    .regex(/^[A-Za-z0-9_.\-[\]]+$/, 'Clave inválida');
 
 export const connectorParamSchema = z.object({
     key: paramKeySchema,
