@@ -3,6 +3,9 @@ import { AuthModule } from '../auth/auth.module';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsOAuthController } from './connectors-oauth.controller';
 import { ConnectorsService } from './connectors.service';
+import { IntegrationAppsService } from './integration-apps.service';
+import { IntegrationsController } from './integrations.controller';
+import { PlatformIntegrationsController } from './platform-integrations.controller';
 
 /**
  * Conectores (v0.1.196, ADR-S22).
@@ -16,8 +19,13 @@ import { ConnectorsService } from './connectors.service';
     // El `SessionGuard` del controller se resuelve en el contexto de ESTE
     // módulo: sin importar AuthModule, Nest no encuentra `SessionService`.
     imports: [AuthModule],
-    controllers: [ConnectorsController, ConnectorsOAuthController],
-    providers: [ConnectorsService],
-    exports: [ConnectorsService],
+    controllers: [
+        ConnectorsController,
+        ConnectorsOAuthController,
+        IntegrationsController,
+        PlatformIntegrationsController,
+    ],
+    providers: [ConnectorsService, IntegrationAppsService],
+    exports: [ConnectorsService, IntegrationAppsService],
 })
 export class ConnectorsModule {}

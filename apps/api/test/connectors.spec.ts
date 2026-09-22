@@ -12,7 +12,7 @@ import { auditLog, automations, connections, lists, tenants, users } from '../sr
 import { withTenant } from '../src/db/tenant-tx';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
-import { memoryOAuthStore } from './helpers/oauth-store';
+import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
 /**
  * v0.1.196 (ADR-S22) — conectores con Postgres real.
@@ -38,7 +38,14 @@ describe('Conectores (v0.1.196)', () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
         store = memoryOAuthStore();
-        svc = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: KEY }), store, new AuditService(tenantDb));
+        svc = new ConnectorsService(
+            tenantDb,
+            pg.db,
+            loadEnv({ SECRETS_KEY: KEY }),
+            store,
+            new AuditService(tenantDb),
+            memoryIntegrationApps(KEY),
+        );
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();
         tenantA = ta!.id;
@@ -206,6 +213,7 @@ describe('Conectores (v0.1.196)', () => {
             loadEnv({ SECRETS_KEY: 'otra-clave-distinta-del-servidor' }),
             memoryOAuthStore(),
             new AuditService(new TenantDb(pg.db)),
+            memoryIntegrationApps('otra-clave-distinta-del-servidor'),
         );
         const [shown] = await otro.list(tenantA, adminId, 'admin');
         expect(shown!.secret_state).toBe('unreadable');
@@ -597,7 +605,7 @@ describe('Conectores (v0.1.196)', () => {
             // Es el caso de Google sin `access_type=offline`: anda una hora y
             // después no hay con qué renovar.
             await seedTokens(dto.id, { expiresAt: Date.now() - 1000, refresh: null });
-            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/volvé a autorizarla/i);
+            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/volvé a conectarla/i);
         });
 
         it('si otra ejecución está renovando, espera en vez de canjear dos veces', async () => {

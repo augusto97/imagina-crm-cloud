@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router';
 import {
     CONNECTOR_AUTH_KEY_LABEL,
     CONNECTOR_AUTH_LABEL,
@@ -110,31 +109,11 @@ export function ConnectorsPanel(): JSX.Element | null {
 
     const [form, setForm] = useState<FormState | null>(null);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-    const [params, setParams] = useSearchParams();
     const [test, setTest] = useState<ConnectionTestResult | null>(null);
 
-    /**
-     * Vuelta del proveedor OAuth: el callback del backend redirige acá con el
-     * resultado. Se muestra y se limpian los parámetros para que no quede
-     * pegado en el historial ni reaparezca al recargar.
-     */
-    const oauthResult = params.get('oauth');
-    useEffect(() => {
-        if (!oauthResult) return;
-        setNotice(
-            oauthResult === 'ok'
-                ? { kind: 'ok', text: __('Autorización completada.') }
-                : { kind: 'err', text: params.get('msg') ?? __('No se pudo autorizar.') },
-        );
-        const next = new URLSearchParams(params);
-        next.delete('oauth');
-        next.delete('msg');
-        setParams(next, { replace: true });
-        void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
-        // Sólo importa el cambio de resultado: las demás dependencias son
-        // estables y re-correr esto pisaría el aviso recién mostrado.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [oauthResult]);
+    // La vuelta del proveedor OAuth (`?oauth=ok|error`) la muestra el panel de
+    // Integraciones que envuelve a éste (v0.1.203): el callback vuelve siempre
+    // a la misma sección.
 
     const invalidate = (): void => {
         void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
@@ -220,7 +199,9 @@ export function ConnectorsPanel(): JSX.Element | null {
         return <p className="imcrm-text-sm imcrm-text-destructive">{errText(e)}</p>;
     }
 
-    const rows = list.data ?? [];
+    // v0.1.203 — las apps de la galería se muestran arriba, en Integraciones;
+    // acá quedan sólo las APIs personalizadas.
+    const rows = (list.data ?? []).filter((c) => c.integration_key === null);
     const redirectUri =
         rows.find((c) => c.oauth_redirect_uri !== '')?.oauth_redirect_uri ??
         `${window.location.origin}/api/v1/connections/oauth/callback`;
@@ -246,11 +227,11 @@ export function ConnectorsPanel(): JSX.Element | null {
                     <div>
                         <CardTitle className="imcrm-flex imcrm-items-center imcrm-gap-2">
                             <Plug className="imcrm-h-4 imcrm-w-4" />
-                            {__('Conectores')}
+                            {__('API personalizada')}
                         </CardTitle>
                         <CardDescription>
                             {__(
-                                'Guardá una vez la credencial de un servicio externo y usala desde cualquier automatización. El secreto se guarda cifrado y no vuelve a mostrarse.',
+                                'Para un servicio que no está en la galería: su URL, cómo se autentica y las acciones que ofrece. La clave se guarda cifrada y no vuelve a mostrarse.',
                             )}
                         </CardDescription>
                     </div>
@@ -283,7 +264,7 @@ export function ConnectorsPanel(): JSX.Element | null {
 
                     {rows.length === 0 && !form && (
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                            {__('Todavía no hay conexiones. Creá una y elegila desde la acción "Llamar a un webhook".')}
+                            {__('Todavía no hay conexiones personalizadas.')}
                         </p>
                     )}
 

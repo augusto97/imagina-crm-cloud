@@ -197,11 +197,15 @@ Sin token o con uno inválido/vencido/revocado → `401` con
   cliente.
 - El rate limit por IP del API aplica también acá.
 
-## Conectores (v0.1.198)
+## Conectores (v0.1.198) y apps de la galería (v0.1.203)
 
 `get_list_schema` incluye `connectors`: las conexiones de la empresa con sus
-**acciones con nombre** (clave, etiqueta y qué parámetros pide cada una).
-Nunca viajan credenciales — sólo qué se puede ejecutar. Para usarlas en una
+**acciones con nombre** (clave, etiqueta, qué parámetros pide cada una y su
+ayuda). Cada conexión trae `app`: la app de la galería (`whatsapp`, `slack`,
+`gmail`, `google_calendar`, `google_sheets`, `outlook`, `telegram`) o `null`
+si es una API personalizada — en las de la galería las acciones ya vienen
+armadas («Enviar mensaje a Slack», «Agregar fila en Google Sheets»). Nunca
+viajan credenciales — sólo qué se puede ejecutar. Para usarlas en una
 automatización, la acción es:
 
 ```json

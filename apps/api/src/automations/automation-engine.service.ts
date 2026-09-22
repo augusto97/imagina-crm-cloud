@@ -12,6 +12,11 @@ import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
+import {
+    buildIntegrationRequest,
+    checkIntegrationResponse,
+    compileIntegrationValues,
+} from '../connectors/integration-calls';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
@@ -517,6 +522,31 @@ export class AutomationEngine {
                     );
                 }
                 const values = (cfg.values ?? {}) as Record<string, unknown>;
+                // v0.1.203 — app de la galería («Enviar mensaje a Slack»): la
+                // petición la arma el código de esa app y la RESPUESTA se revisa
+                // —Slack, Telegram y WAS contestan 200 con el error adentro—, así
+                // un mensaje que no salió no queda como «exitoso» en el historial.
+                if (resolved.integration) {
+                    const integ = resolved.integration;
+                    const compiled = compileIntegrationValues(integ.key, resolved.action, values, merge);
+                    if (compiled.missing.length > 0) {
+                        return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
+                    }
+                    const req = buildIntegrationRequest(integ.key, resolved.action.key, compiled, integ.creds);
+                    const res = await safeWebhookFetch(req.url, {
+                        method: req.method,
+                        headers: req.headers,
+                        body: req.body,
+                        captureBody: true,
+                    });
+                    const problem = checkIntegrationResponse(integ.key, res.status, res.body ?? '');
+                    if (problem) throw new Error(`${resolved.action.label}: ${problem}`);
+                    return ok(
+                        'connector_action',
+                        `${resolved.name} → ${resolved.action.label}: ${res.status}`,
+                        { status: res.status, action: resolved.action.key, integration: integ.key },
+                    );
+                }
                 const call = compileConnectorCall(resolved.action, values, merge);
                 if (call.missing.length > 0) {
                     return skip(

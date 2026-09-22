@@ -1001,6 +1001,61 @@ al desconectar: se borran los tokens locales y la app registrada sigue
 autorizada del otro lado hasta que la persona la quite ahí — cada proveedor
 tiene su propio endpoint de revocación y varios no lo tienen.
 
+**Fase 4 — la galería de apps (v0.1.203).** Las fases 1-3 dejaron el motor
+completo, pero la cara era una herramienta de desarrollador: para conectar
+algo había que saber qué es una cabecera `Authorization`, un scope o una URL
+de tokens, y en OAuth cada empresa tenía que registrar su propia app en la
+consola de Google o Slack. Ningún producto de este tipo le pide eso a su
+cliente. ClickUp puede ofrecer «Conectar» con un botón porque la parte
+técnica la resolvió **una vez** el dueño de la plataforma: registró su app en
+cada proveedor, y cada cliente sólo autoriza con SU cuenta.
+
+- **Dos piezas separadas.** Los **proveedores OAuth** (`google`, `microsoft`,
+  `slack`) los registra el OPERADOR en Plataforma → Integraciones: client id +
+  secreto, cifrado con `SECRETS_KEY` en Redis `platform:integrations` (viaja
+  solo en el snapshot de ADR-S20). Las **integraciones** son las tarjetas de la
+  galería (`INTEGRATIONS` en shared): WhatsApp (Imagina WAS) y Telegram por
+  clave; Slack, Gmail, Google Calendar, Google Sheets y Outlook por OAuth. Cada
+  una declara cómo se conecta y qué ACCIONES trae ya armadas.
+- **La decisión de la fase 1 se mantiene.** El client id identifica a la
+  APP, no es una cuenta compartida: cada empresa conecta su propia cuenta de
+  Google o Slack, y sus tokens quedan cifrados y separados en su conexión. Lo
+  que cambia es quién registra la app: el operador, una vez, en vez de cada
+  cliente.
+- **Las acciones viven en el catálogo, no en la fila.** Una conexión de la
+  galería guarda `provider = <clave de la app>` y trae sus acciones del
+  catálogo: una mejora de la acción llega a todas las empresas con el release,
+  sin migrar conexiones. Usan el shape de las acciones con nombre de la fase 2,
+  así el editor las pinta con el MISMO formulario.
+- **La petición la arma CÓDIGO, una función por acción** (`integration-calls.ts`,
+  puro): una API real no se describe bien con filas clave/valor (Gmail quiere
+  un RFC 2822 en base64, Sheets un arreglo de filas, Calendar objetos anidados
+  con zona horaria). Lo que prueba el editor es lo que ejecuta el motor.
+- **La RESPUESTA se revisa.** Slack, Telegram y WAS contestan 200 con el error
+  adentro (`ok:false`): mirar sólo el status marcaría como exitoso un mensaje
+  que no salió. Para las acciones de la galería un error es un run FALLIDO con
+  el motivo legible («invitá la app al canal con /invite»).
+- **La conexión nace AL VOLVER del proveedor**, no al tocar «Conectar»: si la
+  persona cancela en Google no queda una conexión a medias. Al volver se lee
+  con qué cuenta se conectó (correo de Google/Microsoft, espacio de Slack) y se
+  muestra en la lista.
+- **Una clave se prueba ANTES de guardarse** (Telegram `getMe`, las cuentas de
+  WAS): si está mal se sabe en el diálogo, no a la primera automatización que
+  falle. Si el servicio no contesta —un problema pasajero—, se guarda igual y
+  se avisa que no se pudo comprobar.
+- **Sin el proveedor configurado, la tarjeta no se le muestra a la empresa**
+  (un botón que no puede funcionar es peor que no tenerlo); el operador sí la
+  ve, con el atajo a configurarla.
+- **La API personalizada sigue**, plegada bajo «Avanzado»: es la salida para
+  un servicio que no está en la galería, no el camino de todos los días.
+
+**Consecuencias.** El costo real se mueve al operador: Google exige
+**verificar la app** para los permisos de Calendar, Sheets y Gmail, y mientras
+no esté verificada sólo pueden conectarse los usuarios de prueba que se
+agreguen en la pantalla de consentimiento (hasta 100), con un aviso de «app no
+verificada». La verificación puede tardar semanas; Slack y Microsoft son más
+rápidos, y las apps por clave no necesitan ningún registro.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -1059,4 +1114,4 @@ con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.19.2 (en qué proxy se cree: TRUST_PROXY y X-Forwarded-Host — §14)
+**Versión del documento:** 1.20.0 (galería de integraciones: apps registradas por el operador — ADR-S22 fase 4)

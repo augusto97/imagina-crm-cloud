@@ -183,6 +183,8 @@ export const actionMetaSchema = z.object({
             connection_name: z.string(),
             action_key: z.string(),
             description: z.string(),
+            /** v0.1.203 — app de la galería, para pintar su logo en el menú. */
+            integration_key: z.string().nullable().optional(),
         })
         .optional(),
 });

@@ -4540,6 +4540,87 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cliente mandaba; con `loopback` manda la del proxy) y que el camino
         legítimo sigue funcionando.
 
+  - [x] **Integraciones estilo ClickUp: la galería de apps (v0.1.203, ADR-S22
+        fase 4, pregunta del usuario: "¿estás seguro de que ésa es la mejor
+        manera? es difícil y confusa para un usuario normal; ClickUp no pide
+        algo así")**. Tenía razón: la sección Conectores pedía URL base, tipo de
+        autenticación (Bearer/cabecera/Basic), nombre de la cabecera, secreto de
+        firma, y en OAuth Client ID, Client Secret, scopes, URL de tokens y una
+        URI para registrar en el proveedor — una herramienta de desarrollador.
+        ClickUp ofrece «Conectar» con un botón porque la parte técnica la
+        resolvió UNA vez el dueño de la plataforma. Ahora es igual:
+        (a) **Ajustes → Integraciones** (el id `conectores` se conserva: es la
+        ruta del callback) es una **galería de apps con logo** —WhatsApp (Imagina
+        WAS) y Telegram por clave; Slack, Gmail, Google Calendar, Google Sheets y
+        Outlook por OAuth— con «Conectar», la lista de **Conectadas** («Slack ·
+        Acme», «Gmail · ana@acme.co»), Reconectar/Actualizar clave y
+        Desconectar (avisa cuántas automatizaciones la usan). Sin jerga a la
+        vista: lo técnico quedó plegado bajo **«Avanzado: API personalizada»**
+        (el panel de siempre, sólo con las conexiones propias).
+        (b) **Plataforma → Integraciones** (superadmin): el operador registra
+        UNA vez la app de Google, Microsoft y Slack —pasos numerados, botón a la
+        consola del proveedor, URI de redirección copiable, permisos a habilitar
+        y el aviso de verificación de Google— en Redis `platform:integrations`
+        con el secreto cifrado (`SECRETS_KEY`, jamás vuelve; viaja en el
+        snapshot de ADR-S20). La decisión de F11 se mantiene: el client id
+        identifica a la APP, no es una cuenta; cada empresa conecta SU cuenta y
+        sus tokens quedan cifrados y separados. Sin el proveedor configurado la
+        tarjeta no se le muestra a la empresa (el operador sí la ve, con
+        «Configurar en Plataforma»).
+        (c) **Acciones ya armadas** por app, en el catálogo (`INTEGRATIONS` en
+        shared, mismo shape que las acciones con nombre de v0.1.198, así el
+        editor las pinta con el mismo formulario): enviar WhatsApp (texto y
+        archivo), mensaje de Telegram, mensaje a un canal de Slack, correo con
+        Gmail y con Outlook, evento en Google Calendar y en Outlook (todo el día,
+        hora local en la zona elegida, o el instante UTC de un campo datetime),
+        y **fila en Google Sheets** (un valor por renglón, pegando el ENLACE de
+        la planilla). La petición la arma CÓDIGO, una función pura por acción
+        (`integration-calls.ts`): Gmail es un RFC 2822 en base64 (con el asunto
+        codificado y los saltos de línea de cabeceras neutralizados), Sheets
+        protege las celdas que empiezan con `=`/`@`/`+` para que un registro no
+        inyecte fórmulas (y un teléfono no pierda el `+`), destinatarios capados
+        a 25 como SEC-08. Las acciones viven en el catálogo, no en la fila: una
+        mejora llega a todas las empresas con el release.
+        (d) **La respuesta se revisa**: Slack, Telegram y WAS contestan 200 con
+        el error adentro (`ok:false`), así que un 200 ya no es «éxito» — el run
+        queda FALLIDO con el motivo legible («la app no está en ese canal:
+        invitala con /invite»), en el motor y en «Probar ahora».
+        (e) **La conexión OAuth nace AL VOLVER** del proveedor (cancelar no deja
+        filas a medias) y se lee con qué cuenta se conectó; una **clave se
+        prueba antes de guardarse** (Telegram `getMe`; en WAS «Buscar mis
+        cuentas» lista los números para elegir) — si el servicio no contesta,
+        se guarda igual y se avisa que no se pudo comprobar. Microsoft recibe los
+        scopes también en el canje y la renovación (los exige).
+        (f) En el **editor de automatizaciones** el menú de acciones tiene la
+        sección «Apps conectadas» con el logo de cada app y el atajo **«Conectar
+        otra app»** (abre Ajustes en otra pestaña para no perder lo armado; el
+        catálogo se refresca al volver). El selector de conexión de «Llamar
+        webhook» sólo ofrece APIs personalizadas. El MCP recibe `app` en cada
+        conexión. **Bug de paso**: el uso de una conexión sólo contaba los
+        webhooks, así que borrar una conexión usada por una acción con nombre
+        («Enviar WhatsApp») no avisaba — ahora cuenta las dos.
+        Logos embebidos sin dependencias (Simple Icons CC0 y Phosphor MIT; Slack y
+        Outlook salieron de Simple Icons a pedido de las marcas). 17 tests
+        unitarios de las peticiones + 7 de integración con Postgres real y la red
+        simulada en el borde (`safeWebhookFetch`): app del operador cifrada, viaje
+        OAuth con PKCE, la conexión nace al volver con la cuenta, reconectar no
+        duplica, renovación de Outlook con la app de la plataforma y los scopes,
+        clave de Telegram rechazada que NO se guarda, cuentas de WAS, y el 200 con
+        error de Slack como run fallido en el motor y el probador — 664 API, 154
+        front y 66 shared en verde — + E2E navegador 23/23 (galería con 7 logos y sin jerga,
+        «Configurar en Plataforma», registrar Slack con el secreto que no vuelve,
+        «Conectar» que lleva a slack.com con la app, los permisos y PKCE,
+        Telegram por clave con sus pasos, «Apps conectadas» en el editor, la
+        acción en criollo, «Avanzado» y el celular sin desborde).
+        **Supuesto a confirmar**: la integración de WAS habla la API estilo
+        Zender (`/api/send/whatsapp` con `secret`/`account`/`recipient`/`type`/
+        `message` —los mismos campos que el usuario ya usaba— y
+        `/api/get/wa.accounts` para listar cuentas); si el listado no existe, el
+        diálogo deja escribir la cuenta a mano. **Límite de la verificación**:
+        los proveedores reales no alcanzan el sandbox; el viaje OAuth completo
+        se probó con sus respuestas simuladas, y la conexión real con cada uno
+        queda para cuando el operador registre las apps.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

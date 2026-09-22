@@ -105,6 +105,8 @@ export interface ActionMeta {
         connection_name: string;
         action_key: string;
         description: string;
+        /** v0.1.203 — app de la galería (para el logo); `null` = API personalizada. */
+        integration_key?: string | null;
     };
 }
 
