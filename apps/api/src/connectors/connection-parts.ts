@@ -14,6 +14,10 @@ export interface ConnectionSecrets {
     username?: string;
     password?: string;
     signing_secret?: string;
+    /** OAuth2 (v0.1.199): el token vigente, ya renovado por el service. */
+    access_token?: string;
+    refresh_token?: string;
+    client_secret?: string;
 }
 
 export interface ConnectionInput {
@@ -86,13 +90,28 @@ export function connectionParts(conn: ConnectionInput, secrets: ConnectionSecret
             if (name !== '' && token !== '') body.push({ key: name, value: token });
             break;
         }
+        case 'oauth2': {
+            // El access token llega YA renovado: quien resuelve la conexión se
+            // encarga de eso antes de armar las partes, así esta función sigue
+            // siendo pura y el motor no puede divergir del probador.
+            const access = secrets.access_token ?? '';
+            if (access !== '') headers['authorization'] = `Bearer ${access}`;
+            break;
+        }
         case 'none':
         default:
             break;
     }
 
     const signing = secrets.signing_secret ?? '';
-    const redact = [token, secrets.password ?? '', signing].filter((v) => v.length >= 4);
+    const redact = [
+        token,
+        secrets.password ?? '',
+        signing,
+        secrets.access_token ?? '',
+        secrets.refresh_token ?? '',
+        secrets.client_secret ?? '',
+    ].filter((v) => v.length >= 4);
     return {
         baseUrl: conn.baseUrl.trim(),
         headers,

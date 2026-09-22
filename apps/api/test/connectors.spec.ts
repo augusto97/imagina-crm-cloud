@@ -6,11 +6,13 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuditService } from '../src/audit/audit.service';
 import { loadEnv } from '../src/config/env';
+import { encryptSecret } from '../src/common/secret-box';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { auditLog, automations, connections, lists, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
+import { memoryOAuthStore } from './helpers/oauth-store';
 
 /**
  * v0.1.196 (ADR-S22) — conectores con Postgres real.
@@ -25,6 +27,7 @@ const KEY = 'clave-de-test-32-bytes-o-lo-que-sea';
 describe('Conectores (v0.1.196)', () => {
     let pg: TestPg;
     let svc: ConnectorsService;
+    let store: ReturnType<typeof memoryOAuthStore>;
     let tenantA: number;
     let tenantB: number;
     let adminId: number;
@@ -34,7 +37,8 @@ describe('Conectores (v0.1.196)', () => {
     beforeAll(async () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
-        svc = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: KEY }), new AuditService(tenantDb));
+        store = memoryOAuthStore();
+        svc = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: KEY }), store, new AuditService(tenantDb));
         const [ta] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();
         tenantA = ta!.id;
@@ -200,6 +204,7 @@ describe('Conectores (v0.1.196)', () => {
             new TenantDb(pg.db),
             pg.db,
             loadEnv({ SECRETS_KEY: 'otra-clave-distinta-del-servidor' }),
+            memoryOAuthStore(),
             new AuditService(new TenantDb(pg.db)),
         );
         const [shown] = await otro.list(tenantA, adminId, 'admin');
@@ -482,6 +487,148 @@ describe('Conectores (v0.1.196)', () => {
             });
             expect(rotated.actions).toHaveLength(1);
             expect(rotated.actions[0]!.key).toBe('ping');
+        });
+    });
+    describe('OAuth 2.0 como cliente (v0.1.199)', () => {
+        /** Conexión OAuth2 lista para autorizar. */
+        function oauthBase(over: Record<string, unknown> = {}) {
+            return base({
+                name: 'Google Sheets',
+                auth_type: 'oauth2' as const,
+                base_url: 'https://sheets.example.test/v4',
+                client_secret: 'secreto-de-la-app-4321',
+                oauth: {
+                    client_id: 'cliente-123',
+                    authorize_url: 'https://accounts.example.test/o/auth',
+                    token_url: 'https://accounts.example.test/token',
+                    scopes: 'spreadsheets',
+                    extra_params: [{ key: 'access_type', value: 'offline' }],
+                    provider_key: 'google',
+                },
+                ...over,
+            });
+        }
+
+        /** Simula una autorización ya hecha, escribiendo los tokens cifrados. */
+        async function seedTokens(
+            id: number,
+            opts: { expiresAt: number | null; refresh?: string | null },
+        ): Promise<void> {
+            const [row] = await pg.db.select().from(connections).where(eq(connections.id, id));
+            const secrets = { ...(row!.secrets as Record<string, string>) };
+            secrets.access_token = encryptSecret('at-vigente-1111', KEY);
+            if (opts.refresh !== null) {
+                secrets.refresh_token = encryptSecret(opts.refresh ?? 'rt-1111', KEY);
+            }
+            const config = {
+                ...(row!.config as Record<string, unknown>),
+                oauth_state: { expiresAt: opts.expiresAt, scope: 'spreadsheets', error: null },
+            };
+            await pg.db.update(connections).set({ secrets, config }).where(eq(connections.id, id));
+        }
+
+        it('arranca la autorización con PKCE y no expone el client secret', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase());
+            // El secreto de la app se guarda cifrado y sólo vuelve el hint.
+            expect(dto.secret_hint).toBe('••••4321');
+            expect(JSON.stringify(dto)).not.toContain('secreto-de-la-app-4321');
+            // Todavía no autorizada.
+            expect(dto.oauth_status).toMatchObject({ connected: false, has_refresh: false });
+            expect(dto.oauth_redirect_uri).toMatch(/\/api\/v1\/connections\/oauth\/callback$/);
+
+            const { authorize_url } = await svc.startOAuth(tenantA, adminId, 'admin', dto.id);
+            const url = new URL(authorize_url);
+            expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+            expect(url.searchParams.get('access_type')).toBe('offline');
+            expect(url.searchParams.get('redirect_uri')).toBe(dto.oauth_redirect_uri);
+            // El verifier NO viaja al proveedor: sólo su hash.
+            expect(authorize_url).not.toContain('code_verifier');
+        });
+
+        it('sin client_id o sin URLs no se arranca (el error dice qué falta)', async () => {
+            const dto = await svc.create(
+                tenantA,
+                adminId,
+                'admin',
+                oauthBase({ oauth: { client_id: '', authorize_url: '', token_url: '' } }),
+            );
+            await expect(svc.startOAuth(tenantA, adminId, 'admin', dto.id)).rejects.toThrow(
+                /Client ID/,
+            );
+        });
+
+        it('el callback rechaza un state desconocido y uno de OTRA persona', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase({ name: 'G2' }));
+            const desconocido = await svc.completeOAuth(adminId, 'code-1', 'state-inventado');
+            expect(desconocido.ok).toBe(false);
+            expect(desconocido.error).toMatch(/venció o ya se usó/);
+
+            // Un `state` emitido para el admin no lo puede canjear otra sesión.
+            const { authorize_url } = await svc.startOAuth(tenantA, adminId, 'admin', dto.id);
+            const state = new URL(authorize_url).searchParams.get('state')!;
+            const ajeno = await svc.completeOAuth(managerId, 'code-1', state);
+            expect(ajeno.ok).toBe(false);
+            expect(ajeno.error).toMatch(/otra persona/);
+
+            // Y es de UN SOLO USO: el intento fallido ya lo consumió.
+            const reintento = await svc.completeOAuth(adminId, 'code-1', state);
+            expect(reintento.error).toMatch(/venció o ya se usó/);
+        });
+
+        it('con token vigente inyecta el Bearer y no renueva nada', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase({ name: 'G3' }));
+            await seedTokens(dto.id, { expiresAt: Date.now() + 3_600_000 });
+
+            const parts = await svc.resolveParts(tenantA, dto.id);
+            expect(parts?.headers['authorization']).toBe('Bearer at-vigente-1111');
+            // El access token también está cifrado en reposo.
+            const [row] = await pg.db.select().from(connections).where(eq(connections.id, dto.id));
+            expect(JSON.stringify(row!.secrets)).not.toContain('at-vigente-1111');
+
+            const [shown] = await svc.list(tenantA, adminId, 'admin');
+            expect(shown!.oauth_status).toMatchObject({ connected: true, has_refresh: true });
+            // Ni el access ni el refresh salen al cliente, ni enmascarados.
+            expect(JSON.stringify(shown)).not.toContain('at-vigente-1111');
+            expect(JSON.stringify(shown)).not.toContain('rt-1111');
+        });
+
+        it('vencido y SIN refresh token pide volver a autorizar', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase({ name: 'G4' }));
+            // Es el caso de Google sin `access_type=offline`: anda una hora y
+            // después no hay con qué renovar.
+            await seedTokens(dto.id, { expiresAt: Date.now() - 1000, refresh: null });
+            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/volvé a autorizarla/i);
+        });
+
+        it('si otra ejecución está renovando, espera en vez de canjear dos veces', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase({ name: 'G5' }));
+            await seedTokens(dto.id, { expiresAt: Date.now() - 1000 });
+            // Tomamos el lock "desde otra ejecución": el refresh rotativo de
+            // muchos proveedores invalida el token del segundo que canjea.
+            await store.set(`connoauthlock:${tenantA}:${dto.id}`, '1', 'EX', 20, 'NX');
+            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/renovando/i);
+            await store.del(`connoauthlock:${tenantA}:${dto.id}`);
+        });
+
+        it('desconectar borra los tokens y deja la app registrada', async () => {
+            const dto = await svc.create(tenantA, adminId, 'admin', oauthBase({ name: 'G6' }));
+            await seedTokens(dto.id, { expiresAt: Date.now() + 3_600_000 });
+            const off = await svc.disconnectOAuth(tenantA, adminId, 'admin', dto.id);
+
+            expect(off.oauth_status).toMatchObject({ connected: false, has_refresh: false });
+            // La configuración de la app queda: volver a autorizar es un click.
+            expect(off.oauth.client_id).toBe('cliente-123');
+            expect(off.secret_hint).toBe('••••4321');
+            const [row] = await pg.db.select().from(connections).where(eq(connections.id, dto.id));
+            const secrets = row!.secrets as Record<string, string>;
+            expect(secrets.access_token).toBeUndefined();
+            expect(secrets.refresh_token).toBeUndefined();
+
+            const [log] = await pg.db
+                .select()
+                .from(auditLog)
+                .where(eq(auditLog.action, 'connection.oauth_disconnect'));
+            expect(log?.targetId).toBe(dto.id);
         });
     });
 });

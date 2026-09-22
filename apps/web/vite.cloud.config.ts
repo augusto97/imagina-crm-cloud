@@ -23,6 +23,16 @@ function spaFallback(): Plugin {
                     url.startsWith('/@') ||
                     url.startsWith('/app/') ||
                     url.startsWith('/node_modules/') ||
+                    // v0.1.199: lo que se PROXYA al backend nunca es del SPA.
+                    // Este middleware corre ANTES del proxy de vite, así que
+                    // sin esto una NAVEGACIÓN del navegador a un endpoint del
+                    // API —el callback de OAuth, la página de una lista
+                    // pública— recibía el index del SPA en vez de la respuesta
+                    // del backend. En producción no pasa porque nginx y Caddy
+                    // enrutan `/api/*` antes del fallback.
+                    url.startsWith('/api/') ||
+                    url.startsWith('/.well-known/') ||
+                    url.startsWith('/socket.io/') ||
                     url.includes('.'); // assets con extensión
                 if (isNav && !isInternal) {
                     req.url = url.startsWith('/portal')

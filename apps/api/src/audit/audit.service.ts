@@ -58,7 +58,11 @@ export type AuditAction =
     | 'connection.create'
     | 'connection.update'
     | 'connection.delete'
-    | 'connection.convert';
+    | 'connection.convert'
+    // OAuth2 como cliente (v0.1.199): quién autorizó una app externa en nombre
+    // de la empresa y quién le cortó el acceso.
+    | 'connection.oauth_connect'
+    | 'connection.oauth_disconnect';
 
 export interface AuditEntryDto {
     id: number;

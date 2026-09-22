@@ -935,6 +935,53 @@ guardado de una petición —"Enviar WhatsApp" con los campos *Destinatario* y
   acción?". El asistente y el MCP las ven en `get_list_schema` (`connectors`),
   sin credenciales: sólo qué se puede ejecutar y qué datos pide.
 
+**Fase 3 — OAuth 2.0 como CLIENTE (v0.1.199).** Las fases 1 y 2 asumen un
+secreto ESTÁTICO que alguien pega. Para Google, Microsoft, Slack, GitHub,
+HubSpot o Zoho eso no existe: la empresa **autoriza** la app una vez y el
+proveedor entrega un token que caduca y se renueva solo. La app ya era
+**servidor** OAuth desde ADR-S21 fase 4 (para que Claude se conecte al MCP);
+esto es el lado inverso.
+
+- **`auth_type: 'oauth2'`**, no un proveedor nuevo. La conexión guarda la app
+  registrada (`config.oauth`: client_id, URLs, scopes, extra params) y el
+  `client_secret` cifrado; los tokens del proveedor van en `secrets`, también
+  cifrados, y **nunca vuelven al cliente ni enmascarados** — no son de la
+  persona, son del proveedor.
+- **PKCE siempre** (RFC 7636), aunque haya client secret: es barato y varios
+  proveedores ya lo exigen. El `verifier` y el tenant viven en Redis contra el
+  `state`, que se consume con `GETDEL` —de un solo uso, como el magic link del
+  portal (SEC-15)— y sólo lo puede canjear la MISMA persona que lo pidió.
+- **El refresh se escribe en su PROPIA transacción**, nunca en la del que lo
+  pidió. Si la automatización falla después y revierte, un proveedor que ROTA
+  el refresh token dejaría la conexión muerta para siempre: habríamos guardado
+  uno que el proveedor ya invalidó. Y se toma un **lock corto en Redis**,
+  porque dos acciones en paralelo canjeando el mismo refresh rotativo hacen que
+  el segundo reciba `invalid_grant`; quien no lo consigue espera al token nuevo
+  en vez de pedir otro.
+- **Sin `expires_in` declarado no se renueva a ciegas**: hay proveedores cuyos
+  tokens no caducan y un refresh de más consume cupo o rota uno que andaba.
+- **UNA `redirect_uri` por instalación**
+  (`{APP_BASE_URL}/api/v1/connections/oauth/callback`), porque hay que
+  registrarla en la consola del proveedor y un dominio propio por empresa
+  (ADR-S17) obligaría a registrar una por cliente. El panel la muestra lista
+  para copiar. El callback va en un controller aparte: el navegador vuelve con
+  la cookie de sesión pero SIN `X-Tenant-Id`, así que la empresa sale del
+  `state` que emitimos nosotros.
+- **Los presets de proveedor no son un tipo de conector**: rellenan dos URLs y,
+  sobre todo, traen puestos los parámetros raros de cada uno —el
+  `access_type=offline` de Google es el motivo nº 1 de "me autoricé y a la hora
+  dejó de andar"—. Cualquier otro se configura a mano con los mismos campos.
+- **El canje sale por `safeWebhookFetch`** (SEC-03) como cualquier petición
+  saliente, y el error del proveedor se propaga TAL CUAL: `invalid_grant` es
+  exactamente lo que hay que leer para entender que el refresh murió.
+
+**Consecuencias.** Un token vencido sin refresh **hace fallar** la acción con
+el motivo y el nombre de la conexión, en vez de mandar la petición sin
+credencial (la lección de v0.1.150). Queda fuera la revocación en el proveedor
+al desconectar: se borran los tokens locales y la app registrada sigue
+autorizada del otro lado hasta que la persona la quite ahí — cada proveedor
+tiene su propio endpoint de revocación y varios no lo tienen.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -993,4 +1040,4 @@ con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.18.0 (acciones con nombre por conector — ADR-S22 fase 2)
+**Versión del documento:** 1.19.0 (OAuth2 como cliente en los conectores — ADR-S22 fase 3)
