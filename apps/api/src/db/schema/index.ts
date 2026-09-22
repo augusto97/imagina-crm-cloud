@@ -2,6 +2,7 @@ export * from './tenants';
 export * from './users';
 export * from './memberships';
 export * from './list-groups';
+export * from './connections';
 export * from './list-templates';
 export * from './lists';
 export * from './fields';

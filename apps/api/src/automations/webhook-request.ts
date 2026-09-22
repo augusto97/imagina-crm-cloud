@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { joinUrl, type ConnectionParts } from '../connectors/connection-parts';
 
 /**
  * Construcción de la petición de `call_webhook` (v0.1.155).
@@ -69,10 +70,18 @@ const MIME: Record<WebhookContentType, string> = {
     html: 'text/html; charset=utf-8',
 };
 
+/**
+ * v0.1.196 — `connection` son las partes YA resueltas de un conector (base
+ * URL, cabeceras con la credencial inyectada, query fija y secreto de firma).
+ * Llega como argumento porque esta función es pura y síncrona a propósito:
+ * descifrar acá adentro obligaría a hacer I/O y el probador de la UI dejaría
+ * de armar exactamente la misma petición que el motor.
+ */
 export function buildWebhookRequest(
     cfg: Record<string, unknown>,
     merge: MergeFn,
     fallback: { recordId: number | null; listId: number },
+    connection?: ConnectionParts | null,
 ): WebhookRequest {
     const method = String(cfg.method ?? 'POST').toUpperCase();
     const contentType: WebhookContentType = (WEBHOOK_CONTENT_TYPES as readonly string[]).includes(
@@ -82,8 +91,11 @@ export function buildWebhookRequest(
         : 'json';
 
     // Query params: se agregan a la URL respetando lo que ya traiga escrito.
+    // Con conexión, lo que escribe la acción puede ser sólo el path (`/send`);
+    // una URL absoluta gana siempre sobre la base del conector.
     let url = merge(cfg.url).trim();
-    const query = readPairs(cfg.query_params, merge);
+    if (connection) url = joinUrl(connection.baseUrl, url);
+    const query = [...(connection?.query ?? []), ...readPairs(cfg.query_params, merge)];
     if (query.length > 0) {
         const qs = query
             .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
@@ -91,16 +103,25 @@ export function buildWebhookRequest(
         url += (url.includes('?') ? '&' : '?') + qs;
     }
 
-    const headers: Record<string, string> = {};
+    // Las de la conexión van primero y las de la acción pueden pisarlas: el
+    // conector pone el default, la acción afina un caso puntual.
+    const headers: Record<string, string> = { ...(connection?.headers ?? {}) };
     for (const h of readPairs(cfg.headers, merge)) headers[h.key.toLowerCase()] = h.value;
 
     // Cuerpo: filas clave/valor si las hay; si no, la plantilla cruda; si no,
     // el payload por defecto con el registro que disparó.
-    const params = readPairs(cfg.body_params, merge);
+    const actionParams = readPairs(cfg.body_params, merge);
     const rawTemplate =
         typeof cfg.body_template === 'string' && cfg.body_template.trim() !== ''
             ? merge(cfg.body_template)
             : '';
+    // Los campos de la conexión (auth de tipo `body`) sólo entran cuando el
+    // cuerpo se arma con filas. Con una plantilla cruda manda lo escrito: meter
+    // claves ahí adentro sería reescribirle el JSON al usuario.
+    const params =
+        actionParams.length > 0 || rawTemplate === ''
+            ? [...(connection?.body ?? []), ...actionParams]
+            : actionParams;
 
     const raw = RAW_BODY_TYPES.includes(contentType);
     let body: string | undefined;
@@ -138,10 +159,13 @@ export function buildWebhookRequest(
     }
 
     // Firma HMAC del cuerpo (opcional): el receptor puede verificar que el
-    // pedido salió de acá y que nadie lo tocó en el camino.
-    if (cfg.secret && body !== undefined) {
+    // pedido salió de acá y que nadie lo tocó en el camino. El secreto de la
+    // CONEXIÓN manda sobre el escrito en la acción: después de convertir, el
+    // inline ya no existe, y mientras convivan gana el que está cifrado.
+    const signing = connection?.signingSecret ?? (cfg.secret ? String(cfg.secret) : '');
+    if (signing !== '' && body !== undefined) {
         headers['x-imagina-signature'] =
-            'sha256=' + createHmac('sha256', String(cfg.secret)).update(body).digest('hex');
+            'sha256=' + createHmac('sha256', signing).update(body).digest('hex');
     }
 
     return { url, method, headers, body };

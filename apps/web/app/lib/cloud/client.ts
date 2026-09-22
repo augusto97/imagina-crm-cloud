@@ -1,4 +1,21 @@
 import {
+    connectionSchema,
+    connectionTestResultSchema,
+    connectionUsageSchema,
+    connectorSettingsViewSchema,
+    convertInlineSecretsResultSchema,
+    inlineSecretCandidateSchema,
+    type Connection,
+    type ConnectionDraftTestInput,
+    type ConnectionTestResult,
+    type ConnectionUsage,
+    type ConnectorSettings,
+    type ConnectorSettingsView,
+    type ConvertInlineSecretsInput,
+    type ConvertInlineSecretsResult,
+    type CreateConnectionInput,
+    type InlineSecretCandidate,
+    type UpdateConnectionInput,
     accountExportSchema,
     activeSessionsResponseSchema,
     aiApplyResultSchema,
@@ -636,6 +653,73 @@ export class CloudClient {
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok) throw toApiError(payload, response.status);
         return z.object({ id: z.number().int().positive() }).parse(payload);
+    }
+
+    // --- conectores (ADR-S22, v0.1.196) ---
+    // Los controllers devuelven el envelope `{data}`, así que el schema
+    // valida el sobre completo y el método entrega el contenido.
+    async connectionsList(): Promise<Connection[]> {
+        return (await this.request('GET', '/connections', { schema: dataArray(connectionSchema) })).data;
+    }
+    async connectorSettingsGet(): Promise<ConnectorSettingsView> {
+        return (
+            await this.request('GET', '/connections/settings', {
+                schema: z.object({ data: connectorSettingsViewSchema }),
+            })
+        ).data;
+    }
+    async connectorSettingsSet(input: ConnectorSettings): Promise<ConnectorSettingsView> {
+        return (
+            await this.request('PATCH', '/connections/settings', {
+                body: input,
+                schema: z.object({ data: connectorSettingsViewSchema }),
+            })
+        ).data;
+    }
+    async connectionCreate(input: CreateConnectionInput): Promise<Connection> {
+        return (
+            await this.request('POST', '/connections', {
+                body: input,
+                schema: z.object({ data: connectionSchema }),
+            })
+        ).data;
+    }
+    async connectionUpdate(id: number, input: UpdateConnectionInput): Promise<Connection> {
+        return (
+            await this.request('PATCH', `/connections/${id}`, {
+                body: input,
+                schema: z.object({ data: connectionSchema }),
+            })
+        ).data;
+    }
+    connectionDelete(id: number, force = false): Promise<void> {
+        return this.request('DELETE', `/connections/${id}`, force ? { query: { force: 1 } } : {});
+    }
+    async connectionUsage(id: number): Promise<ConnectionUsage[]> {
+        return (await this.request('GET', `/connections/${id}/usage`, { schema: dataArray(connectionUsageSchema) })).data;
+    }
+    async connectionTest(input: ConnectionDraftTestInput): Promise<ConnectionTestResult> {
+        return (
+            await this.request('POST', '/connections/test', {
+                body: input,
+                schema: z.object({ data: connectionTestResultSchema }),
+            })
+        ).data;
+    }
+    async connectionsInlineSecrets(): Promise<InlineSecretCandidate[]> {
+        return (
+            await this.request('GET', '/connections/inline-secrets', {
+                schema: dataArray(inlineSecretCandidateSchema),
+            })
+        ).data;
+    }
+    async connectionsConvertInline(input: ConvertInlineSecretsInput): Promise<ConvertInlineSecretsResult> {
+        return (
+            await this.request('POST', '/connections/convert-inline', {
+                body: input,
+                schema: z.object({ data: convertInlineSecretsResultSchema }),
+            })
+        ).data;
     }
 
     // --- asistente IA (ADR-S21, v0.1.181) ---

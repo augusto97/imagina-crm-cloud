@@ -7,6 +7,7 @@ import {
     Palette,
     ShieldCheck,
     DatabaseZap,
+    Plug,
     PenLine,
     Sparkles,
     SunMoon,
@@ -29,6 +30,7 @@ export type SettingsSectionId =
     | 'marca'
     | 'formato'
     | 'correo'
+    | 'conectores'
     | 'asistente'
     | 'firma'
     | 'apariencia'
@@ -39,7 +41,14 @@ export type SettingsSectionId =
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
 
-export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): SettingsSectionGroup[] {
+export function settingsSectionGroups({
+    isAdmin,
+    canManageAutomations = false,
+}: {
+    isAdmin: boolean;
+    /** v0.1.196 — Conectores: quien arma automatizaciones ve el inventario. */
+    canManageAutomations?: boolean;
+}): SettingsSectionGroup[] {
     return [
         {
             label: 'Workspace',
@@ -57,6 +66,13 @@ export function settingsSectionGroups({ isAdmin }: { isAdmin: boolean }): Settin
                           // v0.1.114 — quién cambió qué en el workspace.
                           { id: 'auditoria', label: 'Registro de actividad', icon: History },
                       ] satisfies SettingsSectionItem[])
+                    : []),
+                // v0.1.196 (ADR-S22) — credenciales de servicios externos.
+                // No es admin-only: quien arma automatizaciones necesita
+                // elegir una conexión, aunque crear las del equipo sea del
+                // admin (eso lo decide el backend).
+                ...(isAdmin || canManageAutomations
+                    ? ([{ id: 'conectores', label: 'Conectores', icon: Plug }] satisfies SettingsSectionItem[])
                     : []),
             ],
         },

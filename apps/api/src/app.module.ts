@@ -28,6 +28,7 @@ import { PortalModule } from './portal/portal.module';
 import { PublicListsModule } from './public-lists/public-lists.module';
 import { PlatformModule } from './platform/platform.module';
 import { AuditModule } from './audit/audit.service';
+import { ConnectorsModule } from './connectors/connectors.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordsModule } from './records/records.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
@@ -50,6 +51,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ObservabilityModule,
         RealtimeModule,
         AuditModule,
+        ConnectorsModule,
         AuthModule,
         WorkspacesModule,
         MeModule,

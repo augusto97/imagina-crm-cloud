@@ -51,7 +51,14 @@ export type AuditAction =
     | 'workspace.ai_change'
     // v0.1.183 (ADR-S21 fase 3) — tokens de acceso personal (MCP).
     | 'token.create'
-    | 'token.revoke';
+    | 'token.revoke'
+    // v0.1.196 (ADR-S22) — conectores: credenciales de servicios externos.
+    // `connection.convert` es la mudanza de un secreto que estaba escrito
+    // dentro de una automatización a una conexión cifrada.
+    | 'connection.create'
+    | 'connection.update'
+    | 'connection.delete'
+    | 'connection.convert';
 
 export interface AuditEntryDto {
     id: number;

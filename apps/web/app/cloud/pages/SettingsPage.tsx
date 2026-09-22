@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { Crown, SlidersHorizontal } from 'lucide-react';
 import type { BillingSummary } from '@imagina-base/shared';
 import { api, useSession } from '@/cloud/session';
+import { CAP, useCan } from '@/lib/permissions';
 import {
     resolveSettingsSection,
     settingsSectionGroups,
@@ -19,6 +20,7 @@ import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
+import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -52,7 +54,8 @@ export function SettingsPage(): JSX.Element {
         queryFn: () => api.billing(),
     });
 
-    const groups = settingsSectionGroups({ isAdmin });
+    const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
+    const groups = settingsSectionGroups({ isAdmin, canManageAutomations });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" si el param no existe o apunta a una sección gateada.
     const active: SettingsSectionId = resolveSettingsSection(groups, params.get('s'));
@@ -153,6 +156,9 @@ export function SettingsPage(): JSX.Element {
                 {active === 'correo' && isAdmin && <TenantSmtpPanel />}
 
                 {active === 'asistente' && isAdmin && <AiSettingsPanel />}
+
+                {/* v0.1.196 (ADR-S22) — conectores: el panel se auto-oculta ante 403. */}
+                {active === 'conectores' && <ConnectorsPanel />}
                 {/* Bitácora de acciones administrativas (v0.1.114). */}
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
                 {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}

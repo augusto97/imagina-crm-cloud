@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from 'react';
 import { ChevronRight, Play, Plus, Trash2 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1454,6 +1454,66 @@ function KeyValueEditor({
 }
 
 /**
+ * Selector de CONEXIÓN de la acción (v0.1.196, ADR-S22).
+ *
+ * Elegir una conexión es la forma recomendada: la credencial vive cifrada en
+ * un solo lugar y rotarla no obliga a editar cada automatización. "Sin
+ * conexión" sigue existiendo para los webhooks abiertos, que no necesitan
+ * ninguna.
+ */
+function ConnectionSelect({
+    value,
+    onChange,
+}: {
+    value: number | null;
+    onChange: (id: number | null) => void;
+}): JSX.Element {
+    const q = useQuery({
+        queryKey: ['connections'],
+        queryFn: async () => (await api.get<ConnectionOption[]>('/connections')).data ?? [],
+        retry: false,
+        staleTime: 60_000,
+    });
+    const options = q.data ?? [];
+    // Una conexión PRIVADA de otra persona no aparece en la lista, pero la
+    // acción la sigue usando: decirlo es mejor que mostrar el selector vacío.
+    const missing = value !== null && options.length > 0 && !options.some((c) => c.id === value);
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Conexión')}</Label>
+            <Select
+                value={value === null ? '' : String(value)}
+                onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                data-testid="imcrm-action-connection"
+            >
+                <option value="">{__('Sin conexión (escribir la credencial acá abajo)')}</option>
+                {options.map((c) => (
+                    <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.secret_state === 'unreadable' ? ` — ${__('credencial ilegible')}` : ''}
+                    </option>
+                ))}
+                {missing && (
+                    <option value={String(value)}>
+                        {__('Conexión')} #{value} — {__('privada de otra persona')}
+                    </option>
+                )}
+            </Select>
+            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                {__('Las conexiones se crean en Ajustes → Conectores. La URL de acá puede ser relativa a la base de la conexión.')}
+            </p>
+        </div>
+    );
+}
+
+interface ConnectionOption {
+    id: number;
+    name: string;
+    secret_state: string;
+}
+
+/**
  * Constructor + PROBADOR de webhooks salientes (v0.1.155).
  *
  * Antes esto era una URL y un cuadro de texto para escribir el cuerpo a mano:
@@ -1490,6 +1550,9 @@ function CallWebhookConfig({
     const headerRows = readRows(spec.config.headers);
     const queryRows = readRows(spec.config.query_params);
     const secret = typeof spec.config.secret === 'string' ? spec.config.secret : '';
+    // v0.1.196 — con una conexión elegida, la credencial la pone ella y los
+    // campos de secreto de la acción dejan de tener sentido.
+    const connectionId = Number(spec.config.connection_id) > 0 ? Number(spec.config.connection_id) : null;
     const hasBody = method !== 'GET' && method !== 'HEAD';
     const [showRaw, setShowRaw] = useState(rawBody !== '' && bodyRows.length === 0);
     const [test, setTest] = useState<WebhookTestResult | null>(null);
@@ -1518,6 +1581,10 @@ function CallWebhookConfig({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            <ConnectionSelect
+                value={connectionId}
+                onChange={(id) => set({ connection_id: id })}
+            />
             <div className="imcrm-flex imcrm-gap-2 imcrm-items-start">
                 <Select
                     value={method}
@@ -1621,19 +1688,28 @@ function CallWebhookConfig({
                         fields={fields}
                         keyPlaceholder="api_key"
                     />
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                        <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Secreto para firmar (opcional)')}
-                        </Label>
-                        <Input
-                            value={secret}
-                            onChange={(e) => set({ secret: e.target.value })}
-                            placeholder={__('deja vacío si el destino no verifica firma')}
-                        />
+                    {connectionId === null ? (
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                            <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('Secreto para firmar (opcional)')}
+                            </Label>
+                            <Input
+                                value={secret}
+                                onChange={(e) => set({ secret: e.target.value })}
+                                placeholder={__('deja vacío si el destino no verifica firma')}
+                            />
+                            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                {__('Se envía la cabecera x-imagina-signature con el HMAC-SHA256 del cuerpo: el destino puede comprobar que el pedido salió de acá.')}
+                            </p>
+                            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                {__('Mejor todavía: guardalo en una conexión (Ajustes → Conectores) y usala acá. Queda cifrado y se rota en un solo lugar.')}
+                            </p>
+                        </div>
+                    ) : (
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Se envía la cabecera x-imagina-signature con el HMAC-SHA256 del cuerpo: el destino puede comprobar que el pedido salió de acá.')}
+                            {__('La credencial y el secreto de firma los pone la conexión elegida arriba. No hace falta escribirlos acá.')}
                         </p>
-                    </div>
+                    )}
                 </div>
             </details>
 

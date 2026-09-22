@@ -21,6 +21,7 @@ import { AutomationsRepository } from '../src/automations/automations.repository
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
+import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
 import { automationHooks, records, relations, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -229,6 +230,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             listsService,
             new AutomationScheduler(),
             new FakeHookStore(),
+            new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)),
         );
         const plans = new PlansService(pg.db);
         const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });

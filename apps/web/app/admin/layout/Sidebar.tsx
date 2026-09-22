@@ -576,7 +576,13 @@ function SettingsPanelNav({
     isAdmin: boolean;
     requested: string | null;
 }): JSX.Element {
-    const groups = settingsSectionGroups({ isAdmin });
+    const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
+    // v0.1.196 — Conectores no es admin-only: quien arma automatizaciones
+    // necesita ver el inventario de conexiones para elegir una.
+    const groups = settingsSectionGroups({
+        isAdmin,
+        canManageAutomations: canManageAutomations,
+    });
     const active = resolveSettingsSection(groups, requested);
     return (
         <>
