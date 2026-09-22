@@ -160,6 +160,10 @@ export const AI_PROPOSAL_KINDS = [
     'update_view',
     'delete_view',
     'delete_list',
+    // v0.1.201 — últimas brechas de la auditoría del MCP: el ACL por rol de
+    // una lista y su publicación al mundo.
+    'set_list_permissions',
+    'configure_public_sharing',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

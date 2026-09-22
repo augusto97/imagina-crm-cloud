@@ -30,6 +30,8 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     update_view: 'Cambio de vista',
     delete_view: 'Eliminar vista',
     delete_list: 'Eliminar lista',
+    set_list_permissions: 'Permisos de la lista',
+    configure_public_sharing: 'Publicación al mundo',
 };
 
 /**

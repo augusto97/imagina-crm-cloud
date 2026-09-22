@@ -94,7 +94,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         const dashboards = new DashboardsService(tenantDb, null as never, records, fields);
         const blueprint = new BlueprintService(tenantDb, lists, fields, views, automations, new RecordsRepository(), new RelationsRepository(), billing, rt, dashboards);
         const store = new ProposalsStore(redis);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)));
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)), null as never, null as never);
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);
@@ -185,7 +185,10 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         const admin: AiToolContext = { tenantId, userId: adminId, role: 'admin' };
         const read = await connect(admin, 'read');
         const readNames = (await read.listTools()).tools.map((t) => t.name).sort();
-        expect(readNames).toEqual(['aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards', 'list_lists', 'query_records']);
+        expect(readNames).toEqual([
+            'aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
+            'list_lists', 'list_members', 'list_record_comments', 'query_records',
+        ]);
         await read.close();
 
         const full = await connect(admin, 'full');
@@ -201,7 +204,12 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         // Un viewer con scope full: sólo lectura igual (su rol no propone nada).
         const viewer = await connect({ tenantId, userId: viewerId, role: 'viewer' }, 'full');
         const viewerNames = (await viewer.listTools()).tools.map((t) => t.name).sort();
-        expect(viewerNames).toEqual(['aggregate_records', 'apply_proposal', 'get_list_schema', 'list_dashboards', 'list_lists', 'query_records']);
+        // Un viewer no tiene `manage_automations`, así que `list_automation_runs`
+        // sigue afuera aunque su token sea `full`.
+        expect(viewerNames).toEqual([
+            'aggregate_records', 'apply_proposal', 'get_list_schema', 'list_dashboards',
+            'list_lists', 'list_members', 'list_record_comments', 'query_records',
+        ]);
         await viewer.close();
     });
 

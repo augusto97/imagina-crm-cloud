@@ -13,6 +13,9 @@ import { DataTools } from '../src/ai/tools/data-tools';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
 import { AuditService } from '../src/audit/audit.service';
+import { CommentsRepository } from '../src/comments/comments.repository';
+import { CommentsService } from '../src/comments/comments.service';
+import { PublicListsService } from '../src/public-lists/public-lists.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { AutomationScheduler } from '../src/automations/automation-scheduler.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
@@ -82,6 +85,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
     let adminId: number;
     let admin: AiToolContext;
     let client: Client;
+    let publicLists: PublicListsService;
 
     beforeAll(async () => {
         [pg, redisC] = await Promise.all([startPostgres(), startRedis()]);
@@ -102,7 +106,9 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         dashboards = new DashboardsService(tenantDb, null as never, records, fields);
         const blueprint = new BlueprintService(tenantDb, lists, fields, views, automations, new RecordsRepository(), new RelationsRepository(), billing, rt, dashboards);
         const store = new ProposalsStore(redis);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)));
+        const comments = new CommentsService(tenantDb, new CommentsRepository(), lists, records, rt);
+        publicLists = new PublicListsService(pg.db, tenantDb, lists, null as never);
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)), comments, publicLists);
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);
@@ -369,7 +375,100 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const read = new Client({ name: 'spec', version: '0' });
         await read.connect(clientT);
         const names = (await read.listTools()).tools.map((t) => t.name).sort();
-        expect(names).toEqual(['aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards', 'list_lists', 'query_records']);
+        // v0.1.201 — las lecturas nuevas entran solas: el scope `read` es
+        // "todo lo que no propone", no una lista que haya que mantener.
+        expect(names).toEqual([
+            'aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
+            'list_lists', 'list_members', 'list_record_comments', 'query_records',
+        ]);
         await read.close();
+    });
+    /* ── v0.1.201 — últimas brechas: miembros, comentarios, ACL, publicar ── */
+
+    it('list_members devuelve los ids que hacen falta para asignar y compartir', async () => {
+        const out = json(await call('list_members'));
+        const members = out.members as Array<{ id: number; email: string; role: string }>;
+        expect(members.some((m) => m.id === adminId && m.role === 'admin')).toBe(true);
+    });
+
+    it('propose_set_list_permissions: por rol y por persona, con validación real', async () => {
+        // Un campo que no existe no se puede ocultar.
+        const badField = await call('propose_set_list_permissions', {
+            list: 'clientes',
+            roles: { agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: ['no_existe'] } },
+        });
+        expect(isError(badField)).toBe(true);
+        expect(json(badField).error).toContain('«no_existe» no existe');
+
+        // El alcance `assigned` exige un campo de tipo user.
+        const badAssign = await call('propose_set_list_permissions', { list: 'clientes', assignment_field_slug: 'estado' });
+        expect(isError(badAssign)).toBe(true);
+        expect(json(badAssign).error).toContain('tipo user');
+
+        // Sólo se comparte con MIEMBROS de la empresa.
+        const intruso = await call('propose_set_list_permissions', {
+            list: 'clientes',
+            users: [{ user_id: 999_999, view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] }],
+        });
+        expect(isError(intruso)).toBe(true);
+        expect(json(intruso).error).toContain('no es miembro');
+
+        const ok = json(await call('propose_set_list_permissions', {
+            list: 'clientes',
+            roles: {
+                agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: ['estado'] },
+                viewer: { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] },
+            },
+            users: [{ user_id: adminId, view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] }],
+        }));
+        const prop = ok.proposal as { destructive: boolean; preview: { changes: Array<{ label: string; to: string }> } };
+        // Dejar a un rol sin acceso saca gente de golpe: pide confirmación.
+        expect(prop.destructive).toBe(true);
+        expect(prop.preview.changes.find((c) => c.label === 'Rol agent')?.to).toContain('ve lo propio');
+        await apply(ok.proposal_id);
+
+        const doc = await lists.getPermissions(tenantId, 'clientes');
+        expect(doc.permissions.agent).toMatchObject({ view: 'own', create: true, fields_hidden: ['estado'] });
+        expect(doc.permissions.viewer!.view).toBe('none');
+        expect(doc.users.map((u) => u.user_id)).toEqual([adminId]);
+    });
+
+    it('propose_configure_public_sharing: publicar exige campos visibles y avisa que expone datos', async () => {
+        const sinCampos = await call('propose_configure_public_sharing', { list: 'facturas', enabled: true });
+        expect(isError(sinCampos)).toBe(true);
+        expect(json(sinCampos).error).toContain('visible_fields');
+
+        const campoMalo = await call('propose_configure_public_sharing', {
+            list: 'facturas', enabled: true, visible_fields: ['no_existe'],
+        });
+        expect(isError(campoMalo)).toBe(true);
+
+        const vistaMala = await call('propose_configure_public_sharing', {
+            list: 'facturas', enabled: true, visible_fields: ['numero'], view: 'No existe',
+        });
+        expect(isError(vistaMala)).toBe(true);
+        expect(json(vistaMala).error).toContain('No hay una vista');
+
+        const ok = json(await call('propose_configure_public_sharing', {
+            list: 'facturas', enabled: true, visible_fields: ['numero', 'monto'],
+            allowed_domains: ['acme.test'], expires_at: '2030-01-01',
+        }));
+        const prop = ok.proposal as { destructive: boolean; summary: string };
+        // Exponer datos al mundo SIEMPRE pide confirmación reforzada.
+        expect(prop.destructive).toBe(true);
+        expect(prop.summary).toContain('sin cuenta');
+        const applied = await apply(ok.proposal_id);
+        expect(String((applied.result as { message: string }).message)).toContain('publicada');
+
+        const admin2 = await publicLists.getAdmin(tenantId, 'facturas');
+        expect(admin2.enabled).toBe(true);
+        expect(admin2.visible_field_slugs).toEqual(['numero', 'monto']);
+        expect(admin2.allowed_domains).toEqual(['acme.test']);
+        expect(admin2.token).not.toBe('');
+
+        // Despublicar: el enlace deja de funcionar.
+        const off = json(await call('propose_configure_public_sharing', { list: 'facturas', enabled: false }));
+        await apply(off.proposal_id);
+        expect((await publicLists.getAdmin(tenantId, 'facturas')).enabled).toBe(false);
     });
 });
