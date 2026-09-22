@@ -4260,10 +4260,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         acción "Llamar webhook externo", que al elegir una esconde los campos de
         secreto de la acción. La tarjeta de conversión va arriba de todo con el
         nombre ya propuesto: convertir es un click.
-        **Pendientes de F11**: fase 2, manifest con acciones NOMBRADAS por
-        proveedor (hoy agregar un tipo de acción toca seis lugares entre
-        backend, front y el prompt del asistente); fase 3, OAuth2 como CLIENTE
-        (la app ya es servidor OAuth desde ADR-S21 fase 4).
+        **Pendiente de F11**: fase 3, OAuth2 como CLIENTE (la app ya es
+        servidor OAuth desde ADR-S21 fase 4).
         29 tests nuevos (19 unitarios de las piezas puras + 10 de integración
         con Postgres real: cifrado verificado en la fila cruda, aislamiento
         entre empresas, permisos, rotación, credencial ilegible, borrado en uso,
@@ -4279,6 +4277,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         real en el test de integración, y el E2E comprueba que el motor la
         RESUELVE (el log del run distingue "destino bloqueado" de "la conexión
         ya no existe").
+
+  - [x] **Fase 2 — acciones con NOMBRE por conector (v0.1.198)**: la fase 1
+        guardó la credencial una sola vez, pero quien armaba una automatización
+        todavía tenía que saber el método, la ruta y el content-type del
+        servicio. Ahora una conexión declara sus **acciones con nombre** —
+        "Enviar WhatsApp" con los campos *Destinatario* y *Mensaje*— y eso es
+        lo que aparece en el menú del editor. Es lo que hace usable un
+        conector, y es lo que hacen Zapier y n8n.
+        (a) **Viven DENTRO de la conexión** (`connections.config.actions`, sin
+        migración): el catálogo no es de la plataforma sino del servicio que
+        cada empresa conectó, así que **agregar una integración es
+        configuración, no un release** — que era exactamente la deuda anotada
+        en la fase 1 ("agregar un tipo de acción toca seis lugares").
+        (b) **Se COMPILAN a la misma config que `call_webhook`**
+        (`compileConnectorCall`, PURO) y salen por `buildWebhookRequest`: un
+        solo motor de peticiones salientes, así lo que prueba el editor es
+        literalmente lo que ejecuta la automatización. Cada parámetro declara
+        dónde viaja (cuerpo / URL / cabecera / `{clave}` de la ruta), si es
+        obligatorio, su tipo y su valor por defecto.
+        (c) **El merge se aplica UNA vez**, en el compilador; al builder se le
+        pasa una función identidad. Expandir dos veces re-interpretaría como
+        plantilla el texto de un registro (alguien que escribió `{{algo}}` en
+        un campo) — hay test.
+        (d) **La clave de la acción es estable**: renombrar la etiqueta NO
+        rompe ninguna automatización guardada (regla de oro nº 1; el editor
+        propone la clave del nombre sólo mientras la acción es nueva). Una
+        clave que ya no existe **hace fallar** la acción nombrando la conexión
+        —y el editor lo dice en la tarjeta— en vez de ejecutar otra cosa en
+        silencio; un obligatorio vacío la saltea sin mandar nada, y un opcional
+        vacío no viaja (mandar `nota=` le cambia el significado al pedido para
+        muchas APIs).
+        (e) **El catálogo `/actions` deja de ser una constante**: devuelve los
+        5 tipos fijos más una entrada por acción de cada conexión visible, así
+        el menú ofrece "Enviar WhatsApp" bajo una sección **Conectores** en vez
+        de preguntar "¿qué tipo de acción?". Elegirla inserta la acción ya
+        apuntada; el formulario se DERIVA de la definición (etiquetas,
+        obligatorios, ayuda, listas de opciones con escape a variable) y trae
+        **"Probar ahora"**, que resuelve contra un registro real con la
+        credencial de la conexión (misma ruta que el probador de webhooks).
+        (f) **El asistente y el MCP las ven**: `get_list_schema` devuelve
+        `connectors` con qué se puede ejecutar y qué datos pide cada acción —
+        nunca credenciales—, y el prompt documenta
+        `connector_action {connection_id, action_key, values}`.
+        14 tests nuevos (11 unitarios del compilador —ubicaciones, defaults,
+        obligatorios por etiqueta, `{clave}` en ruta y cuerpo crudo, y el
+        compilado real contra `buildWebhookRequest` con la credencial en el
+        cuerpo— y 3 de integración con Postgres: round-trip del catálogo,
+        renombrar sin perder la clave, un PATCH de otra cosa que no borra las
+        acciones, y la petición completa por el probador) — 609 API, 150 front
+        y 66 shared en verde — + E2E navegador 22/22 (definir la acción en
+        Ajustes, que aparezca por su nombre en el menú, formulario derivado,
+        prueba con la URL de la conexión y el secreto tapado, guardar y
+        reabrir, renombrar la etiqueta sin desconectar, y borrarla → la
+        tarjeta avisa). **OJO en dev**: tras tocar `packages/shared` hay que
+        borrar `apps/web/node_modules/.vite` y reiniciar vite — el `--force`
+        solo no alcanzó y las constantes nuevas llegaban `undefined` al
+        navegador (misma trampa de v0.1.167 y v0.1.176, un escalón peor).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

@@ -198,7 +198,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         quota = new AiQuotaService(pg.db, plans);
         const store = new ProposalsStore(redis);
         conversations = new ConversationsStore(redis);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store);
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
         registry = new AiToolRegistry();
         structure.registerInto(registry);
         proposals = new ProposalsService(store, conversations, structure, new AuditService(tenantDb));

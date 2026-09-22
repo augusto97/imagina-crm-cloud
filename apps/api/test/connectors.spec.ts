@@ -83,6 +83,7 @@ describe('Conectores (v0.1.196)', () => {
             auth_key: '',
             headers: [],
             query_params: [],
+            actions: [],
             visibility: 'workspace' as const,
             ...over,
         };
@@ -371,6 +372,116 @@ describe('Conectores (v0.1.196)', () => {
             const found = await svc.scanInline(tenantA);
             expect(found).toHaveLength(2);
             expect(found.map((c) => c.host).sort()).toEqual(['api.example.com', 'api.example.com#2']);
+        });
+    });
+
+    /**
+     * v0.1.198 (fase 2) — acciones con NOMBRE. Lo que hay que demostrar con la
+     * base real: que se guardan, que vuelven al listado (así el menú del
+     * editor de automatizaciones las ofrece), y que resolverlas para ejecutar
+     * entrega credencial + definición juntas.
+     */
+    describe('Acciones con nombre (v0.1.198)', () => {
+        it('las guarda, las devuelve en el listado y las resuelve para ejecutar', async () => {
+            const dto = await svc.create(
+                tenantA,
+                adminId,
+                'admin',
+                base({
+                    name: 'Gateway con acciones',
+                    base_url: 'https://was.example.com/api',
+                    token: 'tok-gateway-4321',
+                    actions: [
+                        {
+                            key: 'enviar_whatsapp',
+                            label: 'Enviar WhatsApp',
+                            description: 'Manda un mensaje al número indicado',
+                            method: 'POST',
+                            path: '/send',
+                            content_type: 'form',
+                            params: [
+                                {
+                                    key: 'recipient',
+                                    label: 'Destinatario',
+                                    type: 'text',
+                                    location: 'body',
+                                    required: true,
+                                    help: '',
+                                    default: '',
+                                    options: [],
+                                },
+                                {
+                                    key: 'message',
+                                    label: 'Mensaje',
+                                    type: 'long_text',
+                                    location: 'body',
+                                    required: true,
+                                    help: '',
+                                    default: '',
+                                    options: [],
+                                },
+                            ],
+                            body_template: '',
+                        },
+                    ],
+                }),
+            );
+            expect(dto.actions).toHaveLength(1);
+            expect(dto.actions[0]!.key).toBe('enviar_whatsapp');
+            expect(dto.actions[0]!.params.map((p) => p.key)).toEqual(['recipient', 'message']);
+
+            // El listado es lo que alimenta el menú del editor.
+            const listed = await svc.list(tenantA, adminId, 'admin');
+            const found = listed.find((c) => c.id === dto.id);
+            expect(found?.actions[0]?.label).toBe('Enviar WhatsApp');
+
+            // Resolver para ejecutar: credencial + definición en un solo viaje.
+            const resolved = await svc.resolveAction(tenantA, dto.id, 'enviar_whatsapp');
+            expect(resolved?.name).toBe('Gateway con acciones');
+            expect(resolved?.action?.path).toBe('/send');
+            expect(resolved?.parts.baseUrl).toBe('https://was.example.com/api');
+            expect(resolved?.parts.headers.authorization).toBe('Bearer tok-gateway-4321');
+
+            // Una clave que ya no existe NO cae a otra acción: devuelve null y
+            // el motor lo reporta como fallo (renombrar no debe ejecutar algo
+            // distinto en silencio).
+            const gone = await svc.resolveAction(tenantA, dto.id, 'enviar_sms');
+            expect(gone?.action).toBeNull();
+        });
+
+        it('renombrar la etiqueta conserva la clave; editar sin `actions` no las borra', async () => {
+            const dto = await svc.create(
+                tenantA,
+                adminId,
+                'admin',
+                base({
+                    name: 'Gateway estable',
+                    actions: [
+                        {
+                            key: 'ping',
+                            label: 'Hacer ping',
+                            description: '',
+                            method: 'GET',
+                            path: '/ping',
+                            content_type: 'json',
+                            params: [],
+                            body_template: '',
+                        },
+                    ],
+                }),
+            );
+            const renamed = await svc.update(tenantA, adminId, 'admin', dto.id, {
+                actions: [{ ...dto.actions[0]!, label: 'Verificar estado' }],
+            });
+            expect(renamed.actions[0]!.key).toBe('ping');
+            expect(renamed.actions[0]!.label).toBe('Verificar estado');
+
+            // Un PATCH de otra cosa (rotar el token) no toca el catálogo.
+            const rotated = await svc.update(tenantA, adminId, 'admin', dto.id, {
+                token: 'tok-nuevo-0000',
+            });
+            expect(rotated.actions).toHaveLength(1);
+            expect(rotated.actions[0]!.key).toBe('ping');
         });
     });
 });

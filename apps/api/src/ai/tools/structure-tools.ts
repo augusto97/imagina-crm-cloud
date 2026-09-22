@@ -48,6 +48,7 @@ import {
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { ConnectorsService } from '../../connectors/connectors.service';
 import { AutomationsService } from '../../automations/automations.service';
 import { DashboardsService } from '../../dashboards/dashboards.service';
 import { fields as fieldsTable, listGroups, records } from '../../db/schema';
@@ -220,7 +221,9 @@ const automationSpec = z.object({
         .describe(
             'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?} | ' +
                 'update_field {values: {slug: valor}} | create_record {target_list: slug, values: {slug: valor}} | ' +
-                'call_webhook {url, method?, headers?, body_template?} | if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
+                'call_webhook {url, method?, headers?, body_template?} | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — usá las que lista `connectors` en get_list_schema | ' +
+                'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
         ),
     is_active: z.boolean().optional().describe('Default true'),
@@ -294,6 +297,7 @@ export class StructureTools implements AiProposalApplier {
         private readonly dashboards: DashboardsService,
         private readonly blueprint: BlueprintService,
         private readonly store: ProposalsStore,
+        private readonly connectors: ConnectorsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -525,11 +529,14 @@ export class StructureTools implements AiProposalApplier {
 
     private async getListSchema(ctx: AiToolContext, input: { list: string }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
-        const [fields, views, autos, count] = await Promise.all([
+        const [fields, views, autos, count, connections] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
             this.views.list(ctx.tenantId, String(list.id)),
             this.automations.list(ctx.tenantId, String(list.id)),
             this.countRecords(ctx.tenantId, list.id),
+            // Las conexiones son del WORKSPACE, no de la lista, pero el
+            // asistente lee este esquema antes de proponer una automatización.
+            this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []),
         ]);
         const allLists = await this.lists.list(ctx.tenantId);
         const listById = new Map(allLists.map((l) => [l.id, l]));
@@ -574,6 +581,30 @@ export class StructureTools implements AiProposalApplier {
                     trigger_config: redactSecrets(a.trigger_config),
                     actions: redactSecrets(a.actions),
                 })),
+                // v0.1.198 — acciones CON NOMBRE de los conectores de la
+                // empresa. Van acá porque es la lectura que el asistente hace
+                // antes de proponer una automatización: sin esto no tendría
+                // forma de saber que existe un "Enviar WhatsApp" configurado.
+                // Nunca viajan credenciales: sólo qué se puede ejecutar y qué
+                // datos pide.
+                connectors: connections
+                    .filter((c) => c.actions.length > 0)
+                    .map((c) => ({
+                        connection_id: c.id,
+                        connection_name: c.name,
+                        actions: c.actions.map((a) => ({
+                            action_key: a.key,
+                            label: a.label,
+                            description: a.description,
+                            params: a.params.map((p) => ({
+                                key: p.key,
+                                label: p.label,
+                                type: p.type,
+                                required: p.required,
+                                options: p.options.map((o) => o.value),
+                            })),
+                        })),
+                    })),
             },
         };
     }
@@ -1401,11 +1432,14 @@ export class StructureTools implements AiProposalApplier {
 
     private async proposeDeleteList(ctx: AiToolContext, input: { list: string }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
-        const [fields, views, autos, count] = await Promise.all([
+        const [fields, views, autos, count, connections] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
             this.views.list(ctx.tenantId, String(list.id)),
             this.automations.list(ctx.tenantId, String(list.id)),
             this.countRecords(ctx.tenantId, list.id),
+            // Las conexiones son del WORKSPACE, no de la lista, pero el
+            // asistente lee este esquema antes de proponer una automatización.
+            this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []),
         ]);
         return this.saveProposal(ctx, {
             kind: 'delete_list',
@@ -2183,6 +2217,8 @@ function describeActions(actions: Array<{ type: string; config: Record<string, u
             }
             case 'call_webhook':
                 return `Llamar webhook ${String(cfg.url ?? '')}`;
+            case 'connector_action':
+                return `Conector: ${String(cfg.action_key ?? '')}`;
             case 'if_else':
                 return 'Condicional sí / no';
             default:

@@ -96,6 +96,16 @@ export interface ActionMeta {
     slug: ActionSlug;
     label: string;
     config_schema: Record<string, Record<string, unknown>>;
+    /**
+     * v0.1.198 — presente sólo en las acciones CON NOMBRE de un conector: el
+     * ítem del menú no es un tipo sino una acción concreta de una conexión.
+     */
+    connector?: {
+        connection_id: number;
+        connection_name: string;
+        action_key: string;
+        description: string;
+    };
 }
 
 export type AutomationRunStatus = 'pending' | 'running' | 'success' | 'failed';

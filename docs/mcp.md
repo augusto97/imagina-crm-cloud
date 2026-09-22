@@ -185,6 +185,22 @@ Sin token o con uno inválido/vencido/revocado → `401` con
   cliente.
 - El rate limit por IP del API aplica también acá.
 
+## Conectores (v0.1.198)
+
+`get_list_schema` incluye `connectors`: las conexiones de la empresa con sus
+**acciones con nombre** (clave, etiqueta y qué parámetros pide cada una).
+Nunca viajan credenciales — sólo qué se puede ejecutar. Para usarlas en una
+automatización, la acción es:
+
+```json
+{ "type": "connector_action",
+  "config": { "connection_id": 3, "action_key": "enviar_whatsapp",
+              "values": { "recipient": "{{telefono}}", "message": "Hola {{nombre}}" } } }
+```
+
+El catálogo de acciones se define en la app (Ajustes → Conectores): desde el
+MCP se usan, no se crean.
+
 ## Límites conocidos
 
 - Sin estado: no hay `GET` (stream de notificaciones del servidor) ni

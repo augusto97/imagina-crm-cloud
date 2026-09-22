@@ -7,6 +7,7 @@ import {
     type Connection,
     type ConnectionTestResult,
     type ConnectorAuthType,
+    type ConnectorAction,
     type ConnectorPair,
     type ConnectorVisibility,
     type InlineSecretCandidate,
@@ -24,6 +25,7 @@ import {
     X,
 } from 'lucide-react';
 
+import { ConnectorActionsEditor } from '@/cloud/components/ConnectorActionsEditor';
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +60,7 @@ interface FormState {
     password: string;
     signing_secret: string;
     headers: ConnectorPair[];
+    actions: ConnectorAction[];
 }
 
 const EMPTY: FormState = {
@@ -72,6 +75,7 @@ const EMPTY: FormState = {
     password: '',
     signing_secret: '',
     headers: [],
+    actions: [],
 };
 
 export function ConnectorsPanel(): JSX.Element | null {
@@ -118,6 +122,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                 visibility: f.visibility,
                 headers: f.headers.filter((h) => h.key.trim() !== ''),
                 query_params: [],
+                actions: f.actions.filter((a) => a.label.trim() !== '' && a.key.trim() !== ''),
                 ...secrets,
             };
             return f.id === null
@@ -143,6 +148,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                 auth_key: f.auth_key.trim(),
                 headers: f.headers.filter((h) => h.key.trim() !== ''),
                 query_params: [],
+                actions: [],
                 visibility: f.visibility,
                 path: '',
                 method: f.auth_type === 'body' ? 'POST' : 'GET',
@@ -551,6 +557,11 @@ function ConnectionForm({
                 </div>
             )}
 
+            <ConnectorActionsEditor
+                actions={form.actions}
+                onChange={(actions) => set('actions', actions)}
+            />
+
             <div className="imcrm-flex imcrm-gap-2">
                 <Button size="sm" onClick={onSave} disabled={saving || form.name.trim() === ''}>
                     {saving ? __('Guardando…') : __('Guardar')}
@@ -666,6 +677,7 @@ function toForm(c: Connection): FormState {
         password: '',
         signing_secret: '',
         headers: c.headers,
+        actions: c.actions,
     };
 }
 

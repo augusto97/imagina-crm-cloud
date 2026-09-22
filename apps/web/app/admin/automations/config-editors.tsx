@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from 'react';
-import { ChevronRight, Play, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, Play, Plus, Send, Trash2 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,8 @@ import { useFields } from '@/hooks/useFields';
 import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
-import { __ } from '@/lib/i18n';
+import { __, sprintf } from '@/lib/i18n';
+import type { Connection, ConnectorParam } from '@imagina-base/shared';
 import type {
     ActionMeta,
     ActionSpec,
@@ -797,6 +798,8 @@ export function ActionConfigEditor({
                 <CreateRecordConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'call_webhook' ? (
                 <CallWebhookConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'connector_action' ? (
+                <ConnectorActionConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'send_email' ? (
                 <SendEmailConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'if_else' ? (
@@ -1461,6 +1464,207 @@ function KeyValueEditor({
  * conexión" sigue existiendo para los webhooks abiertos, que no necesitan
  * ninguna.
  */
+/**
+ * v0.1.198 — acción CON NOMBRE de un conector ("Enviar WhatsApp"). El
+ * formulario se DERIVA de la definición guardada en la conexión: quien arma
+ * la automatización llena campos rotulados y no sabe (ni tiene por qué saber)
+ * de métodos, rutas ni content-types.
+ */
+function ConnectorActionConfig({
+    spec,
+    onChange,
+    fields,
+}: {
+    spec: ActionSpec;
+    onChange: (next: ActionSpec) => void;
+    fields: FieldEntity[];
+}): JSX.Element {
+    const listId = useContext(AutomationEditorListContext);
+    const connectionId = Number(spec.config.connection_id) > 0 ? Number(spec.config.connection_id) : null;
+    const actionKey = typeof spec.config.action_key === 'string' ? spec.config.action_key : '';
+    const values = (spec.config.values ?? {}) as Record<string, unknown>;
+    const [test, setTest] = useState<WebhookTestResult | null>(null);
+
+    const q = useQuery({
+        queryKey: ['connections'],
+        queryFn: async () => (await api.get<Connection[]>('/connections')).data ?? [],
+        retry: false,
+        staleTime: 60_000,
+    });
+    const connections = q.data ?? [];
+    const connection = connections.find((c) => c.id === connectionId) ?? null;
+    const action = connection?.actions.find((a) => a.key === actionKey) ?? null;
+
+    const setValue = (key: string, next: string): void => {
+        onChange({
+            ...spec,
+            config: { ...spec.config, values: { ...values, [key]: next } },
+        });
+    };
+
+    const run = useMutation({
+        mutationFn: async (): Promise<WebhookTestResult> => {
+            const res = await api.post<WebhookTestResult>(
+                `/lists/${listId ?? 0}/automations/test-webhook`,
+                { config: spec.config },
+            );
+            return res.data;
+        },
+        onSuccess: (r) => setTest(r),
+        onError: (err: unknown) =>
+            setTest({
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: err instanceof Error ? err.message : String(err),
+                sample_record_id: null,
+            }),
+    });
+
+    // Una conexión o una acción que ya no existe NO se esconde: la
+    // automatización sigue guardada apuntando ahí y hay que poder verlo.
+    if (!q.isLoading && connection === null) {
+        return (
+            <p className="imcrm-rounded imcrm-bg-muted imcrm-p-2 imcrm-text-xs imcrm-text-destructive">
+                {__('La conexión de esta acción ya no existe o es privada de otra persona.')}
+            </p>
+        );
+    }
+    if (!q.isLoading && action === null) {
+        return (
+            <p className="imcrm-rounded imcrm-bg-muted imcrm-p-2 imcrm-text-xs imcrm-text-destructive">
+                {sprintf(
+                    /* translators: 1: connection name, 2: action key */
+                    __('«%1$s» ya no tiene la acción «%2$s»: se renombró o se borró.'),
+                    connection?.name ?? '',
+                    actionKey,
+                )}
+            </p>
+        );
+    }
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-connector-action-config">
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {connection?.name}
+                {action?.description ? ` · ${action.description}` : ''}
+            </p>
+
+            {(action?.params ?? []).map((param) => (
+                <ConnectorParamField
+                    key={param.key}
+                    param={param}
+                    value={typeof values[param.key] === 'string' ? (values[param.key] as string) : ''}
+                    fields={fields}
+                    onChange={(next) => setValue(param.key, next)}
+                />
+            ))}
+
+            {(action?.params ?? []).length === 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Esta acción no pide datos: se ejecuta tal cual está definida.')}
+                </p>
+            )}
+
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => run.mutate()}
+                    disabled={run.isPending}
+                    data-testid="imcrm-connector-action-test"
+                >
+                    <Send className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {run.isPending ? __('Probando…') : __('Probar ahora')}
+                </Button>
+                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                    {__('Usa un registro real de la lista para resolver las variables.')}
+                </span>
+            </div>
+
+            {test && <WebhookTestReport result={test} />}
+        </div>
+    );
+}
+
+/** Un campo del formulario, derivado del tipo declarado en la conexión. */
+function ConnectorParamField({
+    param,
+    value,
+    fields,
+    onChange,
+}: {
+    param: ConnectorParam;
+    value: string;
+    fields: FieldEntity[];
+    onChange: (next: string) => void;
+}): JSX.Element {
+    const hasOptions = param.type === 'select' && param.options.length > 0;
+    // Una opción de lista también puede venir de una variable del registro:
+    // el escape existe porque si no, el campo queda en un callejón sin salida.
+    const [asTag, setAsTag] = useState(
+        () => hasOptions && value !== '' && !param.options.some((o) => o.value === value),
+    );
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {param.label || param.key}
+                    {param.required && <span className="imcrm-text-destructive"> *</span>}
+                </Label>
+                {hasOptions && (
+                    <button
+                        type="button"
+                        className="imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                        onClick={() => setAsTag((v) => !v)}
+                    >
+                        {asTag ? __('Elegir de la lista') : __('Usar una variable')}
+                    </button>
+                )}
+            </div>
+
+            {param.type === 'boolean' ? (
+                <Select value={value === '' ? 'false' : value} onChange={(e) => onChange(e.target.value)}>
+                    <option value="true">{__('Sí')}</option>
+                    <option value="false">{__('No')}</option>
+                </Select>
+            ) : hasOptions && !asTag ? (
+                <Select value={value} onChange={(e) => onChange(e.target.value)}>
+                    <option value="">{__('(sin elegir)')}</option>
+                    {param.options.map((o) => (
+                        <option key={o.value} value={o.value}>
+                            {o.label || o.value}
+                        </option>
+                    ))}
+                </Select>
+            ) : (
+                <MergeTagInput
+                    value={value}
+                    onChange={onChange}
+                    fields={fields}
+                    autoGrow={param.type === 'long_text'}
+                    placeholder={
+                        param.default !== ''
+                            ? sprintf(
+                                  /* translators: %s: default value */
+                                  __('Por defecto: %s'),
+                                  param.default,
+                              )
+                            : param.type === 'number'
+                              ? __('0 o {{campo}}')
+                              : ''
+                    }
+                />
+            )}
+
+            {param.help !== '' && (
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{param.help}</p>
+            )}
+        </div>
+    );
+}
+
 function ConnectionSelect({
     value,
     onChange,
