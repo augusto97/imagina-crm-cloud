@@ -1,8 +1,14 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import {
+    INTEGRATION_PROVIDER_DEFS,
     connectorSettingsSchema,
+    integrationDef,
+    integrationScopes,
+    isIntegrationKey,
     oauthConfigSchema,
+    type AuthorizeIntegrationInput,
+    type ConnectIntegrationKeyInput,
     type Connection,
     type ConnectionDraftTestInput,
     type ConnectionTestResult,
@@ -16,17 +22,31 @@ import {
     type ConvertInlineSecretsResult,
     type CreateConnectionInput,
     type InlineSecretCandidate,
+    type IntegrationDef,
+    type IntegrationKey,
+    type IntegrationProvider,
+    type IntegrationsOverview,
     type OAuthConfig,
     type OAuthStartResult,
     type OAuthStatus,
     type Role,
     type UpdateConnectionInput,
+    type VerifyIntegrationInput,
+    type VerifyIntegrationResult,
 } from '@imagina-base/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { findConnectorAction, readConnectorActions } from './connector-actions';
+import { IntegrationAppsService } from './integration-apps.service';
+import {
+    identityLabel,
+    identityRequest,
+    parseVerify,
+    verifyRequest,
+    type IntegrationCreds,
+} from './integration-calls';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -108,7 +128,7 @@ export class ConnectionUnusableError extends Error {
     constructor(name: string) {
         super(
             `La conexión «${name}» está configurada pero su credencial no se puede descifrar con la clave actual del servidor. ` +
-                'Volvé a escribirla en Ajustes → Conectores.',
+                'Volvé a escribirla en Ajustes → Integraciones.',
         );
     }
 }
@@ -158,8 +178,32 @@ export interface OAuthStateStore {
 interface PendingOAuth {
     tenantId: number;
     userId: number;
-    connectionId: number;
+    /** `null` = conectar una app de la galería por primera vez (la fila nace al volver). */
+    connectionId: number | null;
     verifier: string;
+    /** v0.1.203 — app de la galería que se está autorizando. */
+    integration?: IntegrationKey;
+    visibility?: ConnectorVisibility;
+}
+
+/** Con qué app del proveedor se autoriza y renueva una conexión. */
+interface OAuthApp {
+    clientId: string;
+    clientSecret: string;
+    authorizeUrl: string;
+    tokenUrl: string;
+    scopes: string;
+    extraParams: ConnectorPair[];
+    /** Microsoft exige repetir los scopes en el canje y en la renovación. */
+    scopeOnToken: boolean;
+    providerKey: string;
+}
+
+/** Lo que el motor necesita para ejecutar una acción de una app de la galería. */
+export interface ResolvedIntegration {
+    key: IntegrationKey;
+    def: IntegrationDef;
+    creds: IntegrationCreds;
 }
 
 /** Estado de la autorización, en `config.oauth_state` (sin tokens). */
@@ -184,6 +228,25 @@ function readOAuthState(raw: unknown): StoredOAuthState {
     };
 }
 
+/** Acción de un conector lista para ejecutar. */
+export interface ResolvedAction {
+    parts: ConnectionParts;
+    action: ConnectorAction | null;
+    name: string;
+    /** Sólo para las apps de la galería: con qué y cómo se arma la petición. */
+    integration: ResolvedIntegration | null;
+}
+
+/** Datos NO secretos de una app de la galería (`config.fields`). */
+function readFields(raw: unknown): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (raw === null || typeof raw !== 'object') return out;
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof value === 'string') out[key] = value;
+    }
+    return out;
+}
+
 @Injectable()
 export class ConnectorsService {
     private readonly logger = new Logger(ConnectorsService.name);
@@ -194,6 +257,7 @@ export class ConnectorsService {
         @Inject(ENV) private readonly env: Env,
         @Inject(REDIS) private readonly redis: OAuthStateStore,
         private readonly audit: AuditService,
+        private readonly apps: IntegrationAppsService,
     ) {}
 
     // ── Ajustes del workspace ────────────────────────────────────────────
@@ -287,7 +351,7 @@ export class ConnectorsService {
         tenantId: number,
         connectionId: number,
         actionKey: unknown,
-    ): Promise<{ parts: ConnectionParts; action: ConnectorAction | null; name: string } | null> {
+    ): Promise<ResolvedAction | null> {
         return this.tenantDb.withTenant(tenantId, (tx) =>
             this.resolveActionInTx(tx, tenantId, connectionId, actionKey),
         );
@@ -298,7 +362,7 @@ export class ConnectorsService {
         tenantId: number,
         connectionId: number,
         actionKey: unknown,
-    ): Promise<{ parts: ConnectionParts; action: ConnectorAction | null; name: string } | null> {
+    ): Promise<ResolvedAction | null> {
         const [raw] = await tx
             .select(COLUMNS)
             .from(connections)
@@ -307,10 +371,33 @@ export class ConnectorsService {
         const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
         const parts = this.partsFrom(row);
         if (!row || !parts) return null;
+        // v0.1.203 — una app de la galería trae sus acciones del CATÁLOGO (no
+        // de la fila): así una mejora de la acción llega a todas las empresas
+        // con el release, sin migrar conexiones.
+        const def = integrationDef(row.provider);
+        if (def && isIntegrationKey(row.provider)) {
+            const secrets = this.readSecrets(row);
+            if (secrets === null) throw new ConnectionUnusableError(row.name);
+            return {
+                parts,
+                action: findConnectorAction(def.actions, actionKey),
+                name: row.name,
+                integration: {
+                    key: row.provider,
+                    def,
+                    creds: {
+                        secret: secrets.token ?? '',
+                        accessToken: secrets.access_token ?? '',
+                        fields: readFields(row.config.fields),
+                    },
+                },
+            };
+        }
         return {
             parts,
             action: findConnectorAction(readConnectorActions(row.config.actions), actionKey),
             name: row.name,
+            integration: null,
         };
     }
 
@@ -342,7 +429,66 @@ export class ConnectorsService {
         return `${this.env.APP_BASE_URL.replace(/\/+$/, '')}/api/v1/connections/oauth/callback`;
     }
 
-    /** Arranca la autorización: guarda el `state` + el verifier y devuelve la URL. */
+    /**
+     * Con qué app del proveedor se habla. Una app de la GALERÍA usa la que el
+     * operador registró en Plataforma → Integraciones; una API personalizada,
+     * la que cargó la propia empresa en su formulario.
+     */
+    private async oauthAppFor(row: ConnectionRow, secrets: ConnectionSecrets): Promise<OAuthApp> {
+        const def = integrationDef(row.provider);
+        if (def && def.auth.kind === 'oauth') {
+            const app = await this.apps.resolve(def.auth.provider);
+            const provider = INTEGRATION_PROVIDER_DEFS[def.auth.provider];
+            return {
+                clientId: app.clientId,
+                clientSecret: app.clientSecret,
+                authorizeUrl: app.authorizeUrl,
+                tokenUrl: app.tokenUrl,
+                scopes: integrationScopes(def),
+                extraParams: provider.extra_params,
+                scopeOnToken: provider.scope_on_token,
+                providerKey: def.auth.provider,
+            };
+        }
+        const cfg = readOAuthConfig(row.config.oauth);
+        return {
+            clientId: cfg.client_id,
+            clientSecret: secrets.client_secret ?? '',
+            authorizeUrl: cfg.authorize_url,
+            tokenUrl: cfg.token_url,
+            scopes: cfg.scopes,
+            extraParams: cfg.extra_params,
+            scopeOnToken: false,
+            providerKey: cfg.provider_key,
+        };
+    }
+
+    /** Guarda el `state` + el verifier y arma la URL del proveedor. */
+    private async beginOAuth(app: OAuthApp, pending: Omit<PendingOAuth, 'verifier'>): Promise<OAuthStartResult> {
+        const pkce = createPkce();
+        const state = randomBytes(24).toString('base64url');
+        await this.redis.set(
+            oauthStateKey(state),
+            JSON.stringify({ ...pending, verifier: pkce.verifier } satisfies PendingOAuth),
+            'EX',
+            OAUTH_STATE_TTL_SECONDS,
+        );
+        return {
+            authorize_url: buildAuthorizeUrl(
+                {
+                    client_id: app.clientId,
+                    authorize_url: app.authorizeUrl,
+                    token_url: app.tokenUrl,
+                    scopes: app.scopes,
+                    extra_params: app.extraParams,
+                    provider_key: app.providerKey,
+                },
+                { redirectUri: this.oauthRedirectUri(), state, challenge: pkce.challenge },
+            ),
+        };
+    }
+
+    /** Arranca la autorización de una API personalizada con OAuth2. */
     async startOAuth(
         tenantId: number,
         userId: number,
@@ -350,6 +496,12 @@ export class ConnectorsService {
         id: number,
     ): Promise<OAuthStartResult> {
         const row = await this.requireEditable(tenantId, userId, role, id);
+        if (integrationDef(row.provider)) {
+            return this.startIntegrationOAuth(tenantId, userId, role, row.provider as IntegrationKey, {
+                visibility: row.visibility as ConnectorVisibility,
+                connection_id: id,
+            });
+        }
         const cfg = readOAuthConfig(row.config.oauth);
         for (const [field, label] of [
             ['client_id', 'el Client ID'],
@@ -364,28 +516,65 @@ export class ConnectorsService {
                 });
             }
         }
-
-        const pkce = createPkce();
-        const state = randomBytes(24).toString('base64url');
-        const pending: PendingOAuth = {
+        const secrets = this.readSecrets(row) ?? {};
+        return this.beginOAuth(await this.oauthAppFor(row, secrets), {
             tenantId,
             userId,
             connectionId: id,
-            verifier: pkce.verifier,
-        };
-        await this.redis.set(
-            oauthStateKey(state),
-            JSON.stringify(pending),
-            'EX',
-            OAUTH_STATE_TTL_SECONDS,
+        });
+    }
+
+    /**
+     * v0.1.203 — «Conectar» una app de la galería. La fila de la conexión NO se
+     * crea acá sino al volver con la autorización: si la persona cancela en el
+     * proveedor no queda una conexión a medias ensuciando la lista.
+     */
+    async startIntegrationOAuth(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        key: IntegrationKey,
+        input: AuthorizeIntegrationInput,
+    ): Promise<OAuthStartResult> {
+        const def = integrationDef(key);
+        if (!def || def.auth.kind !== 'oauth') {
+            throw new BadRequestException({
+                code: 'integration_not_oauth',
+                message: 'Esa app no se conecta con autorización.',
+                data: { status: 400 },
+            });
+        }
+        let visibility = input.visibility;
+        let connectionId: number | null = null;
+        if (input.connection_id) {
+            const row = await this.requireEditable(tenantId, userId, role, input.connection_id);
+            if (row.provider !== key) {
+                throw new BadRequestException({
+                    code: 'integration_mismatch',
+                    message: 'Esa conexión es de otra app.',
+                    data: { status: 400 },
+                });
+            }
+            connectionId = row.id;
+            visibility = row.visibility as ConnectorVisibility;
+        } else {
+            await this.assertMayUseVisibility(tenantId, role, visibility);
+        }
+        const app = await this.apps.resolve(def.auth.provider);
+        const provider = INTEGRATION_PROVIDER_DEFS[def.auth.provider];
+        return this.beginOAuth(
+            {
+                clientId: app.clientId,
+                clientSecret: app.clientSecret,
+                authorizeUrl: app.authorizeUrl,
+                tokenUrl: app.tokenUrl,
+                scopes: integrationScopes(def),
+                extraParams: provider.extra_params,
+                scopeOnToken: provider.scope_on_token,
+                providerKey: def.auth.provider,
+            },
+            { tenantId, userId, connectionId, integration: key, visibility },
         );
-        return {
-            authorize_url: buildAuthorizeUrl(cfg, {
-                redirectUri: this.oauthRedirectUri(),
-                state,
-                challenge: pkce.challenge,
-            }),
-        };
     }
 
     /**
@@ -406,7 +595,7 @@ export class ConnectorsService {
         if (!raw) {
             return {
                 ok: false,
-                error: 'La autorización venció o ya se usó. Volvé a empezar desde Ajustes → Conectores.',
+                error: 'La autorización venció o ya se usó. Volvé a empezar desde Ajustes → Integraciones.',
             };
         }
         let pending: PendingOAuth;
@@ -419,30 +608,32 @@ export class ConnectorsService {
             return { ok: false, error: 'Esta autorización la inició otra persona.' };
         }
 
+        // Primera conexión de una app de la galería: todavía no hay fila.
+        if (pending.connectionId === null) {
+            if (!pending.integration) return { ok: false, error: 'La autorización quedó en un estado inválido.' };
+            return this.completeNewIntegration(pending, code);
+        }
+
         const row = await this.row(pending.tenantId, pending.connectionId);
         if (!row) return { ok: false, error: 'La conexión ya no existe.' };
-        const cfg = readOAuthConfig(row.config.oauth);
         const secrets = this.readSecrets(row);
         if (secrets === null) {
             return { ok: false, error: new ConnectionUnusableError(row.name).message };
         }
 
         try {
-            const token = await this.postToken(
-                cfg.token_url,
-                buildTokenExchangeBody({
-                    code,
-                    redirectUri: this.oauthRedirectUri(),
-                    clientId: cfg.client_id,
-                    clientSecret: secrets.client_secret ?? '',
-                    verifier: pending.verifier,
-                }),
-            );
+            const app = await this.oauthAppFor(row, secrets);
+            const token = await this.exchangeCode(app, code, pending.verifier);
             await this.storeTokens(pending.tenantId, row, token, {
                 // Un proveedor que no rota el refresh no lo reenvía en el canje;
                 // conservar el anterior evita romper una re-autorización.
                 keepRefresh: true,
             });
+            const def = integrationDef(row.provider);
+            if (def && def.auth.kind === 'oauth') {
+                const label = await this.fetchIdentity(def.auth.provider, token.accessToken);
+                if (label) await this.setAccountLabel(pending.tenantId, row.id, label);
+            }
             await this.audit.log({
                 tenantId: pending.tenantId,
                 userId: sessionUserId,
@@ -451,7 +642,7 @@ export class ConnectorsService {
                 targetId: row.id,
                 targetLabel: row.name,
                 meta: {
-                    provider_key: cfg.provider_key,
+                    provider_key: app.providerKey,
                     has_refresh: token.refreshToken !== null,
                     scope: token.scope,
                 },
@@ -462,6 +653,141 @@ export class ConnectorsService {
             await this.setOAuthError(pending.tenantId, row.id, message);
             return { ok: false, error: message };
         }
+    }
+
+    /** Canje del código. Microsoft pide repetir los scopes; el resto los ignora. */
+    private async exchangeCode(app: OAuthApp, code: string, verifier: string): Promise<TokenResponse> {
+        let body = buildTokenExchangeBody({
+            code,
+            redirectUri: this.oauthRedirectUri(),
+            clientId: app.clientId,
+            clientSecret: app.clientSecret,
+            verifier,
+        });
+        if (app.scopeOnToken && app.scopes !== '') body += `&scope=${encodeURIComponent(app.scopes)}`;
+        return this.postToken(app.tokenUrl, body);
+    }
+
+    private async completeNewIntegration(
+        pending: PendingOAuth,
+        code: string,
+    ): Promise<{ ok: boolean; error: string | null }> {
+        const key = pending.integration!;
+        const def = integrationDef(key);
+        if (!def || def.auth.kind !== 'oauth') return { ok: false, error: 'Esa app ya no existe.' };
+        try {
+            const app = await this.apps.resolve(def.auth.provider);
+            const provider = INTEGRATION_PROVIDER_DEFS[def.auth.provider];
+            const token = await this.exchangeCode(
+                {
+                    clientId: app.clientId,
+                    clientSecret: app.clientSecret,
+                    authorizeUrl: app.authorizeUrl,
+                    tokenUrl: app.tokenUrl,
+                    scopes: integrationScopes(def),
+                    extraParams: provider.extra_params,
+                    scopeOnToken: provider.scope_on_token,
+                    providerKey: def.auth.provider,
+                },
+                code,
+                pending.verifier,
+            );
+            const label = await this.fetchIdentity(def.auth.provider, token.accessToken);
+            const secrets: Record<string, string> = {
+                access_token: encryptSecret(token.accessToken, this.env.SECRETS_KEY),
+            };
+            if (token.refreshToken !== null) {
+                secrets.refresh_token = encryptSecret(token.refreshToken, this.env.SECRETS_KEY);
+            }
+            const oauthState: StoredOAuthState = {
+                expiresAt: token.expiresAt,
+                scope: token.scope,
+                error: null,
+            };
+            await this.tenantDb.withTenant(pending.tenantId, async (tx) => {
+                const name = await this.uniqueName(tx, pending.tenantId, def.name, label);
+                const [created] = await tx
+                    .insert(connections)
+                    .values({
+                        tenantId: pending.tenantId,
+                        provider: key,
+                        name,
+                        baseUrl: '',
+                        authType: 'oauth2',
+                        config: { account_label: label, oauth_state: oauthState },
+                        secrets,
+                        visibility: pending.visibility ?? 'workspace',
+                        ownerUserId: pending.userId,
+                        createdBy: pending.userId,
+                    })
+                    .returning({ id: connections.id });
+                await this.audit.logInTx(tx, {
+                    tenantId: pending.tenantId,
+                    userId: pending.userId,
+                    action: 'connection.create',
+                    targetType: 'connection',
+                    targetId: created!.id,
+                    targetLabel: name,
+                    meta: { integration: key, account: label, has_refresh: token.refreshToken !== null },
+                });
+            });
+            return { ok: true, error: null };
+        } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+    }
+
+    /**
+     * Con qué cuenta quedó conectada. Best-effort: si el proveedor no contesta,
+     * la conexión igual sirve; sólo se muestra sin el correo.
+     */
+    private async fetchIdentity(provider: IntegrationProvider, accessToken: string): Promise<string | null> {
+        try {
+            const req = identityRequest(provider, accessToken);
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                captureBody: true,
+                timeoutMs: 8000,
+            });
+            if (res.status >= 400) return null;
+            return identityLabel(provider, res.body ?? '');
+        } catch {
+            return null;
+        }
+    }
+
+    private async setAccountLabel(tenantId: number, id: number, label: string): Promise<void> {
+        await this.tenantDb
+            .withTenant(tenantId, async (tx) => {
+                const [current] = await tx
+                    .select({ config: connections.config })
+                    .from(connections)
+                    .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)))
+                    .limit(1);
+                const config = { ...((current?.config ?? {}) as Record<string, unknown>), account_label: label };
+                await tx
+                    .update(connections)
+                    .set({ config })
+                    .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
+            })
+            .catch(() => undefined);
+    }
+
+    /** «Slack · Acme»; si ya existe, «Slack · Acme (2)». El nombre es único por empresa. */
+    private async uniqueName(tx: Tx, tenantId: number, base: string, label: string | null): Promise<string> {
+        const wanted = label ? `${base} · ${label}` : base;
+        const rows = await tx
+            .select({ name: connections.name })
+            .from(connections)
+            .where(eq(connections.tenantId, tenantId));
+        const taken = new Set(rows.map((r) => r.name.toLowerCase()));
+        if (!taken.has(wanted.toLowerCase())) return wanted.slice(0, 120);
+        for (let n = 2; n < 100; n += 1) {
+            const candidate = `${wanted} (${n})`;
+            if (!taken.has(candidate.toLowerCase())) return candidate.slice(0, 120);
+        }
+        return `${wanted} ${Date.now()}`.slice(0, 120);
     }
 
     /** Revoca localmente: borra los tokens y deja la app registrada intacta. */
@@ -527,7 +853,7 @@ export class ConnectorsService {
         if (refresh === '') {
             throw new BadRequestException({
                 code: 'oauth_expired',
-                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Volvé a autorizarla en Ajustes → Conectores.`,
+                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Volvé a conectarla en Ajustes → Integraciones.`,
                 data: { status: 400 },
             });
         }
@@ -545,15 +871,14 @@ export class ConnectorsService {
         }
 
         try {
-            const cfg = readOAuthConfig(row.config.oauth);
-            const token = await this.postToken(
-                cfg.token_url,
-                buildRefreshBody({
-                    refreshToken: refresh,
-                    clientId: cfg.client_id,
-                    clientSecret: secrets.client_secret ?? '',
-                }),
-            );
+            const app = await this.oauthAppFor(row, secrets);
+            let body = buildRefreshBody({
+                refreshToken: refresh,
+                clientId: app.clientId,
+                clientSecret: app.clientSecret,
+            });
+            if (app.scopeOnToken && app.scopes !== '') body += `&scope=${encodeURIComponent(app.scopes)}`;
+            const token = await this.postToken(app.tokenUrl, body);
             await this.storeTokens(tenantId, row, token, { keepRefresh: true });
             return await this.row(tenantId, row.id);
         } catch (err) {
@@ -651,6 +976,266 @@ export class ConnectorsService {
                     .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
             })
             .catch(() => undefined);
+    }
+
+    // ── Galería de apps (v0.1.203, ADR-S22 fase 4) ───────────────────────
+
+    /** Qué puede conectar esta persona y qué proveedores configuró el operador. */
+    async integrationsOverview(tenantId: number, userId: number, role: Role): Promise<IntegrationsOverview> {
+        const [configured, settings, email] = await Promise.all([
+            this.apps.configured(),
+            this.settings(tenantId),
+            this.userEmail(userId),
+        ]);
+        const providers: Record<string, { configured: boolean }> = {};
+        for (const [provider, ok] of Object.entries(configured)) providers[provider] = { configured: ok };
+        const superadmins = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        return {
+            providers,
+            can_connect_workspace: role === 'admin',
+            can_connect_private: role === 'admin' || settings.allow_private,
+            is_platform_admin: email !== null && superadmins.has(email),
+        };
+    }
+
+    /**
+     * Prueba los datos de una app por clave ANTES de guardarlos: si Telegram no
+     * reconoce el token, la persona lo sabe en el mismo diálogo. También lista
+     * lo que se puede elegir (las cuentas de WhatsApp de la clave).
+     */
+    async verifyIntegration(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        key: IntegrationKey,
+        input: VerifyIntegrationInput,
+    ): Promise<VerifyIntegrationResult> {
+        const { def, creds } = await this.keyCreds(tenantId, userId, role, key, input.fields, input.connection_id ?? null);
+        if (creds.secret === '') {
+            return {
+                ok: false,
+                account_label: null,
+                error: `Falta «${secretField(def)?.label ?? 'la clave'}».`,
+                warning: null,
+                options: {},
+            };
+        }
+        const outcome = await this.runVerify(key, creds);
+        return {
+            ok: outcome.ok,
+            account_label: outcome.label,
+            error: outcome.error,
+            warning: outcome.warning,
+            options: outcome.options,
+        };
+    }
+
+    /** Conecta (o actualiza) una app por clave. Una clave rechazada NO se guarda. */
+    async connectIntegrationKey(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        key: IntegrationKey,
+        input: ConnectIntegrationKeyInput,
+    ): Promise<{ connection: Connection; warning: string | null }> {
+        const existingId = input.connection_id ?? null;
+        const { def, creds, row } = await this.keyCreds(tenantId, userId, role, key, input.fields, existingId);
+        if (def.auth.kind !== 'key') throw new BadRequestException({ code: 'integration_not_key', message: 'Esa app se conecta con «Conectar», no con una clave.', data: { status: 400 } });
+
+        for (const f of def.auth.fields) {
+            const value = f.secret ? creds.secret : (creds.fields[f.key] ?? '');
+            if (f.required && value.trim() === '') {
+                throw new BadRequestException({
+                    code: 'integration_field_missing',
+                    message: `Falta «${f.label}».`,
+                    data: { status: 400 },
+                });
+            }
+        }
+        if (!row) await this.assertMayUseVisibility(tenantId, role, input.visibility);
+
+        const outcome = await this.runVerify(key, creds);
+        if (!outcome.ok) {
+            throw new BadRequestException({
+                code: 'integration_rejected',
+                message: outcome.error ?? 'El servicio rechazó los datos.',
+                data: { status: 400 },
+            });
+        }
+
+        const secretKey = secretField(def);
+        const provided = secretKey ? (input.fields[secretKey.key] ?? '').trim() : '';
+        const secrets = { ...(row?.secrets ?? {}) };
+        if (provided !== '') secrets.token = encryptSecret(provided, this.env.SECRETS_KEY);
+        const config: Record<string, unknown> = {
+            ...(row?.config ?? {}),
+            fields: creds.fields,
+            account_label: outcome.label ?? (row?.config.account_label as string | undefined) ?? null,
+        };
+
+        const id = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (row) {
+                await tx
+                    .update(connections)
+                    .set({ config, secrets, updatedAt: new Date(), lastCheckAt: new Date(), lastCheckOk: true, lastCheckError: null })
+                    .where(and(eq(connections.tenantId, tenantId), eq(connections.id, row.id)));
+                await this.audit.logInTx(tx, {
+                    tenantId,
+                    userId,
+                    action: 'connection.update',
+                    targetType: 'connection',
+                    targetId: row.id,
+                    targetLabel: row.name,
+                    meta: { integration: key, secret_rotated: provided !== '' },
+                });
+                return row.id;
+            }
+            const name = await this.uniqueName(tx, tenantId, def.name, outcome.label);
+            const [created] = await tx
+                .insert(connections)
+                .values({
+                    tenantId,
+                    provider: key,
+                    name,
+                    baseUrl: '',
+                    authType: 'none',
+                    config,
+                    secrets,
+                    visibility: input.visibility,
+                    ownerUserId: userId,
+                    createdBy: userId,
+                    lastCheckAt: new Date(),
+                    lastCheckOk: true,
+                })
+                .returning({ id: connections.id });
+            await this.audit.logInTx(tx, {
+                tenantId,
+                userId,
+                action: 'connection.create',
+                targetType: 'connection',
+                targetId: created!.id,
+                targetLabel: name,
+                // Nunca el secreto: la bitácora la lee cualquier admin.
+                meta: { integration: key, account: outcome.label, visibility: input.visibility },
+            });
+            return created!.id;
+        });
+
+        const fresh = await this.row(tenantId, id);
+        const usage = await this.usageCounts(tenantId);
+        return {
+            connection: this.toDto(fresh!, { usage: usage.get(id) ?? 0, ownerName: null, canEdit: true }),
+            warning: outcome.warning,
+        };
+    }
+
+    /**
+     * Conexiones activas por proveedor en TODA la plataforma, para la consola
+     * del operador («Google: 12 empresas conectadas»). Corre sobre la conexión
+     * base (sin RLS), igual que el resto de la consola.
+     */
+    async providerUsage(): Promise<Map<IntegrationProvider, number>> {
+        const rows = await this.db.select({ provider: connections.provider }).from(connections);
+        const out = new Map<IntegrationProvider, number>();
+        for (const r of rows) {
+            const def = integrationDef(r.provider);
+            if (def && def.auth.kind === 'oauth') {
+                out.set(def.auth.provider, (out.get(def.auth.provider) ?? 0) + 1);
+            }
+        }
+        return out;
+    }
+
+    /** Arma las credenciales de una app por clave: lo tipeado + lo ya guardado. */
+    private async keyCreds(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        key: IntegrationKey,
+        fields: Record<string, string>,
+        connectionId: number | null,
+    ): Promise<{ def: IntegrationDef; creds: IntegrationCreds; row: ConnectionRow | null }> {
+        const def = integrationDef(key);
+        if (!def || def.auth.kind !== 'key') {
+            throw new BadRequestException({
+                code: 'integration_not_key',
+                message: 'Esa app se conecta con «Conectar», no con una clave.',
+                data: { status: 400 },
+            });
+        }
+        let row: ConnectionRow | null = null;
+        let stored: ConnectionSecrets = {};
+        let storedFields: Record<string, string> = {};
+        if (connectionId) {
+            row = await this.requireEditable(tenantId, userId, role, connectionId);
+            if (row.provider !== key) {
+                throw new BadRequestException({
+                    code: 'integration_mismatch',
+                    message: 'Esa conexión es de otra app.',
+                    data: { status: 400 },
+                });
+            }
+            const secrets = this.readSecrets(row);
+            if (secrets === null) {
+                // Ilegible: se exige la clave de nuevo, que es justamente el arreglo.
+                stored = {};
+            } else {
+                stored = secrets;
+            }
+            storedFields = readFields(row.config.fields);
+        }
+        const secretDef = secretField(def);
+        const out: Record<string, string> = {};
+        for (const f of def.auth.fields) {
+            if (f.secret) continue;
+            const typed = fields[f.key];
+            const value = typed !== undefined ? typed.trim() : (storedFields[f.key] ?? '');
+            out[f.key] = value !== '' ? value : f.default;
+        }
+        const typedSecret = secretDef ? (fields[secretDef.key] ?? '').trim() : '';
+        return {
+            def,
+            row,
+            creds: {
+                secret: typedSecret !== '' ? typedSecret : (stored.token ?? ''),
+                accessToken: '',
+                fields: out,
+            },
+        };
+    }
+
+    private async runVerify(key: IntegrationKey, creds: IntegrationCreds) {
+        const req = verifyRequest(key, creds);
+        if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                captureBody: true,
+                timeoutMs: 10_000,
+            });
+            return parseVerify(key, res.status, res.body ?? '', creds);
+        } catch (err) {
+            // Sin red hasta el servicio no se sabe si la clave sirve: se deja
+            // guardar, avisando, en vez de bloquear por un problema pasajero.
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return {
+                ok: true,
+                label: null,
+                error: null,
+                warning: `No pudimos comprobar la conexión ahora (${message}). Se puede guardar igual.`,
+                options: {},
+            };
+        }
+    }
+
+    private async userEmail(userId: number): Promise<string | null> {
+        const [row] = await this.db
+            .select({ email: users.email })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        return row?.email ? row.email.toLowerCase() : null;
     }
 
     // ── Alta, edición y baja ─────────────────────────────────────────────
@@ -799,7 +1384,10 @@ export class ConnectorsService {
         for (const row of rows) {
             let count = 0;
             walkActions(row.actions, (action) => {
-                if (action.type !== 'call_webhook') return;
+                // v0.1.203 — también las acciones con nombre (`connector_action`):
+                // antes sólo se contaban los webhooks y borrar una conexión usada
+                // por «Enviar WhatsApp» no avisaba nada.
+                if (!usesConnection(action.type)) return;
                 const cfg = (action.config ?? {}) as Record<string, unknown>;
                 if (Number(cfg.connection_id) === connectionId) count += 1;
             });
@@ -822,7 +1410,7 @@ export class ConnectorsService {
         const counts = new Map<number, number>();
         for (const row of rows) {
             walkActions(row.actions, (action) => {
-                if (action.type !== 'call_webhook') return;
+                if (!usesConnection(action.type)) return;
                 const cfg = (action.config ?? {}) as Record<string, unknown>;
                 const id = Number(cfg.connection_id);
                 if (Number.isFinite(id) && id > 0) counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -1221,7 +1809,7 @@ export class ConnectorsService {
             throw new ForbiddenException({
                 code: 'private_connections_disabled',
                 message:
-                    'Las conexiones privadas están deshabilitadas en este workspace. El admin puede habilitarlas en Ajustes → Conectores.',
+                    'Las conexiones privadas están deshabilitadas en este workspace. El admin puede habilitarlas en Ajustes → Integraciones.',
                 data: { status: 403 },
             });
         }
@@ -1355,16 +1943,21 @@ export class ConnectorsService {
             row.authType === 'oauth2'
                 ? (secrets?.client_secret ?? '')
                 : (secrets?.token ?? secrets?.password ?? '');
+        const def = integrationDef(row.provider);
+        const account = row.config.account_label;
         return {
             id: row.id,
-            provider: 'http',
+            provider: row.provider,
+            integration_key: def ? def.key : null,
+            account_label: typeof account === 'string' && account !== '' ? account : null,
             name: row.name,
             base_url: row.baseUrl,
             auth_type: row.authType as ConnectorAuthType,
             auth_key: String(row.config.auth_key ?? ''),
             headers: readConfigPairs(row.config.headers) as ConnectorPair[],
             query_params: readConfigPairs(row.config.query_params) as ConnectorPair[],
-            actions: readConnectorActions(row.config.actions),
+            // Las apps de la galería traen sus acciones del catálogo.
+            actions: def ? [...def.actions] : readConnectorActions(row.config.actions),
             oauth: readOAuthConfig(row.config.oauth),
             oauth_status: this.oauthStatus(row, secrets),
             oauth_redirect_uri: this.oauthRedirectUri(),
@@ -1383,6 +1976,17 @@ export class ConnectorsService {
             updated_at: row.updatedAt.toISOString(),
         };
     }
+}
+
+/** El único campo secreto de una app por clave (va a `secrets.token`). */
+function secretField(def: IntegrationDef): { key: string; label: string } | null {
+    if (def.auth.kind !== 'key') return null;
+    return def.auth.fields.find((f) => f.secret) ?? null;
+}
+
+/** Acciones que referencian una conexión por id. */
+function usesConnection(type: unknown): boolean {
+    return type === 'call_webhook' || type === 'connector_action';
 }
 
 interface AutomationRow {

@@ -72,6 +72,7 @@ export class AutomationsCatalogController {
                         connection_name: conn.name,
                         action_key: action.key,
                         description: action.description,
+                        integration_key: conn.integration_key,
                     },
                 });
             }

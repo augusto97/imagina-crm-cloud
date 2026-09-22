@@ -41,7 +41,7 @@ import { TemplatesService } from '../src/templates/templates.service';
 import { ViewsRepository } from '../src/views/views.repository';
 import { ViewsService } from '../src/views/views.service';
 import { startPostgres, type TestPg } from './helpers/containers';
-import { memoryOAuthStore } from './helpers/oauth-store';
+import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
 class FakeHookStore implements HookCaptureStore {
     lpush(): Promise<number> {
@@ -231,7 +231,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             listsService,
             new AutomationScheduler(),
             new FakeHookStore(),
-            new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)),
+            new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps()),
         );
         const plans = new PlansService(pg.db);
         const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });

@@ -333,7 +333,15 @@ export type ConnectorActionCall = z.infer<typeof connectorActionCallSchema>;
 
 export const connectionSchema = z.object({
     id: idSchema,
-    provider: connectorProviderSchema,
+    /**
+     * `http` para una API personalizada; la clave de la app para las de la
+     * galería (v0.1.203: `whatsapp`, `slack`, `gmail`…).
+     */
+    provider: z.string(),
+    /** Clave de la integración de la galería, o `null` si es API personalizada. */
+    integration_key: z.string().nullable(),
+    /** Con qué cuenta quedó conectada («ana@acme.com», «@mi_bot»). */
+    account_label: z.string().nullable(),
     name: z.string().min(1).max(120),
     /** Base opcional: una acción puede escribir sólo el path (`/send`). */
     base_url: z.string().max(2000),

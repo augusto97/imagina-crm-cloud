@@ -702,6 +702,9 @@ export class StructureTools implements AiProposalApplier {
                     .map((c) => ({
                         connection_id: c.id,
                         connection_name: c.name,
+                        // v0.1.203 — app de la galería (whatsapp, slack, gmail…) o
+                        // `null` si es una API personalizada.
+                        app: c.integration_key,
                         actions: c.actions.map((a) => ({
                             action_key: a.key,
                             label: a.label,
@@ -711,6 +714,7 @@ export class StructureTools implements AiProposalApplier {
                                 label: p.label,
                                 type: p.type,
                                 required: p.required,
+                                ...(p.help !== '' ? { help: p.help } : {}),
                                 options: p.options.map((o) => o.value),
                             })),
                         })),

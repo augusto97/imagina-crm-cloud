@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
+import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { useEmailSignature } from '@/hooks/useEmailSignature';
@@ -1544,10 +1546,13 @@ function ConnectorActionConfig({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-connector-action-config">
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {connection?.name}
-                {action?.description ? ` · ${action.description}` : ''}
-            </p>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                <IntegrationLogo integrationKey={connection?.integration_key ?? null} size={24} />
+                <p className="imcrm-min-w-0 imcrm-text-xs imcrm-text-muted-foreground">
+                    <span className="imcrm-font-medium imcrm-text-foreground">{connection?.name}</span>
+                    {action?.description ? ` · ${action.description}` : ''}
+                </p>
+            </div>
 
             {(action?.params ?? []).map((param) => (
                 <ConnectorParamField
@@ -1678,7 +1683,9 @@ function ConnectionSelect({
         retry: false,
         staleTime: 60_000,
     });
-    const options = q.data ?? [];
+    // v0.1.203 — sólo las APIs personalizadas: una app de la galería (Slack,
+    // Gmail…) se usa con sus acciones ya armadas, no como webhook crudo.
+    const options = (q.data ?? []).filter((c) => (c.integration_key ?? null) === null);
     // Una conexión PRIVADA de otra persona no aparece en la lista, pero la
     // acción la sigue usando: decirlo es mejor que mostrar el selector vacío.
     const missing = value !== null && options.length > 0 && !options.some((c) => c.id === value);
@@ -1715,6 +1722,8 @@ interface ConnectionOption {
     id: number;
     name: string;
     secret_state: string;
+    /** v0.1.203 — `null` en las APIs personalizadas. */
+    integration_key?: string | null;
 }
 
 /**

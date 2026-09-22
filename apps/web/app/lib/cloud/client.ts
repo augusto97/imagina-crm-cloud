@@ -3,6 +3,20 @@ import {
     connectionTestResultSchema,
     connectionUsageSchema,
     oauthStartResultSchema,
+    integrationsOverviewSchema,
+    platformIntegrationAppSchema,
+    platformIntegrationsSchema,
+    verifyIntegrationResultSchema,
+    type AuthorizeIntegrationInput,
+    type ConnectIntegrationKeyInput,
+    type IntegrationKey,
+    type IntegrationProvider,
+    type IntegrationsOverview,
+    type PlatformIntegrationApp,
+    type PlatformIntegrations,
+    type UpdatePlatformIntegrationAppInput,
+    type VerifyIntegrationInput,
+    type VerifyIntegrationResult,
     connectorSettingsViewSchema,
     convertInlineSecretsResultSchema,
     inlineSecretCandidateSchema,
@@ -745,6 +759,54 @@ export class CloudClient {
                 schema: z.object({ data: convertInlineSecretsResultSchema }),
             })
         ).data;
+    }
+
+    // --- galería de apps (v0.1.203, ADR-S22 fase 4) ---
+    async integrationsOverview(): Promise<IntegrationsOverview> {
+        return (
+            await this.request('GET', '/integrations', { schema: z.object({ data: integrationsOverviewSchema }) })
+        ).data;
+    }
+    async integrationVerify(key: IntegrationKey, input: VerifyIntegrationInput): Promise<VerifyIntegrationResult> {
+        return (
+            await this.request('POST', `/integrations/${key}/verify`, {
+                body: input,
+                schema: z.object({ data: verifyIntegrationResultSchema }),
+            })
+        ).data;
+    }
+    async integrationConnect(
+        key: IntegrationKey,
+        input: ConnectIntegrationKeyInput,
+    ): Promise<{ connection: Connection; warning: string | null }> {
+        const res = await this.request('POST', `/integrations/${key}/connect`, {
+            body: input,
+            schema: z.object({
+                data: connectionSchema,
+                meta: z.object({ warning: z.string().nullable() }),
+            }),
+        });
+        return { connection: res.data, warning: res.meta.warning };
+    }
+    async integrationAuthorize(key: IntegrationKey, input: AuthorizeIntegrationInput): Promise<OAuthStartResult> {
+        return (
+            await this.request('POST', `/integrations/${key}/authorize`, {
+                body: input,
+                schema: z.object({ data: oauthStartResultSchema }),
+            })
+        ).data;
+    }
+    platformIntegrationsGet(): Promise<PlatformIntegrations> {
+        return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });
+    }
+    platformIntegrationSet(
+        provider: IntegrationProvider,
+        input: UpdatePlatformIntegrationAppInput,
+    ): Promise<PlatformIntegrationApp> {
+        return this.request('PATCH', `/platform/integrations/${provider}`, {
+            body: input,
+            schema: platformIntegrationAppSchema,
+        });
     }
 
     // --- asistente IA (ADR-S21, v0.1.181) ---

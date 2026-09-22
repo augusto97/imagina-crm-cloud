@@ -20,7 +20,7 @@ import { MembersPanel } from '@/cloud/components/MembersPanel';
 import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
-import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
+import { IntegrationsPanel } from '@/cloud/components/IntegrationsPanel';
 import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -158,7 +158,7 @@ export function SettingsPage(): JSX.Element {
                 {active === 'asistente' && isAdmin && <AiSettingsPanel />}
 
                 {/* v0.1.196 (ADR-S22) — conectores: el panel se auto-oculta ante 403. */}
-                {active === 'conectores' && <ConnectorsPanel />}
+                {active === 'conectores' && <IntegrationsPanel />}
                 {/* Bitácora de acciones administrativas (v0.1.114). */}
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
                 {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}

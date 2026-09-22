@@ -67,12 +67,13 @@ export function settingsSectionGroups({
                           { id: 'auditoria', label: 'Registro de actividad', icon: History },
                       ] satisfies SettingsSectionItem[])
                     : []),
-                // v0.1.196 (ADR-S22) — credenciales de servicios externos.
-                // No es admin-only: quien arma automatizaciones necesita
-                // elegir una conexión, aunque crear las del equipo sea del
-                // admin (eso lo decide el backend).
+                // v0.1.196 (ADR-S22) — apps conectadas; v0.1.203 pasa a ser la
+                // galería «Integraciones» (el id `conectores` se conserva: es
+                // la ruta a la que vuelve el callback OAuth). No es admin-only:
+                // quien arma automatizaciones ve qué hay conectado, aunque
+                // conectar para el equipo sea del admin (lo decide el backend).
                 ...(isAdmin || canManageAutomations
-                    ? ([{ id: 'conectores', label: 'Conectores', icon: Plug }] satisfies SettingsSectionItem[])
+                    ? ([{ id: 'conectores', label: 'Integraciones', icon: Plug }] satisfies SettingsSectionItem[])
                     : []),
             ],
         },

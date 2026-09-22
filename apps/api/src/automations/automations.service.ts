@@ -13,7 +13,7 @@ import type {
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
-import { ConnectorsService } from '../connectors/connectors.service';
+import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { automationHooks, fields, records } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
@@ -22,6 +22,11 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { applyMergeTags, labelResolverFor } from './merge-tags';
 import { compileConnectorCall } from '../connectors/connector-actions';
+import {
+    buildIntegrationRequest,
+    checkIntegrationResponse,
+    compileIntegrationValues,
+} from '../connectors/integration-calls';
 import { buildWebhookRequest } from './webhook-request';
 import {
     AutomationsRepository,
@@ -260,11 +265,13 @@ export class AutomationsService {
                     sample_record_id: sample.record?.id ?? null,
                 };
             }
-            const call = compileConnectorCall(
-                resolved.action,
-                ((input.config as Record<string, unknown>).values ?? {}) as Record<string, unknown>,
-                merge,
-            );
+            const rawValues = ((input.config as Record<string, unknown>).values ?? {}) as Record<string, unknown>;
+            // v0.1.203 — una app de la galería: la petición la arma el código
+            // de esa app, exactamente como en el motor.
+            if (resolved.integration) {
+                return this.testIntegration(resolved, rawValues, merge, sample.record?.id ?? null);
+            }
+            const call = compileConnectorCall(resolved.action, rawValues, merge);
             if (call.missing.length > 0) {
                 return {
                     request: { url: '', method: resolved.action.method, headers: {}, body: null },
@@ -322,6 +329,69 @@ export class AutomationsService {
                 response: null,
                 error: err instanceof Error ? err.message : String(err),
                 sample_record_id: sample.record?.id ?? null,
+            };
+        }
+    }
+
+    /** Prueba de una acción de la galería: arma, ejecuta y revisa la respuesta. */
+    private async testIntegration(
+        resolved: ResolvedAction,
+        rawValues: Record<string, unknown>,
+        merge: (raw: unknown) => string,
+        sampleRecordId: number | null,
+    ): Promise<WebhookTestResult> {
+        const integ = resolved.integration!;
+        const action = resolved.action!;
+        const hide = [integ.creds.secret, integ.creds.accessToken].filter((v) => v.length >= 4);
+        const compiled = compileIntegrationValues(integ.key, action, rawValues, merge);
+        if (compiled.missing.length > 0) {
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: `Falta completar: ${compiled.missing.join(', ')}.`,
+                sample_record_id: sampleRecordId,
+            };
+        }
+        let req;
+        try {
+            req = buildIntegrationRequest(integ.key, action.key, compiled, integ.creds);
+        } catch (err) {
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: err instanceof Error ? err.message : String(err),
+                sample_record_id: sampleRecordId,
+            };
+        }
+        const request = {
+            url: redactValues(req.url, hide),
+            method: req.method,
+            headers: maskHeaders(req.headers),
+            body: req.body !== undefined ? redactValues(req.body, hide) : null,
+        };
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                body: req.body,
+                captureBody: true,
+            });
+            return {
+                request,
+                response: {
+                    status: res.status,
+                    content_type: res.contentType ?? '',
+                    body: redactValues(res.body ?? '', hide),
+                },
+                error: checkIntegrationResponse(integ.key, res.status, res.body ?? ''),
+                sample_record_id: sampleRecordId,
+            };
+        } catch (err) {
+            return {
+                request,
+                response: null,
+                error: redactValues(err instanceof Error ? err.message : String(err), hide),
+                sample_record_id: sampleRecordId,
             };
         }
     }

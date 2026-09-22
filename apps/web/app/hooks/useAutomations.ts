@@ -104,6 +104,10 @@ export function useActionCatalog() {
             return res.data;
         },
         staleTime: 5 * 60 * 1000,
+        // v0.1.203 — «Conectar otra app» abre Ajustes en otra pestaña: al
+        // volver, las acciones de la app recién conectada tienen que aparecer
+        // sin recargar el editor (el default global no refresca al enfocar).
+        refetchOnWindowFocus: 'always',
     });
 }
 

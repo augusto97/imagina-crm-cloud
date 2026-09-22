@@ -39,7 +39,7 @@ class CapturingMailTransport implements MailTransport {
 }
 import { startPostgres, type TestPg } from './helpers/containers';
 import type { HookCaptureStore } from '../src/automations/automations.service';
-import { memoryOAuthStore } from './helpers/oauth-store';
+import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
 
 /** Fake en memoria del subconjunto de Redis que usan las capturas de webhook. */
 class FakeHookStore implements HookCaptureStore {
@@ -98,7 +98,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        connectors = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb));
+        connectors = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps());
         automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore, connectors);
         mailbox = new CapturingMailTransport();
         const mail = new MailService(loadEnv(), mailbox);
