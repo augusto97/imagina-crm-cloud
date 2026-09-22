@@ -27,10 +27,40 @@ const envSchema = z.object({
     // Confiar en X-Forwarded-For (para ver la IP real del cliente detrás de
     // nginx/Caddy). El despliegue SIEMPRE está detrás de un reverse proxy, así
     // que default true; poner en false solo si el API se expone directo.
+    /**
+     * En QUÉ proxy se confía para leer `X-Forwarded-*` (v0.1.202).
+     *
+     * De ahí salen el IP del rate limit, el que se muestra en "Dispositivos
+     * conectados" y el host del que se deriva el issuer OAuth (ADR-S21 fase
+     * 4). El valor histórico era `true` = confiar en TODA la cadena, y eso
+     * deja que un cliente DIRECTO se invente la suya: verificado contra este
+     * mismo API, un `X-Forwarded-Host: atacante.test` se volvía el issuer.
+     *
+     * El default pasa a `loopback`: el despliegue de este repo tiene a Caddy
+     * o nginx en la MISMA máquina, así que sólo se le cree al proxy local.
+     * Admite cualquier dirección o rango que entienda `proxy-addr`
+     * (`loopback`, `uniquelocal`, `10.0.0.0/8`, una IP, o varias por coma).
+     *
+     * OJO: un NÚMERO no sirve. Desde fastify 5.12 —el release que cerró el
+     * aviso de spoofing— un hop-count "falla cerrado" y NO confía en nadie,
+     * así que el proxy legítimo dejaría de funcionar en silencio. Si llega
+     * uno se avisa y se usa el default.
+     */
     TRUST_PROXY: z
         .string()
-        .default('true')
-        .transform((v) => v === 'true' || v === '1'),
+        .default('loopback')
+        .transform((v): boolean | string => {
+            if (v === 'true') return true;
+            if (v === 'false') return false;
+            if (/^\d+$/.test(v.trim())) {
+                console.warn(
+                    `[env] TRUST_PROXY=${v} es un número y desde fastify 5.12 eso significa "no confiar en ningún proxy". ` +
+                        'Se usa `loopback`; poné la dirección o el rango del proxy si no está en esta máquina.',
+                );
+                return 'loopback';
+            }
+            return v;
+        }),
     // Tope de tamaño de body (bytes). Acota payloads abusivos; con holgura para
     // imports por lotes.
     BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024),
