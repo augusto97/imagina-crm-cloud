@@ -27,6 +27,10 @@ async function bootstrap(): Promise<void> {
             bodyLimit: env.BODY_LIMIT_BYTES,
             // Ver la IP real del cliente detrás del reverse proxy (para que el
             // rate limit no agrupe a todos bajo la IP del proxy).
+            //
+            // v0.1.202 — ya no es `true` (confiar en cualquiera que mande
+            // `X-Forwarded-*`) sino la DIRECCIÓN del proxy: por defecto
+            // `loopback`, que es donde corre el Caddy/nginx de este repo.
             trustProxy: env.TRUST_PROXY,
         }),
         // rawBody: para verificar la firma de los webhooks de pago (ADR-S12)

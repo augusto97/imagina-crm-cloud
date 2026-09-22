@@ -352,6 +352,14 @@ records y falla el build si se rompen.
 - RLS como segunda línea (§4) + whitelist de expresiones en QueryBuilder
   (herencia del plugin) + Zod en cada boundary.
 - Rate limiting por tenant y por IP (Redis).
+- **En qué proxy se cree** (`TRUST_PROXY`, v0.1.202): de `X-Forwarded-*` salen
+  el IP del rate limit, el que ve la persona en "Dispositivos conectados" y el
+  host del que se deriva el issuer OAuth del MCP (ADR-S21 fase 4). Por eso NO
+  se confía en toda la cadena: el default es `loopback`, el proxy de esta misma
+  máquina. Y el proxy **sobrescribe** `X-Forwarded-Host` en vez de dejar pasar
+  la del cliente — sin eso, confiar en el proxy equivale a confiar en
+  cualquiera. OJO: un número (hop-count) NO sirve; desde fastify 5.12 significa
+  "no confiar en nadie" y rompería el proxy legítimo en silencio.
 - Secrets fuera del repo (env / SOPS). CSP estricta. Cookies httpOnly+secure.
 - Auditoría: `activity` registra todo (ya existe el diseño en el plugin).
 - Backups cifrados; restore drill mensual.
@@ -1051,4 +1059,4 @@ con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.19.1 (los campos derivados filtran, ordenan, agrupan y se exportan — ADR-S19)
+**Versión del documento:** 1.19.2 (en qué proxy se cree: TRUST_PROXY y X-Forwarded-Host — §14)

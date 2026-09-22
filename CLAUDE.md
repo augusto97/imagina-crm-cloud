@@ -1540,7 +1540,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         DOCUMENTADAS: `react-router` (el arreglo sólo existe en la major v7 —
         migración aparte, riesgo real sobre 62k líneas de front) y las de
         `vite`/`vitest`/`esbuild`, que son del servidor de desarrollo y no
-        llegan al bundle de producción. 334 tests API en verde.
+        llegan al bundle de producción. 334 tests API en verde. (react-router
+        se migró en v0.1.119; el resto de los avisos de producción se cerró en
+        v0.1.202, que los dejó en cero.)
   - [x] **Robustez (v0.1.114)**:
         (a) **Tests reales del front donde más duele** — el adaptador
         `lib/api.ts` y las queryKeys no tenían NI UN test, y son justo la capa
@@ -4490,6 +4492,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         + E2E por el MCP REAL (HTTP + token personal: las 4 herramientas en
         `tools/list`, `list_members` con su nota, proponer→aplicar la
         publicación y el `meta` público respondiendo 200 SIN sesión).
+
+  - [x] **Release de seguridad: 17 avisos en dependencias de PRODUCCIÓN y el
+        proxy en el que se cree (v0.1.202)**: revisando los pendientes de
+        dependencias que v0.1.113 dejó anotados (`vite`/`vitest`/`esbuild`, de
+        desarrollo) apareció algo que nadie estaba mirando: `pnpm audit --prod`
+        daba **17 avisos que SÍ llegan a producción**, 10 de ellos high. Se
+        cerraron TODOS (queda en 0) bumpeando lo directo y overrideando lo
+        transitivo: `fastify` 5.8.5→5.12.5 (dos avisos, ver abajo), `fast-uri`
+        →4.2.1 (SSRF y confusión de host, vía Fastify), `nodemailer`
+        9.0.3→9.1.1 (**bypass de validación del dominio destinatario**: un
+        `send_email` de automatización podía entregar a un dominio del
+        atacante), `socket.io-parser` →4.2.7 (agotamiento de memoria del
+        realtime), `nanoid` →6.0.1, `dompurify` →3.4.15, `@tiptap/core`
+        3.29→3.31 (ReDoS cuadrático en los atributos markdown del editor de
+        descripción) y `react-router` 7.18.1→7.18.2.
+        **Y lo que el aviso de fastify destapó, que era lo importante**: el API
+        arrancaba con `trustProxy: true`, o sea "creerle `X-Forwarded-*` a
+        quien sea". Verificado contra el API real: un
+        `X-Forwarded-Host: atacante.test` de un cliente DIRECTO se volvía el
+        **issuer OAuth del MCP**; de la misma cabecera salen el IP del rate
+        limit y el que se le muestra a la persona en "Dispositivos conectados".
+        Ahora `TRUST_PROXY` es en QUÉ proxy se cree, con default `loopback`
+        —el Caddy/nginx de la misma máquina, que es el despliegue de este
+        repo—, y admite direcciones o rangos si hay otra capa por delante.
+        **Ojo con la trampa**: lo natural es poner un hop-count (`1`, "tengo un
+        proxy"), pero desde fastify 5.12 —el mismo release que cierra el
+        aviso— un número **falla cerrado** y no le cree a NADIE: el proxy
+        legítimo deja de funcionar en silencio y el issuer por dominio propio
+        (ADR-S17) se rompe. Lo detectó la verificación en vivo, no el
+        typecheck; ahora un número avisa por consola y cae al default.
+        **Segundo agujero, en el despliegue**: `nginx.conf` nunca fijaba
+        `X-Forwarded-Host`, así que la del cliente pasaba INTACTA — y confiar
+        en el proxy equivale a confiar en cualquiera si el proxy no
+        sobrescribe. Se agregó `proxy_set_header X-Forwarded-Host $host` en los
+        tres `location` que van al API, y el mismo `header_up` explícito en el
+        Caddyfile (Caddy ya lo hacía, pero conviene que se lea).
+        4 tests del parseo de `TRUST_PROXY` (incluido el número que avisa) —
+        640 API y 154 front en verde — + E2E navegador 9/9 contra los saltos de
+        versión más riesgosos (el editor de descripción monta con TipTap 3.31,
+        escribe, los atajos markdown y el menú «/» andan, el autoguardado
+        persiste, cero errores de JS) y verificación en vivo del issuer con el
+        proxy real y con un cliente falseando la cabecera.
+        **Límite de la verificación**: en el sandbox TODO es loopback, así que
+        el caso "cliente de internet falseando" no se puede reproducir acá —
+        lo que sí se verificó es el mecanismo (con `true` la cabecera del
+        cliente mandaba; con `loopback` manda la del proxy) y que el camino
+        legítimo sigue funcionando.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
