@@ -32,14 +32,19 @@ export function FilterRow({
     onChange,
     onRemove,
 }: FilterRowProps): JSX.Element {
-    const filterableFields = fields.filter((f) => f.type !== 'relation' && f.type !== 'lookup');
+    // v0.1.200 — un lookup ya se filtra (el motor le da expresión SQL), salvo
+    // el que apunta a un `computed`: ése no tiene operadores y por eso se cae
+    // solo de la lista.
+    const filterableFields = fields.filter(
+        (f) => f.type !== 'relation' && operatorsForType(f.type, f).length > 0,
+    );
     const selected = fields.find((f) => f.id === condition.field_id) ?? null;
-    const operators = selected ? operatorsForType(selected.type) : [];
+    const operators = selected ? operatorsForType(selected.type, selected) : [];
 
     const setField = (fieldId: number): void => {
         const next = fields.find((f) => f.id === fieldId);
         if (!next) return;
-        const ops = operatorsForType(next.type);
+        const ops = operatorsForType(next.type, next);
         const validOp = ops.some((o) => o.op === condition.op) ? condition.op : (ops[0]?.op ?? 'eq');
         onChange({
             type: 'condition',

@@ -157,7 +157,15 @@ export function ViewSettingsSheet({
     const totalColumns = fields.filter((f) => f.type !== 'relation').length + 2;
     const visibleColumns = Math.max(0, totalColumns - hiddenCount);
     const conditionCount = isEmptyTree(filterTree) ? 0 : countConditions(filterTree);
-    const groupable = fields.filter((f) => isGroupableType(f.type));
+    // v0.1.200 — un lookup hacia un `computed` no tiene expresión SQL, así
+    // que tampoco se puede agrupar por él: se cae solo de la lista en vez de
+    // ofrecer una agrupación que el backend rechaza.
+    const groupable = fields.filter(
+        (f) =>
+            isGroupableType(f.type)
+            && (f.type !== 'lookup'
+                || (f.through?.target_field != null && f.through.target_field.type !== 'computed')),
+    );
     const groupField = groupByFieldId !== null ? fields.find((f) => f.id === groupByFieldId) : null;
 
     const handleCopyLink = async (): Promise<void> => {

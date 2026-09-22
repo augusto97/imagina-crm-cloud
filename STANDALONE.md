@@ -538,7 +538,8 @@ los consume de ahí. Endpoints `GET/POST /platform/plans` y
 `PATCH/DELETE /platform/plans/:slug`; `updateTenant` valida que el plan exista;
 borrar un plan en uso se rechaza. Front: card "Planes" con edición inline de
 límites + alta/baja, y el select de plan de cada empresa se puebla dinámicamente.
-Pendiente: precios de checkout por plan custom.
+Los **precios de checkout** viven en la misma tabla (`price_usd` / `price_cop`):
+un plan custom se vende self-serve apenas el operador le pone precio.
 
 **Fase 4 — alta + detalle de empresa.** El operador da de alta una empresa
 nueva + su admin en **un paso** (`POST /platform/tenants`, reusa el patrón RLS
@@ -664,9 +665,19 @@ del otro lado: la agregación y su filtro se compilan a SQL con el MISMO
 QueryBuilder whitelisteado de la app (regla de oro nº 4), contra el alias
 `rr`. Y como la misma agregación se expresa como subconsulta correlacionada
 con `records.id`, un rollup **filtra, ordena y se suma en el pie** de la
-tabla y en los widgets ("clientes con deuda > 0"). Un lookup no filtra ni
-ordena (es una lista). Lo que no resuelve —relación borrada, config a
-medias— sale vacío en vez de tumbar el listado. No se encadenan (un lookup
+tabla y en los widgets ("clientes con deuda > 0"). **Desde v0.1.200 un lookup
+también** (los pedidos "por la ciudad del cliente"): su expresión es un
+`string_agg` de los valores vinculados, normalizado —distintos y ordenados,
+por el mismo motivo que el set de un multi_select— así que se compara como
+TEXTO aunque el destino sea numérico, y admite además los operadores de
+subcadena. El único que queda afuera es el lookup hacia un `computed`: ése se
+evalúa en JS sobre la fila del otro lado y no hay SQL que lo exprese, así que
+no se ofrece para filtrar ni agrupar en vez de descartarlo en silencio. Lo que
+no resuelve —relación borrada, config a medias— sale vacío en vez de tumbar el
+listado. El **export CSV** (v0.1.200) lleva los derivados y la relación
+resuelta al TÍTULO del vinculado: el archivo dice lo mismo que la pantalla.
+El import no los toma de vuelta, y está bien: un valor derivado no se
+escribe. No se encadenan (un lookup
 no puede apuntar a otro lookup/rollup): obligaría a resolver grafos en cada
 lectura. Un `computed` sí puede usar un rollup como entrada ("cobrado =
 total − deuda"), porque los valores through se inyectan antes de evaluar.
@@ -717,7 +728,7 @@ de base/archivos/secretos. Las sesiones (Redis) no viajan a propósito: son
 efímeras y re-crearlas es un login. Con `STORAGE_DRIVER=s3` los archivos no
 viajan (el bucket es la fuente). Un snapshot incluye secretos: se guarda como
 tal (permisos 600) o cifrado. Migrar UNA empresa entre instancias (con
-re-mapeo de ids) es un problema distinto y queda para un release aparte.
+re-mapeo de ids) es un problema distinto y tiene su propio ADR-S23.
 
 ### ADR-S21 — Asistente IA de estructura: propone, la persona aplica (v0.1.181)
 
@@ -1040,4 +1051,4 @@ con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.19.0 (OAuth2 como cliente en los conectores — ADR-S22 fase 3)
+**Versión del documento:** 1.19.1 (los campos derivados filtran, ordenan, agrupan y se exportan — ADR-S19)

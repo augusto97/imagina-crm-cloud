@@ -3120,9 +3120,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Postgres) → `= ANY($n)` rompía, ahora `IN (…)` bindeado; y crear un
         campo derivado dejaba la columna en "—" hasta recargar (los records
         seguían en cache) → invalidación + evento realtime de records al
-        crear computed/lookup/rollup. Pendiente: export CSV de los through
-        (hoy el CSV sólo lleva campos de datos) y rollups en la agrupación de
-        la vista agrupada. 5 tests de integración (465 API en verde, 111
+        crear computed/lookup/rollup. (El export CSV de los derivados y la
+        agrupación por ellos llegaron en v0.1.200.) 5 tests de integración (465 API en verde, 111
         front, 66 shared) + E2E navegador 23/23 (alta por UI de rollup y
         lookup, formato, filtro "Deuda > 0", orden, ficha, alta sin
         derivados, cambio en Facturas reflejado en Clientes).
@@ -4399,6 +4398,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto F11 queda completa: conexiones reutilizables, acciones con
         nombre y OAuth2 como cliente.**
+
+  - [x] **Los campos derivados dejan de ser de segunda (v0.1.200)**: cierra los
+        dos pendientes que quedaban anotados desde v0.1.170. Los tres eran la
+        misma causa: un `lookup` no tenía expresión SQL y el CSV sólo exportaba
+        lo que vive en `data`.
+        (a) **Un lookup ya FILTRA, ORDENA y AGRUPA** ("los pedidos por la ciudad
+        del cliente", "las facturas cuyo cliente contiene «medell»"). Su
+        expresión es un `string_agg` de los valores vinculados, NORMALIZADO
+        —distintos y ordenados— por el mismo motivo que el set de un
+        multi_select en v0.1.190: si no, «Bogotá, Medellín» y «Medellín,
+        Bogotá» serían dos grupos para el mismo conjunto (con un solo
+        vinculado, el caso normal, es idéntico a lo que muestra la celda). Se
+        compara como TEXTO aunque el destino sea numérico —`string_agg` lo es—
+        y por eso `compileOverride` ganó los operadores de subcadena, que son
+        los que se usan de verdad. **Queda fuera, y se dice**: el lookup hacia
+        un `computed` se evalúa en JS sobre la fila del otro lado y no hay SQL
+        que lo exprese — no aparece en el selector de filtros ni en el de
+        agrupar, en vez de ofrecer algo que el backend descartaría en silencio.
+        De paso el whitelist del query-builder dejó de preguntar por `rollup`
+        para preguntar por "¿tiene expresión inyectada?", que es la condición
+        real (lo detectó el test: el filtro por lookup devolvía TODO porque la
+        condición se caía entera).
+        (b) **Agrupar por un derivado**: el motor de agregados usa esa misma
+        subconsulta correlacionada como expresión de grupo; sin ella (config a
+        medias, relación borrada) **rechaza con el motivo** en vez de devolver
+        un único bucket vacío. El encabezado del grupo formatea con el campo
+        del OTRO lado —la etiqueta de la opción, la moneda con sus decimales,
+        la fecha en el formato de la empresa—, igual que la celda.
+        (c) **El CSV exporta lo que se VE en la tabla**: antes `isDataField`
+        dejaba afuera los computed, los lookup, los rollup y las relaciones —
+        una lista de Facturas se exportaba **sin el cliente y sin el total**.
+        Ahora salen las cuatro, y la relación sale con el **TÍTULO** del
+        vinculado (una query por lista destino y por página, con cache entre
+        páginas: en facturación el mismo cliente se repite muchísimo), no con
+        su id. El import no los toma de vuelta y está bien: un valor derivado
+        no se escribe.
+        De paso se pusieron al día tres textos vencidos de STANDALONE.md (los
+        precios de checkout por plan custom y la migración por empresa ya
+        estaban hechos; ADR-S19 decía que un lookup no filtra ni ordena).
+        6 tests nuevos (3 de integración del motor —filtrar/agrupar/ordenar por
+        lookup, agrupar por rollup con el bucket trayendo SUS filas, el lookup
+        hacia computed rechazado— 1 del CSV con las cuatro columnas derivadas y
+        4 unitarios del front de los operadores) — 633 API y 154 front en
+        verde — + E2E navegador 13/13 (el panel ofrece el lookup, dos buckets
+        por ciudad con sus filas, buckets por total del rollup, la tabla
+        agrupada muestra «Bogotá» y no `bogota`, filtro por subcadena, y el CSV
+        con Cliente=«Acme» y Total=350).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

@@ -1,3 +1,4 @@
+import type { ThroughInfo } from '@imagina-base/shared';
 import { __ } from '@/lib/i18n';
 import type { FieldTypeSlug } from '@/types/field';
 import type { FilterOperator } from '@/types/record';
@@ -86,7 +87,22 @@ const FILE_LIKE: OperatorMeta[] = [
     { op: 'is_null', label: __('sin archivos'), nullary: true },
 ];
 
-export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
+/**
+ * v0.1.200 — un campo derivado se filtra por la expresión SQL que el motor
+ * arma para él (`through-fields`), no por `data`. El único que NO la tiene es
+ * el lookup cuyo destino es un `computed`: ése se evalúa en JS sobre la fila
+ * del otro lado y no hay forma de expresarlo en SQL — sin operadores, en vez
+ * de ofrecer un filtro que el backend descartaría en silencio.
+ */
+export function operatorsForType(type: FieldTypeSlug, field?: { through?: ThroughInfo | null }): OperatorMeta[] {
+    if (type === 'lookup') {
+        const target = field?.through?.target_field;
+        // Sin `through` resuelto tampoco hay expresión.
+        if (!target || target.type === 'computed') return [];
+        // El valor viaja como TEXTO (los vinculados se unen en una cadena),
+        // así que se filtra como texto aunque el destino sea un número.
+        return TEXT_LIKE;
+    }
     switch (type) {
         case 'text':
         case 'long_text':
@@ -124,10 +140,7 @@ export function operatorsForType(type: FieldTypeSlug): OperatorMeta[] {
             // cualquier filtro contra este field por whitelist de
             // columnas físicas.
             return [];
-        case 'lookup':
-            // Un lookup es una lista de valores del otro lado: no se filtra
-            // (filtrá por el campo original en la otra lista).
-            return [];
+
         case 'rollup':
             // v0.1.170 — el backend compila el rollup a una subconsulta
             // correlacionada: "deuda > 0" funciona de verdad.

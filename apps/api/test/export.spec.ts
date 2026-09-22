@@ -75,6 +75,72 @@ describe('ExportService (Postgres real)', () => {
         expect(bundle.records.map((r) => r.data[`f${f.id}`])).toEqual(['A', 'B', 'C']);
     });
 
+    /**
+     * v0.1.200 — el CSV exporta lo que se VE en la tabla.
+     *
+     * Antes el archivo llevaba sólo los campos que viven en `data`: una lista
+     * de Facturas se exportaba sin el cliente (relation), sin el total del
+     * cliente (rollup) y sin los calculados. Un CSV así no sirve ni para
+     * mandarlo al contador ni para revisarlo.
+     */
+    it('el CSV incluye relación (por título), lookup, rollup y computed', async () => {
+        await listsService.create(tenantId, { name: 'Clientes CSV' });
+        await listsService.create(tenantId, { name: 'Facturas CSV' });
+        const clientes = await listsService.get(tenantId, 'clientes_csv');
+        const nombre = await fieldsService.create(tenantId, 'clientes_csv', { label: 'Nombre', type: 'text', slug: 'nombre' });
+        const ciudad = await fieldsService.create(tenantId, 'clientes_csv', { label: 'Ciudad', type: 'text', slug: 'ciudad' });
+        const numero = await fieldsService.create(tenantId, 'facturas_csv', { label: 'Número', type: 'text', slug: 'numero' });
+        const monto = await fieldsService.create(tenantId, 'facturas_csv', { label: 'Monto', type: 'number', slug: 'monto' });
+        const cliente = await fieldsService.create(tenantId, 'facturas_csv', {
+            label: 'Cliente', type: 'relation', slug: 'cliente', config: { target_list_id: clientes.id },
+        });
+        await fieldsService.create(tenantId, 'facturas_csv', {
+            label: 'Ciudad del cliente', type: 'lookup', slug: 'ciudad_cli',
+            config: { relation_field_id: cliente.id, target_field_id: ciudad.id },
+        });
+        await fieldsService.create(tenantId, 'facturas_csv', {
+            label: 'Doble', type: 'computed', slug: 'doble',
+            config: { operation: 'sum', inputs: [monto.id, monto.id] },
+        });
+        const totalCli = await fieldsService.create(tenantId, 'clientes_csv', {
+            label: 'Total', type: 'rollup', slug: 'total',
+            config: { relation_field_id: cliente.id, target_field_id: monto.id, operation: 'sum' },
+        });
+
+        const c1 = await recordsService.create(tenantId, admin, 'clientes_csv', {
+            data: { [`f${nombre.id}`]: 'Acme', [`f${ciudad.id}`]: 'Bogotá' },
+        });
+        await recordsService.create(tenantId, admin, 'facturas_csv', {
+            data: { [`f${numero.id}`]: 'F-1', [`f${monto.id}`]: 100, [`f${cliente.id}`]: [c1.id] },
+        });
+
+        let out = '';
+        await exportService.streamCsvExport(
+            tenantId, admin, 'facturas_csv',
+            { fieldIds: [], delimiter: ',', withBom: false },
+            () => undefined,
+            (c) => { out += c; },
+        );
+        const lines = out.trimEnd().split('\r\n');
+        // Las columnas derivadas aparecen, en el orden de los campos.
+        expect(lines[0]).toBe('Número,Monto,Cliente,Ciudad del cliente,Doble');
+        // La relación sale con el TÍTULO del vinculado, no con su id.
+        expect(lines[1]).toBe('F-1,100,Acme,Bogotá,200');
+        expect(lines[1]).not.toContain(String(c1.id));
+
+        // El rollup del otro lado también, con su valor resuelto.
+        let clientesCsv = '';
+        await exportService.streamCsvExport(
+            tenantId, admin, 'clientes_csv',
+            { fieldIds: [nombre.id, totalCli.id], delimiter: ',', withBom: false },
+            () => undefined,
+            (c) => { clientesCsv += c; },
+        );
+        const cl = clientesCsv.trimEnd().split('\r\n');
+        expect(cl[0]).toBe('Nombre,Total');
+        expect(cl[1]).toBe('Acme,100');
+    });
+
     it('streamCsvExport: CSV con seleccion de campos, delimiter, BOM y filtro', async () => {
         await listsService.create(tenantId, { name: 'Ventas' });
         const nombre = await fieldsService.create(tenantId, 'ventas', { label: 'Nombre', type: 'text', slug: 'nombre' });

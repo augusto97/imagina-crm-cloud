@@ -170,6 +170,11 @@ export const GROUPABLE_FIELD_TYPES = [
     'checkbox',
     'date',
     'datetime',
+    // v0.1.200 — derivados: el backend agrupa por la subconsulta correlacionada
+    // que ya usa para filtrar y ordenar ("los pedidos por la ciudad del
+    // cliente", "los clientes por su saldo").
+    'lookup',
+    'rollup',
 ] as const;
 
 export type GroupableFieldType = (typeof GROUPABLE_FIELD_TYPES)[number];

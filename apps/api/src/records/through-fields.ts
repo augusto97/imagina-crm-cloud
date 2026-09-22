@@ -168,13 +168,31 @@ export class ThroughEngine {
     filterableFor(plans: ThroughPlan[], tenantId: number): Map<number, FilterableField> {
         const out = new Map<number, FilterableField>();
         for (const p of plans) {
-            if (p.field.type !== 'rollup') continue;
-            out.set(p.field.id, {
-                id: p.field.id,
-                type: 'rollup',
-                expr: this.rollupSubquery(p, tenantId),
-                valueKind: p.valueKind,
-            });
+            if (p.field.type === 'rollup') {
+                out.set(p.field.id, {
+                    id: p.field.id,
+                    type: 'rollup',
+                    expr: this.rollupSubquery(p, tenantId),
+                    valueKind: p.valueKind,
+                });
+                continue;
+            }
+            // v0.1.200 — un lookup también pasa a tener expresión SQL, así se
+            // puede FILTRAR, ORDENAR y AGRUPAR por él (antes sólo se leía).
+            //
+            // Queda fuera el lookup cuyo destino es un `computed`: ése se
+            // evalúa en JS sobre la fila del otro lado (`readTarget`) y no hay
+            // forma de expresarlo en SQL. Sin `expr` el campo se descarta del
+            // whitelist, que es el comportamiento anterior: no filtra, no
+            // rompe.
+            if (p.field.type === 'lookup' && p.targetField && p.targetField.type !== 'computed') {
+                out.set(p.field.id, {
+                    id: p.field.id,
+                    type: 'lookup',
+                    expr: this.lookupSubquery(p, tenantId),
+                    valueKind: 'text',
+                });
+            }
         }
         return out;
     }
@@ -292,6 +310,32 @@ export class ThroughEngine {
     }
 
     /** `(SELECT agg FROM relations … WHERE ancla = records.id AND filtro)`. */
+    /**
+     * Valor de un lookup como TEXTO, para filtrar / ordenar / agrupar.
+     *
+     * Un lookup puede traer varios valores (un registro con varios
+     * vinculados), así que se reducen a una cadena. La clave se NORMALIZA
+     * —distintos y ordenados— por el mismo motivo que el set de un
+     * multi_select en v0.1.190: si no, «Bogotá, Medellín» y «Medellín,
+     * Bogotá» serían dos grupos para el mismo conjunto. En el caso normal
+     * (un solo vinculado) es exactamente lo que muestra la celda.
+     */
+    private lookupSubquery(p: ThroughPlan, tenantId: number): SQL {
+        const { anchor, other } = cols(p);
+        const t = p.targetField!;
+        const text = sql`(${RR_DATA} ->> ${sql.raw(`'${jsonbKeyForField(t.id)}'`)})`;
+        return sql`(
+            SELECT string_agg(v, ', ' ORDER BY v)
+            FROM (
+                SELECT DISTINCT ${text} AS v
+                FROM relations rel
+                JOIN records rr ON rr.id = ${other} AND rr.deleted_at IS NULL
+                WHERE ${this.whereCore(p, tenantId, sql`${anchor} = ${records.id}`)}
+                  AND ${text} IS NOT NULL AND ${text} <> ''
+            ) s
+        )`;
+    }
+
     private rollupSubquery(p: ThroughPlan, tenantId: number): SQL {
         const { anchor, other } = cols(p);
         return sql`(
