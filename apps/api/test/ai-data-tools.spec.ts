@@ -67,7 +67,7 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
         const store = new ProposalsStore(redis);
         const data = new DataTools(lists, fields, recordsSvc, aggregate, store);
         // El StructureTools no se ejecuta acá; sólo para el dispatch del applier.
-        const structure = new StructureTools(tenantDb, lists, fields, null as never, null as never, null as never, null as never, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)));
+        const structure = new StructureTools(tenantDb, lists, fields, null as never, null as never, null as never, null as never, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)), null as never, null as never);
         registry = new AiToolRegistry();
         data.registerInto(registry);
         proposals = new ProposalsService(store, new ConversationsStore(redis), structure, new AuditService(tenantDb), data);

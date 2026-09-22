@@ -28,7 +28,7 @@ externos por [Model Context Protocol](https://modelcontextprotocol.io)
     `list_automation_runs`).
   - `full` — además las `propose_*` y `apply_proposal`.
 
-## Herramientas (v0.1.195)
+## Herramientas (v0.1.201)
 
 Lectura (según el rol; `list_automation_runs` exige `manage_automations`):
 
@@ -39,6 +39,8 @@ Lectura (según el rol; `list_automation_runs` exige `manage_automations`):
 | `query_records` / `aggregate_records` | Registros (máx 50, con el ACL de la persona) y agregados con desglose. |
 | `list_dashboards` | Tableros con sus widgets (tipo, título, lista). |
 | `list_automation_runs` | Últimas ejecuciones de una automatización: estado, error, registro y log de acciones. |
+| `list_members` | Las personas del workspace con su id, nombre, email y rol. Los ids son los que piden los campos de tipo `user` y los accesos por persona. |
+| `list_record_comments` | Los comentarios de un registro (autor, fecha, texto), para resumir lo que se habló. |
 
 Escritura (siempre propone → `apply_proposal`; cada una exige la capability
 del rol, p. ej. `manage_lists`):
@@ -52,12 +54,22 @@ del rol, p. ej. `manage_lists`):
 | `propose_create_automation` / `propose_update_automation` / `propose_delete_automation` | Automatizaciones: crear, renombrar, **pausar/activar**, reemplazar disparador o acciones, eliminar. |
 | `propose_configure_portal` | **Portal del cliente**: habilitarlo, qué listas vinculadas ve el cliente y la plantilla de bloques (portada, datos, formulario editable, tabla de registros relacionados, indicadores, descargas, avisos, contacto, preguntas frecuentes, enlaces). Se valida contra el esquema real; lo que se aplica se abre después en el editor visual. |
 | `propose_configure_record_layout` | **Diseño de la ficha del registro**: formulario clásico o layout CRM con plantilla integrada (`auto`, `contact`, `deal`, `task`, `support`) o **personalizada** (cabecera, grupos de campos, lateral con cifras / vinculados / archivos / comentarios / actividad, notas). |
+| `propose_set_list_permissions` | **Quién ve y edita** una lista: por rol (manager / agent / viewer, con alcance `all` / `assigned` / `own` / `none`, si puede crear y qué campos no ve) y por **persona** (pisa su rol sólo en esa lista). `admin` siempre tiene acceso total. |
+| `propose_configure_public_sharing` | **Publicar la lista hacia afuera**: página de solo-lectura embebible por iframe, sin cuenta. Sólo salen los campos marcados visibles; se puede publicar una vista guardada (sus filtros acotan las filas), restringir los dominios que pueden embeberla y ponerle caducidad. Marcada como destructiva: expone datos a cualquiera con el enlace. |
 | `propose_create_records` / `propose_update_records` / `propose_delete_records` | Registros (alta, edición y borrado masivo con filtros o ids). |
 
-Lo que **no** está en el MCP (a propósito o todavía): estilos por bloque
-(colores, tipografía — se ajustan en el editor), permisos por rol de una
-lista, publicación pública, comentarios, archivos, importación/exportación,
-miembros y ajustes del workspace.
+Lo que **no** está en el MCP, y por qué:
+
+- **Estilos por bloque** (colores, tipografía del portal y de la ficha): se
+  ajustan en el editor visual, donde se ven mientras se cambian.
+- **Archivos**: subir bytes por una herramienta de texto no tiene sentido; se
+  suben desde la app y el MCP los ve como referencias.
+- **Importación / exportación**: el MCP ya crea registros directamente
+  (`propose_create_records`), que es lo que un import resolvería; exportar es
+  bajar un archivo, no una respuesta de herramienta.
+- **Miembros y ajustes del workspace** (plan, SMTP, dominio, marca): se leen
+  con `list_members`, pero cambiarlos toca facturación, correo y accesos de
+  toda la empresa — se hace en Ajustes, con la bitácora de siempre.
 
 ## El contrato: proponer → confirmar → aplicar
 

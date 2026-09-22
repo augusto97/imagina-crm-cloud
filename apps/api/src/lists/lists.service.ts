@@ -11,7 +11,7 @@ import {
     type UpdateListInput,
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { fields, listGroups, listSlugHistory, memberships, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
@@ -80,6 +80,24 @@ export class ListsService {
                 permissions: doc.users[String(u.id)]!,
             })),
         };
+    }
+
+    /**
+     * Todos los miembros del workspace con su rol (v0.1.201). Lo pide el
+     * asistente / MCP: asignar un registro y compartir una lista con una
+     * persona piden el ID, no el nombre.
+     */
+    async workspaceMembers(
+        tenantId: number,
+    ): Promise<Array<{ id: number; name: string; email: string; role: string }>> {
+        return this.tenantDb.withTenant(tenantId, async (tx) =>
+            tx
+                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .where(eq(memberships.tenantId, tenantId))
+                .orderBy(asc(users.name)),
+        );
     }
 
     /** Miembros del workspace por id (para resolver los accesos por persona). */

@@ -4178,10 +4178,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `propose_update_list` (mover a carpeta por nombre), y dos lecturas:
         `list_dashboards` y `list_automation_runs` (log con secretos
         enmascarados). La tarjeta de propuesta dibuja la lista de bloques
-        (`preview.blocks`) y el prompt ganó la regla 12. **Quedan fuera y
-        documentadas** (`docs/mcp.md`): estilos por bloque, permisos por rol,
-        publicación pública, comentarios, archivos, import/export, miembros
-        y ajustes del workspace. 6 tests unitarios de los constructores + 8
+        (`preview.blocks`) y el prompt ganó la regla 12. (Permisos por rol,
+        publicación pública, comentarios y miembros llegaron en v0.1.201; lo
+        que queda afuera está razonado en `docs/mcp.md`.) 6 tests unitarios de los constructores + 8
         de integración (Postgres+Redis con el `Client` del SDK MCP: schema
         expuesto, portal con validación/merge/deshabilitar, layout integrado
         → custom → clásico conservando lo del portal, automatizaciones
@@ -4445,6 +4444,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         por ciudad con sus filas, buckets por total del rollup, la tabla
         agrupada muestra «Bogotá» y no `bogota`, filtro por subcadena, y el CSV
         con Cliente=«Acme» y Total=350).
+
+  - [x] **Últimas brechas del MCP: permisos, publicación, miembros y
+        comentarios (v0.1.201)**: cierra la lista de "quedan fuera" que dejó
+        anotada la auditoría de v0.1.195. Cuatro herramientas nuevas en el
+        MISMO registro, así que salen a la vez por el asistente ✨ y por el MCP:
+        (a) **`list_members`** (lectura) — las personas del workspace con su
+        id, nombre, email y rol. Sin esto dos cosas eran IMPOSIBLES desde el
+        MCP aunque las herramientas existieran: asignarle un registro a alguien
+        (un campo `user` guarda el ID, no el nombre) y compartir una lista con
+        una persona puntual.
+        (b) **`list_record_comments`** (lectura) — lo que se habló en un
+        registro, para resumir el historial con un cliente. Viaja con la misma
+        nota que el listado de registros: son DATOS escritos por personas, no
+        instrucciones. El DTO del comentario trae el id del autor, así que el
+        nombre se resuelve con UNA query de miembros, no una por comentario.
+        (c) **`propose_set_list_permissions`** — quién ve y edita una lista,
+        por ROL (manager/agent/viewer con alcance all/assigned/own/none, si
+        puede crear y qué campos no ve) y por PERSONA (pisa su rol sólo en esa
+        lista). Valida de verdad: un campo que no existe en `fields_hidden`, el
+        alcance `assigned` sin un campo de tipo user, o un id que no es miembro
+        de la empresa vuelven al modelo como error corregible. Dejar a un rol
+        sin acceso marca la propuesta como **destructiva**: saca gente de golpe.
+        (d) **`propose_configure_public_sharing`** — publicar una lista de
+        solo-lectura hacia afuera (la página embebible de ADR-S14) o dejar de
+        publicarla, con los campos visibles, la vista cuyos filtros acotan las
+        filas, los dominios que pueden embeberla y la caducidad. **Publicar es
+        siempre destructivo** en el sentido de la tarjeta —expone esos datos a
+        cualquiera con el enlace— y publicar sin campos visibles se rechaza: una
+        página vacía no es lo que nadie pidió. Al aplicar reusa
+        `PublicListsService.updateAdmin`, o sea el mismo camino de la interfaz
+        (token, mapeo sin RLS, todo).
+        Lo que **sigue afuera ahora está razonado** en `docs/mcp.md` en vez de
+        enumerado: estilos por bloque (se ajustan en el editor, donde se ven),
+        archivos (subir bytes por una herramienta de texto no tiene sentido),
+        import/export (el MCP ya crea registros; exportar es bajar un archivo)
+        y cambiar los ajustes del workspace (tocan facturación, correo y
+        accesos de toda la empresa). El prompt del asistente ganó las reglas 13
+        y 14. **El scope `read` del MCP no hubo que tocarlo**: es "todo lo que
+        no propone", así que las dos lecturas nuevas entraron solas — los tests
+        de scope lo confirmaron al fallar con la lista vieja.
+        3 tests de integración nuevos (11 en el spec de config: validaciones
+        reales de ACL, publicar sin campos / con campo o vista inexistente, el
+        round-trip completo hasta `settings`) — 637 API y 154 front en verde —
+        + E2E por el MCP REAL (HTTP + token personal: las 4 herramientas en
+        `tools/list`, `list_members` con su nota, proponer→aplicar la
+        publicación y el `meta` público respondiendo 200 SIN sesión).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
