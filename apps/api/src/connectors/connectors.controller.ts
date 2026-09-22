@@ -29,6 +29,7 @@ import {
     type ConvertInlineSecretsResult,
     type CreateConnectionInput,
     type InlineSecretCandidate,
+    type OAuthStartResult,
     type Role,
     type UpdateConnectionInput,
 } from '@imagina-base/shared';
@@ -114,6 +115,33 @@ export class ConnectorsController {
         @Body(new ZodValidationPipe(createConnectionSchema)) input: CreateConnectionInput,
     ): Promise<{ data: Connection }> {
         const data = await this.connectors.create(tenantId(req), userId(req), role(req), input);
+        return { data };
+    }
+
+    /** Arranca la autorización OAuth2: devuelve la URL del proveedor. */
+    @Post(':id/oauth/start')
+    @HttpCode(200)
+    async oauthStart(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ data: OAuthStartResult }> {
+        const data = await this.connectors.startOAuth(tenantId(req), userId(req), role(req), id);
+        return { data };
+    }
+
+    /** Borra los tokens guardados; la app registrada en el proveedor queda. */
+    @Post(':id/oauth/disconnect')
+    @HttpCode(200)
+    async oauthDisconnect(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ data: Connection }> {
+        const data = await this.connectors.disconnectOAuth(
+            tenantId(req),
+            userId(req),
+            role(req),
+            id,
+        );
         return { data };
     }
 

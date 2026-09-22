@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import {
     connectorSettingsSchema,
+    oauthConfigSchema,
     type Connection,
     type ConnectionDraftTestInput,
     type ConnectionTestResult,
@@ -14,6 +16,9 @@ import {
     type ConvertInlineSecretsResult,
     type CreateConnectionInput,
     type InlineSecretCandidate,
+    type OAuthConfig,
+    type OAuthStartResult,
+    type OAuthStatus,
     type Role,
     type UpdateConnectionInput,
 } from '@imagina-base/shared';
@@ -22,6 +27,16 @@ import { AuditService } from '../audit/audit.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { findConnectorAction, readConnectorActions } from './connector-actions';
+import {
+    buildAuthorizeUrl,
+    buildRefreshBody,
+    buildTokenExchangeBody,
+    createPkce,
+    needsRefresh,
+    parseTokenResponse,
+    type TokenResponse,
+} from './oauth-client';
+import { REDIS } from '../redis/redis.module';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { automations, connections, lists, tenants, users } from '../db/schema';
@@ -117,6 +132,58 @@ const COLUMNS = {
 
 const MAX_TEST_BODY = 2000;
 
+/** Una autorización a medio hacer no puede quedar viva indefinidamente. */
+const OAUTH_STATE_TTL_SECONDS = 10 * 60;
+/** Lock del refresh: más que un canje de token no puede tardar. */
+const OAUTH_LOCK_SECONDS = 20;
+/** Cuánto se espera al que está renovando antes de rendirse. */
+const OAUTH_WAIT_MS = 8000;
+
+const oauthStateKey = (state: string): string => `connoauth:${state}`;
+const oauthLockKey = (tenantId: number, id: number): string => `connoauthlock:${tenantId}:${id}`;
+
+/**
+ * Subconjunto de ioredis que necesita el flujo OAuth. Se declara acá —mismo
+ * criterio que el `HookCaptureStore` de v0.1.111— para poder ejercitar el
+ * canje y el lock con un fake en memoria, sin levantar Redis en cada spec.
+ */
+export interface OAuthStateStore {
+    set(key: string, value: string, mode: 'EX', seconds: number): Promise<unknown>;
+    set(key: string, value: string, mode: 'EX', seconds: number, nx: 'NX'): Promise<unknown>;
+    getdel(key: string): Promise<string | null>;
+    del(key: string): Promise<unknown>;
+}
+
+/** Lo que se guarda mientras la persona está en el proveedor autorizando. */
+interface PendingOAuth {
+    tenantId: number;
+    userId: number;
+    connectionId: number;
+    verifier: string;
+}
+
+/** Estado de la autorización, en `config.oauth_state` (sin tokens). */
+interface StoredOAuthState {
+    expiresAt: number | null;
+    scope: string;
+    error: string | null;
+}
+
+function readOAuthConfig(raw: unknown): OAuthConfig {
+    const parsed = oauthConfigSchema.safeParse(raw ?? {});
+    return parsed.success ? parsed.data : oauthConfigSchema.parse({});
+}
+
+function readOAuthState(raw: unknown): StoredOAuthState {
+    const obj = (raw ?? {}) as Record<string, unknown>;
+    const expires = Number(obj.expiresAt);
+    return {
+        expiresAt: Number.isFinite(expires) && expires > 0 ? expires : null,
+        scope: typeof obj.scope === 'string' ? obj.scope : '',
+        error: typeof obj.error === 'string' && obj.error !== '' ? obj.error : null,
+    };
+}
+
 @Injectable()
 export class ConnectorsService {
     private readonly logger = new Logger(ConnectorsService.name);
@@ -125,6 +192,7 @@ export class ConnectorsService {
         private readonly tenantDb: TenantDb,
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(ENV) private readonly env: Env,
+        @Inject(REDIS) private readonly redis: OAuthStateStore,
         private readonly audit: AuditService,
     ) {}
 
@@ -187,7 +255,7 @@ export class ConnectorsService {
      * otra pregunta, y esa sí se filtra.
      */
     async resolveParts(tenantId: number, connectionId: number): Promise<ConnectionParts | null> {
-        const row = await this.row(tenantId, connectionId);
+        const row = await this.ensureFreshToken(tenantId, await this.row(tenantId, connectionId));
         return this.partsFrom(row);
     }
 
@@ -198,12 +266,13 @@ export class ConnectorsService {
      * bloqueo esperando a sí mismo.
      */
     async resolvePartsInTx(tx: Tx, tenantId: number, connectionId: number): Promise<ConnectionParts | null> {
-        const [row] = await tx
+        const [raw] = await tx
             .select(COLUMNS)
             .from(connections)
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
-        return this.partsFrom((row as ConnectionRow | undefined) ?? null);
+        const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
+        return this.partsFrom(row);
     }
 
     /**
@@ -235,7 +304,7 @@ export class ConnectorsService {
             .from(connections)
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
-        const row = (raw as ConnectionRow | undefined) ?? null;
+        const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
         const parts = this.partsFrom(row);
         if (!row || !parts) return null;
         return {
@@ -259,6 +328,329 @@ export class ConnectorsService {
             },
             secrets,
         );
+    }
+
+    // ── OAuth 2.0 como cliente (v0.1.199, ADR-S22 fase 3) ────────────────
+
+    /**
+     * UNA URI de redirección por instalación. Tiene que estar registrada en la
+     * consola del proveedor, así que no puede variar por tenant (un dominio
+     * propio obligaría a registrar uno por empresa): el panel la muestra lista
+     * para copiar.
+     */
+    oauthRedirectUri(): string {
+        return `${this.env.APP_BASE_URL.replace(/\/+$/, '')}/api/v1/connections/oauth/callback`;
+    }
+
+    /** Arranca la autorización: guarda el `state` + el verifier y devuelve la URL. */
+    async startOAuth(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        id: number,
+    ): Promise<OAuthStartResult> {
+        const row = await this.requireEditable(tenantId, userId, role, id);
+        const cfg = readOAuthConfig(row.config.oauth);
+        for (const [field, label] of [
+            ['client_id', 'el Client ID'],
+            ['authorize_url', 'la URL de autorización'],
+            ['token_url', 'la URL de tokens'],
+        ] as const) {
+            if (cfg[field].trim() === '') {
+                throw new BadRequestException({
+                    code: 'oauth_incomplete',
+                    message: `Falta ${label} de la app registrada en el proveedor.`,
+                    data: { status: 400 },
+                });
+            }
+        }
+
+        const pkce = createPkce();
+        const state = randomBytes(24).toString('base64url');
+        const pending: PendingOAuth = {
+            tenantId,
+            userId,
+            connectionId: id,
+            verifier: pkce.verifier,
+        };
+        await this.redis.set(
+            oauthStateKey(state),
+            JSON.stringify(pending),
+            'EX',
+            OAUTH_STATE_TTL_SECONDS,
+        );
+        return {
+            authorize_url: buildAuthorizeUrl(cfg, {
+                redirectUri: this.oauthRedirectUri(),
+                state,
+                challenge: pkce.challenge,
+            }),
+        };
+    }
+
+    /**
+     * Vuelta del proveedor. El `state` se consume con `GETDEL` —de un solo uso,
+     * el mismo criterio que el magic link del portal (SEC-15)— y además se
+     * exige que lo canjee la MISMA persona que lo pidió: un código robado no
+     * sirve en otra sesión.
+     */
+    async completeOAuth(
+        sessionUserId: number,
+        code: string,
+        state: string,
+    ): Promise<{ ok: boolean; error: string | null }> {
+        if (code.trim() === '' || state.trim() === '') {
+            return { ok: false, error: 'El proveedor no devolvió el código de autorización.' };
+        }
+        const raw = await this.redis.getdel(oauthStateKey(state));
+        if (!raw) {
+            return {
+                ok: false,
+                error: 'La autorización venció o ya se usó. Volvé a empezar desde Ajustes → Conectores.',
+            };
+        }
+        let pending: PendingOAuth;
+        try {
+            pending = JSON.parse(raw) as PendingOAuth;
+        } catch {
+            return { ok: false, error: 'La autorización quedó en un estado inválido.' };
+        }
+        if (pending.userId !== sessionUserId) {
+            return { ok: false, error: 'Esta autorización la inició otra persona.' };
+        }
+
+        const row = await this.row(pending.tenantId, pending.connectionId);
+        if (!row) return { ok: false, error: 'La conexión ya no existe.' };
+        const cfg = readOAuthConfig(row.config.oauth);
+        const secrets = this.readSecrets(row);
+        if (secrets === null) {
+            return { ok: false, error: new ConnectionUnusableError(row.name).message };
+        }
+
+        try {
+            const token = await this.postToken(
+                cfg.token_url,
+                buildTokenExchangeBody({
+                    code,
+                    redirectUri: this.oauthRedirectUri(),
+                    clientId: cfg.client_id,
+                    clientSecret: secrets.client_secret ?? '',
+                    verifier: pending.verifier,
+                }),
+            );
+            await this.storeTokens(pending.tenantId, row, token, {
+                // Un proveedor que no rota el refresh no lo reenvía en el canje;
+                // conservar el anterior evita romper una re-autorización.
+                keepRefresh: true,
+            });
+            await this.audit.log({
+                tenantId: pending.tenantId,
+                userId: sessionUserId,
+                action: 'connection.oauth_connect',
+                targetType: 'connection',
+                targetId: row.id,
+                targetLabel: row.name,
+                meta: {
+                    provider_key: cfg.provider_key,
+                    has_refresh: token.refreshToken !== null,
+                    scope: token.scope,
+                },
+            });
+            return { ok: true, error: null };
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await this.setOAuthError(pending.tenantId, row.id, message);
+            return { ok: false, error: message };
+        }
+    }
+
+    /** Revoca localmente: borra los tokens y deja la app registrada intacta. */
+    async disconnectOAuth(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        id: number,
+    ): Promise<Connection> {
+        const row = await this.requireEditable(tenantId, userId, role, id);
+        const secrets = { ...row.secrets };
+        delete secrets.access_token;
+        delete secrets.refresh_token;
+        const config = { ...row.config, oauth_state: null };
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await tx
+                .update(connections)
+                .set({ secrets, config, updatedAt: new Date() })
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
+            await this.audit.logInTx(tx, {
+                tenantId,
+                userId,
+                action: 'connection.oauth_disconnect',
+                targetType: 'connection',
+                targetId: id,
+                targetLabel: row.name,
+                meta: {},
+            });
+        });
+        const fresh = await this.row(tenantId, id);
+        const usage = await this.usageCounts(tenantId);
+        return this.toDto(fresh!, { usage: usage.get(id) ?? 0, ownerName: null, canEdit: true });
+    }
+
+    /**
+     * Renueva el access token si hace falta, ANTES de armar las partes.
+     *
+     * Dos cuidados que no son opcionales:
+     *  - **Transacción propia**: si la automatización que pidió la conexión
+     *    falla después y revierte, un proveedor que ROTA el refresh token
+     *    dejaría la conexión muerta para siempre (guardamos uno que el
+     *    proveedor ya invalidó). Por eso el token se escribe en su propia
+     *    transacción y no en la del que llama.
+     *    El costo es una segunda conexión del pool mientras dura el canje,
+     *    pero sólo pasa cuando de verdad hay que renovar —una vez por hora por
+     *    conexión—, no en cada acción.
+     *  - **Un solo renovador a la vez**: dos acciones en paralelo canjeando el
+     *    mismo refresh rotativo hacen que el segundo reciba `invalid_grant`.
+     *    Se toma un lock corto en Redis y, si lo tiene otro, se espera a que
+     *    aparezca el token nuevo en vez de pedir uno por las nuestras.
+     */
+    private async ensureFreshToken(
+        tenantId: number,
+        row: ConnectionRow | null,
+    ): Promise<ConnectionRow | null> {
+        if (!row || row.authType !== 'oauth2') return row;
+        const state = readOAuthState(row.config.oauth_state);
+        if (!needsRefresh(state.expiresAt, Date.now())) return row;
+
+        const secrets = this.readSecrets(row);
+        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        const refresh = secrets.refresh_token ?? '';
+        if (refresh === '') {
+            throw new BadRequestException({
+                code: 'oauth_expired',
+                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Volvé a autorizarla en Ajustes → Conectores.`,
+                data: { status: 400 },
+            });
+        }
+
+        const lock = oauthLockKey(tenantId, row.id);
+        const mine = await this.redis.set(lock, '1', 'EX', OAUTH_LOCK_SECONDS, 'NX');
+        if (mine === null) {
+            const updated = await this.waitForRefresh(tenantId, row);
+            if (updated) return updated;
+            throw new ConflictException({
+                code: 'oauth_refresh_busy',
+                message: `Otra ejecución está renovando la autorización de «${row.name}». Reintentá en unos segundos.`,
+                data: { status: 409 },
+            });
+        }
+
+        try {
+            const cfg = readOAuthConfig(row.config.oauth);
+            const token = await this.postToken(
+                cfg.token_url,
+                buildRefreshBody({
+                    refreshToken: refresh,
+                    clientId: cfg.client_id,
+                    clientSecret: secrets.client_secret ?? '',
+                }),
+            );
+            await this.storeTokens(tenantId, row, token, { keepRefresh: true });
+            return await this.row(tenantId, row.id);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await this.setOAuthError(tenantId, row.id, message);
+            throw new BadRequestException({
+                code: 'oauth_refresh_failed',
+                message: `No se pudo renovar la autorización de «${row.name}»: ${message}`,
+                data: { status: 400 },
+            });
+        } finally {
+            await this.redis.del(lock).catch(() => undefined);
+        }
+    }
+
+    /** Espera a que el que tiene el lock publique el token nuevo. */
+    private async waitForRefresh(
+        tenantId: number,
+        row: ConnectionRow,
+    ): Promise<ConnectionRow | null> {
+        const deadline = Date.now() + OAUTH_WAIT_MS;
+        while (Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            const fresh = await this.row(tenantId, row.id);
+            if (!fresh) return null;
+            const state = readOAuthState(fresh.config.oauth_state);
+            if (!needsRefresh(state.expiresAt, Date.now())) return fresh;
+        }
+        return null;
+    }
+
+    /** POST al endpoint de tokens, por el guard de egreso (SEC-03). */
+    private async postToken(tokenUrl: string, body: string): Promise<TokenResponse> {
+        const res = await safeWebhookFetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/x-www-form-urlencoded',
+                accept: 'application/json',
+            },
+            body,
+            captureBody: true,
+        });
+        // `parseTokenResponse` propaga el error del proveedor tal cual
+        // ("invalid_grant" es exactamente lo que hay que leer), así que el
+        // status sólo se usa cuando el cuerpo no dice nada.
+        const parsed = parseTokenResponse(res.body ?? '', res.contentType ?? '', Date.now());
+        if (res.status >= 400) {
+            throw new Error(`El proveedor respondió ${res.status}.`);
+        }
+        return parsed;
+    }
+
+    private async storeTokens(
+        tenantId: number,
+        row: ConnectionRow,
+        token: TokenResponse,
+        opts: { keepRefresh: boolean },
+    ): Promise<void> {
+        const secrets = { ...row.secrets };
+        secrets.access_token = encryptSecret(token.accessToken, this.env.SECRETS_KEY);
+        if (token.refreshToken !== null) {
+            secrets.refresh_token = encryptSecret(token.refreshToken, this.env.SECRETS_KEY);
+        } else if (!opts.keepRefresh) {
+            delete secrets.refresh_token;
+        }
+        const state: StoredOAuthState = {
+            expiresAt: token.expiresAt,
+            scope: token.scope,
+            error: null,
+        };
+        const config = { ...row.config, oauth_state: state };
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(connections)
+                .set({ secrets, config, updatedAt: new Date() })
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, row.id))),
+        );
+    }
+
+    /** Deja el motivo a la vista en el panel en vez de sólo en los logs. */
+    private async setOAuthError(tenantId: number, id: number, message: string): Promise<void> {
+        await this.tenantDb
+            .withTenant(tenantId, async (tx) => {
+                const [current] = await tx
+                    .select({ config: connections.config })
+                    .from(connections)
+                    .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)))
+                    .limit(1);
+                const cfg = { ...((current?.config ?? {}) as Record<string, unknown>) };
+                const state = readOAuthState(cfg.oauth_state);
+                cfg.oauth_state = { ...state, error: message.slice(0, 400) } satisfies StoredOAuthState;
+                await tx
+                    .update(connections)
+                    .set({ config: cfg })
+                    .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
+            })
+            .catch(() => undefined);
     }
 
     // ── Alta, edición y baja ─────────────────────────────────────────────
@@ -285,6 +677,7 @@ export class ConnectorsService {
                         headers: input.headers,
                         query_params: input.query_params,
                         actions: input.actions,
+                        oauth: input.oauth ?? oauthConfigSchema.parse({}),
                     },
                     secrets,
                     visibility: input.visibility,
@@ -325,6 +718,7 @@ export class ConnectorsService {
         if (patch.headers !== undefined) config.headers = patch.headers;
         if (patch.query_params !== undefined) config.query_params = patch.query_params;
         if (patch.actions !== undefined) config.actions = patch.actions;
+        if (patch.oauth !== undefined) config.oauth = patch.oauth;
 
         const changes: Record<string, unknown> = { config, updatedAt: new Date() };
         if (patch.name !== undefined) changes.name = patch.name;
@@ -456,8 +850,12 @@ export class ConnectorsService {
         if (input.connection_id) {
             // Probar una conexión guardada: los secretos salen de la base, así
             // no hay que volver a tipearlos para verificar que siguen sirviendo.
-            const row = await this.requireEditable(tenantId, userId, role, input.connection_id);
-            savedId = row.id;
+            const saved = await this.requireEditable(tenantId, userId, role, input.connection_id);
+            savedId = saved.id;
+            // Con OAuth2, probar con un access token vencido daría un 401 que
+            // parece un problema de configuración y no lo es: se renueva igual
+            // que al ejecutar una automatización.
+            const row = (await this.ensureFreshToken(tenantId, saved)) ?? saved;
             const secrets = this.readSecrets(row);
             if (secrets === null) {
                 return {
@@ -837,10 +1235,11 @@ export class ConnectorsService {
             username?: string | null;
             password?: string | null;
             signing_secret?: string | null;
+            client_secret?: string | null;
         },
     ): Record<string, string> {
         const out = { ...previous };
-        for (const key of ['token', 'username', 'password', 'signing_secret'] as const) {
+        for (const key of ['token', 'username', 'password', 'signing_secret', 'client_secret'] as const) {
             const value = input[key];
             if (value === undefined) continue;
             if (value === null) {
@@ -854,7 +1253,7 @@ export class ConnectorsService {
     }
 
     private touchesSecret(patch: UpdateConnectionInput): boolean {
-        return (['token', 'username', 'password', 'signing_secret'] as const).some(
+        return (['token', 'username', 'password', 'signing_secret', 'client_secret'] as const).some(
             (k) => typeof patch[k] === 'string' && patch[k] !== '',
         );
     }
@@ -863,7 +1262,15 @@ export class ConnectorsService {
     private readSecrets(row: ConnectionRow): ConnectionSecrets | null {
         try {
             const out: ConnectionSecrets = {};
-            for (const key of ['token', 'username', 'password', 'signing_secret'] as const) {
+            for (const key of [
+                'token',
+                'username',
+                'password',
+                'signing_secret',
+                'access_token',
+                'refresh_token',
+                'client_secret',
+            ] as const) {
                 const raw = row.secrets[key];
                 if (typeof raw !== 'string' || raw === '') continue;
                 // Sin clave, `decryptSecret` devuelve el texto cifrado TAL CUAL
@@ -915,6 +1322,26 @@ export class ConnectorsService {
         return err;
     }
 
+    /**
+     * Estado de la autorización para la UI. `null` si la conexión no usa
+     * OAuth2 — así el panel no tiene que adivinar si la tarjeta aplica.
+     */
+    private oauthStatus(row: ConnectionRow, secrets: ConnectionSecrets | null): OAuthStatus | null {
+        if (row.authType !== 'oauth2') return null;
+        const state = readOAuthState(row.config.oauth_state);
+        const connected = typeof row.secrets.access_token === 'string';
+        return {
+            connected,
+            expires_at: state.expiresAt !== null ? new Date(state.expiresAt).toISOString() : null,
+            // Sin refresh token la conexión deja de funcionar cuando vence, y
+            // eso hay que DECIRLO al autorizar, no descubrirlo a la hora.
+            has_refresh: typeof row.secrets.refresh_token === 'string',
+            granted_scopes: state.scope,
+            last_error:
+                secrets === null ? new ConnectionUnusableError(row.name).message : state.error,
+        };
+    }
+
     private toDto(
         row: ConnectionRow,
         extra: { usage: number; ownerName: string | null; canEdit: boolean },
@@ -922,7 +1349,12 @@ export class ConnectorsService {
         const secrets = this.readSecrets(row);
         const hasAny = Object.keys(row.secrets).length > 0;
         const state = !hasAny ? 'none' : secrets === null ? 'unreadable' : 'ok';
-        const primary = secrets?.token ?? secrets?.password ?? '';
+        // En OAuth2 el secreto que la persona pegó es el de la APP registrada;
+        // el token del proveedor no es suyo y no se le muestra ni enmascarado.
+        const primary =
+            row.authType === 'oauth2'
+                ? (secrets?.client_secret ?? '')
+                : (secrets?.token ?? secrets?.password ?? '');
         return {
             id: row.id,
             provider: 'http',
@@ -933,6 +1365,9 @@ export class ConnectorsService {
             headers: readConfigPairs(row.config.headers) as ConnectorPair[],
             query_params: readConfigPairs(row.config.query_params) as ConnectorPair[],
             actions: readConnectorActions(row.config.actions),
+            oauth: readOAuthConfig(row.config.oauth),
+            oauth_status: this.oauthStatus(row, secrets),
+            oauth_redirect_uri: this.oauthRedirectUri(),
             visibility: row.visibility as ConnectorVisibility,
             owner_user_id: row.ownerUserId,
             owner_name: extra.ownerName,

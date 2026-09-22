@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import {
     CONNECTOR_AUTH_KEY_LABEL,
     CONNECTOR_AUTH_LABEL,
     CONNECTOR_AUTH_TYPES,
+    OAUTH_PROVIDER_PRESETS,
+    oauthConfigSchema,
     type Connection,
     type ConnectionTestResult,
     type ConnectorAuthType,
@@ -11,10 +14,13 @@ import {
     type ConnectorPair,
     type ConnectorVisibility,
     type InlineSecretCandidate,
+    type OAuthConfig,
 } from '@imagina-base/shared';
 import {
     AlertTriangle,
     CheckCircle2,
+    Copy,
+    ExternalLink,
     Lock,
     Plug,
     Plus,
@@ -59,6 +65,9 @@ interface FormState {
     username: string;
     password: string;
     signing_secret: string;
+    /** Secreto de la APP registrada en el proveedor (OAuth2). */
+    client_secret: string;
+    oauth: OAuthConfig;
     headers: ConnectorPair[];
     actions: ConnectorAction[];
 }
@@ -74,6 +83,8 @@ const EMPTY: FormState = {
     username: '',
     password: '',
     signing_secret: '',
+    client_secret: '',
+    oauth: oauthConfigSchema.parse({}),
     headers: [],
     actions: [],
 };
@@ -99,7 +110,31 @@ export function ConnectorsPanel(): JSX.Element | null {
 
     const [form, setForm] = useState<FormState | null>(null);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+    const [params, setParams] = useSearchParams();
     const [test, setTest] = useState<ConnectionTestResult | null>(null);
+
+    /**
+     * Vuelta del proveedor OAuth: el callback del backend redirige acá con el
+     * resultado. Se muestra y se limpian los parámetros para que no quede
+     * pegado en el historial ni reaparezca al recargar.
+     */
+    const oauthResult = params.get('oauth');
+    useEffect(() => {
+        if (!oauthResult) return;
+        setNotice(
+            oauthResult === 'ok'
+                ? { kind: 'ok', text: __('Autorización completada.') }
+                : { kind: 'err', text: params.get('msg') ?? __('No se pudo autorizar.') },
+        );
+        const next = new URLSearchParams(params);
+        next.delete('oauth');
+        next.delete('msg');
+        setParams(next, { replace: true });
+        void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
+        // Sólo importa el cambio de resultado: las demás dependencias son
+        // estables y re-correr esto pisaría el aviso recién mostrado.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [oauthResult]);
 
     const invalidate = (): void => {
         void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
@@ -113,6 +148,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                 ...(f.username.trim() ? { username: f.username.trim() } : {}),
                 ...(f.password.trim() ? { password: f.password.trim() } : {}),
                 ...(f.signing_secret.trim() ? { signing_secret: f.signing_secret.trim() } : {}),
+                ...(f.client_secret.trim() ? { client_secret: f.client_secret.trim() } : {}),
             };
             const body = {
                 name: f.name.trim(),
@@ -123,6 +159,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                 headers: f.headers.filter((h) => h.key.trim() !== ''),
                 query_params: [],
                 actions: f.actions.filter((a) => a.label.trim() !== '' && a.key.trim() !== ''),
+                oauth: f.oauth,
                 ...secrets,
             };
             return f.id === null
@@ -184,6 +221,9 @@ export function ConnectorsPanel(): JSX.Element | null {
     }
 
     const rows = list.data ?? [];
+    const redirectUri =
+        rows.find((c) => c.oauth_redirect_uri !== '')?.oauth_redirect_uri ??
+        `${window.location.origin}/api/v1/connections/oauth/callback`;
     const canManage = settings.data?.can_manage ?? false;
     const allowPrivate = settings.data?.allow_private ?? false;
     const candidates = inline.data ?? [];
@@ -259,6 +299,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                                 }}
                                 onDelete={(force) => remove.mutate({ id: c.id, force })}
                                 deleting={remove.isPending}
+                                onNotice={(kind, text) => setNotice({ kind, text })}
                             />
                         ))}
                     </ul>
@@ -278,6 +319,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                             result={test}
                             canWorkspace={canManage}
                             allowPrivate={allowPrivate || canManage}
+                            redirectUri={redirectUri}
                         />
                     )}
 
@@ -311,14 +353,17 @@ function ConnectionRow({
     onEdit,
     onDelete,
     deleting,
+    onNotice,
 }: {
     connection: Connection;
     onEdit: () => void;
     onDelete: (force: boolean) => void;
     deleting: boolean;
+    onNotice: (kind: 'ok' | 'err', text: string) => void;
 }): JSX.Element {
     const [confirming, setConfirming] = useState(false);
     const c = connection;
+    const oauth = c.oauth_status;
     return (
         <li
             className="imcrm-rounded-md imcrm-border imcrm-p-3"
@@ -344,6 +389,15 @@ function ConnectionRow({
                         {__('Credencial ilegible')}
                     </Badge>
                 )}
+                {oauth && (
+                    <Badge
+                        variant={oauth.connected ? 'outline' : 'destructive'}
+                        className="imcrm-gap-1"
+                        data-testid="imcrm-connector-oauth-state"
+                    >
+                        {oauth.connected ? __('Autorizada') : __('Sin autorizar')}
+                    </Badge>
+                )}
                 {c.last_check_ok === true && (
                     <Badge variant="outline" className="imcrm-gap-1">
                         <CheckCircle2 className="imcrm-h-3 imcrm-w-3" />
@@ -351,6 +405,9 @@ function ConnectionRow({
                     </Badge>
                 )}
                 <span className="imcrm-ml-auto imcrm-flex imcrm-gap-1">
+                    {oauth && c.can_edit && (
+                        <OAuthButtons connection={c} onNotice={onNotice} />
+                    )}
                     {c.can_edit && (
                         <Button size="sm" variant="ghost" onClick={onEdit} data-testid="imcrm-connector-edit">
                             {__('Editar')}
@@ -382,6 +439,25 @@ function ConnectionRow({
                       ? __('La usa 1 acción de automatización.')
                       : `${__('La usan')} ${c.usage_count} ${__('acciones de automatización.')}`}
             </p>
+            {oauth && (
+                <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
+                    {!oauth.connected
+                        ? __('Todavía nadie autorizó esta app en el proveedor.')
+                        : oauth.has_refresh
+                          ? `${__('Se renueva sola.')}${oauth.granted_scopes ? ` ${__('Permisos')}: ${oauth.granted_scopes}` : ''}`
+                          : __(
+                                'El proveedor no entregó token de renovación: va a dejar de funcionar cuando venza y habrá que autorizar de nuevo.',
+                            )}
+                </p>
+            )}
+            {oauth?.last_error && (
+                <p
+                    className="imcrm-mt-1 imcrm-text-xs imcrm-text-destructive"
+                    data-testid="imcrm-connector-oauth-error"
+                >
+                    {oauth.last_error}
+                </p>
+            )}
             {c.secret_state === 'unreadable' && (
                 <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-destructive">
                     {__(
@@ -409,6 +485,7 @@ function ConnectionForm({
     result,
     canWorkspace,
     allowPrivate,
+    redirectUri,
 }: {
     form: FormState;
     onChange: (f: FormState) => void;
@@ -420,6 +497,7 @@ function ConnectionForm({
     result: ConnectionTestResult | null;
     canWorkspace: boolean;
     allowPrivate: boolean;
+    redirectUri: string;
 }): JSX.Element {
     const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
         onChange({ ...form, [key]: value });
@@ -490,7 +568,8 @@ function ConnectionForm({
                         </div>
                     </>
                 ) : (
-                    form.auth_type !== 'none' && (
+                    form.auth_type !== 'none' &&
+                    form.auth_type !== 'oauth2' && (
                         <div>
                             <Label htmlFor="conn-token">{__('Clave / token')}</Label>
                             <Input
@@ -526,6 +605,15 @@ function ConnectionForm({
                     </Select>
                 </div>
             </div>
+
+            {form.auth_type === 'oauth2' && (
+                <OAuthConfigFields
+                    form={form}
+                    onChange={onChange}
+                    redirectUri={redirectUri}
+                    editing={editing}
+                />
+            )}
 
             {form.auth_type === 'body' && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -663,12 +751,224 @@ function InlineSecretsCard({
     );
 }
 
+/**
+ * Autorizar / Reautorizar / Desconectar.
+ *
+ * "Autorizar" se abre en la MISMA pestaña a propósito: varios proveedores
+ * rompen el flujo en un popup (bloqueadores, reglas de sesión), y la vuelta
+ * del callback trae de nuevo a esta pantalla con el resultado.
+ */
+function OAuthButtons({
+    connection,
+    onNotice,
+}: {
+    connection: Connection;
+    onNotice: (kind: 'ok' | 'err', text: string) => void;
+}): JSX.Element {
+    const qc = useQueryClient();
+    const tenantId = useSession((s) => s.activeTenantId);
+    const start = useMutation({
+        mutationFn: () => api.connectionOAuthStart(connection.id),
+        onSuccess: (r) => {
+            window.location.assign(r.authorize_url);
+        },
+        onError: (err) => onNotice('err', errText(err)),
+    });
+    const disconnect = useMutation({
+        mutationFn: () => api.connectionOAuthDisconnect(connection.id),
+        onSuccess: () => {
+            onNotice('ok', __('Autorización quitada.'));
+            void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
+        },
+        onError: (err) => onNotice('err', errText(err)),
+    });
+
+    return (
+        <>
+            <Button
+                size="sm"
+                variant={connection.oauth_status?.connected ? 'ghost' : 'default'}
+                disabled={start.isPending}
+                onClick={() => start.mutate()}
+                data-testid="imcrm-connector-oauth-start"
+            >
+                <ExternalLink className="imcrm-h-4 imcrm-w-4" />
+                {connection.oauth_status?.connected ? __('Reautorizar') : __('Autorizar')}
+            </Button>
+            {connection.oauth_status?.connected && (
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={disconnect.isPending}
+                    onClick={() => disconnect.mutate()}
+                    data-testid="imcrm-connector-oauth-disconnect"
+                >
+                    {__('Desconectar')}
+                </Button>
+            )}
+        </>
+    );
+}
+
+/**
+ * Datos de la app registrada en el proveedor.
+ *
+ * El preset no es un "tipo de conector": sólo rellena las dos URLs y, sobre
+ * todo, los parámetros raros de cada uno —el `access_type=offline` de Google
+ * es el motivo nº 1 de "me autoricé y a la hora dejó de andar"—. Cualquier
+ * otro proveedor se configura a mano con los mismos campos.
+ */
+function OAuthConfigFields({
+    form,
+    onChange,
+    redirectUri,
+    editing,
+}: {
+    form: FormState;
+    onChange: (f: FormState) => void;
+    redirectUri: string;
+    editing: boolean;
+}): JSX.Element {
+    const [copied, setCopied] = useState(false);
+    const setOauth = (patch: Partial<OAuthConfig>): void =>
+        onChange({ ...form, oauth: { ...form.oauth, ...patch } });
+    const preset = OAUTH_PROVIDER_PRESETS.find((p) => p.key === form.oauth.provider_key);
+
+    return (
+        <div
+            className="imcrm-space-y-3 imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-3"
+            data-testid="imcrm-connector-oauth-config"
+        >
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__(
+                    'Registrá una app en el proveedor y pegá acá sus datos. Después tocá "Autorizar": nadie tiene que pegar tokens a mano, y el que entregue el proveedor se renueva solo.',
+                )}
+            </p>
+
+            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                <div>
+                    <Label htmlFor="conn-oauth-preset">{__('Proveedor')}</Label>
+                    <Select
+                        id="conn-oauth-preset"
+                        value={form.oauth.provider_key}
+                        onChange={(e) => {
+                            const p = OAUTH_PROVIDER_PRESETS.find((x) => x.key === e.target.value);
+                            setOauth(
+                                p
+                                    ? {
+                                          provider_key: p.key,
+                                          authorize_url: p.authorize_url,
+                                          token_url: p.token_url,
+                                          scopes: form.oauth.scopes.trim() || p.scopes,
+                                          extra_params: p.extra_params,
+                                      }
+                                    : { provider_key: '' },
+                            );
+                        }}
+                    >
+                        <option value="">{__('Otro (configurar a mano)')}</option>
+                        {OAUTH_PROVIDER_PRESETS.map((p) => (
+                            <option key={p.key} value={p.key}>
+                                {p.label}
+                            </option>
+                        ))}
+                    </Select>
+                </div>
+                <div>
+                    <Label htmlFor="conn-oauth-client">{__('Client ID')}</Label>
+                    <Input
+                        id="conn-oauth-client"
+                        value={form.oauth.client_id}
+                        onChange={(e) => setOauth({ client_id: e.target.value })}
+                        data-testid="imcrm-connector-oauth-client-id"
+                    />
+                </div>
+                <div>
+                    <Label htmlFor="conn-oauth-secret">{__('Client Secret')}</Label>
+                    <Input
+                        id="conn-oauth-secret"
+                        type="password"
+                        value={form.client_secret}
+                        onChange={(e) => onChange({ ...form, client_secret: e.target.value })}
+                        placeholder={editing ? __('Dejar vacío para conservar') : ''}
+                        data-testid="imcrm-connector-oauth-client-secret"
+                    />
+                </div>
+                <div>
+                    <Label htmlFor="conn-oauth-scopes">{__('Permisos (scopes)')}</Label>
+                    <Input
+                        id="conn-oauth-scopes"
+                        value={form.oauth.scopes}
+                        onChange={(e) => setOauth({ scopes: e.target.value })}
+                        placeholder="chat:write"
+                    />
+                </div>
+                <div>
+                    <Label htmlFor="conn-oauth-auth-url">{__('URL de autorización')}</Label>
+                    <Input
+                        id="conn-oauth-auth-url"
+                        value={form.oauth.authorize_url}
+                        onChange={(e) => setOauth({ authorize_url: e.target.value })}
+                    />
+                </div>
+                <div>
+                    <Label htmlFor="conn-oauth-token-url">{__('URL de tokens')}</Label>
+                    <Input
+                        id="conn-oauth-token-url"
+                        value={form.oauth.token_url}
+                        onChange={(e) => setOauth({ token_url: e.target.value })}
+                    />
+                </div>
+            </div>
+
+            {preset && <p className="imcrm-text-xs imcrm-text-muted-foreground">{preset.hint}</p>}
+
+            <div>
+                <Label>{__('URI de redirección (registrala en el proveedor)')}</Label>
+                <div className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-2">
+                    <code
+                        className="imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-background imcrm-px-2 imcrm-py-1 imcrm-text-xs"
+                        data-testid="imcrm-connector-oauth-redirect"
+                    >
+                        {redirectUri}
+                    </code>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                            void navigator.clipboard.writeText(redirectUri);
+                            setCopied(true);
+                            window.setTimeout(() => setCopied(false), 1500);
+                        }}
+                    >
+                        <Copy className="imcrm-h-4 imcrm-w-4" />
+                        {copied ? __('¡Copiado!') : __('Copiar')}
+                    </Button>
+                </div>
+                <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
+                    {__(
+                        'Tiene que coincidir EXACTAMENTE con la que registres: el proveedor rechaza el pedido si difiere en una barra.',
+                    )}
+                </p>
+            </div>
+
+            {!editing && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Guardá la conexión y después tocá "Autorizar" en su fila.')}
+                </p>
+            )}
+        </div>
+    );
+}
+
 function toForm(c: Connection): FormState {
     return {
         id: c.id,
         name: c.name,
         base_url: c.base_url,
         auth_type: c.auth_type,
+        client_secret: '',
+        oauth: c.oauth,
         auth_key: c.auth_key,
         visibility: c.visibility,
         // Los secretos NO vuelven del backend: vacío = conservar el guardado.

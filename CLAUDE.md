@@ -4194,7 +4194,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         compacta con estado, grupo Contacto, nota, cifras, archivos,
         comentarios— y Compartir muestra Facturas marcada).
 
-- [ ] **F11 — Conectores e integraciones** (pedido del usuario: "conectar una
+- [x] **F11 — Conectores e integraciones** (pedido del usuario: "conectar una
       app una vez y usarla en varios lados", con su propia app
       `was.imagina.cloud` como caso; decisiones tomadas con él: alcance por
       workspace con opción privada si el admin la habilita, credenciales de
@@ -4260,8 +4260,6 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         acción "Llamar webhook externo", que al elegir una esconde los campos de
         secreto de la acción. La tarjeta de conversión va arriba de todo con el
         nombre ya propuesto: convertir es un click.
-        **Pendiente de F11**: fase 3, OAuth2 como CLIENTE (la app ya es
-        servidor OAuth desde ADR-S21 fase 4).
         29 tests nuevos (19 unitarios de las piezas puras + 10 de integración
         con Postgres real: cifrado verificado en la fila cruda, aislamiento
         entre empresas, permisos, rotación, credencial ilegible, borrado en uso,
@@ -4334,6 +4332,73 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         borrar `apps/web/node_modules/.vite` y reiniciar vite — el `--force`
         solo no alcanzó y las constantes nuevas llegaban `undefined` al
         navegador (misma trampa de v0.1.167 y v0.1.176, un escalón peor).
+
+  - [x] **Fase 3 — OAuth2 como CLIENTE (v0.1.199, ADR-S22 fase 3)**: cierra F11.
+        Las fases 1 y 2 asumen un secreto ESTÁTICO que alguien pega; para Google,
+        Microsoft, Slack, GitHub, HubSpot o Zoho eso no existe — la empresa
+        **autoriza** la app una vez y el proveedor entrega un token que caduca y
+        se renueva solo. La app ya era **servidor** OAuth desde v0.1.184 (para que
+        Claude se conecte al MCP); esto es el lado inverso. `auth_type: 'oauth2'`
+        (no un proveedor nuevo): la conexión guarda la app registrada
+        (`config.oauth`: client_id, URLs, scopes, extra params) y el
+        `client_secret` cifrado; los tokens van en `secrets`, también cifrados, y
+        **no vuelven al cliente ni enmascarados** — no son de la persona, son del
+        proveedor. Las piezas del protocolo son PURAS (`oauth-client.ts`:
+        `createPkce`, `buildAuthorizeUrl`, `buildTokenExchangeBody`,
+        `buildRefreshBody`, `parseTokenResponse`, `needsRefresh`), por el mismo
+        motivo que `connectionParts` y `compileConnectorCall`: se prueban contra
+        el protocolo y no pueden divergir de lo que ejecuta el service.
+        Decisiones que no son opcionales: (a) **PKCE siempre** (RFC 7636) aunque
+        haya client secret; el `verifier` y el tenant viven en Redis contra el
+        `state`, que se consume con `GETDEL` —de un solo uso, como el magic link
+        del portal (SEC-15)— y sólo lo canjea la MISMA persona que lo pidió;
+        (b) **el refresh se escribe en su PROPIA transacción**, nunca en la del que
+        lo pidió: si la automatización falla después y revierte, un proveedor que
+        ROTA el refresh token dejaría la conexión muerta para siempre (habríamos
+        guardado uno que el proveedor ya invalidó); (c) **lock corto en Redis**,
+        porque dos acciones en paralelo canjeando el mismo refresh rotativo hacen
+        que el segundo reciba `invalid_grant` — quien no lo consigue espera al
+        token nuevo en vez de pedir otro; (d) **sin `expires_in` declarado no se
+        renueva a ciegas** (hay proveedores cuyos tokens no caducan y un refresh
+        de más consume cupo); (e) **UNA `redirect_uri` por instalación**
+        (`{APP_BASE_URL}/api/v1/connections/oauth/callback`) porque hay que
+        registrarla en la consola del proveedor y un dominio propio por empresa
+        (ADR-S17) obligaría a registrar una por cliente — el panel la muestra
+        lista para copiar; el callback va en un controller APARTE porque el
+        navegador vuelve con la cookie de sesión pero SIN `X-Tenant-Id`, así que
+        la empresa sale del `state` que emitimos nosotros. El canje sale por
+        `safeWebhookFetch` (SEC-03) y el error del proveedor se propaga TAL CUAL
+        (`invalid_grant` es el diagnóstico). Un token vencido sin refresh **hace
+        fallar** la acción con el motivo y el nombre de la conexión, en vez de
+        mandar la petición sin credencial (lección de v0.1.150). Front: sección
+        OAuth en el formulario (presets de 6 proveedores que traen puestos los
+        parámetros raros de cada uno —el `access_type=offline` de Google es el
+        motivo nº 1 de "me autoricé y a la hora dejó de andar"—, URI de
+        redirección copiable) y botones Autorizar / Reautorizar / Desconectar con
+        badge de estado en la fila. **Bug real encontrado en el E2E**: el
+        `spaFallback` del dev server de vite corre ANTES del proxy y reescribía
+        **cualquier navegación** del navegador sin extensión a `/cloud/index.html`
+        — o sea que ir a un endpoint del API desde la barra de direcciones (el
+        callback de OAuth, la página de una lista pública) devolvía el SPA en vez
+        de la respuesta del backend; ahora `/api/`, `/.well-known/` y
+        `/socket.io/` quedan fuera del fallback (en producción no pasaba: nginx y
+        Caddy enrutan `/api/` primero). Queda fuera la revocación en el proveedor
+        al desconectar: se borran los tokens locales y la app sigue autorizada del
+        otro lado hasta que la persona la quite ahí — cada proveedor tiene su
+        propio endpoint y varios no lo tienen. 13 tests unitarios del protocolo
+        (vectores de PKCE, presets, canje sin `client_secret` vacío, JSON y
+        urlencoded, `invalid_grant` propagado, margen de renovación) + 6 de
+        integración con Postgres real (PKCE y state al arrancar, config
+        incompleta, state ajeno/desconocido/reusado, Bearer inyectado con el
+        access token cifrado en reposo, vencido sin refresh, lock ocupado,
+        desconectar con bitácora) — 629 API, 150 front en verde — + E2E navegador
+        24/24 (preset, URI copiada al portapapeles, guardar, badge, navegación al
+        proveedor con PKCE y el `redirect_uri` exacto, vuelta del callback con el
+        motivo y los parámetros limpiados, un solo uso del state, el secreto que
+        no aparece en ninguna pantalla).
+
+        **Con esto F11 queda completa: conexiones reutilizables, acciones con
+        nombre y OAuth2 como cliente.**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

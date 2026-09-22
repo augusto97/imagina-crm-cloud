@@ -38,6 +38,7 @@ import { BlueprintService } from '../src/templates/blueprint.service';
 import { ViewsRepository } from '../src/views/views.repository';
 import { ViewsService } from '../src/views/views.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
+import { memoryOAuthStore } from './helpers/oauth-store';
 
 class FakeHookStore implements HookCaptureStore {
     lpush(): Promise<number> {
@@ -90,7 +91,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
         fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         views = new ViewsService(tenantDb, new ViewsRepository(), lists, rt);
-        automations = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), lists, new AutomationScheduler(), new FakeHookStore(), new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
+        automations = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), lists, new AutomationScheduler(), new FakeHookStore(), new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)));
         const plans = new PlansService(pg.db);
         const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });
         const billing = new BillingService(tenantDb, plans, new EmailQuotaService(pg.db, plans), new TenantSmtpService(pg.db, env));
@@ -101,7 +102,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         dashboards = new DashboardsService(tenantDb, null as never, records, fields);
         const blueprint = new BlueprintService(tenantDb, lists, fields, views, automations, new RecordsRepository(), new RelationsRepository(), billing, rt, dashboards);
         const store = new ProposalsStore(redis);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb)));
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);

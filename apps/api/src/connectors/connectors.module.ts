@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ConnectorsController } from './connectors.controller';
+import { ConnectorsOAuthController } from './connectors-oauth.controller';
 import { ConnectorsService } from './connectors.service';
 
 /**
@@ -15,7 +16,7 @@ import { ConnectorsService } from './connectors.service';
     // El `SessionGuard` del controller se resuelve en el contexto de ESTE
     // módulo: sin importar AuthModule, Nest no encuentra `SessionService`.
     imports: [AuthModule],
-    controllers: [ConnectorsController],
+    controllers: [ConnectorsController, ConnectorsOAuthController],
     providers: [ConnectorsService],
     exports: [ConnectorsService],
 })

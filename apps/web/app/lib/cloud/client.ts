@@ -2,6 +2,7 @@ import {
     connectionSchema,
     connectionTestResultSchema,
     connectionUsageSchema,
+    oauthStartResultSchema,
     connectorSettingsViewSchema,
     convertInlineSecretsResultSchema,
     inlineSecretCandidateSchema,
@@ -15,6 +16,7 @@ import {
     type ConvertInlineSecretsResult,
     type CreateConnectionInput,
     type InlineSecretCandidate,
+    type OAuthStartResult,
     type UpdateConnectionInput,
     accountExportSchema,
     activeSessionsResponseSchema,
@@ -711,6 +713,21 @@ export class CloudClient {
             await this.request('POST', '/connections/test', {
                 body: input,
                 schema: z.object({ data: connectionTestResultSchema }),
+            })
+        ).data;
+    }
+    /** OAuth2 (v0.1.199): devuelve la URL del proveedor a la que ir. */
+    async connectionOAuthStart(id: number): Promise<OAuthStartResult> {
+        return (
+            await this.request('POST', `/connections/${id}/oauth/start`, {
+                schema: z.object({ data: oauthStartResultSchema }),
+            })
+        ).data;
+    }
+    async connectionOAuthDisconnect(id: number): Promise<Connection> {
+        return (
+            await this.request('POST', `/connections/${id}/oauth/disconnect`, {
+                schema: z.object({ data: connectionSchema }),
             })
         ).data;
     }

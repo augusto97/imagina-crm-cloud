@@ -41,7 +41,15 @@ export type ConnectorProvider = z.infer<typeof connectorProviderSchema>;
  * Cómo se inyecta la credencial en cada petición. Es el eje que hace que un
  * conector sirva para APIs distintas sin escribir código nuevo.
  */
-export const CONNECTOR_AUTH_TYPES = ['none', 'bearer', 'header', 'basic', 'query', 'body'] as const;
+export const CONNECTOR_AUTH_TYPES = [
+    'none',
+    'bearer',
+    'header',
+    'basic',
+    'query',
+    'body',
+    'oauth2',
+] as const;
 export const connectorAuthTypeSchema = z.enum(CONNECTOR_AUTH_TYPES);
 export type ConnectorAuthType = z.infer<typeof connectorAuthTypeSchema>;
 
@@ -52,6 +60,7 @@ export const CONNECTOR_AUTH_LABEL: Record<ConnectorAuthType, string> = {
     basic: 'Usuario y contraseña (Basic)',
     query: 'Parámetro en la URL',
     body: 'Campo del cuerpo',
+    oauth2: 'OAuth 2.0 (autorizar con el proveedor)',
 };
 
 /** Qué significa `auth_key` en cada caso, para rotular bien el formulario. */
@@ -77,6 +86,141 @@ export const connectorPairSchema = z.object({
     value: z.string().max(2000).default(''),
 });
 export type ConnectorPair = z.infer<typeof connectorPairSchema>;
+
+// --- OAuth 2.0 como CLIENTE (v0.1.199, fase 3) --------------------------
+
+/**
+ * Hasta acá toda credencial era un secreto ESTÁTICO que alguien pegaba. Para
+ * Google, Slack, Microsoft o HubSpot eso no existe: la empresa **autoriza** la
+ * app una vez y el servicio entrega un token que caduca y se renueva solo.
+ *
+ * Decisiones:
+ *  - **PKCE siempre**, aunque haya client secret: es barato y varios
+ *    proveedores ya lo exigen.
+ *  - **El refresh se guarda en su propia transacción**, nunca en la del que
+ *    lo pidió: si la automatización falla después y revierte, un proveedor que
+ *    ROTA el refresh token dejaría la conexión muerta para siempre.
+ *  - El `redirect_uri` es UNO y fijo por instalación: hay que registrarlo en
+ *    el proveedor, así que el panel lo muestra listo para copiar.
+ */
+
+export const oauthConfigSchema = z.object({
+    client_id: z.string().trim().max(400).default(''),
+    authorize_url: z.string().trim().max(2000).default(''),
+    token_url: z.string().trim().max(2000).default(''),
+    scopes: z.string().trim().max(2000).default(''),
+    /**
+     * Parámetros extra del paso de autorización. Google necesita
+     * `access_type=offline` + `prompt=consent` para entregar refresh token —
+     * el error más común de una integración OAuth, así que los presets lo
+     * traen puesto.
+     */
+    extra_params: z.array(connectorPairSchema).max(10).default([]),
+    /** Clave del preset usado (informativo: el catálogo vive en el front). */
+    provider_key: z.string().trim().max(40).default(''),
+});
+export type OAuthConfig = z.infer<typeof oauthConfigSchema>;
+
+/**
+ * Presets de proveedores conocidos. No son un "tipo de conector": sólo
+ * ahorran buscar dos URLs y, sobre todo, traen puestos los parámetros raros
+ * de cada uno —`access_type=offline` de Google es el motivo nº 1 de "me
+ * autoricé pero a la hora dejó de andar"—. Cualquier otro proveedor se
+ * configura a mano con los mismos tres campos.
+ */
+export interface OAuthProviderPreset {
+    key: string;
+    label: string;
+    authorize_url: string;
+    token_url: string;
+    scopes: string;
+    extra_params: ConnectorPair[];
+    /** Qué mirar en la consola del proveedor al registrar la app. */
+    hint: string;
+}
+
+export const OAUTH_PROVIDER_PRESETS: readonly OAuthProviderPreset[] = [
+    {
+        key: 'google',
+        label: 'Google',
+        authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+        token_url: 'https://oauth2.googleapis.com/token',
+        scopes: 'https://www.googleapis.com/auth/spreadsheets',
+        // Sin estos dos Google entrega un access token y NINGÚN refresh: la
+        // conexión anda una hora y después se cae sola.
+        extra_params: [
+            { key: 'access_type', value: 'offline' },
+            { key: 'prompt', value: 'consent' },
+        ],
+        hint: 'Google Cloud → APIs y servicios → Credenciales → ID de cliente OAuth (tipo aplicación web).',
+    },
+    {
+        key: 'microsoft',
+        label: 'Microsoft 365 / Entra ID',
+        authorize_url: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+        token_url: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        scopes: 'offline_access https://graph.microsoft.com/.default',
+        extra_params: [],
+        hint: 'Entra ID → Registros de aplicaciones. `offline_access` es lo que habilita el refresh.',
+    },
+    {
+        key: 'slack',
+        label: 'Slack',
+        authorize_url: 'https://slack.com/oauth/v2/authorize',
+        token_url: 'https://slack.com/api/oauth.v2.access',
+        scopes: 'chat:write',
+        extra_params: [],
+        hint: 'api.slack.com/apps → OAuth & Permissions. Los scopes de bot van en `scope`.',
+    },
+    {
+        key: 'github',
+        label: 'GitHub',
+        authorize_url: 'https://github.com/login/oauth/authorize',
+        token_url: 'https://github.com/login/oauth/access_token',
+        scopes: 'repo',
+        extra_params: [],
+        hint: 'GitHub → Settings → Developer settings → OAuth Apps.',
+    },
+    {
+        key: 'hubspot',
+        label: 'HubSpot',
+        authorize_url: 'https://app.hubspot.com/oauth/authorize',
+        token_url: 'https://api.hubapi.com/oauth/v1/token',
+        scopes: 'crm.objects.contacts.write',
+        extra_params: [],
+        hint: 'HubSpot → Developer account → Apps → Auth.',
+    },
+    {
+        key: 'zoho',
+        label: 'Zoho',
+        authorize_url: 'https://accounts.zoho.com/oauth/v2/auth',
+        token_url: 'https://accounts.zoho.com/oauth/v2/token',
+        scopes: 'ZohoCRM.modules.ALL',
+        // Zoho sólo entrega refresh token con `access_type=offline`.
+        extra_params: [{ key: 'access_type', value: 'offline' }],
+        hint: 'Zoho API Console → Server-based Applications. Ojo con el dominio (.com / .eu / .in).',
+    },
+];
+
+/** Estado de la autorización, para la UI. Sin tokens, nunca. */
+export const oauthStatusSchema = z.object({
+    connected: z.boolean(),
+    /** Cuándo vence el access token (el refresh lo renueva solo). */
+    expires_at: isoDateTimeSchema.nullable(),
+    /** Si el proveedor entregó refresh token: sin él, la conexión muere al vencer. */
+    has_refresh: z.boolean(),
+    /** Scopes que el proveedor confirmó al autorizar. */
+    granted_scopes: z.string(),
+    /** Último error de renovación, si lo hubo. */
+    last_error: z.string().nullable(),
+});
+export type OAuthStatus = z.infer<typeof oauthStatusSchema>;
+
+export const oauthStartResultSchema = z.object({
+    /** URL del proveedor a la que hay que mandar al navegador. */
+    authorize_url: z.string(),
+});
+export type OAuthStartResult = z.infer<typeof oauthStartResultSchema>;
 
 // --- Acciones con nombre (v0.1.198, fase 2) -----------------------------
 
@@ -202,6 +346,12 @@ export const connectionSchema = z.object({
     query_params: z.array(connectorPairSchema).max(20),
     /** Acciones con nombre de esta conexión (v0.1.198). */
     actions: z.array(connectorActionSchema).max(40),
+    /** Config OAuth2 (v0.1.199). Vacía si `auth_type` no es `oauth2`. */
+    oauth: oauthConfigSchema,
+    /** Estado de la autorización; `null` si la conexión no usa OAuth2. */
+    oauth_status: oauthStatusSchema.nullable(),
+    /** URI de redirección que hay que registrar en el proveedor. */
+    oauth_redirect_uri: z.string(),
     visibility: connectorVisibilitySchema,
     owner_user_id: idSchema.nullable(),
     owner_name: z.string().nullable(),
@@ -230,6 +380,8 @@ export type Connection = z.infer<typeof connectionSchema>;
  */
 const secretsShape = {
     token: z.string().max(4000).nullish(),
+    /** Sólo OAuth2: el secreto de la app registrada en el proveedor. */
+    client_secret: z.string().max(4000).nullish(),
     username: z.string().max(200).nullish(),
     password: z.string().max(4000).nullish(),
     signing_secret: z.string().max(4000).nullish(),
@@ -244,6 +396,7 @@ export const createConnectionSchema = z.object({
     headers: z.array(connectorPairSchema).max(20).default([]),
     query_params: z.array(connectorPairSchema).max(20).default([]),
     actions: z.array(connectorActionSchema).max(40).default([]),
+    oauth: oauthConfigSchema.optional(),
     visibility: connectorVisibilitySchema.default('workspace'),
     ...secretsShape,
 });
@@ -257,6 +410,7 @@ export const updateConnectionSchema = z.object({
     headers: z.array(connectorPairSchema).max(20).optional(),
     query_params: z.array(connectorPairSchema).max(20).optional(),
     actions: z.array(connectorActionSchema).max(40).optional(),
+    oauth: oauthConfigSchema.optional(),
     visibility: connectorVisibilitySchema.optional(),
     ...secretsShape,
 });
