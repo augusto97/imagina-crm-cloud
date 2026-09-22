@@ -1,18 +1,57 @@
+import { Plug } from 'lucide-react';
+
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { __ } from '@/lib/i18n';
+import type { LucideIcon } from 'lucide-react';
+
 import type { ActionMeta } from '@/types/automation';
 
 import { actionMetaFor } from './automationMeta';
+
+function Row({
+    icon: Icon,
+    title,
+    description,
+    onSelect,
+}: {
+    icon: LucideIcon;
+    title: string;
+    description: string;
+    onSelect: () => void;
+}): JSX.Element {
+    return (
+        <DropdownMenuItem onSelect={onSelect} className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2">
+            <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted imcrm-ring-1 imcrm-ring-border">
+                <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-foreground/70" />
+            </span>
+            <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
+                <span className="imcrm-text-[13px] imcrm-font-medium">{title}</span>
+                {description !== '' && (
+                    <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {description}
+                    </span>
+                )}
+            </span>
+        </DropdownMenuItem>
+    );
+}
 
 /**
  * Menú de tipos de acción (icono + título + descripción). Elegir un
  * tipo inserta la acción directamente — sin paso intermedio. Compartido
  * entre el flujo vertical y el lienzo visual.
+ *
+ * v0.1.198 — debajo de los tipos fijos aparece una sección "Conectores" con
+ * las acciones CON NOMBRE que la empresa configuró ("Enviar WhatsApp" de
+ * «Gateway»). Elegir una inserta ya apuntada a esa conexión y esa acción: el
+ * menú deja de preguntar "¿qué tipo?" para ofrecer lo que de verdad se hace.
  */
 export function ActionTypeMenu({
     actionsCatalog,
@@ -21,39 +60,59 @@ export function ActionTypeMenu({
     exclude,
 }: {
     actionsCatalog: ActionMeta[];
-    onPick: (type: string) => void;
+    /** `config` inicial: vacío en los tipos fijos, apuntado en un conector. */
+    onPick: (type: string, config?: Record<string, unknown>) => void;
     children: React.ReactNode;
     /** Slugs a ocultar (ej. if_else cuando se alcanzó el anidado máximo). */
     exclude?: string[];
 }): JSX.Element {
+    const hidden = exclude ?? [];
+    const builtins = actionsCatalog.filter((a) => !a.connector && !hidden.includes(a.slug));
+    const connectors = actionsCatalog.filter((a) => a.connector && !hidden.includes(a.slug));
+
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="imcrm-w-[300px]">
-                {actionsCatalog
-                    .filter((a) => !(exclude ?? []).includes(a.slug))
-                    .map((a) => {
-                        const meta = actionMetaFor(a.slug);
-                        return (
-                            <DropdownMenuItem
-                                key={a.slug}
-                                onSelect={() => onPick(a.slug)}
-                                className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2"
-                            >
-                                <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted imcrm-ring-1 imcrm-ring-border">
-                                    <meta.icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-foreground/70" />
-                                </span>
-                                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
-                                    <span className="imcrm-text-[13px] imcrm-font-medium">{a.label}</span>
-                                    {meta.description !== '' && (
-                                        <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                                            {__(meta.description)}
-                                        </span>
-                                    )}
-                                </span>
-                            </DropdownMenuItem>
-                        );
-                    })}
+            <DropdownMenuContent align="center" className="imcrm-max-h-[70vh] imcrm-w-[300px] imcrm-overflow-y-auto">
+                {builtins.map((a) => {
+                    const meta = actionMetaFor(a.slug);
+                    return (
+                        <Row
+                            key={a.slug}
+                            icon={meta.icon}
+                            title={a.label}
+                            description={meta.description !== '' ? __(meta.description) : ''}
+                            onSelect={() => onPick(a.slug)}
+                        />
+                    );
+                })}
+                {connectors.length > 0 && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="imcrm-text-[11px] imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                            {__('Conectores')}
+                        </DropdownMenuLabel>
+                        {connectors.map((a) => (
+                            <Row
+                                key={`${a.connector!.connection_id}:${a.connector!.action_key}`}
+                                icon={Plug}
+                                title={a.label}
+                                description={
+                                    a.connector!.description !== ''
+                                        ? a.connector!.description
+                                        : a.connector!.connection_name
+                                }
+                                onSelect={() =>
+                                    onPick('connector_action', {
+                                        connection_id: a.connector!.connection_id,
+                                        action_key: a.connector!.action_key,
+                                        values: {},
+                                    })
+                                }
+                            />
+                        ))}
+                    </>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );

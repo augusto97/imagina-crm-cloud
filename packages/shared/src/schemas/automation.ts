@@ -171,6 +171,20 @@ export const actionMetaSchema = z.object({
     slug: z.string(),
     label: z.string(),
     config_schema: z.record(z.record(z.unknown())),
+    /**
+     * v0.1.198 — acciones con NOMBRE de un conector. Cuando viene, el ítem del
+     * menú no es un tipo de acción sino una acción concreta de una conexión
+     * ("Enviar WhatsApp" de «Gateway»); el `slug` sigue siendo
+     * `connector_action` porque el motor ejecuta una sola cosa.
+     */
+    connector: z
+        .object({
+            connection_id: idSchema,
+            connection_name: z.string(),
+            action_key: z.string(),
+            description: z.string(),
+        })
+        .optional(),
 });
 export type ActionMeta = z.infer<typeof actionMetaSchema>;
 

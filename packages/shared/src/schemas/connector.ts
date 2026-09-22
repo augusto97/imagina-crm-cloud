@@ -24,11 +24,12 @@ import { idSchema, isoDateTimeSchema } from './common';
 // --- Proveedores --------------------------------------------------------
 
 /**
- * Fase 1 trae un único proveedor GENÉRICO: cualquier API HTTP. Alcanza para
- * conectar lo que ya se usa hoy por webhook y es el equivalente honesto a la
- * "Generic Credential Type" de n8n o al resource REST de Retool. Los
- * proveedores con acciones propias (por ejemplo "Enviar WhatsApp") llegan en
- * la fase 2, cuando el catálogo de acciones deje de ser un array literal.
+ * Un único proveedor GENÉRICO: cualquier API HTTP. Alcanza para conectar lo
+ * que ya se usa hoy por webhook y es el equivalente honesto a la "Generic
+ * Credential Type" de n8n o al resource REST de Retool. Las acciones con
+ * nombre ("Enviar WhatsApp") no son un proveedor nuevo: son presets de ESTA
+ * conexión (ver `connectorActionSchema`), así que agregar una integración no
+ * toca código.
  */
 export const CONNECTOR_PROVIDERS = ['http'] as const;
 export const connectorProviderSchema = z.enum(CONNECTOR_PROVIDERS);
@@ -77,6 +78,113 @@ export const connectorPairSchema = z.object({
 });
 export type ConnectorPair = z.infer<typeof connectorPairSchema>;
 
+// --- Acciones con nombre (v0.1.198, fase 2) -----------------------------
+
+/**
+ * Una ACCIÓN con nombre es un preset guardado de una petición: "Enviar
+ * WhatsApp" en vez de "POST /send con estos cuatro campos". Es lo que hace
+ * usable un conector — quien arma una automatización elige la acción y llena
+ * campos rotulados, sin saber de métodos, rutas ni content-types.
+ *
+ * Vive DENTRO de la conexión (`connections.config.actions`) a propósito: no
+ * es un catálogo de la plataforma sino del servicio que cada empresa conectó,
+ * así que agregar una integración es configuración, no un release.
+ */
+
+export const CONNECTOR_PARAM_TYPES = ['text', 'long_text', 'number', 'select', 'boolean'] as const;
+export const connectorParamTypeSchema = z.enum(CONNECTOR_PARAM_TYPES);
+export type ConnectorParamType = z.infer<typeof connectorParamTypeSchema>;
+
+export const CONNECTOR_PARAM_TYPE_LABEL: Record<ConnectorParamType, string> = {
+    text: 'Texto',
+    long_text: 'Texto largo',
+    number: 'Número',
+    select: 'Lista de opciones',
+    boolean: 'Sí / No',
+};
+
+/** Dónde viaja el valor en la petición. */
+export const CONNECTOR_PARAM_LOCATIONS = ['body', 'query', 'header', 'path'] as const;
+export const connectorParamLocationSchema = z.enum(CONNECTOR_PARAM_LOCATIONS);
+export type ConnectorParamLocation = z.infer<typeof connectorParamLocationSchema>;
+
+export const CONNECTOR_PARAM_LOCATION_LABEL: Record<ConnectorParamLocation, string> = {
+    body: 'En el cuerpo',
+    query: 'En la URL (?clave=valor)',
+    header: 'En una cabecera',
+    path: 'En la ruta ({clave})',
+};
+
+/** Clave técnica: la que el servicio externo espera, no la etiqueta humana. */
+const paramKeySchema = z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z0-9_.\-[\]]+$/, 'Clave inválida');
+
+export const connectorParamSchema = z.object({
+    key: paramKeySchema,
+    label: z.string().trim().min(1).max(120),
+    type: connectorParamTypeSchema.default('text'),
+    location: connectorParamLocationSchema.default('body'),
+    required: z.boolean().default(false),
+    /** Ayuda bajo el campo: para qué sirve, qué formato espera el servicio. */
+    help: z.string().max(400).default(''),
+    /** Valor por defecto (admite merge tags como cualquier otro valor). */
+    default: z.string().max(2000).default(''),
+    /** Sólo para `select`. Vacío = se comporta como texto. */
+    options: z
+        .array(z.object({ value: z.string().max(200), label: z.string().max(200) }))
+        .max(50)
+        .default([]),
+});
+export type ConnectorParam = z.infer<typeof connectorParamSchema>;
+
+/** Slug estable: es lo que la automatización guarda, así que renombrar la
+ *  etiqueta NUNCA rompe una automatización guardada (regla de oro nº 1). */
+const actionKeySchema = z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z][a-z0-9_]*$/, 'Usá minúsculas, números y guion bajo');
+
+export const CONNECTOR_ACTION_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
+export const connectorActionMethodSchema = z.enum(CONNECTOR_ACTION_METHODS);
+export type ConnectorActionMethod = z.infer<typeof connectorActionMethodSchema>;
+
+/** Los mismos 6 de `call_webhook`: una acción con nombre ES una petición. */
+export const CONNECTOR_CONTENT_TYPES = ['json', 'form', 'multipart', 'text', 'xml', 'html'] as const;
+export const connectorContentTypeSchema = z.enum(CONNECTOR_CONTENT_TYPES);
+export type ConnectorContentType = z.infer<typeof connectorContentTypeSchema>;
+
+export const connectorActionSchema = z.object({
+    key: actionKeySchema,
+    label: z.string().trim().min(1).max(120),
+    description: z.string().max(400).default(''),
+    method: connectorActionMethodSchema.default('POST'),
+    /** Relativa a `base_url` (o absoluta). Admite `{clave}` de params `path`. */
+    path: z.string().trim().max(2000).default(''),
+    content_type: connectorContentTypeSchema.default('json'),
+    params: z.array(connectorParamSchema).max(30).default([]),
+    /**
+     * Cuerpo crudo para los tipos que no se arman por filas (xml/text/html).
+     * Los `{clave}` de los params se sustituyen ahí igual que en la ruta.
+     */
+    body_template: z.string().max(8000).default(''),
+});
+export type ConnectorAction = z.infer<typeof connectorActionSchema>;
+
+/** Lo que guarda la ACCIÓN de la automatización que usa un conector. */
+export const connectorActionCallSchema = z.object({
+    connection_id: idSchema,
+    action_key: z.string().min(1),
+    /** Valor por parámetro; admite merge tags. */
+    values: z.record(z.string().max(8000)).default({}),
+});
+export type ConnectorActionCall = z.infer<typeof connectorActionCallSchema>;
+
 // --- Entidad ------------------------------------------------------------
 
 export const connectionSchema = z.object({
@@ -92,6 +200,8 @@ export const connectionSchema = z.object({
     headers: z.array(connectorPairSchema).max(20),
     /** Parámetros de URL fijos (no secretos). */
     query_params: z.array(connectorPairSchema).max(20),
+    /** Acciones con nombre de esta conexión (v0.1.198). */
+    actions: z.array(connectorActionSchema).max(40),
     visibility: connectorVisibilitySchema,
     owner_user_id: idSchema.nullable(),
     owner_name: z.string().nullable(),
@@ -133,6 +243,7 @@ export const createConnectionSchema = z.object({
     auth_key: z.string().trim().max(120).default(''),
     headers: z.array(connectorPairSchema).max(20).default([]),
     query_params: z.array(connectorPairSchema).max(20).default([]),
+    actions: z.array(connectorActionSchema).max(40).default([]),
     visibility: connectorVisibilitySchema.default('workspace'),
     ...secretsShape,
 });
@@ -145,6 +256,7 @@ export const updateConnectionSchema = z.object({
     auth_key: z.string().trim().max(120).optional(),
     headers: z.array(connectorPairSchema).max(20).optional(),
     query_params: z.array(connectorPairSchema).max(20).optional(),
+    actions: z.array(connectorActionSchema).max(40).optional(),
     visibility: connectorVisibilitySchema.optional(),
     ...secretsShape,
 });

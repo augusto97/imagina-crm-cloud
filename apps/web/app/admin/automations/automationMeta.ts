@@ -5,6 +5,7 @@ import {
     GitBranch,
     Mail,
     PenLine,
+    Plug,
     Replace,
     Sparkles,
     Webhook,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { __, sprintf } from '@/lib/i18n';
-import type { ActionSpec, TriggerConfig } from '@/types/automation';
+import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
@@ -90,6 +91,13 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: GitBranch,
         title: 'Condición Si / Si no',
         description: 'Divide el flujo en dos ramas según una condición sobre el registro.',
+    },
+    // v0.1.198 — el título real ("Enviar WhatsApp") lo pone el catálogo del
+    // backend por conexión; esto es el fallback cuando no está a mano.
+    connector_action: {
+        icon: Plug,
+        title: 'Acción de un conector',
+        description: 'Ejecuta una acción con nombre de una conexión configurada en Ajustes.',
     },
 };
 
@@ -206,6 +214,13 @@ export function summarizeAction(
     spec: ActionSpec,
     fields: FieldEntity[],
     lists: ListSummary[],
+    /**
+     * v0.1.198 — el catálogo resuelve la ETIQUETA de una acción de conector
+     * ("Enviar WhatsApp") en vez de su clave técnica. Es opcional porque el
+     * índice de automatizaciones no lo carga: ahí cae a la clave, que sigue
+     * siendo legible.
+     */
+    catalog?: ActionMeta[],
 ): string {
     const cfg = spec.config;
     switch (spec.type) {
@@ -233,6 +248,30 @@ export function summarizeAction(
             return to === ''
                 ? __('Envía un correo')
                 : sprintf(__('Envía un correo a %s'), to);
+        }
+        case 'connector_action': {
+            const key = typeof cfg.action_key === 'string' ? cfg.action_key : '';
+            const connId = Number(cfg.connection_id);
+            if (key === '') return __('Acción de un conector');
+            const hit = (catalog ?? []).find(
+                (a) => a.connector?.action_key === key && a.connector.connection_id === connId,
+            );
+            // Con catálogo cargado y sin coincidencia, la acción ya no existe
+            // en el conector: decirlo acá evita que alguien crea que anda.
+            if (!hit && (catalog ?? []).length > 0) {
+                return sprintf(
+                    /* translators: %s: action key */
+                    __('La acción «%s» ya no existe en el conector'),
+                    key,
+                );
+            }
+            if (!hit) return sprintf(/* translators: %s: action key */ __('Ejecuta «%s»'), key);
+            return sprintf(
+                /* translators: 1: action label, 2: connection name */
+                __('%1$s · %2$s'),
+                hit.label,
+                hit.connector!.connection_name,
+            );
         }
         case 'call_webhook': {
             const method = typeof cfg.method === 'string' ? cfg.method : 'POST';

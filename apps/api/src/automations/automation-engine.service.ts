@@ -11,6 +11,7 @@ import {
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { ConnectionParts } from '../connectors/connection-parts';
+import { compileConnectorCall } from '../connectors/connector-actions';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
@@ -489,6 +490,62 @@ export class AutomationEngine {
                 return ok('call_webhook', `${req.method} ${req.url} → ${res.status}`, {
                     status: res.status,
                 });
+            }
+            case 'connector_action': {
+                // v0.1.198 — acción con NOMBRE de un conector ("Enviar
+                // WhatsApp"). Se compila a la misma config que `call_webhook`
+                // y sale por el mismo camino: un solo motor de peticiones
+                // salientes, así lo que prueba el editor es lo que se ejecuta.
+                const connId = Number(cfg.connection_id);
+                if (!Number.isFinite(connId) || connId <= 0) {
+                    return skip('connector_action', 'Sin conexión elegida.');
+                }
+                const resolved = await this.connectors.resolveActionInTx(
+                    tx,
+                    ctx.tenantId,
+                    connId,
+                    cfg.action_key,
+                );
+                if (!resolved) {
+                    throw new Error(
+                        `La conexión #${connId} ya no existe: revisá la acción en el editor.`,
+                    );
+                }
+                if (!resolved.action) {
+                    throw new Error(
+                        `«${resolved.name}» ya no tiene la acción «${String(cfg.action_key ?? '')}»: se renombró o se borró.`,
+                    );
+                }
+                const values = (cfg.values ?? {}) as Record<string, unknown>;
+                const call = compileConnectorCall(resolved.action, values, merge);
+                if (call.missing.length > 0) {
+                    return skip(
+                        'connector_action',
+                        `Falta completar: ${call.missing.join(', ')}.`,
+                    );
+                }
+                // `identity`: los valores ya pasaron por merge en el compilador.
+                // Volver a expandir acá re-interpretaría como plantilla el
+                // contenido de un registro (un texto con `{{algo}}` adentro).
+                const req = buildWebhookRequest(
+                    call.cfg,
+                    (raw) => String(raw ?? ''),
+                    { recordId: ctx.recordId ?? null, listId: ctx.listId },
+                    resolved.parts,
+                );
+                if (!req.url) {
+                    return skip('connector_action', 'La acción no tiene URL ni ruta.');
+                }
+                const res = await safeWebhookFetch(req.url, {
+                    method: req.method,
+                    headers: req.headers,
+                    body: req.body,
+                });
+                return ok(
+                    'connector_action',
+                    `${resolved.name} → ${resolved.action.label}: ${res.status}`,
+                    { status: res.status, action: resolved.action.key },
+                );
             }
             case 'send_email': {
                 // SEC-08: destinatarios saneados y CAPADOS (to/cc/bcc son

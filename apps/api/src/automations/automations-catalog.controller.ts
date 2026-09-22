@@ -5,6 +5,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { ConnectorsService } from '../connectors/connectors.service';
 import { AutomationsService } from './automations.service';
 
 /**
@@ -32,7 +33,10 @@ const ACTIONS: ActionMeta[] = [
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class AutomationsCatalogController {
-    constructor(private readonly automations: AutomationsService) {}
+    constructor(
+        private readonly automations: AutomationsService,
+        private readonly connectors: ConnectorsService,
+    ) {}
 
     @Get('triggers')
     @RequireCapability('manage_automations')
@@ -40,10 +44,39 @@ export class AutomationsCatalogController {
         return { data: TRIGGERS };
     }
 
+    /**
+     * v0.1.198 — el catálogo deja de ser una constante: además de los 5 tipos
+     * fijos devuelve UNA entrada por acción con nombre de cada conector visible
+     * ("Enviar WhatsApp" de «Gateway»). El menú del editor deja de preguntar
+     * "¿qué tipo de acción?" para ofrecer directamente lo que la empresa
+     * conectó, que es lo que pasa en Zapier y en n8n.
+     */
     @Get('actions')
     @RequireCapability('manage_automations')
-    actions(): { data: ActionMeta[] } {
-        return { data: ACTIONS };
+    async actions(@Req() req: FastifyRequest): Promise<{ data: ActionMeta[] }> {
+        const tenant = req.tenant!;
+        const connections = await this.connectors.list(
+            tenant.tenantId,
+            req.authUserId as number,
+            tenant.role,
+        );
+        const fromConnectors: ActionMeta[] = [];
+        for (const conn of connections) {
+            for (const action of conn.actions) {
+                fromConnectors.push({
+                    slug: 'connector_action',
+                    label: action.label,
+                    config_schema: {},
+                    connector: {
+                        connection_id: conn.id,
+                        connection_name: conn.name,
+                        action_key: action.key,
+                        description: action.description,
+                    },
+                });
+            }
+        }
+        return { data: [...ACTIONS, ...fromConnectors] };
     }
 
     /** Runs por automation id (ruta que usa el editor del fork, sin lista). */

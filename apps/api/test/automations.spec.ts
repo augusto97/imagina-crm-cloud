@@ -1,7 +1,7 @@
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { automationRuns, automations, fields, lists, records, tenants } from '../src/db/schema';
+import { automationRuns, automations, fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { AutomationEngine } from '../src/automations/automation-engine.service';
@@ -73,6 +73,8 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
     let fieldsService: FieldsService;
     let recordsService: RecordsService;
     let automationsService: AutomationsService;
+    let connectors: ConnectorsService;
+    let ownerId: number;
     let engine: AutomationEngine;
     let mailbox: CapturingMailTransport;
     let tenantId: number;
@@ -95,7 +97,8 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
+        connectors = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb));
+        automationsService = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), hookStore, connectors);
         mailbox = new CapturingMailTransport();
         const mail = new MailService(loadEnv(), mailbox);
         engine = new AutomationEngine(
@@ -105,11 +108,18 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             new RecordsRepository(),
             new RelationsRepository(),
             mail,
-            new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)),
+            connectors,
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
+        // `connections.owner_user_id` tiene FK a users: el actor del spec
+        // necesita existir de verdad.
+        const [u] = await pg.db
+            .insert(users)
+            .values({ email: 'auto@test.local', passwordHash: 'x', name: 'Auto' })
+            .returning();
+        ownerId = u!.id;
     });
 
     afterAll(async () => {
@@ -419,6 +429,79 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const tareasRecords = await recordsService.list(tenantId, admin, 'tareas', { limit: 50, sort_dir: 'asc' });
         expect(tareasRecords.data).toHaveLength(1);
         expect(tareasRecords.data[0]!.data[`f${titulo.id}`]).toBe('Follow-up');
+    });
+
+
+    /**
+     * v0.1.198 (ADR-S22 fase 2) — acción con NOMBRE de un conector, por el
+     * MISMO camino que ejecuta el motor: el probador compila la acción, le
+     * inyecta la credencial de la conexión y arma la petición. Es la prueba de
+     * que definir la acción una vez alcanza para usarla desde una
+     * automatización sin volver a escribir URL, método ni cabeceras.
+     */
+    it('v0.1.198 — acción con nombre de un conector: compila y lleva la credencial', async () => {
+        await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 990, [key('estado')]: 'vip' },
+        });
+        const conn = await connectors.create(tenantId, ownerId, 'admin', {
+            provider: 'http',
+            name: 'Gateway WhatsApp',
+            base_url: 'https://was.example.test/api',
+            auth_type: 'body',
+            auth_key: 'secret',
+            headers: [],
+            query_params: [],
+            visibility: 'workspace',
+            token: 'clave-del-gateway',
+            actions: [
+                {
+                    key: 'enviar_whatsapp',
+                    label: 'Enviar WhatsApp',
+                    description: '',
+                    method: 'POST',
+                    path: '/send',
+                    content_type: 'form',
+                    params: [
+                        { key: 'recipient', label: 'Destinatario', type: 'text', location: 'body', required: true, help: '', default: '', options: [] },
+                        { key: 'message', label: 'Mensaje', type: 'long_text', location: 'body', required: true, help: '', default: '', options: [] },
+                        { key: 'nota', label: 'Nota', type: 'text', location: 'body', required: false, help: '', default: '', options: [] },
+                    ],
+                    body_template: '',
+                },
+            ],
+        });
+
+        const res = await automationsService.testWebhook(tenantId, 'deals', {
+            config: {
+                connection_id: conn.id,
+                action_key: 'enviar_whatsapp',
+                values: { recipient: '+573001112233', message: 'Estado {{estado}} por {{monto}}' },
+            },
+        });
+        // La ruta se resolvió contra la base de la conexión…
+        expect(res.request.url).toBe('https://was.example.test/api/send');
+        expect(res.request.method).toBe('POST');
+        // …la credencial viaja (enmascarada al MOSTRARLA, no al enviarla)…
+        expect(res.request.body).toContain('secret=');
+        expect(res.request.body).not.toContain('clave-del-gateway');
+        // …los merge tags se resolvieron contra el registro de muestra…
+        expect(res.request.body).toContain(encodeURIComponent('Estado vip por 990'));
+        // …y el opcional vacío NO viaja.
+        expect(res.request.body).not.toContain('nota=');
+
+        // Un obligatorio sin valor NO manda la petición: lo dice y se planta.
+        const incomplete = await automationsService.testWebhook(tenantId, 'deals', {
+            config: { connection_id: conn.id, action_key: 'enviar_whatsapp', values: { message: 'Hola' } },
+        });
+        expect(incomplete.error).toContain('Destinatario');
+        expect(incomplete.request.url).toBe('');
+
+        // Una clave que ya no existe se reporta con el nombre de la conexión,
+        // en vez de ejecutar otra acción en silencio.
+        const gone = await automationsService.testWebhook(tenantId, 'deals', {
+            config: { connection_id: conn.id, action_key: 'enviar_sms', values: {} },
+        });
+        expect(gone.error).toContain('Gateway WhatsApp');
     });
 
     it('v0.1.110 — incoming_webhook: token al guardar, payload en condiciones/merge tags y create_record', async () => {

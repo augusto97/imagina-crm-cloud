@@ -101,7 +101,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         dashboards = new DashboardsService(tenantDb, null as never, records, fields);
         const blueprint = new BlueprintService(tenantDb, lists, fields, views, automations, new RecordsRepository(), new RelationsRepository(), billing, rt, dashboards);
         const store = new ProposalsStore(redis);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store);
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);

@@ -21,6 +21,7 @@ import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { applyMergeTags, labelResolverFor } from './merge-tags';
+import { compileConnectorCall } from '../connectors/connector-actions';
 import { buildWebhookRequest } from './webhook-request';
 import {
     AutomationsRepository,
@@ -240,9 +241,46 @@ export class AutomationsService {
             };
         }
 
+        // v0.1.198 — si la acción es de un CONECTOR con nombre, se compila
+        // igual que en el motor y lo que se prueba es la misma petición.
+        let cfg: Record<string, unknown> = input.config;
+        let mergeForBuild = merge;
+        const actionKey = (input.config as Record<string, unknown>).action_key;
+        if (actionKey !== undefined && actionKey !== null && String(actionKey) !== '') {
+            const resolved = await this.connectors
+                .resolveAction(tenantId, connectionId, actionKey)
+                .catch(() => null);
+            if (!resolved?.action) {
+                return {
+                    request: { url: '', method: 'POST', headers: {}, body: null },
+                    response: null,
+                    error: resolved
+                        ? `«${resolved.name}» ya no tiene la acción «${String(actionKey)}».`
+                        : `La conexión #${connectionId} ya no existe.`,
+                    sample_record_id: sample.record?.id ?? null,
+                };
+            }
+            const call = compileConnectorCall(
+                resolved.action,
+                ((input.config as Record<string, unknown>).values ?? {}) as Record<string, unknown>,
+                merge,
+            );
+            if (call.missing.length > 0) {
+                return {
+                    request: { url: '', method: resolved.action.method, headers: {}, body: null },
+                    response: null,
+                    error: `Falta completar: ${call.missing.join(', ')}.`,
+                    sample_record_id: sample.record?.id ?? null,
+                };
+            }
+            cfg = call.cfg;
+            // Los valores ya pasaron por merge en el compilador (ver el motor).
+            mergeForBuild = (raw: unknown): string => String(raw ?? '');
+        }
+
         const req = buildWebhookRequest(
-            input.config,
-            merge,
+            cfg,
+            mergeForBuild,
             { recordId: sample.record?.id ?? null, listId: list.id },
             connection,
         );

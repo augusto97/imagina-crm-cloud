@@ -12,6 +12,8 @@ import { DataTools, displayValue, mapOptionValue } from '../src/ai/tools/data-to
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
 import { AuditService } from '../src/audit/audit.service';
+import { loadEnv } from '../src/config/env';
+import { ConnectorsService } from '../src/connectors/connectors.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { memberships, tenants, users } from '../src/db/schema';
 import { FieldsRepository } from '../src/fields/fields.repository';
@@ -64,7 +66,7 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
         const store = new ProposalsStore(redis);
         const data = new DataTools(lists, fields, recordsSvc, aggregate, store);
         // El StructureTools no se ejecuta acá; sólo para el dispatch del applier.
-        const structure = new StructureTools(tenantDb, lists, fields, null as never, null as never, null as never, null as never, store);
+        const structure = new StructureTools(tenantDb, lists, fields, null as never, null as never, null as never, null as never, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), new AuditService(tenantDb)));
         registry = new AiToolRegistry();
         data.registerInto(registry);
         proposals = new ProposalsService(store, new ConversationsStore(redis), structure, new AuditService(tenantDb), data);

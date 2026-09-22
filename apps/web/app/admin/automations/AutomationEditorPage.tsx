@@ -270,9 +270,9 @@ function EditorBody({
     const setActions = (next: ActionSpec[]): void =>
         setState((s) => ({ ...s, actions: next }));
 
-    const insertAction = (index: number, type: string): void => {
+    const insertAction = (index: number, type: string, config?: Record<string, unknown>): void => {
         const next = [...state.actions];
-        next.splice(index, 0, { type, config: {} });
+        next.splice(index, 0, { type, config: config ?? {} });
         setActions(next);
         // La acción recién añadida se abre para configurarla al toque.
         setExpanded((prev) => {
@@ -563,7 +563,7 @@ function EditorBody({
                             <div key={i} className="imcrm-flex imcrm-flex-col">
                                 <FlowConnector
                                     actionsCatalog={actionsCatalog}
-                                    onInsert={(type) => insertAction(i, type)}
+                                    onInsert={(type, config) => insertAction(i, type, config)}
                                 />
                                 <FlowCard
                                     tone="neutral"
@@ -573,7 +573,7 @@ function EditorBody({
                                         i + 1,
                                     )}
                                     icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
-                                    title={summarizeAction(spec, fields, lists)}
+                                    title={summarizeAction(spec, fields, lists, actionsCatalog)}
                                     badges={
                                         condCount > 0 ? (
                                             <Badge variant="outline" className="imcrm-shrink-0">
@@ -647,12 +647,12 @@ function EditorBody({
                     {/* Añadir al final */}
                     <FlowConnector
                         actionsCatalog={actionsCatalog}
-                        onInsert={(type) => insertAction(state.actions.length, type)}
+                        onInsert={(type, config) => insertAction(state.actions.length, type, config)}
                         terminal
                     />
                     <AddActionCard
                         actionsCatalog={actionsCatalog}
-                        onInsert={(type) => insertAction(state.actions.length, type)}
+                        onInsert={(type, config) => insertAction(state.actions.length, type, config)}
                         isFirst={state.actions.length === 0}
                     />
                 </div>
@@ -795,7 +795,7 @@ function FlowConnector({
     terminal,
 }: {
     actionsCatalog: ActionMeta[];
-    onInsert: (type: string) => void;
+    onInsert: (type: string, config?: Record<string, unknown>) => void;
     terminal?: boolean;
 }): JSX.Element {
     return (
@@ -874,7 +874,7 @@ function AddActionCard({
     isFirst,
 }: {
     actionsCatalog: ActionMeta[];
-    onInsert: (type: string) => void;
+    onInsert: (type: string, config?: Record<string, unknown>) => void;
     isFirst: boolean;
 }): JSX.Element {
     return (

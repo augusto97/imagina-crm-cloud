@@ -5,6 +5,7 @@ import {
     type ConnectionDraftTestInput,
     type ConnectionTestResult,
     type ConnectionUsage,
+    type ConnectorAction,
     type ConnectorAuthType,
     type ConnectorPair,
     type ConnectorSettings,
@@ -20,6 +21,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
+import { findConnectorAction, readConnectorActions } from './connector-actions';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { automations, connections, lists, tenants, users } from '../db/schema';
@@ -204,6 +206,45 @@ export class ConnectorsService {
         return this.partsFrom((row as ConnectionRow | undefined) ?? null);
     }
 
+    /**
+     * v0.1.198 — partes resueltas MÁS la acción con nombre pedida. Un solo
+     * viaje a la base: el motor necesita las dos cosas juntas para ejecutar.
+     * `action` viene en `null` cuando la clave ya no existe (la acción se
+     * renombró o se borró del conector) y el motor lo reporta como fallo:
+     * mandar la petición "a lo que haya" sería peor que no mandarla.
+     */
+    /** Igual que `resolveActionInTx`, abriendo su propia transacción (probador). */
+    async resolveAction(
+        tenantId: number,
+        connectionId: number,
+        actionKey: unknown,
+    ): Promise<{ parts: ConnectionParts; action: ConnectorAction | null; name: string } | null> {
+        return this.tenantDb.withTenant(tenantId, (tx) =>
+            this.resolveActionInTx(tx, tenantId, connectionId, actionKey),
+        );
+    }
+
+    async resolveActionInTx(
+        tx: Tx,
+        tenantId: number,
+        connectionId: number,
+        actionKey: unknown,
+    ): Promise<{ parts: ConnectionParts; action: ConnectorAction | null; name: string } | null> {
+        const [raw] = await tx
+            .select(COLUMNS)
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
+            .limit(1);
+        const row = (raw as ConnectionRow | undefined) ?? null;
+        const parts = this.partsFrom(row);
+        if (!row || !parts) return null;
+        return {
+            parts,
+            action: findConnectorAction(readConnectorActions(row.config.actions), actionKey),
+            name: row.name,
+        };
+    }
+
     private partsFrom(row: ConnectionRow | null): ConnectionParts | null {
         if (!row) return null;
         const secrets = this.readSecrets(row);
@@ -243,6 +284,7 @@ export class ConnectorsService {
                         auth_key: input.auth_key,
                         headers: input.headers,
                         query_params: input.query_params,
+                        actions: input.actions,
                     },
                     secrets,
                     visibility: input.visibility,
@@ -282,6 +324,7 @@ export class ConnectorsService {
         if (patch.auth_key !== undefined) config.auth_key = patch.auth_key;
         if (patch.headers !== undefined) config.headers = patch.headers;
         if (patch.query_params !== undefined) config.query_params = patch.query_params;
+        if (patch.actions !== undefined) config.actions = patch.actions;
 
         const changes: Record<string, unknown> = { config, updatedAt: new Date() };
         if (patch.name !== undefined) changes.name = patch.name;
@@ -889,6 +932,7 @@ export class ConnectorsService {
             auth_key: String(row.config.auth_key ?? ''),
             headers: readConfigPairs(row.config.headers) as ConnectorPair[],
             query_params: readConfigPairs(row.config.query_params) as ConnectorPair[],
+            actions: readConnectorActions(row.config.actions),
             visibility: row.visibility as ConnectorVisibility,
             owner_user_id: row.ownerUserId,
             owner_name: extra.ownerName,

@@ -406,8 +406,13 @@ export function AutomationCanvas({
         setView({ x: mx - (mx - v.x) * scale, y: my - (my - v.y) * scale, z });
     };
 
-    const insert = (seqPath: SeqPath, index: number, type: string): void => {
-        onActionsChange(insertAt(actions, seqPath, index, { type, config: {} }));
+    const insert = (
+        seqPath: SeqPath,
+        index: number,
+        type: string,
+        config?: Record<string, unknown>,
+    ): void => {
+        onActionsChange(insertAt(actions, seqPath, index, { type, config: config ?? {} }));
         setSelected({ kind: 'action', path: [...seqPath, index] });
     };
 
@@ -517,7 +522,7 @@ export function AutomationCanvas({
                                 <ActionTypeMenu
                                     actionsCatalog={actionsCatalog}
                                     exclude={excludeIf}
-                                    onPick={(type) => insert(e.insertSeqPath, e.insertIndex, type)}
+                                    onPick={(type, config) => insert(e.insertSeqPath, e.insertIndex, type, config)}
                                 >
                                     <button
                                         type="button"
@@ -561,7 +566,7 @@ export function AutomationCanvas({
                                 <ActionTypeMenu
                                     actionsCatalog={actionsCatalog}
                                     exclude={excludeIf}
-                                    onPick={(type) => insert(n.insertSeqPath ?? [], n.insertIndex ?? 0, type)}
+                                    onPick={(type, config) => insert(n.insertSeqPath ?? [], n.insertIndex ?? 0, type, config)}
                                 >
                                     <button
                                         type="button"
@@ -585,7 +590,7 @@ export function AutomationCanvas({
                             tone={isIf ? 'branch' : 'neutral'}
                             overline={isIf ? __('Condición') : __(meta.title)}
                             icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
-                            title={summarizeAction(spec, fields, lists)}
+                            title={summarizeAction(spec, fields, lists, actionsCatalog)}
                             badge={condCount > 0 ? sprintf(__('%d cond.'), condCount) : undefined}
                             selected={
                                 selected?.kind === 'action' && pathKey(selected.path) === pathKey(n.path!)

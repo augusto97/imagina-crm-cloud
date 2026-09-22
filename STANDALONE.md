@@ -905,10 +905,35 @@ apunta una automatización que hoy funciona.
 
 **Consecuencias.** El secreto de firma inline sigue funcionando mientras
 convivan (el de la conexión manda), así que no hay migración forzada. Queda
-para la fase 2 el manifest con acciones NOMBRADAS por proveedor (hoy agregar un
-tipo de acción toca seis lugares entre backend, front y el prompt del
-asistente), y para la fase 3 OAuth2 como CLIENTE, que es la pieza que falta
-para Google o Slack: la app ya es servidor OAuth desde ADR-S21 fase 4.
+para la fase 3 OAuth2 como CLIENTE, que es la pieza que falta para Google o
+Slack: la app ya es servidor OAuth desde ADR-S21 fase 4.
+
+**Fase 2 — acciones con NOMBRE (v0.1.198).** Una conexión sola deja el trabajo
+a medias: quien arma una automatización todavía tiene que saber el método, la
+ruta y el content-type del servicio. Una **acción con nombre** es un preset
+guardado de una petición —"Enviar WhatsApp" con los campos *Destinatario* y
+*Mensaje*— y es lo que hace usable un conector, igual que en Zapier o n8n.
+
+- **Vive DENTRO de la conexión** (`connections.config.actions`, sin migración),
+  no en un catálogo de la plataforma: el catálogo es del servicio que cada
+  empresa conectó, así que **agregar una integración es configuración, no un
+  release**. Ésa era la deuda que la fase 1 dejó anotada.
+- **Se COMPILA a la misma config que `call_webhook`** (`compileConnectorCall`,
+  puro) y sale por `buildWebhookRequest`: un solo motor de peticiones
+  salientes, así lo que prueba el editor es literalmente lo que ejecuta la
+  automatización.
+- **El merge se aplica UNA vez**, en el compilador; el builder recibe una
+  función identidad. Expandir dos veces re-interpretaría como plantilla el
+  texto de un registro (alguien que escribió `{{algo}}` en un campo).
+- **La clave de la acción es estable**: renombrar la etiqueta no rompe ninguna
+  automatización guardada (regla de oro nº 1). Una clave que ya no existe
+  **hace fallar** la acción con el nombre de la conexión, en vez de ejecutar
+  otra cosa en silencio; un obligatorio vacío la saltea sin mandar nada.
+- **El catálogo `/actions` deja de ser una constante**: devuelve los 5 tipos
+  fijos más una entrada por acción con nombre de cada conexión visible, así el
+  menú del editor ofrece "Enviar WhatsApp" en vez de preguntar "¿qué tipo de
+  acción?". El asistente y el MCP las ven en `get_list_schema` (`connectors`),
+  sin credenciales: sólo qué se puede ejecutar y qué datos pide.
 
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
@@ -968,4 +993,4 @@ con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.17.0 (migración de una empresa entre instancias — ADR-S23)
+**Versión del documento:** 1.18.0 (acciones con nombre por conector — ADR-S22 fase 2)
