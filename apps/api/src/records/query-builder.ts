@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
     dateRangePresetSchema,
     isDataField,
+    isThroughField,
     jsonbKeyForField,
     type DateRangePreset,
     type FieldType,
@@ -94,8 +95,11 @@ function compileCondition(
     if (field.id === DESCRIPTION_SEARCH_FIELD_ID) {
         return compileDescriptionText(cond);
     }
-    // v0.1.170 — un rollup filtra por su subconsulta (si el motor la armó).
-    if (field.type === 'rollup') {
+    // v0.1.170 / v0.1.200 — un campo DERIVADO filtra por la subconsulta
+    // correlacionada que le armó el motor (rollup, y desde v0.1.200 también
+    // lookup). Si no la tiene —config a medias, relación borrada, lookup
+    // hacia un `computed`— no es filtrable y la condición se descarta.
+    if (isThroughField(field.type)) {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
     if (!isDataField(field.type) || NON_FILTERABLE.includes(field.type)) {
@@ -209,9 +213,11 @@ function compileDescriptionText(cond: FilterCondition): SQL | undefined {
 }
 
 /**
- * Condición sobre una expresión inyectada (rollup). Sólo los operadores
- * escalares: comparar, nulo / no nulo. El resto no aplica a un agregado y
- * se descarta.
+ * Condición sobre una expresión inyectada (rollup, lookup). Los operadores
+ * escalares —comparar, nulo / no nulo— y, cuando la expresión es de TEXTO
+ * (v0.1.200: el valor de un lookup), también los de subcadena: "la ciudad
+ * del cliente contiene…" es justo lo que se filtra en un CRM. El resto no
+ * aplica y se descarta.
  */
 function compileOverride(
     expr: SQL,
@@ -231,6 +237,24 @@ function compileOverride(
         case 'lt':
         case 'lte':
             return compileComparison(expr, type, cond.op, cond.value);
+        case 'contains':
+        case 'not_contains':
+        case 'starts_with':
+        case 'ends_with': {
+            if (kind !== 'text') return undefined;
+            const needle = escapeLike(str(cond.value));
+            const pattern =
+                cond.op === 'starts_with'
+                    ? `${needle}%`
+                    : cond.op === 'ends_with'
+                      ? `%${needle}`
+                      : `%${needle}%`;
+            // `not_contains` incluye los nulos a propósito: un registro sin
+            // vinculados tampoco contiene el texto buscado.
+            return cond.op === 'not_contains'
+                ? sql`(${expr} IS NULL OR ${expr} NOT ILIKE ${pattern})`
+                : sql`${expr} ILIKE ${pattern}`;
+        }
         default:
             return undefined;
     }

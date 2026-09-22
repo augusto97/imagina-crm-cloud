@@ -270,4 +270,88 @@ describe('lookup / rollup a través de relation (Postgres real)', () => {
         const dto = (await fieldsService.list(tenantA, 'facturas')).find((f) => f.id === lk.id)!;
         expect(dto.through).toBeNull();
     });
+    /* ── v0.1.200 — los derivados dejan de ser de segunda ───────────────── */
+
+    it('filtra y agrupa por un LOOKUP (el valor del otro lado, como texto)', async () => {
+        const s = await setup();
+        const ciudad = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Ciudad', type: 'select', slug: 'ciudad',
+            config: { options: [{ value: 'bogota', label: 'Bogotá' }, { value: 'medellin', label: 'Medellín' }] },
+        });
+        await records_.update(tenantA, admin, 'clientes', s.c1, { data: { [`f${ciudad.id}`]: 'bogota' } });
+        await records_.update(tenantA, admin, 'clientes', s.c2, { data: { [`f${ciudad.id}`]: 'medellin' } });
+        const lk = await fieldsService.create(tenantA, 'facturas', {
+            label: 'Ciudad del cliente', type: 'lookup', slug: 'ciudad_cliente',
+            config: { relation_field_id: s.facturas.cliente.id, target_field_id: ciudad.id },
+        });
+
+        // Filtrar: las 3 facturas de Acme (Bogotá).
+        const bogota = await records_.list(tenantA, admin, 'facturas', {
+            limit: 50, sort_dir: 'asc',
+            filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: lk.id, op: 'eq', value: 'bogota' }] },
+        });
+        expect(bogota.data).toHaveLength(3);
+        // Y por subcadena, que es lo que se usa en un CRM.
+        const contiene = await records_.list(tenantA, admin, 'facturas', {
+            limit: 50, sort_dir: 'asc',
+            filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: lk.id, op: 'contains', value: 'medell' }] },
+        });
+        expect(contiene.data).toHaveLength(1);
+
+        // Agrupar por el lookup: un bucket por ciudad.
+        const agg = await aggregate.run(tenantA, 'facturas', { metric: 'count', group_by_field_id: lk.id });
+        expect(agg.groups).toEqual([
+            { group: 'bogota', value: 3 },
+            { group: 'medellin', value: 1 },
+        ]);
+        // Ordenar por el lookup tampoco rompe (la expresión es la misma).
+        const ordered = await records_.list(tenantA, admin, 'facturas', {
+            limit: 50, sort: `field_${lk.id}:desc`,
+        } as never);
+        expect(ordered.data).toHaveLength(4);
+    });
+
+    it('agrupa por un ROLLUP y el bucket trae SUS registros', async () => {
+        const s = await setup();
+        const nFact = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Facturas', type: 'rollup', slug: 'n_facturas',
+            config: { relation_field_id: s.facturas.cliente.id, operation: 'count' },
+        });
+        const agg = await aggregate.run(tenantA, 'clientes', { metric: 'count', group_by_field_id: nFact.id });
+        // Acme tiene 3 facturas, Globex 1 → dos buckets de un cliente cada uno.
+        expect(agg.groups).toEqual([
+            { group: '1', value: 1 },
+            { group: '3', value: 1 },
+        ]);
+
+        // La clave del bucket vuelve como FILTRO (es lo que hace la vista
+        // agrupada para traer las filas de cada grupo): el valor viaja como
+        // texto y el query builder lo castea al tipo del rollup.
+        const grupo3 = await records_.list(tenantA, admin, 'clientes', {
+            limit: 50, sort_dir: 'asc',
+            filter_tree: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: nFact.id, op: 'eq', value: '3' }] },
+        });
+        expect(grupo3.data.map((r) => r.id)).toEqual([s.c1]);
+    });
+
+    it('un lookup hacia un `computed` no se puede agrupar, y lo dice', async () => {
+        const s = await setup();
+        // El computed del otro lado se evalúa en JS sobre la fila vinculada:
+        // no hay expresión SQL posible, así que agrupar por él se rechaza en
+        // vez de devolver un único bucket vacío.
+        const calc = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Etiqueta', type: 'computed', slug: 'etiqueta',
+            config: { operation: 'concat', inputs: [s.clientes.nombre.id], separator: ' ' },
+        });
+        const lk = await fieldsService.create(tenantA, 'facturas', {
+            label: 'Etiqueta del cliente', type: 'lookup', slug: 'etq_cliente',
+            config: { relation_field_id: s.facturas.cliente.id, target_field_id: calc.id },
+        });
+        // Leerlo SÍ funciona (el motor lo resuelve en JS).
+        const page = await records_.list(tenantA, admin, 'facturas', { limit: 50, sort_dir: 'asc' });
+        expect(page.data[0]!.data[`f${lk.id}`]).toEqual(['Acme']);
+        await expect(
+            aggregate.run(tenantA, 'facturas', { metric: 'count', group_by_field_id: lk.id }),
+        ).rejects.toThrow(/no está configurado del todo|no se puede agrupar/);
+    });
 });

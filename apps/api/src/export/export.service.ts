@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { asc, eq, gt, isNotNull, isNull, and, type SQL } from 'drizzle-orm';
+import { asc, eq, gt, inArray, isNotNull, isNull, and, sql, type SQL } from 'drizzle-orm';
 import {
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
     formatDuration,
     isDataField,
     jsonbKeyForField,
+    resolveTitleFieldId,
     type ExportBundle,
+    type Field,
     type FieldType,
     type FilterGroup,
     type RecordDto,
@@ -60,13 +62,26 @@ export class ExportService {
         write: (chunk: string) => void,
     ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const all = await this.fields.listByListId(tenantId, list.id);
-        const dataFields = all.filter((f) => isDataField(f.type));
-        const byId = new Map(dataFields.map((f) => [f.id, f]));
+        // `list` (no `listByListId`): trae los lookup/rollup con su relación
+        // RESUELTA en `through`, que es lo que necesita el formateo de abajo.
+        const all = await this.fields.list(tenantId, String(list.id));
+        // v0.1.200 — el CSV exporta TODO lo que se ve en la tabla, no sólo lo
+        // que vive en `data`. Antes `isDataField` dejaba afuera los computed,
+        // los lookup, los rollup y las relaciones: una lista de Facturas se
+        // exportaba sin el cliente y sin el total. Los derivados ya vienen
+        // resueltos en `RecordsService.list` (el motor los inyecta en `data`);
+        // las relaciones se resuelven acá a los TÍTULOS de los vinculados, que
+        // es lo que el archivo tiene que decir para ser legible.
+        const exportable = all.filter((f) => isDataField(f.type) || isExportableDerived(f.type));
+        const byId = new Map(exportable.map((f) => [f.id, f]));
         const columns =
             opts.fieldIds.length > 0
                 ? opts.fieldIds.map((id) => byId.get(id)).filter((f) => f !== undefined)
-                : dataFields;
+                : exportable;
+        const labeler = await this.relationLabeler(
+            tenantId,
+            columns.filter((c) => c.type === 'relation'),
+        );
 
         // v0.1.132 — jerarquía. Las subtareas SIEMPRE se exportan (si no, el
         // archivo perdería filas en silencio), pero las dos columnas que la
@@ -93,8 +108,13 @@ export class ExportService {
                 filter_tree: opts.filterTree,
                 include_subtasks: true,
             });
+            await labeler.prime(page.data);
             for (const r of page.data) {
-                const cells = columns.map((c) => stringifyCell(r.data[jsonbKeyForField(c.id)], c.type));
+                const cells = columns.map((c) =>
+                    c.type === 'relation'
+                        ? labeler.labels(c.id, r.relations?.[jsonbKeyForField(c.id)])
+                        : stringifyCell(r.data[jsonbKeyForField(c.id)], c.type, targetTypeOf(c)),
+                );
                 write(
                     csvLine(
                         withHierarchy
@@ -157,6 +177,82 @@ export class ExportService {
         write(']}');
     }
 
+    /**
+     * Resuelve los ids de una relación a los TÍTULOS de los registros
+     * vinculados (v0.1.200). Un CSV con "12, 47" no le sirve a nadie; lo que
+     * el archivo tiene que decir es «Acme S.A.».
+     *
+     * Una query por lista destino y por PÁGINA, no por fila (regla de oro
+     * nº 8), y con cache entre páginas: en una lista de facturas el mismo
+     * cliente se repite muchísimo.
+     */
+    private async relationLabeler(tenantId: number, relFields: Field[]): Promise<RelationLabeler> {
+        const targets = new Map<number, { listId: number; titleKey: string }>();
+        for (const f of relFields) {
+            const listId = Number((f.config as { target_list_id?: unknown }).target_list_id);
+            if (!Number.isInteger(listId) || listId <= 0) continue;
+            const otherList = await this.lists.get(tenantId, String(listId)).catch(() => null);
+            if (!otherList) continue;
+            const otherFields = await this.fields.listByListId(tenantId, listId);
+            const titleId = resolveTitleFieldId(otherFields, otherList.settings);
+            if (titleId === null) continue;
+            targets.set(f.id, { listId, titleKey: jsonbKeyForField(titleId) });
+        }
+        const cache = new Map<number, string>();
+
+        return {
+            prime: async (rows) => {
+                const wanted = new Set<number>();
+                for (const r of rows) {
+                    for (const f of relFields) {
+                        const ids = r.relations?.[jsonbKeyForField(f.id)];
+                        if (!Array.isArray(ids)) continue;
+                        for (const id of ids) if (!cache.has(id)) wanted.add(id);
+                    }
+                }
+                if (wanted.size === 0) return;
+                const byList = new Map<string, number[]>();
+                for (const t of targets.values()) byList.set(t.titleKey, []);
+                // Los ids de todas las relaciones se piden juntos por clave de
+                // título: dos relaciones a la misma lista comparten la query.
+                for (const f of relFields) {
+                    const t = targets.get(f.id);
+                    if (!t) continue;
+                    for (const r of rows) {
+                        const ids = r.relations?.[jsonbKeyForField(f.id)];
+                        if (!Array.isArray(ids)) continue;
+                        for (const id of ids) if (wanted.has(id)) byList.get(t.titleKey)!.push(id);
+                    }
+                }
+                for (const [titleKey, ids] of byList) {
+                    if (ids.length === 0) continue;
+                    const unique = [...new Set(ids)];
+                    const rowsOut = await this.tenantDb.withTenant(tenantId, (tx) =>
+                        tx
+                            .select({
+                                id: records.id,
+                                title: sql<string | null>`(${records.data} ->> ${titleKey})`,
+                            })
+                            .from(records)
+                            .where(
+                                and(
+                                    eq(records.tenantId, tenantId),
+                                    inArray(records.id, unique),
+                                    isNull(records.deletedAt),
+                                ),
+                            ),
+                    );
+                    for (const row of rowsOut) cache.set(row.id, row.title ?? `#${row.id}`);
+                }
+            },
+            labels: (fieldId, value) => {
+                const ids = Array.isArray(value) ? value : [];
+                if (ids.length === 0 || !targets.has(fieldId)) return '';
+                return ids.map((id) => cache.get(Number(id)) ?? `#${String(id)}`).join(', ');
+            },
+        };
+    }
+
     /** ¿La lista tiene alguna subtarea viva? (una query, con LIMIT 1). */
     private async hasSubtasks(tenantId: number, listId: number): Promise<boolean> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -217,6 +313,21 @@ export class ExportService {
     }
 }
 
+/** Derivados que SÍ salen en el CSV (`relation` incluida: se exporta el título). */
+function isExportableDerived(type: string): boolean {
+    return type === 'computed' || type === 'lookup' || type === 'rollup' || type === 'relation';
+}
+
+/** Tipo del campo del OTRO lado, para formatear un lookup/rollup como la celda. */
+function targetTypeOf(field: Field): string | undefined {
+    return field.through?.target_field?.type;
+}
+
+interface RelationLabeler {
+    prime(rows: Array<{ relations?: Record<string, number[]> }>): Promise<void>;
+    labels(fieldId: number, value: unknown): string;
+}
+
 /** Una línea CSV con quoting RFC-4180 (comillas dobladas, quote si hace falta). */
 function csvLine(cells: string[], delimiter: string): string {
     return (
@@ -237,8 +348,21 @@ function csvLine(cells: string[], delimiter: string): string {
 }
 
 /** Serializa un valor JSONB a celda CSV (paridad con el CsvExporter del plugin). */
-function stringifyCell(value: unknown, type: string): string {
+function stringifyCell(value: unknown, type: string, targetType?: string): string {
     if (value === null || value === undefined || value === '') return '';
+    // v0.1.200 — un lookup trae una LISTA de valores del otro lado: cada uno
+    // se formatea con el tipo del campo DESTINO (una duración sale `1h 30m`,
+    // no 90), igual que en la celda.
+    if (type === 'lookup') {
+        const items = Array.isArray(value) ? value : [value];
+        return items
+            .map((v) => stringifyCell(v, targetType ?? 'text'))
+            .filter((v) => v !== '')
+            .join(', ');
+    }
+    // Un rollup es un escalar; el tipo del destino manda cuando aporta
+    // (min/max de una fecha, una duración).
+    if (type === 'rollup') return stringifyCell(value, targetType ?? 'number');
     if (type === 'multi_select') {
         return Array.isArray(value) ? value.map(String).join(', ') : String(value);
     }

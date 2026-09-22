@@ -51,3 +51,38 @@ describe('operatorsForType (v0.1.191)', () => {
         expect(operatorsForType('multi_select').find((o) => o.op === 'eq')?.label).toBe('incluye');
     });
 });
+
+describe('operatorsForType — campos derivados (v0.1.200)', () => {
+    const through = (targetType: string) => ({
+        through: {
+            direction: 'forward' as const,
+            relation_label: 'Cliente',
+            other_list_id: 2,
+            other_list_name: 'Clientes',
+            target_field: { id: 9, label: 'Ciudad', type: targetType as never, config: {} },
+        },
+    });
+
+    it('un lookup se filtra como TEXTO (su valor viaja como cadena)', () => {
+        const ops = operatorsForType('lookup', through('select')).map((o) => o.op);
+        // Aunque el destino sea un select, el backend compara la cadena que
+        // une los vinculados: contiene / empieza con son los que sirven.
+        expect(ops).toEqual(expect.arrayContaining(['eq', 'contains']));
+    });
+
+    it('un lookup numérico también se compara como texto, no como número', () => {
+        const ops = operatorsForType('lookup', through('currency')).map((o) => o.op);
+        expect(ops).toContain('contains');
+    });
+
+    it('un lookup hacia un `computed` no se filtra: no hay SQL que lo exprese', () => {
+        expect(operatorsForType('lookup', through('computed'))).toEqual([]);
+        // Sin la relación resuelta tampoco.
+        expect(operatorsForType('lookup', { through: null })).toEqual([]);
+        expect(operatorsForType('lookup')).toEqual([]);
+    });
+
+    it('un rollup sigue comparándose como número', () => {
+        expect(operatorsForType('rollup').map((o) => o.op)).toEqual(expect.arrayContaining(['gt', 'lt']));
+    });
+});

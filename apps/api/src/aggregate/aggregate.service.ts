@@ -7,6 +7,7 @@ import {
     type FieldType,
     type FilterNode,
     type TimeBucket,
+    isThroughField,
     jsonbKeyForField,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
@@ -77,13 +78,20 @@ export class AggregateService {
             // opciones (como ClickUp: cada registro cae en UN solo grupo), con
             // la clave NORMALIZADA (set ordenado) para que `["a","b"]` y
             // `["b","a"]` sean el mismo grupo; sin opciones → bucket null.
+            // v0.1.200 — agrupar por un campo DERIVADO (lookup / rollup). Su
+            // valor no vive en `data`: es la subconsulta correlacionada que el
+            // motor de through-fields ya arma para filtrar y ordenar. Sin ella
+            // (config a medias, relación borrada) agrupar daría un solo bucket
+            // vacío, que es peor que decirlo.
             const groupExpr =
                 req.time_bucket !== undefined
                     && (groupField.type === 'date' || groupField.type === 'datetime')
                     ? timeBucketExpr(groupField, req.time_bucket)
                     : groupField.type === 'multi_select'
                         ? multiSelectSetExpr(groupField.id)
-                        : fieldTextExpr(groupField.id);
+                        : isThroughField(groupField.type)
+                            ? throughGroupExpr(groupField, fieldsById)
+                            : fieldTextExpr(groupField.id);
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx
                     .select({ grp: groupExpr, val: aggExpr })
@@ -388,6 +396,21 @@ function normalize(val: unknown): number | string | null {
     if (typeof val === 'bigint') return Number(val);
     if (val instanceof Date) return val.toISOString();
     return String(val);
+}
+
+/**
+ * Expresión de agrupación de un campo derivado (lookup / rollup, v0.1.200).
+ * Se agrupa por su valor como TEXTO: la clave de un bucket viaja como string
+ * y el filtro por bucket la vuelve a castear según el tipo.
+ */
+function throughGroupExpr(field: Field, byId: Map<number, FilterableField>): SQL {
+    const expr = byId.get(field.id)?.expr;
+    if (!expr) {
+        throw badRequest(
+            `El campo «${field.label}» no está configurado del todo (falta la relación o el campo destino): no se puede agrupar por él.`,
+        );
+    }
+    return sql`(${expr})::text`;
 }
 
 function badRequest(message: string): BadRequestException {

@@ -153,7 +153,7 @@ export function ConditionEditor({
 
             {rows.map((rule, i) => {
                 const field = fields.find((f) => f.slug === rule.slug);
-                const operators = field ? operatorsForType(field.type) : [];
+                const operators = field ? operatorsForType(field.type, field) : [];
                 const isNullary = isNullaryOperator(rule.op);
                 const isDate = field?.type === 'date' || field?.type === 'datetime';
 
@@ -170,7 +170,7 @@ export function ConditionEditor({
                                 onChange={(e) => {
                                     const newSlug = e.target.value;
                                     const newField = fields.find((f) => f.slug === newSlug);
-                                    const newOps = newField ? operatorsForType(newField.type) : [];
+                                    const newOps = newField ? operatorsForType(newField.type, newField) : [];
                                     const validOp = newOps.some((o) => o.op === rule.op)
                                         ? rule.op
                                         : (newOps[0]?.op ?? 'eq');

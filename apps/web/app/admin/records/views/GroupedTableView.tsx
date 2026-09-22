@@ -15,6 +15,7 @@ import type { RowDensity, RowFontSize } from '../recordsState';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
+import { lookupDisplayField, rollupDisplayField } from '@/lib/throughFields';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type {
@@ -1336,6 +1337,20 @@ function filterOpForBucket(
  */
 function formatBucketLabel(field: FieldEntity, value: string | null): string {
     if (value === null) return __('(Sin valor)');
+    // v0.1.200 — un derivado se agrupa por su valor como texto; la etiqueta
+    // se formatea con el campo del OTRO lado (moneda con sus decimales, la
+    // etiqueta de la opción, la fecha en el formato de la empresa), que es
+    // exactamente lo que muestra la celda.
+    if (field.type === 'rollup') return formatBucketLabel(rollupDisplayField(field), value);
+    if (field.type === 'lookup') {
+        const display = lookupDisplayField(field);
+        if (!display) return value;
+        // El backend une los vinculados con ", " — se formatea cada uno.
+        return value
+            .split(', ')
+            .map((v) => formatBucketLabel(display, v))
+            .join(', ');
+    }
     if (field.type === 'checkbox') {
         return value === '1' || value === 'true' ? __('Sí') : __('No');
     }
