@@ -11,6 +11,8 @@ import {
     parseVerify,
     sheetCell,
     spreadsheetId,
+    TEST_MESSAGE,
+    testSendRequest,
     verifyRequest,
     type IntegrationCreds,
 } from '../src/connectors/integration-calls';
@@ -83,7 +85,9 @@ describe('WhatsApp (WAS)', () => {
         );
         expect(req.url).toBe('https://was.imagina.cloud/api/send/whatsapp');
         expect(req.headers['content-type']).toBe('application/x-www-form-urlencoded');
-        expect(req.body).toBe('secret=sk_abc123&account=acc-9&recipient=%2B573001112233&type=text&message=Hola%20Ana');
+        // Los MISMOS campos que la petición que ya funciona en producción
+        // (webhook a mano contra WAS): sin `type`, WAS asume texto.
+        expect(req.body).toBe('secret=sk_abc123&account=acc-9&recipient=%2B573001112233&message=Hola%20Ana');
     });
 
     it('un servidor propio reemplaza al por defecto; un documento viaja como document', () => {
@@ -126,10 +130,41 @@ describe('WhatsApp (WAS)', () => {
             { value: 'u2', label: '+5730022' },
         ]);
         expect(ok.label).toBe('+5730022');
-        expect(parseVerify('whatsapp', 200, '{"status":401,"message":"Invalid secret"}', c).ok).toBe(false);
         const unknown = parseVerify('whatsapp', 404, '<html>', c);
         expect(unknown.ok).toBe(true);
         expect(unknown.warning).toMatch(/a mano/);
+    });
+
+    it('el listado es una AYUDA: una clave sin permiso de listar NO se rechaza (v0.1.204)', () => {
+        // Las claves de WAS/Zender tienen permisos por función: una clave de
+        // envío recibe 403 al listar cuentas y manda perfecto.
+        const c = creds({ secret: 's', fields: { account: 'u2' } });
+        for (const [status, body] of [
+            [403, '{"status":403,"message":"This API key has no permission for wa_accounts"}'],
+            [200, '{"status":401,"message":"Invalid secret"}'],
+            [401, ''],
+        ] as const) {
+            const out = parseVerify('whatsapp', status, body, c);
+            expect(out.ok).toBe(true);
+            expect(out.error).toBeNull();
+            expect(out.warning).toMatch(/mensaje de prueba/);
+        }
+        // Lo que dijo WAS llega a la persona, textual.
+        expect(parseVerify('whatsapp', 403, '{"status":403,"message":"Sin permiso"}', c).warning).toContain(
+            '«Sin permiso»',
+        );
+    });
+
+    it('el mensaje de prueba es un envío real con la misma función que el motor', () => {
+        const req = testSendRequest('whatsapp', creds({ secret: 'k', fields: { account: 'acc-1' } }), ' +57 300 111 2233 ')!;
+        expect(req.url).toBe('https://was.imagina.cloud/api/send/whatsapp');
+        const body = new URLSearchParams(req.body!);
+        expect(body.get('recipient')).toBe('+573001112233');
+        expect(body.get('account')).toBe('acc-1');
+        expect(body.get('message')).toBe(TEST_MESSAGE);
+        const tg = testSendRequest('telegram', creds({ secret: '9:x' }), '@canal')!;
+        expect(JSON.parse(tg.body!)).toMatchObject({ chat_id: '@canal', text: TEST_MESSAGE });
+        expect(testSendRequest('slack', creds(), '#x')).toBeNull();
     });
 });
 

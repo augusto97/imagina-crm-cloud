@@ -177,7 +177,13 @@ export interface IntegrationFieldDef {
 
 export type IntegrationAuth =
     | { kind: 'oauth'; provider: IntegrationProvider; scopes: string }
-    | { kind: 'key'; fields: IntegrationFieldDef[]; how_to: string[] };
+    | {
+          kind: 'key';
+          fields: IntegrationFieldDef[];
+          how_to: string[];
+          /** Mensaje de prueba real antes de guardar: a quién se le manda. */
+          test?: { label: string; placeholder: string; help: string };
+      };
 
 export interface IntegrationDef {
     key: IntegrationKey;
@@ -312,8 +318,14 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             how_to: [
                 'Entrá a tu panel de WhatsApp (WAS).',
                 'Andá a Herramientas → Claves de API y copiá la clave.',
-                'Pegala acá y tocá «Buscar mis cuentas» para elegir el número.',
+                'Pegala acá y tocá «Buscar mis cuentas» para elegir el número. Si tu clave no tiene permiso para listar cuentas, escribí a mano el identificador de la cuenta (el mismo que ya usás en tus envíos).',
+                'Mandate un mensaje de prueba a tu propio número: si llega, quedó conectado.',
             ],
+            test: {
+                label: 'Número para el mensaje de prueba',
+                placeholder: '+573001234567',
+                help: 'Con indicativo de país. Llega un WhatsApp real desde la cuenta elegida.',
+            },
         },
         actions: [
             action({
@@ -384,6 +396,11 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 'Elegí un nombre y copiá el token que te devuelve.',
                 'Agregá el bot al grupo o canal donde quieras recibir los avisos.',
             ],
+            test: {
+                label: 'Chat para el mensaje de prueba',
+                placeholder: '-1001234567890 o @mi_canal',
+                help: 'El ID del chat, grupo o canal donde está el bot.',
+            },
         },
         actions: [
             action({
@@ -582,6 +599,12 @@ export const verifyIntegrationSchema = z.object({
     fields: z.record(z.string().max(4000)).default({}),
     /** Para reusar la clave ya guardada sin volver a pegarla. */
     connection_id: idSchema.nullish(),
+    /**
+     * Destino de un mensaje de prueba REAL (número de WhatsApp, chat de
+     * Telegram). Es lo único que prueba una clave de verdad: listar cuentas
+     * puede estar prohibido para una clave que envía perfecto.
+     */
+    test_to: z.string().trim().max(120).nullish(),
 });
 export type VerifyIntegrationInput = z.infer<typeof verifyIntegrationSchema>;
 
@@ -594,6 +617,8 @@ export const verifyIntegrationResultSchema = z.object({
     warning: z.string().nullable(),
     /** Valores posibles para los campos con `lookup` (cuentas de WhatsApp). */
     options: z.record(z.array(z.object({ value: z.string(), label: z.string() }))),
+    /** Se pidió un mensaje de prueba y el servicio lo aceptó. */
+    test_sent: z.boolean().default(false),
 });
 export type VerifyIntegrationResult = z.infer<typeof verifyIntegrationResultSchema>;
 

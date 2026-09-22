@@ -8,7 +8,7 @@ import type {
     IntegrationFieldDef,
     VerifyIntegrationResult,
 } from '@imagina-base/shared';
-import { CheckCircle2, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Search, Send, X } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -26,6 +26,10 @@ import { cn } from '@/lib/utils';
  * criollo y con los pasos para encontrarlos. La clave se prueba contra el
  * servicio antes de guardarse: si está mal, se sabe acá y no a la primera
  * automatización que falle.
+ *
+ * v0.1.204: la prueba que vale es un MENSAJE REAL («Enviar prueba»). Listar
+ * cuentas es sólo una ayuda: una clave de WAS con permiso de envío y sin
+ * permiso de listado es perfectamente válida.
  */
 export function IntegrationKeyDialog({
     def,
@@ -43,6 +47,9 @@ export function IntegrationKeyDialog({
 }): JSX.Element {
     const fields: IntegrationFieldDef[] = def.auth.kind === 'key' ? def.auth.fields : [];
     const howTo = def.auth.kind === 'key' ? def.auth.how_to : [];
+    const testDef = def.auth.kind === 'key' ? (def.auth.test ?? null) : null;
+    const [testTo, setTestTo] = useState('');
+    const [sentTo, setSentTo] = useState<string | null>(null);
     const [values, setValues] = useState<Record<string, string>>(() =>
         Object.fromEntries(fields.filter((f) => !f.secret).map((f) => [f.key, f.default])),
     );
@@ -68,6 +75,24 @@ export function IntegrationKeyDialog({
             }
         },
         onError: (err) => setError(errText(err)),
+    });
+
+    const sendTest = useMutation({
+        mutationFn: (to: string) =>
+            api.integrationVerify(def.key, {
+                fields: payload(),
+                connection_id: connection?.id ?? null,
+                test_to: to,
+            }),
+        onSuccess: (res, to) => {
+            setCheck(res);
+            setError(res.ok ? null : res.error);
+            setSentTo(res.ok && res.test_sent ? to : null);
+        },
+        onError: (err) => {
+            setSentTo(null);
+            setError(errText(err));
+        },
     });
 
     const save = useMutation({
@@ -126,6 +151,7 @@ export function IntegrationKeyDialog({
                         onChange={(e) => {
                             setValues((prev) => ({ ...prev, [f.key]: e.target.value }));
                             if (f.secret) setCheck(null);
+                            setSentTo(null);
                         }}
                         data-testid={`imcrm-integration-field-${f.key}`}
                     />
@@ -224,17 +250,64 @@ export function IntegrationKeyDialog({
                             </div>
                         )}
 
-                        {check?.ok && !error && (
+                        {testDef && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+                                <Label htmlFor="int-test-to">{testDef.label}</Label>
+                                <div className="imcrm-flex imcrm-gap-2">
+                                    <Input
+                                        id="int-test-to"
+                                        autoComplete="off"
+                                        value={testTo}
+                                        placeholder={testDef.placeholder}
+                                        onChange={(e) => {
+                                            setTestTo(e.target.value);
+                                            setSentTo(null);
+                                        }}
+                                        data-testid="imcrm-integration-test-to"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={
+                                            sendTest.isPending || testTo.trim() === '' || (!secretTyped && !editing)
+                                        }
+                                        onClick={() => {
+                                            setError(null);
+                                            sendTest.mutate(testTo.trim());
+                                        }}
+                                        data-testid="imcrm-integration-test-send"
+                                    >
+                                        <Send className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        {sendTest.isPending ? __('Enviando…') : __('Enviar prueba')}
+                                    </Button>
+                                </div>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground">{testDef.help}</p>
+                            </div>
+                        )}
+
+                        {sentTo !== null && !error && (
                             <p
                                 className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-success"
-                                data-testid="imcrm-integration-verified"
+                                data-testid="imcrm-integration-test-ok"
                             >
-                                <CheckCircle2 className="imcrm-h-4 imcrm-w-4" />
-                                {check.account_label
-                                    ? `${__('Clave válida')} · ${check.account_label}`
-                                    : __('Clave válida')}
+                                <CheckCircle2 className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
+                                {`${__('Mensaje de prueba enviado a')} ${sentTo}. ${__('Si te llegó, ya podés conectar.')}`}
                             </p>
                         )}
+                        {sentTo === null &&
+                            check?.ok &&
+                            !error &&
+                            (check.account_label !== null || Object.values(check.options).some((o) => o.length > 0)) && (
+                                <p
+                                    className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-success"
+                                    data-testid="imcrm-integration-verified"
+                                >
+                                    <CheckCircle2 className="imcrm-h-4 imcrm-w-4" />
+                                    {check.account_label
+                                        ? `${__('Clave válida')} · ${check.account_label}`
+                                        : __('Clave válida')}
+                                </p>
+                            )}
                         {check?.warning && !error && (
                             <p className="imcrm-text-xs imcrm-text-warning">{check.warning}</p>
                         )}

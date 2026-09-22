@@ -41,9 +41,11 @@ import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box'
 import { findConnectorAction, readConnectorActions } from './connector-actions';
 import { IntegrationAppsService } from './integration-apps.service';
 import {
+    checkIntegrationResponse,
     identityLabel,
     identityRequest,
     parseVerify,
+    testSendRequest,
     verifyRequest,
     type IntegrationCreds,
 } from './integration-calls';
@@ -1018,16 +1020,58 @@ export class ConnectorsService {
                 error: `Falta «${secretField(def)?.label ?? 'la clave'}».`,
                 warning: null,
                 options: {},
+                test_sent: false,
             };
         }
         const outcome = await this.runVerify(key, creds);
-        return {
+        const base: VerifyIntegrationResult = {
             ok: outcome.ok,
             account_label: outcome.label,
             error: outcome.error,
             warning: outcome.warning,
             options: outcome.options,
+            test_sent: false,
         };
+        const to = (input.test_to ?? '').trim();
+        if (!outcome.ok || to === '') return base;
+
+        const test = await this.runTestSend(key, def, creds, to);
+        if (test !== null) return { ...base, ok: false, error: test };
+        // La clave acaba de mandar un mensaje de verdad: el aviso de «no pude
+        // listar tus cuentas» ya no aporta nada y sólo confunde.
+        return { ...base, warning: null, test_sent: true };
+    }
+
+    /**
+     * Manda el mensaje de prueba con la MISMA función que usa el motor. Devuelve
+     * el motivo legible si no salió (con lo que dijo el servicio), o `null`.
+     */
+    private async runTestSend(
+        key: IntegrationKey,
+        def: IntegrationDef,
+        creds: IntegrationCreds,
+        to: string,
+    ): Promise<string | null> {
+        if (key === 'whatsapp' && (creds.fields.account ?? '').trim() === '') {
+            const label = def.auth.kind === 'key' ? def.auth.fields.find((f) => f.key === 'account')?.label : null;
+            return `Elegí o escribí «${label ?? 'la cuenta'}» antes de mandar la prueba.`;
+        }
+        const req = testSendRequest(key, creds, to);
+        if (!req) return null;
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                body: req.body,
+                captureBody: true,
+                timeoutMs: 15_000,
+            });
+            const reason = checkIntegrationResponse(key, res.status, res.body ?? '');
+            return reason === null ? null : `El mensaje de prueba no salió. ${redactValues(reason, [creds.secret])}`;
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return `No pudimos mandar el mensaje de prueba (${message}).`;
+        }
     }
 
     /** Conecta (o actualiza) una app por clave. Una clave rechazada NO se guarda. */
