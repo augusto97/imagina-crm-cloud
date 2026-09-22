@@ -5,7 +5,25 @@ import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
 import { loadEnv } from '../src/config/env';
-import { automations, fields, impersonationLog, lists as listsTable, memberships, records, tenants, users } from '../src/db/schema';
+import {
+    attachments,
+    auditLog,
+    automations,
+    comments,
+    connections,
+    fields,
+    impersonationLog,
+    listGroups,
+    listSlugHistory,
+    lists as listsTable,
+    memberships,
+    mentions,
+    records,
+    recurrences,
+    templates,
+    tenants,
+    users,
+} from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -266,6 +284,73 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         expect(await pg.db.select().from(memberships).where(eq(memberships.tenantId, id))).toHaveLength(0);
         // El owner (usuario) NO se borra (puede estar en otras empresas).
         expect(await pg.db.select().from(users).where(eq(users.email, 'del@t.test'))).toHaveLength(1);
+    });
+
+    /**
+     * v0.1.197 — el borrado es una lista EXPLÍCITA de tablas (no hay cascada
+     * desde `tenants`), así que cada release que agregó una tabla con
+     * `tenant_id` podía dejar la empresa imborrable con un 500 por FK. El test
+     * anterior sólo sembraba listas/records/automatizaciones, que es por lo
+     * que la regresión pasó desapercibida: acá se siembran las tablas que
+     * llegaron después.
+     */
+    it('deleteTenant: borra también adjuntos, conexiones, plantillas, carpetas, menciones, recurrencias y bitácora', async () => {
+        const id = await seedTenant({ name: 'Borrar todo', ownerEmail: 'full@t.test', records: 2 });
+        const [owner] = await pg.db.select().from(users).where(eq(users.email, 'full@t.test'));
+        const [list] = await pg.db.select().from(listsTable).where(eq(listsTable.tenantId, id));
+        const [record] = await pg.db.select().from(records).where(eq(records.tenantId, id));
+        const [field] = await pg.db
+            .insert(fields)
+            .values({ tenantId: id, listId: list!.id, slug: 'vence', label: 'Vence', type: 'date' })
+            .returning();
+
+        const [group] = await pg.db
+            .insert(listGroups)
+            .values({ tenantId: id, name: 'Carpeta' })
+            .returning();
+        await pg.db.update(listsTable).set({ groupId: group!.id }).where(eq(listsTable.id, list!.id));
+        await pg.db.insert(listSlugHistory).values({ tenantId: id, listId: list!.id, slug: 'viejo' });
+        await pg.db.insert(attachments).values({
+            tenantId: id,
+            filename: 'x.txt',
+            storageKey: `t${id}/x.txt`,
+            createdBy: owner!.id,
+        });
+        await pg.db.insert(connections).values({ tenantId: id, name: 'Gateway', createdBy: owner!.id });
+        await pg.db.insert(templates).values({ tenantId: id, name: 'Plantilla', blueprint: {} });
+        const [comment] = await pg.db
+            .insert(comments)
+            .values({ tenantId: id, listId: list!.id, recordId: record!.id, userId: owner!.id, body: 'hola' })
+            .returning();
+        await pg.db.insert(mentions).values({
+            tenantId: id,
+            commentId: comment!.id,
+            listId: list!.id,
+            recordId: record!.id,
+            mentionedUserId: owner!.id,
+            authorUserId: owner!.id,
+        });
+        await pg.db.insert(recurrences).values({
+            tenantId: id,
+            listId: list!.id,
+            recordId: record!.id,
+            dateFieldId: field!.id,
+            frequency: 'monthly',
+        });
+        await pg.db.insert(auditLog).values({ tenantId: id, action: 'list.create', targetLabel: 'X' });
+
+        await platform.deleteTenant(id);
+        await expect(platform.getTenant(id)).rejects.toBeInstanceOf(NotFoundException);
+        expect(await pg.db.select().from(attachments).where(eq(attachments.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(connections).where(eq(connections.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(templates).where(eq(templates.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(listGroups).where(eq(listGroups.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(mentions).where(eq(mentions.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(recurrences).where(eq(recurrences.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(auditLog).where(eq(auditLog.tenantId, id))).toHaveLength(0);
+        expect(await pg.db.select().from(listSlugHistory).where(eq(listSlugHistory.tenantId, id))).toHaveLength(0);
+        // El usuario sigue existiendo: puede estar en otras empresas.
+        expect(await pg.db.select().from(users).where(eq(users.email, 'full@t.test'))).toHaveLength(1);
     });
 
     it('deleteTenant: 404 si no existe', async () => {

@@ -27,6 +27,8 @@ import { FilesService } from './files.service';
                     : new LocalFileStorage(env.UPLOADS_DIR),
         },
     ],
-    exports: [FilesService],
+    // `FILE_STORAGE` sale del módulo para que la migración de empresas
+    // (ADR-S23) mueva los bytes por el mismo driver que los sube.
+    exports: [FilesService, FILE_STORAGE],
 })
 export class FilesModule {}

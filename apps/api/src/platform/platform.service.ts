@@ -46,11 +46,22 @@ import {
     savedViews,
     tenants,
     users,
+    auditLog,
+    automationHooks,
+    connections,
+    listGroups,
+    listSlugHistory,
+    mentions,
+    personalAccessTokens,
+    recurrences,
+    relations,
+    templates,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
 import { EmailQuotaService, periodOf } from '../mail/email-quota.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
+import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
 
 /**
  * Consola de plataforma (operador SaaS). Corre sobre la conexión BASE (rol
@@ -72,6 +83,9 @@ export class PlatformService {
         // v0.1.181 (ADR-S21) — opcionales: los specs arman el service a mano.
         @Optional() private readonly aiQuota?: AiQuotaService,
         @Optional() private readonly aiSettings?: AiSettingsService,
+        // v0.1.197 — borrar una empresa también borra sus bytes. Opcional por
+        // el mismo motivo que los anteriores.
+        @Optional() @Inject(FILE_STORAGE) private readonly storage?: FileStorage,
     ) {}
 
     /**
@@ -275,22 +289,55 @@ export class PlatformService {
      */
     async deleteTenant(id: number): Promise<void> {
         await this.getTenant(id); // 404 si no existe.
+        // Los bytes de los adjuntos viven fuera de la base: si no se borran
+        // acá quedan ocupando disco para siempre, y el operador pidió borrar
+        // la empresa, no dejar sus archivos dando vueltas.
+        const files = await this.db
+            .select({ key: attachments.storageKey })
+            .from(attachments)
+            .where(eq(attachments.tenantId, id));
+
         await this.db.transaction(async (tx: Tx) => {
+            // Orden por dependencias, hijas primero. La lista es EXPLÍCITA (no
+            // hay cascada desde `tenants`), así que toda tabla con `tenant_id`
+            // tiene que estar acá: la que falte deja la empresa imborrable con
+            // un 500 por violación de FK — fue el caso de attachments,
+            // connections, templates, carpetas, menciones, recurrencias y la
+            // bitácora, agregadas en releases posteriores al original.
+            await tx.delete(mentions).where(eq(mentions.tenantId, id));
+            await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));
             await tx.delete(comments).where(eq(comments.tenantId, id));
             await tx.delete(activity).where(eq(activity.tenantId, id));
+            await tx.delete(relations).where(eq(relations.tenantId, id));
+            await tx.delete(recurrences).where(eq(recurrences.tenantId, id));
             await tx.delete(portalLinks).where(eq(portalLinks.tenantId, id));
             await tx.delete(publicLists).where(eq(publicLists.tenantId, id));
             await tx.delete(savedFilters).where(eq(savedFilters.tenantId, id));
             await tx.delete(savedViews).where(eq(savedViews.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
+            await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));
             await tx.delete(dashboards).where(eq(dashboards.tenantId, id));
             await tx.delete(lists).where(eq(lists.tenantId, id));
+            await tx.delete(listGroups).where(eq(listGroups.tenantId, id));
+            await tx.delete(templates).where(eq(templates.tenantId, id));
+            await tx.delete(connections).where(eq(connections.tenantId, id));
+            await tx.delete(attachments).where(eq(attachments.tenantId, id));
+            await tx.delete(auditLog).where(eq(auditLog.tenantId, id));
+            await tx.delete(emailUsage).where(eq(emailUsage.tenantId, id));
+            await tx.delete(aiUsage).where(eq(aiUsage.tenantId, id));
+            await tx.delete(personalAccessTokens).where(eq(personalAccessTokens.tenantId, id));
             await tx.delete(memberships).where(eq(memberships.tenantId, id));
             await tx.delete(tenants).where(eq(tenants.id, id));
         });
+
+        // Best-effort: la empresa ya no existe en la base; un byte que no se
+        // pueda borrar no tiene que revertir el borrado.
+        for (const f of files) {
+            await this.storage?.delete(f.key).catch(() => undefined);
+        }
     }
 
     // ─────────────── Impersonación de soporte (F5) ───────────────

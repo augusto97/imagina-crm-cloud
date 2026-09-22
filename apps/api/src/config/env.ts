@@ -127,6 +127,8 @@ const envSchema = z.object({
     // estos overrides sirven para dev/tests o para guardar las copias en
     // otro disco.
     BACKUPS_DIR: z.string().default(''),
+    /** v0.1.197 — dónde se guardan los archivos de migración de empresa. */
+    TRANSFERS_DIR: z.string().default(''),
     BACKUPS_SCRIPTS_DIR: z.string().default(''),
     // v0.1.181 (ADR-S21) — clave del proveedor IA por env: respaldo de la que el
     // superadmin carga en Plataforma → Asistente IA (Redis `platform:ai`).

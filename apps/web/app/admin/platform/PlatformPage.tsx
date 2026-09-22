@@ -20,6 +20,7 @@ import { PlatformAiCard } from './PlatformAiCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
+import { PlatformTransfersCard } from './PlatformTransfersCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
 import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
@@ -180,6 +181,7 @@ export function PlatformPage(): JSX.Element {
             {tab === 'ai' && <PlatformAiCard />}
             {tab === 'updates' && <SystemUpdatesPanel />}
             {tab === 'backups' && <BackupsPanel />}
+            {tab === 'transfers' && <PlatformTransfersCard />}
         </div>
     );
 }
