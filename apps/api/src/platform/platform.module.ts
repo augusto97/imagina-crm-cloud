@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
+import { FilesModule } from '../files/files.module';
 import { PlatformController } from './platform.controller';
 import { PlatformService } from './platform.service';
+import { TenantTransferController } from './tenant-transfer.controller';
+import { TenantTransferService } from './tenant-transfer.service';
 
 /**
  * Consola de plataforma (operador SaaS). `SuperadminGuard` se provee acá (no es
@@ -10,8 +13,8 @@ import { PlatformService } from './platform.service';
  * DbModule @Global.
  */
 @Module({
-    imports: [AuthModule],
-    controllers: [PlatformController],
-    providers: [PlatformService, SuperadminGuard],
+    imports: [AuthModule, FilesModule],
+    controllers: [PlatformController, TenantTransferController],
+    providers: [PlatformService, TenantTransferService, SuperadminGuard],
 })
 export class PlatformModule {}

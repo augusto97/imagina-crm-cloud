@@ -910,7 +910,62 @@ tipo de acción toca seis lugares entre backend, front y el prompt del
 asistente), y para la fase 3 OAuth2 como CLIENTE, que es la pieza que falta
 para Google o Slack: la app ya es servidor OAuth desde ADR-S21 fase 4.
 
+### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
+
+**Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
+restaurar a un instante, pero no para los tres casos que aparecen cuando el
+negocio crece — partir un servidor en dos, venderle una empresa a otro
+operador, o sacar a un cliente de la nube compartida a la suya. Para eso hace
+falta un artefacto de UNA empresa, y el problema es que todos los ids de la app
+son `bigint generated always as identity` sobre tablas COMPARTIDAS: al insertar
+en el destino se regeneran. Una referencia que no se traduzca no falla
+ruidosamente, **apunta a la fila de otra empresa**, que es la peor clase de bug
+posible en un producto multi-tenant.
+
+**Decisión.** Un **archivo portable por empresa** (`imagina-tenant-<slug>-<UTC>.tar`)
+con `manifest.json`, una NDJSON por tabla y los bytes de los adjuntos; el
+import lo inserta regenerando ids y **re-mapeando toda referencia**.
+
+- **El re-mapeo vive en un módulo PURO y testeado aparte**
+  (`tenant-transfer.remap.ts`). Cubre cuatro vocabularios distintos: las claves
+  por convención (`*_field_id`, `*_field_ids`, `list_id`, `inputs`) más las que
+  no siguen ninguna y hay que nombrar a mano (`connection_id`,
+  `default_template_id`, `view_id`, `related_lists`); las CLAVES `f{field_id}`
+  de `records.data` y del diff de actividad, con los tipos `file`/`user` cuyo
+  VALOR también es un id; el árbol ProseMirror de la descripción
+  (`mentionUser`, `mentionRecord`, `imageBlock`, `fileBlock`) a cualquier
+  profundidad; y `lists.settings`, donde los ids de usuario son las CLAVES de
+  `permissions.users`. Un id que no resuelve queda en `null` y la referencia se
+  descarta: dejarlo con el número viejo se lo daría a otra persona.
+- **Lo que NO viaja es tan importante como lo que viaja.** El dominio propio
+  (único global, apunta al servidor anterior), el token público de cada lista y
+  la URL de los webhooks entrantes son **credenciales de la instancia de
+  origen**: el import emite unos nuevos y lo dice en los avisos. Los tokens
+  personales y OAuth se guardan sólo hasheados, así que no hay nada que mover.
+- **Los secretos viajan cifrados con una huella de la `SECRETS_KEY` del
+  origen.** Si el destino tiene otra clave no se pueden descifrar, así que se
+  **descartan** en vez de guardar basura que fallaría recién al mandar un
+  correo (la lección de v0.1.150).
+- **Las personas se deduplican por email.** Quien ya tiene cuenta en el destino
+  se vincula (conserva su contraseña, su 2FA y sus otras empresas); quien no,
+  se crea con el hash de argon2, que es portable.
+- **Todo el import corre en UNA transacción** y los bytes escritos fuera de ella
+  se borran si revierte: nunca queda una empresa a medio armar.
+- **El orden es el de las dependencias**, y el único tramo no obvio está
+  comentado: los adjuntos van ANTES que los registros (`data` los referencia),
+  los registros se insertan en dos pasadas (el padre de una subtarea y las
+  menciones de la descripción apuntan a registros que en la primera todavía no
+  existen), la config de los campos derivados se reescribe cuando ya existen
+  todos, y `lists.settings` se escribe AL FINAL porque referencia campos,
+  vistas, plantillas, otras listas y personas.
+
+**Consecuencias.** La empresa de origen queda intacta: migrar es copiar, y
+darla de baja es una decisión aparte del operador (si el import fallara a
+mitad, el cliente sigue operando donde estaba). El export es síncrono y el tar
+se arma con otro nombre y se renombra al final, así una request cortada nunca
+deja un archivo a medias en el listado. Queda pendiente el caso de la empresa
+con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
 ---
 
-**Versión del documento:** 1.16.0 (conectores: credenciales reutilizables y cifradas — ADR-S22)
+**Versión del documento:** 1.17.0 (migración de una empresa entre instancias — ADR-S23)

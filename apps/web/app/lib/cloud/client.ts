@@ -108,6 +108,9 @@ import {
     backupsStatusSchema,
     backupsSettingsSchema,
     updateBackupsSettingsSchema,
+    exportTenantResultSchema,
+    importTenantResultSchema,
+    tenantTransferStatusSchema,
     workspaceMemberSchema,
     registerInputSchema,
     slugCheckResultSchema,
@@ -168,6 +171,11 @@ import {
     type UpdateMemberRoleInput,
     type UpdateStatus,
     type BackupsStatus,
+    type ExportTenantInput,
+    type ExportTenantResult,
+    type ImportTenantBody,
+    type ImportTenantResult,
+    type TenantTransferStatus,
     type BackupsSettings,
     type UpdateBackupsSettingsInput,
     type WorkspaceMember,
@@ -877,6 +885,43 @@ export class CloudClient {
     /** URL de descarga (misma origin, sesión por cookie): sirve para un <a href>. */
     backupDownloadUrl(name: string): string {
         return `${this.baseUrl}/system/backups/${encodeURIComponent(name)}/download`;
+    }
+
+    // --- migración de UNA empresa entre instancias (v0.1.197, ADR-S23) ---
+    transfersStatus(): Promise<TenantTransferStatus> {
+        return this.request('GET', '/platform/transfers', { schema: tenantTransferStatusSchema });
+    }
+    transferExport(tenantId: number, input: ExportTenantInput): Promise<ExportTenantResult> {
+        return this.request('POST', `/platform/tenants/${tenantId}/export`, {
+            body: input,
+            schema: exportTenantResultSchema,
+        });
+    }
+    transferImport(name: string, input: ImportTenantBody): Promise<ImportTenantResult> {
+        return this.request('POST', `/platform/transfers/${encodeURIComponent(name)}/import`, {
+            body: input,
+            schema: importTenantResultSchema,
+        });
+    }
+    transferRemove(name: string): Promise<void> {
+        return this.request('DELETE', `/platform/transfers/${encodeURIComponent(name)}`, {});
+    }
+    transferDownloadUrl(name: string): string {
+        return `${this.baseUrl}/platform/transfers/${encodeURIComponent(name)}/download`;
+    }
+    /** Sube un archivo exportado en otro servidor (multipart, campo `file`). */
+    async transferUpload(file: File): Promise<{ file: string }> {
+        const form = new FormData();
+        form.append('file', file);
+        const response = await fetch(`${this.baseUrl}/platform/transfers/upload`, {
+            method: 'POST',
+            headers: { Accept: 'application/json' },
+            credentials: 'include',
+            body: form,
+        });
+        const payload: unknown = await response.json().catch(() => null);
+        if (!response.ok) throw toApiError(payload, response.status);
+        return z.object({ file: z.string() }).parse(payload);
     }
 
     // --- SMTP de plataforma (ADR-S11, sólo superadmin) ---

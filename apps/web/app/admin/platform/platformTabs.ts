@@ -1,4 +1,4 @@
-import { Building2, CreditCard, DatabaseBackup, History, Mail, RefreshCw, Sparkles, Users } from 'lucide-react';
+import { ArrowRightLeft, Building2, CreditCard, DatabaseBackup, History, Mail, RefreshCw, Sparkles, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -8,7 +8,7 @@ import type { LucideIcon } from 'lucide-react';
  * el punto de render. Los ajustes GLOBALES de la app (SMTP de plataforma,
  * actualizaciones) viven acá, no en Ajustes del workspace.
  */
-export type PlatformTabId = 'tenants' | 'users' | 'plans' | 'audit' | 'correo' | 'ai' | 'updates' | 'backups';
+export type PlatformTabId = 'tenants' | 'users' | 'plans' | 'audit' | 'correo' | 'ai' | 'updates' | 'backups' | 'transfers';
 
 export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; icon: LucideIcon }> = [
     { id: 'tenants', label: 'Empresas', icon: Building2 },
@@ -20,6 +20,8 @@ export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; ic
     { id: 'ai', label: 'Asistente IA', icon: Sparkles },
     { id: 'updates', label: 'Actualizaciones', icon: RefreshCw },
     { id: 'backups', label: 'Copias de seguridad', icon: DatabaseBackup },
+    // v0.1.197 — mover UNA empresa a otra instancia (ADR-S23).
+    { id: 'transfers', label: 'Migrar empresas', icon: ArrowRightLeft },
 ];
 
 export function isPlatformTab(value: string | null): value is PlatformTabId {

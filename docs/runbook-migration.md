@@ -118,10 +118,51 @@ servidor nuevo al mismo bucket (o replicalo).
 
 ## Escenario 3 — Migrar UNA empresa (tenant) a otra instancia
 
-Pendiente (próximo release): exportar/importar una empresa con sus listas,
-registros, archivos, miembros y ajustes entre instancias, con re-mapeo de
-ids. Hoy la opción es por lista (`GET /lists/:l/export` + import) o migrar la
-instancia completa (escenario 2).
+Para partir un servidor en dos, venderle una empresa a otro operador o sacar a
+un cliente de la nube compartida a la suya. Todo desde **Plataforma → Migrar
+empresas** (superadmin). ADR-S23.
+
+1. **En el servidor de ORIGEN**: elegí la empresa y tocá **Exportar**. Deja un
+   `imagina-tenant-<slug>-<fecha>.tar` con sus listas, campos, registros
+   (incluidas subtareas y descripciones), vistas, tableros, automatizaciones,
+   comentarios, actividad, archivos subidos y miembros. Descargalo.
+2. **En el servidor de DESTINO**: **Subir archivo (.tar)**, después
+   **Importar acá**. Podés cambiarle el nombre y el identificador; si el
+   identificador ya está ocupado se usa el siguiente libre (`acme` → `acme-2`).
+3. **Revisá los avisos del import.** Son acciones pendientes, no ruido:
+   - El **enlace público** de cada lista es nuevo → hay que volver a repartirlo.
+   - La **URL de los webhooks entrantes** es nueva → actualizá el sistema que
+     los llama.
+   - El **dominio propio** no viaja (es único global y apunta al servidor
+     anterior): configuralo en Ajustes → Marca y movele el DNS.
+   - Si el destino tiene otra `SECRETS_KEY`, **no viajaron** la contraseña
+     SMTP, la clave de IA, las credenciales de los conectores ni los segundos
+     factores: hay que volver a cargarlos.
+4. **Las personas se deduplican por email**: quien ya tenía cuenta en el
+   destino se vincula (conserva su contraseña y su 2FA); el resto se crea con
+   su hash, así que entran con la misma contraseña de siempre. Las **sesiones
+   abiertas no viajan**: todos vuelven a iniciar sesión.
+5. **La empresa de origen queda intacta.** Migrar es COPIAR: si algo sale mal,
+   el cliente sigue operando donde estaba. Recién cuando verificaste el destino
+   (entrar, ver listas y registros, descargar un adjunto) dás de baja la
+   original desde Plataforma → Empresas.
+
+> Con `STORAGE_DRIVER=s3` los bytes de los adjuntos igual viajan DENTRO del
+> archivo: el import los vuelve a subir al storage del destino con claves
+> nuevas. No hace falta compartir el bucket.
+
+**Por CLI** (mismo efecto, útil para automatizar):
+
+```bash
+curl -sS -X POST "$API/api/v1/platform/tenants/$ID/export" \
+  -H 'content-type: application/json' -b cookies.txt \
+  -d '{"include_runs":true,"include_files":true}'
+curl -sS "$API/api/v1/platform/transfers/$NOMBRE/download" -b cookies.txt -o empresa.tar
+# en el destino
+curl -sS -X POST "$API2/api/v1/platform/transfers/upload" -b cookies2.txt -F file=@empresa.tar
+curl -sS -X POST "$API2/api/v1/platform/transfers/$NOMBRE/import" \
+  -H 'content-type: application/json' -b cookies2.txt -d '{"slug":"acme"}'
+```
 
 ## Cadencia recomendada
 
@@ -138,6 +179,7 @@ instancia completa (escenario 2).
 |---|---|
 | `BASE_PATH` | raíz del layout (`releases/ shared/ current`). Deriva todo lo demás |
 | `BACKUPS_DIR` | guardar las copias en otro disco (el panel también lo usa) |
+| `TRANSFERS_DIR` | dónde viven los archivos de migración por empresa (default: `<BACKUPS_DIR>/transfers`, o `shared/transfers`) |
 | `BACKUP_GPG_RECIPIENT` | cifrar cada snapshot (`.tar.gpg`; se restaura por CLI con la clave) |
 | `SNAPSHOT_KEEP` / `SNAPSHOT_INCLUDE_ENV` | retención y si viaja el `.env` (CLI; el panel usa sus ajustes) |
 | `PG_CONTAINER` | sin `pg_dump`/`psql` en el host, se usan por `docker exec`. Redis no necesita CLI: los scripts hablan RESP con `redis-kv.mjs` (Node puro, viaja junto a ellos) |

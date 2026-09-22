@@ -387,7 +387,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `isCloud()` eliminado; `moduleEnabled` lee sólo CLOUD_WIRED.
         Typecheck/lint 0 errores, build OK, verificado E2E en navegador.
 
-- [ ] **F6 — Paridad total con el plugin** (brechas detectadas en la auditoría
+- [x] **F6 — Paridad total con el plugin** (brechas detectadas en la auditoría
       v0.1.47/48; orden: relations → portal completo → búsqueda → menciones →
       media → recurrencias → computed):
   - [x] **Campos `relation` (v0.1.49)**: tabla `relations` (migración 0023,
@@ -1158,7 +1158,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (editor con chrome=control, preview cero dashed/labels/bordes,
         fondo de página aplicado).
 
-- [ ] **F7 — Dashboards premium** (plan acordado con el usuario: motor
+- [x] **F7 — Dashboards premium** (plan acordado con el usuario: motor
       honesto → look premium → widgets nuevos → interactividad; el grid
       sigue en react-grid-layout — física correcta para tableros — y se
       COMPARTEN las piezas del editor de plantillas: blockStyle/presets/
@@ -1494,7 +1494,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dashboards con charts, editor de automatizaciones, ficha de registro
         y login.
 
-- [ ] **F8 — Auditoría integral post-v0.1.112** (hallazgos de la revisión
+- [x] **F8 — Auditoría integral post-v0.1.112** (hallazgos de la revisión
       completa pedida por el usuario; orden acordado: seguridad → robustez →
       escala):
   - [x] **Release de seguridad (v0.1.113)**:
@@ -3396,7 +3396,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `{{estado|label}}`="Pendiente de pago", picker con 3 chips e
         inserción de `{{servicio|label}}`).
 
-- [ ] **F9 — Copias de seguridad y migración** (pedido del usuario: "migrar
+- [x] **F9 — Copias de seguridad y migración** (pedido del usuario: "migrar
       un cliente o toda la app de servidor, o restaurar a una versión
       anterior, de forma robusta, eficiente y fácil"):
   - [x] **Snapshot completo + restauración + migración de servidor (v0.1.179,
@@ -3492,7 +3492,75 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con el `MAIL_FROM` sin comillas; verificado que el script viejo falla y
         el nuevo pasa) — 9/9 del spec, 482 API en verde.
 
-- [ ] **F10 — Asistente IA** (pedido del usuario: "que un cliente le pueda
+  - [x] **Migrar UNA empresa entre instancias (v0.1.197, ADR-S23)**: el
+        snapshot de ADR-S20 mueve el SERVIDOR entero; esto mueve un CLIENTE —
+        lo que hace falta para partir un servidor en dos, venderle una empresa
+        a otro operador o sacar a un cliente de la nube compartida a la suya.
+        **Plataforma → Migrar empresas**: exportar deja un
+        `imagina-tenant-<slug>-<UTC>.tar` (manifest + una NDJSON por tabla +
+        los bytes de los adjuntos; NDJSON y no un JSON gigante porque una
+        empresa con 200k registros no entra en memoria como una cadena), y el
+        import lo trae a este servidor. El problema real no es copiar filas: es
+        que **todos los ids son `bigint identity` sobre tablas COMPARTIDAS**,
+        así que al insertar se regeneran y una referencia sin traducir no falla
+        ruidosamente — **apunta a la fila de otra empresa**. Por eso el
+        re-mapeo vive en un módulo PURO y testeado aparte
+        (`tenant-transfer.remap.ts`) que cubre los cuatro vocabularios:
+        (a) las claves por convención (`*_field_id`, `*_field_ids`, `list_id`,
+        `inputs`) más las que no siguen ninguna y hay que nombrar a mano
+        (`connection_id`, `default_template_id`, `view_id`, `related_lists`);
+        (b) las CLAVES `f{field_id}` de `records.data` —con los tipos `file` y
+        `user`, cuyo VALOR también es un id— y el diff de `activity`, donde el
+        valor es `{from,to}` y traducirlo lo rompería; (c) el árbol ProseMirror
+        de la descripción (`mentionUser`/`mentionRecord`/`imageBlock`/
+        `fileBlock`) a cualquier profundidad; (d) `lists.settings`, donde los
+        ids de usuario son las CLAVES de `permissions.users`. Un id que no
+        resuelve queda en `null` y la referencia se descarta: dejarlo con el
+        número viejo se lo daría a OTRA persona. **Lo que NO viaja es tan
+        importante como lo que viaja**: el dominio propio (único global), el
+        token público de cada lista y la URL de los webhooks entrantes son
+        credenciales de la instancia de origen — el import emite unos nuevos y
+        lo dice en los avisos. Los **secretos** viajan cifrados con una huella
+        de la `SECRETS_KEY` del origen: si el destino tiene otra clave se
+        **descartan** en vez de guardar basura que fallaría recién al mandar un
+        correo (lección de v0.1.150). Las **personas se deduplican por email**
+        (quien ya tiene cuenta acá se vincula y conserva contraseña, 2FA y sus
+        otras empresas; el resto se crea con el hash de argon2, que es
+        portable). Todo el import corre en **una transacción** y los bytes
+        escritos fuera de ella se borran si revierte. El orden es el de las
+        dependencias y el único tramo no obvio está comentado: adjuntos ANTES
+        que los registros, registros en dos pasadas (el padre de una subtarea y
+        las menciones de la descripción apuntan a registros que en la primera
+        no existen), la config de los campos derivados en una segunda pasada, y
+        `lists.settings` AL FINAL. La empresa de origen **queda intacta**:
+        migrar es copiar, y darla de baja es otra decisión.
+        **Bug real encontrado en el camino** (y arreglado acá porque es
+        justo el paso siguiente del operador): **borrar una empresa desde la
+        consola devolvía 500**. `deleteTenant` es una lista EXPLÍCITA de tablas
+        (no hay cascada desde `tenants`) y se quedó en las que existían cuando
+        se escribió: faltaban adjuntos, conexiones, plantillas, carpetas,
+        historial de slugs, menciones, recurrencias, relaciones, hooks de
+        webhook, bitácora, uso mensual y tokens personales — o sea que
+        cualquier empresa con un archivo subido o una conexión era
+        **imborrable**. Ahora se borran todas en orden FK-safe y también los
+        **bytes** de los adjuntos (si no, el operador pide borrar la empresa y
+        sus archivos quedan ocupando disco para siempre). El test viejo sólo
+        sembraba listas/records/automatizaciones: por eso la regresión pasó
+        desapercibida, y el nuevo siembra las tablas que llegaron después.
+        11 tests unitarios del re-mapeo + 5 de integración con Postgres real
+        (round-trip completo: se importa en la MISMA base, así los ids nuevos
+        caen en otro rango y cualquier referencia sin traducir apuntaría a la
+        empresa original, que sigue ahí) + 1 de regresión del borrado — 595
+        API y 150 front en verde — y E2E en navegador 26/26 (exportar desde la
+        consola, manifest leído del propio tar, descarga con bytes exactos,
+        traversal rechazado, importar, la vista kanban de la empresa importada
+        apuntando al campo NUEVO, la tabla renderizando el registro, la empresa
+        de origen intacta, borrar el archivo).
+
+      **Con esto F9 queda completa: copias del servidor, restauración,
+      migración de servidor y migración por empresa.**
+
+- [x] **F10 — Asistente IA** (pedido del usuario: "que un cliente le pueda
       pedir a la app una lista, un tablero o una automatización en lenguaje
       natural"; plan acordado en tres fases: estructura → datos → MCP; el
       usuario sumó la decisión comercial: clave global con restricciones Y/O
