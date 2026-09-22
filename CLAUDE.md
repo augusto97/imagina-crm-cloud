@@ -4621,6 +4621,35 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         se probó con sus respuestas simuladas, y la conexión real con cada uno
         queda para cuando el operador registre las apps.
 
+  - [x] **Fix de la integración de WhatsApp (WAS/Zender) — una clave de envío ya
+        no se rechaza (v0.1.204, reporte del usuario con captura: "WAS no reconoce
+        esa clave de API", con la MISMA clave que su automatización usa y
+        funciona)**: el conector de v0.1.203 validaba la clave pidiendo el
+        listado de cuentas (`/api/get/wa.accounts`) y tomaba un 401/403 como
+        "clave inválida" — pero las claves de Zender tienen **permisos por
+        función**, y una clave creada para ENVIAR recibe 403 al listar aunque
+        mande perfecto. O sea: se bloqueaba justo la clave que ya funciona en
+        producción. Se confirmó leyendo por el MCP la automatización real del
+        usuario (webhook a mano con `account`/`recipient`/`message` y el
+        `secret` inyectado por su conexión). Arreglos: (a) el **listado es una
+        ayuda, nunca una puerta** — si WAS no lo permite, se guarda igual y se
+        muestra lo que WAS respondió, textual, con la indicación de escribir la
+        cuenta a mano; (b) **"Enviar prueba"**: la verificación que vale es un
+        mensaje REAL (`test_to` en `verifyIntegrationSchema`) armado con la
+        MISMA función que usa el motor (`testSendRequest` →
+        `buildIntegrationRequest`) y leído con `checkIntegrationResponse` —
+        el 200 con error adentro de WAS se reporta con su motivo; también para
+        Telegram (ID del chat); (c) el envío de texto manda **exactamente** los
+        campos de la petición que funciona (se quitó `type=text`, que WAS asume);
+        (d) los pasos del diálogo explican la cuenta a mano y el mensaje de
+        prueba, y "Clave válida" sólo aparece cuando de verdad se comprobó algo.
+        3 tests unitarios + 1 de integración que reproduce el caso exacto
+        (listado 403 → guarda; prueba sale con los campos correctos; un 200 con
+        error de WAS se dice; sin cuenta no se manda nada) — 667 API, 154 front
+        y 66 shared en verde — + E2E navegador 9/9. **Límite de la
+        verificación**: el sandbox no llega a `was.imagina.cloud` (el proxy de
+        salida devuelve 403), así que el envío real se prueba en el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -345,6 +345,8 @@ export function buildIntegrationRequest(
     const v = compiled.values;
     switch (`${integration}.${actionKey}`) {
         case 'whatsapp.send_text':
+            // Exactamente los campos de la petición que ya funciona en
+            // producción (webhook a mano): `type` se omite, WAS asume texto.
             return {
                 url: `${wasServer(creds)}/api/send/whatsapp`,
                 method: 'POST',
@@ -353,7 +355,6 @@ export function buildIntegrationRequest(
                     ['secret', creds.secret],
                     ['account', creds.fields.account ?? ''],
                     ['recipient', phone(v.recipient ?? '')],
-                    ['type', 'text'],
                     ['message', v.message ?? ''],
                 ]),
             };
@@ -626,10 +627,12 @@ export function parseVerify(
         return { ...out, label: username ? `@${username}` : null };
     }
     if (integration === 'whatsapp') {
+        // El listado de cuentas es una AYUDA, nunca una puerta: las claves de
+        // WAS (Zender) tienen permisos por función, y una clave creada sólo
+        // para enviar recibe 403 al listar aunque mande perfecto. Rechazarla
+        // por eso bloqueaba justo las claves que ya funcionan en producción.
+        // Lo que prueba la clave de verdad es el mensaje de prueba.
         const inner = json ? Number(json.status) : NaN;
-        if (status === 401 || status === 403 || inner === 401 || inner === 403) {
-            return { ...out, ok: false, error: 'WAS no reconoce esa clave de API. Copiala de nuevo desde tu panel.' };
-        }
         const data = json?.data;
         if (status < 400 && Array.isArray(data)) {
             const accounts = data
@@ -649,15 +652,49 @@ export function parseVerify(
             }
             return out;
         }
-        if (inner >= 400 && json && typeof json.message === 'string') {
-            return { ...out, ok: false, error: `WAS rechazó la clave: ${json.message}` };
-        }
-        // Un servidor que no contesta como esperamos NO bloquea: la clave puede
-        // estar bien y el listado de cuentas no existir en esa versión.
+        const said = json && typeof json.message === 'string' && json.message.trim() !== '' ? json.message.trim() : null;
+        const code = Number.isFinite(inner) && inner >= 400 ? inner : status;
+        const detail = said ? ` (WAS respondió: «${said}»)` : code >= 400 ? ` (respuesta ${code})` : '';
         return {
             ...out,
-            warning: 'No pudimos listar tus cuentas; escribí el identificador de la cuenta a mano.',
+            warning:
+                `No pudimos listar tus cuentas con esta clave${detail}. Es normal si la clave sólo tiene ` +
+                'permiso de envío: escribí el identificador de la cuenta a mano y mandá un mensaje de prueba ' +
+                'para confirmar que funciona.',
         };
     }
     return out;
+}
+
+// --- Mensaje de prueba ------------------------------------------------------------
+
+export const TEST_MESSAGE = 'Prueba de conexión de Imagina Base: si te llegó este mensaje, la integración quedó lista.';
+
+/**
+ * Un envío REAL con la misma función que usa el motor: si la prueba pasa, la
+ * automatización también. Sólo para las apps de mensajería por clave.
+ */
+export function testSendRequest(
+    integration: IntegrationKey,
+    creds: IntegrationCreds,
+    to: string,
+): IntegrationRequest | null {
+    const target = to.trim();
+    if (integration === 'whatsapp') {
+        return buildIntegrationRequest(
+            'whatsapp',
+            'send_text',
+            { values: { recipient: target, message: TEST_MESSAGE }, lines: {} },
+            creds,
+        );
+    }
+    if (integration === 'telegram') {
+        return buildIntegrationRequest(
+            'telegram',
+            'send_message',
+            { values: { chat_id: target, text: TEST_MESSAGE }, lines: {} },
+            creds,
+        );
+    }
+    return null;
 }

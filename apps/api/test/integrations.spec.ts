@@ -363,6 +363,67 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         ).rejects.toThrow(/Cuenta de WhatsApp/);
     });
 
+    it('WhatsApp: una clave de ENVÍO sin permiso de listar se guarda, y el mensaje de prueba la confirma (v0.1.204)', async () => {
+        // El caso real: la clave de WAS manda perfecto desde un webhook, pero
+        // WAS contesta 403 al listar cuentas porque la clave no tiene ese
+        // permiso. Antes eso se leía como «clave inválida» y no dejaba guardar.
+        net.handler = (call) => {
+            if (call.url.startsWith('https://was.imagina.cloud/api/get/wa.accounts')) {
+                return { status: 403, body: '{"status":403,"message":"API key has no permission"}' };
+            }
+            if (call.url === 'https://was.imagina.cloud/api/send/whatsapp') {
+                const body = new URLSearchParams(call.body ?? '');
+                return body.get('recipient') === '+570000000000'
+                    ? { status: 200, body: '{"status":400,"message":"Invalid recipient!"}' }
+                    : { status: 200, body: '{"status":200,"message":"WhatsApp message has been queued for sending!"}' };
+            }
+            return { status: 404, body: '' };
+        };
+        const fieldsIn = { secret: 'was-envio-1234', account: '1765987873c81e' };
+
+        const listing = await svc.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp', { fields: fieldsIn });
+        expect(listing.ok).toBe(true);
+        expect(listing.warning).toContain('API key has no permission');
+
+        net.calls.length = 0;
+        const sent = await svc.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp', {
+            fields: fieldsIn,
+            test_to: '+57 300 111 2233',
+        });
+        expect(sent).toMatchObject({ ok: true, test_sent: true, warning: null, error: null });
+        const send = net.calls.find((c) => c.url.endsWith('/api/send/whatsapp'))!;
+        expect(Object.fromEntries(new URLSearchParams(send.body!))).toMatchObject({
+            secret: 'was-envio-1234',
+            account: '1765987873c81e',
+            recipient: '+573001112233',
+        });
+
+        // Un envío que WAS rechaza (200 con error adentro) se dice, con su motivo.
+        const bad = await svc.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp', {
+            fields: fieldsIn,
+            test_to: '+570000000000',
+        });
+        expect(bad.ok).toBe(false);
+        expect(bad.test_sent).toBe(false);
+        expect(bad.error).toMatch(/Invalid recipient/);
+
+        // Sin cuenta no se manda nada.
+        net.calls.length = 0;
+        const noAccount = await svc.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp', {
+            fields: { secret: 'was-envio-1234', account: '' },
+            test_to: '+573001112233',
+        });
+        expect(noAccount.error).toMatch(/Cuenta de WhatsApp/);
+        expect(net.calls.some((c) => c.url.endsWith('/api/send/whatsapp'))).toBe(false);
+
+        // Y guardar ya no se bloquea por el listado.
+        const { connection } = await svc.connectIntegrationKey(tenantId, adminId, 'admin', 'whatsapp', {
+            fields: fieldsIn,
+            visibility: 'workspace',
+        });
+        expect(connection).toMatchObject({ integration_key: 'whatsapp', secret_state: 'ok', secret_hint: '••••1234' });
+    });
+
     it('motor y probador: el 200 con error de Slack es un FALLO con el motivo, y borrar avisa del uso', async () => {
         await apps.update('slack', { client_id: 'slack-client-1', client_secret: 'slack-secreto-9876' }, new Map());
         net.handler = (call) => {
