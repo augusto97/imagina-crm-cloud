@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router';
 import {
     ChevronDown,
     ChevronRight,
@@ -320,6 +321,8 @@ function FolderHeader({
 
     const Icon = listIcon(group.icon) ?? DEFAULT_FOLDER_ICON;
     const color = listColor(group.color);
+    const { pathname } = useLocation();
+    const active = pathname === `/folders/${group.id}`;
 
     const submitRename = (): void => {
         const name = draft.trim();
@@ -390,11 +393,17 @@ function FolderHeader({
                     'imcrm-group/gr imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1 lg:imcrm-min-h-0',
                     isDropTarget
                         ? 'imcrm-bg-primary/10 imcrm-ring-1 imcrm-ring-primary/40'
-                        : menuOpen
+                        : active
+                          ? 'imcrm-bg-background imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border'
+                          : menuOpen
                           ? 'imcrm-bg-accent/60'
                           : 'hover:imcrm-bg-accent/40',
                 )}
             >
+                {/* v0.1.212 — la cabecera tiene DOS blancos: el cuadrado de
+                    color (chevron al hover) pliega/despliega, y el nombre
+                    ABRE la carpeta como un espacio con sólo sus listas
+                    (/folders/:id), como en ClickUp. */}
                 <button
                     type="button"
                     onClick={(e) => {
@@ -402,11 +411,18 @@ function FolderHeader({
                         onToggle();
                     }}
                     aria-expanded={!collapsed}
-                    className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2 imcrm-text-left"
+                    aria-label={
+                        collapsed
+                            ? sprintf(/* translators: %s: folder name */ __('Desplegar %s'), group.name)
+                            : sprintf(/* translators: %s: folder name */ __('Plegar %s'), group.name)
+                    }
+                    data-testid="folder-toggle"
+                    // Objetivo táctil de 32px en mobile; compacto en lg.
+                    className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-p-1.5 lg:imcrm-p-0"
                 >
                     {/* Icono de color que se vuelve chevron al hover (ClickUp).
-                        En táctil no hay hover: queda el icono, y el toque en
-                        la fila pliega igual. */}
+                        En táctil no hay hover: queda el icono, y el toque
+                        sobre él pliega igual. */}
                     <span
                         aria-hidden
                         data-testid="folder-icon"
@@ -429,13 +445,27 @@ function FolderHeader({
                             )}
                         </span>
                     </span>
+                </button>
+                <Link
+                    to={`/folders/${group.id}`}
+                    onClick={() => {
+                        // Abrir la carpeta también la despliega en el menú.
+                        if (collapsed) onToggle();
+                    }}
+                    aria-current={active ? 'page' : undefined}
+                    data-testid="folder-open"
+                    // El destino de arrastre es la fila entera: el enlace no
+                    // debe iniciar su propio drag (arrastraría la URL).
+                    draggable={false}
+                    className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2 imcrm-self-stretch imcrm-text-left lg:imcrm-ml-1"
+                >
                     <span className="imcrm-truncate imcrm-text-[14px] imcrm-font-medium lg:imcrm-text-[13px]">
                         {group.name}
                     </span>
                     <span className="imcrm-shrink-0 imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground group-hover/gr:imcrm-hidden">
                         {count}
                     </span>
-                </button>
+                </Link>
                 {canManage && (
                     <>
                         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>

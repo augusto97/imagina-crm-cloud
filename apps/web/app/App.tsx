@@ -10,6 +10,7 @@ import { FavoritesPage } from '@/admin/favorites/FavoritesPage';
 // secundarias (dashboards, automations, builder, settings) para que
 // el first-paint no descargue su código si el user nunca las visita.
 import { ListsIndexPage } from '@/admin/lists/ListsIndexPage';
+import { FolderPage } from '@/admin/lists/FolderPage';
 import { RecordPage } from '@/admin/records/RecordPage';
 import { RecordsPage } from '@/admin/records/RecordsPage';
 import { lazyWithReload } from '@/lib/lazyWithReload';
@@ -73,6 +74,7 @@ export function App(): JSX.Element {
                 <Route path="lists/:listSlug/automations/:automationId" element={
                     <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
                 } />
+                <Route path="folders/:folderId" element={<FolderPage />} />
                 <Route path="favorites" element={<FavoritesPage />} />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>
