@@ -13,6 +13,8 @@ import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
 import type { RowDensity, RowFontSize } from '../recordsState';
 import { useWrapText, WrapTextContext } from '../wrapText';
+import { RelationTitlesContext } from '../relationTitlesContext';
+import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { lookupDisplayField, rollupDisplayField } from '@/lib/throughFields';
@@ -528,9 +530,10 @@ function defaultSizeForColumn(c: ColumnDef): number {
     }
 }
 
+const EMPTY_ROWS: RecordEntity[] = [];
+
 function buildColumns(fields: FieldEntity[]): ColumnDef[] {
-    const dynamic = fields
-        .filter((f) => f.type !== 'relation')
+    const dynamic = [...fields]
         .sort((a, b) => a.position - b.position)
         .map<ColumnDef>((f) => ({
             id: f.slug,
@@ -706,6 +709,12 @@ function GroupBucketSection({
                   data: fallbackRecords.data,
               };
 
+    // v0.1.209 — títulos de los vinculados del grupo: una query por columna relation.
+    const relationTitles = useRelationTitlesForRows(
+        useMemo(() => columns.map((c) => c.field).filter((f): f is FieldEntity => f !== null), [columns]),
+        records.data?.data ?? EMPTY_ROWS,
+    );
+
     const aggregates: { data: AggregatesResponse | undefined } = useAggregatesPrefetched
         ? { data: prefetchedAggregates }
         : { data: fallbackAggregates.data };
@@ -806,6 +815,7 @@ function GroupBucketSection({
     );
 
     return (
+        <RelationTitlesContext.Provider value={relationTitles}>
         <section
             // Grupo PLANO (estilo ClickUp): sin card (border/rounded/
             // shadow/bg-card) alrededor — header del grupo (chip +
@@ -1256,6 +1266,7 @@ function GroupBucketSection({
                 canDelete={canDeleteRecords}
             />
         </section>
+        </RelationTitlesContext.Provider>
     );
 }
 
@@ -1287,7 +1298,7 @@ function renderColumnCell(
             listId={listId}
             recordId={record.id}
             field={column.field}
-            value={record.fields[column.field.slug]}
+            value={column.field.type === 'relation' ? record.relations?.[column.field.slug] : record.fields[column.field.slug]}
         />
     );
 }

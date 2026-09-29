@@ -12,7 +12,7 @@ import {
     type StoreSyncResource,
     type StoreSyncStatus,
 } from '@imagina-base/shared';
-import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Truck, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -486,6 +486,8 @@ function Configured({
                 </p>
             </section>
 
+            <PurchasingSection status={status} />
+
             <WriteBackSection
                 status={status}
                 // Optimista: el interruptor se mueve al tocarlo, no cuando vuelve el servidor.
@@ -625,7 +627,14 @@ function WriteBackSection({
     onToggle: (on: boolean) => void;
 }): JSX.Element {
     const wb = status.write_back_status;
-    const on = pending ?? status.write_back;
+    // Optimista de verdad: el estado de la mutación de React Query se notifica
+    // un tick después, y un checkbox controlado vuelve a su valor viejo en ese
+    // hueco. El valor local se fija EN el evento y se suelta al terminar.
+    const [local, setLocal] = useState<boolean | null>(null);
+    useEffect(() => {
+        if (!busy) setLocal(null);
+    }, [busy]);
+    const on = local ?? pending ?? status.write_back;
     const groups = (['products', 'variations', 'orders', 'customers'] as const).map((r) => ({
         resource: r,
         fields: STORE_WRITE_BACK_FIELDS[r].map((f) => f.label),
@@ -651,7 +660,10 @@ function WriteBackSection({
                         className="imcrm-peer imcrm-sr-only"
                         checked={on}
                         disabled={busy}
-                        onChange={(e) => onToggle(e.target.checked)}
+                        onChange={(e) => {
+                            setLocal(e.target.checked);
+                            onToggle(e.target.checked);
+                        }}
                         data-testid="imcrm-store-write-back-toggle"
                     />
                     <span
@@ -697,6 +709,57 @@ function WriteBackSection({
                     {__('El último cambio no llegó a la tienda')}: {wb.last_error}
                 </p>
             )}
+        </section>
+    );
+}
+
+// ── Reposición: órdenes de compra (v0.1.209) ───────────────────────────────
+
+function PurchasingSection({ status }: { status: StoreSyncStatus }): JSX.Element | null {
+    const { orders, suppliers } = status.purchase_lists;
+    const products = status.lists.products;
+    if (!orders && !suppliers) return null;
+    const tile = 'imcrm-flex imcrm-flex-col imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-3 imcrm-py-2 hover:imcrm-bg-accent';
+    return (
+        <section className="imcrm-space-y-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-purchasing">
+            <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
+                <Truck className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                {__('Reponer stock')}
+            </h2>
+            <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
+                <li>{__('En Productos (vista «Para reponer») o en Variaciones, seleccioná lo que falta y tocá «Orden de compra»: la cantidad viene sugerida por lo que se vende.')}</li>
+                <li>{__('Pasá la orden a «Enviada»: cada artículo la muestra «En camino».')}</li>
+                <li>{__('Cuando llegue, marcala «Recibida» (o «Recibida parcial» con lo que llegó en cada línea): las unidades se SUMAN al stock de la tienda.')}</li>
+            </ol>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Para un ajuste suelto (una devolución, un conteo), escribí la cantidad en la columna «Sumar al stock» del producto: se suma a lo que la tienda tenga en ese momento (-3 resta) y queda anotado en «Último movimiento».')}
+            </p>
+            <ul className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-3">
+                {orders && (
+                    <li>
+                        <Link to={`/lists/${orders.slug}/records`} className={tile} data-testid="imcrm-store-purchasing-orders">
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Órdenes de compra')}</span>
+                            <span className="imcrm-text-sm imcrm-font-medium">{orders.name}</span>
+                        </Link>
+                    </li>
+                )}
+                {suppliers && (
+                    <li>
+                        <Link to={`/lists/${suppliers.slug}/records`} className={tile} data-testid="imcrm-store-purchasing-suppliers">
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Proveedores')}</span>
+                            <span className="imcrm-text-sm imcrm-font-medium">{suppliers.name}</span>
+                        </Link>
+                    </li>
+                )}
+                {products && (
+                    <li>
+                        <Link to={`/lists/${products.slug}/records`} className={tile}>
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Qué pedir')}</span>
+                            <span className="imcrm-text-sm imcrm-font-medium">{__('Productos → «Para reponer»')}</span>
+                        </Link>
+                    </li>
+                )}
+            </ul>
         </section>
     );
 }

@@ -17,6 +17,11 @@ export interface RecordChange {
     recordId: number;
     before: Record<string, unknown>;
     after: Record<string, unknown>;
+    /**
+     * v0.1.209 — `created` para un alta (`before` vacío). Sin el campo es un
+     * cambio: los oyentes viejos siguen viendo sólo cambios.
+     */
+    kind?: 'created' | 'updated';
 }
 
 type Listener = (change: RecordChange) => void | Promise<void>;

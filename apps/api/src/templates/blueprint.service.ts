@@ -428,12 +428,37 @@ export class BlueprintService {
         tenantId: number,
         actorId: number,
         addition: ListBlueprint,
-        keyToListId: Map<string, number>,
+        keyToListIdIn: Map<string, number>,
         existing: Map<string, Map<string, number>>,
-    ): Promise<{ fieldIds: Record<string, Record<string, number>>; dashboardIds: number[]; warnings: string[] }> {
+        /** v0.1.209 — carpeta donde nacen las listas NUEVAS del blueprint. */
+        opts: { groupId?: number | null } = {},
+    ): Promise<{
+        fieldIds: Record<string, Record<string, number>>;
+        dashboardIds: number[];
+        warnings: string[];
+        /** v0.1.209 — key → id de las listas que se crearon (las que no existían). */
+        createdLists: Record<string, number>;
+    }> {
         const warnings: string[] = [];
         const slugMaps = new Map<string, Map<string, number>>();
         for (const [k, m] of existing) slugMaps.set(k, new Map(m));
+        const keyToListId = new Map(keyToListIdIn);
+        // v0.1.209 — Las listas que el blueprint trae y todavía no existen se
+        // crean PRIMERO (como en `materialize`): un campo de una lista vieja
+        // puede apuntar a una nueva (el «En camino» de Productos suma las
+        // líneas de compra).
+        const createdLists: Record<string, number> = {};
+        for (const bl of addition.lists) {
+            if (keyToListId.has(bl.key)) continue;
+            try {
+                const list = await this.lists.create(tenantId, { name: bl.name, icon: bl.icon ?? undefined, color: bl.color ?? undefined });
+                if (opts.groupId) await this.lists.update(tenantId, String(list.id), { group_id: opts.groupId });
+                keyToListId.set(bl.key, list.id);
+                createdLists[bl.key] = list.id;
+            } catch (err) {
+                warnings.push(`Lista «${bl.name}»: ${message(err)}`);
+            }
+        }
         const resolveLists = (v: unknown): unknown => resolveListRefs(v, keyToListId);
 
         const pending: Array<{ listId: number; key: string; name: string; id: number; config: unknown }> = [];
@@ -477,6 +502,17 @@ export class BlueprintService {
             const listId = keyToListId.get(bl.key);
             if (listId === undefined) continue;
             const slugToId = slugMaps.get(bl.key)!;
+            // Los ajustes (el campo de título) sólo en las listas que nacieron
+            // acá: una lista existente conserva los suyos.
+            if (createdLists[bl.key] !== undefined && Object.keys(bl.settings).length > 0) {
+                const settings = resolveLists(resolveFieldRefs(bl.settings, slugToId, slugMaps)) as Record<string, unknown>;
+                if (settings.title_field_id === null) delete settings.title_field_id;
+                try {
+                    await this.lists.update(tenantId, String(listId), { settings });
+                } catch (err) {
+                    warnings.push(`Ajustes de «${bl.name}»: ${message(err)}`);
+                }
+            }
             for (const v of bl.views) {
                 try {
                     await this.views.create(tenantId, String(listId), {
@@ -523,7 +559,7 @@ export class BlueprintService {
         this.realtime.lists(tenantId);
         const fieldIds: Record<string, Record<string, number>> = {};
         for (const [key, map] of slugMaps) fieldIds[key] = Object.fromEntries(map);
-        return { fieldIds, dashboardIds, warnings };
+        return { fieldIds, dashboardIds, warnings, createdLists };
     }
 
     /**

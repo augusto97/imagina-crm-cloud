@@ -16,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
@@ -299,6 +300,7 @@ export function RecordPage(): JSX.Element {
                         <div className="imcrm-mt-4">
                             <PortalAccessButton list={list.data} record={record.data} />
                         </div>
+                        <RecordBacklinks listId={list.data.id} recordId={id} />
                         {error !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                                 {error}

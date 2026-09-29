@@ -17,6 +17,8 @@ import type { FieldEntity } from '@/types/field';
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 
 import { DateCellEditor } from './DateCellEditor';
+import { RelationPicker } from '@/components/fields/RelationPicker';
+
 import { CompactFieldRow } from './crm/CompactFieldRow';
 import { FieldValueDisplay } from './crm/FieldValueDisplay';
 
@@ -62,8 +64,7 @@ const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
 /**
  * Form per-tipo reutilizado por RecordCreateDialog y RecordDetailDrawer.
  * Se renderiza un input apropiado por tipo; los tipos `relation` se editan
- * como CSV de IDs (placeholder hasta que tengamos el RecordPicker en Fase
- * posterior).
+ * con el selector de registros (`RelationPicker`, v0.1.209).
  */
 export function RecordFieldsForm({
     listId,
@@ -303,31 +304,9 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             // (rules-of-hooks — acá estamos dentro de un switch).
             control = <FileFieldControl id={id} value={value} onChange={onChange} />;
             break;
-        case 'relation': {
-            // Placeholder: CSV de IDs hasta que tengamos un picker.
-            const current = Array.isArray(value)
-                ? value.join(', ')
-                : typeof value === 'string'
-                    ? value
-                    : '';
-            control = (
-                <Input
-                    id={id}
-                    value={current}
-                    onChange={(e) => {
-                        const ids = e.target.value
-                            .split(',')
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                            .map(Number)
-                            .filter((n) => !Number.isNaN(n));
-                        onChange(ids);
-                    }}
-                    placeholder={__('IDs separados por coma')}
-                />
-            );
+        case 'relation':
+            control = <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;
             break;
-        }
         case 'computed':
         case 'lookup':
         case 'rollup':

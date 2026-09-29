@@ -7,6 +7,7 @@ import { PhoneControl } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 
 import { Input } from '@/components/ui/input';
+import { RelationPicker } from '@/components/fields/RelationPicker';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { useRecurrencesForRecord } from '@/hooks/useRecurrences';
@@ -18,6 +19,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { DateCellEditor } from './DateCellEditor';
 import { renderCellValue } from './renderCellValue';
+import { useRelationTitlesFor } from './relationTitlesContext';
 import { useWrapText } from './wrapText';
 
 interface EditableCellProps {
@@ -64,6 +66,7 @@ function EditableCellInner({
 }: EditableCellProps): JSX.Element {
     const update = useUpdateRecord(listId);
     const wrapText = useWrapText();
+    const relationTitles = useRelationTitlesFor(field.id);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState<unknown>(value);
     const [error, setError] = useState<string | null>(null);
@@ -139,6 +142,23 @@ function EditableCellInner({
                     onChange={(v) => {
                         void commit(field.type === 'select' ? (v ?? null) : (Array.isArray(v) ? v : []));
                     }}
+                />
+            );
+        }
+
+        // v0.1.209 — relación: chips con el título del vinculado (resuelto
+        // por la tabla, una query por columna) y el mismo selector con
+        // buscador que la ficha. Sin permiso de edición queda de lectura.
+        if (field.type === 'relation') {
+            return (
+                <RelationPicker
+                    field={field}
+                    variant="cell"
+                    wrap={wrapText}
+                    value={value}
+                    knownTitles={relationTitles}
+                    disabled={!canEditByUser}
+                    onChange={(ids) => void commit(ids)}
                 />
             );
         }

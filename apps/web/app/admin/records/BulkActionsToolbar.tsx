@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Copy, Pencil, Trash2, X } from 'lucide-react';
+import { Copy, Pencil, Trash2, Truck, X } from 'lucide-react';
+import type { StoreListMarker } from '@imagina-base/shared';
 
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { Button } from '@/components/ui/button';
@@ -18,12 +19,15 @@ import type { FieldEntity } from '@/types/field';
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
 import { FilterUserPicker } from './FilterUserPicker';
+import { PurchaseOrderDialog } from './PurchaseOrderDialog';
 import { toValueList } from './filterValue';
 
 interface BulkActionsToolbarProps {
     listId: number;
     selectedIds: number[];
     onClear: () => void;
+    /** Marca de lista de la tienda (v0.1.209): en Productos/Variaciones ofrece «Orden de compra». */
+    storeMarker?: StoreListMarker | null;
 }
 
 /**
@@ -43,8 +47,15 @@ export function BulkActionsToolbar({
     listId,
     selectedIds,
     onClear,
+    storeMarker,
 }: BulkActionsToolbarProps): JSX.Element | null {
     const bulk = useBulkRecords(listId);
+    const [purchaseOpen, setPurchaseOpen] = useState(false);
+    // La selección se limpia al CERRAR el diálogo tras crear la orden: limpiarla
+    // antes desmontaría la barra (y con ella el diálogo con el resultado).
+    const [purchaseDone, setPurchaseDone] = useState(false);
+    const restockResource =
+        storeMarker && (storeMarker.role === 'products' || storeMarker.role === 'variations') ? storeMarker.role : null;
 
     if (selectedIds.length === 0) return null;
 
@@ -118,6 +129,37 @@ export function BulkActionsToolbar({
                 selectedIds={selectedIds}
                 onDone={onClear}
             />
+
+            {restockResource && storeMarker && (
+                <>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="imcrm-gap-1.5"
+                        onClick={() => setPurchaseOpen(true)}
+                        data-testid="imcrm-bulk-purchase"
+                    >
+                        <Truck className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Orden de compra')}
+                    </Button>
+                    {purchaseOpen && (
+                        <PurchaseOrderDialog
+                            open={purchaseOpen}
+                            onOpenChange={(o) => {
+                                setPurchaseOpen(o);
+                                if (!o && purchaseDone) {
+                                    setPurchaseDone(false);
+                                    onClear();
+                                }
+                            }}
+                            connectionId={storeMarker.connection_id}
+                            resource={restockResource}
+                            recordIds={selectedIds.slice(0, 200)}
+                            onCreated={() => setPurchaseDone(true)}
+                        />
+                    )}
+                </>
+            )}
 
             <Button
                 variant="ghost"

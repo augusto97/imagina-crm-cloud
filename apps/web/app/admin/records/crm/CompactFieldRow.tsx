@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
+import { RelationPicker } from '@/components/fields/RelationPicker';
 import { OptionPicker } from '@/components/ui/option-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { UserPicker } from '@/components/ui/user-picker';
@@ -79,7 +80,9 @@ export function CompactFieldRow({
         field.type === 'date' ||
         field.type === 'datetime' ||
         // v0.1.158 — la calificación se pone clickeando la estrella.
-        field.type === 'rating';
+        field.type === 'rating' ||
+        // v0.1.209 — relación: selector de registros con buscador.
+        field.type === 'relation';
 
     // Tipos read-only (computed / lookup / rollup): nunca editables.
     const isReadOnly = isDerivedFieldType(field.type);
@@ -288,33 +291,6 @@ function EditingControl({
         case 'file':
             // Upload real (ADR-S16) — mismo control que el form completo.
             return <FileFieldControl id={id} value={value} onChange={onChange} />;
-        case 'relation': {
-            const current = Array.isArray(value)
-                ? value.join(', ')
-                : typeof value === 'string'
-                    ? value
-                    : '';
-            return (
-                <Input
-                    id={id}
-                    ref={ref as React.Ref<HTMLInputElement>}
-                    value={current}
-                    onChange={(e) => {
-                        const ids = e.target.value
-                            .split(',')
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                            .map(Number)
-                            .filter((n) => !Number.isNaN(n));
-                        onChange(ids);
-                    }}
-                    onBlur={onBlur}
-                    onKeyDown={handleKey}
-                    placeholder={__('IDs separados por coma')}
-                    className="imcrm-h-8 imcrm-text-sm"
-                />
-            );
-        }
         default:
             return (
                 <Input
@@ -383,6 +359,10 @@ function InlineControl({
                 />
             </span>
         );
+    }
+
+    if (field.type === 'relation') {
+        return <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;
     }
 
     if (field.type === 'user') {

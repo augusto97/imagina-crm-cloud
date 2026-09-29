@@ -1,12 +1,15 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
     STORE_META_RESOURCES,
+    STORE_PURCHASE_LISTS,
     STORE_SYNC_RESOURCES,
     type MapStoreMetaInput,
     type Role,
     type SetupStoreSyncInput,
     type StoreMetaKey,
+    type StoreListMarker,
     type StoreMetaResource,
+    type StorePurchaseList,
     type StoreSyncResource,
     type StoreSyncStatus,
     type UnmapStoreMetaInput,
@@ -29,7 +32,7 @@ import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
 import { readSettings, readState, type SyncSettings } from './store-sync.types';
 import { wooGet } from './woocommerce/woo-fetch';
-import { buildWooPack, inventoryAddition, WOO_LIST_KEYS, WOO_PACK_VERSION } from './woocommerce/woo-pack';
+import { buildWooPack, packAddition, PURCHASE_LIST_KEYS, WOO_LIST_KEYS, WOO_PACK_VERSION } from './woocommerce/woo-pack';
 import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
 
 /**
@@ -83,6 +86,7 @@ export class StoreSyncService {
             lists: empty,
             dashboard_id: null,
             inventory_dashboard_id: null,
+            purchase_lists: { suppliers: null, orders: null, lines: null },
             folder_id: null,
             running: false,
             current: null,
@@ -112,7 +116,9 @@ export class StoreSyncService {
                 .from(syncLinks)
                 .where(eq(syncLinks.syncId, row.id))
                 .groupBy(syncLinks.resource);
-            const ids = Object.values(settings.lists).filter((v): v is number => typeof v === 'number');
+            const ids = [...Object.values(settings.lists), ...Object.values(settings.purchase_lists)].filter(
+                (v): v is number => typeof v === 'number',
+            );
             const l = ids.length
                 ? await tx
                       .select({ id: lists.id, slug: lists.slug, name: lists.name })
@@ -168,6 +174,13 @@ export class StoreSyncService {
             lists: listsOut,
             dashboard_id: settings.dashboard_id,
             inventory_dashboard_id: settings.inventory_dashboard_id,
+            purchase_lists: Object.fromEntries(
+                STORE_PURCHASE_LISTS.map((k) => {
+                    const id = settings.purchase_lists[k];
+                    const l = id ? byId.get(id) : undefined;
+                    return [k, l ? { id: l.id, slug: l.slug, name: l.name } : null];
+                }),
+            ) as StoreSyncStatus['purchase_lists'],
             folder_id: settings.folder_id,
             running: state.running,
             current: state.current,
@@ -239,6 +252,8 @@ export class StoreSyncService {
             low_stock_amount: shop.lowStock,
             pack_version: WOO_PACK_VERSION,
             inventory_dashboard_id: made.dashboardIds[1] ?? null,
+            purchase_lists: {},
+            purchase_fields: {},
         };
         for (const r of STORE_SYNC_RESOURCES) {
             const key = WOO_LIST_KEYS[r];
@@ -246,6 +261,12 @@ export class StoreSyncService {
             const list = made.lists[idx];
             if (list) settings.lists[r] = list.id;
             settings.fields[r] = made.fieldIds[key] ?? {};
+        }
+        for (const k of STORE_PURCHASE_LISTS) {
+            const key = PURCHASE_LIST_KEYS[k];
+            const list = made.lists[pack.lists.findIndex((l) => l.key === key)];
+            if (list) settings.purchase_lists[k] = list.id;
+            settings.purchase_fields[k] = made.fieldIds[key] ?? {};
         }
         if (made.warnings.length > 0) this.logger.warn(`Pack de la tienda con avisos: ${made.warnings.join(' | ')}`);
 
@@ -274,6 +295,7 @@ export class StoreSyncService {
             });
             return created!;
         });
+        await this.markLists(tenantId, connectionId, settings);
         let current = row;
         if (input.mode === 'realtime') {
             try {
@@ -341,12 +363,12 @@ export class StoreSyncService {
     }
 
     /**
-     * v0.1.208 — Actualiza el pack de una sincronización creada ANTES del
-     * inventario: agrega los campos de inventario a Productos y Variaciones,
-     * la vista «Para reponer» y el tablero de Inventario, y encola una vuelta
-     * completa de productos para llenarlos. Idempotente y bajo el candado de
-     * la corrida (dos trabajos simultáneos no duplican campos). Devuelve si
-     * actualizó.
+     * Actualiza el pack de una sincronización creada con una versión anterior
+     * (v0.1.208 el inventario, v0.1.209 la reposición): agrega lo que falta
+     * —campos, vistas, tableros y listas nuevas— SIN tocar lo que ya está, y
+     * encola una vuelta completa de productos para llenar lo nuevo.
+     * Idempotente y bajo el candado de la corrida (dos trabajos simultáneos no
+     * duplican campos). Devuelve si actualizó.
      */
     async upgradePack(tenantId: number, syncId: number, creds: IntegrationCreds): Promise<boolean> {
         const token = await this.engine.acquire(syncId);
@@ -357,10 +379,12 @@ export class StoreSyncService {
             );
             if (!row) return false;
             const settings = readSettings(row.settings);
-            if (settings.pack_version >= WOO_PACK_VERSION) return false;
+            const from = settings.pack_version;
+            if (from >= WOO_PACK_VERSION) return false;
             const shop = await this.storeFormat(creds);
             const full = buildWooPack({ storeName: settings.store_name, currency: shop.currency, precision: shop.precision, phoneCountry: shop.country });
-            const addition = inventoryAddition(full, settings.resources.products);
+            // Con la lista de productos (el pack la crea siempre; sólo falta si alguien la borró).
+            const addition = packAddition(full, from, settings.lists.products !== undefined);
             const keyToListId = new Map<string, number>();
             const existing = new Map<string, Map<string, number>>();
             for (const r of STORE_SYNC_RESOURCES) {
@@ -369,37 +393,59 @@ export class StoreSyncService {
                 if (listId) keyToListId.set(key, listId);
                 existing.set(key, new Map(Object.entries(settings.fields[r] ?? {})));
             }
-            const made = await this.blueprints.extend(tenantId, row.createdBy ?? 0, addition, keyToListId, existing);
+            for (const k of STORE_PURCHASE_LISTS) {
+                const listId = settings.purchase_lists[k];
+                if (listId) keyToListId.set(PURCHASE_LIST_KEYS[k], listId);
+                existing.set(PURCHASE_LIST_KEYS[k], new Map(Object.entries(settings.purchase_fields[k] ?? {})));
+            }
+            const made = await this.blueprints.extend(tenantId, row.createdBy ?? 0, addition, keyToListId, existing, {
+                groupId: settings.folder_id,
+            });
             if (made.warnings.length > 0) this.logger.warn(`Actualización del pack #${syncId}: ${made.warnings.join(' | ')}`);
-            await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
                 const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
                 const s = readSettings(locked!.settings);
                 for (const r of ['products', 'variations'] as const) {
-                    const fresh = made.fieldIds[WOO_LIST_KEYS[r]];
-                    if (fresh) s.fields[r] = { ...(s.fields[r] ?? {}), ...fresh };
+                    const got = made.fieldIds[WOO_LIST_KEYS[r]];
+                    if (got) s.fields[r] = { ...(s.fields[r] ?? {}), ...got };
+                }
+                for (const k of STORE_PURCHASE_LISTS) {
+                    const key = PURCHASE_LIST_KEYS[k];
+                    if (made.createdLists[key]) s.purchase_lists[k] = made.createdLists[key];
+                    const got = made.fieldIds[key];
+                    if (got && Object.keys(got).length > 0) s.purchase_fields[k] = { ...(s.purchase_fields[k] ?? {}), ...got };
                 }
                 s.pack_version = WOO_PACK_VERSION;
-                // El pack 1 armó las tablas del tablero de ventas con una clave que
-                // el widget no lee (`columns`): mostraban las columnas por defecto.
-                if (s.dashboard_id) {
-                    const [dash] = await tx.select({ widgets: dashboards.widgets }).from(dashboards).where(eq(dashboards.id, s.dashboard_id));
-                    if (dash && Array.isArray(dash.widgets)) {
-                        const fixed = (dash.widgets as Array<Record<string, unknown>>).map((w) => {
-                            const cfg = (w.config ?? {}) as Record<string, unknown>;
-                            if (w.type !== 'table' || !Array.isArray(cfg.columns) || Array.isArray(cfg.visible_field_ids)) return w;
-                            const { columns, ...rest } = cfg;
-                            return { ...w, config: { ...rest, visible_field_ids: columns } };
-                        });
-                        await tx.update(dashboards).set({ widgets: fixed as never }).where(eq(dashboards.id, s.dashboard_id));
-                    }
+                if (from < 2) {
+                    // El pack 1 armó las tablas del tablero de ventas con una clave que
+                    // el widget no lee (`columns`): mostraban las columnas por defecto.
+                    if (s.dashboard_id) await this.patchTables(tx, s.dashboard_id, (cfg) => {
+                        if (!Array.isArray(cfg.columns) || Array.isArray(cfg.visible_field_ids)) return null;
+                        const { columns, ...rest } = cfg;
+                        return { ...rest, visible_field_ids: columns };
+                    });
+                    s.inventory_dashboard_id = made.dashboardIds[0] ?? s.inventory_dashboard_id;
+                } else if (s.inventory_dashboard_id) {
+                    // Pack 2 → 3: las tablas «para reponer» suman «En camino» (lo
+                    // ya pedido a proveedores), así nadie pide dos veces lo mismo.
+                    const byList = new Map<number, number | undefined>();
+                    if (s.lists.products) byList.set(s.lists.products, s.fields.products?.en_camino);
+                    if (s.lists.variations) byList.set(s.lists.variations, s.fields.variations?.en_camino);
+                    await this.patchTables(tx, s.inventory_dashboard_id, (cfg, listId) => {
+                        const add = byList.get(listId);
+                        const cols = Array.isArray(cfg.visible_field_ids) ? (cfg.visible_field_ids as unknown[]) : null;
+                        if (!add || !cols || cols.includes(add)) return null;
+                        return { ...cfg, visible_field_ids: [...cols.slice(0, 2), add, ...cols.slice(2)] };
+                    });
                 }
                 s.low_stock_amount = shop.lowStock;
-                s.inventory_dashboard_id = made.dashboardIds[0] ?? s.inventory_dashboard_id;
                 await tx
                     .update(connectionSyncs)
                     .set({ settings: s as unknown as Record<string, unknown>, updatedAt: new Date() })
                     .where(eq(connectionSyncs.id, syncId));
+                return s;
             });
+            await this.markLists(tenantId, row.connectionId, fresh);
         } finally {
             await this.engine.release(syncId, token);
         }
@@ -408,6 +454,59 @@ export class StoreSyncService {
         this.queue.enqueueRun(tenantId, syncId, { full: true, only: ['products'] });
         this.realtime.forget(tenantId);
         return true;
+    }
+
+    /** Reescribe los widgets de TABLA de un tablero (`fix` devuelve null = sin cambios). */
+    private async patchTables(
+        tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
+        dashboardId: number,
+        fix: (cfg: Record<string, unknown>, listId: number) => Record<string, unknown> | null,
+    ): Promise<void> {
+        const [dash] = await tx.select({ widgets: dashboards.widgets }).from(dashboards).where(eq(dashboards.id, dashboardId));
+        if (!dash || !Array.isArray(dash.widgets)) return;
+        let changed = false;
+        const next = (dash.widgets as Array<Record<string, unknown>>).map((w) => {
+            if (w.type !== 'table') return w;
+            const out = fix((w.config ?? {}) as Record<string, unknown>, Number(w.list_id));
+            if (!out) return w;
+            changed = true;
+            return { ...w, config: out };
+        });
+        if (changed) await tx.update(dashboards).set({ widgets: next as never }).where(eq(dashboards.id, dashboardId));
+    }
+
+    /**
+     * v0.1.209 — Marca cada lista de la tienda con su conexión y su papel
+     * (`settings.store_sync`): la UI lo usa para ofrecer «Crear orden de
+     * compra» en Productos/Variaciones. Idempotente: sólo escribe donde falta
+     * o cambió (una lista cuyos ajustes se reescribieron sin la marca la
+     * recupera en la próxima vuelta).
+     */
+    async markLists(tenantId: number, connectionId: number, settings: SyncSettings): Promise<void> {
+        const roles: Array<[number, StoreListMarker['role']]> = [];
+        for (const r of STORE_SYNC_RESOURCES) if (settings.lists[r]) roles.push([settings.lists[r]!, r]);
+        const purchaseRole: Record<StorePurchaseList, StoreListMarker['role']> = {
+            suppliers: 'suppliers',
+            orders: 'purchase_orders',
+            lines: 'purchase_lines',
+        };
+        for (const k of STORE_PURCHASE_LISTS) if (settings.purchase_lists[k]) roles.push([settings.purchase_lists[k]!, purchaseRole[k]]);
+        if (roles.length === 0) return;
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            for (const [listId, role] of roles) {
+                const marker = JSON.stringify({ store_sync: { connection_id: connectionId, role } });
+                await tx
+                    .update(lists)
+                    .set({ settings: sql`${lists.settings} || ${marker}::jsonb` })
+                    .where(
+                        and(
+                            eq(lists.tenantId, tenantId),
+                            eq(lists.id, listId),
+                            sql`${lists.settings}->'store_sync' IS DISTINCT FROM ${marker}::jsonb->'store_sync'`,
+                        ),
+                    );
+            }
+        });
     }
 
     // ── Cambios ─────────────────────────────────────────────────────────────
@@ -632,6 +731,7 @@ export class StoreSyncService {
                 this.logger.warn(`No se pudo actualizar el pack #${syncId}: ${String(err)}`),
             );
         }
+        await this.markLists(tenantId, row.connectionId, readSettings(row.settings)).catch(() => undefined);
         const ran = await this.engine.run(tenantId, syncId, creds, opts);
         // Modo tiempo real: cada vuelta (la red de seguridad horaria) revisa que
         // los avisos sigan activos en la tienda.

@@ -73,6 +73,10 @@ export interface RecordsQuery {
     filter_tree?: FilterTree | string;
     /** Subtareas: trae las que cuelgan de este registro (v0.1.132). */
     parent?: number;
+    /** Vinculados: `<campo relation>:<registro>` — los que apuntan a ese registro (v0.1.209). */
+    related_to?: string;
+    /** Registros puntuales por id, separados por coma (v0.1.209). */
+    ids?: string;
 }
 
 /**

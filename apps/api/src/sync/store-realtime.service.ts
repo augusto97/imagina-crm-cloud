@@ -194,6 +194,8 @@ export class StoreRealtimeService {
 
     /** Oyente del `RecordChangeHub`: si el registro vive en una lista de la tienda, encola el envío. */
     async onRecordChange(change: RecordChange): Promise<void> {
+        // Un alta hecha en la app no tiene contraparte en la tienda (no hay a qué mandarla).
+        if (change.kind === 'created') return;
         const target = (await this.writeTargets(change.tenantId)).get(change.listId);
         if (!target) return;
         const changed: number[] = [];

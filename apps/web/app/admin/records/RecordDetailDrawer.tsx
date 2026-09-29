@@ -34,6 +34,7 @@ import { useList } from '@/hooks/useLists';
 import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
+import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordTitleInput } from './RecordTitleInput';
@@ -365,6 +366,8 @@ export function RecordDetailDrawer({
                                             <PortalAccessButton list={listData.data} record={record} />
                                         </div>
                                     )}
+
+                                    <RecordBacklinks listId={listId} recordId={record.id} />
 
                                     {error !== null && (
                                         <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

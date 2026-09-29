@@ -141,6 +141,99 @@ export type UnmapStoreMetaInput = z.infer<typeof unmapStoreMetaSchema>;
 
 const listRefSchema = z.object({ id: idSchema, slug: z.string(), name: z.string() }).nullable();
 
+// ── Reposición (v0.1.209) ──────────────────────────────────────────────────
+
+/**
+ * Las tres listas de compras que agrega el pack 3. NO se traen de la tienda:
+ * son de la empresa (a quién le compra y qué pidió). Lo que sí toca la tienda
+ * es el efecto de recibir una orden —el stock sube—.
+ */
+export const STORE_PURCHASE_LISTS = ['suppliers', 'orders', 'lines'] as const;
+export type StorePurchaseList = (typeof STORE_PURCHASE_LISTS)[number];
+
+/** Estados de una orden de compra (valores del select del pack). */
+export const PURCHASE_ORDER_STATUSES = ['borrador', 'enviada', 'recibida_parcial', 'recibida', 'cancelada'] as const;
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
+
+/**
+ * Marca que el pack deja en `lists.settings.store_sync` de cada lista de la
+ * tienda: de qué conexión es y qué guarda. La UI la usa para ofrecer «Crear
+ * orden de compra» en Productos/Variaciones. NO viaja al duplicar una lista
+ * ni en una plantilla (la copia no es de la tienda).
+ */
+export const STORE_LIST_ROLES = [...STORE_SYNC_RESOURCES, 'suppliers', 'purchase_orders', 'purchase_lines'] as const;
+export const storeListMarkerSchema = z.object({
+    connection_id: idSchema,
+    role: z.enum(STORE_LIST_ROLES),
+});
+export type StoreListMarker = z.infer<typeof storeListMarkerSchema>;
+
+/** Lectura tolerante del marcador (un settings viejo o ajeno no rompe la UI). */
+export function readStoreListMarker(settings: unknown): StoreListMarker | null {
+    const raw = settings && typeof settings === 'object' ? (settings as Record<string, unknown>).store_sync : null;
+    const parsed = storeListMarkerSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+}
+
+const restockResourceSchema = z.enum(['products', 'variations']);
+
+export const purchasePreviewSchema = z.object({
+    resource: restockResourceSchema,
+    record_ids: z.array(idSchema).min(1).max(200),
+});
+export type PurchasePreviewInput = z.infer<typeof purchasePreviewSchema>;
+
+/** Una fila del diálogo «Crear orden de compra», con la cantidad sugerida. */
+export const purchasePreviewItemSchema = z.object({
+    record_id: idSchema,
+    name: z.string(),
+    sku: z.string().nullable(),
+    stock: z.number().nullable(),
+    in_transit: z.number(),
+    sold_30d: z.number(),
+    threshold: z.number(),
+    /** Cuánto pedir: un mes de venta + la alerta de stock, menos lo que hay y lo que viene. */
+    suggested: z.number().int().positive(),
+    /** Costo de la última compra de este artículo (si hubo). */
+    last_cost: z.number().nullable(),
+    /** Por qué no se puede pedir (un producto con variaciones: se pide por variación). */
+    blocked: z.string().nullable(),
+});
+export type PurchasePreviewItem = z.infer<typeof purchasePreviewItemSchema>;
+
+export const createPurchaseOrderSchema = z.object({
+    resource: restockResourceSchema,
+    items: z
+        .array(
+            z.object({
+                record_id: idSchema,
+                quantity: z.number().int().positive().max(1_000_000),
+                cost: z.number().nonnegative().max(1e12).nullish(),
+            }),
+        )
+        .min(1)
+        .max(200),
+    /** Un proveedor que ya está en la lista, o uno nuevo por nombre. */
+    supplier_id: idSchema.nullish(),
+    supplier_name: z.string().trim().max(190).nullish(),
+    status: z.enum(['borrador', 'enviada']).default('borrador'),
+    expected_date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullish(),
+    notes: z.string().max(5000).nullish(),
+});
+export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderSchema>;
+
+export const purchaseOrderCreatedSchema = z.object({
+    order_id: idSchema,
+    order_number: z.string(),
+    list_slug: z.string(),
+    lines: z.number().int().nonnegative(),
+    warnings: z.array(z.string()),
+});
+export type PurchaseOrderCreated = z.infer<typeof purchaseOrderCreatedSchema>;
+
 export const storeMetaKeySchema = z.object({
     key: z.string(),
     /** En cuántos registros apareció (en lo que lleva visto la sincronización). */
@@ -177,6 +270,10 @@ export const storeSyncStatusSchema = z.object({
     dashboard_id: idSchema.nullable(),
     /** v0.1.208 — tablero de inventario. */
     inventory_dashboard_id: idSchema.nullable().default(null),
+    /** v0.1.209 — las listas de compras (proveedores, órdenes y sus líneas). */
+    purchase_lists: z
+        .object({ suppliers: listRefSchema, orders: listRefSchema, lines: listRefSchema })
+        .default({ suppliers: null, orders: null, lines: null }),
     folder_id: idSchema.nullable(),
     running: z.boolean(),
     /** Qué está haciendo ahora («Trayendo pedidos…»). */

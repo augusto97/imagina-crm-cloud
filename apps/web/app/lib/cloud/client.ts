@@ -8,6 +8,12 @@ import {
     platformIntegrationsSchema,
     verifyIntegrationResultSchema,
     storeSyncStatusSchema,
+    purchasePreviewItemSchema,
+    purchaseOrderCreatedSchema,
+    type PurchasePreviewInput,
+    type PurchasePreviewItem,
+    type CreatePurchaseOrderInput,
+    type PurchaseOrderCreated,
     type StoreSyncStatus,
     type SetupStoreSyncInput,
     type UpdateStoreSyncInput,
@@ -847,6 +853,23 @@ export class CloudClient {
             await this.request('POST', `/connections/${connectionId}/sync/meta/unmap`, {
                 body: input,
                 schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    // ── Reposición: órdenes de compra (v0.1.209) ─────────────────────
+    async purchasePreview(connectionId: number, input: PurchasePreviewInput): Promise<PurchasePreviewItem[]> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/purchasing/preview`, {
+                body: input,
+                schema: z.object({ data: z.array(purchasePreviewItemSchema) }),
+            })
+        ).data;
+    }
+    async purchaseCreateOrder(connectionId: number, input: CreatePurchaseOrderInput): Promise<PurchaseOrderCreated> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/purchasing/orders`, {
+                body: input,
+                schema: z.object({ data: purchaseOrderCreatedSchema }),
             })
         ).data;
     }

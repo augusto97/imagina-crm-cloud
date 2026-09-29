@@ -149,6 +149,8 @@ export class RecordsService {
             trigger: 'record_created',
             after: row.data,
         });
+        // v0.1.209 — también las altas (las compras completan una línea nueva).
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created' });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
@@ -223,7 +225,9 @@ export class RecordsService {
             const assignmentId = resolvePermissions(list.settings).assignment_field_id;
             const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
-            const where = andWhere(andWhere(filterWhere, searchWhere), scopeW);
+            // v0.1.209 — una selección de filas y los vinculados a un registro.
+            const pickW = pickWhere(tenantId, fields, query);
+            const where = andWhere(andWhere(andWhere(filterWhere, searchWhere), scopeW), pickW);
 
             // Orden por CAMPO (`sort=field_{id}:{dir},...`): expresiones
             // tipadas whitelisted (regla de oro nº 4) con NULLS LAST. Los
@@ -232,10 +236,12 @@ export class RecordsService {
             const sorted = orderBy.length > 0;
             // Subtareas: por defecto sólo primer nivel. `parent` trae las de
             // un registro; `include_subtasks` devuelve todo plano (export).
+            // Una selección por ids o los vinculados a un registro son filas
+            // CONCRETAS: pueden ser subtareas, no se filtran por nivel.
             const parent =
                 query.parent !== undefined
                     ? query.parent
-                    : query.include_subtasks === true
+                    : query.include_subtasks === true || query.ids !== undefined || query.related_to !== undefined
                         ? ('any' as const)
                         : ('roots' as const);
             const listed = await this.repo.list(tx, tenantId, list.id, {
@@ -904,6 +910,36 @@ function compileSearch(fields: Field[], search: string | undefined): SQL | undef
     );
     parts.push(sql`${records.descriptionText} ILIKE ${escaped}`);
     return sql`(${sql.join(parts, sql` OR `)})`;
+}
+
+/**
+ * v0.1.209 — Restricciones de "filas concretas" del listado:
+ *  - `ids`: sólo esos registros (una acción sobre una selección);
+ *  - `related_to=<campo>:<registro>`: los que apuntan a ese registro por ese
+ *    campo relation (las líneas de una orden de compra). El campo tiene que
+ *    ser un relation DE ESTA LISTA: un id de otro campo o de otra lista se
+ *    rechaza, como cualquier filtro fuera del whitelist.
+ */
+function pickWhere(tenantId: number, fields: Field[], query: ListRecordsQuery): SQL | undefined {
+    let out: SQL | undefined;
+    if (query.ids !== undefined) {
+        const ids = [...new Set(query.ids.split(',').map(Number))].filter((n) => Number.isSafeInteger(n) && n > 0);
+        out = ids.length > 0 ? inArray(records.id, ids) : sql`false`;
+    }
+    if (query.related_to !== undefined) {
+        const [fieldId, targetId] = query.related_to.split(':').map(Number) as [number, number];
+        const field = fields.find((f) => f.id === fieldId);
+        if (!field || field.type !== 'relation') {
+            throw new BadRequestException({
+                code: 'invalid_related_to',
+                message: 'El campo de «vinculados a» tiene que ser una relación de esta lista',
+                data: { status: 400 },
+            });
+        }
+        const rel = sql`EXISTS (SELECT 1 FROM relations r WHERE r.tenant_id = ${tenantId} AND r.field_id = ${fieldId} AND r.source_record_id = ${records.id} AND r.target_record_id = ${targetId})`;
+        out = out ? and(out, rel) : rel;
+    }
+    return out;
 }
 
 /**

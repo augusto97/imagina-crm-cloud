@@ -48,8 +48,7 @@ export function ColumnsMenu({
 
     const isVisible = (id: string): boolean => visibility[id] !== false;
 
-    const dynamicCols = fields
-        .filter((f) => f.type !== 'relation')
+    const dynamicCols = [...fields]
         .sort((a, b) => a.position - b.position);
 
     const hiddenCount = Object.values(visibility).filter((v) => v === false).length;

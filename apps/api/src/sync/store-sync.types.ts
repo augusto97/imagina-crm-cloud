@@ -1,7 +1,9 @@
 import {
     STORE_META_RESOURCES,
+    STORE_PURCHASE_LISTS,
     STORE_SYNC_RESOURCES,
     type StoreMetaResource,
+    type StorePurchaseList,
     type StoreSyncMode,
     type StoreSyncResource,
 } from '@imagina-base/shared';
@@ -34,6 +36,10 @@ export interface SyncSettings {
     pack_version: number;
     /** Tablero de inventario (pack 2). */
     inventory_dashboard_id: number | null;
+    /** v0.1.209 (pack 3) — listas de compras: id de cada una. */
+    purchase_lists: Partial<Record<StorePurchaseList, number>>;
+    /** v0.1.209 — slug del pack → id del campo, por lista de compras. */
+    purchase_fields: Partial<Record<StorePurchaseList, Record<string, number>>>;
 }
 
 export interface KeysetCursor {
@@ -123,7 +129,20 @@ export function readSettings(raw: unknown): SyncSettings {
             : null,
         pack_version: Number(s.pack_version) > 0 ? Number(s.pack_version) : 1,
         inventory_dashboard_id: Number(s.inventory_dashboard_id) > 0 ? Number(s.inventory_dashboard_id) : null,
+        ...readPurchase(s),
     };
+}
+
+function readPurchase(s: Record<string, unknown>): Pick<SyncSettings, 'purchase_lists' | 'purchase_fields'> {
+    const listsRaw = idMap(s.purchase_lists);
+    const fieldsRaw = obj(s.purchase_fields);
+    const purchase_lists: SyncSettings['purchase_lists'] = {};
+    const purchase_fields: SyncSettings['purchase_fields'] = {};
+    for (const k of STORE_PURCHASE_LISTS) {
+        if (listsRaw[k]) purchase_lists[k] = listsRaw[k];
+        if (fieldsRaw[k]) purchase_fields[k] = idMap(fieldsRaw[k]);
+    }
+    return { purchase_lists, purchase_fields };
 }
 
 function readCursor(v: unknown): KeysetCursor | null {
