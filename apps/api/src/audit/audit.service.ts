@@ -62,7 +62,12 @@ export type AuditAction =
     // OAuth2 como cliente (v0.1.199): quién autorizó una app externa en nombre
     // de la empresa y quién le cortó el acceso.
     | 'connection.oauth_connect'
-    | 'connection.oauth_disconnect';
+    | 'connection.oauth_disconnect'
+    // v0.1.206 — sincronización con una tienda (crea listas, trae datos de afuera).
+    | 'store_sync.create'
+    | 'store_sync.update'
+    | 'store_sync.delete'
+    | 'store_sync.map_meta';
 
 export interface AuditEntryDto {
     id: number;

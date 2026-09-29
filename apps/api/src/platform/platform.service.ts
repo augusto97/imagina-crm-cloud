@@ -56,6 +56,8 @@ import {
     recurrences,
     relations,
     templates,
+    connectionSyncs,
+    syncLinks,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -305,6 +307,8 @@ export class PlatformService {
             // connections, templates, carpetas, menciones, recurrencias y la
             // bitácora, agregadas en releases posteriores al original.
             await tx.delete(mentions).where(eq(mentions.tenantId, id));
+            await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));
+            await tx.delete(connectionSyncs).where(eq(connectionSyncs.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));

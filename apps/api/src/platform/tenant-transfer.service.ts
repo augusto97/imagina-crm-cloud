@@ -43,6 +43,7 @@ import {
     automations,
     comments,
     connections,
+    connectionSyncs,
     dashboards,
     emailUsage,
     fields,
@@ -61,6 +62,7 @@ import {
     templates,
     tenants,
     users,
+    syncLinks,
 } from '../db/schema';
 import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
 import {
@@ -72,6 +74,7 @@ import {
     remapRecordData,
     remapRichDoc,
     type IdMaps,
+    remapSyncSettings,
 } from './tenant-transfer.remap';
 
 /**
@@ -270,6 +273,10 @@ export class TenantTransferService {
             await dump('mentions', await this.byTenant(mentions, tenantId));
             await dump('email_usage', await this.byTenant(emailUsage, tenantId));
             await dump('ai_usage', await this.byTenant(aiUsage, tenantId));
+            // v0.1.206 — sincronizaciones con tiendas y sus vínculos: sin
+            // ellos, reactivarla en el destino DUPLICARÍA todo lo traído.
+            await dump('connection_syncs', await this.byTenant(connectionSyncs, tenantId));
+            await dump('sync_links', await this.byTenant(syncLinks, tenantId));
 
             // Tablas grandes: por páginas keyset, escribiendo a medida (las de
             // una empresa con cientos de miles de filas no entran en memoria).
@@ -954,6 +961,60 @@ export class TenantTransferService {
             inputTokens: Number(u.inputTokens ?? 0),
             outputTokens: Number(u.outputTokens ?? 0),
         }));
+
+        // v0.1.206 — sincronizaciones con tiendas (después de registros y
+        // conexiones: los vínculos apuntan a los dos).
+        const syncMap = new Map<number, number>();
+        for (const sRow of await this.readAll(rows('connection_syncs'))) {
+            const connectionId = mapId(maps.connection, sRow.connectionId);
+            if (connectionId === null) continue;
+            const state: Row = { ...((sRow.state as Row | null) ?? {}), running: false };
+            // Los avisos en tiempo real apuntan a la instancia de ORIGEN: se
+            // registran de nuevo acá cuando corre (fase 3).
+            if (state.realtime && typeof state.realtime === 'object') {
+                state.realtime = { ...(state.realtime as Row), webhook_ids: [] };
+            }
+            const [ins] = await tx
+                .insert(connectionSyncs)
+                .values({
+                    tenantId,
+                    connectionId,
+                    provider: String(sRow.provider ?? 'woocommerce'),
+                    settings: remapSyncSettings(sRow.settings, maps, groupMap),
+                    state,
+                    enabled: Boolean(sRow.enabled),
+                    nextRunAt: new Date(),
+                    createdBy: mapId(maps.user, sRow.createdBy),
+                })
+                .returning({ id: connectionSyncs.id });
+            syncMap.set(Number(sRow.id), ins!.id);
+        }
+        counts.connection_syncs = syncMap.size;
+        counts.sync_links = await this.streamInsert(rows('sync_links'), async (batch) => {
+            const values = batch
+                .map((l) => {
+                    const syncId = syncMap.get(Number(l.syncId));
+                    const recordId = mapId(maps.record, l.recordId);
+                    if (syncId === undefined || recordId === null) return null;
+                    return {
+                        tenantId,
+                        syncId,
+                        resource: String(l.resource),
+                        externalId: String(l.externalId),
+                        parentExternalId: (l.parentExternalId as string | null) ?? null,
+                        recordId,
+                    };
+                })
+                .filter((v): v is NonNullable<typeof v> => v !== null);
+            if (!values.length) return 0;
+            await this.insertValues(tx, syncLinks, values);
+            return values.length;
+        });
+        if (syncMap.size > 0 && !sameKey) {
+            warnings.push(
+                'La clave de la tienda no viajó (otra clave de cifrado): volvé a cargarla en Integraciones → WooCommerce. La sincronización sigue donde estaba, sin duplicar nada.',
+            );
+        }
 
         if (publicTokens.size > 0) {
             warnings.push(

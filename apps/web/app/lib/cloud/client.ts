@@ -7,6 +7,12 @@ import {
     platformIntegrationAppSchema,
     platformIntegrationsSchema,
     verifyIntegrationResultSchema,
+    storeSyncStatusSchema,
+    type StoreSyncStatus,
+    type SetupStoreSyncInput,
+    type UpdateStoreSyncInput,
+    type MapStoreMetaInput,
+    type UnmapStoreMetaInput,
     type AuthorizeIntegrationInput,
     type ConnectIntegrationKeyInput,
     type IntegrationKey,
@@ -795,6 +801,57 @@ export class CloudClient {
                 schema: z.object({ data: oauthStartResultSchema }),
             })
         ).data;
+    }
+    // ── Sincronización con tiendas (v0.1.206, ADR-S24) ────────────────
+    async storeSyncStatus(connectionId: number): Promise<StoreSyncStatus> {
+        return (
+            await this.request('GET', `/connections/${connectionId}/sync`, {
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncSetup(connectionId: number, input: SetupStoreSyncInput): Promise<StoreSyncStatus> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sync`, {
+                body: input,
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncUpdate(connectionId: number, input: UpdateStoreSyncInput): Promise<StoreSyncStatus> {
+        return (
+            await this.request('PATCH', `/connections/${connectionId}/sync`, {
+                body: input,
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncRun(connectionId: number, full: boolean): Promise<StoreSyncStatus> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sync/run`, {
+                body: { full },
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncMapMeta(connectionId: number, input: MapStoreMetaInput): Promise<StoreSyncStatus> {
+        return (
+            await this.request('PUT', `/connections/${connectionId}/sync/meta`, {
+                body: input,
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncUnmapMeta(connectionId: number, input: UnmapStoreMetaInput): Promise<StoreSyncStatus> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sync/meta/unmap`, {
+                body: input,
+                schema: z.object({ data: storeSyncStatusSchema }),
+            })
+        ).data;
+    }
+    async storeSyncRemove(connectionId: number): Promise<void> {
+        await this.request('DELETE', `/connections/${connectionId}/sync`, {});
     }
     platformIntegrationsGet(): Promise<PlatformIntegrations> {
         return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });

@@ -411,6 +411,45 @@ export class ConnectorsService {
         };
     }
 
+    /**
+     * v0.1.206 — la sincronización con tiendas se ve y se configura con el
+     * mismo permiso que EDITAR la conexión: trae datos de afuera a nombre de
+     * la empresa y crea listas.
+     */
+    async editableConnection(
+        tenantId: number,
+        userId: number,
+        role: Role,
+        id: number,
+    ): Promise<{ id: number; name: string; provider: string }> {
+        const row = await this.requireEditable(tenantId, userId, role, id);
+        return { id: row.id, name: row.name, provider: row.provider };
+    }
+
+    /**
+     * v0.1.206 — credenciales de una app por clave para el motor de
+     * sincronización (corre en segundo plano, sin persona). `null` si la
+     * conexión ya no existe; lanza si existe pero no se puede descifrar.
+     */
+    async integrationCredsFor(
+        tenantId: number,
+        id: number,
+    ): Promise<{ name: string; provider: string; creds: IntegrationCreds } | null> {
+        const row = await this.row(tenantId, id);
+        if (!row) return null;
+        const secrets = this.readSecrets(row);
+        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        return {
+            name: row.name,
+            provider: row.provider,
+            creds: {
+                secret: secrets.token ?? '',
+                accessToken: secrets.access_token ?? '',
+                fields: readFields(row.config.fields),
+            },
+        };
+    }
+
     private partsFrom(row: ConnectionRow | null): ConnectionParts | null {
         if (!row) return null;
         const secrets = this.readSecrets(row);

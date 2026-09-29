@@ -4698,6 +4698,77 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         variaciones, meta de plugins, paginación con `X-WP-TotalPages`) en sus
         dos modos: normal y hosting que tira la cabecera.
 
+  - [x] **WooCommerce — fase 2: la tienda sincronizada (v0.1.206, ADR-S24,
+        pedido del usuario: "traer pedidos, usuarios, compras por usuario y por
+        producto… ¿cómo harías con productos variables y los meta fields de
+        otros plugins?")**: la fase 1 (v0.1.205) sólo ESCRIBÍA en la tienda;
+        ahora la tienda se TRAE y se mantiene al día. Desde Integraciones →
+        «Sincronizar tienda» (página `/settings/stores/:id`) se elige qué traer
+        (clientes / productos / pedidos, pedidos desde una fecha para ahorrar
+        registros del plan) y la frecuencia (5 min a 1 día), y se crea una
+        CARPETA con un **pack de cinco listas vinculadas** —Clientes, Productos,
+        Variaciones, Pedidos y Líneas de pedido— más el tablero «Ventas ·
+        tienda» (KPIs, ventas en el tiempo, estados, top clientes y productos).
+        Todo es un registro común: se filtra, se agrupa, se suma y dispara
+        automatizaciones. Cuánto compró cada cliente, su ticket promedio, las
+        unidades e ingresos de cada producto y de CADA variación son rollups
+        sobre las líneas (no números copiados), así cuadran solos. La moneda,
+        los decimales y el país salen de los ajustes de la tienda.
+        (a) **Vínculo por id de la tienda FUERA de los datos**: `sync_links`
+        (migración 0053, RLS; `connection_syncs` guarda ajustes y estado) —
+        renombrar o borrar columnas no rompe nada (regla de oro nº 1).
+        (b) **Productos variables**: cada variación (talla, color) es un
+        registro propio vinculado al producto («Camiseta — Rojo / M»); la línea
+        de pedido apunta al producto Y a la variación.
+        (c) **Clientes invitados**: WooCommerce sólo lista registrados; el
+        invitado se identifica por `email:x` y el registrado por `id:N`, y las
+        DOS claves de una persona apuntan al mismo registro en los dos sentidos
+        (la cuenta que aparece adopta el registro de invitada; la compra sin
+        sesión de alguien con cuenta va a su registro). **Bug atrapado por el
+        test**: la primera versión RENOMBRABA el vínculo `email:x`→`id:N`, y la
+        siguiente vuelta completa volvía a crear a la invitada desde sus
+        pedidos viejos (que siguen diciendo `email:x`) — ahora se conservan las
+        dos claves y el contador cuenta registros distintos, no vínculos.
+        (d) **Campos de otros plugins** (`meta_data`): se descubren por recurso
+        con cuántos registros los tienen, un ejemplo y un tipo sugerido (los
+        que empiezan con `_` se marcan internos y van plegados); «Traer como
+        columna» crea el campo y relee ese recurso para rellenar lo existente;
+        los valores estructurados (ACF) van como JSON en un texto largo.
+        (e) **Incremental por keyset**: productos y pedidos con
+        `orderby=modified` + `modified_after` desde un cursor (fecha + ids de
+        ese segundo: la API compara por segundo y el filtro es exclusivo)
+        guardado por página; una tienda que ignora el filtro se detecta y se
+        pagina por número; clientes nuevos por id descendente + barrido
+        completo diario (igual que el stock de variaciones). Las líneas que un
+        pedido ya no tiene se borran.
+        (f) **Una corrida a la vez** (candado en Redis renovado por página +
+        `pg_advisory_xact_lock` por escritura), cola BullMQ propia con tick por
+        minuto, reintentos con espera ante 5xx/429 de la tienda.
+        (g) **Ni la importación inicial ni «Recorrer todo de nuevo» disparan
+        automatizaciones** (nadie quiere 3.000 WhatsApps al conectar); los
+        cambios posteriores sí, con el antes y el después.
+        (h) **El plan manda**: si la tienda excede los registros del plan, la
+        corrida se detiene con el motivo en pantalla. Dejar de sincronizar o
+        desconectar conserva todo (ADR-S09). Migrar una empresa lleva la
+        sincronización re-mapeada y borrar una empresa limpia sus tablas.
+        Front: estado en vivo («En cola…» / «Trayendo pedidos…» con barra de
+        avance / «Al día»), tarjetas por recurso que abren su lista, pausar/
+        reanudar, frecuencia, avisos por dato que no se pudo guardar y la
+        sección «Campos de otros plugins» por pestaña. **Bug atrapado en el
+        E2E**: tras «Sincronizar ahora» la respuesta aún dice «no corre» (el
+        worker no la tomó) y la pantalla volvía a preguntar cada 30 s — ahora
+        recuerda el pedido y consulta cada 2 s hasta que la corrida arranca.
+        21 tests nuevos (10 unitarios del mapeo/pack/lectores/re-mapeo + 11 de
+        integración con Postgres y Redis reales y la tienda simulada en el
+        borde de red: alta, importación paginada de 230 pedidos, re-correr sin
+        duplicar, incremental con evento antes/después, tienda sin
+        `modified_after`, adopción de invitada en los dos sentidos, meta a
+        columna, pausa y tick, RLS, límite del plan, baja conservando datos) —
+        701 API, 154 front y 66 shared en verde — + E2E navegador 25/25 contra una tienda falsa (250 pedidos, 292 líneas,
+        meta mapeada rellenada, incremental, móvil sin desborde).
+        Sigue la fase 3: avisos en tiempo real (webhooks de la tienda) y
+        edición en los dos sentidos.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

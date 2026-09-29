@@ -322,7 +322,11 @@ export function Sidebar({
             )}
 
             {sec === 'settings' && (
-                <SettingsPanelNav isAdmin={isAdmin} requested={params.get('s')} />
+                <SettingsPanelNav
+                    isAdmin={isAdmin}
+                    // La página de una tienda sincronizada vive bajo Integraciones.
+                    requested={pathname.startsWith('/settings/stores/') ? 'conectores' : params.get('s')}
+                />
             )}
 
             {sec === 'platform' && <PlatformPanelNav requested={params.get('tab')} />}

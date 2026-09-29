@@ -9,7 +9,7 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ChevronDown, ChevronRight, Lock, Settings2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, RefreshCw, Settings2 } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
@@ -117,12 +117,17 @@ export function IntegrationsPanel(): JSX.Element | null {
     };
 
     const disconnect = async (c: Connection): Promise<void> => {
+        const usage =
+            c.usage_count > 0
+                ? `${__('La usan')} ${c.usage_count} ${__('acciones de automatización: van a fallar hasta que la conectes de nuevo.')}`
+                : __('Podés volver a conectarla cuando quieras.');
         const ok = await confirm({
             title: __('¿Desconectar esta app?'),
+            // Una tienda sincronizada deja de actualizarse, pero lo que se trajo queda.
             description:
-                c.usage_count > 0
-                    ? `${__('La usan')} ${c.usage_count} ${__('acciones de automatización: van a fallar hasta que la conectes de nuevo.')}`
-                    : __('Podés volver a conectarla cuando quieras.'),
+                c.integration_key === 'woocommerce'
+                    ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu workspace.')}`
+                    : usage,
             confirmLabel: __('Desconectar'),
             destructive: true,
         });
@@ -377,6 +382,14 @@ function ConnectedRow({
                     </p>
                 )}
             </div>
+            {c.integration_key === 'woocommerce' && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/stores/${c.id}`} data-testid="imcrm-store-sync-open">
+                        <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Sincronizar tienda')}
+                    </Link>
+                </Button>
+            )}
             {c.can_edit && (
                 <div className="imcrm-flex imcrm-gap-1">
                     <Button size="sm" variant="ghost" disabled={busy} onClick={onReconnect} data-testid="imcrm-integration-reconnect">

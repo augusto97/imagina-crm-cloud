@@ -372,6 +372,13 @@
       "when": 1784200000021,
       "tag": "0052_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784200000022,
+      "tag": "0053_store_sync",
+      "breakpoints": true
     }
   ]
 }

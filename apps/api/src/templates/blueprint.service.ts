@@ -45,6 +45,10 @@ export interface MaterializeOptions {
 
 export interface MaterializeResult {
     lists: List[];
+    /** v0.1.206 — key de la lista del pack → (slug → id del campo creado). */
+    fieldIds: Record<string, Record<string, number>>;
+    /** v0.1.206 — tableros creados, en el orden del blueprint. */
+    dashboardIds: number[];
     /** Piezas que no se pudieron reconstruir (se informa, no se aborta). */
     warnings: string[];
 }
@@ -369,6 +373,7 @@ export class BlueprintService {
 
         // G) Tableros del pack (v0.1.167): cada widget apunta a una lista del
         //    pack y sus campos se resuelven contra ESA lista.
+        const dashboardIds: number[] = [];
         for (const d of blueprint.dashboards) {
             const widgets: WidgetSpec[] = [];
             for (const wd of d.widgets) {
@@ -394,19 +399,22 @@ export class BlueprintService {
                 });
             }
             try {
-                await this.dashboards.create(tenantId, actorId, {
+                const created = await this.dashboards.create(tenantId, actorId, {
                     name: d.name,
                     description: d.description,
                     widgets,
                     settings: d.settings,
                 });
+                dashboardIds.push(created.id);
             } catch (err) {
                 warnings.push(`Tablero «${d.name}»: ${message(err)}`);
             }
         }
 
         this.realtime.lists(tenantId);
-        return { lists: created, warnings };
+        const fieldIds: Record<string, Record<string, number>> = {};
+        for (const [key, map] of slugMaps) fieldIds[key] = Object.fromEntries(map);
+        return { lists: created, warnings, fieldIds, dashboardIds };
     }
 
     /**
