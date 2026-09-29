@@ -1,4 +1,5 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { createHmac } from 'node:crypto';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -12,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 interface FakeCall {
     url: string;
     method?: string;
+    body?: string;
 }
 type Row = Record<string, unknown>;
 const store = vi.hoisted(() => ({
@@ -23,14 +25,62 @@ const store = vi.hoisted(() => ({
     nextId: 10_000,
     calls: [] as FakeCall[],
     ignoreModifiedAfter: false,
+    webhooks: [] as Row[],
+    readOnly: false,
 }));
 vi.mock('../src/common/safe-fetch', async (importOriginal) => {
     const real = await importOriginal<typeof import('../src/common/safe-fetch')>();
     return {
         ...real,
-        safeWebhookFetch: async (url: string, opts: { method?: string }) => {
-            store.calls.push({ url, method: opts.method });
+        safeWebhookFetch: async (url: string, opts: { method?: string; body?: string }) => {
+            store.calls.push({ url, method: opts.method, body: opts.body });
             const u = new URL(url);
+            const method = opts.method ?? 'GET';
+            const input = opts.body ? (JSON.parse(opts.body) as Row) : {};
+            const ok = (o: unknown) => ({ status: 200, body: JSON.stringify(o), headers: {} });
+            const denied = { status: 401, body: '{"code":"woocommerce_rest_cannot_create","message":"No tenés permiso"}', headers: {} };
+            const touchRow = (o: Row) => {
+                store.clock += 60_000;
+                o.date_modified_gmt = new Date(store.clock).toISOString().slice(0, 19);
+            };
+            if (method !== 'GET') {
+                const p = u.pathname.replace('/wp-json/wc/v3', '');
+                if (store.readOnly) return denied;
+                if (p === '/webhooks' && method === 'POST') {
+                    const wh = { id: store.nextId++, name: input.name, topic: input.topic, delivery_url: input.delivery_url, secret: input.secret, status: input.status ?? 'active' };
+                    store.webhooks.push(wh);
+                    return { status: 201, body: JSON.stringify({ ...wh, secret: undefined }), headers: {} };
+                }
+                let m = /^\/webhooks\/(\d+)$/.exec(p);
+                if (m) {
+                    const wh = store.webhooks.find((w) => w.id === Number(m![1]));
+                    if (method === 'DELETE') store.webhooks = store.webhooks.filter((w) => w !== wh);
+                    else if (wh) Object.assign(wh, input);
+                    return ok(wh ?? {});
+                }
+                const apply = (o: Row | undefined) => {
+                    if (!o) return { status: 404, body: '{"code":"not_found","message":"ID no válido"}', headers: {} };
+                    const { billing, meta_data, ...rest } = input as Row & { billing?: Row; meta_data?: Row[] };
+                    Object.assign(o, rest);
+                    if (billing) o.billing = { ...(o.billing as Row), ...billing };
+                    for (const md of meta_data ?? []) {
+                        const list = (o.meta_data as Row[]) ?? (o.meta_data = []);
+                        const hit = (list as Row[]).find((x) => x.key === md.key);
+                        if (hit) hit.value = md.value;
+                        else (list as Row[]).push(md);
+                    }
+                    if (rest.regular_price !== undefined || rest.sale_price !== undefined) o.price = (o.sale_price as string) || (o.regular_price as string);
+                    touchRow(o);
+                    return ok(o);
+                };
+                if ((m = /^\/products\/(\d+)\/variations\/(\d+)$/.exec(p))) {
+                    return apply((store.variations[Number(m[1])] ?? []).find((v) => v.id === Number(m![2])));
+                }
+                if ((m = /^\/products\/(\d+)$/.exec(p))) return apply(store.products.find((x) => x.id === Number(m![1])));
+                if ((m = /^\/orders\/(\d+)$/.exec(p))) return apply(store.orders.find((x) => x.id === Number(m![1])));
+                if ((m = /^\/customers\/(\d+)$/.exec(p))) return apply(store.customers.find((x) => x.id === Number(m![1])));
+                return { status: 404, body: '{"code":"rest_no_route","message":"No existe"}', headers: {} };
+            }
             if (u.pathname === '/wp-json/') return { status: 200, body: '{"name":"Tienda Test"}', headers: {} };
             const path = u.pathname.replace('/wp-json/wc/v3', '');
             const q = u.searchParams;
@@ -77,6 +127,7 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
             const vm = /^\/products\/(\d+)\/variations$/.exec(path);
             if (vm) return page(store.variations[Number(vm[1])] ?? []);
             if (path === '/products') return page(byModified(store.products));
+            if (path === '/webhooks') return page(store.webhooks);
             if (path === '/orders') return page(byModified(store.orders));
             return { status: 404, body: '{"code":"rest_no_route","message":"No existe"}', headers: {} };
         },
@@ -95,7 +146,7 @@ import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { connectionSyncs, lists, plans, records, relations, syncLinks, tenants, users, memberships } from '../src/db/schema';
+import { connectionSyncs, lists, plans, records, relations, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -109,7 +160,9 @@ import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { StoreSyncEngine } from '../src/sync/store-sync.engine';
-import { StoreSyncQueue } from '../src/sync/store-sync.queue';
+import { StoreSyncQueue, type StoreSyncPushJob } from '../src/sync/store-sync.queue';
+import { StoreRealtimeService } from '../src/sync/store-realtime.service';
+import { RecordChangeHub } from '../src/records/record-change-hub';
 import { StoreSyncService } from '../src/sync/store-sync.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { BlueprintService } from '../src/templates/blueprint.service';
@@ -142,8 +195,16 @@ class CapturingDispatcher extends AutomationDispatcher {
 }
 class CapturingQueue extends StoreSyncQueue {
     runs: Array<{ tenantId: number; syncId: number; opts: { full?: boolean; only?: string[] } }> = [];
+    pushes: StoreSyncPushJob[] = [];
     override enqueueRun(tenantId: number, syncId: number, opts: { full?: boolean; only?: string[] }): void {
         this.runs.push({ tenantId, syncId, opts });
+    }
+    /** Sin cola: el aviso se procesa en el acto (el camino "sin Redis" del service). */
+    override enqueueHook(): boolean {
+        return false;
+    }
+    override enqueuePush(job: StoreSyncPushJob): void {
+        this.pushes.push(job);
     }
 }
 
@@ -234,6 +295,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
     let recordsService: RecordsService;
     let dispatcher: CapturingDispatcher;
     let queue: CapturingQueue;
+    let realtime: StoreRealtimeService;
     let tenantId: number;
     let otherTenant: number;
     let adminId: number;
@@ -274,10 +336,14 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         );
         dispatcher = new CapturingDispatcher();
         const activity = new ActivityService(tenantDb, new ActivityRepository(), listsService);
-        recordsService = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, activity, dispatcher, new RelationsRepository());
+        const hub = new RecordChangeHub();
+        recordsService = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, activity, dispatcher, new RelationsRepository(), undefined, hub);
         const engine = new StoreSyncEngine(tenantDb, fieldsService, billing, rt, dispatcher, activity, redis);
         queue = new CapturingQueue();
-        svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue);
+        realtime = new StoreRealtimeService(tenantDb, pg.db, env, engine, queue);
+        svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime);
+        realtime.setCredsResolver((t, s) => svc.credsForSync(t, s));
+        hub.subscribe((c) => realtime.onRecordChange(c));
 
         await pg.db.insert(plans).values({ slug: 'grande', name: 'Grande', maxRecords: null }).onConflictDoNothing();
         await pg.db.insert(plans).values({ slug: 'mini', name: 'Mini', maxRecords: 30 }).onConflictDoNothing();
@@ -485,6 +551,179 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         await pg.db.update(connectionSyncs).set({ nextRunAt: new Date(Date.now() - 1000) }).where(eq(connectionSyncs.id, syncId));
         await svc.tick();
         expect(queue.runs.map((r) => r.syncId)).toEqual([syncId]);
+    });
+
+    // ── Fase 3: tiempo real + edición en los dos sentidos (v0.1.207) ──────────
+
+    const hookOf = () => {
+        const wh = store.webhooks[0]!;
+        const token = String(wh.delivery_url).split('/').pop()!;
+        return { token, secret: String(wh.secret) };
+    };
+    const deliver = async (topic: string, payload: Row, opts: { secret?: string; token?: string } = {}) => {
+        const { token, secret } = hookOf();
+        const raw = JSON.stringify(payload);
+        const sig = createHmac('sha256', opts.secret ?? secret).update(raw).digest('base64');
+        await realtime.receive(opts.token ?? token, { 'x-wc-webhook-topic': topic, 'x-wc-webhook-signature': sig }, raw, JSON.parse(raw));
+    };
+
+    it('tiempo real: con una clave de sólo lectura NO cambia de modo y dice por qué', async () => {
+        store.readOnly = true;
+        await expect(svc.update(tenantId, adminId, 'admin', connId, { mode: 'realtime' })).rejects.toThrow(/permiso de escritura/);
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.mode).toBe('interval');
+        expect(store.webhooks).toHaveLength(0);
+        store.readOnly = false;
+    });
+
+    it('tiempo real: registra un aviso por tema, firmado con un secreto propio', async () => {
+        st = await svc.update(tenantId, adminId, 'admin', connId, { mode: 'realtime' });
+        expect(st.mode).toBe('realtime');
+        expect(st.realtime).toMatchObject({ active: true, webhooks: 10, error: null });
+        expect(store.webhooks.map((w) => w.topic).sort()).toEqual(
+            ['customer.created', 'customer.updated', 'order.created', 'order.deleted', 'order.restored', 'order.updated', 'product.created', 'product.deleted', 'product.restored', 'product.updated'],
+        );
+        const urls = new Set(store.webhooks.map((w) => w.delivery_url));
+        expect(urls.size).toBe(1);
+        expect([...urls][0]).toMatch(/^http:\/\/localhost:5174\/api\/v1\/public\/store-hooks\/[A-Za-z0-9_-]{32}$/);
+        // El secreto viaja a la tienda pero en la base está cifrado.
+        const [row] = await pg.db.select().from(storeHooks).where(eq(storeHooks.syncId, syncId));
+        expect(row!.secretEnc).not.toContain(hookOf().secret);
+    });
+
+    it('recibir: ping ok, token desconocido 404, firma mala 401 — nada se escribe', async () => {
+        const { token } = hookOf();
+        await expect(realtime.receive(token, {}, 'webhook_id=5', { webhook_id: '5' })).resolves.toBeUndefined();
+        await expect(realtime.receive('x'.repeat(32), { 'x-wc-webhook-topic': 'order.updated' }, '{}', {})).rejects.toThrow(/Not found/);
+        const before = dispatcher.events.length;
+        await expect(deliver('order.updated', { ...store.orders[0]!, status: 'cancelled' }, { secret: 'otro' })).rejects.toThrow(/Firma/);
+        expect(dispatcher.events.length).toBe(before);
+    });
+
+    it('recibir: un pedido que cambia en la tienda se actualiza al instante y dispara automatizaciones', async () => {
+        const order = store.orders[10]!;
+        order.status = 'cancelled';
+        touch(order);
+        dispatcher.events.length = 0;
+        await deliver('order.updated', order);
+        const orders = await rows(tenantId, st.lists.orders!.id);
+        const rec = orders.find((o) => o[`f${fieldIds.orders!.woo_id}`] === String(order.id))!;
+        expect(rec[`f${fieldIds.orders!.estado}`]).toBe('cancelled');
+        expect(dispatcher.events.some((e) => e.trigger === 'record_updated' && e.recordId === rec.id)).toBe(true);
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.realtime.received).toBe(1);
+        expect(st.realtime.last_received_at).not.toBeNull();
+    });
+
+    it('recibir: una variación llega como product.updated y se reconoce; un borrado manda a la papelera sin borrar', async () => {
+        const v = store.variations[20]![0]!;
+        v.stock_quantity = 1;
+        v.type = 'variation';
+        touch(v);
+        await deliver('product.updated', v);
+        const vars = await rows(tenantId, st.lists.variations!.id);
+        expect(vars.find((x) => x[`f${fieldIds.variations!.woo_id}`] === '21')![`f${fieldIds.variations!.stock}`]).toBe(1);
+
+        await deliver('product.deleted', { id: 10 });
+        const prods = await rows(tenantId, st.lists.products!.id);
+        const taza = prods.find((x) => x[`f${fieldIds.products!.woo_id}`] === '10')!;
+        expect(taza[`f${fieldIds.products!.estado}`]).toBe('trash');
+        // Un borrado de algo que nunca se trajo no crea nada.
+        await deliver('product.deleted', { id: 999 });
+        expect((await rows(tenantId, st.lists.products!.id)).length).toBe(prods.length);
+    });
+
+    it('red de seguridad: un aviso desactivado se reactiva y uno borrado se vuelve a crear', async () => {
+        store.webhooks[0]!.status = 'disabled';
+        const gone = store.webhooks.pop()!;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        expect(store.webhooks).toHaveLength(10);
+        expect(store.webhooks.every((w) => w.status === 'active')).toBe(true);
+        expect(store.webhooks.some((w) => w.topic === gone.topic)).toBe(true);
+    });
+
+    it('edición en los dos sentidos: SÓLO lo que cambió viaja a la tienda, y sin rebote', async () => {
+        const actor = { userId: adminId, role: 'admin' as const };
+        const prods = await rows(tenantId, st.lists.products!.id);
+        const camiseta = prods.find((x) => x[`f${fieldIds.products!.woo_id}`] === '20')!;
+        // Apagada: editar no manda nada.
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, actor, st.lists.products!.slug, Number(camiseta.id), { data: { [`f${fieldIds.products!.precio_normal}`]: 31000 } } as never);
+        await new Promise((r) => setTimeout(r, 100));
+        expect(queue.pushes).toHaveLength(0);
+
+        st = await svc.update(tenantId, adminId, 'admin', connId, { write_back: true });
+        expect(st.write_back).toBe(true);
+        const priceKey = `f${fieldIds.products!.precio_normal}`;
+        await recordsService.update(tenantId, actor, st.lists.products!.slug, Number(camiseta.id), { data: { [priceKey]: 35000 } } as never);
+        // El oyente de cambios es asíncrono (no frena la edición de la persona).
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        expect(queue.pushes[0]).toMatchObject({ syncId, resource: 'products', recordId: Number(camiseta.id), fieldIds: [fieldIds.products!.precio_normal] });
+
+        const calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(put.url).toContain('/wc/v3/products/20');
+        // Sólo el precio: el stock (que la tienda pudo haber bajado) no se toca.
+        expect(JSON.parse(put.body!)).toEqual({ regular_price: '35000' });
+        expect(store.products.find((p) => p.id === 20)!.regular_price).toBe('35000');
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.write_back_status).toMatchObject({ pushed: 1, failed: 0, last_error: null });
+
+        // El aviso que la tienda manda después no encuentra diferencias: nada rebota.
+        dispatcher.events.length = 0;
+        queue.pushes.length = 0;
+        await deliver('product.updated', store.products.find((p) => p.id === 20)!);
+        await new Promise((r) => setTimeout(r, 100));
+        expect(dispatcher.events.filter((e) => e.recordId === Number(camiseta.id))).toHaveLength(0);
+        expect(queue.pushes).toHaveLength(0);
+    });
+
+    it('edición en los dos sentidos: variaciones, clientes (no invitados) y un fallo visible', async () => {
+        const actor = { userId: adminId, role: 'admin' as const };
+        const vars = await rows(tenantId, st.lists.variations!.id);
+        const s22 = vars.find((x) => x[`f${fieldIds.variations!.woo_id}`] === '22')!;
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, actor, st.lists.variations!.slug, Number(s22.id), { data: { [`f${fieldIds.variations!.stock}`]: 7 } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        const calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(put.url).toContain('/wc/v3/products/20/variations/22');
+        expect(JSON.parse(put.body!)).toEqual({ manage_stock: true, stock_quantity: 7 });
+
+        // Cliente registrado: el teléfono va a la facturación; la invitada no tiene a quién.
+        const customers = await rows(tenantId, st.lists.customers!.id);
+        const email = `f${fieldIds.customers!.email}`;
+        const beto = customers.find((c) => c[email] === 'beto@x.co')!;
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, actor, st.lists.customers!.slug, Number(beto.id), { data: { [`f${fieldIds.customers!.telefono}`]: '+573009998877' } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        const c2 = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const put2 = store.calls.slice(c2).find((c) => c.method === 'PUT')!;
+        expect(put2.url).toContain('/wc/v3/customers/2');
+        expect(JSON.parse(put2.body!)).toEqual({ billing: { phone: '+573009998877' } });
+
+        // La tienda rechaza (clave sin escritura): queda contado y con el motivo.
+        store.readOnly = true;
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, actor, st.lists.variations!.slug, Number(s22.id), { data: { [`f${fieldIds.variations!.stock}`]: 8 } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        await realtime.processPush(queue.pushes[0]!);
+        store.readOnly = false;
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.write_back_status.failed).toBe(1);
+        expect(st.write_back_status.last_error).toMatch(/permiso de escritura/);
+    });
+
+    it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {
+        const { token } = hookOf();
+        st = await svc.update(tenantId, adminId, 'admin', connId, { mode: 'interval', write_back: false });
+        expect(st.mode).toBe('interval');
+        expect(st.realtime.active).toBe(false);
+        expect(store.webhooks).toHaveLength(0);
+        await expect(realtime.receive(token, { 'x-wc-webhook-topic': 'order.updated' }, '{}', {})).rejects.toThrow(/Not found/);
     });
 
     it('otra empresa no ve la sincronización ni sus vínculos (RLS)', async () => {

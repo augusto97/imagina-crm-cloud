@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
     jsonbKeyForField,
     validateFieldValue,
@@ -25,6 +25,7 @@ import { FieldsRepository } from '../fields/fields.repository';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
+import { RecordChangeHub } from '../records/record-change-hub';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
@@ -76,6 +77,8 @@ export class AutomationEngine {
         private readonly relationsRepo: RelationsRepository,
         private readonly mail: MailService,
         private readonly connectors: ConnectorsService,
+        // v0.1.207 — Optional + al final: los specs que lo arman a mano siguen andando.
+        @Optional() private readonly changes?: RecordChangeHub,
     ) {}
 
     /** Trigger de record (record_created / record_updated). */
@@ -385,6 +388,10 @@ export class AutomationEngine {
                     applied[slug] = resolved;
                 }
                 await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
+                // Una automatización que cambia un producto sincronizado también
+                // lo cambia en la tienda. Si la corrida revierte, el envío lee el
+                // valor vigente y manda lo que la tienda ya tenía (inocuo).
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
                 ctx.data = merged; // acciones posteriores ven el valor actualizado.
                 return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).`, { values: applied });
             }

@@ -1,4 +1,4 @@
-import { bigint, boolean, jsonb, pgTable, primaryKey, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { connections } from './connections';
 import { records } from './records';
 import { tenants } from './tenants';
@@ -48,3 +48,24 @@ export const syncLinks = pgTable(
 
 export type ConnectionSyncRow = typeof connectionSyncs.$inferSelect;
 export type SyncLinkRow = typeof syncLinks.$inferSelect;
+
+/**
+ * Avisos en tiempo real de la tienda (v0.1.207, ADR-S24 fase 3). SIN RLS: el
+ * token opaco de la URL dice a qué sincronización va el aviso antes de saber
+ * de qué empresa es; el secreto (cifrado) verifica la firma de cada entrega.
+ */
+export const storeHooks = pgTable(
+    'store_hooks',
+    {
+        token: varchar('token', { length: 64 }).primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        syncId: bigint('sync_id', { mode: 'number' })
+            .notNull()
+            .references(() => connectionSyncs.id, { onDelete: 'cascade' }),
+        secretEnc: text('secret_enc').notNull(),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [uniqueIndex('store_hooks_sync_ux').on(t.syncId)],
+);

@@ -54,7 +54,12 @@ async function bootstrap(): Promise<void> {
         max: (req) =>
             sensitivePaths.some((p) => req.url.includes(p))
                 ? env.RATE_LIMIT_AUTH_MAX
-                : env.RATE_LIMIT_MAX,
+                : // v0.1.207 — los avisos de una tienda llegan todos de la misma IP y
+                  // en ráfagas (una edición masiva de productos); WooCommerce APAGA el
+                  // aviso tras varias entregas fallidas. Van firmados (HMAC) y con token.
+                  req.url.includes('/public/store-hooks/')
+                  ? env.RATE_LIMIT_MAX * 10
+                  : env.RATE_LIMIT_MAX,
         timeWindow: '1 minute',
         // No limitar los health probes (evita 429/503 espurios del monitoreo).
         allowList: (req) => req.url.includes('/health'),

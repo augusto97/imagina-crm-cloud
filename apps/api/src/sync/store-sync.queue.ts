@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
-import type { StoreSyncResource } from '@imagina-base/shared';
+import type { StoreMetaResource, StoreSyncResource } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
@@ -8,12 +8,31 @@ import { guardRedis } from '../redis/redis.util';
 export const STORE_SYNC_QUEUE = 'store-sync';
 const TICK_JOB = 'tick';
 const RUN_JOB = 'run';
+const HOOK_JOB = 'hook';
+const PUSH_JOB = 'push';
 
 export interface StoreSyncRunJob {
     tenantId: number;
     syncId: number;
     full?: boolean;
     only?: StoreSyncResource[];
+}
+
+/** Un aviso de la tienda, ya verificado (v0.1.207). */
+export interface StoreSyncHookJob {
+    tenantId: number;
+    syncId: number;
+    topic: string;
+    payload: Record<string, unknown>;
+}
+
+/** Un registro editado en la app que tiene que viajar a la tienda (v0.1.207). */
+export interface StoreSyncPushJob {
+    tenantId: number;
+    syncId: number;
+    resource: StoreMetaResource;
+    recordId: number;
+    fieldIds: number[];
 }
 
 /**
@@ -48,12 +67,35 @@ export class StoreSyncQueue {
             })
             .catch((err) => this.logger.error(`No se pudo encolar la sincronización #${syncId}: ${String(err)}`));
     }
+
+    /** Un aviso de la tienda: se procesa enseguida y fuera de la request (la tienda espera 5 s). */
+    enqueueHook(job: StoreSyncHookJob): boolean {
+        if (!this.queue) return false;
+        this.queue
+            .add(HOOK_JOB, job, { removeOnComplete: true, removeOnFail: 100, attempts: 3, backoff: { type: 'exponential', delay: 5_000 } })
+            .catch((err) => this.logger.error(`No se pudo encolar el aviso de la tienda: ${String(err)}`));
+        return true;
+    }
+
+    /**
+     * Un cambio hecho en la app que viaja a la tienda. Con una pequeña espera
+     * para que la transacción de la edición termine; cada cambio es su propio
+     * envío (juntarlos haría mandar campos que nadie tocó).
+     */
+    enqueuePush(job: StoreSyncPushJob): void {
+        if (!this.queue) return;
+        this.queue
+            .add(PUSH_JOB, job, { delay: 1_500, removeOnComplete: true, removeOnFail: 100 })
+            .catch((err) => this.logger.error(`No se pudo encolar el envío a la tienda: ${String(err)}`));
+    }
 }
 
 /** Los handlers los pone el módulo (evita el ciclo service ↔ queue). */
 export interface StoreSyncHandlers {
     tick(): Promise<unknown>;
     runJob(job: StoreSyncRunJob): Promise<boolean>;
+    hookJob(job: StoreSyncHookJob): Promise<unknown>;
+    pushJob(job: StoreSyncPushJob): Promise<unknown>;
 }
 
 @Injectable()
@@ -88,6 +130,14 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
                     if (!this.handlers) return;
                     if (job.name === TICK_JOB) {
                         await this.handlers.tick();
+                        return;
+                    }
+                    if (job.name === HOOK_JOB) {
+                        await this.handlers.hookJob(job.data as StoreSyncHookJob);
+                        return;
+                    }
+                    if (job.name === PUSH_JOB) {
+                        await this.handlers.pushJob(job.data as StoreSyncPushJob);
                         return;
                     }
                     const data = job.data as StoreSyncRunJob;

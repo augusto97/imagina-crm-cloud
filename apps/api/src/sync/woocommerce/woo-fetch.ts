@@ -105,3 +105,39 @@ export async function wooGetPage(
         totalPages: headerInt(headers, 'x-wp-totalpages'),
     };
 }
+
+/**
+ * Escritura en la tienda (v0.1.207): alta/baja de avisos y la edición en los
+ * dos sentidos. SIN reintentos a ciegas: un PUT repetido es inocuo, pero un
+ * POST de un aviso repetido crearía dos; el que llama decide.
+ */
+export async function wooSend(
+    creds: IntegrationCreds,
+    method: 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    body: Record<string, unknown> | null,
+    query: Array<[string, string]> = [],
+): Promise<unknown> {
+    const url = wooUrl(creds, path, query);
+    const hide = [creds.secret, creds.fields.consumer_key ?? ''].filter((s) => s.length >= 4);
+    let res;
+    try {
+        res = await safeWebhookFetch(url, {
+            method,
+            headers: wooHeaders(creds, body !== null),
+            body: body === null ? undefined : JSON.stringify(body),
+            captureBody: true,
+            maxCaptureBytes: MAX_PAGE_BYTES,
+            timeoutMs: 30_000,
+        });
+    } catch (err) {
+        throw new WooApiError(`No pudimos hablar con la tienda: ${redactValues(err instanceof Error ? err.message : String(err), hide)}.`, 0);
+    }
+    const problem = checkWooResponse(res.status, res.body ?? '');
+    if (problem) throw new WooApiError(problem, res.status);
+    try {
+        return JSON.parse(res.body ?? 'null') as unknown;
+    } catch {
+        return null;
+    }
+}

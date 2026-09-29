@@ -27,7 +27,8 @@ import {
     type SyncSettings,
     type SyncState,
 } from './store-sync.types';
-import { WOO_PAGE_SIZE, wooGetPage } from './woocommerce/woo-fetch';
+import { WOO_PAGE_SIZE, wooGetPage, wooSend } from './woocommerce/woo-fetch';
+import { buildWriteBack, isVariationPayload, parseWooTopic, type WooHookResource } from './woocommerce/woo-hooks';
 import {
     coerceMeta,
     customerFromOrder,
@@ -156,32 +157,12 @@ export class StoreSyncEngine {
         const token = await this.acquire(syncId);
         if (!token) return false;
         try {
-            const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
-                const [r] = await tx
-                    .select()
-                    .from(connectionSyncs)
-                    .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.id, syncId)))
-                    .limit(1);
-                return r ?? null;
-            });
-            if (!row) return true;
-            const settings = readSettings(row.settings);
-            const state = readState(row.state);
-            const ctx: RunCtx = {
-                tenantId,
-                syncId,
-                actorId: row.createdBy ?? 0,
-                settings,
-                state,
-                creds,
-                targets: await this.loadTargets(tenantId, settings),
-                // Ni la importación inicial ni una resincronización COMPLETA
-                // disparan automatizaciones: son puestas al día, no novedades.
-                dispatch: state.initial_done && opts.full !== true,
-                lockToken: token,
-                warnings: new Set(),
-                touchedLists: new Set(),
-            };
+            const loaded = await this.context(tenantId, syncId, creds, token);
+            if (!loaded) return true;
+            const { ctx, settings } = loaded;
+            // Ni la importación inicial ni una resincronización COMPLETA
+            // disparan automatizaciones: son puestas al día, no novedades.
+            ctx.dispatch = ctx.state.initial_done && opts.full !== true;
             const startedAt = new Date().toISOString();
             await this.saveState(tenantId, syncId, {
                 running: true,
@@ -229,6 +210,201 @@ export class StoreSyncEngine {
         } finally {
             await this.release(syncId, token);
         }
+    }
+
+    /** Lo que necesita cualquier escritura: ajustes, estado y las listas destino con sus campos. */
+    private async context(
+        tenantId: number,
+        syncId: number,
+        creds: IntegrationCreds,
+        lockToken: string,
+    ): Promise<{ ctx: RunCtx; settings: SyncSettings } | null> {
+        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [r] = await tx
+                .select()
+                .from(connectionSyncs)
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.id, syncId)))
+                .limit(1);
+            return r ?? null;
+        });
+        if (!row) return null;
+        const settings = readSettings(row.settings);
+        const state = readState(row.state);
+        const ctx: RunCtx = {
+            tenantId,
+            syncId,
+            actorId: row.createdBy ?? 0,
+            settings,
+            state,
+            creds,
+            targets: await this.loadTargets(tenantId, settings),
+            dispatch: state.initial_done,
+            lockToken,
+            warnings: new Set(),
+            touchedLists: new Set(),
+        };
+        return { ctx, settings };
+    }
+
+    // ── Avisos en tiempo real (fase 3) ──────────────────────────────────────
+
+    /**
+     * Aplica UN aviso de la tienda (un pedido, producto o cliente que cambió).
+     * No toma el candado de la corrida: cada escritura ya va con el candado de
+     * Postgres de la sincronización, así un aviso y una corrida simultáneos no
+     * duplican nada. Dispara automatizaciones (si la importación inicial ya
+     * terminó): un aviso ES una novedad.
+     */
+    async applyHook(tenantId: number, syncId: number, creds: IntegrationCreds, topic: string, payload: WooJson): Promise<void> {
+        const parsed = parseWooTopic(topic);
+        if (!parsed) return;
+        const loaded = await this.context(tenantId, syncId, creds, '');
+        if (!loaded) return;
+        const { ctx, settings } = loaded;
+        const id = Number(payload.id);
+        let error: string | null = null;
+        try {
+            if (!Number.isInteger(id) || id <= 0) return;
+            if (parsed.event === 'deleted') {
+                await this.applyDeletion(ctx, parsed.resource, payload);
+            } else if (parsed.resource === 'order' && settings.resources.orders) {
+                await this.upsertOrders(ctx, [payload]);
+            } else if (parsed.resource === 'customer' && settings.resources.customers) {
+                await this.upsert(ctx, 'customers', [mapCustomer(payload)], {});
+            } else if (parsed.resource === 'product' && settings.resources.products) {
+                if (isVariationPayload(payload)) {
+                    const parentId = String(Number(payload.parent_id));
+                    const name = await this.productNameFromApp(ctx, parentId);
+                    await this.upsert(ctx, 'variations', [mapVariation(payload, { id: Number(parentId), name })], {});
+                } else {
+                    await this.upsert(ctx, 'products', [mapProduct(payload)], {});
+                    // Un producto variable avisa como uno solo: sus variaciones se releen.
+                    if (payload.type === 'variable') await this.syncVariationsOf(ctx, payload);
+                }
+            }
+        } catch (err) {
+            error = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`Aviso ${topic} de la sincronización #${syncId}: ${error}`);
+        }
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(connectionSyncs)
+                .set({
+                    state: sql`jsonb_set(
+                        ${connectionSyncs.state},
+                        '{realtime}',
+                        coalesce(${connectionSyncs.state}->'realtime', '{}'::jsonb) || jsonb_build_object(
+                            'received', coalesce((${connectionSyncs.state}->'realtime'->>'received')::int, 0) + 1,
+                            'last_received_at', ${new Date().toISOString()}::text,
+                            'error', ${error}::text
+                        )
+                    )`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(connectionSyncs.tenantId, tenantId), eq(connectionSyncs.id, syncId))),
+        );
+        for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+    }
+
+    /**
+     * Borrado en la tienda: el registro NO se borra (los datos son de la
+     * empresa, ADR-S09) — queda marcado en la papelera, como en la tienda.
+     */
+    private async applyDeletion(ctx: RunCtx, resource: WooHookResource, payload: WooJson): Promise<void> {
+        const id = String(Number(payload.id));
+        const trash = [{ value: 'trash', label: 'Papelera' }];
+        if (resource === 'order') {
+            await this.upsert(ctx, 'orders', [this.stub('orders', id, { estado: 'trash' }, { estado: trash })], { updateOnly: true });
+        } else if (resource === 'product') {
+            const variation = isVariationPayload(payload);
+            await this.upsert(
+                ctx,
+                variation ? 'variations' : 'products',
+                [this.stub(variation ? 'variations' : 'products', id, { estado: 'trash' }, { estado: trash })],
+                { updateOnly: true },
+            );
+        }
+        // Un cliente borrado en la tienda queda como está: sus compras siguen siendo suyas.
+    }
+
+    private stub(
+        resource: StoreSyncResource,
+        externalId: string,
+        values: Record<string, unknown>,
+        options: MappedItem['options'],
+    ): MappedItem {
+        return { resource, externalId, parentExternalId: null, values, relations: {}, options, meta: {} };
+    }
+
+    // ── Edición en los dos sentidos (fase 3) ─────────────────────────────────
+
+    /**
+     * Manda a la tienda lo que se cambió en un registro. Los valores se leen
+     * AHORA (no los del momento del cambio): si la edición se revirtió, se
+     * manda lo que la tienda ya tenía, que es inocuo. Lo que la tienda
+     * devuelve se aplica sin disparar nada (puede normalizar un precio), y
+     * el aviso que la tienda mande después no encuentra diferencias: así un
+     * cambio nunca rebota en un bucle.
+     */
+    async push(
+        tenantId: number,
+        syncId: number,
+        creds: IntegrationCreds,
+        resource: StoreMetaResource,
+        recordId: number,
+        changedFieldIds: number[],
+    ): Promise<{ sent: string[] } | null> {
+        const loaded = await this.context(tenantId, syncId, creds, '');
+        if (!loaded) return null;
+        const { ctx, settings } = loaded;
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [link] = await tx
+                .select({ externalId: syncLinks.externalId, parent: syncLinks.parentExternalId })
+                .from(syncLinks)
+                .where(and(eq(syncLinks.syncId, syncId), eq(syncLinks.resource, resource), eq(syncLinks.recordId, recordId)))
+                // Un cliente con cuenta puede tener también su vínculo de invitada: manda la cuenta.
+                .orderBy(sql`${syncLinks.externalId} LIKE 'id:%' DESC`)
+                .limit(1);
+            const [rec] = await tx
+                .select({ data: records.data })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.id, recordId), isNull(records.deletedAt)))
+                .limit(1);
+            return link && rec ? { link, data: rec.data } : null;
+        });
+        if (!found) return null;
+        const changed = new Set(changedFieldIds);
+        const values: Record<string, unknown> = {};
+        for (const [slug, fieldId] of Object.entries(settings.fields[resource] ?? {})) {
+            if (changed.has(fieldId)) values[slug] = found.data[`f${fieldId}`] ?? null;
+        }
+        const seen = ctx.state.meta[resource] ?? {};
+        const meta = Object.entries(settings.meta_map[resource] ?? {})
+            .filter(([, fieldId]) => changed.has(fieldId))
+            .map(([key, fieldId]) => ({ key, value: found.data[`f${fieldId}`] ?? null, sample: seen[key]?.sample ?? null }));
+        const req = buildWriteBack({
+            resource,
+            externalId: found.link.externalId,
+            parentExternalId: found.link.parent,
+            changed: values,
+            meta,
+        });
+        if (!req) return null;
+        const res = await wooSend(creds, 'PUT', req.path, req.body);
+        // La tienda devuelve el objeto como quedó: se aplica sin disparar nada.
+        if (res && typeof res === 'object' && !Array.isArray(res)) {
+            ctx.dispatch = false;
+            const obj = res as WooJson;
+            if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
+            else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj)], {});
+            else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj)], {});
+            else {
+                const name = await this.productNameFromApp(ctx, String(found.link.parent));
+                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(found.link.parent), name })], {});
+            }
+            for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+        }
+        return { sent: req.fields };
     }
 
     private async loadTargets(
@@ -522,7 +698,11 @@ export class StoreSyncEngine {
         ctx: RunCtx,
         resource: StoreSyncResource,
         items: MappedItem[],
-        opts: { createOnly?: boolean },
+        /**
+         * `createOnly`: no pisar lo que ya existe (el cliente armado desde un pedido).
+         * `updateOnly`: no crear (un aviso de borrado de algo que nunca se trajo).
+         */
+        opts: { createOnly?: boolean; updateOnly?: boolean },
     ): Promise<{ created: number; updated: number }> {
         const target = ctx.targets[resource];
         this.recordMeta(ctx, resource, items);
@@ -537,7 +717,7 @@ export class StoreSyncEngine {
         const known = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
             this.existingLinks(tx, ctx, resource, items.map((i) => i.externalId)),
         );
-        const newCount = items.filter((i) => !known.has(i.externalId)).length;
+        const newCount = opts.updateOnly ? 0 : items.filter((i) => !known.has(i.externalId)).length;
         if (newCount > 0) {
             try {
                 await this.billing.assertCanCreateRecords(ctx.tenantId, newCount);
@@ -585,7 +765,7 @@ export class StoreSyncEngine {
                     } else {
                         untouched.push({ item, id: linked });
                     }
-                } else {
+                } else if (!opts.updateOnly) {
                     toCreate.push({ item, data });
                 }
             }

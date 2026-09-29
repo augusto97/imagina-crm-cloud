@@ -72,6 +72,46 @@ export const updateStoreSyncSchema = z.object({
 });
 export type UpdateStoreSyncInput = z.infer<typeof updateStoreSyncSchema>;
 
+/**
+ * Qué columnas del pack viajan de vuelta a la tienda cuando se editan en la
+ * app (fase 3, «editar en los dos sentidos»). Lo que NO está acá es de sólo
+ * lectura a propósito: los totales de un pedido los calcula la tienda, el
+ * nombre de un cliente se parte en nombre/apellido de formas que no se
+ * pueden adivinar, y las líneas de pedido no se editan desde afuera.
+ * Los campos de otros plugins que se trajeron a una columna también viajan.
+ */
+export const STORE_WRITE_BACK_FIELDS: Record<StoreMetaResource, Array<{ slug: string; label: string }>> = {
+    products: [
+        { slug: 'nombre', label: 'Nombre' },
+        { slug: 'sku', label: 'SKU' },
+        { slug: 'precio_normal', label: 'Precio normal' },
+        { slug: 'precio_rebajado', label: 'Precio rebajado' },
+        { slug: 'stock', label: 'Stock' },
+        { slug: 'estado_stock', label: 'Estado del stock' },
+        { slug: 'estado', label: 'Estado' },
+    ],
+    variations: [
+        { slug: 'sku', label: 'SKU' },
+        { slug: 'precio_normal', label: 'Precio normal' },
+        { slug: 'precio_rebajado', label: 'Precio rebajado' },
+        { slug: 'stock', label: 'Stock' },
+        { slug: 'estado_stock', label: 'Estado del stock' },
+        { slug: 'estado', label: 'Estado' },
+    ],
+    orders: [
+        { slug: 'estado', label: 'Estado' },
+        { slug: 'nota_cliente', label: 'Nota del cliente' },
+    ],
+    customers: [
+        { slug: 'email', label: 'Email' },
+        { slug: 'telefono', label: 'Teléfono' },
+        { slug: 'empresa', label: 'Empresa' },
+        { slug: 'ciudad', label: 'Ciudad' },
+        { slug: 'region', label: 'Región' },
+        { slug: 'pais', label: 'País' },
+    ],
+};
+
 export const runStoreSyncSchema = z.object({
     /** true = vuelve a recorrer TODO (no sólo lo que cambió). */
     full: z.boolean().default(false),
@@ -151,6 +191,17 @@ export const storeSyncStatusSchema = z.object({
         received: z.number().int().nonnegative(),
         last_received_at: z.string().nullable(),
         error: z.string().nullable(),
+        /** Cuántos avisos quedaron registrados en la tienda (uno por tema). */
+        webhooks: z.number().int().nonnegative().default(0),
     }),
+    /** Fase 3: lo editado en la app que viajó (o no) a la tienda. */
+    write_back_status: z
+        .object({
+            pushed: z.number().int().nonnegative(),
+            failed: z.number().int().nonnegative(),
+            last_at: z.string().nullable(),
+            last_error: z.string().nullable(),
+        })
+        .default({ pushed: 0, failed: 0, last_at: null, last_error: null }),
 });
 export type StoreSyncStatus = z.infer<typeof storeSyncStatusSchema>;

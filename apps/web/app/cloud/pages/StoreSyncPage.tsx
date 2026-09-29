@@ -6,12 +6,13 @@ import {
     STORE_META_RESOURCES,
     STORE_SYNC_INTERVALS,
     STORE_SYNC_RESOURCE_LABEL,
+    STORE_WRITE_BACK_FIELDS,
     type StoreMetaKey,
     type StoreMetaResource,
     type StoreSyncResource,
     type StoreSyncStatus,
 } from '@imagina-base/shared';
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -157,13 +158,14 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
     const [sinceMode, setSinceMode] = useState<'all' | 'since'>('all');
     const [since, setSince] = useState('');
     const [interval, setInterval] = useState(15);
+    const [mode, setMode] = useState<'realtime' | 'interval'>('realtime');
     const [error, setError] = useState<string | null>(null);
     const setup = useMutation({
         mutationFn: () =>
             api.storeSyncSetup(connectionId, {
                 resources,
                 orders_since: sinceMode === 'since' && since ? since : null,
-                mode: 'interval',
+                mode,
                 interval_minutes: interval,
             }),
         onSuccess: onDone,
@@ -236,25 +238,26 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 </fieldset>
             )}
 
-            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                <Label htmlFor="store-interval">{__('Mantener al día')}</Label>
-                <Select
-                    id="store-interval"
-                    className="imcrm-w-60"
-                    value={String(interval)}
-                    onChange={(e) => setInterval(Number(e.target.value))}
-                    data-testid="imcrm-store-sync-interval"
-                >
-                    {STORE_SYNC_INTERVALS.map((n) => (
-                        <option key={n} value={n}>
-                            {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
-                        </option>
-                    ))}
-                </Select>
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('La app le pregunta a la tienda qué cambió. Se trae sólo lo nuevo o modificado.')}
-                </p>
-            </div>
+            <fieldset className="imcrm-space-y-2">
+                <legend className="imcrm-text-sm imcrm-font-medium">{__('Mantener al día')}</legend>
+                <ModeChoice mode={mode} onChange={setMode} />
+                {mode === 'interval' && (
+                    <Select
+                        id="store-interval"
+                        aria-label={__('Frecuencia')}
+                        className="imcrm-w-60"
+                        value={String(interval)}
+                        onChange={(e) => setInterval(Number(e.target.value))}
+                        data-testid="imcrm-store-sync-interval"
+                    >
+                        {STORE_SYNC_INTERVALS.map((n) => (
+                            <option key={n} value={n}>
+                                {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
+                            </option>
+                        ))}
+                    </Select>
+                )}
+            </fieldset>
 
             {error && <p className="imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-store-sync-error">{error}</p>}
             <div className="imcrm-flex imcrm-justify-end">
@@ -398,23 +401,49 @@ function Configured({
 
             <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Cómo se mantiene al día')}</h2>
+                <ModeChoice
+                    mode={status.mode}
+                    disabled={update.isPending}
+                    onChange={(mode) => {
+                        setError(null);
+                        update.mutate({ mode });
+                    }}
+                />
+                {update.isPending && update.variables?.mode === 'realtime' && (
+                    <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs imcrm-text-muted-foreground">
+                        <Loader2 className="imcrm-h-3 imcrm-w-3 imcrm-animate-spin" />
+                        {__('Registrando los avisos en la tienda…')}
+                    </p>
+                )}
+                {status.mode === 'realtime' ? (
+                    <RealtimeStatus status={status} />
+                ) : (
+                    status.realtime.error && (
+                        <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs imcrm-text-warning" data-testid="imcrm-store-realtime-error">
+                            <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                            {status.realtime.error}
+                        </p>
+                    )
+                )}
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-gap-4">
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                        <Label htmlFor="store-interval-edit">{__('Frecuencia')}</Label>
-                        <Select
-                            id="store-interval-edit"
-                            className="imcrm-w-60"
-                            value={String(status.interval_minutes)}
-                            onChange={(e) => update.mutate({ interval_minutes: Number(e.target.value) })}
-                            data-testid="imcrm-store-sync-interval-edit"
-                        >
-                            {STORE_SYNC_INTERVALS.map((n) => (
-                                <option key={n} value={n}>
-                                    {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
-                                </option>
-                            ))}
-                        </Select>
-                    </div>
+                    {status.mode === 'interval' && (
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                            <Label htmlFor="store-interval-edit">{__('Frecuencia')}</Label>
+                            <Select
+                                id="store-interval-edit"
+                                className="imcrm-w-60"
+                                value={String(status.interval_minutes)}
+                                onChange={(e) => update.mutate({ interval_minutes: Number(e.target.value) })}
+                                data-testid="imcrm-store-sync-interval-edit"
+                            >
+                                {STORE_SYNC_INTERVALS.map((n) => (
+                                    <option key={n} value={n}>
+                                        {__(INTERVAL_LABEL[n] ?? `Cada ${n} minutos`)}
+                                    </option>
+                                ))}
+                            </Select>
+                        </div>
+                    )}
                     <Button
                         variant="outline"
                         size="sm"
@@ -449,6 +478,17 @@ function Configured({
                 </p>
             </section>
 
+            <WriteBackSection
+                status={status}
+                // Optimista: el interruptor se mueve al tocarlo, no cuando vuelve el servidor.
+                pending={update.isPending ? update.variables?.write_back : undefined}
+                busy={update.isPending}
+                onToggle={(on) => {
+                    setError(null);
+                    update.mutate({ write_back: on });
+                }}
+            />
+
             <MetaSection status={status} connectionId={connectionId} onChange={onChange} onQueued={onQueued} onError={onErr} />
 
             {error && <p className="imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-store-sync-action-error">{error}</p>}
@@ -477,6 +517,179 @@ function Configured({
                 </Button>
             </section>
         </div>
+    );
+}
+
+// ── Tiempo real y edición en los dos sentidos (fase 3) ─────────────────────
+
+function ModeChoice({
+    mode,
+    disabled,
+    onChange,
+}: {
+    mode: 'realtime' | 'interval';
+    disabled?: boolean;
+    onChange: (m: 'realtime' | 'interval') => void;
+}): JSX.Element {
+    const options = [
+        {
+            value: 'realtime' as const,
+            icon: <Zap className="imcrm-h-4 imcrm-w-4" />,
+            title: __('En tiempo real'),
+            badge: __('Recomendado'),
+            help: __('La tienda avisa al instante cada pedido, producto o cliente que cambia. Igual se revisa una vez por hora por si se perdió algún aviso. Necesita una clave de API con permiso de Lectura/Escritura.'),
+        },
+        {
+            value: 'interval' as const,
+            icon: <RefreshCw className="imcrm-h-4 imcrm-w-4" />,
+            title: __('Cada cierto tiempo'),
+            badge: null,
+            help: __('La app le pregunta a la tienda qué cambió cada tanto. Sirve con una clave de sólo lectura o si la tienda no puede llegar a este servidor.'),
+        },
+    ];
+    return (
+        <div className="imcrm-grid imcrm-gap-2 sm:imcrm-grid-cols-2" role="radiogroup" aria-label={__('Cómo se mantiene al día')}>
+            {options.map((o) => (
+                <button
+                    key={o.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === o.value}
+                    disabled={disabled}
+                    onClick={() => mode !== o.value && onChange(o.value)}
+                    className={cn(
+                        'imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-p-3 imcrm-text-left imcrm-transition-colors disabled:imcrm-opacity-60',
+                        mode === o.value ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border hover:imcrm-bg-accent',
+                    )}
+                    data-testid={`imcrm-store-mode-${o.value}`}
+                >
+                    <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                        {o.icon}
+                        {o.title}
+                        {o.badge && <Badge variant="outline" className="imcrm-text-[10px]">{o.badge}</Badge>}
+                    </span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">{o.help}</span>
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function RealtimeStatus({ status }: { status: StoreSyncStatus }): JSX.Element {
+    const rt = status.realtime;
+    return (
+        <div className="imcrm-space-y-1 imcrm-text-xs" data-testid="imcrm-store-realtime">
+            {rt.active ? (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-success">
+                    <span className="imcrm-relative imcrm-flex imcrm-h-2 imcrm-w-2">
+                        <span className="imcrm-absolute imcrm-inline-flex imcrm-h-full imcrm-w-full imcrm-animate-ping imcrm-rounded-full imcrm-bg-success imcrm-opacity-60" />
+                        <span className="imcrm-relative imcrm-inline-flex imcrm-h-2 imcrm-w-2 imcrm-rounded-full imcrm-bg-success" />
+                    </span>
+                    {__('Escuchando a la tienda')} · {rt.webhooks} {__('avisos registrados')}
+                </p>
+            ) : (
+                <p className="imcrm-text-muted-foreground">{__('Los avisos todavía no están registrados en la tienda.')}</p>
+            )}
+            <p className="imcrm-text-muted-foreground" data-testid="imcrm-store-realtime-received">
+                {rt.received === 0
+                    ? __('Todavía no llegó ningún aviso: aparecen cuando algo cambie en la tienda.')
+                    : `${formatNumber(rt.received)} ${rt.received === 1 ? __('aviso recibido') : __('avisos recibidos')} · ${__('último')}: ${when(rt.last_received_at)}`}
+            </p>
+            {rt.error && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-warning" data-testid="imcrm-store-realtime-error">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {rt.error}
+                </p>
+            )}
+        </div>
+    );
+}
+
+function WriteBackSection({
+    status,
+    pending,
+    busy,
+    onToggle,
+}: {
+    status: StoreSyncStatus;
+    pending: boolean | undefined;
+    busy: boolean;
+    onToggle: (on: boolean) => void;
+}): JSX.Element {
+    const wb = status.write_back_status;
+    const on = pending ?? status.write_back;
+    const groups = (['products', 'variations', 'orders', 'customers'] as const).map((r) => ({
+        resource: r,
+        fields: STORE_WRITE_BACK_FIELDS[r].map((f) => f.label),
+    }));
+    return (
+        <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-write-back">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-3">
+                <div className="imcrm-min-w-0 imcrm-flex-1">
+                    <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
+                        <ArrowLeftRight className="imcrm-h-4 imcrm-w-4" />
+                        {__('Editar desde la app')}
+                    </h2>
+                    <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
+                        {__(
+                            'Cambiá un precio, el stock o el estado de un pedido en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
+                        )}
+                    </p>
+                </div>
+                <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                    <input
+                        type="checkbox"
+                        role="switch"
+                        className="imcrm-peer imcrm-sr-only"
+                        checked={on}
+                        disabled={busy}
+                        onChange={(e) => onToggle(e.target.checked)}
+                        data-testid="imcrm-store-write-back-toggle"
+                    />
+                    <span
+                        aria-hidden
+                        className={cn(
+                            'imcrm-relative imcrm-inline-flex imcrm-h-5 imcrm-w-9 imcrm-items-center imcrm-rounded-full imcrm-transition-colors peer-focus-visible:imcrm-ring-2 peer-focus-visible:imcrm-ring-ring',
+                            on ? 'imcrm-bg-primary' : 'imcrm-bg-muted',
+                        )}
+                    >
+                        <span
+                            className={cn(
+                                'imcrm-inline-block imcrm-h-4 imcrm-w-4 imcrm-rounded-full imcrm-bg-background imcrm-shadow imcrm-transition-transform',
+                                on ? 'imcrm-translate-x-[18px]' : 'imcrm-translate-x-0.5',
+                            )}
+                        />
+                    </span>
+                    {on ? __('Activado') : __('Desactivado')}
+                </label>
+            </div>
+            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                {groups.map((g) => (
+                    <div key={g.resource} className="imcrm-text-xs">
+                        <p className="imcrm-font-medium">{__(STORE_SYNC_RESOURCE_LABEL[g.resource])}</p>
+                        <p className="imcrm-text-muted-foreground">{g.fields.join(' · ')}</p>
+                    </div>
+                ))}
+            </div>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__(
+                    'También los campos de otros plugins que traigas a una columna. El resto (totales, líneas de pedido, clientes invitados) es de sólo lectura: lo calcula o lo guarda la tienda. Necesita una clave con permiso de Lectura/Escritura.',
+                )}
+            </p>
+            {(wb.pushed > 0 || wb.failed > 0) && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-store-write-back-stats">
+                    {formatNumber(wb.pushed)} {wb.pushed === 1 ? __('cambio enviado') : __('cambios enviados')}
+                    {wb.failed > 0 && ` · ${formatNumber(wb.failed)} ${wb.failed === 1 ? __('falló') : __('fallaron')}`}
+                    {wb.last_at && ` · ${__('último')}: ${when(wb.last_at)}`}
+                </p>
+            )}
+            {wb.last_error && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-store-write-back-error">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {__('El último cambio no llegó a la tienda')}: {wb.last_error}
+                </p>
+            )}
+        </section>
     );
 }
 

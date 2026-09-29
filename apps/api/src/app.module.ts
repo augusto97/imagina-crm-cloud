@@ -31,6 +31,7 @@ import { AuditModule } from './audit/audit.service';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { StoreSyncModule } from './sync/store-sync.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { RecordChangeHubModule } from './records/record-change-hub';
 import { RecordsModule } from './records/records.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
 import { RedisModule } from './redis/redis.module';
@@ -46,6 +47,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         ConfigModule,
         DbModule,
         RedisModule,
+        RecordChangeHubModule,
         TenancyModule,
         AuthzModule,
         MailModule,

@@ -4769,6 +4769,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Sigue la fase 3: avisos en tiempo real (webhooks de la tienda) y
         edición en los dos sentidos.
 
+  - [x] **WooCommerce — fase 3: tiempo real + editar en los dos sentidos
+        (v0.1.207, ADR-S24 fase 3)**: cierra el pedido del usuario ("hacé todas
+        las fases, con los dos modos de sincronización").
+        (a) **Modo «En tiempo real» (recomendado, ahora el default del alta)**:
+        se registra en la tienda un aviso por tema (pedidos/productos:
+        creado/actualizado/borrado/restaurado; clientes: creado/actualizado)
+        hacia `POST /public/store-hooks/:token`. Tabla `store_hooks` (migración
+        0054, SIN RLS como `automation_hooks`): token → sincronización + secreto
+        de firma CIFRADO. Cada entrega se verifica con `base64(HMAC-SHA256)`
+        sobre el cuerpo CRUDO en tiempo constante (firma mala → 401, token
+        desconocido → 404 opaco); el «ping» sin tema se contesta 200 (sin eso
+        WooCommerce no crea el aviso). La respuesta no espera a escribir: el
+        aviso va a la cola (`hook`), porque WooCommerce corta a los 5 s y APAGA
+        el aviso tras varias fallas; la ruta tiene 10× el rate limit general
+        (ráfagas de una sola IP). Una variación llega como `product.updated` y
+        se reconoce por su forma; un producto variable relee sus variaciones;
+        un borrado deja el registro en estado «trash» (nunca se borra nada) y
+        un borrado de algo que nunca se trajo no crea nada.
+        (b) **Red de seguridad**: en tiempo real igual se sincroniza cada hora
+        y esa vuelta reactiva los avisos que la tienda desactivó y recrea los
+        que faltan. Si la tienda no los acepta (clave de sólo lectura, tienda
+        que no llega a `APP_BASE_URL`) el modo NO cambia y se dice por qué; en
+        el alta cae a intervalos con el motivo a la vista. Volver a intervalos
+        borra los avisos de la tienda y el token deja de valer.
+        (c) **«Editar desde la app» (opt-in)**: `RecordChangeHub` (módulo
+        global, `@Optional` en RecordsService y en el motor de
+        automatizaciones) avisa cuando una persona o una automatización cambia
+        un registro; si vive en una lista de la tienda con la edición activada,
+        se encola un envío (`push`). **Sólo viaja lo que cambió** —mandar el
+        registro entero pisaría un stock que la tienda bajó con una venta que
+        todavía no llegó— y los valores se leen al enviar. Columnas que viajan
+        (`STORE_WRITE_BACK_FIELDS` en shared): productos (nombre, SKU, precios,
+        stock, estado de stock, estado), variaciones (lo mismo sin nombre),
+        pedidos (estado, nota del cliente), clientes registrados (email y datos
+        de facturación) + los campos de plugins traídos a columnas (sí/no con
+        la convención que ya usaba la tienda: `yes/no` o `1/0`; JSON como
+        objeto). Totales, líneas e invitados son de sólo lectura. **Sin bucles
+        por construcción**: el motor de sincronización nunca emite en el hub, y
+        el aviso que la tienda manda de vuelta no encuentra diferencias. Un
+        envío rechazado queda contado con el motivo en la pantalla.
+        Front: elección de modo en el alta y en la tienda (tarjetas con el
+        estado «Escuchando a la tienda · N avisos», avisos recibidos y último),
+        sección «Editar desde la app» con interruptor optimista, las columnas
+        que viajan y el contador de envíos/fallas. **Bug atrapado en el E2E**:
+        el interruptor era controlado por la respuesta del servidor y no se
+        movía al tocarlo — ahora es optimista. 15 tests nuevos (6 unitarios de
+        temas/firma/ping/variación/armado del envío/meta + 9 de integración con
+        Postgres y Redis reales: clave de sólo lectura no cambia el modo,
+        registro de 10 avisos con secreto cifrado, ping/404/401 sin escribir
+        nada, pedido por aviso con evento antes/después, variación y borrado a
+        la papelera, red de seguridad, envío SÓLO del campo cambiado sin
+        rebote, variación/cliente/invitado y falla visible, volver a
+        intervalos) + E2E navegador 23/23 contra la tienda falsa (10 pings en
+        200, pedido nuevo llega sin «Sincronizar ahora», firma falsa 401,
+        precio editado en la app llega a la tienda con un solo envío, volver a
+        intervalos borra los avisos, móvil sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
