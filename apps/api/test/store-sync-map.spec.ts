@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
 import { readSettings, readState } from '../src/sync/store-sync.types';
-import { buildWooPack, INVENTORY_FIELD_SLUGS, inventoryAddition, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
+import { buildWooPack, INVENTORY_FIELD_SLUGS, packAddition, PURCHASE_LIST_KEYS, RESTOCK_FIELD_SLUGS, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
+import { orderSeq, pendingOf, receiveTarget, suggestQuantity } from '../src/sync/store-purchasing.service';
 import {
     buildWriteBack,
     isVariationPayload,
@@ -182,10 +183,10 @@ describe('Mapeo WooCommerce → pack (puro)', () => {
 });
 
 describe('Pack de la tienda', () => {
-    it('cinco listas vinculadas con sus dos tableros y la moneda de la tienda', () => {
+    it('cinco listas de la tienda + tres de compras, con sus dos tableros y la moneda de la tienda', () => {
         const bp = buildWooPack({ storeName: 'Tienda', currency: 'COP', precision: 0, phoneCountry: 'CO' });
-        expect(bp.lists.map((l) => l.key)).toEqual(Object.values(WOO_LIST_KEYS));
-        for (const l of bp.lists) {
+        expect(bp.lists.map((l) => l.key)).toEqual([...Object.values(WOO_LIST_KEYS), ...Object.values(PURCHASE_LIST_KEYS)]);
+        for (const l of bp.lists.filter((x) => (Object.values(WOO_LIST_KEYS) as string[]).includes(x.key))) {
             // Cada lista tiene su woo_id indexado: es por donde se busca al sincronizar.
             const woo = l.fields.find((f) => f.slug === 'woo_id');
             expect(woo, l.key).toBeDefined();
@@ -384,19 +385,75 @@ describe('Inventario (puros, v0.1.208)', () => {
         expect(buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' }, meta: [] })).toBeNull();
     });
 
-    it('la actualización del pack agrega SÓLO lo de inventario, derivado del pack completo', () => {
+    it('la actualización del pack agrega SÓLO lo que falta, derivado del pack completo', () => {
         const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
-        const add = inventoryAddition(full, true);
-        expect(add.lists.map((l) => l.key)).toEqual(['productos', 'variaciones']);
-        for (const l of add.lists) {
-            expect(l.fields.every((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug))).toBe(true);
+        // Desde el pack 1: inventario + reposición + las listas de compras.
+        const add = packAddition(full, 1, true);
+        expect(add.lists.map((l) => l.key)).toEqual(['productos', 'variaciones', 'proveedores', 'compras', 'lineas_compra']);
+        for (const l of add.lists.slice(0, 2)) {
+            expect(l.fields.every((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug) || RESTOCK_FIELD_SLUGS.includes(fd.slug))).toBe(true);
             expect(l.views.map((v) => v.name)).toEqual(['Para reponer']);
         }
         expect(add.lists[0]!.fields.map((fd) => fd.slug)).toContain('stock_variaciones');
         expect(add.lists[1]!.fields.map((fd) => fd.slug)).not.toContain('stock_variaciones');
         expect(add.dashboards).toHaveLength(1);
         expect(add.dashboards[0]!.name).toBe('Inventario · T');
-        // Sin productos sincronizados no hay nada que agregar.
-        expect(inventoryAddition(full, false).lists).toHaveLength(0);
+        // Desde el pack 2: sólo reposición (sin vistas ni tableros repetidos).
+        const add2 = packAddition(full, 2, true);
+        expect(add2.dashboards).toHaveLength(0);
+        expect(add2.lists.find((l) => l.key === 'productos')!.fields.map((fd) => fd.slug).sort()).toEqual([...RESTOCK_FIELD_SLUGS].sort());
+        expect(add2.lists.find((l) => l.key === 'productos')!.views).toHaveLength(0);
+        expect(add2.lists.find((l) => l.key === PURCHASE_LIST_KEYS.lines)!.fields.length).toBeGreaterThan(8);
+        // Al día: nada. Sin productos sincronizados: nada.
+        expect(packAddition(full, 3, true).lists.every((l) => l.fields.length === 0)).toBe(true);
+        expect(packAddition(full, 1, false).lists).toHaveLength(0);
+    });
+
+    it('el pack trae las listas de compras vinculadas a productos y variaciones', () => {
+        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
+        const lines = full.lists.find((l) => l.key === PURCHASE_LIST_KEYS.lines)!;
+        const rel = (slug: string) => (lines.fields.find((fd) => fd.slug === slug)!.config as { target_list_id: { $list: string } }).target_list_id.$list;
+        expect(rel('orden')).toBe('compras');
+        expect(rel('producto')).toBe('productos');
+        expect(rel('variacion')).toBe('variaciones');
+        const products = full.lists.find((l) => l.key === 'productos')!;
+        const enCamino = products.fields.find((fd) => fd.slug === 'en_camino')!;
+        expect(enCamino.type).toBe('rollup');
+        expect(enCamino.config).toMatchObject({ operation: 'sum', target_field_id: { $field: 'pendiente', $list: 'lineas_compra' } });
+    });
+});
+
+describe('Reposición (puros, v0.1.209)', () => {
+    it('recibir: «Recibida» lleva a lo recibido (o a lo pedido); «en parte» sólo con la cantidad escrita', () => {
+        expect(receiveTarget('recibida', 10, null)).toBe(10);
+        expect(receiveTarget('recibida', 10, 8)).toBe(8);
+        expect(receiveTarget('recibida', null, null)).toBe(0);
+        expect(receiveTarget('recibida_parcial', 10, null)).toBeNull();
+        expect(receiveTarget('recibida_parcial', 10, 3)).toBe(3);
+        expect(receiveTarget('enviada', 10, 3)).toBeNull();
+        expect(receiveTarget('cancelada', 10, 3)).toBeNull();
+        expect(receiveTarget('recibida', 10, -4)).toBe(0);
+    });
+
+    it('pendiente: sólo una orden pedida y no cerrada tiene algo en camino', () => {
+        expect(pendingOf('enviada', 10, 0)).toBe(10);
+        expect(pendingOf('recibida_parcial', 10, 4)).toBe(6);
+        expect(pendingOf('recibida_parcial', 10, 12)).toBe(0);
+        expect(pendingOf('borrador', 10, 0)).toBe(0);
+        expect(pendingOf('recibida', 10, 4)).toBe(0);
+        expect(pendingOf('cancelada', 10, 0)).toBe(0);
+    });
+
+    it('sugerencia: un mes de venta + la alerta − lo que hay − lo que viene, nunca menos de 1', () => {
+        expect(suggestQuantity(2, 0, 10, 5)).toBe(13);
+        expect(suggestQuantity(-3, 0, 0, 2)).toBe(5);
+        expect(suggestQuantity(50, 0, 10, 5)).toBe(1);
+        expect(suggestQuantity(null, 4, 3.5, 2)).toBe(2);
+    });
+
+    it('numeración de órdenes', () => {
+        expect(orderSeq('OC-0007')).toBe(7);
+        expect(orderSeq(' OC-12 ')).toBe(12);
+        expect(orderSeq('Pedido 7')).toBeNull();
     });
 });

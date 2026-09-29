@@ -4877,6 +4877,83 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         reponer», tablero, venta que baja el stock en vivo) y regresión de
         tiempo real 23/23 y sincronización 25/25.
 
+  - [x] **Reposición con órdenes de compra (v0.1.209, ADR-S24, pedido del
+        usuario: "hacé la reposición completa con órdenes de compra")**: el
+        inventario de v0.1.208 decía QUÉ faltaba; ahora se REPONE desde la app
+        y las unidades llegan solas al stock de WooCommerce.
+        (a) **Tres listas nuevas en la carpeta de la tienda** (pack versión 3):
+        Proveedores (contacto, días de entrega, nº de órdenes y última),
+        Órdenes de compra (número OC-0001 automático, estado borrador →
+        enviada → recibida parcial / recibida / cancelada, fecha y entrega
+        estimada por los días del proveedor, y rollups de líneas, unidades,
+        total y «por recibir»; vista kanban por estado) y Líneas de compra
+        (artículo, cantidad pedida y recibida, costo, subtotal, lo ya sumado y
+        lo pendiente). En productos y variaciones: **«En camino»** (rollup de lo
+        pendiente de órdenes enviadas), **«Sumar al stock»** y **«Último
+        movimiento»**. Las tiendas ya conectadas se actualizan solas en la
+        próxima corrida (`extend` ahora también CREA listas, dentro de la
+        carpeta de la tienda) y las tablas del tablero de inventario ganan la
+        columna «En camino».
+        (b) **Crear la orden desde la selección**: en Productos o Variaciones
+        (típicamente en «Para reponer») se marcan filas y la barra de acciones
+        ofrece **«Orden de compra»**: un diálogo con la cantidad SUGERIDA por
+        artículo (un mes de venta + la alerta de stock − lo que hay − lo que
+        viene en camino, mínimo 1), el costo de la última compra, proveedor
+        (existente o nuevo por nombre), estado y fecha. Los costos aceptan el
+        punto de miles latinoamericano ("12.500"). Un producto variable se
+        bloquea con el motivo: se pide por variación. Endpoints
+        `POST /connections/:id/purchasing/preview|orders` (`create_records`).
+        (c) **Recibir suma sobre el stock REAL de la tienda**: WooCommerce sólo
+        acepta el stock absoluto, así que se lee el producto EN LA TIENDA y se
+        escribe `antes + delta` (el número de la app puede estar atrasado por
+        una venta). Cada línea recuerda cuánto ya aplicó, así que re-guardar
+        «Recibida» no suma dos veces y corregir lo recibido ajusta sólo la
+        diferencia; «Recibida parcial» suma lo recibido por línea. Una
+        variación que hereda el stock del producto se suma al padre (y se
+        anota). La orden deja escrito el resultado ("Se sumaron 11 unidades…")
+        o los problemas por línea, y cada artículo su movimiento
+        ("+10 por OC-0001 → stock 10").
+        (d) **«Sumar al stock»** para ajustes sueltos (devolución, conteo): se
+        escribe el número en la columna (-3 resta), se suma a lo que la tienda
+        tenga en ese momento y la celda se vacía sola — con una escritura
+        condicional ANTES de tocar la tienda, así un ajuste no se aplica dos
+        veces.
+        (e) **Selector de registros para las relaciones** (hallazgo de la
+        prueba): los campos `relation` se editaban TIPEANDO IDS separados por
+        coma en el alta y en la ficha, y ni siquiera aparecían como columna en
+        la tabla. Ahora `RelationPicker` (chips con el TÍTULO del vinculado +
+        buscador del servidor sobre la lista destino, que respeta el ACL) en
+        el alta, la ficha, el layout CRM y la celda de la tabla, y las
+        relaciones son columnas visibles/ocultables en la tabla plana y la
+        agrupada. Los títulos se resuelven en lote con `?ids=` —una query por
+        columna y página, nunca una por celda— y la columna no ofrece ordenar
+        (el backend no ordena por relación).
+        (f) **«Vinculados» en la ficha**: los registros de OTRAS listas que
+        apuntan a éste (las líneas de una orden, los pedidos de un cliente),
+        con sus columnas y **«Agregar»** que abre el alta con la relación ya
+        cargada. El listado de records ganó `related_to=<campo>:<registro>`
+        (400 si el campo no es una relación de esa lista) e `ids=`.
+        (g) Pantalla de la tienda: sección **«Reponer stock»** con el paso a
+        paso y accesos a Órdenes de compra, Proveedores y «Para reponer».
+        **Dos bugs atrapados en el E2E**: (1) el servicio cachea 30 s qué
+        listas son de compras y una tienda recién armada quedaba afuera — la
+        orden no se recibía hasta que vencía el caché; ahora una lista
+        desconocida fuerza una recarga (a lo sumo cada 2 s). (2) El
+        interruptor «Editar desde la app» de v0.1.207 no era optimista de
+        verdad: el estado de la mutación llega un tick después y el checkbox
+        controlado volvía a su valor hasta la respuesta; ahora el valor se
+        fija en el evento. 11 tests de API nuevos (puros de recibir/pendiente/
+        sugerencia/numeración/actualización del pack + integración: orden
+        desde variaciones, recibir con stock real e idempotencia, recepción
+        parcial con stock heredado del padre, «Sumar al stock», `ids`/
+        `related_to`, actualización 2→3) — 736 API — y 7 del front (costos,
+        helpers de relación; 161) + E2E navegador 24/24 contra la tienda falsa
+        (diálogo con sugerencias → OC-0001 → «En camino» 10 → «Vinculados» →
+        recibir 0 → 10 en la tienda → re-guardar no suma → «Sumar al stock»
+        8 → 11 → alta de línea con el selector → columna Proveedor con el
+        nombre → celular) y regresiones de sincronización 25/25, tiempo real
+        23/23 e inventario 18/18.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

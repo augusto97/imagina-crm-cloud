@@ -1222,6 +1222,34 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
   (`BlueprintService.extend`, bajo el lock de la sincronización — nunca en
   paralelo con una corrida) agregando SÓLO lo que falta: campos, vistas y
   tableros; nada existente se pisa ni se borra.
+- **Reposición: órdenes de compra (v0.1.209).** WooCommerce sólo acepta el
+  stock ABSOLUTO (`stock_quantity`), así que sumar es leer–sumar–escribir: se
+  hace un GET del producto o variación EN LA TIENDA y se escribe
+  `antes + delta` — nunca sobre el número que tiene la app, que puede estar
+  atrasado respecto de una venta. Una variación que hereda el stock del
+  producto (`manage_stock: 'parent'`) se suma al padre, y un producto variable
+  sin stock propio se rechaza (se pide por variación). El pack (versión 3)
+  suma tres listas en la carpeta de la tienda —Proveedores, Órdenes de compra
+  y Líneas de compra— y en productos/variaciones las columnas «Sumar al
+  stock», «En camino» (rollup de lo pendiente de las líneas de órdenes
+  enviadas o recibidas a medias) y «Último movimiento». Las órdenes son
+  registros comunes y la lógica cuelga del `RecordChangeHub`: al pasar una
+  orden a «Recibida» (o «Recibida parcial» con lo recibido por línea) cada
+  línea suma la DIFERENCIA entre lo que corresponde y lo que ya aplicó
+  (`aplicada`), así re-guardar el estado no suma dos veces y corregir una
+  cantidad recibida ajusta sólo la diferencia. «Sumar al stock» es un ajuste
+  suelto: la celda se vacía con una escritura condicional (sólo si sigue
+  teniendo ese número) ANTES de tocar la tienda, así dos procesos no pueden
+  aplicar el mismo ajuste. Todo corre bajo un lock por sincronización y las
+  escrituras del propio servicio no emiten en el hub (sin bucles). La
+  selección de «Para reponer» arma la orden con una cantidad SUGERIDA
+  (`ventas 30 d + alerta − stock − en camino`, mínimo 1) y el costo de la
+  última compra; el marcador `settings.store_sync {connection_id, role}` en
+  cada lista le dice a la interfaz dónde ofrecerlo (no viaja al duplicar ni
+  en plantillas). El listado de records ganó `ids=` (puntuales) y
+  `related_to=<campo>:<registro>` (los que apuntan a un registro), que es lo
+  que usa la sección «Vinculados» de la ficha y la resolución de títulos de
+  los campos relation en la tabla (una query por columna y página).
 
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
@@ -1233,4 +1261,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.23.0 (inventario de la tienda y versión del pack — ADR-S24)
+**Versión del documento:** 1.24.0 (reposición con órdenes de compra — ADR-S24)

@@ -1,5 +1,5 @@
 import { BLUEPRINT_VERSION, WOO_ORDER_STATUS_OPTIONS, type ListBlueprint, type StoreSyncResource } from '@imagina-base/shared';
-import { dashboard, f, kanban, kpi, list, listRef, opt, ref, rollup, select, table, widget } from '../../templates/blueprint-dsl';
+import { dashboard, f, kanban, kpi, list, listRef, lookup, opt, ref, rollup, select, table, widget } from '../../templates/blueprint-dsl';
 import type { BlueprintField, ListBlueprint as Blueprint } from '@imagina-base/shared';
 
 /**
@@ -68,10 +68,12 @@ const LOW_OR_OUT = ['agotado', 'bajo'];
 
 /**
  * Pack de la tienda: 1 = v0.1.206 (sin inventario), 2 = v0.1.208 (inventario:
- * estado, umbral, valor, rotación, vistas «Para reponer» y tablero). Una
- * sincronización creada antes se ACTUALIZA sola a la versión nueva.
+ * estado, umbral, valor, rotación, vistas «Para reponer» y tablero), 3 =
+ * v0.1.209 (reposición: proveedores, órdenes de compra y sus líneas, «Sumar
+ * al stock» y «En camino»). Una sincronización creada antes se ACTUALIZA sola
+ * a la versión nueva.
  */
-export const WOO_PACK_VERSION = 2;
+export const WOO_PACK_VERSION = 3;
 
 /** Los slugs que agregó el pack 2 (lo que falta en una sincronización vieja). */
 export const INVENTORY_FIELD_SLUGS = [
@@ -84,8 +86,21 @@ export const INVENTORY_FIELD_SLUGS = [
     'stock_variaciones',
     'valor_variaciones',
 ];
+/** Los slugs que agregó el pack 3 a Productos y Variaciones. */
+export const RESTOCK_FIELD_SLUGS = ['sumar_stock', 'en_camino', 'ultimo_movimiento'];
+/** Las listas de compras (key del pack) que agregó el pack 3. */
+export const PURCHASE_LIST_KEYS = { suppliers: 'proveedores', orders: 'compras', lines: 'lineas_compra' } as const;
 export const INVENTORY_VIEW_NAME = 'Para reponer';
 export const INVENTORY_DASHBOARD_PREFIX = 'Inventario · ';
+
+/** Estados de una orden de compra (los mismos valores que `PURCHASE_ORDER_STATUSES` de shared). */
+const PURCHASE_STATUS = [
+    opt('borrador', 'Borrador', 'slate'),
+    opt('enviada', 'Enviada al proveedor', 'sky'),
+    opt('recibida_parcial', 'Recibida en parte', 'amber'),
+    opt('recibida', 'Recibida', 'emerald'),
+    opt('cancelada', 'Cancelada', 'rose'),
+];
 
 const PRODUCT_TYPE = [
     opt('simple', 'Simple', 'sky'),
@@ -164,6 +179,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     f('Stock', 'stock', 'number'),
                     select('Inventario', 'estado_stock', STOCK_STATUS),
                     ...inventoryFields('lineas', 'producto', o),
+                    ...restockFields('producto', 'Unidades pedidas a proveedores (de este producto y sus variaciones) que todavía no llegaron.'),
                     rollup('Stock de variaciones', 'stock_variaciones', 'variaciones', 'producto', 'sum', 'stock',
                         'Unidades en stock sumando todas sus variaciones (talla, color…).'),
                     rollup('Valor en variaciones', 'valor_variaciones', 'variaciones', 'producto', 'sum', 'valor_inventario',
@@ -202,6 +218,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     f('Stock', 'stock', 'number'),
                     select('Inventario', 'estado_stock', STOCK_STATUS),
                     ...inventoryFields('lineas', 'variacion', o),
+                    ...restockFields('variacion', 'Unidades de esta variación pedidas a proveedores que todavía no llegaron.'),
                     select('Publicación', 'estado', PRODUCT_STATUS),
                     f('Imagen', 'imagen', 'url'),
                     wooId(),
@@ -271,6 +288,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 ],
                 { settings: { title_field_id: ref('nombre') } },
             ),
+            ...purchaseLists(money),
         ],
         dashboards: [
             dashboard(`Ventas · ${o.storeName}`.slice(0, 190), 'Pedidos, ventas y lo más vendido de la tienda.', [
@@ -328,6 +346,114 @@ function inventoryFields(linesKey: string, linesRelSlug: string, o: WooPackOptio
     ];
 }
 
+/**
+ * v0.1.209 — Reposición en Productos y Variaciones: «Sumar al stock» (se
+ * escribe cuántas unidades entraron y la app las SUMA en la tienda, leyendo
+ * el stock de ese momento), «En camino» (lo pedido a proveedores que no
+ * llegó) y el último movimiento (qué se sumó, cuándo y por qué).
+ */
+function restockFields(linesRelSlug: string, inTransitHelp: string): BlueprintField[] {
+    return [
+        f('Sumar al stock', 'sumar_stock', 'number', {
+            description: 'Escribí cuántas unidades entraron (o un negativo para descontar): se suman al stock de la tienda y la celda vuelve a quedar vacía.',
+        }),
+        rollup('En camino', 'en_camino', PURCHASE_LIST_KEYS.lines, linesRelSlug, 'sum', 'pendiente', inTransitHelp),
+        f('Último movimiento de stock', 'ultimo_movimiento', 'text', {
+            description: 'Lo último que la app sumó o descontó en la tienda, y por qué.',
+        }),
+    ];
+}
+
+/**
+ * v0.1.209 — Las listas de COMPRAS: a quién se le compra, qué se le pidió y
+ * cada renglón del pedido. No existen en WooCommerce: son de la empresa.
+ * Lo que cruza a la tienda es el efecto de recibir una orden (el stock sube,
+ * ver `StorePurchasingService`). Varias columnas de las líneas las mantiene
+ * la app (subtotal, lo ya sumado, lo pendiente, el artículo): se dice en su
+ * descripción.
+ */
+function purchaseLists(money: (label: string, slug: string) => BlueprintField): Blueprint['lists'] {
+    const K = PURCHASE_LIST_KEYS;
+    return [
+        list(
+            K.suppliers,
+            'Proveedores',
+            'handshake',
+            '#7F54B3',
+            [
+                f('Nombre', 'nombre', 'text'),
+                f('Contacto', 'contacto', 'text'),
+                f('Email', 'email', 'email'),
+                f('Teléfono', 'telefono', 'phone'),
+                f('Tiempo de entrega (días)', 'entrega_dias', 'number', {
+                    description: 'Cuántos días tarda en llegar un pedido, para calcular la fecha esperada.',
+                }),
+                f('Notas', 'notas', 'long_text'),
+                rollup('Órdenes', 'ordenes', K.orders, 'proveedor', 'count', null, 'Órdenes de compra hechas a este proveedor.'),
+                rollup('Última orden', 'ultima_orden', K.orders, 'proveedor', 'max', 'fecha', 'Fecha de la orden más reciente.'),
+            ],
+            { settings: { title_field_id: ref('nombre') } },
+        ),
+        list(
+            K.orders,
+            'Órdenes de compra',
+            'truck',
+            '#7F54B3',
+            [
+                f('Orden', 'numero', 'text', {
+                    is_indexed: true,
+                    description: 'Se numera sola (OC-0001, OC-0002…) si la dejás vacía.',
+                }),
+                f('Proveedor', 'proveedor', 'relation', { config: { target_list_id: listRef(K.suppliers) } }),
+                select('Estado', 'estado', PURCHASE_STATUS),
+                f('Fecha', 'fecha', 'date'),
+                f('Entrega esperada', 'entrega', 'date'),
+                f('Recibida el', 'recibida_el', 'datetime', { description: 'Se completa sola al recibir la orden entera.' }),
+                rollup('Líneas', 'lineas', K.lines, 'orden', 'count', null, 'Artículos distintos en la orden.'),
+                rollup('Unidades', 'unidades', K.lines, 'orden', 'sum', 'cantidad', 'Unidades pedidas en total.'),
+                rollup('Total', 'total', K.lines, 'orden', 'sum', 'subtotal', 'Suma de los subtotales (cantidad × costo).'),
+                rollup('Por recibir', 'por_recibir', K.lines, 'orden', 'sum', 'pendiente', 'Unidades que todavía no llegaron.'),
+                f('Resultado de la recepción', 'resultado', 'long_text', {
+                    description: 'Qué se sumó al stock de la tienda al recibir la orden (o qué no se pudo). Lo escribe la app.',
+                }),
+                f('Notas', 'notas', 'long_text'),
+            ],
+            {
+                settings: { title_field_id: ref('numero') },
+                views: [table(), kanban('Por estado', 'estado')],
+            },
+        ),
+        list(
+            K.lines,
+            'Líneas de compra',
+            'list',
+            '#7F54B3',
+            [
+                f('Artículo', 'articulo', 'text', { description: 'Se completa solo con el producto o la variación elegida.' }),
+                f('Orden de compra', 'orden', 'relation', { config: { target_list_id: listRef(K.orders) } }),
+                f('Producto', 'producto', 'relation', { config: { target_list_id: listRef('productos') } }),
+                f('Variación', 'variacion', 'relation', {
+                    config: { target_list_id: listRef('variaciones') },
+                    description: 'En un producto con variaciones, la talla o el color exacto que se repone.',
+                }),
+                f('Cantidad pedida', 'cantidad', 'number'),
+                f('Cantidad recibida', 'recibida', 'number', {
+                    description: 'Vacío = llegó todo lo pedido (cuando la orden se marca «Recibida»). Con «Recibida en parte» se suma lo que diga acá.',
+                }),
+                money('Costo unitario', 'costo'),
+                money('Subtotal', 'subtotal'),
+                f('Sumado al stock', 'aplicada', 'number', {
+                    description: 'Unidades de esta línea que ya se sumaron al stock de la tienda. Lo lleva la app: así recibir dos veces no suma dos veces.',
+                }),
+                f('Pendiente de recibir', 'pendiente', 'number', { description: 'Lo pedido que todavía no llegó (lo lleva la app).' }),
+                lookup('Estado de la orden', 'estado_orden', K.lines, 'orden', K.orders, 'estado', 'El estado de la orden de compra de esta línea.'),
+                f('Último movimiento', 'movimiento', 'text', { description: 'Qué se sumó al stock por esta línea (o por qué no).' }),
+            ],
+            { settings: { title_field_id: ref('articulo') } },
+        ),
+    ];
+}
+
 /** La vista de trabajo del inventario: lo agotado o por agotarse, lo más urgente arriba. */
 function restockView() {
     // La raíz de un filtro de vista es SIEMPRE un grupo (filterTreeSchema).
@@ -348,7 +474,7 @@ export function inventoryDashboard(storeName: string) {
     const restock = (listKey: string, title: string, x: number) =>
         widget('table', listKey, title, {
             limit: 15, sort_field_id: ref('stock'), sort_dir: 'asc', filter_tree: state(LOW_OR_OUT),
-            visible_field_ids: [ref('nombre'), ref('stock'), ref('estado_inventario'), ref('vendidas_30d'), ref('cobertura_meses')],
+            visible_field_ids: [ref('nombre'), ref('stock'), ref('en_camino'), ref('estado_inventario'), ref('vendidas_30d'), ref('cobertura_meses')],
         }, x, 8, 6, 6);
     return dashboard(`${INVENTORY_DASHBOARD_PREFIX}${storeName}`.slice(0, 190), 'Qué hay, qué falta y qué reponer.', [
         kpi('productos', 'Productos agotados', { icon: 'alert', filter_tree: state(['agotado']) }, 0),
@@ -366,24 +492,40 @@ export function inventoryDashboard(storeName: string) {
 }
 
 /**
- * Lo que el pack 2 le agrega a una sincronización hecha con el pack 1: los
- * campos de inventario de Productos y Variaciones, su vista «Para reponer» y
- * el tablero de Inventario. Se DERIVA del pack completo (una sola definición:
- * lo que ve una tienda nueva y lo que recibe una vieja no pueden divergir).
+ * Lo que le falta a una sincronización hecha con un pack anterior para quedar
+ * en la versión actual. Se DERIVA del pack completo (una sola definición: lo
+ * que ve una tienda nueva y lo que recibe una vieja no pueden divergir).
+ *  - desde el pack 1: los campos de inventario de Productos y Variaciones,
+ *    su vista «Para reponer» y el tablero de Inventario;
+ *  - desde el pack 2 (o 1): las columnas de reposición y las tres listas de
+ *    compras.
+ * Sin productos no hay inventario que reponer: sólo lo de inventario queda
+ * fuera, igual que antes.
  */
-export function inventoryAddition(full: Blueprint, withProducts: boolean): Blueprint {
-    const keys = withProducts ? new Set(['productos', 'variaciones']) : new Set<string>();
-    return {
-        version: full.version,
-        lists: full.lists
-            .filter((l) => keys.has(l.key))
-            .map((l) => ({
+export function packAddition(full: Blueprint, fromVersion: number, withProducts: boolean): Blueprint {
+    if (!withProducts) return { version: full.version, lists: [], dashboards: [] };
+    const slugs = new Set<string>([
+        ...(fromVersion < 2 ? INVENTORY_FIELD_SLUGS : []),
+        ...(fromVersion < 3 ? RESTOCK_FIELD_SLUGS : []),
+    ]);
+    const purchaseKeys = new Set<string>(fromVersion < 3 ? Object.values(PURCHASE_LIST_KEYS) : []);
+    const lists: Blueprint['lists'] = [];
+    for (const l of full.lists) {
+        if (purchaseKeys.has(l.key)) {
+            lists.push({ ...l, automations: [], records: [] });
+        } else if (l.key === 'productos' || l.key === 'variaciones') {
+            lists.push({
                 ...l,
-                fields: l.fields.filter((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug)),
-                views: l.views.filter((v) => v.name === INVENTORY_VIEW_NAME),
+                fields: l.fields.filter((fd) => slugs.has(fd.slug)),
+                views: fromVersion < 2 ? l.views.filter((v) => v.name === INVENTORY_VIEW_NAME) : [],
                 automations: [],
                 records: [],
-            })),
-        dashboards: withProducts ? full.dashboards.filter((d) => d.name.startsWith(INVENTORY_DASHBOARD_PREFIX)) : [],
+            });
+        }
+    }
+    return {
+        version: full.version,
+        lists,
+        dashboards: fromVersion < 2 ? full.dashboards.filter((d) => d.name.startsWith(INVENTORY_DASHBOARD_PREFIX)) : [],
     };
 }

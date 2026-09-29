@@ -108,6 +108,25 @@ export const listRecordsQuerySchema = z.object({
      */
     page: z.coerce.number().int().positive().max(100_000).optional(),
     with_total: z.coerce.boolean().optional(),
+    /**
+     * v0.1.209 — Sólo estos registros (ids separados por coma, hasta 200):
+     * lo que necesita una acción sobre una SELECCIÓN de filas con sus
+     * valores calculados, en una request y no una por fila.
+     */
+    ids: z
+        .string()
+        .regex(/^\d+(,\d+){0,199}$/)
+        .optional(),
+    /**
+     * v0.1.209 — Registros VINCULADOS a otro: `<id del campo relation>:<id
+     * del registro destino>` ("las líneas de esta orden de compra"). El
+     * campo tiene que ser un relation de ESTA lista (whitelist, como los
+     * filtros); las relaciones no son filtrables por el filter tree.
+     */
+    related_to: z
+        .string()
+        .regex(/^\d+:\d+$/)
+        .optional(),
 });
 export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 

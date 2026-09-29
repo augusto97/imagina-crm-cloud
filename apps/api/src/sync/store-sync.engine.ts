@@ -27,7 +27,7 @@ import {
     type SyncSettings,
     type SyncState,
 } from './store-sync.types';
-import { WOO_PAGE_SIZE, wooGetPage, wooSend } from './woocommerce/woo-fetch';
+import { WOO_PAGE_SIZE, wooGet, wooGetPage, wooSend } from './woocommerce/woo-fetch';
 import { buildWriteBack, isVariationPayload, parseWooTopic, type WooHookResource } from './woocommerce/woo-hooks';
 import {
     coerceMeta,
@@ -77,6 +77,9 @@ const MAX_PAGES_PER_RUN = 400;
 const INSERT_CHUNK = 500;
 
 export class SyncStopped extends Error {}
+
+/** v0.1.209 — Un ajuste de stock que no se pudo hacer (el motivo se muestra tal cual). */
+export class StockAdjustError extends Error {}
 
 interface ListTarget {
     listId: number;
@@ -408,6 +411,142 @@ export class StoreSyncEngine {
             for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
         }
         return { sent: req.fields };
+    }
+
+    /**
+     * v0.1.209 — SUMA (o resta) unidades al stock de un producto o variación
+     * en la tienda: lo que hace recibir una orden de compra y la columna
+     * «Sumar al stock».
+     *
+     * La API de WooCommerce sólo acepta el stock ABSOLUTO, así que se lee el
+     * de la tienda EN ESE MOMENTO (no el de la app, que puede estar atrasado
+     * por una venta que todavía no llegó) y se escribe lectura + diferencia.
+     * Entre las dos requests pasan milisegundos: es la única forma de sumar
+     * que tiene la API y la que usan los plugins de compras.
+     *
+     *  - Una variación cuyo stock lleva el producto padre («manage_stock:
+     *    parent») se suma en el PADRE: es donde vive la cuenta.
+     *  - Un producto variable no tiene stock propio: se rechaza (hay que
+     *    pedir la variación).
+     *  - Un producto que no llevaba la cuenta pasa a llevarla, arrancando en 0.
+     *
+     * Lo que la tienda devuelve se aplica al registro como cualquier dato de
+     * la tienda (dispara automatizaciones: «volvió a haber stock» es una
+     * novedad) y el movimiento queda escrito en «Último movimiento de stock».
+     */
+    async adjustStock(
+        tenantId: number,
+        syncId: number,
+        creds: IntegrationCreds,
+        resource: 'products' | 'variations',
+        recordId: number,
+        delta: number,
+        reason: string,
+    ): Promise<{ before: number; after: number; resource: 'products' | 'variations'; recordId: number }> {
+        const loaded = await this.context(tenantId, syncId, creds, '');
+        if (!loaded) throw new StockAdjustError('La tienda ya no se está sincronizando.');
+        const { ctx } = loaded;
+        ctx.dispatch = ctx.state.initial_done;
+        const link = await this.linkOf(ctx, resource, recordId);
+        if (!link) throw new StockAdjustError('Este registro no viene de la tienda: no hay a dónde sumar el stock.');
+
+        let target: { resource: 'products' | 'variations'; externalId: string; parent: string | null; recordId: number } = {
+            resource,
+            externalId: link.externalId,
+            parent: link.parent,
+            recordId,
+        };
+        const pathOf = (t: typeof target) =>
+            t.resource === 'products' ? `/products/${Number(t.externalId)}` : `/products/${Number(t.parent)}/variations/${Number(t.externalId)}`;
+        if (target.resource === 'variations' && !(Number(target.parent) > 0)) {
+            throw new StockAdjustError('No sabemos de qué producto es esta variación: sincronizá la tienda y probá de nuevo.');
+        }
+        let current = (await wooGet(creds, pathOf(target))).json as WooJson;
+        let note = '';
+        if (target.resource === 'variations' && current.manage_stock === 'parent') {
+            // El stock de esta variación lo lleva el producto padre.
+            const parentRecord = await this.recordOfLink(ctx, 'products', String(target.parent));
+            target = { resource: 'products', externalId: String(target.parent), parent: null, recordId: parentRecord ?? 0 };
+            current = (await wooGet(creds, pathOf(target))).json as WooJson;
+            note = ' (el stock lo lleva el producto)';
+        }
+        if (target.resource === 'products' && current.type === 'variable' && current.manage_stock !== true) {
+            throw new StockAdjustError('Es un producto con variaciones: el stock se suma en cada variación (talla, color…).');
+        }
+        const managed = current.manage_stock === true || current.manage_stock === 'parent';
+        const before = managed ? Math.trunc(Number(current.stock_quantity ?? 0)) || 0 : 0;
+        const after = before + Math.trunc(delta);
+        if (!managed) note += ' (la tienda no llevaba la cuenta: ahora sí)';
+        const res = (await wooSend(creds, 'PUT', pathOf(target), { manage_stock: true, stock_quantity: after })) as WooJson | null;
+
+        if (res && typeof res === 'object') {
+            if (target.resource === 'products') {
+                await this.upsert(ctx, 'products', [mapProduct(res, this.inv(ctx))], {});
+            } else {
+                const name = await this.productNameFromApp(ctx, String(target.parent));
+                await this.upsert(ctx, 'variations', [mapVariation(res, { id: Number(target.parent), name }, this.inv(ctx))], {});
+            }
+        }
+        const sign = delta > 0 ? `+${delta}` : String(delta);
+        const text = `${sign} ${reason}${note} → stock ${after}`.slice(0, 250);
+        await this.writeMovement(ctx, resource, recordId, text);
+        if (target.recordId > 0 && (target.resource !== resource || target.recordId !== recordId)) {
+            await this.writeMovement(ctx, target.resource, target.recordId, text);
+        }
+        for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+        return { before, after, resource: target.resource, recordId: target.recordId };
+    }
+
+    /** Escribe «Último movimiento de stock» en un registro (con su rastro en la actividad). */
+    private async writeMovement(ctx: RunCtx, resource: 'products' | 'variations', recordId: number, text: string): Promise<void> {
+        const fieldId = ctx.settings.fields[resource]?.ultimo_movimiento;
+        const target = ctx.targets[resource];
+        if (!fieldId || !target) return;
+        const key = `f${fieldId}`;
+        await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ data: records.data })
+                .from(records)
+                .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, recordId), isNull(records.deletedAt)))
+                .limit(1);
+            if (!row) return;
+            const after = { ...row.data, [key]: text };
+            await tx
+                .update(records)
+                .set({ data: after, updatedAt: new Date() })
+                .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, recordId)));
+            await this.activity.logInTx(tx, {
+                tenantId: ctx.tenantId,
+                listId: target.listId,
+                recordId,
+                userId: null,
+                action: 'record_updated',
+                diff: computeDiff(row.data, after),
+            });
+        });
+        ctx.touchedLists.add(target.listId);
+    }
+
+    private async linkOf(ctx: RunCtx, resource: StoreSyncResource, recordId: number) {
+        const [link] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ externalId: syncLinks.externalId, parent: syncLinks.parentExternalId })
+                .from(syncLinks)
+                .where(and(eq(syncLinks.syncId, ctx.syncId), eq(syncLinks.resource, resource), eq(syncLinks.recordId, recordId)))
+                .limit(1),
+        );
+        return link ?? null;
+    }
+
+    private async recordOfLink(ctx: RunCtx, resource: StoreSyncResource, externalId: string): Promise<number | null> {
+        const [link] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ recordId: syncLinks.recordId })
+                .from(syncLinks)
+                .where(and(eq(syncLinks.syncId, ctx.syncId), eq(syncLinks.resource, resource), eq(syncLinks.externalId, externalId)))
+                .limit(1),
+        );
+        return link?.recordId ?? null;
     }
 
     private async loadTargets(

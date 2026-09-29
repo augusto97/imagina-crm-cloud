@@ -180,6 +180,9 @@ export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         // Paginación por página (v0.1.187) — mismo whitelist, misma trampa.
         page: raw.page,
         with_total: raw.with_total,
+        // v0.1.209 — selección y vinculados. Mismo whitelist, misma trampa.
+        ids: raw.ids,
+        related_to: raw.related_to,
     };
     const rawTree = typeof raw.filter_tree === 'string' ? raw.filter_tree : raw.filter;
     if (typeof rawTree === 'string' && rawTree.trim() !== '') {

@@ -42,8 +42,7 @@ export function ColumnsConfigDialog({
     // Construye el orden default: id → fields (por position) → updated_at.
     // Se usa cuando `columnOrder` viene vacío (vista nueva sin persistir).
     const buildDefaultOrder = (): string[] => {
-        const dyn = fields
-            .filter((f) => f.type !== 'relation')
+        const dyn = [...fields]
             .sort((a, b) => a.position - b.position)
             .map((f) => f.slug);
         return ['id', ...dyn, 'updated_at'];
@@ -92,7 +91,7 @@ export function ColumnsConfigDialog({
     const knownIds = new Set([
         'id',
         'updated_at',
-        ...fields.filter((f) => f.type !== 'relation').map((f) => f.slug),
+        ...fields.map((f) => f.slug),
     ]);
     const orderedIds = draftOrder.filter((id) => knownIds.has(id));
     const missingIds = [...knownIds].filter((id) => ! orderedIds.includes(id));

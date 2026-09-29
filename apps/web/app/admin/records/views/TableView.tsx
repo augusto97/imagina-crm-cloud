@@ -19,6 +19,8 @@ import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
 import type { RowDensity, RowFontSize } from '../recordsState';
 import { WrapTextContext } from '../wrapText';
+import { RelationTitlesContext } from '../relationTitlesContext';
+import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
@@ -36,6 +38,9 @@ import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup } from './hscrollGroup';
 import { usePageStickyTop, useStuckSentinel } from './stickyTop';
 
+
+/** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
+const UNSORTABLE: readonly string[] = ['relation', 'file'];
 interface TableViewProps {
     listId: number;
     /** Slug de la lista — para queries que necesitan slug en la URL (aggregates). */
@@ -206,13 +211,13 @@ export function TableView({
     );
 
     const columns = useMemo<ColumnDef<RecordEntity>[]>(() => {
-        const dynamic = fields
-            .filter((f) => f.type !== 'relation')
+        const dynamic = [...fields]
             .sort((a, b) => a.position - b.position)
             .map<ColumnDef<RecordEntity>>((field, i) => ({
                 id: field.slug,
                 header: field.label,
-                accessorFn: (row) => row.fields[field.slug],
+                // v0.1.209 — la relación vive aparte de `fields` (ids vinculados).
+                accessorFn: (row) => (field.type === 'relation' ? row.relations?.[field.slug] : row.fields[field.slug]),
                 cell: (ctx) => {
                     const editable = (
                         <EditableCell
@@ -241,7 +246,7 @@ export function TableView({
                 size: defaultSizeForType(field.type),
                 minSize: 80,
                 maxSize: 800,
-                meta: { fieldId: field.id, primary: field.is_primary },
+                meta: { fieldId: field.id, primary: field.is_primary, sortable: !UNSORTABLE.includes(field.type) },
             }));
 
         return [
@@ -313,6 +318,13 @@ export function TableView({
             ),
         [records, expandedIds, childrenByParent],
     );
+
+    // v0.1.209 — títulos de los vinculados: una query por columna relation.
+    const relationRows = useMemo(
+        () => [...records, ...Object.values(childrenByParent).flat()],
+        [records, childrenByParent],
+    );
+    const relationTitles = useRelationTitlesForRows(fields, relationRows);
 
     const table = useReactTable({
         data: dataWithSubRows,
@@ -491,6 +503,7 @@ export function TableView({
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
        <WrapTextContext.Provider value={wrapText}>
+       <RelationTitlesContext.Provider value={relationTitles}>
         <div
             // Región de la tabla: la cabecera sticky se pega mientras esta
             // caja siga en pantalla y se va con ella al terminar.
@@ -546,9 +559,10 @@ export function TableView({
                             </th>
                             {hg.headers.map((h) => {
                                 const meta = h.column.columnDef.meta as
-                                    | { fieldId: number | null; primary?: boolean }
+                                    | { fieldId: number | null; primary?: boolean; sortable?: boolean }
                                     | undefined;
                                 const fieldId = meta?.fieldId ?? null;
+                                const sortable = meta?.sortable !== false;
                                 const isPrimary = meta?.primary ?? false;
                                 const sortIndex = fieldId !== null
                                     ? sort.findIndex((s) => s.field_id === fieldId)
@@ -633,7 +647,7 @@ export function TableView({
                                             {fieldId !== null ? (
                                                 <button
                                                     type="button"
-                                                    onClick={(e) => onSortChange(fieldId, e.shiftKey)}
+                                                    onClick={(e) => sortable && onSortChange(fieldId, e.shiftKey)}
                                                     className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-rounded hover:imcrm-text-foreground"
                                                 >
                                                     {isPrimary && (
@@ -661,7 +675,7 @@ export function TableView({
                                                     // El click en el header CICLA (asc→desc→sin
                                                     // orden); el menú pide una dirección concreta,
                                                     // así que va por su propio handler.
-                                                    onSort={onSortSet ? (f, dir) => onSortSet(f.id, dir) : undefined}
+                                                    onSort={onSortSet && sortable ? (f, dir) => onSortSet(f.id, dir) : undefined}
                                                     // OJO: el id de columna de TanStack es el
                                                     // SLUG del campo, no `field_{id}` (que es el
                                                     // formato del sort del backend).
@@ -1045,6 +1059,7 @@ export function TableView({
             canCreate={canCreateRecords}
             canDelete={canDeleteRecords}
         />
+       </RelationTitlesContext.Provider>
        </WrapTextContext.Provider>
       </RecurrencesBatchProvider>
     );

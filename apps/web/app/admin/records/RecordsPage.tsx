@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { readStoreListMarker } from '@imagina-base/shared';
 import {
     ArrowLeft,
     Download,
@@ -1043,6 +1044,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
+                        storeMarker={readStoreListMarker(list.data.settings)}
                     />
 
                     <FieldCreateDialog
