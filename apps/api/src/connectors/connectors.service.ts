@@ -48,7 +48,15 @@ import {
     testSendRequest,
     verifyRequest,
     type IntegrationCreds,
+    type VerifyOutcome,
 } from './integration-calls';
+import {
+    classifyWooVerify,
+    wooSiteIndexUrl,
+    wooSiteName,
+    wooStoreUrl,
+    wooVerifyPlan,
+} from './woocommerce/wc-api';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -1113,7 +1121,7 @@ export class ConnectorsService {
         if (provided !== '') secrets.token = encryptSecret(provided, this.env.SECRETS_KEY);
         const config: Record<string, unknown> = {
             ...(row?.config ?? {}),
-            fields: creds.fields,
+            fields: { ...creds.fields, ...(outcome.fields ?? {}) },
             account_label: outcome.label ?? (row?.config.account_label as string | undefined) ?? null,
         };
 
@@ -1248,7 +1256,8 @@ export class ConnectorsService {
         };
     }
 
-    private async runVerify(key: IntegrationKey, creds: IntegrationCreds) {
+    private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
+        if (key === 'woocommerce') return this.runWooVerify(creds);
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
         try {
@@ -1271,6 +1280,86 @@ export class ConnectorsService {
                 options: {},
             };
         }
+    }
+
+    /**
+     * WooCommerce (v0.1.205): se prueba la clave contra la API de la tienda
+     * y, de paso, se DESCUBRE cómo habla ese hosting — si tira la cabecera
+     * `Authorization` (hay que mandar la clave en la URL) o si no tiene enlaces
+     * permanentes (`?rest_route=`). Lo que funciona queda guardado en los
+     * campos ocultos de la conexión; la persona nunca ve ninguna de estas
+     * palabras. A diferencia de las apps de mensajería, una tienda que no
+     * responde NO se guarda: casi siempre es la dirección mal escrita, y todo
+     * lo que viene después (acciones, sincronización) depende de llegar a ella.
+     */
+    private async runWooVerify(creds: IntegrationCreds): Promise<VerifyOutcome> {
+        const out: VerifyOutcome = { ok: true, label: null, error: null, warning: null, options: {} };
+        const fail = (error: string): VerifyOutcome => ({ ...out, ok: false, error });
+        let store: string;
+        try {
+            store = wooStoreUrl(creds.fields.store_url ?? '');
+        } catch (err) {
+            return fail(err instanceof Error ? err.message : String(err));
+        }
+        const base: IntegrationCreds = { ...creds, fields: { ...creds.fields, store_url: store } };
+        const secrets = [creds.secret, creds.fields.consumer_key ?? ''];
+        let authMessage: string | null = null;
+        let reached = false;
+        let lastProblem: string | null = null;
+        for (const attempt of wooVerifyPlan(base)) {
+            let verdict;
+            try {
+                const res = await safeWebhookFetch(attempt.url, {
+                    method: 'GET',
+                    headers: attempt.headers,
+                    captureBody: true,
+                    timeoutMs: 12_000,
+                });
+                verdict = classifyWooVerify(res.status, res.body ?? '');
+            } catch (err) {
+                lastProblem = redactValues(err instanceof Error ? err.message : String(err), secrets);
+                // Sin red hasta la tienda, las otras combinaciones tampoco van a llegar.
+                break;
+            }
+            reached = true;
+            if (verdict.kind === 'ok') {
+                const fields = { ...base.fields, ...attempt.fields };
+                let label: string | null = null;
+                try {
+                    const c: IntegrationCreds = { ...base, fields };
+                    const res = await safeWebhookFetch(wooSiteIndexUrl(c), {
+                        method: 'GET',
+                        headers: { accept: 'application/json' },
+                        captureBody: true,
+                        maxCaptureBytes: 512 * 1024,
+                        timeoutMs: 8_000,
+                    });
+                    label = wooSiteName(res.body ?? '');
+                } catch {
+                    // El nombre es un adorno: sin él se usa el dominio.
+                }
+                return {
+                    ...out,
+                    label: label ?? new URL(store).host,
+                    fields: { store_url: store, auth_mode: attempt.fields.auth_mode, api_style: attempt.fields.api_style },
+                };
+            }
+            if (verdict.kind === 'auth') authMessage = verdict.message;
+            if (verdict.kind === 'other') lastProblem = verdict.message;
+        }
+        if (authMessage !== null) {
+            return fail(
+                `WooCommerce rechazó la clave${authMessage ? ` («${authMessage}»)` : ''}. Revisá que copiaste la clave del cliente y la secreta de la MISMA clave, y que tenga permisos de «Lectura» o «Lectura/Escritura».`,
+            );
+        }
+        if (!reached) {
+            return fail(`No pudimos llegar a la tienda (${lastProblem ?? 'sin respuesta'}). Revisá la dirección.`);
+        }
+        return fail(
+            lastProblem && lastProblem !== ''
+                ? `No pudimos usar la API de la tienda: ${lastProblem}`
+                : 'No encontramos la API de WooCommerce en esa dirección. Revisá que sea la del sitio de WordPress donde está instalado WooCommerce.',
+        );
     }
 
     private async userEmail(userId: number): Promise<string | null> {

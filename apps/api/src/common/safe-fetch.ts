@@ -35,13 +35,34 @@ export interface SafeFetchOptions {
      * evita retener respuestas grandes en memoria.
      */
     captureBody?: boolean;
+    /**
+     * Con `captureBody`: cuánto del cuerpo se retiene (default 8 KB, el del
+     * probador). La sincronización con tiendas (v0.1.206) lee páginas de 100
+     * pedidos, que pesan cientos de KB: sube el tope explícitamente y el
+     * cuerpo llega COMPLETO (sin el recorte de caracteres del probador).
+     */
+    maxCaptureBytes?: number;
 }
 
 export interface SafeFetchResult {
     status: number;
-    /** Sólo con `captureBody`: primeros 8 KB de la respuesta. */
+    /** Sólo con `captureBody`: primeros 8 KB de la respuesta (o `maxCaptureBytes`). */
     body?: string;
     contentType?: string;
+    /** Con `captureBody`: las cabeceras de la respuesta, en minúscula. */
+    headers?: Record<string, string>;
+    /** El cuerpo superó el tope y llegó cortado. */
+    truncated?: boolean;
+}
+
+/**
+ * v0.1.205 — SÓLO para desarrollo: deja salir a direcciones privadas y a
+ * `http://` para probar de punta a punta contra un servidor local (una tienda
+ * WooCommerce falsa en el propio contenedor). En producción se IGNORA aunque
+ * la variable esté puesta: el guard anti-SSRF no tiene interruptor ahí.
+ */
+export function devPrivateEgressAllowed(): boolean {
+    return process.env.NODE_ENV !== 'production' && process.env.DEV_ALLOW_PRIVATE_EGRESS === '1';
 }
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -49,6 +70,8 @@ const MAX_RESPONSE_BYTES = 256 * 1024;
 /** Tope de lo que se retiene y se muestra en el probador. */
 const MAX_PREVIEW_BYTES = 8 * 1024;
 const MAX_PREVIEW_CHARS = 4000;
+/** Techo absoluto de lo que se puede pedir retener (una página de la API de una tienda). */
+const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
 
 export async function safeWebhookFetch(
     rawUrl: string,
@@ -67,7 +90,7 @@ export async function safeWebhookFetch(
     // Node NO llama a `lookup` cuando el hostname ya es una IP literal, así que
     // el guard del lookup se saltaría con `http://169.254.169.254/`. Validamos
     // la IP literal acá. (`URL.hostname` devuelve IPv6 sin corchetes.)
-    if (isIP(url.hostname) && isBlockedAddress(url.hostname)) {
+    if (isIP(url.hostname) && isBlockedAddress(url.hostname) && !devPrivateEgressAllowed()) {
         throw new BadRequestException(
             `SSRF: destino de red interna bloqueado (${url.hostname})`,
         );
@@ -87,20 +110,35 @@ export async function safeWebhookFetch(
             (res) => {
                 const status = res.statusCode ?? 0;
                 const contentType = String(res.headers['content-type'] ?? '');
+                const big = opts.maxCaptureBytes !== undefined;
+                const keep = big ? Math.min(opts.maxCaptureBytes!, MAX_CAPTURE_BYTES) : MAX_PREVIEW_BYTES;
+                const hardCap = big ? keep : MAX_RESPONSE_BYTES;
                 let received = 0;
+                let truncated = false;
                 const chunks: Buffer[] = [];
-                const done = (): SafeFetchResult =>
-                    opts.captureBody
-                        ? {
-                              status,
-                              contentType,
-                              body: Buffer.concat(chunks).toString('utf8').slice(0, MAX_PREVIEW_CHARS),
-                          }
-                        : { status };
+                const done = (): SafeFetchResult => {
+                    if (!opts.captureBody) return { status };
+                    const text = Buffer.concat(chunks).toString('utf8');
+                    const headers: Record<string, string> = {};
+                    for (const [k, v] of Object.entries(res.headers)) {
+                        if (v !== undefined) headers[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
+                    }
+                    return {
+                        status,
+                        contentType,
+                        headers,
+                        truncated,
+                        body: big ? text : text.slice(0, MAX_PREVIEW_CHARS),
+                    };
+                };
                 res.on('data', (chunk: Buffer) => {
                     received += chunk.length;
-                    if (opts.captureBody && received <= MAX_PREVIEW_BYTES) chunks.push(chunk);
-                    if (received > MAX_RESPONSE_BYTES) res.destroy();
+                    if (opts.captureBody && received <= keep) chunks.push(chunk);
+                    else if (opts.captureBody) truncated = true;
+                    if (received > hardCap) {
+                        truncated = true;
+                        res.destroy();
+                    }
                 });
                 res.on('end', () => resolve(done()));
                 // Si abortamos por tamaño, el status ya se capturó.
@@ -158,7 +196,7 @@ function guardedLookup(hostname: string, options: unknown, callback: LookupCb): 
         }
         const list = addresses as LookupAddress[];
         for (const a of list) {
-            if (isBlockedAddress(a.address)) {
+            if (isBlockedAddress(a.address) && !devPrivateEgressAllowed()) {
                 callback(
                     new Error(`SSRF: dirección de red interna bloqueada (${a.address})`),
                     '',

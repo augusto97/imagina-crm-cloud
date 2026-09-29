@@ -1,4 +1,5 @@
 import type { ConnectorAction, IntegrationKey, IntegrationProvider } from '@imagina-base/shared';
+import { buildWooRequest, checkWooResponse } from './woocommerce/wc-api';
 
 /**
  * Peticiones de las apps de la galería (v0.1.203, ADR-S22 fase 4).
@@ -25,7 +26,7 @@ export interface IntegrationCreds {
 
 export interface IntegrationRequest {
     url: string;
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
     headers: Record<string, string>;
     body?: string;
 }
@@ -36,10 +37,8 @@ export interface IntegrationValues {
     lines: Record<string, string[]>;
 }
 
-/** Dato mal cargado por quien armó la automatización: el mensaje es para esa persona. */
-export class IntegrationInputError extends Error {
-    readonly code = 'integration_input';
-}
+import { IntegrationInputError } from './integration-errors';
+export { IntegrationInputError };
 
 export type MergeFn = (raw: unknown) => string;
 
@@ -50,6 +49,7 @@ export type MergeFn = (raw: unknown) => string;
  */
 const LINE_PARAMS: Partial<Record<string, readonly string[]>> = {
     'google_sheets.append_row': ['values'],
+    'woocommerce.update_product': ['meta'],
 };
 
 /**
@@ -343,6 +343,7 @@ export function buildIntegrationRequest(
     creds: IntegrationCreds,
 ): IntegrationRequest {
     const v = compiled.values;
+    if (integration === 'woocommerce') return buildWooRequest(actionKey, compiled, creds);
     switch (`${integration}.${actionKey}`) {
         case 'whatsapp.send_text':
             // Exactamente los campos de la petición que ya funciona en
@@ -502,6 +503,7 @@ export function checkIntegrationResponse(
     status: number,
     body: string,
 ): string | null {
+    if (integration === 'woocommerce') return checkWooResponse(status, body);
     const json = parseJson(body);
     if (integration === 'slack') {
         if (json && json.ok === false) {
@@ -600,6 +602,11 @@ export interface VerifyOutcome {
     error: string | null;
     warning: string | null;
     options: Record<string, Array<{ value: string; label: string }>>;
+    /**
+     * Campos NO secretos que descubrió la verificación y hay que guardar con
+     * la conexión (WooCommerce: cómo acepta la clave esa tienda).
+     */
+    fields?: Record<string, string>;
 }
 
 export function parseVerify(

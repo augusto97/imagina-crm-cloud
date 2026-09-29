@@ -424,6 +424,82 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         expect(connection).toMatchObject({ integration_key: 'whatsapp', secret_state: 'ok', secret_hint: '••••1234' });
     });
 
+    it('WooCommerce: descubre cómo habla la tienda (clave en la URL si el hosting tira la cabecera) y lo guarda', async () => {
+        // El caso real de muchos hostings con PHP por FastCGI: la cabecera
+        // Authorization no llega a WordPress → WooCommerce ve un pedido anónimo.
+        net.handler = (call) => {
+            if (call.url.startsWith('https://tienda.test/wp-json/wc/v3/products')) {
+                return call.url.includes('consumer_secret=cs_bueno')
+                    ? { status: 200, body: '[{"id":1}]' }
+                    : { status: 401, body: '{"code":"woocommerce_rest_cannot_view","message":"No podés listar"}' };
+            }
+            if (call.url === 'https://tienda.test/wp-json/') return { status: 200, body: '{"name":"Tienda Test"}' };
+            if (call.url.startsWith('https://tienda.test/wp-json/wc/v3/orders/77')) {
+                return { status: 200, body: '{"id":77,"status":"completed"}' };
+            }
+            return { status: 404, body: '' };
+        };
+
+        // Clave equivocada: rechazada en las cuatro combinaciones y NO se guarda.
+        await expect(
+            svc.connectIntegrationKey(tenantId, adminId, 'admin', 'woocommerce', {
+                fields: { store_url: 'tienda.test/', consumer_key: 'ck_x', consumer_secret: 'cs_malo' },
+                visibility: 'workspace',
+            }),
+        ).rejects.toThrow(/rechazó la clave/);
+        expect(await svc.list(tenantId, adminId, 'admin')).toHaveLength(0);
+
+        // Sin HTTPS no se intenta nada.
+        net.calls.length = 0;
+        await expect(
+            svc.connectIntegrationKey(tenantId, adminId, 'admin', 'woocommerce', {
+                fields: { store_url: 'http://tienda.test', consumer_key: 'ck_x', consumer_secret: 'cs_bueno' },
+                visibility: 'workspace',
+            }),
+        ).rejects.toThrow(/HTTPS/);
+        expect(net.calls).toHaveLength(0);
+
+        const { connection } = await svc.connectIntegrationKey(tenantId, adminId, 'admin', 'woocommerce', {
+            fields: { store_url: 'tienda.test/', consumer_key: 'ck_bien', consumer_secret: 'cs_bueno' },
+            visibility: 'workspace',
+        });
+        expect(connection).toMatchObject({
+            name: 'WooCommerce · Tienda Test',
+            integration_key: 'woocommerce',
+            account_label: 'Tienda Test',
+            secret_hint: '••••ueno',
+        });
+        const [row] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(connections).where(eq(connections.id, connection.id)),
+        );
+        expect((row!.config as { fields: Record<string, string> }).fields).toMatchObject({
+            store_url: 'https://tienda.test',
+            consumer_key: 'ck_bien',
+            auth_mode: 'query',
+            api_style: 'pretty',
+        });
+        // El secreto no viaja en claro en la fila.
+        expect(JSON.stringify(row!.config)).not.toContain('cs_bueno');
+
+        // La acción sale por la combinación descubierta, y el probador tapa la clave de la URL.
+        const list = await listsService.create(tenantId, { name: 'Pedidos Woo' });
+        await fieldsService.create(tenantId, list.slug, { label: 'Pedido', type: 'text', slug: 'pedido' });
+        const test = await automationsService.testWebhook(tenantId, list.slug, {
+            config: {
+                connection_id: connection.id,
+                action_key: 'update_order_status',
+                values: { order_id: '77', status: 'completed' },
+            },
+        });
+        expect(test.error).toBeNull();
+        expect(test.request.method).toBe('PUT');
+        expect(test.request.url).toContain('/wp-json/wc/v3/orders/77?consumer_key=ck_bien&consumer_secret=');
+        expect(test.request.url).not.toContain('cs_bueno');
+        const sent = net.calls.find((c) => c.url.includes('/orders/77'))!;
+        expect(sent.method).toBe('PUT');
+        expect(JSON.parse(sent.body!)).toEqual({ status: 'completed' });
+    });
+
     it('motor y probador: el 200 con error de Slack es un FALLO con el motivo, y borrar avisa del uso', async () => {
         await apps.update('slack', { client_id: 'slack-client-1', client_secret: 'slack-secreto-9876' }, new Map());
         net.handler = (call) => {

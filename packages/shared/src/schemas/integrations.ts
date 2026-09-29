@@ -143,6 +143,7 @@ export const INTEGRATION_KEYS = [
     'google_calendar',
     'google_sheets',
     'outlook',
+    'woocommerce',
 ] as const;
 export const integrationKeySchema = z.enum(INTEGRATION_KEYS);
 export type IntegrationKey = z.infer<typeof integrationKeySchema>;
@@ -156,6 +157,7 @@ export const INTEGRATION_CATEGORY_LABEL = {
     correo: 'Correo',
     calendario: 'Calendario',
     datos: 'Hojas de cálculo',
+    comercio: 'Tiendas online',
 } as const;
 export type IntegrationCategory = keyof typeof INTEGRATION_CATEGORY_LABEL;
 
@@ -173,6 +175,14 @@ export interface IntegrationFieldDef {
     default: string;
     /** El servidor puede listar los valores posibles («Buscar mis cuentas»). */
     lookup: boolean;
+    /**
+     * Lo completa el SERVIDOR al verificar, nunca la persona (v0.1.205): cómo
+     * habla la tienda de WooCommerce —si acepta la clave en la cabecera o hay
+     * que mandarla en la URL, si tiene enlaces permanentes— se descubre
+     * probando, y preguntárselo a alguien que sólo quiere «Conectar» es
+     * exactamente la jerga que la galería vino a sacar.
+     */
+    hidden: boolean;
 }
 
 export type IntegrationAuth =
@@ -207,6 +217,7 @@ function field(def: Partial<IntegrationFieldDef> & { key: string; label: string 
         advanced: false,
         default: '',
         lookup: false,
+        hidden: false,
         ...def,
     };
 }
@@ -277,6 +288,19 @@ const emailParams: Array<Record<string, unknown>> = [
 ];
 
 const WAS_DEFAULT_SERVER = 'https://was.imagina.cloud';
+
+/** Estados de pedido de WooCommerce (los del núcleo; un plugin puede sumar otros). */
+export const WOO_ORDER_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+    { value: 'pending', label: 'Pendiente de pago' },
+    { value: 'processing', label: 'Procesando' },
+    { value: 'on-hold', label: 'En espera' },
+    { value: 'completed', label: 'Completado' },
+    { value: 'cancelled', label: 'Cancelado' },
+    { value: 'refunded', label: 'Reembolsado' },
+    { value: 'failed', label: 'Fallido' },
+    { value: 'checkout-draft', label: 'Borrador' },
+    { value: 'trash', label: 'En la papelera' },
+];
 
 export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
@@ -551,6 +575,185 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 label: 'Crear evento en Outlook',
                 description: 'En el calendario de la cuenta conectada.',
                 params: eventParams,
+            }),
+        ],
+    },
+    {
+        key: 'woocommerce',
+        name: 'WooCommerce',
+        tagline: 'Tu tienda online: pedidos, clientes y productos.',
+        description:
+            'Conectá tu tienda de WordPress para actualizar productos, precios y stock, cambiar el estado de los pedidos y crear cupones desde tus automatizaciones.',
+        category: 'comercio',
+        color: '#7F54B3',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'store_url',
+                    label: 'Dirección de la tienda',
+                    required: true,
+                    placeholder: 'https://mitienda.com',
+                    help: 'La dirección de tu sitio de WordPress. Tiene que tener HTTPS (candado).',
+                }),
+                field({
+                    key: 'consumer_key',
+                    label: 'Clave del cliente',
+                    required: true,
+                    placeholder: 'ck_…',
+                    help: 'Empieza con ck_.',
+                }),
+                field({
+                    key: 'consumer_secret',
+                    label: 'Clave secreta',
+                    secret: true,
+                    required: true,
+                    placeholder: 'cs_…',
+                    help: 'Empieza con cs_. Se guarda cifrada.',
+                }),
+                // Los completa la verificación (ver `hidden`).
+                field({ key: 'auth_mode', label: 'Autenticación', hidden: true, default: 'header' }),
+                field({ key: 'api_style', label: 'Rutas', hidden: true, default: 'pretty' }),
+            ],
+            how_to: [
+                'En el panel de WordPress andá a WooCommerce → Ajustes → Avanzado → API REST.',
+                'Tocá «Añadir clave», poné una descripción (por ejemplo «Imagina Base») y en Permisos elegí «Lectura/Escritura».',
+                'Tocá «Generar clave API» y copiá la clave del cliente (ck_…) y la clave secreta (cs_…) acá. La secreta sólo se muestra esa vez.',
+            ],
+        },
+        actions: [
+            action({
+                key: 'update_product',
+                label: 'Actualizar producto en WooCommerce',
+                description: 'Precio, rebaja, stock, estado o campos de otros plugins.',
+                params: [
+                    {
+                        key: 'product_id',
+                        label: 'ID del producto',
+                        required: true,
+                        help: 'El número del producto en WooCommerce. En una lista sincronizada es la columna «ID WooCommerce» ({{woo_id}}).',
+                    },
+                    {
+                        key: 'variation_id',
+                        label: 'ID de la variación',
+                        help: 'Sólo para productos variables: para cambiar el precio o el stock de UNA variante (talla, color).',
+                    },
+                    { key: 'name', label: 'Nombre', help: 'Vacío = no se cambia.' },
+                    { key: 'regular_price', label: 'Precio normal', help: 'Vacío = no se cambia.' },
+                    {
+                        key: 'sale_price',
+                        label: 'Precio rebajado',
+                        help: 'Vacío = no se cambia. Escribí «quitar» para sacar la rebaja.',
+                    },
+                    {
+                        key: 'stock_quantity',
+                        label: 'Stock (unidades)',
+                        type: 'number',
+                        help: 'Activa la gestión de inventario del producto.',
+                    },
+                    {
+                        key: 'stock_status',
+                        label: 'Estado del inventario',
+                        type: 'select',
+                        options: [
+                            { value: '', label: 'No cambiar' },
+                            { value: 'instock', label: 'Hay existencias' },
+                            { value: 'outofstock', label: 'Agotado' },
+                            { value: 'onbackorder', label: 'Se puede reservar' },
+                        ],
+                    },
+                    {
+                        key: 'status',
+                        label: 'Publicación',
+                        type: 'select',
+                        options: [
+                            { value: '', label: 'No cambiar' },
+                            { value: 'publish', label: 'Publicado' },
+                            { value: 'draft', label: 'Borrador' },
+                            { value: 'pending', label: 'Pendiente de revisión' },
+                            { value: 'private', label: 'Privado' },
+                        ],
+                    },
+                    {
+                        key: 'meta',
+                        label: 'Campos personalizados (meta)',
+                        type: 'long_text',
+                        help: 'Uno por renglón, con el formato clave=valor. Sirve para los campos que agregan otros plugins (ACF, Yoast, etc.).',
+                    },
+                ],
+            }),
+            action({
+                key: 'update_order_status',
+                label: 'Cambiar el estado de un pedido',
+                description: 'WooCommerce manda al cliente el correo que corresponda al estado nuevo.',
+                params: [
+                    {
+                        key: 'order_id',
+                        label: 'ID del pedido',
+                        required: true,
+                        help: 'El número del pedido en WooCommerce ({{woo_id}} en una lista sincronizada).',
+                    },
+                    {
+                        key: 'status',
+                        label: 'Estado nuevo',
+                        type: 'select',
+                        required: true,
+                        default: 'completed',
+                        // Los que se ELIGEN a mano: el borrador del checkout y la
+                        // papelera no son estados que se pongan con un PUT.
+                        options: WOO_ORDER_STATUS_OPTIONS.filter(
+                            (o) => o.value !== 'checkout-draft' && o.value !== 'trash',
+                        ),
+                    },
+                ],
+            }),
+            action({
+                key: 'add_order_note',
+                label: 'Agregar una nota al pedido',
+                description: 'Una nota interna, o una nota que le llega al cliente por correo.',
+                params: [
+                    { key: 'order_id', label: 'ID del pedido', required: true },
+                    { key: 'note', label: 'Nota', type: 'long_text', required: true },
+                    {
+                        key: 'customer_note',
+                        label: 'Enviársela al cliente',
+                        type: 'boolean',
+                        default: 'false',
+                        help: 'Si está activo, WooCommerce le manda la nota al cliente por correo.',
+                    },
+                ],
+            }),
+            action({
+                key: 'create_coupon',
+                label: 'Crear un cupón',
+                description: 'Un cupón de descuento, por ejemplo para un cliente puntual.',
+                params: [
+                    { key: 'code', label: 'Código', required: true, help: 'Lo que el cliente escribe al pagar.' },
+                    {
+                        key: 'discount_type',
+                        label: 'Tipo de descuento',
+                        type: 'select',
+                        default: 'percent',
+                        options: [
+                            { value: 'percent', label: 'Porcentaje' },
+                            { value: 'fixed_cart', label: 'Monto fijo sobre el carrito' },
+                            { value: 'fixed_product', label: 'Monto fijo por producto' },
+                        ],
+                    },
+                    { key: 'amount', label: 'Valor del descuento', type: 'number', required: true },
+                    { key: 'date_expires', label: 'Vence el', help: 'AAAA-MM-DD. Vacío = no vence.' },
+                    { key: 'usage_limit', label: 'Usos en total', type: 'number' },
+                    { key: 'usage_limit_per_user', label: 'Usos por cliente', type: 'number' },
+                    {
+                        key: 'email_restrictions',
+                        label: 'Sólo para estos correos',
+                        help: 'Separados por coma. Vacío = cualquiera.',
+                    },
+                    { key: 'minimum_amount', label: 'Compra mínima', type: 'number' },
+                    { key: 'free_shipping', label: 'Incluye envío gratis', type: 'boolean', default: 'false' },
+                    { key: 'individual_use', label: 'No se combina con otros cupones', type: 'boolean', default: 'false' },
+                    { key: 'description', label: 'Descripción interna' },
+                ],
             }),
         ],
     },

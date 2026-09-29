@@ -211,5 +211,14 @@ export function loadEnv(overrides: Partial<Record<string, string>> = {}): Env {
     }
     const env = envSchema.parse({ ...process.env, ...overrides });
     assertProductionSecrets(env);
+    if (process.env.DEV_ALLOW_PRIVATE_EGRESS === '1') {
+        // v0.1.205 — el interruptor de pruebas locales (ver safe-fetch) no hace
+        // nada en producción; se avisa igual para que nadie crea que sí.
+        console.warn(
+            env.NODE_ENV === 'production'
+                ? '[env] DEV_ALLOW_PRIVATE_EGRESS se IGNORA en producción: el guard anti-SSRF sigue activo.'
+                : '[env] DEV_ALLOW_PRIVATE_EGRESS=1: las peticiones salientes pueden ir a direcciones privadas y http:// (sólo desarrollo).',
+        );
+    }
     return env;
 }
