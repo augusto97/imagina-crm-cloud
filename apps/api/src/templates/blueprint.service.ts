@@ -418,6 +418,115 @@ export class BlueprintService {
     }
 
     /**
+     * v0.1.208 — Agrega a listas que YA existen lo que falta de un blueprint:
+     * campos (por slug: lo que ya está no se toca), vistas y tableros. Lo usa
+     * la actualización del pack de una tienda sincronizada (el inventario
+     * llegó después de que muchas empresas ya habían conectado su tienda).
+     * Mismas dos pasadas que `materialize` para los campos derivados.
+     */
+    async extend(
+        tenantId: number,
+        actorId: number,
+        addition: ListBlueprint,
+        keyToListId: Map<string, number>,
+        existing: Map<string, Map<string, number>>,
+    ): Promise<{ fieldIds: Record<string, Record<string, number>>; dashboardIds: number[]; warnings: string[] }> {
+        const warnings: string[] = [];
+        const slugMaps = new Map<string, Map<string, number>>();
+        for (const [k, m] of existing) slugMaps.set(k, new Map(m));
+        const resolveLists = (v: unknown): unknown => resolveListRefs(v, keyToListId);
+
+        const pending: Array<{ listId: number; key: string; name: string; id: number; config: unknown }> = [];
+        for (const bl of addition.lists) {
+            const listId = keyToListId.get(bl.key);
+            if (listId === undefined) continue;
+            const slugToId = slugMaps.get(bl.key) ?? new Map<string, number>();
+            slugMaps.set(bl.key, slugToId);
+            for (const f of bl.fields) {
+                if (slugToId.has(f.slug)) continue;
+                const hasFieldRefs = JSON.stringify(f.config).includes('"$field"');
+                try {
+                    const field = await this.fields.create(tenantId, String(listId), {
+                        label: f.label,
+                        slug: f.slug,
+                        type: f.type,
+                        config: this.dropDeadListRefs(resolveLists(hasFieldRefs ? {} : f.config) as Record<string, unknown>),
+                        is_required: f.is_required,
+                        is_unique: f.is_unique,
+                        is_indexed: f.is_indexed,
+                        description: f.description,
+                    });
+                    slugToId.set(f.slug, field.id);
+                    if (hasFieldRefs) pending.push({ listId, key: bl.key, name: bl.name, id: field.id, config: f.config });
+                } catch (err) {
+                    warnings.push(`Campo «${f.label}» de «${bl.name}»: ${message(err)}`);
+                }
+            }
+        }
+        for (const p of pending) {
+            const config = this.dropDeadListRefs(
+                resolveLists(resolveFieldRefs(p.config, slugMaps.get(p.key)!, slugMaps)) as Record<string, unknown>,
+            );
+            try {
+                await this.fields.update(tenantId, String(p.listId), String(p.id), { config });
+            } catch (err) {
+                warnings.push(`Configuración de un campo derivado de «${p.name}»: ${message(err)}`);
+            }
+        }
+        for (const bl of addition.lists) {
+            const listId = keyToListId.get(bl.key);
+            if (listId === undefined) continue;
+            const slugToId = slugMaps.get(bl.key)!;
+            for (const v of bl.views) {
+                try {
+                    await this.views.create(tenantId, String(listId), {
+                        name: v.name,
+                        type: v.type,
+                        config: resolveLists(resolveFieldRefs(v.config, slugToId, slugMaps)) as Record<string, unknown>,
+                        is_default: v.is_default,
+                    });
+                } catch (err) {
+                    warnings.push(`Vista «${v.name}» de «${bl.name}»: ${message(err)}`);
+                }
+            }
+        }
+        const dashboardIds: number[] = [];
+        for (const d of addition.dashboards) {
+            const widgets: WidgetSpec[] = [];
+            for (const wd of d.widgets) {
+                const type = widgetTypeSchema.safeParse(wd.type);
+                if (!type.success || wd.list === 0) continue;
+                const listId = keyToListId.get(wd.list.$list);
+                const slugToId = slugMaps.get(wd.list.$list);
+                if (listId === undefined || !slugToId) continue;
+                widgets.push({
+                    id: newWidgetId(),
+                    type: type.data,
+                    list_id: listId,
+                    title: wd.title,
+                    config: resolveLists(resolveFieldRefs(wd.config, slugToId)) as Record<string, unknown>,
+                    layout: wd.layout,
+                });
+            }
+            try {
+                const created = await this.dashboards.create(tenantId, actorId, {
+                    name: d.name,
+                    description: d.description,
+                    widgets,
+                    settings: d.settings,
+                });
+                dashboardIds.push(created.id);
+            } catch (err) {
+                warnings.push(`Tablero «${d.name}»: ${message(err)}`);
+            }
+        }
+        this.realtime.lists(tenantId);
+        const fieldIds: Record<string, Record<string, number>> = {};
+        for (const [key, map] of slugMaps) fieldIds[key] = Object.fromEntries(map);
+        return { fieldIds, dashboardIds, warnings };
+    }
+
+    /**
      * Una relation cuyo `$list` no se pudo resolver (lista fuera del pack y
      * de otro workspace) queda SIN destino: el campo existe, el usuario elige
      * la lista después. Idem `list_id` de un create_record.

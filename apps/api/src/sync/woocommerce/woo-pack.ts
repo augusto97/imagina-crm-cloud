@@ -1,5 +1,6 @@
 import { BLUEPRINT_VERSION, WOO_ORDER_STATUS_OPTIONS, type ListBlueprint, type StoreSyncResource } from '@imagina-base/shared';
 import { dashboard, f, kanban, kpi, list, listRef, opt, ref, rollup, select, table, widget } from '../../templates/blueprint-dsl';
+import type { BlueprintField, ListBlueprint as Blueprint } from '@imagina-base/shared';
 
 /**
  * El PACK de la tienda (v0.1.206, ADR-S24): cinco listas vinculadas y un
@@ -54,6 +55,38 @@ const PRODUCT_STATUS = [
     opt('private', 'Privado', 'violet'),
     opt('trash', 'En la papelera', 'rose'),
 ];
+/** El estado de inventario que se lee de un vistazo (lo deriva el mapeo, v0.1.208). */
+const INVENTORY_STATE = [
+    opt('agotado', 'Agotado', 'rose'),
+    opt('bajo', 'Stock bajo', 'amber'),
+    opt('en_stock', 'En stock', 'emerald'),
+    opt('por_encargo', 'Por encargo', 'violet'),
+    opt('por_variacion', 'Por variación', 'sky'),
+    opt('sin_control', 'Sin control de stock', 'slate'),
+];
+const LOW_OR_OUT = ['agotado', 'bajo'];
+
+/**
+ * Pack de la tienda: 1 = v0.1.206 (sin inventario), 2 = v0.1.208 (inventario:
+ * estado, umbral, valor, rotación, vistas «Para reponer» y tablero). Una
+ * sincronización creada antes se ACTUALIZA sola a la versión nueva.
+ */
+export const WOO_PACK_VERSION = 2;
+
+/** Los slugs que agregó el pack 2 (lo que falta en una sincronización vieja). */
+export const INVENTORY_FIELD_SLUGS = [
+    'controla_stock',
+    'umbral_stock',
+    'estado_inventario',
+    'valor_inventario',
+    'vendidas_30d',
+    'cobertura_meses',
+    'stock_variaciones',
+    'valor_variaciones',
+];
+export const INVENTORY_VIEW_NAME = 'Para reponer';
+export const INVENTORY_DASHBOARD_PREFIX = 'Inventario · ';
+
 const PRODUCT_TYPE = [
     opt('simple', 'Simple', 'sky'),
     opt('variable', 'Variable', 'violet'),
@@ -130,6 +163,11 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     money('Precio rebajado', 'precio_rebajado'),
                     f('Stock', 'stock', 'number'),
                     select('Inventario', 'estado_stock', STOCK_STATUS),
+                    ...inventoryFields('lineas', 'producto', o),
+                    rollup('Stock de variaciones', 'stock_variaciones', 'variaciones', 'producto', 'sum', 'stock',
+                        'Unidades en stock sumando todas sus variaciones (talla, color…).'),
+                    rollup('Valor en variaciones', 'valor_variaciones', 'variaciones', 'producto', 'sum', 'valor_inventario',
+                        'Lo que valen, a precio de venta, las unidades de todas sus variaciones.'),
                     f('Categorías', 'categorias', 'multi_select', { config: { options: [] } }),
                     f('Etiquetas', 'etiquetas', 'multi_select', { config: { options: [] } }),
                     f('Imagen', 'imagen', 'url'),
@@ -145,7 +183,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 ],
                 {
                     settings: { title_field_id: ref('nombre') },
-                    views: [table(), kanban('Por inventario', 'estado_stock')],
+                    views: [table(), restockView(), kanban('Por inventario', 'estado_inventario')],
                 },
             ),
             list(
@@ -163,6 +201,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     money('Precio rebajado', 'precio_rebajado'),
                     f('Stock', 'stock', 'number'),
                     select('Inventario', 'estado_stock', STOCK_STATUS),
+                    ...inventoryFields('lineas', 'variacion', o),
                     select('Publicación', 'estado', PRODUCT_STATUS),
                     f('Imagen', 'imagen', 'url'),
                     wooId(),
@@ -172,7 +211,10 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     rollup('Ingresos', 'ingresos', 'lineas', 'variacion', 'sum', 'total',
                         'Lo vendido de esta variación en pedidos completados o en proceso.', paid),
                 ],
-                { settings: { title_field_id: ref('nombre') } },
+                {
+                    settings: { title_field_id: ref('nombre') },
+                    views: [table(), restockView(), kanban('Por inventario', 'estado_inventario')],
+                },
             ),
             list(
                 'pedidos',
@@ -242,13 +284,106 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 widget('chart_pie', 'pedidos', 'Pedidos por estado', { group_by_field_id: ref('estado'), center_label: 'Pedidos' }, 8, 2, 4, 4),
                 widget('table', 'productos', 'Lo más vendido', {
                     limit: 10, sort_field_id: ref('ingresos'), sort_dir: 'desc',
-                    columns: [ref('nombre'), ref('unidades_vendidas'), ref('ingresos'), ref('stock')],
+                    visible_field_ids: [ref('nombre'), ref('unidades_vendidas'), ref('ingresos'), ref('stock')],
                 }, 0, 6, 6, 5),
                 widget('table', 'clientes', 'Mejores clientes', {
                     limit: 10, sort_field_id: ref('total_comprado'), sort_dir: 'desc',
-                    columns: [ref('nombre'), ref('pedidos'), ref('total_comprado'), ref('ultimo_pedido')],
+                    visible_field_ids: [ref('nombre'), ref('pedidos'), ref('total_comprado'), ref('ultimo_pedido')],
                 }, 6, 6, 6, 5),
             ]),
+            inventoryDashboard(o.storeName),
         ],
+    };
+}
+
+/**
+ * Los campos de inventario de productos y variaciones. Los cuatro primeros los
+ * trae la sincronización; la rotación y la cobertura se CALCULAN sobre las
+ * líneas de pedido, así responden "¿cuánto me dura lo que tengo?" sin que la
+ * tienda lo sepa.
+ */
+function inventoryFields(linesKey: string, linesRelSlug: string, o: WooPackOptions): BlueprintField[] {
+    const paidLast30 = [
+        { slug: 'estado_pedido', op: 'in', value: PAID_STATUSES },
+        { slug: 'fecha', op: 'between_relative', value: 'last_30_days' },
+    ];
+    return [
+        f('Controla stock', 'controla_stock', 'checkbox', {
+            description: 'La tienda lleva la cuenta de las unidades. Sin esto, sólo dice si hay o no hay.',
+        }),
+        f('Alerta de stock bajo', 'umbral_stock', 'number', {
+            description: 'Con cuántas unidades se considera «stock bajo». Vacío = el general de la tienda.',
+        }),
+        select('Estado de inventario', 'estado_inventario', INVENTORY_STATE),
+        f('Valor en stock', 'valor_inventario', 'currency', {
+            config: { currency: o.currency, precision: o.precision },
+            description: 'Unidades en stock × precio de venta.',
+        }),
+        rollup('Vendidas (30 días)', 'vendidas_30d', linesKey, linesRelSlug, 'sum', 'cantidad',
+            'Unidades vendidas en los últimos 30 días (pedidos completados o en proceso).', paidLast30),
+        f('Meses de cobertura', 'cobertura_meses', 'computed', {
+            config: { operation: 'divide', inputs: [ref('stock'), ref('vendidas_30d')] },
+            description: 'Stock ÷ vendidas en 30 días: cuántos meses alcanza al ritmo de venta actual.',
+        }),
+    ];
+}
+
+/** La vista de trabajo del inventario: lo agotado o por agotarse, lo más urgente arriba. */
+function restockView() {
+    // La raíz de un filtro de vista es SIEMPRE un grupo (filterTreeSchema).
+    const tree = {
+        type: 'group',
+        logic: 'and',
+        children: [{ type: 'condition', field_id: ref('estado_inventario'), op: 'in', value: LOW_OR_OUT }],
+    };
+    return table(INVENTORY_VIEW_NAME, false, {
+        filter_tree: tree,
+        filters: [{ field_id: ref('estado_inventario'), op: 'in', value: LOW_OR_OUT }],
+        sort: [{ field_id: ref('stock'), dir: 'asc' }],
+    });
+}
+
+export function inventoryDashboard(storeName: string) {
+    const state = (v: string[]) => ({ type: 'condition', field_id: ref('estado_inventario'), op: 'in', value: v });
+    const restock = (listKey: string, title: string, x: number) =>
+        widget('table', listKey, title, {
+            limit: 15, sort_field_id: ref('stock'), sort_dir: 'asc', filter_tree: state(LOW_OR_OUT),
+            visible_field_ids: [ref('nombre'), ref('stock'), ref('estado_inventario'), ref('vendidas_30d'), ref('cobertura_meses')],
+        }, x, 8, 6, 6);
+    return dashboard(`${INVENTORY_DASHBOARD_PREFIX}${storeName}`.slice(0, 190), 'Qué hay, qué falta y qué reponer.', [
+        kpi('productos', 'Productos agotados', { icon: 'alert', filter_tree: state(['agotado']) }, 0),
+        kpi('productos', 'Con stock bajo', { icon: 'alert', filter_tree: state(['bajo']) }, 3),
+        kpi('variaciones', 'Variaciones agotadas', { icon: 'alert', filter_tree: state(['agotado']) }, 6),
+        kpi('variaciones', 'Variaciones con stock bajo', { icon: 'alert', filter_tree: state(['bajo']) }, 9),
+        kpi('productos', 'Valor en stock (productos)', { metric: 'sum', metric_field_id: ref('valor_inventario'), icon: 'dollar' }, 0, 2, 4),
+        kpi('variaciones', 'Valor en stock (variaciones)', { metric: 'sum', metric_field_id: ref('valor_inventario'), icon: 'dollar' }, 4, 2, 4),
+        kpi('productos', 'Unidades en stock', { metric: 'sum', metric_field_id: ref('stock'), icon: 'briefcase' }, 8, 2, 4),
+        widget('chart_pie', 'productos', 'Productos por estado de inventario', { group_by_field_id: ref('estado_inventario'), center_label: 'Productos' }, 0, 4, 6, 4),
+        widget('chart_pie', 'variaciones', 'Variaciones por estado de inventario', { group_by_field_id: ref('estado_inventario'), center_label: 'Variaciones' }, 6, 4, 6, 4),
+        restock('productos', 'Productos para reponer', 0),
+        restock('variaciones', 'Variaciones para reponer', 6),
+    ]);
+}
+
+/**
+ * Lo que el pack 2 le agrega a una sincronización hecha con el pack 1: los
+ * campos de inventario de Productos y Variaciones, su vista «Para reponer» y
+ * el tablero de Inventario. Se DERIVA del pack completo (una sola definición:
+ * lo que ve una tienda nueva y lo que recibe una vieja no pueden divergir).
+ */
+export function inventoryAddition(full: Blueprint, withProducts: boolean): Blueprint {
+    const keys = withProducts ? new Set(['productos', 'variaciones']) : new Set<string>();
+    return {
+        version: full.version,
+        lists: full.lists
+            .filter((l) => keys.has(l.key))
+            .map((l) => ({
+                ...l,
+                fields: l.fields.filter((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug)),
+                views: l.views.filter((v) => v.name === INVENTORY_VIEW_NAME),
+                automations: [],
+                records: [],
+            })),
+        dashboards: withProducts ? full.dashboards.filter((d) => d.name.startsWith(INVENTORY_DASHBOARD_PREFIX)) : [],
     };
 }

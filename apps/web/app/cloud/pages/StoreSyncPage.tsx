@@ -12,7 +12,7 @@ import {
     type StoreSyncResource,
     type StoreSyncStatus,
 } from '@imagina-base/shared';
-import { AlertTriangle, ArrowLeft, ArrowLeftRight, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -180,7 +180,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Traé tu tienda a Imagina Base')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Creamos una carpeta con cinco listas vinculadas —clientes, productos, variaciones, pedidos y líneas de pedido— y un tablero de ventas. Después se mantienen al día solas. Cuánto compró cada cliente o cuánto vendió cada producto (y cada talla o color) se calcula solo.',
+                        'Creamos una carpeta con cinco listas vinculadas —clientes, productos, variaciones, pedidos y líneas de pedido— y dos tableros: ventas e inventario. Después se mantienen al día solas. Cuánto compró cada cliente, cuánto vendió cada producto (y cada talla o color), qué está agotado o por agotarse y para cuántos meses alcanza el stock se calcula solo.',
                     )}
                 </p>
             </div>
@@ -190,7 +190,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 {(
                     [
                         ['customers', __('Clientes'), __('Los registrados. Los que compraron como invitados llegan igual, por sus pedidos.')],
-                        ['products', __('Productos'), __('Con sus variaciones (talla, color…), precios, stock y categorías.')],
+                        ['products', __('Productos'), __('Con sus variaciones (talla, color…), precios, categorías e inventario: stock, alertas de stock bajo y lo que vale lo que tenés.')],
                         ['orders', __('Pedidos'), __('Con cada producto comprado (líneas de pedido).')],
                     ] as const
                 ).map(([k, label, help]) => (
@@ -377,6 +377,14 @@ function Configured({
                                 <Link to={`/dashboards/${status.dashboard_id}`} data-testid="imcrm-store-sync-dashboard">
                                     <LayoutDashboard className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Tablero de ventas')}
+                                </Link>
+                            </Button>
+                        )}
+                        {status.inventory_dashboard_id !== null && (
+                            <Button size="sm" variant="outline" asChild>
+                                <Link to={`/dashboards/${status.inventory_dashboard_id}`} data-testid="imcrm-store-sync-inventory">
+                                    <Boxes className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Inventario')}
                                 </Link>
                             </Button>
                         )}

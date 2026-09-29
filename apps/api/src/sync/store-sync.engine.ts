@@ -196,6 +196,7 @@ export class StoreSyncEngine {
                 cursors: ctx.state.cursors,
                 customers_full_at: ctx.state.customers_full_at,
                 variations_full_at: ctx.state.variations_full_at,
+                products_full_at: ctx.state.products_full_at,
                 last_error: error,
             };
             if (!error) {
@@ -269,15 +270,17 @@ export class StoreSyncEngine {
                 await this.applyDeletion(ctx, parsed.resource, payload);
             } else if (parsed.resource === 'order' && settings.resources.orders) {
                 await this.upsertOrders(ctx, [payload]);
+                // Una venta (o una cancelación que repone) mueve el stock de lo vendido.
+                if (settings.resources.products) await this.refreshStock(ctx, [payload]);
             } else if (parsed.resource === 'customer' && settings.resources.customers) {
                 await this.upsert(ctx, 'customers', [mapCustomer(payload)], {});
             } else if (parsed.resource === 'product' && settings.resources.products) {
                 if (isVariationPayload(payload)) {
                     const parentId = String(Number(payload.parent_id));
                     const name = await this.productNameFromApp(ctx, parentId);
-                    await this.upsert(ctx, 'variations', [mapVariation(payload, { id: Number(parentId), name })], {});
+                    await this.upsert(ctx, 'variations', [mapVariation(payload, { id: Number(parentId), name }, this.inv(ctx))], {});
                 } else {
-                    await this.upsert(ctx, 'products', [mapProduct(payload)], {});
+                    await this.upsert(ctx, 'products', [mapProduct(payload, this.inv(ctx))], {});
                     // Un producto variable avisa como uno solo: sus variaciones se releen.
                     if (payload.type === 'variable') await this.syncVariationsOf(ctx, payload);
                 }
@@ -397,10 +400,10 @@ export class StoreSyncEngine {
             const obj = res as WooJson;
             if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
             else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj)], {});
-            else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj)], {});
+            else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj, this.inv(ctx))], {});
             else {
                 const name = await this.productNameFromApp(ctx, String(found.link.parent));
-                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(found.link.parent), name })], {});
+                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(found.link.parent), name }, this.inv(ctx))], {});
             }
             for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
         }
@@ -485,13 +488,18 @@ export class StoreSyncEngine {
     private async syncProducts(ctx: RunCtx, forceFull: boolean): Promise<void> {
         const lastSweep = ctx.state.variations_full_at ? Date.parse(ctx.state.variations_full_at) : 0;
         const sweepVariations = forceFull || !ctx.state.initial_done || Date.now() - lastSweep > FULL_SWEEP_MS;
+        // v0.1.208 — una vez por día se recorren TODOS los productos: un plugin
+        // (ERP, POS, importador) puede cambiar el stock sin tocar la fecha de
+        // modificación, y entonces el incremental nunca se enteraría.
+        const lastProducts = ctx.state.products_full_at ? Date.parse(ctx.state.products_full_at) : 0;
+        const sweepProducts = forceFull || !ctx.state.initial_done || Date.now() - lastProducts > FULL_SWEEP_MS;
         let done = 0;
         let variationsDone = 0;
         const variableSeen = new Set<string>();
-        await this.keyset(ctx, 'products', forceFull, [], async (rows, remaining) => {
+        await this.keyset(ctx, 'products', sweepProducts, [], async (rows, remaining) => {
             // Con keyset la tienda informa lo que FALTA desde el cursor, no el total.
             const total = remaining === null ? null : done + remaining;
-            await this.upsert(ctx, 'products', rows.map(mapProduct), {});
+            await this.upsert(ctx, 'products', rows.map((p) => mapProduct(p, this.inv(ctx))), {});
             for (const p of rows) {
                 if (p.type !== 'variable') continue;
                 variableSeen.add(String(p.id));
@@ -512,6 +520,7 @@ export class StoreSyncEngine {
             }
             ctx.state.variations_full_at = new Date().toISOString();
         }
+        if (sweepProducts) ctx.state.products_full_at = new Date().toISOString();
     }
 
     /** Ids de productos padre de las variaciones ya vinculadas + productos variables vinculados. */
@@ -542,6 +551,69 @@ export class StoreSyncEngine {
         });
     }
 
+    private inv(ctx: RunCtx) {
+        return { lowStockDefault: ctx.settings.low_stock_amount };
+    }
+
+    /**
+     * v0.1.208 — Re-lee el stock de lo que se vendió en estos pedidos. Es la
+     * pieza que mantiene el INVENTARIO al día: una venta baja el stock de una
+     * variación (talla, color) sin tocar la fecha del producto padre, así que el
+     * incremental por fecha no se enteraría hasta el barrido diario. Pide los
+     * productos de a 100 por `include=` y las variaciones por producto padre:
+     * un puñado de requests aunque lleguen cientos de pedidos.
+     */
+    async refreshStock(ctx: RunCtx, orders: WooJson[]): Promise<void> {
+        const productIds = new Set<number>();
+        const variationsByParent = new Map<number, Set<number>>();
+        for (const o of orders) {
+            for (const raw of Array.isArray(o.line_items) ? o.line_items : []) {
+                const l = raw && typeof raw === 'object' ? (raw as WooJson) : {};
+                const pid = Number(l.product_id);
+                const vid = Number(l.variation_id);
+                if (!(pid > 0)) continue;
+                if (vid > 0) {
+                    if (!variationsByParent.has(pid)) variationsByParent.set(pid, new Set());
+                    variationsByParent.get(pid)!.add(vid);
+                } else {
+                    productIds.add(pid);
+                }
+            }
+        }
+        const ids = [...productIds];
+        for (let i = 0; i < ids.length; i += WOO_PAGE_SIZE) {
+            const chunk = ids.slice(i, i + WOO_PAGE_SIZE);
+            const res = await wooGetPage(ctx.creds, '/products', [
+                ['include', chunk.join(',')],
+                ['per_page', String(WOO_PAGE_SIZE)],
+            ]);
+            await this.upsert(ctx, 'products', res.rows.map((p) => mapProduct(p, this.inv(ctx))), {});
+        }
+        for (const [parentId, vids] of variationsByParent) {
+            const name = await this.productNameFromApp(ctx, String(parentId));
+            const list = [...vids];
+            for (let i = 0; i < list.length; i += WOO_PAGE_SIZE) {
+                let res;
+                try {
+                    res = await wooGetPage(ctx.creds, `/products/${parentId}/variations`, [
+                        ['include', list.slice(i, i + WOO_PAGE_SIZE).join(',')],
+                        ['per_page', String(WOO_PAGE_SIZE)],
+                    ]);
+                } catch (err) {
+                    // Un producto que ya no existe no frena el resto.
+                    if (err instanceof Error && /404/.test(err.message)) break;
+                    throw err;
+                }
+                await this.upsert(
+                    ctx,
+                    'variations',
+                    res.rows.map((v) => mapVariation(v, { id: parentId, name }, this.inv(ctx))),
+                    {},
+                );
+            }
+        }
+    }
+
     /** Trae TODAS las variaciones de un producto variable. Devuelve cuántas. */
     async syncVariationsOf(ctx: RunCtx, parent: WooJson, fetchParent = false): Promise<number> {
         let product = parent;
@@ -564,7 +636,7 @@ export class StoreSyncEngine {
                 if (err instanceof Error && /404/.test(err.message)) return count;
                 throw err;
             }
-            const items = res.rows.map((v) => mapVariation(v, product));
+            const items = res.rows.map((v) => mapVariation(v, product, this.inv(ctx)));
             seen.push(...items.map((i) => i.externalId));
             await this.upsert(ctx, 'variations', items, {});
             count += items.length;
@@ -606,6 +678,9 @@ export class StoreSyncEngine {
         await this.keyset(ctx, 'orders', forceFull, extra, async (rows, remaining) => {
             const total = remaining === null ? null : done + remaining;
             lines += await this.upsertOrders(ctx, rows);
+            // Incremental: el stock de lo que se vendió cambió. En la importación
+            // inicial no hace falta (los productos se acaban de traer enteros).
+            if (ctx.dispatch && ctx.settings.resources.products) await this.refreshStock(ctx, rows);
             done += rows.length;
             await this.progress(ctx, 'orders', done, total);
             await this.progress(ctx, 'line_items', lines, null);

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
 import { readSettings, readState } from '../src/sync/store-sync.types';
-import { buildWooPack, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
+import { buildWooPack, INVENTORY_FIELD_SLUGS, inventoryAddition, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
 import {
     buildWriteBack,
     isVariationPayload,
@@ -16,6 +16,10 @@ import {
 import {
     coerceMeta,
     customerFromOrder,
+    inventoryState,
+    inventoryValue,
+    lowStockThreshold,
+    managesStock,
     customerRefForOrder,
     mapCustomer,
     mapLineItems,
@@ -178,7 +182,7 @@ describe('Mapeo WooCommerce → pack (puro)', () => {
 });
 
 describe('Pack de la tienda', () => {
-    it('cinco listas vinculadas con su tablero y la moneda de la tienda', () => {
+    it('cinco listas vinculadas con sus dos tableros y la moneda de la tienda', () => {
         const bp = buildWooPack({ storeName: 'Tienda', currency: 'COP', precision: 0, phoneCountry: 'CO' });
         expect(bp.lists.map((l) => l.key)).toEqual(Object.values(WOO_LIST_KEYS));
         for (const l of bp.lists) {
@@ -187,7 +191,8 @@ describe('Pack de la tienda', () => {
             expect(woo, l.key).toBeDefined();
             expect(woo!.is_indexed, l.key).toBe(true);
         }
-        expect(bp.dashboards?.length).toBe(1);
+        // Ventas + inventario (v0.1.208).
+        expect(bp.dashboards?.map((d) => d.name)).toEqual(['Ventas · Tienda', 'Inventario · Tienda']);
         const productos = bp.lists.find((l) => l.key === 'productos')!;
         expect(productos.fields.find((f) => f.slug === 'precio')!.config).toMatchObject({ currency: 'COP', precision: 0 });
     });
@@ -322,5 +327,76 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
             meta: [{ key: 'garantia_meses', value: 24, sample: '12' }],
         })!;
         expect(r.body).toEqual({ meta_data: [{ key: 'garantia_meses', value: '24' }] });
+    });
+});
+
+describe('Inventario (puros, v0.1.208)', () => {
+    it('lleva stock si la tienda lo cuenta, incluida la variación que lo cuenta en el padre', () => {
+        expect(managesStock({ manage_stock: true })).toBe(true);
+        expect(managesStock({ manage_stock: 'parent' })).toBe(true);
+        expect(managesStock({ manage_stock: false })).toBe(false);
+        expect(managesStock({})).toBe(false);
+    });
+
+    it('umbral: el del producto (0 incluido) o el general de la tienda o el default de WooCommerce', () => {
+        expect(lowStockThreshold({ low_stock_amount: 10 }, 5)).toBe(10);
+        expect(lowStockThreshold({ low_stock_amount: 0 }, 5)).toBe(0);
+        expect(lowStockThreshold({ low_stock_amount: null }, 5)).toBe(5);
+        expect(lowStockThreshold({ low_stock_amount: '' }, null)).toBe(2);
+    });
+
+    it('estado: agotado / bajo / en stock / por encargo / sin control', () => {
+        expect(inventoryState({ manage_stock: true, stock_quantity: 0, stock_status: 'outofstock' }, 5)).toBe('agotado');
+        expect(inventoryState({ manage_stock: true, stock_quantity: -2, stock_status: 'outofstock' }, 5)).toBe('agotado');
+        expect(inventoryState({ manage_stock: true, stock_quantity: 5 }, 5)).toBe('bajo');
+        expect(inventoryState({ manage_stock: true, stock_quantity: 6 }, 5)).toBe('en_stock');
+        // Sin unidades pero con reservas permitidas se sigue vendiendo.
+        expect(inventoryState({ manage_stock: true, stock_quantity: 0, backorders: 'notify', stock_status: 'onbackorder' }, 5)).toBe('por_encargo');
+        expect(inventoryState({ manage_stock: false, stock_status: 'outofstock' }, 5)).toBe('agotado');
+        expect(inventoryState({ manage_stock: false, stock_status: 'onbackorder' }, 5)).toBe('por_encargo');
+        expect(inventoryState({ manage_stock: false, stock_status: 'instock' }, 5)).toBe('sin_control');
+        expect(inventoryState({ manage_stock: false, stock_status: 'instock', type: 'variable' }, 5)).toBe('por_variacion');
+    });
+
+    it('valor en stock = unidades × precio; sin control no hay valor; sin unidades vale 0', () => {
+        expect(inventoryValue({ manage_stock: true, stock_quantity: 3, price: '19999.99' })).toBe(59999.97);
+        expect(inventoryValue({ manage_stock: true, stock_quantity: 0, price: '100' })).toBe(0);
+        expect(inventoryValue({ manage_stock: false, stock_quantity: 3, price: '100' })).toBeNull();
+        expect(inventoryValue({ manage_stock: true, stock_quantity: 3, price: '' })).toBeNull();
+    });
+
+    it('el mapeo usa el umbral general de la tienda cuando el producto no trae el suyo', () => {
+        const p = mapProduct({ id: 1, manage_stock: true, stock_quantity: 4, price: '10', stock_status: 'instock' }, { lowStockDefault: 5 });
+        expect(p.values).toMatchObject({ controla_stock: true, umbral_stock: null, estado_inventario: 'bajo', valor_inventario: 40 });
+        const v = mapVariation({ id: 2, manage_stock: 'parent', stock_quantity: 9, price: '5' }, { id: 1, name: 'X' }, { lowStockDefault: 5 });
+        expect(v.values).toMatchObject({ stock: 9, estado_inventario: 'en_stock', valor_inventario: 45 });
+    });
+
+    it('la edición en dos sentidos manda el umbral y el control de stock', () => {
+        expect(
+            buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { umbral_stock: 7.6, controla_stock: true }, meta: [] })!.body,
+        ).toEqual({ low_stock_amount: 7, manage_stock: true });
+        // Vaciar el umbral = volver al general de la tienda.
+        expect(
+            buildWriteBack({ resource: 'variations', externalId: '2', parentExternalId: '1', changed: { umbral_stock: null }, meta: [] })!.body,
+        ).toEqual({ low_stock_amount: null });
+        // El estado de inventario es DERIVADO: no viaja.
+        expect(buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' }, meta: [] })).toBeNull();
+    });
+
+    it('la actualización del pack agrega SÓLO lo de inventario, derivado del pack completo', () => {
+        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
+        const add = inventoryAddition(full, true);
+        expect(add.lists.map((l) => l.key)).toEqual(['productos', 'variaciones']);
+        for (const l of add.lists) {
+            expect(l.fields.every((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug))).toBe(true);
+            expect(l.views.map((v) => v.name)).toEqual(['Para reponer']);
+        }
+        expect(add.lists[0]!.fields.map((fd) => fd.slug)).toContain('stock_variaciones');
+        expect(add.lists[1]!.fields.map((fd) => fd.slug)).not.toContain('stock_variaciones');
+        expect(add.dashboards).toHaveLength(1);
+        expect(add.dashboards[0]!.name).toBe('Inventario · T');
+        // Sin productos sincronizados no hay nada que agregar.
+        expect(inventoryAddition(full, false).lists).toHaveLength(0);
     });
 });

@@ -1202,6 +1202,26 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
   motor de sincronización escribe por su propio camino y nunca emite en el
   hub, así que lo que llega de la tienda no vuelve; y el aviso que la tienda
   manda tras recibir el cambio no encuentra diferencias.
+- **Inventario (v0.1.208).** El stock es el dato más vivo de una tienda y el
+  que peor se sincroniza por fecha: una venta baja el stock de una VARIACIÓN
+  sin tocar la fecha de modificación del producto, así que el incremental por
+  `modified_after` no la veía hasta el barrido. Por eso **cada pedido nuevo o
+  modificado dispara un refresco del stock de lo que vendió** (un GET por
+  lote con `include=`, ≤100 ids, para productos y por padre para
+  variaciones), y una vez por día se barren TODOS los productos (plugins que
+  cambian stock sin pasar por un pedido). El estado de inventario se DERIVA
+  al mapear (agotado / bajo / en stock / por encargo / por variación / sin
+  control) con el umbral del producto o, si no tiene, el general de la tienda
+  (`/settings/products`, leído al conectar). Lo que exige cruzar listas
+  (vendidas en 30 días, meses de cobertura, stock de las variaciones) son
+  rollups y computed del pack: se recalculan solos en cada lectura. El pack
+  trae además la vista «Para reponer», un kanban por estado y el tablero
+  «Inventario».
+- **Versión del pack.** `settings.pack_version`: las tiendas conectadas con un
+  pack anterior se actualizan solas en su próxima corrida
+  (`BlueprintService.extend`, bajo el lock de la sincronización — nunca en
+  paralelo con una corrida) agregando SÓLO lo que falta: campos, vistas y
+  tableros; nada existente se pisa ni se borra.
 
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
@@ -1213,4 +1233,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.22.0 (tiempo real y edición en los dos sentidos — ADR-S24 fase 3)
+**Versión del documento:** 1.23.0 (inventario de la tienda y versión del pack — ADR-S24)
