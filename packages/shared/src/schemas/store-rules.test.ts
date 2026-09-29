@@ -89,6 +89,19 @@ describe('storeCellAccess', () => {
         expect(storeCellAccess(cats, 40, row({ tipo: 'variacion' })).access).toBe('locked');
     });
 
+    it('slug del producto: se habilita, la variación no tiene; valores que WordPress no acepta (v0.1.215)', () => {
+        const withSlug = storeListMarkerSchema.parse({ ...products, fields: { ...products.fields, slug_url: 41 }, editable: ['slug_url'] });
+        expect(storeCellAccess(withSlug, 41, row({ tipo: 'simple' })).access).toBe('editable');
+        const v = storeCellAccess(withSlug, 41, row({ tipo: 'variacion' }));
+        expect(v.access === 'locked' && v.reason).toMatch(/dirección propia/);
+        // Sin habilitarla, se bloquea con cómo habilitarla.
+        const off = storeCellAccess({ ...withSlug, editable: null }, 41, row({ tipo: 'simple' }));
+        expect(off.access === 'locked' && off.reason).toMatch(/habilitala/);
+        expect(storeValueError(withSlug, 41, '', row({}))).toMatch(/vacío/);
+        expect(storeValueError(withSlug, 41, 'ropa/taza', row({}))).toMatch(/«\/»/);
+        expect(storeValueError(withSlug, 41, 'taza-roja', row({}))).toBeNull();
+    });
+
     it('clientes: sólo los que tienen cuenta', () => {
         const customers = storeListMarkerSchema.parse({
             connection_id: 1,

@@ -1379,6 +1379,21 @@ avisos registrados en la tienda llamando a una URL muerta → un hook previo al
 borrado (`ConnectorsService.onBeforeRemove`) los saca mientras todavía hay
 credenciales.
 
+**Slug del producto (v0.1.215, pack 6).** Columna «Slug» en Productos (se
+lee decodificado: WordPress guarda `caf%c3%a9`) y editable si la empresa la
+habilita (`slug_url` en el catálogo; una variación no tiene dirección propia).
+WordPress limpia el valor (acentos, espacios, mayúsculas) y lo hace único
+(`-2`): lo que vuelve de la tienda es lo que queda en la app. Rechazado antes de
+mandarlo: vacío o con `/`, `?` o `#`. Verificado contra WooCommerce real que la
+dirección vieja responde 301 a la nueva (WordPress guarda `_wp_old_slug`).
+**Upgrade liviano**: una tienda en el pack 5 sólo SUMA las columnas que le
+faltan (`addMissingPackFields`: `extend` sin tableros, vistas ni registros) y
+pide una vuelta de productos para llenarlas — re-correr la migración 5 entera
+re-traería las variaciones y rehacería los tableros sin motivo. De paso:
+`runJob` marcaba las listas con los ajustes leídos ANTES de actualizar el pack,
+así que la marca quedaba vieja hasta la corrida siguiente (también en la
+migración de v0.1.213); ahora relee después de actualizar.
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
 tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
@@ -1389,4 +1404,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.27.0 (columnas editables elegibles por lista de la tienda + prueba contra un WooCommerce real — ADR-S24)
+**Versión del documento:** 1.28.0 (slug del producto editable + upgrade liviano del pack — ADR-S24)

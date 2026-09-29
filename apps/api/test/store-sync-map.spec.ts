@@ -382,6 +382,17 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
         expect(wb({ resource: 'products', externalId: '20', parentExternalId: null, changed: { categorias: ['a'] }, editable })).toBeNull();
     });
 
+    it('slug del producto: se lee decodificado y viaja sólo del producto (v0.1.215)', () => {
+        expect(mapProduct({ id: 3, name: 'Café', slug: 'caf%c3%a9-de-origen' }).values.slug_url).toBe('café-de-origen');
+        expect(mapProduct({ id: 3, name: 'X', slug: '' }).values.slug_url).toBeNull();
+        expect(mapProduct({ id: 3, name: 'X', slug: '%E0%A4%A' }).values.slug_url).toBe('%E0%A4%A');
+        const r = wb({ resource: 'products', externalId: '3', parentExternalId: null, changed: { slug_url: ' taza-roja ' }, editable: ['slug_url'] })!;
+        expect(r.body).toEqual({ slug: 'taza-roja' });
+        expect(r.fields).toEqual(['Slug (dirección)']);
+        expect(wb({ resource: 'variations', externalId: '9', parentExternalId: '3', changed: { slug_url: 'x' }, editable: ['slug_url'] })).toBeNull();
+        expect(wb({ resource: 'products', externalId: '3', parentExternalId: null, changed: { slug_url: 'x' } })).toBeNull();
+    });
+
     it('clientes con cuenta y datos del pedido, sólo si se habilitaron', () => {
         const c = wb({
             resource: 'customers',

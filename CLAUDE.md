@@ -5184,6 +5184,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         borrar conexión) y 1 del endpoint de opciones — 739 API, 169 front y
         76 shared en verde.
 
+  - [x] **Slug del producto editable (v0.1.215, ADR-S24 pack 6, pregunta del
+        usuario: "¿y si algún cliente quiere editar el slug del producto?")**:
+        el slug NI SE TRAÍA. Ahora Productos tiene la columna «Slug» (leída
+        decodificada: WordPress guarda `caf%c3%a9`) y se suma al catálogo de
+        columnas editables (apagada por defecto; una variación no tiene
+        dirección propia → candado con el motivo). Se rechaza antes de mandarlo
+        vacío o con `/`, `?`, `#`; WordPress limpia el resto (acentos, espacios,
+        mayúsculas → `taza-cafe-grande`) y lo hace único (`libreta-2`), y la
+        app queda con lo que devolvió la tienda, «Enlace» incluido.
+        **Upgrade liviano del pack**: las tiendas en el pack 5 sólo suman las
+        columnas que les faltan (sin rehacer tableros ni re-traer variaciones)
+        y una vuelta de productos las llena. **Bug de paso**: tras actualizar
+        el pack, `runJob` re-marcaba las listas con los ajustes leídos ANTES de
+        la actualización, así que la marca (candados, qué viaja) quedaba vieja
+        hasta la corrida siguiente — también pasaba en la migración de
+        v0.1.213; ahora relee. Tests: reglas en shared, mapeo/envío puros, envío
+        con limpieza y unicidad y upgrade 5→6 que no rehace nada (741 API, 169
+        front, 77 shared en verde) + E2E 45/45 contra un **WooCommerce real**:
+        el slug llega, se cambia, llega a la tienda con su enlace nuevo, **la
+        dirección vieja responde 301 a la nueva**, WordPress limpia acentos y
+        espacios, lo hace único si ya existe, y la variación queda bloqueada.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

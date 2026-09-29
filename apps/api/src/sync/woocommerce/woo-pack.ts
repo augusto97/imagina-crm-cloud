@@ -50,7 +50,7 @@ export const PAID_STATUSES = ['completed', 'processing'];
  * 5 = v0.1.213: variaciones y líneas como subtareas, sin compras. Una
  * sincronización anterior se MIGRA sola (`StoreSyncService.upgradePack`).
  */
-export const WOO_PACK_VERSION = 5;
+export const WOO_PACK_VERSION = 6;
 
 export const INVENTORY_VIEW_NAME = 'Para reponer';
 export const INVENTORY_DASHBOARD_PREFIX = 'Inventario · ';
@@ -176,6 +176,9 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     select('Tipo', 'tipo', PRODUCT_TYPE),
                     f('Atributos', 'atributos', 'text', { description: 'La talla, el color… de cada variación.' }),
                     f('SKU', 'sku', 'text', { is_indexed: true }),
+                    f('Slug', 'slug_url', 'text', {
+                        description: 'La última parte de la dirección del producto en la tienda (…/producto/<slug>/).',
+                    }),
                     select('Publicación', 'estado', PRODUCT_STATUS),
                     money('Precio', 'precio', 'El precio al que se vende hoy (el rebajado si hay rebaja).'),
                     money('Precio normal', 'precio_normal'),

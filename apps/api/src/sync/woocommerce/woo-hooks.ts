@@ -195,6 +195,14 @@ export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
             case 'products:sku':
                 body.sku = text(value).trim();
                 break;
+            case 'products:slug_url': {
+                // WordPress lo limpia y lo hace único (`taza-roja-2`): lo que vuelve
+                // de la tienda es lo que queda en la app.
+                const slug = text(value).trim();
+                if (isVariation || slug === '') continue;
+                body.slug = slug;
+                break;
+            }
             case 'products:categorias':
             case 'products:etiquetas': {
                 const ids = slug === 'categorias' ? input.terms?.categorias : input.terms?.etiquetas;
