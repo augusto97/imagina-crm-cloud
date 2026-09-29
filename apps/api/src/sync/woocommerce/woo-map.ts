@@ -283,6 +283,20 @@ export interface MapInventoryOptions {
     storeUrl?: string | null;
 }
 
+/**
+ * El slug tal como se lee: WordPress guarda los que llevan acentos o eñes
+ * codificados (`caf%c3%a9`), y en la app se muestran como se escriben.
+ */
+export function wooSlug(v: unknown): string | null {
+    const raw = nonEmpty(v);
+    if (!raw) return null;
+    try {
+        return decodeURIComponent(raw);
+    } catch {
+        return raw;
+    }
+}
+
 export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedItem {
     const id = Number(p.id);
     const categorias = terms(p.categories);
@@ -292,6 +306,7 @@ export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedIte
     const values: Record<string, unknown> = {
         nombre: nonEmpty(p.name) ?? `Producto ${id}`,
         sku: nonEmpty(p.sku),
+        slug_url: wooSlug(p.slug),
         tipo: nonEmpty(p.type),
         estado: nonEmpty(p.status),
         precio: wooNumber(p.price),

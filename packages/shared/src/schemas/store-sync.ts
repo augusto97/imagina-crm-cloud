@@ -129,6 +129,12 @@ export const STORE_EDITABLE_CATALOG: Record<StoreListRole, readonly StoreEditabl
         { slug: 'estado', label: 'Publicación', defaultOn: true },
         { slug: 'nombre', label: 'Nombre', defaultOn: false, hint: 'Del producto. El nombre de una variación sale de su producto y sus atributos.' },
         { slug: 'sku', label: 'SKU', defaultOn: false, hint: 'WooCommerce lo rechaza si otro producto ya lo usa.' },
+        {
+            slug: 'slug_url',
+            label: 'Slug (dirección)',
+            defaultOn: false,
+            hint: 'La parte final de la dirección del producto. WordPress la hace única y la dirección vieja redirige a la nueva.',
+        },
         { slug: 'categorias', label: 'Categorías', defaultOn: false, hint: 'Una categoría nueva se crea en la tienda.' },
         { slug: 'etiquetas', label: 'Etiquetas', defaultOn: false, hint: 'Una etiqueta nueva se crea en la tienda.' },
     ],

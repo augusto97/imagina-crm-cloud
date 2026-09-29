@@ -126,6 +126,9 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
         case 'nombre':
             if (kind === 'variacion') return { access: 'locked', reason: 'El nombre de una variación sale de su producto y sus atributos: cambiá el del producto.' };
             return { access: 'editable' };
+        case 'slug_url':
+            if (kind === 'variacion') return { access: 'locked', reason: 'Una variación no tiene dirección propia: usa la de su producto.' };
+            return { access: 'editable' };
         case 'categorias':
         case 'etiquetas':
             if (kind === 'variacion') return { access: 'locked', reason: 'Las categorías y etiquetas son del producto: se cambian en el producto.' };
@@ -195,6 +198,11 @@ export function storeValueError(
             return null;
         case 'nombre':
             if (empty || String(value).trim() === '') return 'El nombre no puede quedar vacío.';
+            return null;
+        case 'slug_url':
+            if (empty || String(value).trim() === '') return 'El slug no puede quedar vacío: WordPress lo usa para la dirección del producto.';
+            if (String(value).trim().length > 190) return 'El slug es demasiado largo (máximo 190 caracteres).';
+            if (/[/?#]/.test(String(value))) return 'El slug no puede llevar «/», «?» ni «#»: es sólo la última parte de la dirección.';
             return null;
         case 'email':
             if (marker.role === 'customers' && (empty || String(value).trim() === '')) return 'El email de una cuenta de la tienda no puede quedar vacío.';

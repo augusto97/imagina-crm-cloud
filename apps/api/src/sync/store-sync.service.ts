@@ -374,6 +374,70 @@ export class StoreSyncService {
     }
 
     /**
+     * Upgrade liviano: agrega a las listas que ya existen las columnas del pack
+     * que todavía no tienen (sin tocar tableros, vistas ni registros), guarda
+     * sus ids, actualiza la marca de las listas y pide una vuelta de productos
+     * para llenarlas. Corre bajo el candado de la sincronización (lo toma quien
+     * llama).
+     */
+    private async addMissingPackFields(
+        tenantId: number,
+        syncId: number,
+        actor: number,
+        settings: SyncSettings,
+        full: ListBlueprint,
+    ): Promise<void> {
+        const keyToListId = new Map<string, number>();
+        const existing = new Map<string, Map<string, number>>();
+        for (const r of WOO_ROOT_RESOURCES) {
+            const listId = settings.lists[r];
+            if (!listId) continue;
+            keyToListId.set(WOO_LIST_KEYS[r], listId);
+            existing.set(WOO_LIST_KEYS[r], new Map(Object.entries(settings.fields[r] ?? {})));
+        }
+        const addition: ListBlueprint = {
+            version: full.version,
+            lists: full.lists
+                .filter((l) => keyToListId.has(l.key))
+                .map((l) => ({ ...l, views: [], automations: [], records: [] })),
+            dashboards: [],
+        };
+        const made = await this.blueprints.extend(tenantId, actor, addition, keyToListId, existing, { groupId: settings.folder_id });
+        if (made.warnings.length > 0) this.logger.warn(`Actualización del pack #${syncId}: ${made.warnings.join(' | ')}`);
+        const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
+            const s = readSettings(locked!.settings);
+            for (const r of WOO_ROOT_RESOURCES) {
+                const got = made.fieldIds[WOO_LIST_KEYS[r]];
+                if (got) s.fields[r] = { ...(s.fields[r] ?? {}), ...got };
+            }
+            // Variaciones y líneas comparten el mapa de su lista (pack 5).
+            if (s.lists.products) s.fields.variations = s.fields.products;
+            if (s.lists.orders) s.fields.line_items = s.fields.orders;
+            const from = s.pack_version;
+            s.pack_version = WOO_PACK_VERSION;
+            await tx
+                .update(connectionSyncs)
+                .set({ settings: s as unknown as Record<string, unknown>, updatedAt: new Date() })
+                .where(eq(connectionSyncs.id, syncId));
+            await this.audit.logInTx(tx, {
+                tenantId,
+                userId: null,
+                action: 'store_sync.migrate',
+                targetType: 'connection',
+                targetId: locked!.connectionId,
+                targetLabel: s.store_name,
+                meta: { from, to: WOO_PACK_VERSION },
+            });
+            return { s, connectionId: locked!.connectionId };
+        });
+        await this.markLists(tenantId, fresh.connectionId, fresh.s);
+        this.realtime.forget(tenantId);
+        // Una vuelta completa de productos llena las columnas nuevas.
+        if (fresh.s.lists.products) this.queue.enqueueRun(tenantId, syncId, { full: true, only: ['products'] });
+    }
+
+    /**
      * v0.1.213 — MIGRA una sincronización creada con un pack anterior al
      * pack 5. Idempotente y bajo el candado de la corrida. Devuelve si migró.
      *
@@ -407,6 +471,13 @@ export class StoreSyncService {
             const shop = await this.storeFormat(creds);
             const full = buildWooPack({ storeName: settings.store_name, currency: shop.currency, precision: shop.precision, phoneCountry: shop.country });
             const packFields = new Map(full.lists.map((l) => [l.key, l]));
+            // Una tienda que ya está en el pack 5 sólo SUMA lo nuevo (v0.1.215:
+            // el slug del producto). Re-correr la migración entera re-traería las
+            // variaciones y rehacería los tableros sin motivo.
+            if (settings.pack_version >= 5) {
+                await this.addMissingPackFields(tenantId, syncId, actor, settings, full);
+                return true;
+            }
 
             const productsList = settings.lists.products ?? null;
             const ordersList = settings.lists.orders ?? null;
@@ -874,17 +945,25 @@ export class StoreSyncService {
             });
             return true;
         }
-        if (readSettings(row.settings).pack_version < WOO_PACK_VERSION) {
-            await this.upgradePack(tenantId, syncId, creds).catch((err) =>
-                this.logger.warn(`No se pudo actualizar el pack #${syncId}: ${String(err)}`),
-            );
+        let settings = readSettings(row.settings);
+        if (settings.pack_version < WOO_PACK_VERSION) {
+            const upgraded = await this.upgradePack(tenantId, syncId, creds).catch((err) => {
+                this.logger.warn(`No se pudo actualizar el pack #${syncId}: ${String(err)}`);
+                return false;
+            });
+            // Lo leído antes de actualizar ya no vale: marcar las listas con eso
+            // pisaría la marca nueva (columnas que no existen, faltan las nuevas).
+            if (upgraded) {
+                const fresh = await this.findSync(tenantId, row.connectionId);
+                if (fresh) settings = readSettings(fresh.settings);
+            }
         }
-        await this.markLists(tenantId, row.connectionId, readSettings(row.settings)).catch(() => undefined);
+        await this.markLists(tenantId, row.connectionId, settings).catch(() => undefined);
         const ran = await this.engine.run(tenantId, syncId, creds, opts);
         // Modo tiempo real: cada vuelta (la red de seguridad horaria) revisa que
         // los avisos sigan activos en la tienda.
-        if (ran && readSettings(row.settings).mode === 'realtime') {
-            await this.realtime.ensure(tenantId, syncId, creds, readSettings(row.settings));
+        if (ran && settings.mode === 'realtime') {
+            await this.realtime.ensure(tenantId, syncId, creds, settings);
         }
         return ran;
     }

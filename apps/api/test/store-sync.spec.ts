@@ -78,6 +78,16 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                             return { status: 400, body: '{"code":"product_invalid_sku","message":"SKU no válido o duplicado."}', headers: {} };
                         }
                     }
+                    if (typeof rest.slug === 'string') {
+                        // Como WordPress: limpia y hace único (`taza-2`).
+                        let clean = rest.slug.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                        const taken = (v: string) => store.products.some((x) => x !== o && x.slug === v);
+                        let n = 2;
+                        const base = clean;
+                        while (taken(clean)) clean = `${base}-${n++}`;
+                        rest.slug = clean;
+                        o.permalink = `https://tienda.test/producto/${clean}/`;
+                    }
                     if (categories) o.categories = categories.map((c) => store.terms.categories.find((t) => t.id === c.id)).filter(Boolean);
                     if (tags) o.tags = tags.map((c) => store.terms.tags.find((t) => t.id === c.id)).filter(Boolean);
                     Object.assign(o, rest);
@@ -327,8 +337,8 @@ function seedStore(orderCount: number): void {
     };
     store.customers = [customer(1, 'Ana', 'ana@x.co'), customer(2, 'Beto', 'beto@x.co'), customer(3, 'Caro', 'caro@x.co')];
     store.products = [
-        { id: 10, name: 'Taza', type: 'simple', status: 'publish', price: '20000', regular_price: '20000', manage_stock: true, stock_quantity: 50, stock_status: 'instock', categories: [{ id: 16, name: 'Cocina', slug: 'cocina' }], tags: [{ id: 19, name: 'Regalo', slug: 'regalo' }], date_modified_gmt: tick(), meta_data: [{ key: 'garantia_meses', value: '12' }, { key: '_edit_lock', value: 'x' }] },
-        { id: 20, name: 'Camiseta', type: 'variable', status: 'publish', price: '30000', stock_status: 'instock', categories: [{ id: 17, name: 'Ropa', slug: 'ropa' }], date_modified_gmt: tick(), meta_data: [] },
+        { id: 10, name: 'Taza', slug: 'taza', type: 'simple', status: 'publish', price: '20000', regular_price: '20000', manage_stock: true, stock_quantity: 50, stock_status: 'instock', categories: [{ id: 16, name: 'Cocina', slug: 'cocina' }], tags: [{ id: 19, name: 'Regalo', slug: 'regalo' }], date_modified_gmt: tick(), meta_data: [{ key: 'garantia_meses', value: '12' }, { key: '_edit_lock', value: 'x' }] },
+        { id: 20, name: 'Camiseta', slug: 'camiseta', type: 'variable', status: 'publish', price: '30000', stock_status: 'instock', categories: [{ id: 17, name: 'Ropa', slug: 'ropa' }], date_modified_gmt: tick(), meta_data: [] },
     ];
     store.variations = {
         20: [
@@ -1014,6 +1024,25 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(putC.url).toContain('/wc/v3/customers/1');
         expect(JSON.parse(putC.body!)).toEqual({ billing: { phone: '+573009998877' } });
         expect((store.customers[0]!.billing as Row).phone).toBe('+573009998877');
+
+        // Slug (v0.1.215): se habilita, viaja, y queda el que dejó WordPress.
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'slug_url', on: true } });
+        const tz = (await tree(tenantId, st.lists.products!.id)).roots.find((x) => x.id === taza.id)!;
+        expect(tz[k('products', 'slug_url')]).toBe('taza');
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'slug_url')]: 'cocina/taza' } } as never),
+        ).rejects.toThrow(/«\/»/);
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'slug_url')]: 'Camiseta' } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const putS = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(JSON.parse(putS.body!)).toEqual({ slug: 'Camiseta' });
+        const tz2 = (await tree(tenantId, st.lists.products!.id)).roots.find((x) => x.id === taza.id)!;
+        // WordPress lo limpió y lo hizo único (ya existía «camiseta»).
+        expect(tz2[k('products', 'slug_url')]).toBe('camiseta-2');
+        expect(tz2[k('products', 'enlace')]).toBe('https://tienda.test/producto/camiseta-2/');
     });
 
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {
@@ -1052,7 +1081,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         queue.runs.length = 0;
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
         const s1 = await settings();
-        expect(s1.pack_version).toBe(5);
+        expect(s1.pack_version).toBe(6);
         expect(s1.lists.variations).toBe(s1.lists.products);
         expect(s1.lists.line_items).toBe(s1.lists.orders);
         expect(s1.fields.products!.sumar_stock).toBeUndefined();
@@ -1076,6 +1105,51 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products', 'orders'] })).toBe(true);
         expect((await tree(tenantId, s1.lists.products!)).children).toHaveLength(2);
         expect((await svc.status(tenantId, adminId, 'admin', connId)).last_error).toBeNull();
+    });
+
+    it('actualización liviana 5 → 6: suma la columna Slug sin rehacer nada y la llena (v0.1.215)', async () => {
+        const read = async () => {
+            const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+            return row!.settings as Record<string, unknown> & { fields: Record<string, Record<string, number>>; lists: Record<string, number>; dashboard_id: number };
+        };
+        const s0 = await read();
+        const slugField = s0.fields.products!.slug_url!;
+        // Una tienda que quedó en el pack 5: sin la columna.
+        await fieldsService.remove(tenantId, String(s0.lists.products), String(slugField), { internal: true });
+        const noSlug = (m: Record<string, number>) => Object.fromEntries(Object.entries(m).filter(([k2]) => k2 !== 'slug_url'));
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .update(connectionSyncs)
+                .set({
+                    settings: {
+                        ...s0,
+                        pack_version: 5,
+                        fields: { ...s0.fields, products: noSlug(s0.fields.products!), variations: noSlug(s0.fields.variations!) },
+                    },
+                })
+                .where(eq(connectionSyncs.id, syncId)),
+        );
+        const before = await tree(tenantId, s0.lists.products!);
+        queue.runs.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const s1 = await read();
+        expect(s1.pack_version).toBe(6);
+        expect(s1.fields.products!.slug_url).toBeGreaterThan(0);
+        expect(s1.fields.variations!.slug_url).toBe(s1.fields.products!.slug_url);
+        // Nada se rehizo: mismo tablero, mismos registros (con sus variaciones).
+        expect(s1.dashboard_id).toBe(s0.dashboard_id);
+        const after = await tree(tenantId, s0.lists.products!);
+        expect(after.roots.map((r) => r.id).sort()).toEqual(before.roots.map((r) => r.id).sort());
+        expect(after.children.map((r) => r.id).sort()).toEqual(before.children.map((r) => r.id).sort());
+        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products'] } });
+        // La marca de la lista conoce la columna nueva.
+        const [lst] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, s0.lists.products!)));
+        expect((lst!.settings as { store_sync: { fields: Record<string, number> } }).store_sync.fields.slug_url).toBe(s1.fields.products!.slug_url);
+        // La vuelta de productos la llena.
+        await svc.runJob(tenantId, syncId, { full: true, only: ['products'] });
+        const filled = await tree(tenantId, s0.lists.products!);
+        const camiseta = filled.roots.find((x) => x[`f${s1.fields.products!.woo_id}`] === '20')!;
+        expect(camiseta[`f${s1.fields.products!.slug_url}`]).toBe('camiseta');
     });
 
     it('otra empresa no ve la sincronización ni sus vínculos (RLS)', async () => {
