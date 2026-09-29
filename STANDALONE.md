@@ -1112,6 +1112,70 @@ se arma con otro nombre y se renombra al final, así una request cortada nunca
 deja un archivo a medias en el listado. Queda pendiente el caso de la empresa
 con cientos de miles de registros, donde conviene encolarlo como los snapshots.
 
+### ADR-S24 — Sincronizar una tienda: la tienda es la fuente, la app es un espejo vivo (v0.1.206)
+
+**Contexto.** Las acciones de WooCommerce (v0.1.205) escriben en la tienda,
+pero lo que pide un comercio es lo inverso: ver sus pedidos, clientes y
+productos DENTRO de la app —cuánto compró cada cliente, cuánto vendió cada
+producto y cada talla— y automatizar sobre eso. Un conector que sólo manda no
+alcanza; hace falta un motor que traiga y mantenga al día.
+
+**Decisión.** Una sincronización por conexión (`connection_syncs`) que
+materializa un **pack de cinco listas vinculadas** (clientes, productos,
+variaciones, pedidos, líneas de pedido) con sus rollups y un tablero de
+ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
+
+- **Vínculo por id externo, fuera de los datos.** `sync_links` (RLS) guarda
+  recurso + id de la tienda → registro. La app nunca identifica un registro
+  de la tienda por un campo editable: la persona puede renombrar o borrar
+  columnas sin romper la sincronización (regla de oro nº 1).
+- **Todo es un registro común.** Lo que llega de la tienda se filtra, se
+  agrupa, se suma en tableros y dispara automatizaciones como cualquier otro
+  registro. Cuánto compró un cliente es un rollup sobre sus líneas, no un
+  número copiado de la tienda: sale bien aunque el cliente compre como
+  invitado.
+- **Clientes invitados.** WooCommerce sólo lista los registrados, pero un
+  pedido de invitado también es de alguien: se identifica por `email:x`, y el
+  registrado por `id:N`. Las dos claves de una misma persona apuntan al MISMO
+  registro (dos vínculos, un registro), en los dos sentidos: la cuenta que
+  aparece adopta el registro de invitada, y la compra sin sesión de alguien
+  con cuenta va a su registro.
+- **Productos variables.** Cada variación (talla, color) es un registro propio
+  vinculado al producto; una línea de pedido apunta al producto Y a la
+  variación, así se suma por los dos.
+- **Campos de otros plugins (`meta_data`).** Se DESCUBREN (clave, cuántos
+  registros la tienen, un ejemplo y un tipo sugerido; las que empiezan con
+  `_` se marcan internas) y la persona elige cuáles traer a una columna.
+  Traer una relee ese recurso entero para rellenar lo existente. Un valor
+  estructurado (ACF, datos serializados) se guarda como JSON en un texto: se
+  ve y se busca, aunque no se edite como dato.
+- **Incremental por fecha de modificación (keyset).** Productos y pedidos se
+  piden con `orderby=modified` + `modified_after` desde un cursor (fecha + ids
+  de ese segundo, porque la API compara por segundo y el filtro es
+  exclusivo), guardado por página: una corrida cortada sigue donde quedó.
+  Una tienda vieja que ignora el filtro se detecta y se pagina por número.
+  Los clientes no admiten ese filtro: los nuevos se detectan por id
+  descendente y los cambios llegan en un barrido completo diario, como el
+  stock de las variaciones.
+- **Una corrida a la vez.** Candado en Redis por sincronización (renovado en
+  cada página) + `pg_advisory_xact_lock` en cada escritura: una corrida y un
+  aviso que lleguen juntos no crean el mismo pedido dos veces.
+- **Ni la importación inicial ni una resincronización completa disparan
+  automatizaciones.** Son puestas al día, no novedades: nadie quiere 3.000
+  WhatsApps de "pedido nuevo" al conectar la tienda.
+- **Los límites del plan mandan.** Si la tienda trae más registros de los que
+  el plan permite, la corrida se detiene con el motivo en pantalla; nada se
+  borra ni se trunca a escondidas.
+- **Los datos son de la empresa (ADR-S09).** Dejar de sincronizar o
+  desconectar la tienda conserva las listas y todo lo traído.
+
+**Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
+tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
+tenant, como las recurrencias). El modo por intervalos pregunta cada N
+minutos; los avisos en tiempo real (webhooks de la tienda) y la edición en
+los dos sentidos quedan para la fase siguiente. Migrar una empresa lleva la
+sincronización con ids re-mapeados.
+
 ---
 
-**Versión del documento:** 1.20.0 (galería de integraciones: apps registradas por el operador — ADR-S22 fase 4)
+**Versión del documento:** 1.21.0 (sincronización con tiendas WooCommerce — ADR-S24)

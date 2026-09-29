@@ -43,6 +43,10 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },
     'workspace.domain_change': { text: 'cambió el dominio' },
     'import.run': { text: 'importó datos a' },
+    'store_sync.create': { text: 'activó la sincronización de la tienda' },
+    'store_sync.update': { text: 'cambió la sincronización de la tienda' },
+    'store_sync.delete': { text: 'desactivó la sincronización de la tienda', danger: true },
+    'store_sync.map_meta': { text: 'trajo un campo de la tienda a' },
 };
 
 function describe(entry: AuditEntry): { text: string; danger: boolean } {

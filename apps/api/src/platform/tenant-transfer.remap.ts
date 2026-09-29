@@ -223,3 +223,39 @@ export function remapAutomation(
     delete trigger.webhook_token;
     return { triggerConfig: trigger, actions: remapJson(actions, maps) };
 }
+
+/**
+ * v0.1.206 — ajustes de una sincronización con tienda (`connection_syncs.settings`).
+ * No siguen la convención de claves (`lists.customers`, `fields.orders.total`,
+ * `meta_map.products[clave]`), así que se traducen a mano. Lo que no resuelve
+ * se DESCARTA: un id viejo apuntaría a una lista o un campo de otra empresa.
+ */
+export function remapSyncSettings(
+    raw: unknown,
+    maps: IdMaps,
+    groupMap: Map<number, number>,
+): Record<string, unknown> {
+    const s = raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+    const remapIds = (value: unknown, map: Map<number, number>): Record<string, number> => {
+        const out: Record<string, number> = {};
+        if (!value || typeof value !== 'object') return out;
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            const id = mapId(map, v);
+            if (id !== null) out[k] = id;
+        }
+        return out;
+    };
+    const nested = (value: unknown, map: Map<number, number>): Record<string, Record<string, number>> => {
+        const out: Record<string, Record<string, number>> = {};
+        if (!value || typeof value !== 'object') return out;
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = remapIds(v, map);
+        return out;
+    };
+    s.lists = remapIds(s.lists, maps.list);
+    s.fields = nested(s.fields, maps.field);
+    s.meta_map = nested(s.meta_map, maps.field);
+    s.folder_id = mapId(groupMap, s.folder_id);
+    // Los tableros se importan sin mapa de ids: el enlace se pierde (el tablero no).
+    s.dashboard_id = null;
+    return s;
+}

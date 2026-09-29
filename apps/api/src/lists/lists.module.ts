@@ -10,6 +10,6 @@ import { ListsService } from './lists.service';
     imports: [AuthModule],
     controllers: [ListsController, ListGroupsController],
     providers: [ListsService, ListsRepository, ListGroupsService],
-    exports: [ListsService],
+    exports: [ListsService, ListGroupsService],
 })
 export class ListsModule {}

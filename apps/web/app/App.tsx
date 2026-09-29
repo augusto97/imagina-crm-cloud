@@ -31,6 +31,7 @@ const AutomationEditorPage = lazyWithReload(() => import('@/admin/automations/Au
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
 const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
+const StoreSyncPage = lazyWithReload(() => import('@/cloud/pages/StoreSyncPage').then(m => ({ default: m.StoreSyncPage })));
 
 /**
  * Fallback minimal mientras un chunk lazy se descarga. Suficiente:
@@ -80,6 +81,9 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><DashboardPage /></Suspense>
                 } />
                 <Route path="settings" element={<CloudSettingsPage />} />
+                <Route path="settings/stores/:connectionId" element={
+                    <Suspense fallback={<RouteFallback />}><StoreSyncPage /></Suspense>
+                } />
                 <Route path="platform" element={
                     <Suspense fallback={<RouteFallback />}><PlatformPage /></Suspense>
                 } />

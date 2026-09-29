@@ -28,3 +28,4 @@ export * from './impersonation-log';
 export * from './ai-usage';
 export * from './personal-tokens';
 export * from './oauth-clients';
+export * from './store-sync';

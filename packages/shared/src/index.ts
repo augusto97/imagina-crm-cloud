@@ -44,5 +44,6 @@ export * from './field-types/duration';
 export * from './schemas/templates';
 export * from './schemas/connector';
 export * from './schemas/integrations';
+export * from './schemas/store-sync';
 export * from './schemas/tenant-transfer';
 export * from './templates/automation-recipes';
