@@ -23,13 +23,23 @@ import { useDashboards } from '@/hooks/useDashboards';
 import { toggledFavorites, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useListGroups } from '@/hooks/useListGroups';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
+import {
+    FAVORITES_GROUPING_KEY,
+    FAVORITES_GROUPINGS,
+    favoriteSections,
+    type FavoritesGrouping,
+} from '@/lib/favoriteSections';
 import { __ } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
+import { usePersistedChoice } from '@/lib/usePersistedChoice';
 import { cn } from '@/lib/utils';
 import type { DashboardEntity } from '@/types/dashboard';
 import type { ListSummary } from '@/types/list';
+import { ViewSwitch } from '@/components/ui/view-switch';
+import { FolderSquare } from '@/admin/lists/FolderBadge';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
 
 import { DashboardPanelItem } from './DashboardPanelItem';
@@ -679,15 +689,19 @@ function RailItem({
 /** Sección del panel claro (label small-caps + children). */
 function PanelSection({
     label,
+    icon,
     children,
 }: {
     label: string;
+    /** v0.1.211 — el cuadrado de la carpeta en las secciones de Favoritos. */
+    icon?: React.ReactNode;
     children: React.ReactNode;
 }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-            <h3 className="imcrm-px-2.5 imcrm-pb-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.1em] imcrm-text-muted-foreground">
-                {label}
+            <h3 className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-px-2.5 imcrm-pb-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.1em] imcrm-text-muted-foreground">
+                {icon}
+                <span className="imcrm-truncate">{label}</span>
             </h3>
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">{children}</div>
         </div>
@@ -695,9 +709,10 @@ function PanelSection({
 }
 
 /**
- * v0.1.107 — Sección "Favoritos": listas y dashboards ANCLADOS por el
- * usuario (estrella al hover de cada item). Mezcla ambos tipos, en el
- * orden en que se anclaron; se oculta si no hay ninguno.
+ * Sección "Favoritos" del panel: listas y dashboards ANCLADOS (v0.1.107).
+ * v0.1.211 — agrupados por CARPETA (como el menú de Listas; dashboards al
+ * final) o por tipo. La elección es la misma de la página de Favoritos
+ * (store compartido): cambiarla en un lado repinta el otro.
  */
 function FavoritesSection({
     favs,
@@ -710,45 +725,66 @@ function FavoritesSection({
     dashboards: DashboardEntity[];
     onToggle: (kind: keyof Favorites, id: number) => void;
 }): JSX.Element | null {
-    const listById = new Map(lists.map((l) => [l.id, l]));
-    const dashById = new Map(dashboards.map((d) => [d.id, d]));
-    // Cada anclado con SU icono (v0.1.145) y su menú contextual
-    // (v0.1.172): la misma fila que en los árboles de Listas/Dashboards.
-    const items = [
-        ...favs.lists
-            .map((id) => listById.get(id))
-            .filter((l): l is ListSummary => l !== undefined)
-            .map((l) => ({ key: `l-${l.id}`, list: l, dashboard: undefined })),
-        ...favs.dashboards
-            .map((id) => dashById.get(id))
-            .filter((d): d is DashboardEntity => d !== undefined)
-            .map((d) => ({ key: `d-${d.id}`, list: undefined, dashboard: d })),
-    ];
-    if (items.length === 0) {
+    const groups = useListGroups();
+    const [grouping, setGrouping] = usePersistedChoice<FavoritesGrouping>(
+        FAVORITES_GROUPING_KEY,
+        FAVORITES_GROUPINGS,
+        'folders',
+    );
+    const sections = favoriteSections(favs, lists, dashboards, groups.data ?? [], grouping);
+    if (sections.length === 0) {
         return (
             <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
                 {__('Tocá el pin de una lista o un dashboard en su menú para anclarlo acá.')}
             </p>
         );
     }
+    const hasFolders = (groups.data ?? []).length > 0;
     return (
-        <PanelSection label={__('Anclados')}>
-            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                {items.map((it) => (
-                    <li key={it.key}>
-                        {it.list !== undefined ? (
-                            <ListPanelItem list={it.list} starred onToggleStar={() => onToggle('lists', it.list.id)} />
-                        ) : (
-                            <DashboardPanelItem
-                                dashboard={it.dashboard}
-                                starred
-                                onToggleStar={() => onToggle('dashboards', it.dashboard.id)}
-                            />
-                        )}
-                    </li>
-                ))}
-            </ul>
-        </PanelSection>
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="favorites-panel">
+            {hasFolders && (
+                <div className="imcrm-px-1.5">
+                    <ViewSwitch<FavoritesGrouping>
+                        label={__('Agrupar favoritos')}
+                        value={grouping}
+                        onChange={setGrouping}
+                        testId="favorites-panel-grouping"
+                        options={[
+                            { value: 'folders', label: __('Por carpeta') },
+                            { value: 'type', label: __('Por tipo') },
+                        ]}
+                    />
+                </div>
+            )}
+            {sections.map((s) => (
+                <PanelSection
+                    key={s.key}
+                    label={
+                        s.kind === 'folder'
+                            ? s.group.name
+                            : s.kind === 'root'
+                              ? __('Sin carpeta')
+                              : s.kind === 'lists'
+                                ? __('Listas')
+                                : __('Dashboards')
+                    }
+                    icon={s.kind === 'folder' ? <FolderSquare group={s.group} size="sm" /> : undefined}
+                >
+                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        {s.lists.map((l) => (
+                            <li key={`l-${l.id}`}>
+                                <ListPanelItem list={l} starred onToggleStar={() => onToggle('lists', l.id)} />
+                            </li>
+                        ))}
+                        {s.dashboards.map((d) => (
+                            <li key={`d-${d.id}`}>
+                                <DashboardPanelItem dashboard={d} starred onToggleStar={() => onToggle('dashboards', d.id)} />
+                            </li>
+                        ))}
+                    </ul>
+                </PanelSection>
+            ))}
+        </div>
     );
 }
 
