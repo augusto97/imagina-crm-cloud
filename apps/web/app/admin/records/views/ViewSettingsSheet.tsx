@@ -14,6 +14,7 @@ import {
     Trash2,
     WrapText,
     Zap,
+    Wand2,
 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -93,6 +94,9 @@ interface ViewSettingsSheetProps {
     canExport: boolean;
     onImport: () => void;
     onExport: () => void;
+    /** v0.1.216 — edición masiva de todo lo que coincide con la vista. */
+    canBulkEdit: boolean;
+    onBulkEdit: () => void;
 }
 
 /**
@@ -139,6 +143,8 @@ export function ViewSettingsSheet({
     canExport,
     onImport,
     onExport,
+    canBulkEdit,
+    onBulkEdit,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -424,6 +430,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onExport();
+                                    }}
+                                />
+                            )}
+                            {canBulkEdit && (
+                                <RowButton
+                                    icon={Wand2}
+                                    label={__('Edición masiva')}
+                                    value={__('Todo lo que coincide')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onBulkEdit();
                                     }}
                                 />
                             )}

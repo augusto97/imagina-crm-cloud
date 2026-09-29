@@ -5206,6 +5206,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dirección vieja responde 301 a la nueva**, WordPress limpia acentos y
         espacios, lo hace único si ya existe, y la variación queda bloqueada.
 
+  - [x] **Edición masiva de verdad (v0.1.216, ADR-S25, pedido del usuario:
+        "edición masiva con sumas, restas, cálculos…")**: la acción masiva sólo
+        sabía «poner este valor» sobre la selección de la página. Ahora
+        **«Editar en lote»** (barra de selección, y «Edición masiva» en
+        Personalizar vista para TODO lo que coincide con los filtros y la
+        búsqueda, hasta 5.000) abre un diálogo con una lista ORDENADA de cambios
+        —cada uno parte del valor de CADA registro y ve el resultado del
+        anterior—: poner/vaciar; **sumar, restar, multiplicar, dividir, subir o
+        bajar un %**; **redondear** a una grilla `k × múltiplo + ajuste` en una
+        dirección (presets «terminar en 900», «a miles», «terminar en ,99»;
+        hacia arriba NUNCA baja un precio: 11.000 → 11.900); **calcular** una
+        columna con otras (`Precio = Costo × 1,3`); copiar entre columnas con
+        conversión de tipo; texto (prefijo, sufijo, buscar/reemplazar literal,
+        mayúsculas, espacios); **agregar/quitar opciones** de un multi_select sin
+        pisar las demás; invertir un checkbox; **correr fechas** (días a años,
+        con fin de mes); poner hoy; vincular/desvincular registros. Operaciones
+        por tipo en `BULK_OPS_BY_TYPE` (shared): la UI arma el menú con eso y el
+        motor lo exige. **Vista previa** con antes → después, cuántos cambian,
+        cuántos ya estaban así y cuáles no se pueden cambiar con el motivo
+        (operando vacío, valor que el campo no acepta, lo que la tienda no
+        admite) — una fila con error NO se escribe a medias. La vista previa y la
+        escritura usan la MISMA función pura (`applyBulkOperations`); se aplica
+        en tandas de 200 con barra de avance y cada escritura es un
+        `RecordsService.update` (validación, ACL por fila, bitácora,
+        automatizaciones, reglas y envío de la tienda). Editar por filtro exige
+        `bulk_actions`; la selección, poder editar. Los números se tipean con
+        los separadores de la empresa («12.500» con punto de miles).
+        Endpoints `POST /lists/:l/records/bulk-edit/preview` y `/bulk-edit`.
+        **Encontrado en el E2E**: el primer diseño del redondeo era
+        «redondear y después sumar el ajuste», y con «terminar en 900» un
+        11.000 quedaba en 10.900 — bajaba el precio; ahora se ajusta a la
+        grilla en la dirección pedida. 14 tests del motor en shared + 5 del
+        diálogo en el front + 5 de integración con Postgres (por selección, por
+        filtro abarcando más que la página, filas con error, alcance de edición
+        del agente, columnas calculadas) + E2E navegador 21/21 (230 registros:
+        tres cambios encadenados, 230 por filtro en dos tandas con avance,
+        errores listados, punto de miles, celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

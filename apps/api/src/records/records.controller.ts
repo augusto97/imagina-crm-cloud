@@ -14,7 +14,13 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    bulkEditApplySchema,
+    bulkEditPreviewSchema,
     bulkRecordsSchema,
+    type BulkEditApplyInput,
+    type BulkEditPreview,
+    type BulkEditPreviewInput,
+    type BulkEditResult,
     createRecordSchema,
     listRecordsQuerySchema,
     updateRecordDescriptionSchema,
@@ -34,6 +40,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { BillingService } from '../billing/billing.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { BulkEditService } from './bulk-edit.service';
 import { RecordsService, type Actor, type RecordsPage } from './records.service';
 
 /**
@@ -47,6 +54,7 @@ export class RecordsController {
     constructor(
         private readonly records: RecordsService,
         private readonly billing: BillingService,
+        private readonly bulkEdit: BulkEditService,
     ) {}
 
     @Get()
@@ -68,6 +76,33 @@ export class RecordsController {
         @Body(new ZodValidationPipe(bulkRecordsSchema)) input: BulkRecordsInput,
     ): Promise<{ succeeded: number[]; failed: Array<{ id: number; message: string }> }> {
         return this.records.bulk(tenantId(req), actor(req), list, input.action, input.ids, input.values);
+    }
+
+    /**
+     * Edición masiva (v0.1.216): vista previa sobre la selección o sobre
+     * todo lo que coincide con los filtros (devuelve los ids que cambian), y
+     * aplicación en tandas de hasta 200 de esos ids.
+     */
+    @Post('bulk-edit/preview')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records')
+    bulkEditPreview(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(bulkEditPreviewSchema)) input: BulkEditPreviewInput,
+    ): Promise<BulkEditPreview> {
+        return this.bulkEdit.preview(tenantId(req), actor(req), list, input.target, input.operations);
+    }
+
+    @Post('bulk-edit')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records')
+    bulkEditApply(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(bulkEditApplySchema)) input: BulkEditApplyInput,
+    ): Promise<BulkEditResult> {
+        return this.bulkEdit.apply(tenantId(req), actor(req), list, input.ids, input.operations);
     }
 
     @Get(':id')

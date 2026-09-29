@@ -11,11 +11,12 @@ import { RecordsGroupedService } from './records-grouped.service';
 import { RecordsRepository } from './records.repository';
 import { RelationsRepository } from './relations.repository';
 import { RecordsService } from './records.service';
+import { BulkEditService } from './bulk-edit.service';
 
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule, AggregateModule, RecurrencesModule],
     controllers: [RecordsController, RecordsGroupedController],
-    providers: [RecordsService, RecordsRepository, RelationsRepository, RecordsGroupedService],
+    providers: [RecordsService, BulkEditService, RecordsRepository, RelationsRepository, RecordsGroupedService],
     exports: [RecordsService],
 })
 export class RecordsModule {}
