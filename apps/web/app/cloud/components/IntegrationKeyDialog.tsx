@@ -45,7 +45,10 @@ export function IntegrationKeyDialog({
     onClose: () => void;
     onDone: (message: string) => void;
 }): JSX.Element {
-    const fields: IntegrationFieldDef[] = def.auth.kind === 'key' ? def.auth.fields : [];
+    // Los campos `hidden` los completa el servidor al verificar (WooCommerce:
+    // cómo acepta la clave esa tienda); ni se muestran ni se mandan.
+    const fields: IntegrationFieldDef[] =
+        def.auth.kind === 'key' ? def.auth.fields.filter((f) => !f.hidden) : [];
     const howTo = def.auth.kind === 'key' ? def.auth.how_to : [];
     const testDef = def.auth.kind === 'key' ? (def.auth.test ?? null) : null;
     const [testTo, setTestTo] = useState('');

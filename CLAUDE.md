@@ -4650,6 +4650,54 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verificación**: el sandbox no llega a `was.imagina.cloud` (el proxy de
         salida devuelve 403), así que el envío real se prueba en el servidor.
 
+  - [x] **WooCommerce — fase 1: conectar la tienda + acciones de escritura
+        (v0.1.205, pedido del usuario: "un conector para WooCommerce que traiga
+        casi todo")**. Primera de tres entregas (la 2 sincroniza, la 3 agrega
+        tiempo real y edición en los dos sentidos). WooCommerce entra a la
+        galería (categoría "Tiendas online") como app **por clave**: la persona
+        pega la dirección de la tienda, la clave del cliente (`ck_…`) y la
+        secreta (`cs_…`, cifrada), con los pasos para generarla en WooCommerce →
+        Ajustes → Avanzado → API REST. Lo técnico se DESCUBRE al conectar y
+        queda en campos ocultos (`hidden`, nuevo en `IntegrationFieldDef`: los
+        completa el servidor, el diálogo ni los muestra ni los manda):
+        `wooVerifyPlan` prueba cabecera `Authorization: Basic` y, si el hosting
+        la tira (PHP por CGI/FastCGI: WooCommerce ve un pedido anónimo), la
+        clave en la URL; y `/wp-json/…` o `?rest_route=` para tiendas sin enlaces
+        permanentes. A diferencia de las apps de mensajería, una tienda que no
+        responde NO se guarda (casi siempre es la dirección mal escrita) y sin
+        HTTPS se rechaza con el motivo (WooCommerce no acepta la clave sin
+        conexión segura). La conexión se nombra con el nombre del sitio.
+        **Acciones** (módulo puro `woocommerce/wc-api.ts`, el mismo que usará
+        la sincronización): actualizar producto —precio normal/rebajado ("quitar"
+        la saca), stock (activa la gestión de inventario), estado de inventario,
+        publicación y **campos de otros plugins** (`meta_data`, "clave=valor"
+        por renglón: ACF, Yoast…)— también de UNA **variación**
+        (`/products/{padre}/variations/{id}`); cambiar el estado de un pedido;
+        nota al pedido (interna o al cliente); y crear cupón (tipo, valor,
+        vencimiento, usos, correos permitidos, compra mínima). Sólo viajan los
+        datos completados; los errores de WooCommerce se traducen (sin permiso
+        de escritura, clave rechazada, 404 con el mensaje de la tienda, un 200
+        con HTML de un modo mantenimiento). **Bug atrapado en el E2E**: un precio
+        tipeado "26.000" (punto de miles, como se escribe en Latinoamérica)
+        viajaba como 26; `wooPrice` ahora lee los grupos de a tres como miles y
+        el último separador como decimal cuando hay dos. `IntegrationRequest`
+        gana `PUT`/`DELETE`, `IntegrationInputError` se mudó a su propio módulo
+        (`integration-errors.ts`) para no crear un import circular, y
+        `safeWebhookFetch` gana `maxCaptureBytes` + cabeceras de la respuesta
+        (lo necesita la sincronización para leer páginas de 100 pedidos).
+        **Interruptor de desarrollo** `DEV_ALLOW_PRIVATE_EGRESS=1`: deja salir
+        a direcciones privadas y `http://` para probar contra una tienda falsa
+        local; en producción se IGNORA (y se avisa al arrancar). 12 tests
+        unitarios nuevos (URLs y autenticación en sus cuatro combinaciones,
+        cuerpos de cada acción, variación, meta, precios latinos, traducción de
+        errores) + 1 de integración (descubre la clave en la URL, clave mala y
+        sin HTTPS no se guardan, la acción sale por la combinación descubierta y
+        el probador tapa la clave de la URL) — 680 API, 154 front y 66 shared en
+        verde — + E2E navegador 17/17 contra una **tienda WooCommerce falsa**
+        (API wc/v3 con la forma real: 250 pedidos, producto variable con 3
+        variaciones, meta de plugins, paginación con `X-WP-TotalPages`) en sus
+        dos modos: normal y hosting que tira la cabecera.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
