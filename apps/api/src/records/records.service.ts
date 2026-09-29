@@ -11,8 +11,11 @@ import {
     evaluateComputed,
     isDataField,
     jsonbKeyForField,
+    readStoreListMarker,
     richDocToPlainText,
     sanitizeRichDoc,
+    storeCellAccess,
+    storeValueError,
     validateFieldValue,
     type CreateRecordInput,
     type Field,
@@ -39,6 +42,7 @@ import {
 } from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
+import { assertNotStoreManaged } from '../lists/store-guard';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField } from './query-builder';
@@ -92,6 +96,7 @@ export class RecordsService {
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
+        assertNotStoreManaged(list, 'create');
         // ACL por lista: el rol debe tener create habilitado para esta lista.
         if (!effectivePermissions(list.settings, actor.role, actor.userId).create) {
             throw new ForbiddenException({
@@ -344,6 +349,11 @@ export class RecordsService {
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             const patch = this.validateData(fields, rel.data, { partial: true });
             const merged = mergeData(current.data, patch);
+            // v0.1.213 — lista de una tienda: sólo lo que WooCommerce acepta.
+            this.assertStoreEdit(list, fields, current.data, merged, [
+                ...Object.keys(patch).map((k) => Number(k.slice(1))),
+                ...rel.values.map((v) => v.field.id),
+            ]);
             const updated = await this.repo.updateData(tx, tenantId, listId, id, merged);
             if (updated) {
                 await this.syncRelations(tx, tenantId, id, rel.values);
@@ -536,6 +546,7 @@ export class RecordsService {
     ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
+        assertNotStoreManaged(list, 'delete');
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
@@ -606,6 +617,52 @@ export class RecordsService {
             this.realtime.records(tenantId, list.id);
         }
         return { succeeded, failed };
+    }
+
+    /**
+     * v0.1.213 — En una lista sincronizada con una tienda, cada columna que
+     * cambia tiene que ser editable EN ESA FILA (precios, stock y estados, con
+     * las reglas de `store-rules.ts`) y el valor tiene que ser uno que la
+     * tienda acepte. Las columnas propias de la empresa quedan libres. Se
+     * evalúa sobre la fila YA mezclada: activar «Controla stock» y poner el
+     * stock en el mismo cambio es válido.
+     */
+    private assertStoreEdit(
+        list: List,
+        fields: Field[],
+        before: Record<string, unknown>,
+        merged: Record<string, unknown>,
+        fieldIds: number[],
+    ): void {
+        const marker = readStoreListMarker(list.settings);
+        if (!marker) return;
+        const row = (slug: string): unknown => {
+            const id = marker.fields[slug];
+            return id ? merged[`f${id}`] : undefined;
+        };
+        for (const fieldId of new Set(fieldIds)) {
+            const key = `f${fieldId}`;
+            if (JSON.stringify(before[key] ?? null) === JSON.stringify(merged[key] ?? null) && !fields.some((f) => f.id === fieldId && f.type === 'relation')) continue;
+            const label = fields.find((f) => f.id === fieldId)?.label ?? 'Esa columna';
+            const access = storeCellAccess(marker, fieldId, row);
+            if (access.access === 'locked') {
+                throw new ForbiddenException({
+                    code: 'store_field_locked',
+                    message: `${label}: ${access.reason}`,
+                    data: { status: 403, field_id: fieldId },
+                });
+            }
+            if (access.access === 'editable') {
+                const err = storeValueError(marker, fieldId, merged[key], row);
+                if (err) {
+                    throw new BadRequestException({
+                        code: 'store_invalid_value',
+                        message: `${label}: ${err}`,
+                        data: { status: 400, field_id: fieldId },
+                    });
+                }
+            }
+        }
     }
 
     /**

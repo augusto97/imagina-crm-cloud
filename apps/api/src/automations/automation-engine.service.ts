@@ -1,12 +1,16 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
     jsonbKeyForField,
+    readStoreListMarker,
+    storeCellAccess,
+    storeValueError,
     validateFieldValue,
     type ActionLogEntry,
     type ActionSpec,
     type AutomationRunStatus,
     type ConditionData,
     type FieldValueSpec,
+    type StoreListMarker,
 } from '@imagina-base/shared';
 import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
@@ -20,7 +24,7 @@ import {
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
-import { automationRuns, records } from '../db/schema';
+import { automationRuns, lists, records } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
@@ -80,6 +84,16 @@ export class AutomationEngine {
         // v0.1.207 — Optional + al final: los specs que lo arman a mano siguen andando.
         @Optional() private readonly changes?: RecordChangeHub,
     ) {}
+
+    /** Marca de lista de tienda (v0.1.213), o null. */
+    private async storeMarkerOf(tx: Tx, tenantId: number, listId: number): Promise<StoreListMarker | null> {
+        const [row] = await tx
+            .select({ settings: lists.settings })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
+            .limit(1);
+        return readStoreListMarker(row?.settings);
+    }
 
     /** Trigger de record (record_created / record_updated). */
     async process(event: TriggerEvent): Promise<void> {
@@ -387,13 +401,46 @@ export class AutomationEngine {
                     merged[key] = resolved;
                     applied[slug] = resolved;
                 }
+                // v0.1.213 — en una lista de tienda, una automatización respeta
+                // las MISMAS reglas que una persona: lo que la tienda no
+                // aceptaría (o sólo se edita en WooCommerce) se saltea con el
+                // motivo en el log, en vez de escribir un valor que la próxima
+                // sincronización pisaría en silencio.
+                const storeSkipped: string[] = [];
+                const marker = await this.storeMarkerOf(tx, ctx.tenantId, ctx.listId);
+                if (marker) {
+                    const row = (packSlug: string): unknown => {
+                        const id = marker.fields[packSlug];
+                        return id ? merged[`f${id}`] : undefined;
+                    };
+                    for (const slug of Object.keys(applied)) {
+                        const key = ctx.slugToKey.get(slug)!;
+                        const fieldId = Number(key.slice(1));
+                        const access = storeCellAccess(marker, fieldId, row);
+                        const err =
+                            access.access === 'locked'
+                                ? access.reason
+                                : access.access === 'editable'
+                                  ? storeValueError(marker, fieldId, merged[key], row)
+                                  : null;
+                        if (!err) continue;
+                        if (key in ctx.data) merged[key] = ctx.data[key];
+                        else delete merged[key];
+                        delete applied[slug];
+                        storeSkipped.push(`${slug} (${err})`);
+                    }
+                    if (Object.keys(applied).length === 0) {
+                        return skip('update_field', `Nada que cambiar: ${storeSkipped.join('; ')}`);
+                    }
+                }
                 await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
                 // Una automatización que cambia un producto sincronizado también
                 // lo cambia en la tienda. Si la corrida revierte, el envío lee el
                 // valor vigente y manda lo que la tienda ya tenía (inocuo).
                 this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
                 ctx.data = merged; // acciones posteriores ven el valor actualizado.
-                return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).`, { values: applied });
+                const storeNote = storeSkipped.length > 0 ? ` Omitidos: ${storeSkipped.join('; ')}.` : '';
+                return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).${storeNote}`, { values: applied });
             }
             case 'create_record': {
                 // Los slugs de `values` se resuelven contra la lista DESTINO
@@ -403,6 +450,10 @@ export class AutomationEngine {
                 // los campos relation se sincronizan en la tabla `relations`
                 // con targets verificados vivos en su lista destino.
                 const targetList = Number(cfg.target_list ?? cfg.list_id ?? ctx.listId) || ctx.listId;
+                // Una lista de tienda no admite altas: sus registros nacen en WooCommerce.
+                if (await this.storeMarkerOf(tx, ctx.tenantId, targetList)) {
+                    return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
+                }
                 const rawValues = (cfg.values as Record<string, unknown>) ?? {};
                 const targetFields = await this.fields.listByList(tx, ctx.tenantId, targetList);
                 const byKey = new Map(targetFields.map((f) => [jsonbKeyForField(f.id), f]));

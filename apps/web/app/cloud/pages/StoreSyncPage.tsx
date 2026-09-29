@@ -12,7 +12,7 @@ import {
     type StoreSyncResource,
     type StoreSyncStatus,
 } from '@imagina-base/shared';
-import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Truck, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -22,6 +22,7 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
+import { listsKeys } from '@/hooks/useLists';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
 import { formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
@@ -180,7 +181,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Traé tu tienda a Imagina Base')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Creamos una carpeta con cinco listas vinculadas —clientes, productos, variaciones, pedidos y líneas de pedido— y dos tableros: ventas e inventario. Después se mantienen al día solas. Cuánto compró cada cliente, cuánto vendió cada producto (y cada talla o color), qué está agotado o por agotarse y para cuántos meses alcanza el stock se calcula solo.',
+                        'Creamos una carpeta con tres listas —Clientes, Productos (cada variación, como talla o color, va adentro de su producto) y Pedidos (lo que se compró va adentro de cada pedido)— y dos tableros: ventas e inventario. Después se mantienen al día solas. Cuánto compró cada cliente, cuánto vendió cada producto (y cada talla o color), qué está agotado o por agotarse y para cuántos meses alcanza el stock se calcula solo. Los productos, pedidos y clientes se siguen creando en WooCommerce: la app los refleja.',
                     )}
                 </p>
             </div>
@@ -191,7 +192,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                     [
                         ['customers', __('Clientes'), __('Los registrados. Los que compraron como invitados llegan igual, por sus pedidos.')],
                         ['products', __('Productos'), __('Con sus variaciones (talla, color…), precios, categorías e inventario: stock, alertas de stock bajo y lo que vale lo que tenés.')],
-                        ['orders', __('Pedidos'), __('Con cada producto comprado (líneas de pedido).')],
+                        ['orders', __('Pedidos'), __('Con lo que se compró en cada uno (adentro del pedido).')],
                     ] as const
                 ).map(([k, label, help]) => (
                     <label key={k} className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-sm">
@@ -292,13 +293,19 @@ function Configured({
     const run = useMutation({ mutationFn: (full: boolean) => api.storeSyncRun(connectionId, full), onSuccess: onQueued, onError: onErr });
     const update = useMutation({
         mutationFn: (patch: Parameters<typeof api.storeSyncUpdate>[1]) => api.storeSyncUpdate(connectionId, patch),
-        onSuccess: onChange,
+        onSuccess: (s) => {
+            // «Editar desde la app» cambia la marca de las listas: candados y banner.
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
+            onChange(s);
+        },
         onError: onErr,
     });
     const remove = useMutation({
         mutationFn: () => api.storeSyncRemove(connectionId),
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['store-sync', connectionId] });
+            // Las listas quedan como listas comunes: sin marca, sin candados.
+            void qc.invalidateQueries({ queryKey: listsKeys.all });
             navigate('/settings?s=conectores');
         },
         onError: onErr,
@@ -486,8 +493,6 @@ function Configured({
                 </p>
             </section>
 
-            <PurchasingSection status={status} />
-
             <WriteBackSection
                 status={status}
                 // Optimista: el interruptor se mueve al tocarlo, no cuando vuelve el servidor.
@@ -635,10 +640,10 @@ function WriteBackSection({
         if (!busy) setLocal(null);
     }, [busy]);
     const on = local ?? pending ?? status.write_back;
-    const groups = (['products', 'variations', 'orders', 'customers'] as const).map((r) => ({
-        resource: r,
-        fields: STORE_WRITE_BACK_FIELDS[r].map((f) => f.label),
-    }));
+    const groups = [
+        { label: __('Productos y variaciones'), fields: STORE_WRITE_BACK_FIELDS.products.map((f) => f.label) },
+        { label: __('Pedidos'), fields: STORE_WRITE_BACK_FIELDS.orders.map((f) => f.label) },
+    ];
     return (
         <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-write-back">
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-3">
@@ -649,7 +654,7 @@ function WriteBackSection({
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                         {__(
-                            'Cambiá un precio, el stock o el estado de un pedido en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
+                            'Cambiá un precio, el stock o el estado de un pedido o de un producto en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
                         )}
                     </p>
                 </div>
@@ -685,15 +690,15 @@ function WriteBackSection({
             </div>
             <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
                 {groups.map((g) => (
-                    <div key={g.resource} className="imcrm-text-xs">
-                        <p className="imcrm-font-medium">{__(STORE_SYNC_RESOURCE_LABEL[g.resource])}</p>
+                    <div key={g.label} className="imcrm-text-xs">
+                        <p className="imcrm-font-medium">{g.label}</p>
                         <p className="imcrm-text-muted-foreground">{g.fields.join(' · ')}</p>
                     </div>
                 ))}
             </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                 {__(
-                    'También los campos de otros plugins que traigas a una columna. El resto (totales, líneas de pedido, clientes invitados) es de sólo lectura: lo calcula o lo guarda la tienda. Necesita una clave con permiso de Lectura/Escritura.',
+                    'Nada más: el nombre, el SKU, las imágenes, las variaciones, los clientes y los totales se editan en WooCommerce, así nunca queda en la app algo que la tienda no tiene. Además, cada fila acepta lo que acepta la tienda: un producto con variaciones no tiene precio ni stock propio (se cambian en cada variación) y con el stock controlado el estado del stock lo calcula WooCommerce. Necesita una clave con permiso de Lectura/Escritura.',
                 )}
             </p>
             {(wb.pushed > 0 || wb.failed > 0) && (
@@ -713,57 +718,6 @@ function WriteBackSection({
     );
 }
 
-// ── Reposición: órdenes de compra (v0.1.209) ───────────────────────────────
-
-function PurchasingSection({ status }: { status: StoreSyncStatus }): JSX.Element | null {
-    const { orders, suppliers } = status.purchase_lists;
-    const products = status.lists.products;
-    if (!orders && !suppliers) return null;
-    const tile = 'imcrm-flex imcrm-flex-col imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-3 imcrm-py-2 hover:imcrm-bg-accent';
-    return (
-        <section className="imcrm-space-y-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-purchasing">
-            <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
-                <Truck className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                {__('Reponer stock')}
-            </h2>
-            <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
-                <li>{__('En Productos (vista «Para reponer») o en Variaciones, seleccioná lo que falta y tocá «Orden de compra»: la cantidad viene sugerida por lo que se vende.')}</li>
-                <li>{__('Pasá la orden a «Enviada»: cada artículo la muestra «En camino».')}</li>
-                <li>{__('Cuando llegue, marcala «Recibida» (o «Recibida parcial» con lo que llegó en cada línea): las unidades se SUMAN al stock de la tienda.')}</li>
-            </ol>
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Para un ajuste suelto (una devolución, un conteo), escribí la cantidad en la columna «Sumar al stock» del producto: se suma a lo que la tienda tenga en ese momento (-3 resta) y queda anotado en «Último movimiento».')}
-            </p>
-            <ul className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-3">
-                {orders && (
-                    <li>
-                        <Link to={`/lists/${orders.slug}/records`} className={tile} data-testid="imcrm-store-purchasing-orders">
-                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Órdenes de compra')}</span>
-                            <span className="imcrm-text-sm imcrm-font-medium">{orders.name}</span>
-                        </Link>
-                    </li>
-                )}
-                {suppliers && (
-                    <li>
-                        <Link to={`/lists/${suppliers.slug}/records`} className={tile} data-testid="imcrm-store-purchasing-suppliers">
-                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Proveedores')}</span>
-                            <span className="imcrm-text-sm imcrm-font-medium">{suppliers.name}</span>
-                        </Link>
-                    </li>
-                )}
-                {products && (
-                    <li>
-                        <Link to={`/lists/${products.slug}/records`} className={tile}>
-                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Qué pedir')}</span>
-                            <span className="imcrm-text-sm imcrm-font-medium">{__('Productos → «Para reponer»')}</span>
-                        </Link>
-                    </li>
-                )}
-            </ul>
-        </section>
-    );
-}
-
 function ResourceTile({ resource, status }: { resource: StoreSyncResource; status: StoreSyncStatus }): JSX.Element {
     const list = status.lists[resource];
     const p = status.progress[resource] ?? { count: 0, done: 0, total: null };
@@ -771,7 +725,12 @@ function ResourceTile({ resource, status }: { resource: StoreSyncResource; statu
     const pct = active && p.total ? Math.min(100, Math.round((p.done / Math.max(p.total, 1)) * 100)) : null;
     const body = (
         <>
-            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__(STORE_SYNC_RESOURCE_LABEL[resource])}</span>
+            <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__(STORE_SYNC_RESOURCE_LABEL[resource])}
+                {/* v0.1.213 — variaciones y líneas viven adentro de su padre. */}
+                {resource === 'variations' && <span className="imcrm-block imcrm-text-[10px]">{__('dentro de cada producto')}</span>}
+                {resource === 'line_items' && <span className="imcrm-block imcrm-text-[10px]">{__('dentro de cada pedido')}</span>}
+            </span>
             <span className="imcrm-text-lg imcrm-font-semibold imcrm-tabular-nums" data-testid={`imcrm-store-sync-count-${resource}`}>
                 {formatNumber(p.count)}
             </span>
@@ -859,7 +818,7 @@ function MetaSection({
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Campos de otros plugins')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Los plugins de WooCommerce guardan datos propios en cada producto, pedido o cliente. Estos son los que encontramos: elegí cuáles traer a una columna.',
+                        'Los plugins de WooCommerce guardan datos propios en cada producto, pedido o cliente. Estos son los que encontramos: elegí cuáles traer a una columna (de sólo lectura: se editan en WooCommerce).',
                     )}
                 </p>
             </div>

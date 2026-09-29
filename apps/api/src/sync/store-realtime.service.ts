@@ -19,8 +19,7 @@ import { isWooPing, parseWooTopic, verifyWooSignature, wooHookTopics } from './w
 /** Lo que el listener de cambios necesita saber de una lista sincronizada. */
 interface WriteTarget {
     syncId: number;
-    resource: StoreMetaResource;
-    /** Ids de los campos que viajan a la tienda (los del catálogo + la meta traída). */
+    /** Ids de los campos que viajan a la tienda (precios, stock y estados). */
     fieldIds: Set<number>;
 }
 
@@ -207,7 +206,6 @@ export class StoreRealtimeService {
         const job: StoreSyncPushJob = {
             tenantId: change.tenantId,
             syncId: target.syncId,
-            resource: target.resource,
             recordId: change.recordId,
             fieldIds: changed,
         };
@@ -220,7 +218,7 @@ export class StoreRealtimeService {
         let error: string | null = null;
         let sent = false;
         try {
-            const res = await this.engine.push(job.tenantId, job.syncId, c, job.resource, job.recordId, job.fieldIds);
+            const res = await this.engine.push(job.tenantId, job.syncId, c, job.recordId, job.fieldIds);
             sent = res !== null;
         } catch (err) {
             error = explain(err);
@@ -261,14 +259,15 @@ export class StoreRealtimeService {
         for (const row of rows) {
             const settings = readSettings(row.settings);
             if (!settings.write_back) continue;
+            // Productos y variaciones comparten lista (v0.1.213): se juntan sus
+            // columnas editables; qué es cada fila lo resuelve el envío.
             for (const resource of Object.keys(STORE_WRITE_BACK_FIELDS) as StoreMetaResource[]) {
                 const listId = settings.lists[resource];
                 if (!listId) continue;
                 const packFields = settings.fields[resource] ?? {};
-                const ids = new Set<number>();
+                const ids = byList.get(listId)?.fieldIds ?? new Set<number>();
                 for (const f of STORE_WRITE_BACK_FIELDS[resource]) if (packFields[f.slug]) ids.add(packFields[f.slug]!);
-                for (const id of Object.values(settings.meta_map[resource] ?? {})) ids.add(id);
-                byList.set(listId, { syncId: row.id, resource, fieldIds: ids });
+                if (ids.size > 0) byList.set(listId, { syncId: row.id, fieldIds: ids });
             }
         }
         this.targets.set(tenantId, { at: Date.now(), byList });

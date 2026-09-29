@@ -12,6 +12,7 @@ import type { RecordEntity } from '@/types/record';
 
 import { ChartBlockView } from './blocks/ChartBlockView';
 import { CompactFieldRow } from './CompactFieldRow';
+import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { KpiBlockView } from './blocks/KpiBlockView';
 import {
     ActionButtonView,
@@ -58,6 +59,7 @@ export function BlockRenderer({
     record,
     headerData,
 }: BlockRendererProps): JSX.Element | null {
+    const storeRules = useStoreRules();
     if (block.type === 'header') {
         // 0.57.36 — las acciones Guardar/Eliminar viven en la toolbar del
         // registro (fuera del template) y en el drawer.
@@ -69,7 +71,9 @@ export function BlockRenderer({
             ?? { titleField: null, subtitleFields: [], statusFields: [], quickActions: [] };
         const tf = data.titleField;
         const editable = recordId > 0 && tf !== null
-            && (tf.type === 'text' || tf.type === 'long_text');
+            && (tf.type === 'text' || tf.type === 'long_text')
+            // v0.1.213 — el nombre de un producto de la tienda se edita en WooCommerce.
+            && !lockedReasonsFor(storeRules, [tf], values)[tf.slug];
         return (
             <RecordHeader
                 record={record}
@@ -344,6 +348,9 @@ function FieldsContent({
     fieldErrors?: Record<string, string>;
     compact: boolean;
 }): JSX.Element {
+    const storeRules = useStoreRules();
+    // v0.1.213 — en una lista de tienda, lo que se edita en WooCommerce va de lectura.
+    const locked = lockedReasonsFor(storeRules, fields, values);
     if (fields.length === 0) {
         return (
             <p className="imcrm-px-4 imcrm-py-3 imcrm-text-xs imcrm-text-muted-foreground">
@@ -363,6 +370,7 @@ function FieldsContent({
                         value={values[f.slug]}
                         onChange={(v) => setValue(f.slug, v)}
                         error={fieldErrors?.[f.slug]}
+                        lockedReason={locked[f.slug] ?? null}
                     />
                 ))}
             </div>
@@ -376,6 +384,7 @@ function FieldsContent({
             values={values}
             onChange={onChange}
             fieldErrors={fieldErrors}
+            lockedReasons={locked}
         />
     );
 }

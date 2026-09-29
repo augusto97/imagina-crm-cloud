@@ -12,6 +12,7 @@ import {
     formatDuration,
     formatPhone,
     isDataField,
+    isStoreField,
     isThroughField,
     jsonbKeyForField,
     LOOKUP_TARGET_TYPES,
@@ -19,11 +20,13 @@ import {
     resolveTitleFieldId,
     ROLLUP_MINMAX_TYPES,
     ROLLUP_NUMERIC_TYPES,
+    readStoreListMarker,
     slugify,
     validateFieldValue,
     type CreateFieldInput,
     type Field,
     type FieldType,
+    type StoreListMarker,
     type UpdateFieldInput,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -363,8 +366,11 @@ export class FieldsService {
         listIdOrSlug: string,
         fieldIdOrSlug: string,
         patch: UpdateFieldInput,
+        /** `internal`: la sincronización con la tienda (puede tocar sus propias columnas). */
+        opts: { internal?: boolean } = {},
     ): Promise<Field> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        if (!opts.internal) await this.assertStoreFieldPatch(tenantId, listId, fieldIdOrSlug, patch);
 
         // Techo de índices (v0.1.115): sólo al ENCENDERLO. El campo actual se
         // excluye del conteo para que re-guardar uno ya indexado no rebote.
@@ -445,10 +451,23 @@ export class FieldsService {
         return toField(row);
     }
 
-    async remove(tenantId: number, listIdOrSlug: string, fieldIdOrSlug: string): Promise<void> {
+    async remove(
+        tenantId: number,
+        listIdOrSlug: string,
+        fieldIdOrSlug: string,
+        opts: { internal?: boolean } = {},
+    ): Promise<void> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const marker = opts.internal ? null : await this.storeMarker(tenantId, listId);
         const removedId = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
+            if (marker && isStoreField(marker, current.id)) {
+                throw new BadRequestException({
+                    code: 'store_field_locked',
+                    message: `«${current.label}» viene de ${marker.store_name ? `la tienda ${marker.store_name}` : 'la tienda'}: no se puede borrar mientras se sincronice.`,
+                    data: { status: 400 },
+                });
+            }
             await this.repo.remove(tx, tenantId, listId, current.id);
             return current.id;
         });
@@ -474,6 +493,50 @@ export class FieldsService {
         });
         this.realtime.fields(tenantId, listId);
         return rows.map(toField);
+    }
+
+    /** El marcador de lista de tienda (v0.1.213), o null si es una lista común. */
+    private async storeMarker(tenantId: number, listId: number): Promise<StoreListMarker | null> {
+        const list = await this.lists.get(tenantId, String(listId));
+        return readStoreListMarker(list.settings);
+    }
+
+    /**
+     * Una columna que viene de la tienda (v0.1.213) sólo cambia de NOMBRE,
+     * descripción, posición o índice: cambiarle el tipo, las opciones o el
+     * nombre interno haría que la próxima sincronización no la reconozca (o
+     * escriba valores que el campo ya no acepta).
+     */
+    private async assertStoreFieldPatch(
+        tenantId: number,
+        listId: number,
+        fieldIdOrSlug: string,
+        patch: UpdateFieldInput,
+    ): Promise<void> {
+        const marker = await this.storeMarker(tenantId, listId);
+        if (!marker) return;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.resolveField(tx, tenantId, listId, fieldIdOrSlug));
+        if (!isStoreField(marker, current.id)) return;
+        const allowed = new Set(['label', 'description', 'position', 'is_indexed']);
+        const touched = Object.entries(patch).filter(([k, v]) => v !== undefined && !allowed.has(k));
+        // Reenviar el MISMO valor (un form que manda todo) no es un cambio.
+        const same: Record<string, unknown> = {
+            type: current.type,
+            slug: current.slug,
+            is_required: current.isRequired,
+            is_unique: current.isUnique,
+        };
+        const real = touched.filter(([k, v]) => {
+            if (k in same) return v !== same[k];
+            if (k === 'config') return canonicalJson(v) !== canonicalJson(current.config ?? {});
+            return true;
+        });
+        if (real.length === 0) return;
+        throw new BadRequestException({
+            code: 'store_field_locked',
+            message: `«${current.label}» viene de la tienda: sólo se le puede cambiar el nombre y la descripción.`,
+            data: { status: 400 },
+        });
     }
 
     /** Resuelve el list_id validando pertenencia al tenant (404 si no existe). */
@@ -767,4 +830,13 @@ function bridgeValue(from: FieldType, to: FieldType, raw: unknown): unknown {
         return String(raw);
     }
     return raw;
+}
+
+/** JSON con claves ordenadas: JSONB reordena las claves, así que el orden no es un cambio. */
+function canonicalJson(v: unknown): string {
+    return JSON.stringify(v, (_k, val: unknown) =>
+        val && typeof val === 'object' && !Array.isArray(val)
+            ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+            : val,
+    );
 }

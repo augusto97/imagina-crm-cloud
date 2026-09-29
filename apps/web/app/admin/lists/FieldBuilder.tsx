@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { isStoreField, readStoreListMarker } from '@imagina-base/shared';
 import {
     Columns3,
     GripVertical,
@@ -10,6 +11,7 @@ import {
     Layers,
     List as ListIcon,
     Loader2,
+    Lock,
     MoreHorizontal,
     Pencil,
     Plus,
@@ -90,6 +92,9 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const navigate = useNavigate();
     const list = useList(listId);
     const listData = list.data;
+    // v0.1.213 — columnas que vienen de la tienda: sólo cambian de nombre.
+    const storeMarker = readStoreListMarker(listData?.settings);
+    const fromStore = (f: FieldEntity): boolean => (storeMarker ? isStoreField(storeMarker, f.id) : false);
     const lists = useLists();
     const fields = useFields(listId);
     const types = useFieldTypes();
@@ -435,6 +440,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                                         onDuplicate={() => void handleDuplicate(field)}
                                                         onCopyId={() => void handleCopyId(field)}
                                                         onDelete={() => void handleDelete(field)}
+                                                        storeField={fromStore(field)}
                                                         onMakeTitle={
                                                             canBeTitle(field) && !field.is_primary
                                                                 ? () => makeTitle(field)
@@ -478,6 +484,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                 listId={listId}
                                 field={selected}
                                 onDelete={() => void handleDelete(selected)}
+                                storeField={fromStore(selected)}
                                 onMakeTitle={
                                     canBeTitle(selected) && !selected.is_primary
                                         ? () => makeTitle(selected)
@@ -516,6 +523,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                 listId={listId}
                                 field={selected}
                                 onDelete={() => void handleDelete(selected)}
+                                storeField={fromStore(selected)}
                                 onMakeTitle={
                                     canBeTitle(selected) && !selected.is_primary
                                         ? () => makeTitle(selected)
@@ -530,6 +538,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
             <FieldDialog
                 listId={listId}
                 field={editingField}
+                storeField={editingField ? fromStore(editingField) : false}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
             />
@@ -664,6 +673,8 @@ interface FieldRowProps {
     onCopyId: () => void;
     onDelete: () => void;
     onMakeTitle?: () => void;
+    /** Viene de la tienda: se marca y no se borra. */
+    storeField?: boolean;
 }
 
 function FieldRow({
@@ -679,6 +690,7 @@ function FieldRow({
     onCopyId,
     onDelete,
     onMakeTitle,
+    storeField = false,
 }: FieldRowProps): JSX.Element {
     const Icon = fieldTypeIcon(field.type);
     return (
@@ -717,6 +729,17 @@ function FieldRow({
                         <Badge variant="secondary" className="imcrm-shrink-0 imcrm-gap-1">
                             <KeyRound className="imcrm-h-3 imcrm-w-3" />
                             {__('Título')}
+                        </Badge>
+                    )}
+                    {storeField && (
+                        <Badge
+                            variant="outline"
+                            className="imcrm-shrink-0 imcrm-gap-1"
+                            title={__('Viene de WooCommerce: sólo se le cambia el nombre.')}
+                            data-testid="field-store-badge"
+                        >
+                            <Lock className="imcrm-h-3 imcrm-w-3" />
+                            {__('WooCommerce')}
                         </Badge>
                     )}
                 </span>
@@ -775,11 +798,15 @@ function FieldRow({
                         <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                         {__('Copiar ID de campo')}
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem danger onSelect={onDelete}>
-                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                        {__('Eliminar de esta lista')}
-                    </DropdownMenuItem>
+                    {!storeField && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem danger onSelect={onDelete}>
+                                <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                {__('Eliminar de esta lista')}
+                            </DropdownMenuItem>
+                        </>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
         </li>

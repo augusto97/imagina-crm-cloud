@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Lock, Pencil } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -39,6 +39,11 @@ interface CompactFieldRowProps {
      * (layout CRM) que ya usan esta fila sin icono.
      */
     showTypeIcon?: boolean;
+    /**
+     * v0.1.213 — En una lista de tienda, por qué este campo no se puede
+     * cambiar acá (se muestra de sólo lectura, con el motivo). null = libre.
+     */
+    lockedReason?: string | null;
 }
 
 /**
@@ -62,6 +67,7 @@ export function CompactFieldRow({
     onChange,
     error,
     showTypeIcon = false,
+    lockedReason = null,
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
     const TypeIcon = fieldTypeIcon(field.type);
@@ -84,8 +90,9 @@ export function CompactFieldRow({
         // v0.1.209 — relación: selector de registros con buscador.
         field.type === 'relation';
 
-    // Tipos read-only (computed / lookup / rollup): nunca editables.
-    const isReadOnly = isDerivedFieldType(field.type);
+    // Tipos read-only (computed / lookup / rollup): nunca editables. Y en
+    // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
+    const isReadOnly = isDerivedFieldType(field.type) || lockedReason !== null;
 
     return (
         <div
@@ -115,12 +122,19 @@ export function CompactFieldRow({
             </label>
 
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
-                {isInlineControl ? (
-                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} />
-                ) : isReadOnly ? (
-                    <div className="imcrm-min-h-[24px] imcrm-py-0.5 imcrm-text-sm">
-                        <FieldValueDisplay field={field} value={value} />
+                {isReadOnly ? (
+                    <div
+                        className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-gap-1.5 imcrm-py-0.5 imcrm-text-sm"
+                        title={lockedReason ?? undefined}
+                        data-testid={lockedReason ? 'imcrm-field-locked' : undefined}
+                    >
+                        <span className="imcrm-min-w-0 imcrm-flex-1">
+                            <FieldValueDisplay field={field} value={value} />
+                        </span>
+                        {lockedReason && <Lock className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground/60" aria-label={lockedReason} />}
                     </div>
+                ) : isInlineControl ? (
+                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} />
                 ) : editing ? (
                     <EditingControl
                         field={field}

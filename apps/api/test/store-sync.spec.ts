@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createHmac } from 'node:crypto';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -164,14 +164,16 @@ import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { AutomationScheduler } from '../src/automations/automation-scheduler.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
+import { AutomationEngine } from '../src/automations/automation-engine.service';
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { connectionSyncs, dashboards, fields, lists, plans, records, relations, savedViews, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
-import { INVENTORY_FIELD_SLUGS, RESTOCK_FIELD_SLUGS } from '../src/sync/woocommerce/woo-pack';
+import { AggregateService } from '../src/aggregate/aggregate.service';
+import { ImportService } from '../src/import/import.service';
+import { automationRuns, automations, connectionSyncs, dashboards, lists, plans, records, relations, savedViews, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -189,7 +191,6 @@ import { StoreSyncQueue, type StoreSyncPushJob } from '../src/sync/store-sync.qu
 import { StoreRealtimeService } from '../src/sync/store-realtime.service';
 import { RecordChangeHub } from '../src/records/record-change-hub';
 import { StoreSyncService } from '../src/sync/store-sync.service';
-import { StorePurchasingService } from '../src/sync/store-purchasing.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { BlueprintService } from '../src/templates/blueprint.service';
 import { ViewsRepository } from '../src/views/views.repository';
@@ -231,10 +232,6 @@ class CapturingQueue extends StoreSyncQueue {
     }
     override enqueuePush(job: StoreSyncPushJob): void {
         this.pushes.push(job);
-    }
-    /** Sin cola: los trabajos de compras se procesan en el acto (el camino "sin Redis"). */
-    override enqueuePurchase(): boolean {
-        return false;
     }
 }
 
@@ -325,10 +322,12 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
     let svc: StoreSyncService;
     let fieldsService: FieldsService;
     let recordsService: RecordsService;
+    let aggregate: AggregateService;
+    let importer: ImportService;
+    let listsSvc: ListsService;
     let dispatcher: CapturingDispatcher;
     let queue: CapturingQueue;
     let realtime: StoreRealtimeService;
-    let purchasing: StorePurchasingService;
     let tenantId: number;
     let otherTenant: number;
     let adminId: number;
@@ -371,14 +370,15 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const activity = new ActivityService(tenantDb, new ActivityRepository(), listsService);
         const hub = new RecordChangeHub();
         recordsService = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, activity, dispatcher, new RelationsRepository(), undefined, hub);
+        aggregate = new AggregateService(tenantDb, listsService, fieldsService);
+        importer = new ImportService(tenantDb, listsService, fieldsService, new RecordsRepository(), billing, rt);
+        listsSvc = listsService;
         const engine = new StoreSyncEngine(tenantDb, fieldsService, billing, rt, dispatcher, activity, redis);
         queue = new CapturingQueue();
         realtime = new StoreRealtimeService(tenantDb, pg.db, env, engine, queue);
         svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime);
         realtime.setCredsResolver((t, s) => svc.credsForSync(t, s));
         hub.subscribe((c) => realtime.onRecordChange(c));
-        purchasing = new StorePurchasingService(tenantDb, redis, engine, queue, rt, recordsService, svc);
-        hub.subscribe((c) => purchasing.onRecordChange(c));
 
         await pg.db.insert(plans).values({ slug: 'grande', name: 'Grande', maxRecords: null }).onConflictDoNothing();
         await pg.db.insert(plans).values({ slug: 'mini', name: 'Mini', maxRecords: 30 }).onConflictDoNothing();
@@ -416,12 +416,31 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         ).then((r) => r.map((x) => ({ id: x.id, ...x.data })));
     }
 
+
+    /** Filas de primer nivel (pedidos, productos) y subtareas (líneas, variaciones). */
+    async function tree(tId: number, listId: number) {
+        const all = await withTenant(pg.db, tId, (tx) =>
+            tx
+                .select({ id: records.id, parentId: records.parentId, data: records.data })
+                .from(records)
+                .where(and(eq(records.listId, listId), isNull(records.deletedAt))),
+        );
+        type TreeRow = Record<string, unknown> & { id: number; parentId: number | null };
+        const flat = (r: (typeof all)[number]): TreeRow => ({ ...(r.data as Record<string, unknown>), id: r.id, parentId: r.parentId });
+        return {
+            roots: all.filter((r) => r.parentId === null).map(flat),
+            children: all.filter((r) => r.parentId !== null).map(flat),
+        };
+    }
+
     let connId: number;
     let syncId: number;
     let st: Awaited<ReturnType<StoreSyncService['status']>>;
-    let fieldIds: Record<string, Record<string, number>>;
+    let F: Record<string, Record<string, number>>;
+    const k = (resource: string, slug: string) => `f${F[resource]![slug]}`;
+    const admin = () => ({ userId: adminId, role: 'admin' as const });
 
-    it('alta: carpeta con cinco listas vinculadas + tablero, moneda de la tienda, y encola la importación', async () => {
+    it('alta: carpeta con TRES listas (variaciones y líneas viven en su padre), dos tableros y la marca de cada lista', async () => {
         seedStore(230);
         connId = await connect(tenantId);
         st = await svc.setup(tenantId, adminId, 'admin', connId, {
@@ -433,113 +452,112 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         syncId = await syncIdOf(tenantId, connId);
         expect(st.configured).toBe(true);
         expect(st.store_name).toContain('Tienda Test');
-        expect(Object.keys(st.lists).sort()).toEqual(['customers', 'line_items', 'orders', 'products', 'variations']);
+        expect(st.lists.variations!.id).toBe(st.lists.products!.id);
+        expect(st.lists.line_items!.id).toBe(st.lists.orders!.id);
+        const inFolder = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: lists.id }).from(lists).where(eq(lists.groupId, st.folder_id!)));
+        expect(inFolder).toHaveLength(3);
         expect(st.dashboard_id).not.toBeNull();
         expect(st.inventory_dashboard_id).not.toBeNull();
-        expect(st.folder_id).not.toBeNull();
-        // v0.1.208 — la vista «Para reponer» nace en Productos y Variaciones
-        // (una config inválida se saltaba con un aviso en el log, en silencio).
         const reponer = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(eq(savedViews.name, 'Para reponer')));
-        expect(reponer).toHaveLength(2);
-        const [invDash] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.inventory_dashboard_id!)));
-        expect((invDash!.widgets as unknown[]).length).toBe(11);
-        // Las tablas de los tableros eligen sus columnas (la clave que lee el widget).
-        const tables = (invDash!.widgets as Array<{ type: string; config: Record<string, unknown> }>).filter((w) => w.type === 'table');
-        expect(tables.every((w) => Array.isArray(w.config.visible_field_ids) && (w.config.visible_field_ids as unknown[]).length === 6)).toBe(true);
-        // v0.1.209 — las listas de compras nacen con el pack y cada lista lleva su marca.
-        expect(st.purchase_lists.suppliers).not.toBeNull();
-        expect(st.purchase_lists.orders).not.toBeNull();
-        expect(st.purchase_lists.lines).not.toBeNull();
-        const marked = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: lists.id, settings: lists.settings }).from(lists));
-        const roleOf = (id: number) => (marked.find((l) => l.id === id)!.settings as { store_sync?: { role: string; connection_id: number } }).store_sync;
-        expect(roleOf(st.lists.products!.id)).toEqual({ connection_id: connId, role: 'products' });
-        expect(roleOf(st.purchase_lists.orders!.id)).toEqual({ connection_id: connId, role: 'purchase_orders' });
+        expect(reponer).toHaveLength(1);
         expect(queue.runs).toEqual([{ tenantId, syncId, opts: { full: true } }]);
 
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        fieldIds = (row!.settings as { fields: Record<string, Record<string, number>> }).fields;
-        // La moneda y los decimales de la tienda van a los campos de dinero.
+        F = (row!.settings as { fields: Record<string, Record<string, number>> }).fields;
+        expect(F.variations).toEqual(F.products);
+        expect(F.line_items).toEqual(F.orders);
+        // Cada lista lleva su marca: qué columnas son de la tienda y si se edita desde la app.
+        const marked = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: lists.id, settings: lists.settings }).from(lists));
+        const marker = (id: number) => (marked.find((l) => l.id === id)!.settings as { store_sync?: Record<string, unknown> }).store_sync;
+        expect(marker(st.lists.products!.id)).toMatchObject({ connection_id: connId, role: 'products', write_back: false, fields: F.products });
+        expect(marker(st.lists.orders!.id)).toMatchObject({ role: 'orders' });
         const precio = await fieldsService.listByListId(tenantId, st.lists.products!.id);
         expect(precio.find((f) => f.slug === 'precio')!.config).toMatchObject({ currency: 'COP', precision: 0 });
-        // Una segunda alta para la misma tienda se rechaza.
         await expect(
             svc.setup(tenantId, adminId, 'admin', connId, { resources: { customers: true, products: true, orders: true }, orders_since: null, mode: 'interval', interval_minutes: 15 }),
         ).rejects.toThrow();
     });
 
-    it('importación inicial: clientes (con invitados), productos, variaciones, pedidos paginados y líneas — sin disparar automatizaciones', async () => {
+    it('importación inicial: variaciones como SUBTAREAS del producto y líneas como SUBTAREAS del pedido — sin disparar automatizaciones', async () => {
         expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
         st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.last_error).toBeNull();
         expect(st.initial_done).toBe(true);
-        expect(st.progress.customers!.count).toBe(4); // 3 registrados + la invitada
+        expect(st.progress.customers!.count).toBe(4);
         expect(st.progress.products!.count).toBe(2);
         expect(st.progress.variations!.count).toBe(2);
-        expect(st.progress.orders!.count).toBe(230); // 3 páginas de 100
+        expect(st.progress.orders!.count).toBe(230);
         expect(st.progress.line_items!.count).toBe(173 * 2 + 57);
         expect(dispatcher.events).toHaveLength(0);
 
-        // La invitada existe UNA vez (su email normalizado) aunque tenga 57 pedidos.
-        const customers = await rows(tenantId, st.lists.customers!.id);
-        const email = `f${fieldIds.customers!.email}`;
-        expect(customers.filter((c) => String(c[email]).toLowerCase() === 'invitada@correo.co')).toHaveLength(1);
+        const products = await tree(tenantId, st.lists.products!.id);
+        expect(products.roots).toHaveLength(2);
+        const camiseta = products.roots.find((r) => r[k('products', 'woo_id')] === '20')!;
+        // Las dos tallas cuelgan de la camiseta.
+        expect(products.children.map((c) => [c.parentId, c[k('products', 'nombre')], c[k('products', 'tipo')]]).sort()).toEqual([
+            [camiseta.id, 'Camiseta — M', 'variacion'],
+            [camiseta.id, 'Camiseta — S', 'variacion'],
+        ]);
+        const orders = await tree(tenantId, st.lists.orders!.id);
+        expect(orders.roots).toHaveLength(230);
+        expect(orders.children).toHaveLength(173 * 2 + 57);
+        expect(orders.roots.every((o) => o[k('orders', 'tipo')] === 'pedido')).toBe(true);
+        expect(orders.children.every((l) => l[k('orders', 'tipo')] === 'linea')).toBe(true);
+        // La línea de una talla apunta al producto Y a la variación.
+        const rel = await withTenant(pg.db, tenantId, (tx) => tx.select().from(relations).where(eq(relations.fieldId, F.orders!.producto!)));
+        expect(rel.length).toBe(173 * 2 + 57 + 173);
 
-        // Variación vinculada a su producto; línea a pedido + producto + variación.
-        const variations = await rows(tenantId, st.lists.variations!.id);
-        const vNombre = `f${fieldIds.variations!.nombre}`;
-        expect(variations.map((v) => v[vNombre]).sort()).toEqual(['Camiseta — M', 'Camiseta — S']);
-        const rel = await withTenant(pg.db, tenantId, (tx) =>
-            tx.select().from(relations).where(eq(relations.fieldId, fieldIds.line_items!.variacion!)),
-        );
-        expect(rel.length).toBe(173);
+        // Rollups: la camiseta suma TODAS sus tallas y cada talla las suyas.
+        const res = await recordsService.list(tenantId, admin(), st.lists.products!.slug, { limit: 10, include_subtasks: true } as never);
+        const byWoo = (w: string) => res.data.find((r) => r.data[k('products', 'woo_id')] === w)!;
+        expect(byWoo('10').data[k('products', 'unidades_vendidas')]).toBe(173 * 2 + 57);
+        expect(byWoo('20').data[k('products', 'unidades_vendidas')]).toBe(173);
+        expect(Number(byWoo('21').data[k('products', 'unidades_vendidas')]) + Number(byWoo('22').data[k('products', 'unidades_vendidas')])).toBe(173);
+        const cl = await recordsService.list(tenantId, admin(), st.lists.customers!.slug, { limit: 10 } as never);
+        const guest = cl.data.find((r) => String(r.data[k('customers', 'email')]).toLowerCase() === 'invitada@correo.co')!;
+        // Suma PEDIDOS (las líneas no tienen cliente y además se filtra por tipo).
+        expect(guest.data[k('customers', 'total_comprado')]).toBe(57 * 20000);
+        expect(guest.data[k('customers', 'pedidos')]).toBe(57);
 
-        // Los rollups calculan: unidades vendidas de la taza y total de la invitada.
-        const res = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.products!.slug, { limit: 10 } as never);
-        const taza = res.data.find((r) => r.data[`f${fieldIds.products!.nombre}`] === 'Taza')!;
-        expect(taza.data[`f${fieldIds.products!.unidades_vendidas}`]).toBe(173 * 2 + 57);
-        const cl = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.customers!.slug, { limit: 10 } as never);
-        const guest = cl.data.find((r) => String(r.data[email]).toLowerCase() === 'invitada@correo.co')!;
-        expect(guest.data[`f${fieldIds.customers!.total_comprado}`]).toBe(57 * 20000);
+        // Inventario: la camiseta es el RESUMEN de sus tallas (S=5 → bajo, M=0 → agotado).
+        expect(camiseta[k('products', 'stock')]).toBe(5);
+        expect(camiseta[k('products', 'estado_inventario')]).toBe('bajo');
+        expect(camiseta[k('products', 'valor_inventario')]).toBe(5 * 30000);
+        const taza = products.roots.find((r) => r[k('products', 'woo_id')] === '10')!;
+        expect(taza[k('products', 'estado_inventario')]).toBe('en_stock');
+        expect(taza[k('products', 'valor_inventario')]).toBe(50 * 20000);
+        const m22 = products.children.find((r) => r[k('products', 'woo_id')] === '22')!;
+        expect(m22[k('products', 'estado_inventario')]).toBe('agotado');
+        expect(m22[k('products', 'controla_stock')]).toBe(true);
 
-        // Meta descubierta, con los internos marcados.
         const keys = st.meta_keys.products ?? [];
-        expect(keys.find((k) => k.key === 'garantia_meses')).toMatchObject({ private: false, suggested_type: 'number', field_id: null });
-        expect(keys.find((k) => k.key === '_edit_lock')).toMatchObject({ private: true });
-
-        // v0.1.208 — INVENTARIO: estado, umbral general de la tienda (5), valor
-        // en stock, y la variación cuyo stock lleva el padre ("parent").
-        const inv = (resource: 'products' | 'variations', slug: string) => `f${fieldIds[resource]![slug]}`;
-        const byWoo = async (resource: 'products' | 'variations', wooId: string) =>
-            (await rows(tenantId, st.lists[resource]!.id)).find((r) => r[inv(resource, 'woo_id')] === wooId)!;
-        const taza10 = await byWoo('products', '10');
-        expect(taza10[inv('products', 'estado_inventario')]).toBe('en_stock');
-        expect(taza10[inv('products', 'controla_stock')]).toBe(true);
-        expect(taza10[inv('products', 'valor_inventario')]).toBe(50 * 20000);
-        const s21 = await byWoo('variations', '21');
-        expect(s21[inv('variations', 'estado_inventario')]).toBe('bajo');
-        const m22 = await byWoo('variations', '22');
-        expect(m22[inv('variations', 'estado_inventario')]).toBe('agotado');
-        expect(m22[inv('variations', 'controla_stock')]).toBe(true);
-        expect(m22[inv('variations', 'stock')]).toBe(0);
-        expect(st.inventory_dashboard_id).not.toBeNull();
-        // El producto variable suma el stock de sus variaciones (rollup).
-        const prods = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.products!.slug, { limit: 10 } as never);
-        const camiseta = prods.data.find((r) => r.data[inv('products', 'woo_id')] === '20')!;
-        expect(camiseta.data[inv('products', 'stock_variaciones')]).toBe(5);
-        // Un producto variable sin stock propio lo lleva en sus variaciones.
-        expect(camiseta.data[inv('products', 'estado_inventario')]).toBe('por_variacion');
+        expect(keys.find((x) => x.key === 'garantia_meses')).toMatchObject({ private: false, suggested_type: 'number', field_id: null });
     });
 
-    it('re-correr no duplica nada, y lo que no cambió no se re-escribe', async () => {
-        const before = (await rows(tenantId, st.lists.orders!.id)).length;
+    it('el listado muestra sólo el primer nivel (con cuántas subtareas tiene); el pie y los grupos cuentan lo que se ve', async () => {
+        const page = await recordsService.list(tenantId, admin(), st.lists.orders!.slug, { limit: 5, with_total: true } as never);
+        expect(page.meta.total).toBe(230);
+        expect(page.data.every((r) => (r.subtask_count ?? 0) >= 1)).toBe(true);
+        // El pie suma los TOTALES de los pedidos, no pedidos + líneas.
+        const foot = await aggregate.footer(tenantId, st.lists.orders!.slug, { fieldIds: [F.orders!.total!] });
+        const expected = store.orders.reduce((sum, o) => sum + Number(o.total), 0);
+        expect(foot.totals.total!.sum).toBe(expected);
+        // Agrupar por estado cuenta pedidos.
+        const g = await aggregate.run(tenantId, st.lists.orders!.slug, { metric: 'count', group_by_field_id: F.orders!.estado }, { rootsOnly: true });
+        expect(g.groups!.reduce((sum, x) => sum + Number(x.value), 0)).toBe(230);
+    });
+
+    it('re-correr no duplica nada', async () => {
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
         expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
-        expect((await rows(tenantId, st.lists.orders!.id)).length).toBe(before);
-        expect((await rows(tenantId, st.lists.line_items!.id)).length).toBe(173 * 2 + 57);
+        const orders = await tree(tenantId, st.lists.orders!.id);
+        expect(orders.roots).toHaveLength(230);
+        expect(orders.children).toHaveLength(173 * 2 + 57);
+        expect((await tree(tenantId, st.lists.products!.id)).children).toHaveLength(2);
         expect(dispatcher.events).toHaveLength(0);
     });
 
-    it('incremental: trae sólo lo modificado, borra la línea que el pedido ya no tiene y dispara las automatizaciones', async () => {
+    it('incremental: trae lo modificado, saca la línea que el pedido ya no tiene y dispara las automatizaciones', async () => {
         const calls = store.calls.length;
         const edited = store.orders[5]!;
         edited.status = 'refunded';
@@ -552,17 +570,22 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.last_error).toBeNull();
         expect(st.progress.orders!.count).toBe(231);
-        // El pedido editado perdió su segunda línea: 1 menos + 1 del pedido nuevo.
         expect(st.progress.line_items!.count).toBe(173 * 2 + 57);
-        // Pidió los pedidos modificados desde el cursor (no la tienda entera).
         const orderCalls = store.calls.slice(calls).filter((c) => c.url.includes('/wc/v3/orders'));
         expect(orderCalls.every((c) => c.url.includes('modified_after='))).toBe(true);
+        // La línea nueva cuelga del pedido nuevo, y la del pedido editado copia su estado.
+        const orders = await tree(tenantId, st.lists.orders!.id);
+        const freshRec = orders.roots.find((o) => o[k('orders', 'woo_id')] === String(fresh.id))!;
+        const freshLines = orders.children.filter((l) => l.parentId === freshRec.id);
+        expect(freshLines).toHaveLength(1);
+        expect(freshLines[0]![k('orders', 'cantidad')]).toBe(3);
+        const editedRec = orders.roots.find((o) => o[k('orders', 'woo_id')] === String(edited.id))!;
+        const editedLines = orders.children.filter((l) => l.parentId === editedRec.id);
+        expect(editedLines).toHaveLength(1);
+        expect(editedLines[0]![k('orders', 'estado')]).toBe('refunded');
 
-        const orderEvents = dispatcher.events.filter((e) => e.listId === st.lists.orders!.id);
+        const orderEvents = dispatcher.events.filter((e) => e.listId === st.lists.orders!.id && e.after?.[k('orders', 'tipo')] === 'pedido');
         expect(orderEvents.map((e) => e.trigger).sort()).toEqual(['record_created', 'record_updated']);
-        const upd = orderEvents.find((e) => e.trigger === 'record_updated')!;
-        expect(upd.after![`f${fieldIds.orders!.estado}`]).toBe('refunded');
-        expect(upd.before![`f${fieldIds.orders!.estado}`]).toBe('completed');
     });
 
     it('una tienda que IGNORA modified_after igual termina (pagina por número) sin duplicar', async () => {
@@ -579,33 +602,17 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         store.customers.push(customer(4, 'Invitada', 'invitada@correo.co'));
         expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
         const customers = await rows(tenantId, st.lists.customers!.id);
-        const email = `f${fieldIds.customers!.email}`;
+        const email = k('customers', 'email');
         const hers = customers.filter((c) => String(c[email]).toLowerCase() === 'invitada@correo.co');
         expect(hers).toHaveLength(1);
-        expect(hers[0]![`f${fieldIds.customers!.registrado}`]).toBe(true);
-        // Las dos claves apuntan al mismo registro: los pedidos viejos de invitada siguen sumando ahí.
-        const all = await withTenant(pg.db, tenantId, (tx) =>
-            tx.select().from(syncLinks).where(and(eq(syncLinks.syncId, syncId), eq(syncLinks.recordId, Number(hers[0]!.id)))),
-        );
-        expect(all.map((l) => l.externalId).sort()).toEqual(['email:invitada@correo.co', 'id:4']);
-        // Una segunda vuelta completa no la vuelve a crear como invitada.
+        expect(hers[0]![k('customers', 'registrado')]).toBe(true);
         expect(await svc.runJob(tenantId, syncId, { full: true })).toBe(true);
         expect((await rows(tenantId, st.lists.customers!.id)).length).toBe(customers.length);
-
-        // Al revés: alguien CON cuenta compra sin iniciar sesión → va a su registro.
-        store.orders.push(orderFor({ customerId: 0, email: 'BETO@x.co', lines: [{ product: 10, qty: 1, price: 20000 }] }));
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        const now = await rows(tenantId, st.lists.customers!.id);
-        expect(now.length).toBe(customers.length);
         st = await svc.status(tenantId, adminId, 'admin', connId);
-        // Cuatro personas, aunque haya cinco claves (el conteo es de registros).
         expect(st.progress.customers!.count).toBe(4);
     });
 
-    it('inventario: una venta baja el stock SIN tocar la fecha del producto y el pedido lo trae igual', async () => {
-        // Lo que hace WooCommerce al vender una talla: baja el stock de la
-        // variación; el producto padre no cambia de fecha → el incremental por
-        // fecha jamás se enteraría. El pedido es la señal.
+    it('inventario: una venta baja el stock de la talla y el producto recalcula su resumen', async () => {
         store.variations[20]![0]!.stock_quantity = 2;
         store.products.find((p) => p.id === 10)!.stock_quantity = 40;
         const venta = orderFor({ customerId: 1, email: 'ana@x.co', lines: [{ product: 10, qty: 1, price: 20000 }, { product: 20, variation: 21, qty: 1, price: 30000 }] });
@@ -616,37 +623,38 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
         st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.last_error).toBeNull();
-        const k = (resource: 'products' | 'variations', slug: string) => `f${fieldIds[resource]![slug]}`;
-        const vars = await rows(tenantId, st.lists.variations!.id);
-        const s21 = vars.find((r) => r[k('variations', 'woo_id')] === '21')!;
-        expect(s21[k('variations', 'stock')]).toBe(2);
-        expect(s21[k('variations', 'estado_inventario')]).toBe('bajo');
-        const prods = await rows(tenantId, st.lists.products!.id);
-        expect(prods.find((r) => r[k('products', 'woo_id')] === '10')![k('products', 'stock')]).toBe(40);
-        // Pidió sólo lo vendido (por `include=`), no el catálogo entero.
+        const products = await tree(tenantId, st.lists.products!.id);
+        const s21 = products.children.find((r) => r[k('products', 'woo_id')] === '21')!;
+        expect(s21[k('products', 'stock')]).toBe(2);
+        expect(s21[k('products', 'estado_inventario')]).toBe('bajo');
+        const camiseta = products.roots.find((r) => r[k('products', 'woo_id')] === '20')!;
+        expect(camiseta[k('products', 'stock')]).toBe(2);
+        expect(products.roots.find((r) => r[k('products', 'woo_id')] === '10')![k('products', 'stock')]).toBe(40);
         expect(store.calls.slice(calls).some((c) => c.url === 'include-variations:21')).toBe(true);
-        // El cambio de stock dispara automatizaciones (p. ej. «Aviso de stock bajo»).
         expect(dispatcher.events.some((e) => e.recordId === Number(s21.id) && e.trigger === 'record_updated')).toBe(true);
-        // Rotación: vendidas en 30 días y meses de cobertura (stock ÷ vendidas).
-        const list = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.variations!.slug, { limit: 10 } as never);
+        // El resumen del padre NO dispara automatizaciones (ya lo hizo la talla).
+        expect(dispatcher.events.some((e) => e.recordId === Number(camiseta.id))).toBe(false);
+        const list = await recordsService.list(tenantId, admin(), st.lists.products!.slug, { limit: 10, parent: camiseta.id } as never);
         const s21r = list.data.find((r) => r.id === Number(s21.id))!;
-        expect(s21r.data[k('variations', 'vendidas_30d')]).toBe(1);
-        expect(s21r.data[k('variations', 'cobertura_meses')]).toBe(2);
+        expect(s21r.data[k('products', 'vendidas_30d')]).toBe(1);
+        expect(s21r.data[k('products', 'cobertura_meses')]).toBe(2);
     });
 
-    it('un campo de otro plugin se trae a una columna y se rellena en los registros existentes', async () => {
+    it('un campo de otro plugin se trae a una columna (de sólo lectura) y se rellena', async () => {
         queue.runs.length = 0;
         st = await svc.mapMeta(tenantId, adminId, 'admin', connId, { resource: 'products', key: 'garantia_meses', label: 'Garantía', type: 'number' });
         expect(queue.runs).toEqual([{ tenantId, syncId, opts: { full: true, only: ['products'] } }]);
-        const mapped = st.meta_keys.products!.find((k) => k.key === 'garantia_meses')!;
-        expect(mapped.field_id).not.toBeNull();
+        const mapped = st.meta_keys.products!.find((x) => x.key === 'garantia_meses')!;
         expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products'] })).toBe(true);
         const products = await rows(tenantId, st.lists.products!.id);
-        expect(products.find((p) => p[`f${fieldIds.products!.nombre}`] === 'Taza')![`f${mapped.field_id}`]).toBe(12);
-        // Dejar de traerla conserva la columna (los datos son de la empresa).
+        const taza = products.find((p) => p[k('products', 'nombre')] === 'Taza')!;
+        expect(taza[`f${mapped.field_id}`]).toBe(12);
+        await expect(
+            recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(taza.id), { data: { [`f${mapped.field_id}`]: 24 } } as never),
+        ).rejects.toThrow(/Se edita en WooCommerce/);
+        // Dejar de traerla: la columna queda y pasa a ser propia (editable).
         st = await svc.unmapMeta(tenantId, adminId, 'admin', connId, { resource: 'products', key: 'garantia_meses' });
-        expect(st.meta_keys.products!.find((k) => k.key === 'garantia_meses')!.field_id).toBeNull();
-        expect((await fieldsService.listByListId(tenantId, st.lists.products!.id)).some((f) => f.id === mapped.field_id)).toBe(true);
+        await recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(taza.id), { data: { [`f${mapped.field_id}`]: 24 } } as never);
     });
 
     it('pausar: el tick no la encola; reanudar sí', async () => {
@@ -661,7 +669,80 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(queue.runs.map((r) => r.syncId)).toEqual([syncId]);
     });
 
-    // ── Fase 3: tiempo real + edición en los dos sentidos (v0.1.207) ──────────
+    // ── Lo que WooCommerce no permitiría (v0.1.213) ───────────────────────────
+
+    it('no se crean, borran ni importan registros en una lista de la tienda', async () => {
+        await expect(
+            recordsService.create(tenantId, admin(), st.lists.products!.slug, { data: { [k('products', 'nombre')]: 'Nuevo' } } as never),
+        ).rejects.toThrow(/se crean en WooCommerce/);
+        const [one] = await rows(tenantId, st.lists.orders!.id);
+        await expect(recordsService.remove(tenantId, admin(), st.lists.orders!.slug, Number(one!.id))).rejects.toThrow(/se borran en WooCommerce/);
+        const bulk = await recordsService.bulk(tenantId, admin(), st.lists.orders!.slug, 'delete', [Number(one!.id)], {});
+        expect(bulk.succeeded).toHaveLength(0);
+        await expect(importer.preview(tenantId, st.lists.customers!.slug, 'nombre\nX')).rejects.toThrow(/importar/);
+    });
+
+    it('columnas: las de la tienda sólo cambian de nombre; las propias son libres', async () => {
+        const products = st.lists.products!.slug;
+        await expect(fieldsService.remove(tenantId, products, String(F.products!.sku))).rejects.toThrow(/no se puede borrar/);
+        await expect(fieldsService.update(tenantId, products, String(F.products!.sku), { type: 'long_text' } as never)).rejects.toThrow(/sólo se le puede cambiar el nombre/);
+        await expect(fieldsService.update(tenantId, products, String(F.products!.sku), { slug: 'otro' } as never)).rejects.toThrow(/sólo se le puede cambiar el nombre/);
+        const renamed = await fieldsService.update(tenantId, products, String(F.products!.sku), { label: 'Código' } as never);
+        expect(renamed.label).toBe('Código');
+        // Una columna propia (sólo en Imagina) se crea, se edita y se borra libre.
+        const own = await fieldsService.create(tenantId, products, { label: 'Notas internas', type: 'text' } as never);
+        const [taza] = (await rows(tenantId, st.lists.products!.id)).filter((r) => r[k('products', 'woo_id')] === '10');
+        await recordsService.update(tenantId, admin(), products, Number(taza!.id), { data: { [`f${own.id}`]: 'revisar' } } as never);
+        await fieldsService.remove(tenantId, products, String(own.id));
+    });
+
+    it('una automatización respeta las mismas reglas: saltea lo que se edita en WooCommerce y no crea registros de la tienda', async () => {
+        const products = st.lists.products!;
+        const own = await fieldsService.create(tenantId, products.slug, { label: 'Revisión', type: 'text' } as never);
+        const [auto] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(automations)
+                .values({
+                    tenantId,
+                    listId: products.id,
+                    name: 'Marcar',
+                    triggerType: 'record_updated',
+                    actions: [
+                        // «Editar desde la app» está apagado: el precio se saltea, la columna propia no.
+                        { type: 'update_field', config: { values: { precio_normal: '1', [own.slug]: 'ok' } } },
+                        { type: 'create_record', config: { target_list: st.lists.orders!.id, values: {} } },
+                    ] as never,
+                })
+                .returning(),
+        );
+        const engine = new AutomationEngine(
+            tenantDb,
+            new AutomationsRepository(),
+            new FieldsRepository(),
+            new RecordsRepository(),
+            new RelationsRepository(),
+            null as never,
+            connectors,
+        );
+        const taza = (await tree(tenantId, products.id)).roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const before = { ...taza };
+        const ordersBefore = (await rows(tenantId, st.lists.orders!.id)).length;
+        await engine.process({ tenantId, listId: products.id, recordId: Number(taza.id), trigger: 'record_updated', before, after: before });
+        const after = (await tree(tenantId, products.id)).roots.find((x) => x.id === taza.id)!;
+        expect(after[`f${own.id}`]).toBe('ok');
+        expect(after[k('products', 'precio_normal')]).toBe(taza[k('products', 'precio_normal')]);
+        expect((await rows(tenantId, st.lists.orders!.id)).length).toBe(ordersBefore);
+        const [run] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto!.id)),
+        );
+        const log = JSON.stringify(run!.actionsLog);
+        expect(log).toMatch(/precio_normal \(/);
+        expect(log).toMatch(/se crean en WooCommerce/);
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(automations).where(eq(automations.id, auto!.id)));
+        await fieldsService.remove(tenantId, products.slug, String(own.id));
+    });
+
+    // ── Tiempo real + edición en los dos sentidos ─────────────────────────────
 
     const hookOf = () => {
         const wh = store.webhooks[0]!;
@@ -680,65 +761,42 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         await expect(svc.update(tenantId, adminId, 'admin', connId, { mode: 'realtime' })).rejects.toThrow(/permiso de escritura/);
         st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.mode).toBe('interval');
-        expect(store.webhooks).toHaveLength(0);
         store.readOnly = false;
     });
 
-    it('tiempo real: registra un aviso por tema, firmado con un secreto propio', async () => {
+    it('tiempo real: registra un aviso por tema; ping ok, token desconocido 404, firma mala 401', async () => {
         st = await svc.update(tenantId, adminId, 'admin', connId, { mode: 'realtime' });
-        expect(st.mode).toBe('realtime');
         expect(st.realtime).toMatchObject({ active: true, webhooks: 10, error: null });
-        expect(store.webhooks.map((w) => w.topic).sort()).toEqual(
-            ['customer.created', 'customer.updated', 'order.created', 'order.deleted', 'order.restored', 'order.updated', 'product.created', 'product.deleted', 'product.restored', 'product.updated'],
-        );
-        const urls = new Set(store.webhooks.map((w) => w.delivery_url));
-        expect(urls.size).toBe(1);
-        expect([...urls][0]).toMatch(/^http:\/\/localhost:5174\/api\/v1\/public\/store-hooks\/[A-Za-z0-9_-]{32}$/);
-        // El secreto viaja a la tienda pero en la base está cifrado.
         const [row] = await pg.db.select().from(storeHooks).where(eq(storeHooks.syncId, syncId));
         expect(row!.secretEnc).not.toContain(hookOf().secret);
-    });
-
-    it('recibir: ping ok, token desconocido 404, firma mala 401 — nada se escribe', async () => {
         const { token } = hookOf();
         await expect(realtime.receive(token, {}, 'webhook_id=5', { webhook_id: '5' })).resolves.toBeUndefined();
         await expect(realtime.receive('x'.repeat(32), { 'x-wc-webhook-topic': 'order.updated' }, '{}', {})).rejects.toThrow(/Not found/);
-        const before = dispatcher.events.length;
         await expect(deliver('order.updated', { ...store.orders[0]!, status: 'cancelled' }, { secret: 'otro' })).rejects.toThrow(/Firma/);
-        expect(dispatcher.events.length).toBe(before);
     });
 
-    it('recibir: un pedido que cambia en la tienda se actualiza al instante y dispara automatizaciones', async () => {
-        const order = store.orders[10]!;
-        order.status = 'cancelled';
-        touch(order);
-        dispatcher.events.length = 0;
-        await deliver('order.updated', order);
-        const orders = await rows(tenantId, st.lists.orders!.id);
-        const rec = orders.find((o) => o[`f${fieldIds.orders!.woo_id}`] === String(order.id))!;
-        expect(rec[`f${fieldIds.orders!.estado}`]).toBe('cancelled');
-        expect(dispatcher.events.some((e) => e.trigger === 'record_updated' && e.recordId === rec.id)).toBe(true);
-        st = await svc.status(tenantId, adminId, 'admin', connId);
-        expect(st.realtime.received).toBe(1);
-        expect(st.realtime.last_received_at).not.toBeNull();
-    });
+    it('recibir: un pedido nuevo llega con sus líneas como subtareas; una talla recalcula su producto; un borrado va a la papelera', async () => {
+        const nuevo = orderFor({ customerId: 3, email: 'caro@x.co', lines: [{ product: 20, variation: 21, qty: 2, price: 30000 }] });
+        store.orders.push(nuevo);
+        await deliver('order.created', nuevo);
+        const orders = await tree(tenantId, st.lists.orders!.id);
+        const rec = orders.roots.find((o) => o[k('orders', 'woo_id')] === String(nuevo.id))!;
+        expect(orders.children.filter((l) => l.parentId === rec.id)).toHaveLength(1);
 
-    it('recibir: una variación llega como product.updated y se reconoce; un borrado manda a la papelera sin borrar', async () => {
         const v = store.variations[20]![0]!;
-        v.stock_quantity = 1;
+        v.stock_quantity = 9;
         v.type = 'variation';
         touch(v);
         await deliver('product.updated', v);
-        const vars = await rows(tenantId, st.lists.variations!.id);
-        expect(vars.find((x) => x[`f${fieldIds.variations!.woo_id}`] === '21')![`f${fieldIds.variations!.stock}`]).toBe(1);
+        const products = await tree(tenantId, st.lists.products!.id);
+        expect(products.children.find((x) => x[k('products', 'woo_id')] === '21')![k('products', 'stock')]).toBe(9);
+        expect(products.roots.find((x) => x[k('products', 'woo_id')] === '20')![k('products', 'stock')]).toBe(9);
 
         await deliver('product.deleted', { id: 10 });
-        const prods = await rows(tenantId, st.lists.products!.id);
-        const taza = prods.find((x) => x[`f${fieldIds.products!.woo_id}`] === '10')!;
-        expect(taza[`f${fieldIds.products!.estado}`]).toBe('trash');
-        // Un borrado de algo que nunca se trajo no crea nada.
+        const after = await tree(tenantId, st.lists.products!.id);
+        expect(after.roots.find((x) => x[k('products', 'woo_id')] === '10')![k('products', 'estado')]).toBe('trash');
         await deliver('product.deleted', { id: 999 });
-        expect((await rows(tenantId, st.lists.products!.id)).length).toBe(prods.length);
+        expect((await tree(tenantId, st.lists.products!.id)).roots.length).toBe(after.roots.length);
     });
 
     it('red de seguridad: un aviso desactivado se reactiva y uno borrado se vuelve a crear', async () => {
@@ -746,78 +804,87 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const gone = store.webhooks.pop()!;
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
         expect(store.webhooks).toHaveLength(10);
-        expect(store.webhooks.every((w) => w.status === 'active')).toBe(true);
         expect(store.webhooks.some((w) => w.topic === gone.topic)).toBe(true);
     });
 
-    it('edición en los dos sentidos: SÓLO lo que cambió viaja a la tienda, y sin rebote', async () => {
-        const actor = { userId: adminId, role: 'admin' as const };
-        const prods = await rows(tenantId, st.lists.products!.id);
-        const camiseta = prods.find((x) => x[`f${fieldIds.products!.woo_id}`] === '20')!;
-        // Apagada: editar no manda nada.
-        queue.pushes.length = 0;
-        await recordsService.update(tenantId, actor, st.lists.products!.slug, Number(camiseta.id), { data: { [`f${fieldIds.products!.precio_normal}`]: 31000 } } as never);
-        await new Promise((r) => setTimeout(r, 100));
-        expect(queue.pushes).toHaveLength(0);
+    it('editar desde la app: apagado todo es de sólo lectura; prendido, sólo precios, stock y estados — y viajan', async () => {
+        const products = st.lists.products!.slug;
+        const tree0 = await tree(tenantId, st.lists.products!.id);
+        const taza = tree0.roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const camiseta = tree0.roots.find((x) => x[k('products', 'woo_id')] === '20')!;
+        const s21 = tree0.children.find((x) => x[k('products', 'woo_id')] === '21')!;
+        // Apagado: ni el precio.
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'precio_normal')]: 21000 } } as never),
+        ).rejects.toThrow(/Editar desde la app/);
 
         st = await svc.update(tenantId, adminId, 'admin', connId, { write_back: true });
-        expect(st.write_back).toBe(true);
-        const priceKey = `f${fieldIds.products!.precio_normal}`;
-        await recordsService.update(tenantId, actor, st.lists.products!.slug, Number(camiseta.id), { data: { [priceKey]: 35000 } } as never);
-        // El oyente de cambios es asíncrono (no frena la edición de la persona).
+        const [lst] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, st.lists.products!.id)));
+        expect((lst!.settings as { store_sync: { write_back: boolean } }).store_sync.write_back).toBe(true);
+
+        // Nombre y SKU siguen siendo de la tienda.
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'nombre')]: 'Otra' } } as never),
+        ).rejects.toThrow(/Se edita en WooCommerce/);
+        // Un producto con variaciones no tiene precio propio.
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(camiseta.id), { data: { [k('products', 'precio_normal')]: 1 } } as never),
+        ).rejects.toThrow(/variaciones no tiene precio propio/);
+        // Un valor que la tienda no aceptaría.
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'precio_rebajado')]: 999999 } } as never),
+        ).rejects.toThrow(/menor que el normal/);
+
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'precio_normal')]: 35000 } } as never);
         await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
-        expect(queue.pushes[0]).toMatchObject({ syncId, resource: 'products', recordId: Number(camiseta.id), fieldIds: [fieldIds.products!.precio_normal] });
-
-        const calls = store.calls.length;
+        expect(queue.pushes[0]).toMatchObject({ syncId, recordId: Number(taza.id), fieldIds: [F.products!.precio_normal] });
+        let calls = store.calls.length;
         await realtime.processPush(queue.pushes[0]!);
-        const put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
-        expect(put.url).toContain('/wc/v3/products/20');
-        // Sólo el precio: el stock (que la tienda pudo haber bajado) no se toca.
+        let put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(put.url).toContain('/wc/v3/products/10');
         expect(JSON.parse(put.body!)).toEqual({ regular_price: '35000' });
-        expect(store.products.find((p) => p.id === 20)!.regular_price).toBe('35000');
-        st = await svc.status(tenantId, adminId, 'admin', connId);
-        expect(st.write_back_status).toMatchObject({ pushed: 1, failed: 0, last_error: null });
 
-        // El aviso que la tienda manda después no encuentra diferencias: nada rebota.
+        // La talla: se reconoce por su vínculo y va a la ruta de variaciones.
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(s21.id), { data: { [k('products', 'stock')]: 7 } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(put.url).toContain('/wc/v3/products/20/variations/21');
+        expect(JSON.parse(put.body!)).toEqual({ manage_stock: true, stock_quantity: 7 });
+        // …y el producto recalcula su resumen con lo que devolvió la tienda.
+        const again = await tree(tenantId, st.lists.products!.id);
+        expect(again.roots.find((x) => x.id === camiseta.id)![k('products', 'stock')]).toBe(7);
+
+        // El aviso que la tienda manda después no rebota.
         dispatcher.events.length = 0;
         queue.pushes.length = 0;
-        await deliver('product.updated', store.products.find((p) => p.id === 20)!);
+        await deliver('product.updated', store.products.find((p) => p.id === 10)!);
         await new Promise((r) => setTimeout(r, 100));
-        expect(dispatcher.events.filter((e) => e.recordId === Number(camiseta.id))).toHaveLength(0);
         expect(queue.pushes).toHaveLength(0);
     });
 
-    it('edición en los dos sentidos: variaciones, clientes (no invitados) y un fallo visible', async () => {
-        const actor = { userId: adminId, role: 'admin' as const };
-        const vars = await rows(tenantId, st.lists.variations!.id);
-        const s22 = vars.find((x) => x[`f${fieldIds.variations!.woo_id}`] === '22')!;
-        queue.pushes.length = 0;
-        await recordsService.update(tenantId, actor, st.lists.variations!.slug, Number(s22.id), { data: { [`f${fieldIds.variations!.stock}`]: 7 } } as never);
-        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
-        const calls = store.calls.length;
-        await realtime.processPush(queue.pushes[0]!);
-        const put = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
-        expect(put.url).toContain('/wc/v3/products/20/variations/22');
-        expect(JSON.parse(put.body!)).toEqual({ manage_stock: true, stock_quantity: 7 });
-
-        // Cliente registrado: el teléfono va a la facturación; la invitada no tiene a quién.
+    it('editar desde la app: el estado de un pedido sí; el de una línea y los clientes no; un rechazo de la tienda queda a la vista', async () => {
+        const orders = await tree(tenantId, st.lists.orders!.id);
+        const pedido = orders.roots[0]!;
+        const linea = orders.children.find((l) => l.parentId === pedido.id)!;
+        await expect(
+            recordsService.update(tenantId, admin(), st.lists.orders!.slug, Number(linea.id), { data: { [k('orders', 'estado')]: 'cancelled' } } as never),
+        ).rejects.toThrow(/líneas de un pedido/);
+        await expect(
+            recordsService.update(tenantId, admin(), st.lists.orders!.slug, Number(pedido.id), { data: { [k('orders', 'estado')]: 'checkout-draft' } } as never),
+        ).rejects.toThrow(/lo pone la tienda/);
         const customers = await rows(tenantId, st.lists.customers!.id);
-        const email = `f${fieldIds.customers!.email}`;
-        const beto = customers.find((c) => c[email] === 'beto@x.co')!;
-        queue.pushes.length = 0;
-        await recordsService.update(tenantId, actor, st.lists.customers!.slug, Number(beto.id), { data: { [`f${fieldIds.customers!.telefono}`]: '+573009998877' } } as never);
-        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
-        const c2 = store.calls.length;
-        await realtime.processPush(queue.pushes[0]!);
-        const put2 = store.calls.slice(c2).find((c) => c.method === 'PUT')!;
-        expect(put2.url).toContain('/wc/v3/customers/2');
-        expect(JSON.parse(put2.body!)).toEqual({ billing: { phone: '+573009998877' } });
+        await expect(
+            recordsService.update(tenantId, admin(), st.lists.customers!.slug, Number(customers[0]!.id), { data: { [k('customers', 'telefono')]: '+573009998877' } } as never),
+        ).rejects.toThrow(/Se edita en WooCommerce/);
 
-        // La tienda rechaza (clave sin escritura): queda contado y con el motivo.
-        store.readOnly = true;
         queue.pushes.length = 0;
-        await recordsService.update(tenantId, actor, st.lists.variations!.slug, Number(s22.id), { data: { [`f${fieldIds.variations!.stock}`]: 8 } } as never);
+        await recordsService.update(tenantId, admin(), st.lists.orders!.slug, Number(pedido.id), { data: { [k('orders', 'estado')]: 'on-hold' } } as never);
         await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        store.readOnly = true;
         await realtime.processPush(queue.pushes[0]!);
         store.readOnly = false;
         st = await svc.status(tenantId, adminId, 'admin', connId);
@@ -828,383 +895,63 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {
         const { token } = hookOf();
         st = await svc.update(tenantId, adminId, 'admin', connId, { mode: 'interval', write_back: false });
-        expect(st.mode).toBe('interval');
         expect(st.realtime.active).toBe(false);
         expect(store.webhooks).toHaveLength(0);
         await expect(realtime.receive(token, { 'x-wc-webhook-topic': 'order.updated' }, '{}', {})).rejects.toThrow(/Not found/);
     });
 
-    // ── Reposición: órdenes de compra y «Sumar al stock» (v0.1.209) ──────────
-
-    const admin = () => ({ userId: adminId, role: 'admin' as const });
-    const settingsNow = async () => {
-        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        return row!.settings as {
-            fields: Record<string, Record<string, number>>;
-            purchase_lists: Record<string, number>;
-            purchase_fields: Record<string, Record<string, number>>;
+    it('migración: una tienda conectada con el pack viejo pasa a subtareas sin perder lo que es de la empresa', async () => {
+        const settings = async () => {
+            const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+            return row!.settings as Record<string, unknown> & { fields: Record<string, Record<string, number>>; lists: Record<string, number> };
         };
-    };
-    const recordOf = async (id: number) => {
-        const [r] = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.id, id)));
-        return r!.data as Record<string, unknown>;
-    };
-    const byWooId = async (resource: 'products' | 'variations', woo: string) =>
-        (await rows(tenantId, st.lists[resource]!.id)).find((r) => r[`f${fieldIds[resource]!.woo_id}`] === woo)!;
-    const putsTo = (from: number, path: string) => store.calls.slice(from).filter((c) => c.method === 'PUT' && c.url.includes(path));
-
-    it('reposición: crear una orden desde Variaciones con la cantidad sugerida; la línea se completa sola y «En camino» sube', async () => {
-        const S = await settingsNow();
-        const L = S.purchase_fields.lines!;
-        const O = S.purchase_fields.orders!;
-        const s21 = await byWooId('variations', '21');
-        const preview = await purchasing.preview(tenantId, admin(), connId, { resource: 'variations', record_ids: [Number(s21.id)] });
-        expect(preview).toHaveLength(1);
-        const p = preview[0]!;
-        // Sin alerta propia: la de la tienda (5). Un mes de venta + la alerta − lo que hay − lo que viene.
-        expect(p.threshold).toBe(5);
-        expect(p.suggested).toBe(Math.max(1, p.sold_30d + 5 - (p.stock ?? 0) - p.in_transit));
-        expect(p.blocked).toBeNull();
-        // Un producto con variaciones no se pide entero.
-        const camiseta = await byWooId('products', '20');
-        const [blocked] = await purchasing.preview(tenantId, admin(), connId, { resource: 'products', record_ids: [Number(camiseta.id)] });
-        expect(blocked!.blocked).toMatch(/variaciones/);
-
-        const made = await purchasing.createOrder(tenantId, admin(), connId, {
-            resource: 'variations',
-            items: [{ record_id: Number(s21.id), quantity: 10, cost: 12000 }],
-            supplier_name: 'Textiles SA',
-            status: 'enviada',
-        });
-        expect(made).toMatchObject({ order_number: 'OC-0001', lines: 1, warnings: [] });
-        const order = await recordOf(made.order_id);
-        expect(order[`f${O.estado}`]).toBe('enviada');
-        expect(order[`f${O.fecha}`]).toBe(new Date().toISOString().slice(0, 10));
-        const [line] = await recordsService
-            .list(tenantId, admin(), String(S.purchase_lists.lines), { limit: 10, related_to: `${L.orden}:${made.order_id}` } as never)
-            .then((r) => r.data);
-        expect(line!.data[`f${L.articulo}`]).toMatch(/Camiseta/);
-        // v0.1.210 — el SKU de la variación viaja a la línea (al proveedor se le pide por SKU).
-        expect(line!.data[`f${L.sku}`]).toBe('CAM-S');
-        expect(line!.data[`f${L.subtotal}`]).toBe(120000);
-        expect(line!.data[`f${L.pendiente}`]).toBe(10);
-        // La variación trae su producto padre: «En camino» del producto también la cuenta.
-        expect(line!.relations?.[`f${L.producto}`]).toEqual([Number(camiseta.id)]);
-        const vars = await recordsService.list(tenantId, admin(), st.lists.variations!.slug, { limit: 10, ids: String(s21.id) } as never);
-        expect(vars.data[0]!.data[`f${fieldIds.variations!.en_camino}`]).toBe(10);
-        const prods = await recordsService.list(tenantId, admin(), st.lists.products!.slug, { limit: 10, ids: String(camiseta.id) } as never);
-        expect(prods.data[0]!.data[`f${fieldIds.products!.en_camino}`]).toBe(10);
-        // El proveedor nuevo quedó vinculado.
-        const [supplier] = await rows(tenantId, S.purchase_lists.suppliers!);
-        expect(supplier![`f${S.purchase_fields.suppliers!.nombre}`]).toBe('Textiles SA');
-    });
-
-    it('reposición: recibir la orden SUMA en la tienda sobre el stock de ese momento; recibir de nuevo no suma dos veces', async () => {
-        const S = await settingsNow();
-        const L = S.purchase_fields.lines!;
-        const O = S.purchase_fields.orders!;
-        const [orderRow] = await rows(tenantId, S.purchase_lists.orders!);
-        const orderId = Number(orderRow!.id);
-        const v21 = store.variations[20]!.find((v) => v.id === 21)!;
-        // Una venta que la app todavía no vio: la tienda tiene MENOS de lo que dice la app.
-        v21.stock_quantity = 3;
-        const calls = store.calls.length;
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.orders), orderId, { data: { [`f${O.estado}`]: 'recibida' } } as never);
-        await vi.waitFor(() => expect(v21.stock_quantity).toBe(13));
-        const puts = putsTo(calls, '/products/20/variations/21');
-        expect(puts).toHaveLength(1);
-        expect(JSON.parse(puts[0]!.body!)).toEqual({ manage_stock: true, stock_quantity: 13 });
-        await vi.waitFor(async () => expect((await recordOf(orderId))[`f${O.resultado}`]).toMatch(/Se sumaron 10 unidades/));
-        const order = await recordOf(orderId);
-        expect(typeof order[`f${O.recibida_el}`]).toBe('string');
-        const lineId = (await rows(tenantId, S.purchase_lists.lines!))[0]!.id as number;
-        const line = await recordOf(lineId);
-        expect(line[`f${L.aplicada}`]).toBe(10);
-        expect(line[`f${L.pendiente}`]).toBe(0);
-        const s21 = await byWooId('variations', '21');
-        expect(s21[`f${fieldIds.variations!.stock}`]).toBe(13);
-        expect(s21[`f${fieldIds.variations!.ultimo_movimiento}`]).toBe('+10 por OC-0001 → stock 13');
-
-        // Marcarla de nuevo (o ir y volver de estado) no suma otra vez.
-        const again = store.calls.length;
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.orders), orderId, { data: { [`f${O.estado}`]: 'recibida_parcial' } } as never);
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.orders), orderId, { data: { [`f${O.estado}`]: 'recibida' } } as never);
-        await new Promise((r) => setTimeout(r, 600));
-        expect(putsTo(again, '/variations/21')).toHaveLength(0);
-        expect(v21.stock_quantity).toBe(13);
-
-        // Corregir lo recibido (llegaron 8, no 10) descuenta SÓLO la diferencia.
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.lines), lineId, { data: { [`f${L.recibida}`]: 8 } } as never);
-        await vi.waitFor(() => expect(v21.stock_quantity).toBe(11));
-        await vi.waitFor(async () => expect((await recordOf(lineId))[`f${L.aplicada}`]).toBe(8));
-    });
-
-    it('reposición: «recibida en parte» suma sólo lo recibido; una variación con el stock en el padre suma en el producto', async () => {
-        const S = await settingsNow();
-        const L = S.purchase_fields.lines!;
-        const O = S.purchase_fields.orders!;
-        // Talla M lleva su stock en el producto (manage_stock: parent).
-        const camiseta = store.products.find((p) => p.id === 20)!;
-        camiseta.manage_stock = true;
-        camiseta.stock_quantity = 3;
-        // (la edición en dos sentidos de más arriba le había puesto stock propio)
-        store.variations[20]!.find((v) => v.id === 22)!.manage_stock = 'parent';
-        const v21 = store.variations[20]!.find((v) => v.id === 21)!;
-        const start21 = Number(v21.stock_quantity);
-        const s21 = await byWooId('variations', '21');
-        const s22 = await byWooId('variations', '22');
-        const made = await purchasing.createOrder(tenantId, admin(), connId, {
-            resource: 'variations',
-            items: [
-                { record_id: Number(s21.id), quantity: 6 },
-                { record_id: Number(s22.id), quantity: 6, cost: 9000 },
-            ],
-            status: 'enviada',
-        });
-        expect(made.order_number).toBe('OC-0002');
-        const lines = (await recordsService.list(tenantId, admin(), String(S.purchase_lists.lines), { limit: 10, related_to: `${L.orden}:${made.order_id}` } as never)).data;
-        const l21 = lines.find((l) => (l.relations?.[`f${L.variacion}`] ?? [])[0] === Number(s21.id))!;
-        // El costo de la última compra se reusa si no se dice otro.
-        expect(l21.data[`f${L.costo}`]).toBe(12000);
-
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.lines), l21.id, { data: { [`f${L.recibida}`]: 2 } } as never);
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.orders), made.order_id, { data: { [`f${O.estado}`]: 'recibida_parcial' } } as never);
-        await vi.waitFor(() => expect(v21.stock_quantity).toBe(start21 + 2));
-        expect(camiseta.stock_quantity).toBe(3); // la línea de M no tiene cantidad recibida: no se toca
-        await vi.waitFor(async () => expect((await recordOf(l21.id))[`f${L.pendiente}`]).toBe(4));
-
-        // Recibida entera: M (sin cantidad escrita) = lo pedido, y va al PRODUCTO.
-        await recordsService.update(tenantId, admin(), String(S.purchase_lists.orders), made.order_id, { data: { [`f${O.estado}`]: 'recibida' } } as never);
-        await vi.waitFor(() => expect(camiseta.stock_quantity).toBe(9));
-        expect(v21.stock_quantity).toBe(start21 + 2); // lo escrito manda: llegaron 2
-        const sm = await byWooId('variations', '22');
-        await vi.waitFor(async () =>
-            expect((await recordOf(Number(sm.id)))[`f${fieldIds.variations!.ultimo_movimiento}`]).toBe('+6 por OC-0002 (el stock lo lleva el producto) → stock 9'),
-        );
-    });
-
-    it('«Sumar al stock»: suma sobre la tienda, vacía la celda y deja el movimiento; si la tienda rechaza, lo dice', async () => {
-        const taza = store.products.find((p) => p.id === 10)!;
-        taza.stock_quantity = 21; // la tienda vendió algo que la app todavía no vio
-        const rec = await byWooId('products', '10');
-        const sumar = `f${fieldIds.products!.sumar_stock}`;
-        const mov = `f${fieldIds.products!.ultimo_movimiento}`;
-        await recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(rec.id), { data: { [sumar]: 7 } } as never);
-        await vi.waitFor(() => expect(taza.stock_quantity).toBe(28));
-        await vi.waitFor(async () => expect((await recordOf(Number(rec.id)))[mov]).toBe('+7 desde «Sumar al stock» → stock 28'));
-        const after = await recordOf(Number(rec.id));
-        expect(after[sumar]).toBeUndefined();
-        expect(after[`f${fieldIds.products!.stock}`]).toBe(28);
-
-        store.readOnly = true;
-        await recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(rec.id), { data: { [sumar]: 3 } } as never);
-        await vi.waitFor(async () => expect((await recordOf(Number(rec.id)))[mov]).toMatch(/^No se pudo sumar 3: .*permiso/));
-        store.readOnly = false;
-        expect(taza.stock_quantity).toBe(28);
-        expect((await recordOf(Number(rec.id)))[sumar]).toBeUndefined();
-    });
-
-    it('listado: `ids` y `related_to` traen filas concretas; un campo que no es relación de la lista se rechaza', async () => {
-        const S = await settingsNow();
-        const [first] = await rows(tenantId, S.purchase_lists.orders!);
-        const page = await recordsService.list(tenantId, admin(), String(S.purchase_lists.lines), {
-            limit: 50,
-            related_to: `${S.purchase_fields.lines!.orden}:${first!.id}`,
-        } as never);
-        expect(page.data).toHaveLength(1);
-        await expect(
-            recordsService.list(tenantId, admin(), String(S.purchase_lists.lines), { limit: 50, related_to: `${S.purchase_fields.lines!.cantidad}:${first!.id}` } as never),
-        ).rejects.toThrow(/relación/);
-        const two = (await rows(tenantId, S.purchase_lists.lines!)).slice(0, 2).map((r) => r.id);
-        const picked = await recordsService.list(tenantId, admin(), String(S.purchase_lists.lines), { limit: 50, ids: two.join(',') } as never);
-        expect(picked.data.map((r) => r.id).sort()).toEqual([...two].sort());
-    });
-
-    it('actualización del pack: una sincronización creada ANTES del inventario recibe campos, vista y tablero solos', async () => {
-        // Simula el pack 1 (v0.1.206): sin campos de inventario, sin vista ni tablero.
-        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        const settings = row!.settings as Record<string, unknown> & { fields: Record<string, Record<string, number>> };
-        for (const r of ['products', 'variations'] as const) {
-            for (const slug of INVENTORY_FIELD_SLUGS) {
-                const id = settings.fields[r]?.[slug];
-                if (!id) continue;
-                await fieldsService.remove(tenantId, String(st.lists[r]!.id), String(id));
-                delete settings.fields[r]![slug];
-            }
-        }
-        // El pack 1 guardaba las columnas de las tablas del tablero de ventas en `columns`.
-        const [sales] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.dashboard_id!)));
-        const oldWidgets = (sales!.widgets as Array<{ type: string; config: Record<string, unknown> }>).map((w) => {
-            if (w.type !== 'table') return w;
-            const { visible_field_ids, ...rest } = w.config;
-            return { ...w, config: { ...rest, columns: visible_field_ids } };
-        });
-        await withTenant(pg.db, tenantId, async (tx) => {
-            await tx.update(dashboards).set({ widgets: oldWidgets }).where(eq(dashboards.id, st.dashboard_id!));
-            await tx.delete(savedViews).where(eq(savedViews.name, 'Para reponer'));
-            await tx.delete(dashboards).where(eq(dashboards.id, st.inventory_dashboard_id!));
-            await tx
-                .update(connectionSyncs)
-                .set({ settings: { ...settings, pack_version: 1, inventory_dashboard_id: null, low_stock_amount: null } })
-                .where(eq(connectionSyncs.id, syncId));
-        });
-        queue.runs.length = 0;
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        const s2 = after!.settings as { pack_version: number; low_stock_amount: number; inventory_dashboard_id: number; fields: Record<string, Record<string, number>> };
-        expect(s2.pack_version).toBe(4);
-        expect(s2.low_stock_amount).toBe(5);
-        expect(s2.inventory_dashboard_id).toBeGreaterThan(0);
-        for (const slug of INVENTORY_FIELD_SLUGS) expect(s2.fields.products![slug], slug).toBeGreaterThan(0);
-        const views = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(eq(savedViews.name, 'Para reponer')));
-        expect(views).toHaveLength(2);
-        const [salesAfter] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.dashboard_id!)));
-        for (const w of salesAfter!.widgets as Array<{ type: string; config: Record<string, unknown> }>) {
-            if (w.type !== 'table') continue;
-            expect(w.config.columns).toBeUndefined();
-            expect((w.config.visible_field_ids as unknown[]).length).toBe(4);
-        }
-        // Encola la vuelta completa de productos que llena los campos nuevos.
-        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: expect.arrayContaining(['products']) } });
-        expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products'] })).toBe(true);
-        const vars = await rows(tenantId, st.lists.variations!.id);
-        expect(vars.every((v) => typeof v[`f${s2.fields.variations!.estado_inventario}`] === 'string')).toBe(true);
-        // Una segunda vuelta no vuelve a actualizar nada.
-        queue.runs.length = 0;
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        expect(queue.runs).toHaveLength(0);
-    });
-
-    it('actualización del pack 2 → 3: una tienda conectada con inventario recibe las compras y «En camino» sola', async () => {
-        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        const settings = row!.settings as Record<string, unknown> & {
-            fields: Record<string, Record<string, number>>;
-            purchase_lists: Record<string, number>;
-            inventory_dashboard_id: number;
-            folder_id: number;
+        // Armar a mano lo que tenía una tienda del pack 4: listas aparte para
+        // variaciones y líneas, columnas de compras y dos listas de compras.
+        const s0 = await settings();
+        const oldVar = await listsSvc.create(tenantId, { name: 'Variaciones viejas' });
+        const oldLines = await listsSvc.create(tenantId, { name: 'Líneas viejas' });
+        const emptyPurchase = await listsSvc.create(tenantId, { name: 'Proveedores' });
+        const usedPurchase = await listsSvc.create(tenantId, { name: 'Órdenes de compra' });
+        const oc = await fieldsService.create(tenantId, String(usedPurchase.id), { label: 'Orden', type: 'text' } as never);
+        await withTenant(pg.db, tenantId, (tx) => tx.insert(records).values({ tenantId, listId: usedPurchase.id, data: { [`f${oc.id}`]: 'OC-0001' }, createdBy: adminId }));
+        const sumar = await fieldsService.create(tenantId, String(s0.lists.products), { label: 'Sumar al stock', slug: 'sumar_stock', type: 'number' } as never);
+        const legacy = {
+            ...s0,
+            pack_version: 4,
+            lists: { ...s0.lists, variations: oldVar.id, line_items: oldLines.id },
+            fields: { ...s0.fields, products: { ...s0.fields.products, sumar_stock: sumar.id } },
+            purchase_lists: { suppliers: emptyPurchase.id, orders: usedPurchase.id },
         };
-        // Simula el pack 2 (v0.1.208): sin listas de compras ni columnas de reposición.
-        const oldEnCamino = [settings.fields.products!.en_camino, settings.fields.variations!.en_camino];
-        for (const r of ['products', 'variations'] as const) {
-            for (const slug of RESTOCK_FIELD_SLUGS) {
-                const id = settings.fields[r]?.[slug];
-                if (!id) continue;
-                await fieldsService.remove(tenantId, String(st.lists[r]!.id), String(id));
-                delete settings.fields[r]![slug];
-            }
-        }
-        const oldPurchase = Object.values(settings.purchase_lists);
-        const [inv] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, settings.inventory_dashboard_id)));
-        const trimmed = (inv!.widgets as Array<{ type: string; config: Record<string, unknown> }>).map((w) =>
-            w.type === 'table' ? { ...w, config: { ...w.config, visible_field_ids: (w.config.visible_field_ids as number[]).filter((x) => !oldEnCamino.includes(x)) } } : w,
-        );
-        await withTenant(pg.db, tenantId, async (tx) => {
-            await tx.update(dashboards).set({ widgets: trimmed }).where(eq(dashboards.id, settings.inventory_dashboard_id));
-            await tx.delete(lists).where(inArray(lists.id, oldPurchase));
-            await tx
-                .update(connectionSyncs)
-                .set({ settings: { ...settings, pack_version: 2, purchase_lists: {}, purchase_fields: {} } })
-                .where(eq(connectionSyncs.id, syncId));
-        });
-        const tablesBefore = (trimmed as Array<{ type: string; config: { visible_field_ids?: number[] } }>).filter((w) => w.type === 'table');
-        const lenBefore = tablesBefore.map((w) => w.config.visible_field_ids!.length);
-
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        const s3 = after!.settings as {
-            pack_version: number;
-            fields: Record<string, Record<string, number>>;
-            purchase_lists: Record<string, number>;
-            purchase_fields: Record<string, Record<string, number>>;
-        };
-        expect(s3.pack_version).toBe(4);
-        for (const slug of RESTOCK_FIELD_SLUGS) expect(s3.fields.variations![slug], slug).toBeGreaterThan(0);
-        expect(Object.keys(s3.purchase_lists).sort()).toEqual(['lines', 'orders', 'suppliers']);
-        expect(s3.purchase_fields.lines!.pendiente).toBeGreaterThan(0);
-        // Las listas nuevas nacen en la carpeta de la tienda, con su marca.
-        const newLists = await withTenant(pg.db, tenantId, (tx) =>
-            tx.select({ id: lists.id, groupId: lists.groupId, settings: lists.settings }).from(lists).where(inArray(lists.id, Object.values(s3.purchase_lists))),
-        );
-        expect(newLists.every((l) => l.groupId === settings.folder_id)).toBe(true);
-        expect(newLists.map((l) => (l.settings as { store_sync?: { role: string } }).store_sync?.role).sort()).toEqual(['purchase_lines', 'purchase_orders', 'suppliers']);
-        // Las tablas «para reponer» del tablero de inventario suman «En camino».
-        const [invAfter] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, settings.inventory_dashboard_id)));
-        const tablesAfter = (invAfter!.widgets as Array<{ type: string; list_id: number; config: { visible_field_ids: number[] } }>).filter((w) => w.type === 'table');
-        tablesAfter.forEach((w, i) => {
-            expect(w.config.visible_field_ids.length).toBe(lenBefore[i]! + 1);
-            const res = w.list_id === st.lists.products!.id ? 'products' : 'variations';
-            expect(w.config.visible_field_ids).toContain(s3.fields[res]!.en_camino);
-        });
-        // Idempotente.
-        queue.runs.length = 0;
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        expect(queue.runs).toHaveLength(0);
-    });
-
-    it('actualización del pack 3 → 4: enlaces de edición, enlace de la variación, miniaturas y SKU en las compras ya hechas', async () => {
-        // Una compra hecha con el pack 3 (su línea todavía sin SKU).
-        const s21 = await byWooId('variations', '21');
-        await purchasing.createOrder(tenantId, admin(), connId, {
-            resource: 'variations',
-            items: [{ record_id: Number(s21.id), quantity: 2 }],
-            supplier_name: 'Textiles SA',
-            status: 'borrador',
-        });
-        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
-        const settings = row!.settings as Record<string, unknown> & {
-            fields: Record<string, Record<string, number>>;
-            purchase_lists: Record<string, number>;
-            purchase_fields: Record<string, Record<string, number>>;
-            store_url: string;
-        };
-        // Simula el pack 3 (v0.1.209): sin identificadores y con la imagen como enlace.
-        const drop: Array<[string, number, string]> = [
-            ['products', st.lists.products!.id, 'editar'],
-            ['variations', st.lists.variations!.id, 'editar'],
-            ['variations', st.lists.variations!.id, 'enlace'],
-            ['customers', st.lists.customers!.id, 'editar'],
-        ];
-        for (const [r, listId, slug] of drop) {
-            await fieldsService.remove(tenantId, String(listId), String(settings.fields[r]![slug]));
-            delete settings.fields[r]![slug];
-        }
-        await fieldsService.remove(tenantId, String(settings.purchase_lists.lines), String(settings.purchase_fields.lines!.sku));
-        delete settings.purchase_fields.lines!.sku;
-        const images = [settings.fields.products!.imagen!, settings.fields.variations!.imagen!];
-        await withTenant(pg.db, tenantId, async (tx) => {
-            await tx.update(fields).set({ config: {} }).where(inArray(fields.id, images));
-            await tx.update(connectionSyncs).set({ settings: { ...settings, pack_version: 3 } }).where(eq(connectionSyncs.id, syncId));
-        });
+        await withTenant(pg.db, tenantId, (tx) => tx.update(connectionSyncs).set({ settings: legacy }).where(eq(connectionSyncs.id, syncId)));
+        const oldDash = s0.dashboard_id as number;
 
         queue.runs.length = 0;
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        const S = await settingsNow();
-        expect((S as unknown as { pack_version: number }).pack_version).toBe(4);
-        for (const [r, , slug] of drop) expect(S.fields[r as 'products']![slug], `${r}.${slug}`).toBeGreaterThan(0);
-        // Las imágenes pasan a verse como miniatura.
-        const imgCfg = await withTenant(pg.db, tenantId, (tx) => tx.select({ config: fields.config }).from(fields).where(inArray(fields.id, images)));
-        expect(imgCfg.every((f) => (f.config as { display?: string }).display === 'image')).toBe(true);
-        // Las líneas de compra que ya existían reciben el SKU de lo que piden.
-        const L = S.purchase_fields.lines!;
-        expect(L.sku).toBeGreaterThan(0);
-        const lines = await rows(tenantId, S.purchase_lists.lines!);
-        expect(lines.length).toBeGreaterThan(0);
-        expect(lines.every((l) => l[`f${L.sku}`] === 'CAM-S')).toBe(true);
-        // Se re-leen productos Y clientes para llenar los enlaces nuevos.
-        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products', 'customers'] } });
-        expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products', 'customers'] })).toBe(true);
-        const base = settings.store_url.replace(/\/+$/, '');
-        const taza = await byWooId('products', '10');
-        expect(taza[`f${S.fields.products!.editar}`]).toBe(`${base}/wp-admin/post.php?post=10&action=edit`);
-        const talla = await byWooId('variations', '21');
-        expect(talla[`f${S.fields.variations!.editar}`]).toBe(`${base}/wp-admin/post.php?post=20&action=edit`);
-        expect(talla[`f${S.fields.variations!.enlace}`]).toBe('https://tienda.test/camiseta/?attribute_talla=S');
-        const ana = (await rows(tenantId, st.lists.customers!.id)).find((r) => r[`f${S.fields.customers!.woo_id}`] === '1')!;
-        expect(ana[`f${S.fields.customers!.editar}`]).toBe(`${base}/wp-admin/user-edit.php?user_id=1`);
-        // Idempotente.
-        queue.runs.length = 0;
-        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
-        expect(queue.runs).toHaveLength(0);
+        const s1 = await settings();
+        expect(s1.pack_version).toBe(5);
+        expect(s1.lists.variations).toBe(s1.lists.products);
+        expect(s1.lists.line_items).toBe(s1.lists.orders);
+        expect(s1.fields.products!.sumar_stock).toBeUndefined();
+        expect(s1).not.toHaveProperty('purchase_lists');
+        // Las listas viejas de la tienda se fueron; la de compras vacía también;
+        // la que tenía datos quedó como lista común.
+        const live = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: lists.id, settings: lists.settings }).from(lists));
+        const ids = new Set(live.map((l) => l.id));
+        expect(ids.has(oldVar.id)).toBe(false);
+        expect(ids.has(oldLines.id)).toBe(false);
+        expect(ids.has(emptyPurchase.id)).toBe(false);
+        expect(ids.has(usedPurchase.id)).toBe(true);
+        expect((live.find((l) => l.id === usedPurchase.id)!.settings as Record<string, unknown>).store_sync).toBeUndefined();
+        expect((await fieldsService.listByListId(tenantId, s1.lists.products!)).some((f) => f.id === sumar.id)).toBe(false);
+        // Tableros nuevos; el viejo ya no existe.
+        expect(s1.dashboard_id).not.toBe(oldDash);
+        const dash = await withTenant(pg.db, tenantId, (tx) => tx.select({ id: dashboards.id }).from(dashboards).where(eq(dashboards.id, oldDash)));
+        expect(dash).toHaveLength(0);
+        // Se encola la vuelta que trae variaciones y líneas donde van.
+        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products', 'orders'] } });
+        expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products', 'orders'] })).toBe(true);
+        expect((await tree(tenantId, s1.lists.products!)).children).toHaveLength(2);
+        expect((await svc.status(tenantId, adminId, 'admin', connId)).last_error).toBeNull();
     });
 
     it('otra empresa no ve la sincronización ni sus vínculos (RLS)', async () => {
@@ -1212,16 +959,15 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const links = await withTenant(pg.db, otherTenant, (tx) => tx.select({ n: sql<number>`count(*)::int` }).from(syncLinks));
         expect(syncs).toHaveLength(0);
         expect(links[0]!.n).toBe(0);
-        // Y ni siquiera puede pedir el estado con un id ajeno.
         await expect(svc.status(otherTenant, adminId, 'admin', connId)).rejects.toThrow();
     });
 
-    it('el límite de registros del plan corta la importación con un motivo claro (sin dejar nada a medias)', async () => {
+    it('el límite de registros del plan corta la importación con un motivo claro', async () => {
         await withTenant(pg.db, otherTenant, (tx) => tx.insert(memberships).values({ tenantId: otherTenant, userId: adminId, role: 'admin' }));
         await pg.db.update(tenants).set({ plan: 'mini' }).where(eq(tenants.id, otherTenant));
         seedStore(40);
         const c2 = await connect(otherTenant);
-        const s2 = await svc.setup(otherTenant, adminId, 'admin', c2, {
+        await svc.setup(otherTenant, adminId, 'admin', c2, {
             resources: { customers: true, products: true, orders: true },
             orders_since: null,
             mode: 'interval',
@@ -1232,21 +978,28 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const after = await svc.status(otherTenant, adminId, 'admin', c2);
         expect(after.last_error).toMatch(/plan/i);
         expect(after.initial_done).toBe(false);
-        expect(after.running).toBe(false);
-        // Nunca más registros que el límite.
         const total = await withTenant(pg.db, otherTenant, (tx) =>
             tx.select({ n: sql<number>`count(*)::int` }).from(records).innerJoin(lists, eq(lists.id, records.listId)).where(isNull(records.deletedAt)),
         );
         expect(total[0]!.n).toBeLessThanOrEqual(30);
-        void s2;
     });
 
-    it('dejar de sincronizar conserva las listas y sus datos', async () => {
+    it('dejar de sincronizar conserva las listas y sus datos (y ya se pueden editar libremente)', async () => {
         const productsList = st.lists.products!.id;
         await svc.remove(tenantId, adminId, 'admin', connId);
         expect((await svc.status(tenantId, adminId, 'admin', connId)).configured).toBe(false);
-        expect((await rows(tenantId, productsList)).length).toBe(2);
+        expect((await tree(tenantId, productsList)).roots.length).toBe(2);
         const links = await withTenant(pg.db, tenantId, (tx) => tx.select().from(syncLinks).where(eq(syncLinks.syncId, syncId)));
         expect(links).toHaveLength(0);
+        // Sin la marca: son listas comunes, sin bloqueos.
+        const marked = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select({ id: lists.id }).from(lists).where(sql`${lists.settings} ? 'store_sync'`),
+        );
+        expect(marked).toHaveLength(0);
+        const [taza] = (await tree(tenantId, productsList)).roots.filter((r) => r[k('products', 'woo_id')] === '10');
+        await recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(taza!.id), { data: { [k('products', 'nombre')]: 'Taza editada' } } as never);
+        const created = await recordsService.create(tenantId, admin(), st.lists.products!.slug, { data: { [k('products', 'nombre')]: 'Producto propio' } } as never);
+        expect(created.id).toBeGreaterThan(0);
+        await fieldsService.remove(tenantId, st.lists.products!.slug, String(F.products!.sku));
     });
 });

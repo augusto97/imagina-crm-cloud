@@ -1121,9 +1121,11 @@ producto y cada talla— y automatizar sobre eso. Un conector que sólo manda no
 alcanza; hace falta un motor que traiga y mantenga al día.
 
 **Decisión.** Una sincronización por conexión (`connection_syncs`) que
-materializa un **pack de cinco listas vinculadas** (clientes, productos,
-variaciones, pedidos, líneas de pedido) con sus rollups y un tablero de
+materializa un **pack de listas vinculadas** con sus rollups y un tablero de
 ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
+(Hasta v0.1.212 eran cinco listas; desde v0.1.213 son TRES —clientes,
+productos, pedidos— con las variaciones y las líneas como SUBTAREAS: ver
+«Rediseño» más abajo.)
 
 - **Vínculo por id externo, fuera de los datos.** `sync_links` (RLS) guarda
   recurso + id de la tienda → registro. La app nunca identifica un registro
@@ -1222,7 +1224,8 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
   (`BlueprintService.extend`, bajo el lock de la sincronización — nunca en
   paralelo con una corrida) agregando SÓLO lo que falta: campos, vistas y
   tableros; nada existente se pisa ni se borra.
-- **Reposición: órdenes de compra (v0.1.209).** WooCommerce sólo acepta el
+- **Reposición: órdenes de compra (v0.1.209 — RETIRADA en v0.1.213, ver
+  «Rediseño»).** WooCommerce sólo acepta el
   stock ABSOLUTO (`stock_quantity`), así que sumar es leer–sumar–escribir: se
   hace un GET del producto o variación EN LA TIENDA y se escribe
   `antes + delta` — nunca sobre el número que tiene la app, que puede estar
@@ -1266,6 +1269,62 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
   auto-actualización no lo toca) y dejaría que el texto de un registro
   dispare pedidos del navegador a terceros.
 
+**Rediseño (v0.1.213, pack 5) — la lista de la tienda es un ESPEJO, no una
+segunda tienda.** Feedback del usuario: el pack confundía (productos en una
+lista y sus variaciones en otra, líneas en una tercera; listas —proveedores,
+órdenes de compra— que WooCommerce no tiene) y dejaba hacer cosas que la
+tienda no acepta (crear un producto sin galería, pasar un variable a simple,
+borrar variaciones) o que la próxima sincronización pisaría en silencio.
+
+- **Tres listas; variaciones y líneas como subtareas.** Productos (con cada
+  variación como subtarea de su producto) · Pedidos (con cada línea como
+  subtarea de su pedido) · Clientes. Se reusa el modelo de subtareas de
+  v0.1.132 (`records.parent_id`, un nivel): la tabla muestra el primer nivel y
+  la flechita despliega lo de adentro. `settings.lists.variations` apunta a la
+  lista de productos y `settings.fields.variations` a su mapa de campos (igual
+  líneas → pedidos), así el motor sigue hablando de cinco RECURSOS aunque haya
+  tres LISTAS. Una columna `tipo` dice qué es cada fila (simple / variable /
+  variación / agrupado / externo; pedido / línea) y los tableros y rollups la
+  filtran para no contar dos veces. El padre variable muestra el RESUMEN de sus
+  variaciones (stock y valor sumados, estado más urgente), recalculado por el
+  motor, y el pie de la tabla y los grupos cuentan sólo el primer nivel.
+- **La tienda manda; la app no crea ni borra.** Una lista marcada
+  (`settings.store_sync` v2: `{connection_id, role, store_name, store_url,
+  write_back, fields: {slug del pack → id}, meta_fields}`) rechaza el alta, el
+  borrado y la importación (403 `store_managed`) en TODOS los caminos: API,
+  importador, automatizaciones (`create_record` se saltea con el motivo),
+  asistente IA/MCP y recurrencias (no se clona; no se rueda una fecha de la
+  tienda). La interfaz no ofrece esos botones y enlaza a «Crear en WooCommerce».
+- **Qué se edita desde acá.** Sólo precios, stock y estados (publicación del
+  producto, estado del pedido), y sólo con «Editar desde la app» activado —
+  lo que la tienda acepta sin ambigüedad. Las reglas son PURAS y compartidas
+  (`store-rules.ts` en shared: `storeCellAccess` + `storeValueError`), así el
+  backend rechaza (403 `store_field_locked` / 400 `store_invalid_value`) con
+  la MISMA función que la UI usa para dibujar el candado y el motivo antes de
+  que alguien lo intente: un producto variable no tiene precio propio, un
+  rebajado no puede superar al normal, el stock es entero, el estado de stock
+  lo calcula WooCommerce si el stock está controlado, las líneas de un pedido
+  no se tocan. Una automatización que intente otra cosa saltea ese campo con
+  el motivo en el log, en vez de escribir algo que la tienda no aceptaría.
+- **Columnas de la tienda vs. propias.** Una columna de la tienda sólo cambia
+  de nombre, descripción e índice (ni tipo, ni opciones, ni se borra: la
+  próxima sincronización la necesita tal cual); las columnas PROPIAS de la
+  empresa son libres, se marcan «sólo en Imagina» y nunca viajan.
+- **Se retiró la reposición** (proveedores, órdenes de compra, líneas de
+  compra, «Sumar al stock», «En camino», «Último movimiento»): no es un
+  concepto de WooCommerce y mezclaba un sistema de compras dentro del espejo.
+- **Dejar de sincronizar quita la marca** (y borrar la conexión también): las
+  listas quedan como listas comunes, editables sin restricciones. La migración
+  0055 limpia las marcas huérfanas de desconexiones anteriores.
+- **Migración automática (pack <5 → 5)** en la próxima corrida de cada tienda,
+  bajo el lock de la sincronización: se borran los campos que el pack nuevo no
+  tiene y se rearman los rollups; las variaciones y líneas viejas (registros
+  de las listas separadas) se dan de baja junto con sus vínculos y se vuelven
+  a traer como subtareas en una vuelta completa; se recrean los tableros; las
+  listas de compras VACÍAS se borran y las que tienen datos de la empresa
+  QUEDAN como listas comunes (sin la marca) — los datos nunca se pierden
+  (ADR-S09). Queda en la bitácora (`store_sync.migrate`).
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
 tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
@@ -1276,4 +1335,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.25.0 (identificadores de la tienda y proxy de miniaturas — ADR-S24)
+**Versión del documento:** 1.26.0 (rediseño de la tienda: tres listas con subtareas, espejo de sólo lectura salvo precios/stock/estados — ADR-S24)

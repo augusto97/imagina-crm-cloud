@@ -4,14 +4,19 @@ import { idSchema } from './common';
 /**
  * Sincronización con tiendas (v0.1.206, ADR-S24) — hoy WooCommerce.
  *
- * La tienda se trae a CINCO listas vinculadas entre sí (clientes, productos,
- * variaciones, pedidos y líneas de pedido), y lo que la persona pregunta
- * —"cuánto me compró este cliente", "cuánto vendió este producto"— sale de
- * rollups sobre esas relaciones, no de un reporte de la tienda: así se puede
- * filtrar, agrupar y graficar como cualquier otro dato de la app.
+ * v0.1.213 — la tienda se trae a TRES listas: Clientes, Productos (cada
+ * variación es una SUBTAREA de su producto) y Pedidos (cada línea es una
+ * SUBTAREA de su pedido). Lo que la persona pregunta —"cuánto me compró este
+ * cliente", "cuánto vendió este producto"— sale de rollups sobre esas
+ * relaciones, no de un reporte de la tienda: así se puede filtrar, agrupar y
+ * graficar como cualquier otro dato de la app.
  */
 
-/** Lo que se sincroniza. `line_items` y `variations` vienen con sus padres. */
+/**
+ * Lo que se sincroniza. `variations` y `line_items` siguen siendo recursos
+ * propios (tienen su id en la tienda y su progreso), pero viven en la lista
+ * de su padre: las variaciones en Productos y las líneas en Pedidos.
+ */
 export const STORE_SYNC_RESOURCES = ['customers', 'products', 'variations', 'orders', 'line_items'] as const;
 export const storeSyncResourceSchema = z.enum(STORE_SYNC_RESOURCES);
 export type StoreSyncResource = z.infer<typeof storeSyncResourceSchema>;
@@ -73,47 +78,35 @@ export const updateStoreSyncSchema = z.object({
 export type UpdateStoreSyncInput = z.infer<typeof updateStoreSyncSchema>;
 
 /**
- * Qué columnas del pack viajan de vuelta a la tienda cuando se editan en la
- * app (fase 3, «editar en los dos sentidos»). Lo que NO está acá es de sólo
- * lectura a propósito: los totales de un pedido los calcula la tienda, el
- * nombre de un cliente se parte en nombre/apellido de formas que no se
- * pueden adivinar, y las líneas de pedido no se editan desde afuera.
- * Los campos de otros plugins que se trajeron a una columna también viajan.
+ * Qué columnas se pueden editar en la app y viajan a la tienda (v0.1.213:
+ * PRECIOS, STOCK y ESTADOS — y nada más). Todo lo demás se edita en
+ * WooCommerce: el nombre, el SKU, las imágenes, el tipo de producto, las
+ * variaciones, los datos del cliente. Lo que se puede cambiar además depende
+ * de la FILA (un producto con variaciones no tiene precio propio): esas
+ * reglas viven en `store-rules.ts`, compartidas por el backend (que rechaza)
+ * y la interfaz (que bloquea la celda y dice por qué).
  */
 export const STORE_WRITE_BACK_FIELDS: Record<StoreMetaResource, Array<{ slug: string; label: string }>> = {
     products: [
-        { slug: 'nombre', label: 'Nombre' },
-        { slug: 'sku', label: 'SKU' },
         { slug: 'precio_normal', label: 'Precio normal' },
         { slug: 'precio_rebajado', label: 'Precio rebajado' },
         { slug: 'stock', label: 'Stock' },
-        { slug: 'estado_stock', label: 'Estado del stock' },
         { slug: 'controla_stock', label: 'Controla stock' },
+        { slug: 'estado_stock', label: 'Estado del stock' },
         { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
-        { slug: 'estado', label: 'Estado' },
+        { slug: 'estado', label: 'Publicación' },
     ],
     variations: [
-        { slug: 'sku', label: 'SKU' },
         { slug: 'precio_normal', label: 'Precio normal' },
         { slug: 'precio_rebajado', label: 'Precio rebajado' },
         { slug: 'stock', label: 'Stock' },
-        { slug: 'estado_stock', label: 'Estado del stock' },
         { slug: 'controla_stock', label: 'Controla stock' },
+        { slug: 'estado_stock', label: 'Estado del stock' },
         { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
-        { slug: 'estado', label: 'Estado' },
+        { slug: 'estado', label: 'Publicación' },
     ],
-    orders: [
-        { slug: 'estado', label: 'Estado' },
-        { slug: 'nota_cliente', label: 'Nota del cliente' },
-    ],
-    customers: [
-        { slug: 'email', label: 'Email' },
-        { slug: 'telefono', label: 'Teléfono' },
-        { slug: 'empresa', label: 'Empresa' },
-        { slug: 'ciudad', label: 'Ciudad' },
-        { slug: 'region', label: 'Región' },
-        { slug: 'pais', label: 'País' },
-    ],
+    orders: [{ slug: 'estado', label: 'Estado' }],
+    customers: [],
 };
 
 export const runStoreSyncSchema = z.object({
@@ -141,30 +134,28 @@ export type UnmapStoreMetaInput = z.infer<typeof unmapStoreMetaSchema>;
 
 const listRefSchema = z.object({ id: idSchema, slug: z.string(), name: z.string() }).nullable();
 
-// ── Reposición (v0.1.209) ──────────────────────────────────────────────────
-
-/**
- * Las tres listas de compras que agrega el pack 3. NO se traen de la tienda:
- * son de la empresa (a quién le compra y qué pidió). Lo que sí toca la tienda
- * es el efecto de recibir una orden —el stock sube—.
- */
-export const STORE_PURCHASE_LISTS = ['suppliers', 'orders', 'lines'] as const;
-export type StorePurchaseList = (typeof STORE_PURCHASE_LISTS)[number];
-
-/** Estados de una orden de compra (valores del select del pack). */
-export const PURCHASE_ORDER_STATUSES = ['borrador', 'enviada', 'recibida_parcial', 'recibida', 'cancelada'] as const;
-export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
-
 /**
  * Marca que el pack deja en `lists.settings.store_sync` de cada lista de la
- * tienda: de qué conexión es y qué guarda. La UI la usa para ofrecer «Crear
- * orden de compra» en Productos/Variaciones. NO viaja al duplicar una lista
- * ni en una plantilla (la copia no es de la tienda).
+ * tienda (v0.1.209; v0.1.213 lleva además QUÉ columnas son de la tienda).
+ * Con ella el backend rechaza lo que WooCommerce no permitiría (crear o
+ * borrar registros, editar una columna de sólo lectura) y la interfaz lo
+ * muestra antes de que alguien lo intente. NO viaja al duplicar una lista ni
+ * en una plantilla (la copia no es de la tienda).
  */
-export const STORE_LIST_ROLES = [...STORE_SYNC_RESOURCES, 'suppliers', 'purchase_orders', 'purchase_lines'] as const;
+export const STORE_LIST_ROLES = ['customers', 'products', 'orders'] as const;
+export type StoreListRole = (typeof STORE_LIST_ROLES)[number];
 export const storeListMarkerSchema = z.object({
     connection_id: idSchema,
     role: z.enum(STORE_LIST_ROLES),
+    store_name: z.string().default(''),
+    /** Dirección de la tienda (para «Crear en WooCommerce»). */
+    store_url: z.string().default(''),
+    /** «Editar desde la app» activado: sin eso, TODA columna de la tienda es de sólo lectura. */
+    write_back: z.boolean().default(false),
+    /** slug del pack → id del campo: las columnas que son de la tienda. */
+    fields: z.record(z.string(), idSchema).default({}),
+    /** Campos de otros plugins traídos a columnas (también de la tienda, de sólo lectura). */
+    meta_fields: z.array(idSchema).default([]),
 });
 export type StoreListMarker = z.infer<typeof storeListMarkerSchema>;
 
@@ -174,65 +165,6 @@ export function readStoreListMarker(settings: unknown): StoreListMarker | null {
     const parsed = storeListMarkerSchema.safeParse(raw);
     return parsed.success ? parsed.data : null;
 }
-
-const restockResourceSchema = z.enum(['products', 'variations']);
-
-export const purchasePreviewSchema = z.object({
-    resource: restockResourceSchema,
-    record_ids: z.array(idSchema).min(1).max(200),
-});
-export type PurchasePreviewInput = z.infer<typeof purchasePreviewSchema>;
-
-/** Una fila del diálogo «Crear orden de compra», con la cantidad sugerida. */
-export const purchasePreviewItemSchema = z.object({
-    record_id: idSchema,
-    name: z.string(),
-    sku: z.string().nullable(),
-    stock: z.number().nullable(),
-    in_transit: z.number(),
-    sold_30d: z.number(),
-    threshold: z.number(),
-    /** Cuánto pedir: un mes de venta + la alerta de stock, menos lo que hay y lo que viene. */
-    suggested: z.number().int().positive(),
-    /** Costo de la última compra de este artículo (si hubo). */
-    last_cost: z.number().nullable(),
-    /** Por qué no se puede pedir (un producto con variaciones: se pide por variación). */
-    blocked: z.string().nullable(),
-});
-export type PurchasePreviewItem = z.infer<typeof purchasePreviewItemSchema>;
-
-export const createPurchaseOrderSchema = z.object({
-    resource: restockResourceSchema,
-    items: z
-        .array(
-            z.object({
-                record_id: idSchema,
-                quantity: z.number().int().positive().max(1_000_000),
-                cost: z.number().nonnegative().max(1e12).nullish(),
-            }),
-        )
-        .min(1)
-        .max(200),
-    /** Un proveedor que ya está en la lista, o uno nuevo por nombre. */
-    supplier_id: idSchema.nullish(),
-    supplier_name: z.string().trim().max(190).nullish(),
-    status: z.enum(['borrador', 'enviada']).default('borrador'),
-    expected_date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .nullish(),
-    notes: z.string().max(5000).nullish(),
-});
-export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderSchema>;
-
-export const purchaseOrderCreatedSchema = z.object({
-    order_id: idSchema,
-    order_number: z.string(),
-    list_slug: z.string(),
-    lines: z.number().int().nonnegative(),
-    warnings: z.array(z.string()),
-});
-export type PurchaseOrderCreated = z.infer<typeof purchaseOrderCreatedSchema>;
 
 export const storeMetaKeySchema = z.object({
     key: z.string(),
@@ -270,10 +202,6 @@ export const storeSyncStatusSchema = z.object({
     dashboard_id: idSchema.nullable(),
     /** v0.1.208 — tablero de inventario. */
     inventory_dashboard_id: idSchema.nullable().default(null),
-    /** v0.1.209 — las listas de compras (proveedores, órdenes y sus líneas). */
-    purchase_lists: z
-        .object({ suppliers: listRefSchema, orders: listRefSchema, lines: listRefSchema })
-        .default({ suppliers: null, orders: null, lines: null }),
     folder_id: idSchema.nullable(),
     running: z.boolean(),
     /** Qué está haciendo ahora («Trayendo pedidos…»). */

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
-import type { StoreMetaResource, StoreSyncResource } from '@imagina-base/shared';
+import type { StoreSyncResource } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
@@ -10,7 +10,8 @@ const TICK_JOB = 'tick';
 const RUN_JOB = 'run';
 const HOOK_JOB = 'hook';
 const PUSH_JOB = 'push';
-const PURCHASE_JOB = 'purchase';
+/** v0.1.209-212: compras. Ya no existe; uno que quedó en la cola se descarta. */
+const LEGACY_PURCHASE_JOB = 'purchase';
 
 export interface StoreSyncRunJob {
     tenantId: number;
@@ -27,20 +28,17 @@ export interface StoreSyncHookJob {
     payload: Record<string, unknown>;
 }
 
-/** Un registro editado en la app que tiene que viajar a la tienda (v0.1.207). */
+/**
+ * Un registro editado en la app que tiene que viajar a la tienda (v0.1.207).
+ * Qué es la fila (producto, variación, pedido) lo resuelve el motor por su
+ * vínculo con la tienda: en Productos conviven productos y variaciones.
+ */
 export interface StoreSyncPushJob {
     tenantId: number;
     syncId: number;
-    resource: StoreMetaResource;
     recordId: number;
     fieldIds: number[];
 }
-
-/** v0.1.209 — Reposición: algo cambió en una línea/orden de compra, o se escribió «Sumar al stock». */
-export type StorePurchaseJob =
-    | { tenantId: number; syncId: number; kind: 'line'; recordId: number }
-    | { tenantId: number; syncId: number; kind: 'order'; recordId: number }
-    | { tenantId: number; syncId: number; kind: 'adjust'; resource: 'products' | 'variations'; recordId: number; delta: number };
 
 /**
  * Encola corridas de sincronización (v0.1.206). Mismo patrón que el
@@ -95,20 +93,6 @@ export class StoreSyncQueue {
             .add(PUSH_JOB, job, { delay: 1_500, removeOnComplete: true, removeOnFail: 100 })
             .catch((err) => this.logger.error(`No se pudo encolar el envío a la tienda: ${String(err)}`));
     }
-
-    /**
-     * v0.1.209 — Un trabajo de compras. `false` = no hay cola (el que llama lo
-     * procesa en el acto). Sin reintentos a ciegas: sumar stock no es
-     * idempotente en la tienda (la idempotencia la dan «Sumado al stock» y el
-     * reclamo de la celda, no la cola).
-     */
-    enqueuePurchase(job: StorePurchaseJob): boolean {
-        if (!this.queue) return false;
-        this.queue
-            .add(PURCHASE_JOB, job, { delay: 500, removeOnComplete: true, removeOnFail: 100 })
-            .catch((err) => this.logger.error(`No se pudo encolar el trabajo de compras: ${String(err)}`));
-        return true;
-    }
 }
 
 /** Los handlers los pone el módulo (evita el ciclo service ↔ queue). */
@@ -117,7 +101,6 @@ export interface StoreSyncHandlers {
     runJob(job: StoreSyncRunJob): Promise<boolean>;
     hookJob(job: StoreSyncHookJob): Promise<unknown>;
     pushJob(job: StoreSyncPushJob): Promise<unknown>;
-    purchaseJob(job: StorePurchaseJob): Promise<unknown>;
 }
 
 @Injectable()
@@ -162,10 +145,7 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
                         await this.handlers.pushJob(job.data as StoreSyncPushJob);
                         return;
                     }
-                    if (job.name === PURCHASE_JOB) {
-                        await this.handlers.purchaseJob(job.data as StorePurchaseJob);
-                        return;
-                    }
+                    if (job.name === LEGACY_PURCHASE_JOB) return;
                     const data = job.data as StoreSyncRunJob;
                     const ran = await this.handlers.runJob(data);
                     // Otra corrida la tenía tomada: se reintenta en un rato

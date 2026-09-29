@@ -15,6 +15,9 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { StoreFieldNote } from './StoreColumnBadge';
+import { storeColumnKind, useStoreRules } from './storeRules';
+
 /**
  * Cuadro flotante para EDITAR un campo sin salir de la tabla (v0.1.74;
  * v0.1.160 lo dejó sólo para edición — el alta se mudó al panel lateral
@@ -49,6 +52,9 @@ export function FieldCreateDialog({
     const [isRequired, setIsRequired] = useState(false);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
+    // v0.1.213 — una columna de la tienda sólo cambia de nombre.
+    const storeKind = storeColumnKind(useStoreRules(), field?.id ?? 0);
+    const storeField = storeKind === 'store_locked' || storeKind === 'store_sync';
 
     // Precarga al abrir. `update` queda FUERA de las deps a propósito (misma
     // lección que FieldDialog del builder: el objeto de mutación cambia de
@@ -73,7 +79,7 @@ export function FieldCreateDialog({
         try {
             await update.mutateAsync({
                 id: field.id,
-                input: { label: label.trim(), is_required: isRequired, config },
+                input: storeField ? { label: label.trim() } : { label: label.trim(), is_required: isRequired, config },
             });
             onOpenChange(false);
         } catch (err) {
@@ -132,22 +138,28 @@ export function FieldCreateDialog({
                             />
                         </div>
 
-                        <FieldConfigEditor
-                            type={field.type}
-                            config={config}
-                            onChange={setConfig}
-                            listId={listId}
-                            currentFieldId={field.id}
-                        />
+                        {storeField ? (
+                            <StoreFieldNote />
+                        ) : (
+                            <>
+                                <FieldConfigEditor
+                                    type={field.type}
+                                    config={config}
+                                    onChange={setConfig}
+                                    listId={listId}
+                                    currentFieldId={field.id}
+                                />
 
-                        <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                            <input
-                                type="checkbox"
-                                checked={isRequired}
-                                onChange={(e) => setIsRequired(e.target.checked)}
-                            />
-                            {__('Obligatorio')}
-                        </label>
+                                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                    <input
+                                        type="checkbox"
+                                        checked={isRequired}
+                                        onChange={(e) => setIsRequired(e.target.checked)}
+                                    />
+                                    {__('Obligatorio')}
+                                </label>
+                            </>
+                        )}
 
                         {submitError !== null && (
                             <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

@@ -41,6 +41,8 @@ import type { RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
+import { StoreListBanner } from './StoreListBanner';
+import { StoreRulesContext, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
 import { FieldCreateDialog } from './FieldCreateDialog';
 import { FieldsPanel } from './FieldsPanel';
@@ -271,9 +273,19 @@ export function RecordsPage(): JSX.Element {
     // del backend si un viewer intenta editar.
     const canManageList = useCan(CAP.MANAGE_LISTS);
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS) && moduleEnabled('automations');
-    const canImportRecords = useCan(CAP.IMPORT_RECORDS);
+    // v0.1.213 — lista sincronizada con una tienda: los registros se crean,
+    // se borran y se importan en WooCommerce; las celdas siguen las reglas
+    // de `store-rules` (las mismas que aplica el backend).
+    const storeMarker = readStoreListMarker(list.data?.settings);
+    const storeRules = useMemo<StoreRules | null>(
+        () => (storeMarker && fields.data ? { marker: storeMarker, fields: fields.data } : null),
+        // El marcador se re-lee en cada render: se compara por su contenido.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [JSON.stringify(storeMarker), fields.data],
+    );
+    const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
-    const canCreateRecords = useCan(CAP.CREATE_RECORDS);
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [drawerRecordId, setDrawerRecordId] = useState<number | null>(null);
@@ -391,12 +403,12 @@ const applyView = (view: SavedViewEntity | null): void => {
         const wantsNew = searchParams.get('new') === '1';
         const wantsImport = searchParams.get('import') === '1';
         if (!wantsNew && !wantsImport) return;
-        if (wantsNew) {
+        if (wantsNew && canCreateRecords) {
             setCreateDefaults(undefined);
             setCreateParentId(null);
             setCreateOpen(true);
         }
-        if (wantsImport) setImportOpen(true);
+        if (wantsImport && canImportRecords) setImportOpen(true);
         const next = new URLSearchParams(searchParams);
         next.delete('new');
         next.delete('import');
@@ -529,6 +541,7 @@ const applyView = (view: SavedViewEntity | null): void => {
         // tabla nunca scrollea verticalmente por su cuenta (pedido
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
+        <StoreRulesContext.Provider value={storeRules}>
         <PageStickyTopContext.Provider value={pageStickyTop}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
             {/* Centinela del bloque fijo: cuando sale por arriba, el bloque
@@ -781,6 +794,8 @@ const applyView = (view: SavedViewEntity | null): void => {
             )}
             </div>
 
+            {storeMarker && <StoreListBanner marker={storeMarker} />}
+
             {/*
               Dialog de export sin trigger propio — lo abren los botones
               del breadcrumb / menú "···" via `exportOpen`.
@@ -952,7 +967,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     }
                                     onAddColumn={openFieldCreate}
                                     onEditField={canManageList ? openFieldEdit : undefined}
-                                    onAddRecord={(groupField, bucketValue) => {
+                                    onAddRecord={!canCreateRecords ? undefined : (groupField, bucketValue) => {
                                         // Prefill: crear desde el grupo "Hecho"
                                         // → el form abre con estado=hecho.
                                         setCreateDefaults(prefillForGroup(groupField, bucketValue));
@@ -961,7 +976,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     wrapText={state.wrapText}
                                     density={state.density}
                                     fontSize={state.fontSize}
-                                    onCreateSubtask={(record) => {
+                                    onCreateSubtask={!canCreateRecords ? undefined : (record) => {
                                         setCreateDefaults(undefined);
                                         setCreateParentId(record.id);
                                         setCreateOpen(true);
@@ -996,7 +1011,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setState((s) => ({ ...s, columnOrder: next }))
                                     }
                                     filterTree={state.filterTree}
-                                    onAddRecord={() => {
+                                    onAddRecord={!canCreateRecords ? undefined : () => {
                                         setCreateDefaults(undefined);
                                         setCreateOpen(true);
                                     }}
@@ -1007,7 +1022,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     density={state.density}
                                     fontSize={state.fontSize}
                                     rowNumberOffset={(state.page - 1) * state.perPage}
-                                    onCreateSubtask={(record) => {
+                                    onCreateSubtask={!canCreateRecords ? undefined : (record) => {
                                         setCreateDefaults(undefined);
                                         setCreateParentId(record.id);
                                         setCreateOpen(true);
@@ -1046,7 +1061,6 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
-                        storeMarker={readStoreListMarker(list.data.settings)}
                     />
 
                     <FieldCreateDialog
@@ -1097,6 +1111,7 @@ const applyView = (view: SavedViewEntity | null): void => {
             )}
         </div>
         </PageStickyTopContext.Provider>
+        </StoreRulesContext.Provider>
     );
 }
 

@@ -31,6 +31,8 @@ import type {
 } from '@/types/record';
 
 import { EditableCell } from '@/admin/records/EditableCell';
+import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
+import { storeAccessFor, useStoreRules, type StoreRules } from '@/admin/records/storeRules';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { orderByCatalog, parseMultiBucket } from '@/lib/multiBucket';
@@ -653,8 +655,10 @@ function GroupBucketSection({
     const toggleSubtasks = (id: number): void => {
         setExpandedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     };
-    const canCreateRecords = useCan(CAP.CREATE_RECORDS);
-    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
+    // v0.1.213 — lista de una tienda: sin altas ni borrados (se hacen allá).
+    const storeRules = useStoreRules();
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS) && storeRules === null;
 
     // Filter tree del bucket: árbol base + condición `groupByField op
     // value`. Solo se usa para fallback (page > 1 o cuando el bundle
@@ -975,6 +979,7 @@ function GroupBucketSection({
                                                         />
                                                     )}
                                                     <span className="imcrm-truncate">{c.label}</span>
+                                                    {c.field && <StoreColumnBadge fieldId={c.field.id} />}
                                                     {c.field !== null && onEditField !== undefined && (
                                                         <FieldHeaderMenu
                                                             listId={listId}
@@ -1122,10 +1127,10 @@ function GroupBucketSection({
                                                                 expanded={expandedIds.includes(record.id)}
                                                                 onToggle={() => toggleSubtasks(record.id)}
                                                             >
-                                                                {renderColumnCell(c, record, listId)}
+                                                                {renderColumnCell(c, record, listId, storeRules)}
                                                             </RecordNameCell>
                                                         ) : (
-                                                            renderColumnCell(c, record, listId)
+                                                            renderColumnCell(c, record, listId, storeRules)
                                                         )}
                                                     </td>
                                                 );
@@ -1277,6 +1282,7 @@ function renderColumnCell(
     column: ColumnDef,
     record: RecordEntity,
     listId: number,
+    storeRules: StoreRules | null,
 ): JSX.Element | null {
     if (column.id === 'id') {
         return (
@@ -1302,8 +1308,14 @@ function renderColumnCell(
             recordId={record.id}
             field={column.field}
             value={column.field.type === 'relation' ? record.relations?.[column.field.slug] : record.fields[column.field.slug]}
+            lockedReason={lockedReasonOf(storeRules, column.field, record)}
         />
     );
+}
+
+function lockedReasonOf(rules: StoreRules | null, field: FieldEntity, record: RecordEntity): string | null {
+    const access = storeAccessFor(rules, field, record);
+    return access?.access === 'locked' ? access.reason : null;
 }
 
 function bucketKey(bucket: RecordGroupBucket): string {

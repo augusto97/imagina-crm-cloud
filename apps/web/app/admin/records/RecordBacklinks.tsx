@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { ChevronDown, ChevronRight, Link2, Plus } from 'lucide-react';
+import { readStoreListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useFields } from '@/hooks/useFields';
@@ -67,6 +68,8 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
         () => (relField ? { [relField.slug]: [recordId] } : undefined),
         [relField, recordId],
     );
+    // Una lista de tienda no admite altas desde acá (se crean en WooCommerce).
+    const storeManaged = readStoreListMarker(list.data?.settings) !== null;
     const label = path.list_name === path.relation_label ? path.list_name : `${path.list_name} · ${path.relation_label}`;
 
     return (
@@ -84,7 +87,7 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
                         {formatNumber(total)}
                     </span>
                 </button>
-                {relField && fields.data && (
+                {relField && fields.data && !storeManaged && (
                     <Button
                         variant="ghost"
                         size="sm"

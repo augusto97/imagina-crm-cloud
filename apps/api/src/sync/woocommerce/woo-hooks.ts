@@ -77,8 +77,6 @@ export interface WriteBackInput {
     parentExternalId: string | null;
     /** slug del pack → valor NUEVO (ya en el formato de la app). Sólo lo que cambió. */
     changed: Record<string, unknown>;
-    /** Campos de otros plugins que cambiaron: clave → valor nuevo + ejemplo visto en la tienda. */
-    meta: Array<{ key: string; value: unknown; sample: string | null }>;
 }
 
 export interface WriteBackRequest {
@@ -98,52 +96,21 @@ function text(v: unknown): string {
 }
 
 /**
- * Un valor de la app convertido a lo que guarda un plugin. Un sí/no se
- * escribe con la MISMA convención que ya usaba la tienda (WooCommerce usa
- * `yes/no`; ACF, `1/0`) — mandar la otra dejaría el dato "raro" para el plugin.
- */
-export function metaOut(value: unknown, sample: string | null): unknown {
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'boolean') {
-        return /^(yes|no)$/i.test(sample ?? '') ? (value ? 'yes' : 'no') : value ? '1' : '0';
-    }
-    if (typeof value === 'string' && /^[[{]/.test(value.trim())) {
-        try {
-            return JSON.parse(value) as unknown;
-        } catch {
-            return value;
-        }
-    }
-    return typeof value === 'number' ? String(value) : value;
-}
-
-/**
  * Qué mandarle a la tienda cuando se editó un registro. Devuelve `null` si no
- * hay nada que mandar (se editó una columna propia de la app, o el cliente es
- * un invitado —que en la tienda no existe como cliente—). SÓLO viaja lo que
- * cambió: mandar el registro entero pisaría, por ejemplo, un stock que la
- * tienda bajó con una venta y todavía no llegó a la app.
+ * hay nada que mandar (se editó una columna propia de la app). SÓLO viaja lo
+ * que cambió —mandar el registro entero pisaría, por ejemplo, un stock que la
+ * tienda bajó con una venta que todavía no llegó— y sólo precios, stock y
+ * estados (v0.1.213): el resto se edita en WooCommerce. Qué fila acepta qué lo
+ * decide `storeCellAccess` ANTES de guardar; acá se arma el pedido.
  */
 export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
     const allowed = new Set(STORE_WRITE_BACK_FIELDS[input.resource].map((f) => f.slug));
     const label = new Map(STORE_WRITE_BACK_FIELDS[input.resource].map((f) => [f.slug, f.label]));
     const body: Record<string, unknown> = {};
     const sent: string[] = [];
-    const billing: Record<string, unknown> = {};
     for (const [slug, value] of Object.entries(input.changed)) {
         if (!allowed.has(slug)) continue;
-        sent.push(label.get(slug) ?? slug);
         switch (slug) {
-            case 'nombre':
-                if (text(value).trim() === '') {
-                    sent.pop();
-                    continue;
-                }
-                body.name = text(value).trim();
-                break;
-            case 'sku':
-                body.sku = text(value);
-                break;
             case 'precio_normal':
                 body.regular_price = money(value);
                 break;
@@ -153,12 +120,9 @@ export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
                 break;
             case 'stock': {
                 const n = wooNumber(value);
-                if (n === null) {
-                    body.manage_stock = false;
-                } else {
-                    body.manage_stock = true;
-                    body.stock_quantity = Math.trunc(n);
-                }
+                if (n === null) continue;
+                body.manage_stock = true;
+                body.stock_quantity = Math.trunc(n);
                 break;
             }
             case 'estado_stock':
@@ -176,33 +140,10 @@ export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
             case 'estado':
                 body.status = text(value);
                 break;
-            case 'nota_cliente':
-                body.customer_note = text(value);
-                break;
-            case 'email':
-                body.email = text(value);
-                break;
-            case 'telefono':
-                billing.phone = text(value);
-                break;
-            case 'empresa':
-                billing.company = text(value);
-                break;
-            case 'ciudad':
-                billing.city = text(value);
-                break;
-            case 'region':
-                billing.state = text(value);
-                break;
-            case 'pais':
-                billing.country = text(value);
-                break;
+            default:
+                continue;
         }
-    }
-    if (Object.keys(billing).length > 0) body.billing = billing;
-    if (input.meta.length > 0) {
-        body.meta_data = input.meta.map((m) => ({ key: m.key, value: metaOut(m.value, m.sample) }));
-        sent.push(...input.meta.map((m) => m.key));
+        sent.push(label.get(slug) ?? slug);
     }
     if (Object.keys(body).length === 0) return null;
 
@@ -217,10 +158,7 @@ export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
         }
         case 'orders':
             return { path: `/orders/${Number(id)}`, body, fields: sent };
-        case 'customers': {
-            // Un invitado (`email:x`) no es un cliente de la tienda: no hay a quién editar.
-            const m = /^id:(\d+)$/.exec(id);
-            return m ? { path: `/customers/${m[1]}`, body, fields: sent } : null;
-        }
+        case 'customers':
+            return null;
     }
 }

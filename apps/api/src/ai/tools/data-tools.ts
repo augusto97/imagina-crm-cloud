@@ -17,6 +17,9 @@ import {
     type FilterGroup,
     type List,
     type RecordDto,
+    readStoreListMarker,
+    STORE_EDITABLE_SLUGS,
+    storeFieldSlug,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -225,6 +228,9 @@ export class DataTools implements AiProposalApplier {
 
     private async proposeCreateRecords(ctx: AiToolContext, input: CreateRecordsSpec): Promise<AiToolResult> {
         const { list, fields, bySlug } = await this.loadList(ctx, input.list);
+        if (readStoreListMarker(list.settings)) {
+            throw new AiToolError(`«${list.name}» está sincronizada con una tienda: sus registros se crean en WooCommerce y llegan solos.`);
+        }
         const rows: Array<Record<string, unknown>> = [];
         const sample: AiProposalPreview['rows'] = [];
         for (const [i, values] of input.records.entries()) {
@@ -253,6 +259,23 @@ export class DataTools implements AiProposalApplier {
         const { list, fields, bySlug } = await this.loadList(ctx, input.list);
         if (Object.keys(input.values).length === 0) throw new AiToolError('values está vacío: indicá qué campos cambiar.');
         const data = this.coerceValues(input.values, bySlug, list, 'values');
+        // v0.1.213 — en una lista de tienda sólo se cambian precios, stock y
+        // estados (y sólo con «Editar desde la app»); las columnas propias, libres.
+        const marker = readStoreListMarker(list.settings);
+        if (marker) {
+            for (const key of Object.keys(data)) {
+                const fieldId = Number(key.slice(1));
+                const packSlug = storeFieldSlug(marker, fieldId);
+                if (packSlug === null) continue;
+                const label = fields.find((f) => f.id === fieldId)?.label ?? key;
+                if (!STORE_EDITABLE_SLUGS[marker.role].includes(packSlug)) {
+                    throw new AiToolError(`«${label}» viene de WooCommerce y se edita allá.`);
+                }
+                if (!marker.write_back) {
+                    throw new AiToolError(`Para cambiar «${label}» desde la app hay que activar «Editar desde la app» en los ajustes de la tienda.`);
+                }
+            }
+        }
         const targets = await this.resolveTargets(ctx, list, bySlug, input);
         if (targets.ids.length === 0) throw new AiToolError('Ningún registro coincide con esos filtros (o la persona no puede verlos). Revisá los filtros con query_records.');
         const changes: AiProposalPreview['changes'] = Object.entries(data).map(([key, v]) => {
@@ -275,6 +298,9 @@ export class DataTools implements AiProposalApplier {
 
     private async proposeDeleteRecords(ctx: AiToolContext, input: DeleteRecordsSpec): Promise<AiToolResult> {
         const { list, bySlug } = await this.loadList(ctx, input.list);
+        if (readStoreListMarker(list.settings)) {
+            throw new AiToolError(`«${list.name}» está sincronizada con una tienda: sus registros se borran en WooCommerce.`);
+        }
         const targets = await this.resolveTargets(ctx, list, bySlug, input);
         if (targets.ids.length === 0) throw new AiToolError('Ningún registro coincide con esos filtros (o la persona no puede verlos).');
         const n = targets.ids.length;

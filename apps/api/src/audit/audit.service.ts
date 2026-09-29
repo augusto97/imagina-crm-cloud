@@ -65,6 +65,7 @@ export type AuditAction =
     | 'connection.oauth_disconnect'
     // v0.1.206 — sincronización con una tienda (crea listas, trae datos de afuera).
     | 'store_sync.create'
+    | 'store_sync.migrate'
     | 'store_sync.update'
     | 'store_sync.delete'
     | 'store_sync.map_meta';

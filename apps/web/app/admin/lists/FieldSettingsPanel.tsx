@@ -15,6 +15,8 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
+import { StoreFieldNote } from '@/admin/records/StoreColumnBadge';
+
 import { FieldConfigEditor } from './FieldConfigEditor';
 import { FieldTypeSelect } from './FieldTypeSelect';
 import { SlugEditor } from './SlugEditor';
@@ -43,9 +45,14 @@ interface Props {
     onDelete: () => void;
     /** Sólo si el campo puede ser título y todavía no lo es. */
     onMakeTitle?: () => void;
+    /**
+     * v0.1.213 — columna que viene de una tienda sincronizada: sólo nombre,
+     * descripción e índice; ni tipo, ni configuración, ni borrar.
+     */
+    storeField?: boolean;
 }
 
-export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle }: Props): JSX.Element {
+export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, storeField = false }: Props): JSX.Element {
     const update = useUpdateField(listId);
     const { data: fieldTypes } = useFieldTypes();
 
@@ -100,6 +107,17 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle }: Pro
             if (!ok) return;
         }
         try {
+            if (storeField) {
+                await update.mutateAsync({
+                    id: field.id,
+                    input: {
+                        label: label.trim(),
+                        description: description.trim() === '' ? null : description.trim(),
+                        is_indexed: isIndexed,
+                    },
+                });
+                return;
+            }
             await update.mutateAsync({
                 id: field.id,
                 input: {
@@ -151,63 +169,73 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle }: Pro
                 </p>
             </div>
 
-            <Section title={__('Tipo y nombre interno')}>
-                <FieldTypeSelect
-                    value={type}
-                    onChange={(next) => {
-                        if (!next) return;
-                        setType(next);
-                        setConfig({});
-                    }}
-                    editingFromType={field.type}
-                />
-                {type !== field.type && <TypeRiskNote fromType={field.type} toType={type} />}
-                <SlugEditor
-                    type="field"
-                    label={__('Nombre interno')}
-                    currentSlug={field.slug}
-                    listId={listId}
-                    value={slug}
-                    onChange={setSlug}
-                    isDirty={slugDirty}
-                    onDirty={() => setSlugDirty(true)}
-                />
-            </Section>
+            {storeField ? (
+                <StoreFieldNote />
+            ) : (
+                <>
+                    <Section title={__('Tipo y nombre interno')}>
+                        <FieldTypeSelect
+                            value={type}
+                            onChange={(next) => {
+                                if (!next) return;
+                                setType(next);
+                                setConfig({});
+                            }}
+                            editingFromType={field.type}
+                        />
+                        {type !== field.type && <TypeRiskNote fromType={field.type} toType={type} />}
+                        <SlugEditor
+                            type="field"
+                            label={__('Nombre interno')}
+                            currentSlug={field.slug}
+                            listId={listId}
+                            value={slug}
+                            onChange={setSlug}
+                            isDirty={slugDirty}
+                            onDirty={() => setSlugDirty(true)}
+                        />
+                    </Section>
 
-            <Section title={__('Configuración')}>
-                <FieldConfigEditor
-                    type={type}
-                    config={config}
-                    onChange={setConfig}
-                    listId={listId}
-                    currentFieldId={field.id}
-                />
-            </Section>
+                    <Section title={__('Configuración')}>
+                        <FieldConfigEditor
+                            type={type}
+                            config={config}
+                            onChange={setConfig}
+                            listId={listId}
+                            currentFieldId={field.id}
+                        />
+                    </Section>
+                </>
+            )}
 
             <Section title={__('Comportamiento')}>
-                <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                    <input
-                        type="checkbox"
-                        checked={isRequired}
-                        onChange={(e) => setIsRequired(e.target.checked)}
-                    />
-                    {__('Obligatorio')}
-                </label>
-                <label
-                    className={cn(
-                        'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                        !supportsUnique && 'imcrm-opacity-50',
-                    )}
-                >
-                    <input
-                        type="checkbox"
-                        checked={isUnique}
-                        disabled={!supportsUnique}
-                        onChange={(e) => setIsUnique(e.target.checked)}
-                    />
-                    {__('Sin repetidos')}
-                    {!supportsUnique && ' ' + __('(no aplica a este tipo)')}
-                </label>
+                {!storeField && (
+                    <>
+                        <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                            <input
+                                type="checkbox"
+                                checked={isRequired}
+                                onChange={(e) => setIsRequired(e.target.checked)}
+                            />
+                            {__('Obligatorio')}
+                        </label>
+                        <label
+                            className={cn(
+                                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
+                                !supportsUnique && 'imcrm-opacity-50',
+                            )}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={isUnique}
+                                disabled={!supportsUnique}
+                                onChange={(e) => setIsUnique(e.target.checked)}
+                            />
+                            {__('Sin repetidos')}
+                            {!supportsUnique && ' ' + __('(no aplica a este tipo)')}
+                        </label>
+                    </>
+                )}
                 <label
                     className={cn(
                         'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
@@ -243,16 +271,20 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle }: Pro
             )}
 
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="imcrm-gap-1.5 imcrm-text-destructive"
-                    onClick={onDelete}
-                >
-                    <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Eliminar')}
-                </Button>
+                {storeField ? (
+                    <span />
+                ) : (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="imcrm-gap-1.5 imcrm-text-destructive"
+                        onClick={onDelete}
+                    >
+                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Eliminar')}
+                    </Button>
+                )}
                 <Button type="submit" size="sm" disabled={!dirty || update.isPending || label.trim() === ''}>
                     {update.isPending ? __('Guardando…') : __('Guardar')}
                 </Button>

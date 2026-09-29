@@ -45,6 +45,14 @@ export class AggregateService {
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
+        /**
+         * v0.1.213 — `rootsOnly`: contar sólo las filas de primer nivel, las
+         * que muestra la tabla (los grupos de la vista agrupada). Sin eso, en
+         * una lista con subtareas (las líneas de un pedido) el contador de un
+         * grupo sumaba filas que no se ven. Los tableros cuentan TODO y filtran
+         * por tipo cuando hace falta.
+         */
+        opts: { rootsOnly?: boolean } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
@@ -62,6 +70,7 @@ export class AggregateService {
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
             isNull(records.deletedAt),
+            opts.rootsOnly ? isNull(records.parentId) : undefined,
             filterWhere,
         );
 
@@ -199,6 +208,10 @@ export class AggregateService {
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
             isNull(records.deletedAt),
+            // v0.1.213 — el pie suma lo que la tabla MUESTRA: las filas de
+            // primer nivel. Sumar también las subtareas contaba dos veces el
+            // total de un pedido (el pedido + sus líneas).
+            isNull(records.parentId),
             filterWhere,
         );
 
