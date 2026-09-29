@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
     collectMentionedUserIds,
+    type BulkEditTarget,
     evaluateComputed,
     isDataField,
     jsonbKeyForField,
@@ -402,6 +403,76 @@ export class RecordsService {
                 result.rels.get(row.id),
             ),
         );
+    }
+
+    /**
+     * v0.1.216 — Las filas que abarca una edición masiva: las elegidas por id
+     * o TODAS las que coinciden con los filtros y la búsqueda de la vista.
+     * Mismo whitelist de filtros y búsqueda que el listado, pero con el alcance
+     * de EDICIÓN del rol (lo que la persona puede cambiar, no sólo lo que ve).
+     * Trae los datos con calculados, lookups y rollups ya evaluados (sirven de
+     * operandos) y los vínculos de cada relación.
+     */
+    async bulkRows(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        target: BulkEditTarget,
+        cap: number,
+    ): Promise<{
+        list: List;
+        fields: Field[];
+        total: number;
+        rows: Array<{ id: number; data: Record<string, unknown>; relations: Record<number, number[]> }>;
+    }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
+            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+            const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+            const scopeW = scopeWhere(perms.edit, actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+            let where: SQL | undefined;
+            let parent: 'roots' | 'any';
+            if ('ids' in target) {
+                where = inArray(records.id, [...new Set(target.ids)]);
+                parent = 'any';
+            } else {
+                const fieldsById = new Map<number, FilterableField>([
+                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                    ...this.fields.through.filterableFor(plans, tenantId),
+                    descriptionSearchFilterable(),
+                ]);
+                where = andWhere(compileFilterTree(fieldsById, target.filter_tree, new Date()), compileSearch(fields, target.search));
+                parent = target.include_subtasks ? 'any' : 'roots';
+            }
+            where = andWhere(where, scopeW);
+            const total = await this.repo.count(tx, tenantId, list.id, { parent, where });
+            if (total > cap) {
+                throw new BadRequestException({
+                    code: 'bulk_too_many',
+                    message: `Son ${total} registros y una edición masiva abarca hasta ${cap}. Acotá con filtros y hacelo en partes.`,
+                    data: { status: 400, total, cap },
+                });
+            }
+            if (total === 0) return { list, fields, total, rows: [] };
+            const listed = await this.repo.list(tx, tenantId, list.id, { parent, where, limit: cap, dir: 'asc' });
+            const enriched = await this.fields.through.attach(tx, tenantId, plans, listed.slice(0, cap), fields);
+            const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
+            const rels = await this.relationsRepo.batchTargets(
+                tx,
+                tenantId,
+                enriched.map((r) => r.id),
+                relFieldIds,
+            );
+            const rows = enriched.map((r) => {
+                const byField = rels.get(r.id);
+                const relations: Record<number, number[]> = {};
+                for (const id of relFieldIds) relations[id] = byField?.get(id) ?? [];
+                return { id: r.id, data: withComputed(fields, r).data as Record<string, unknown>, relations };
+            });
+            return { list, fields, total, rows };
+        });
     }
 
     /**

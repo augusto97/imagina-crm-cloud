@@ -1,30 +1,20 @@
 import { useState } from 'react';
-import { Copy, Pencil, Trash2, X } from 'lucide-react';
-import { storeColumnKind, useStoreRules } from './storeRules';
+import { Copy, Trash2, Wand2, X } from 'lucide-react';
 
-import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select } from '@/components/ui/select';
-import { useFields } from '@/hooks/useFields';
 import { useBulkRecords, useCreateRecord } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
-import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { FieldEntity } from '@/types/field';
 
-import { extractFieldOptions } from './fieldOptions';
-import { FilterOptionPicker } from './FilterOptionPicker';
-import { FilterUserPicker } from './FilterUserPicker';
-import { toValueList } from './filterValue';
+import { useStoreRules } from './storeRules';
 
 interface BulkActionsToolbarProps {
     listId: number;
     selectedIds: number[];
     onClear: () => void;
+    /** Abre la edición masiva (v0.1.216) sobre la selección. */
+    onBulkEdit: () => void;
 }
 
 /**
@@ -33,8 +23,10 @@ interface BulkActionsToolbarProps {
  * viewport para que no se entierre al final del contenido.
  *
  * Acciones soportadas:
- *  - Actualizar campo: popover que pide field + valor; corre bulk
- *    update con `{slug: value}` por cada record seleccionado.
+ *  - Editar en lote (v0.1.216): abre la edición masiva con operaciones
+ *    (sumar, porcentajes, redondeos, cálculos, agregar/quitar opciones…),
+ *    vista previa y aplicación en tandas. Reemplaza al viejo «Actualizar
+ *    campo», que sólo sabía poner un valor fijo.
  *  - Duplicar: lee cada record con `useRecord` y crea uno nuevo con
  *    los mismos values.
  *  - Eliminar: soft-delete batch (ya existía).
@@ -44,6 +36,7 @@ export function BulkActionsToolbar({
     listId,
     selectedIds,
     onClear,
+    onBulkEdit,
 }: BulkActionsToolbarProps): JSX.Element | null {
     const bulk = useBulkRecords(listId);
     // v0.1.213 — en una lista de tienda no se duplica ni se borra (se hace
@@ -111,11 +104,16 @@ export function BulkActionsToolbar({
 
             <div className="imcrm-h-5 imcrm-w-px imcrm-bg-border imcrm-mx-1" aria-hidden />
 
-            <UpdateFieldAction
-                listId={listId}
-                selectedIds={selectedIds}
-                onDone={onClear}
-            />
+            <Button
+                variant="ghost"
+                size="sm"
+                className="imcrm-gap-1.5"
+                onClick={onBulkEdit}
+                data-testid="imcrm-bulk-edit-open"
+            >
+                <Wand2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                {__('Editar en lote')}
+            </Button>
 
             {!storeManaged && (
                 <DuplicateAction
@@ -138,229 +136,6 @@ export function BulkActionsToolbar({
                 </Button>
             )}
         </div>
-    );
-}
-
-/**
- * "Actualizar campo": popover con (1) selector de campo, (2) input
- * apropiado al tipo del campo, (3) botón "Aplicar" que dispara bulk
- * update. Cubre los casos comunes (estado, fecha, etiqueta, número).
- *
- * Tipos no editables inline (relation, file, computed) se filtran de
- * la lista de campos seleccionables.
- */
-function UpdateFieldAction({
-    listId,
-    selectedIds,
-    onDone,
-}: {
-    listId: number;
-    selectedIds: number[];
-    onDone: () => void;
-}): JSX.Element {
-    const fields = useFields(listId);
-    const bulk = useBulkRecords(listId);
-    const storeRules = useStoreRules();
-    const [open, setOpen] = useState(false);
-    const [fieldSlug, setFieldSlug] = useState<string>('');
-    const [value, setValue] = useState<unknown>('');
-
-    const editableFields = (fields.data ?? []).filter(
-        (f) =>
-            f.type !== 'relation'
-            && !isDerivedFieldType(f.type)
-            && f.type !== 'file'
-            // Lista de tienda: columnas propias o las que viajan (la fila decide el resto).
-            && storeColumnKind(storeRules, f.id) !== 'store_locked',
-    );
-    const selected = editableFields.find((f) => f.slug === fieldSlug) ?? null;
-
-    const apply = async (): Promise<void> => {
-        if (selected === null) return;
-        await bulk.mutateAsync({
-            action: 'update',
-            ids: selectedIds,
-            values: { [selected.slug]: value },
-        });
-        setOpen(false);
-        setFieldSlug('');
-        setValue('');
-        onDone();
-    };
-
-    return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="imcrm-gap-1.5">
-                    <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Actualizar campo')}
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent align="center" sideOffset={8} className="imcrm-w-72 imcrm-p-3">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Campo')}
-                    </Label>
-                    <Select
-                        value={fieldSlug}
-                        onChange={(e) => {
-                            setFieldSlug(e.target.value);
-                            // Reset value cuando cambia el field para
-                            // que no se quede un value de un tipo
-                            // anterior.
-                            setValue('');
-                        }}
-                    >
-                        <option value="">{__('— Selecciona —')}</option>
-                        {editableFields.map((f) => (
-                            <option key={f.id} value={f.slug}>
-                                {f.label}
-                            </option>
-                        ))}
-                    </Select>
-
-                    {selected && (
-                        <>
-                            <Label className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Nuevo valor')}
-                            </Label>
-                            <BulkValueInput
-                                field={selected}
-                                value={value}
-                                onChange={setValue}
-                            />
-                        </>
-                    )}
-
-                    <Button
-                        onClick={apply}
-                        disabled={selected === null || bulk.isPending}
-                        size="sm"
-                        className="imcrm-mt-2"
-                    >
-                        {bulk.isPending ? __('Aplicando…') : __('Aplicar')}
-                    </Button>
-                    <p className="imcrm-text-[10px] imcrm-text-muted-foreground">
-                        {sprintf(
-                            _n(
-                                'Se actualizará %d registro.',
-                                'Se actualizarán %d registros.',
-                                selectedIds.length,
-                            ),
-                            selectedIds.length,
-                        )}
-                    </p>
-                </div>
-            </PopoverContent>
-        </Popover>
-    );
-}
-
-/**
- * Input apropiado al tipo del field para el bulk-update. Subset
- * minimal de FilterValueInput: text, number, date, checkbox,
- * select. Para multi_select acepta CSV.
- */
-function BulkValueInput({
-    field,
-    value,
-    onChange,
-}: {
-    field: FieldEntity;
-    value: unknown;
-    onChange: (v: unknown) => void;
-}): JSX.Element {
-    // v0.1.191 — mismos pickers que los filtros: las opciones se ELIGEN con
-    // sus chips de color (el multi_select pedía "opt1, opt2" tipeado a
-    // mano con los value internos), el usuario se busca por nombre y la
-    // calificación se pone con las estrellas.
-    if (field.type === 'select' || field.type === 'multi_select') {
-        const multi = field.type === 'multi_select';
-        return (
-            <FilterOptionPicker
-                mode={multi ? 'multi' : 'single'}
-                options={extractFieldOptions(field)}
-                value={multi ? toValueList(value) : (typeof value === 'string' ? value : null)}
-                onChange={(next) => onChange(multi ? (next ?? []) : (next ?? ''))}
-                aria-label={__('Nuevo valor')}
-                data-testid="imcrm-bulk-option-picker"
-            />
-        );
-    }
-    if (field.type === 'user') {
-        return (
-            <FilterUserPicker
-                mode="single"
-                value={value}
-                onChange={(next) => onChange(next ?? '')}
-            />
-        );
-    }
-    if (field.type === 'rating') {
-        const cfg = field.config as { max?: unknown; icon?: unknown };
-        return (
-            <div className="imcrm-flex imcrm-min-h-9 imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2">
-                <RatingControl
-                    value={typeof value === 'number' ? value : null}
-                    max={typeof cfg.max === 'number' ? cfg.max : 5}
-                    icon={(typeof cfg.icon === 'string' ? cfg.icon : 'star') as RatingIcon}
-                    size="md"
-                    onChange={(next) => onChange(next ?? '')}
-                />
-            </div>
-        );
-    }
-    if (field.type === 'checkbox') {
-        return (
-            <Select
-                value={value === true || value === '1' ? '1' : '0'}
-                onChange={(e) => onChange(e.target.value === '1')}
-            >
-                <option value="1">{__('Marcado')}</option>
-                <option value="0">{__('No marcado')}</option>
-            </Select>
-        );
-    }
-    if (field.type === 'date') {
-        return (
-            <Input
-                type="date"
-                value={typeof value === 'string' ? value : ''}
-                onChange={(e) => onChange(e.target.value)}
-            />
-        );
-    }
-    if (field.type === 'datetime') {
-        return (
-            <Input
-                type="datetime-local"
-                value={typeof value === 'string' ? value : ''}
-                onChange={(e) => onChange(e.target.value)}
-            />
-        );
-    }
-    if (
-        field.type === 'number'
-        || field.type === 'currency'
-        // v0.1.158 — se guardan como número (0-100 / minutos).
-        || field.type === 'percent'
-        || field.type === 'duration'
-    ) {
-        return (
-            <Input
-                type="number"
-                step="any"
-                value={value === null || value === undefined ? '' : String(value)}
-                onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
-            />
-        );
-    }
-    return (
-        <Input
-            value={typeof value === 'string' ? value : ''}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={__('Nuevo valor')}
-        />
     );
 }
 

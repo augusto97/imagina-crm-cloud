@@ -41,8 +41,9 @@ import type { RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
+import { BulkEditDialog } from './bulk/BulkEditDialog';
 import { StoreListBanner } from './StoreListBanner';
-import { StoreRulesContext, type StoreRules } from './storeRules';
+import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
 import { FieldCreateDialog } from './FieldCreateDialog';
 import { FieldsPanel } from './FieldsPanel';
@@ -257,6 +258,8 @@ export function RecordsPage(): JSX.Element {
     // Padre del alta en curso: si viene, el registro nace como subtarea suya.
     const [createParentId, setCreateParentId] = useState<number | null>(null);
     const [importOpen, setImportOpen] = useState(false);
+    // v0.1.216 — edición masiva (selección o todo lo que coincide con la vista).
+    const [bulkEditOpen, setBulkEditOpen] = useState(false);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
@@ -285,6 +288,7 @@ export function RecordsPage(): JSX.Element {
     );
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
+    const canBulkEdit = useCan(CAP.BULK_ACTIONS);
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -866,6 +870,24 @@ const applyView = (view: SavedViewEntity | null): void => {
                     canExport={canExportRecords}
                     onImport={() => setImportOpen(true)}
                     onExport={() => setExportOpen(true)}
+                    canBulkEdit={canBulkEdit}
+                    onBulkEdit={() => setBulkEditOpen(true)}
+                />
+            )}
+
+            {fields.data && fields.data.length > 0 && (
+                <BulkEditDialog
+                    open={bulkEditOpen}
+                    onOpenChange={setBulkEditOpen}
+                    listId={list.data.id}
+                    fields={fields.data}
+                    selectedIds={selectedIds}
+                    filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    matchingCount={records.data?.meta?.total ?? null}
+                    canEditMatching={canBulkEdit}
+                    isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
+                    onDone={() => setSelectedIds([])}
                 />
             )}
 
@@ -1061,6 +1083,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         listId={list.data.id}
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
+                        onBulkEdit={() => setBulkEditOpen(true)}
                     />
 
                     <FieldCreateDialog

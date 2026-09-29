@@ -1402,6 +1402,61 @@ tienda tiene que poder llegar a ese dominio. Migrar una empresa lleva la
 sincronización con ids re-mapeados; los avisos NO viajan (son de la
 instancia de origen) y se vuelven a registrar en la primera vuelta.
 
+
+### ADR-S25 — Edición masiva: operaciones sobre el valor de cada fila, con vista previa (v0.1.216)
+
+**Contexto.** La acción masiva sólo sabía «poner este valor en esta columna»
+sobre las filas seleccionadas de la página. No servía para lo que de verdad se
+hace en lote: subir los precios un 10 %, redondearlos a los terminados en 900,
+sumar stock, agregar o quitar una etiqueta sin pisar las demás, correr una
+fecha un mes, calcular una columna a partir de otra — ni para hacerlo sobre
+TODO lo que coincide con un filtro y no sólo sobre lo visible.
+
+**Decisión.**
+
+- **Una edición es una lista ORDENADA de operaciones** (`bulkOperationSchema`,
+  shared): `set`/`clear`, aritmética (`add`, `subtract`, `multiply`,
+  `divide`, `percent`), `round` a una grilla `k × múltiplo + ajuste` en una
+  dirección (hacia arriba nunca baja un precio: 11.000 → 11.900 con «terminar
+  en 900»), `calc` (`A ± × ÷ B` con columnas o números), `copy` entre
+  columnas con conversión de tipo, texto (prefijo, sufijo, buscar/reemplazar
+  literal, mayúsculas, espacios), opciones (`add_options`/`remove_options`),
+  checkbox (`toggle`), fechas (`shift_date` con fin de mes, `today`) y
+  vínculos de relaciones (`add_links`/`remove_links`). Qué operación admite
+  cada tipo lo define `BULK_OPS_BY_TYPE`: la UI arma su menú con eso y el
+  motor lo exige.
+- **Cada operación parte del valor ACTUAL de cada fila** y se encadenan (la
+  segunda ve lo que dejó la primera). Una operación que no se puede hacer en
+  una fila (un operando vacío, un valor que el campo no acepta, lo que la
+  tienda no admite) deja la FILA ENTERA sin escribir y se reporta: aplicar
+  medio cambio sería peor que no aplicarlo.
+- **La vista previa y la escritura usan la MISMA función**
+  (`applyBulkOperations`, pura, en shared). La vista previa resuelve todos los
+  registros abarcados (selección o filtros + búsqueda de la vista, con el
+  alcance de EDICIÓN del rol, tope 5.000) y devuelve los ids que cambian, un
+  ejemplo de antes → después y los que no se pueden cambiar con el motivo. El
+  cliente aplica esos ids en tandas de 200 (pedidos cortos, barra de avance;
+  cada tanda recalcula sobre el valor del momento), y una fila que entró al
+  filtro después de la vista previa no se cuela.
+- **Escribir es `RecordsService.update`, fila por fila**: una edición masiva
+  es exactamente N ediciones a mano — validación con el validador compartido,
+  ACL por fila, bitácora, automatizaciones, recurrencias y, en una lista de
+  tienda, las reglas de `store-rules` y el envío a WooCommerce. Un solo aviso
+  de realtime por tanda.
+- **Permisos**: editar la selección exige poder editar registros (el agente
+  edita lo suyo); editar TODO lo de un filtro exige `bulk_actions`. Las
+  columnas ocultas para el rol no se escriben ni se leen como operando, y las
+  calculadas (computed/lookup/rollup) no se escriben.
+- **Los números se tipean con los separadores de la empresa** (formato
+  regional, v0.1.104): con punto de miles, «12.500» es doce mil quinientos.
+
+**Consecuencias.** `POST /lists/:l/records/bulk-edit/preview` y
+`POST /lists/:l/records/bulk-edit`. El viejo `POST .../records/bulk`
+(borrar / poner un valor) se mantiene para duplicar y eliminar. La edición
+masiva de una lista de tienda con los datos que la tienda tiene y la app no
+(atributos, clase de envío, peso, visibilidad…) es otra pieza: la hace la tienda
+en lote (ver la nota de ADR-S24 de v0.1.217).
+
 ---
 
-**Versión del documento:** 1.28.0 (slug del producto editable + upgrade liviano del pack — ADR-S24)
+**Versión del documento:** 1.29.0 (edición masiva con operaciones y vista previa — ADR-S25)
