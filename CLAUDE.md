@@ -5046,6 +5046,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dashboards al final, por tipo, página y panel sincronizados en los dos
         sentidos, celular sin desborde y con el pin visible sin hover).
 
+  - [x] **Cada carpeta es un espacio (v0.1.212, pedido del usuario: "al darle
+        click a cada carpeta en el menú, ver de una un espacio con solo esas
+        listas")**: la cabecera de carpeta del menú tenía UN solo blanco
+        (plegar/desplegar). Ahora tiene dos, como ClickUp: el **cuadrado de
+        color** (chevron al hover) sigue plegando —con objetivo táctil de 32px
+        en celular— y el **nombre abre la carpeta** en `/folders/:id`
+        (`FolderPage`): breadcrumb Listas › carpeta, el icono y color de la
+        carpeta, "N listas · M actualizadas esta semana", buscador (con más de
+        3 listas), las MISMAS tarjetas del índice (`ListCard` extraído y
+        compartido: icono y color reales, pin a favoritos) y **"Nueva lista"**
+        que nace adentro. Abrirla también la despliega en el menú y la marca
+        como activa; en el drawer de celular el nombre navega y cierra, el
+        icono pliega sin cerrar. En el índice de Listas cada sección gana un
+        botón **"Abrir"**. Estados propios: carpeta vacía (explica que se puede
+        crear o arrastrar una lista hasta el nombre) y carpeta inexistente
+        (salida a Listas). El enlace del nombre es `draggable={false}`: el
+        destino de arrastre de listas sigue siendo la fila entera. Sin cambios
+        de backend. E2E navegador 22/22 (plegar no navega, el nombre abre el
+        espacio y lo despliega, activa en el menú, sólo sus listas, resumen,
+        color, buscador, pin, alta en la carpeta, abrir lista, "Abrir" desde el
+        índice, vacía, inexistente, celular) + regresión de v0.1.211 28/28.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
