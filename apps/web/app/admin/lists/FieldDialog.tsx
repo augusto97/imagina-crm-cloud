@@ -16,6 +16,7 @@ import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 import { FieldTypeSelect } from './FieldTypeSelect';
 import { SlugEditor } from './SlugEditor';
+import { StoreFieldNote } from '@/admin/records/StoreColumnBadge';
 
 /**
  * Dialog unificado de creación + edición de campos. Maneja:
@@ -36,6 +37,8 @@ interface FieldDialogProps {
     field?: FieldEntity | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /** v0.1.213 — columna de una tienda sincronizada: sólo cambia el nombre. */
+    storeField?: boolean;
 }
 
 export function FieldDialog({
@@ -43,6 +46,7 @@ export function FieldDialog({
     field,
     open,
     onOpenChange,
+    storeField = false,
 }: FieldDialogProps): JSX.Element {
     const create = useCreateField(listId);
     const update = useUpdateField(listId);
@@ -135,7 +139,9 @@ export function FieldDialog({
         }
 
         try {
-            if (isEdit && field) {
+            if (isEdit && field && storeField) {
+                await update.mutateAsync({ id: field.id, input: { label: label.trim() } });
+            } else if (isEdit && field) {
                 await update.mutateAsync({
                     id: field.id,
                     input: {
@@ -223,93 +229,105 @@ export function FieldDialog({
                                     />
                                 </div>
 
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-                                    <Label>{__('Tipo')}</Label>
-                                    <FieldTypeSelect
-                                        value={type}
-                                        onChange={handleTypeChange}
-                                        editingFromType={isEdit && field ? field.type : undefined}
-                                    />
-                                    {isEdit && field && type !== '' && type !== field.type && (
-                                        <TypeChangeWarning fromType={field.type} toType={type} />
-                                    )}
-                                </div>
+                                {storeField ? null : (
+                                    <>
+                                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                                            <Label>{__('Tipo')}</Label>
+                                            <FieldTypeSelect
+                                                value={type}
+                                                onChange={handleTypeChange}
+                                                editingFromType={isEdit && field ? field.type : undefined}
+                                            />
+                                            {isEdit && field && type !== '' && type !== field.type && (
+                                                <TypeChangeWarning fromType={field.type} toType={type} />
+                                            )}
+                                        </div>
 
-                                {/* `currentSlug` en edición: sin él se consultaba el
-                                    slug PROPIO del campo y volvía "ocupado" — el
-                                    aviso salía con sólo abrir el campo (v0.1.162). */}
-                                <SlugEditor
-                                    type="field"
-                                    label={__('Nombre interno')}
-                                    sourceText={label}
-                                    currentSlug={isEdit && field ? field.slug : undefined}
-                                    listId={listId}
-                                    value={slug}
-                                    onChange={setSlug}
-                                    isDirty={slugDirty}
-                                    onDirty={() => setSlugDirty(true)}
-                                />
+                                        {/* `currentSlug` en edición: sin él se consultaba el
+                                            slug PROPIO del campo y volvía "ocupado" — el
+                                            aviso salía con sólo abrir el campo (v0.1.162). */}
+                                        <SlugEditor
+                                            type="field"
+                                            label={__('Nombre interno')}
+                                            sourceText={label}
+                                            currentSlug={isEdit && field ? field.slug : undefined}
+                                            listId={listId}
+                                            value={slug}
+                                            onChange={setSlug}
+                                            isDirty={slugDirty}
+                                            onDirty={() => setSlugDirty(true)}
+                                        />
+                                    </>
+                                )}
+
                             </div>
 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
                                 <ColumnTitle>{__('Configuración')}</ColumnTitle>
 
-                                <FieldConfigEditor
-                                    type={type}
-                                    config={config}
-                                    onChange={setConfig}
-                                    listId={listId}
-                                    currentFieldId={field?.id}
-                                />
+                                {storeField ? (
+                                    <StoreFieldNote />
+                                ) : (
+                                    <>
+                                        <FieldConfigEditor
+                                            type={type}
+                                            config={config}
+                                            onChange={setConfig}
+                                            listId={listId}
+                                            currentFieldId={field?.id}
+                                        />
 
-                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
-                                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={isRequired}
-                                            onChange={(e) => setIsRequired(e.target.checked)}
-                                        />
-                                        {__('Obligatorio')}
-                                    </label>
-                                    <label
-                                        className={cn(
-                                            'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                                            !supportsUnique && 'imcrm-opacity-50',
-                                        )}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={isUnique}
-                                            onChange={(e) => setIsUnique(e.target.checked)}
-                                            disabled={!supportsUnique}
-                                        />
-                                        {__('Sin repetidos')}
-                                        {!supportsUnique && type !== '' && ' ' + __('(no aplica a este tipo)')}
-                                    </label>
-                                    {/* `is_indexed`: el usuario marca los campos
-                                        por los que filtra/ordena seguido para que
-                                        se cree el índice. Vital a 50k+ filas.
-                                        UNIQUE ya provee índice, así que con
-                                        "sin repetidos" activo este se deshabilita. */}
-                                    <label
-                                        className={cn(
-                                            'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                                            isUnique && 'imcrm-opacity-50',
-                                        )}
-                                        title={__('Crea un índice sobre la columna: acelera filtros y orden en listas grandes (50k+ registros), a cambio de algo más de espacio y escrituras un poco más lentas. Activalo sólo en los campos por los que filtrás a menudo.')}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={isIndexed}
-                                            onChange={(e) => setIsIndexed(e.target.checked)}
-                                            disabled={isUnique}
-                                        />
-                                        {__('Indexar')}
-                                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                            {__('(rápido a gran escala)')}
-                                        </span>
-                                    </label>
-                                </div>
+                                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">
+                                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isRequired}
+                                                    onChange={(e) => setIsRequired(e.target.checked)}
+                                                />
+                                                {__('Obligatorio')}
+                                            </label>
+                                            <label
+                                                className={cn(
+                                                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
+                                                    !supportsUnique && 'imcrm-opacity-50',
+                                                )}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isUnique}
+                                                    onChange={(e) => setIsUnique(e.target.checked)}
+                                                    disabled={!supportsUnique}
+                                                />
+                                                {__('Sin repetidos')}
+                                                {!supportsUnique && type !== '' && ' ' + __('(no aplica a este tipo)')}
+                                            </label>
+                                            {/* `is_indexed`: el usuario marca los campos
+                                                por los que filtra/ordena seguido para que
+                                                se cree el índice. Vital a 50k+ filas.
+                                                UNIQUE ya provee índice, así que con
+                                                "sin repetidos" activo este se deshabilita. */}
+                                            <label
+                                                className={cn(
+                                                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
+                                                    isUnique && 'imcrm-opacity-50',
+                                                )}
+                                                title={__('Crea un índice sobre la columna: acelera filtros y orden en listas grandes (50k+ registros), a cambio de algo más de espacio y escrituras un poco más lentas. Activalo sólo en los campos por los que filtrás a menudo.')}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isIndexed}
+                                                    onChange={(e) => setIsIndexed(e.target.checked)}
+                                                    disabled={isUnique}
+                                                />
+                                                {__('Indexar')}
+                                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                                    {__('(rápido a gran escala)')}
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </>
+                                )}
+
                             </div>
                         </div>
 

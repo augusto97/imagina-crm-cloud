@@ -19,6 +19,7 @@ import type { RecordEntity } from '@/types/record';
 import { BlockRenderer } from './BlockRenderer';
 import { RecordDescription } from '../description/RecordDescription';
 import { PortalAccessButton } from './PortalAccessButton';
+import { useStoreRules } from '../storeRules';
 
 interface RecordCrmLayoutProps {
     list: ListSummary;
@@ -60,6 +61,7 @@ export function RecordCrmLayout({
     // v0.1.122 — la ficha vive en el admin (tema claro/oscuro): la capa de
     // estilo necesita el tema para decidir la tinta de los bloques.
     const dark = useTheme().resolved === 'dark';
+    const storeRules = useStoreRules();
 
     const initialValues = useMemo<Record<string, unknown>>(
         () => ({ ...record.fields, ...record.relations }),
@@ -122,16 +124,19 @@ export function RecordCrmLayout({
                     </Link>
                 </Button>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                        onClick={onDelete}
-                        disabled={deleting}
-                    >
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        {__('Eliminar')}
-                    </Button>
+                    {/* Los registros de una tienda se borran en WooCommerce (v0.1.213). */}
+                    {!storeRules && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
+                            onClick={onDelete}
+                            disabled={deleting}
+                        >
+                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                            {__('Eliminar')}
+                        </Button>
+                    )}
                     <Button
                         size="sm"
                         className="imcrm-gap-2"

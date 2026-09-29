@@ -206,11 +206,13 @@ export class RecordsGroupedService {
         // multi_select: un bucket por COMBINACIÓN exacta (clave = JSON del
         // set normalizado, la arma el motor) — cada registro cae en UN grupo,
         // como en ClickUp, así los grupos son disjuntos y la suma es el total.
-        const agg = await this.aggregate.run(tenantId, listKey, {
-            metric: 'count',
-            group_by_field_id: groupBy,
-            filter_tree: filterTree,
-        });
+        // Sólo filas de primer nivel: son las que el grupo muestra (v0.1.213).
+        const agg = await this.aggregate.run(
+            tenantId,
+            listKey,
+            { metric: 'count', group_by_field_id: groupBy, filter_tree: filterTree },
+            { rootsOnly: true },
+        );
         return (agg.groups ?? []).map((g) => ({ value: g.group, count: Number(g.value ?? 0) }));
     }
 }

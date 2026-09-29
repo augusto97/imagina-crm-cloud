@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Copy, Pencil, Trash2, Truck, X } from 'lucide-react';
-import type { StoreListMarker } from '@imagina-base/shared';
+import { Copy, Pencil, Trash2, X } from 'lucide-react';
+import { storeColumnKind, useStoreRules } from './storeRules';
 
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { Button } from '@/components/ui/button';
@@ -19,15 +19,12 @@ import type { FieldEntity } from '@/types/field';
 import { extractFieldOptions } from './fieldOptions';
 import { FilterOptionPicker } from './FilterOptionPicker';
 import { FilterUserPicker } from './FilterUserPicker';
-import { PurchaseOrderDialog } from './PurchaseOrderDialog';
 import { toValueList } from './filterValue';
 
 interface BulkActionsToolbarProps {
     listId: number;
     selectedIds: number[];
     onClear: () => void;
-    /** Marca de lista de la tienda (v0.1.209): en Productos/Variaciones ofrece «Orden de compra». */
-    storeMarker?: StoreListMarker | null;
 }
 
 /**
@@ -47,15 +44,11 @@ export function BulkActionsToolbar({
     listId,
     selectedIds,
     onClear,
-    storeMarker,
 }: BulkActionsToolbarProps): JSX.Element | null {
     const bulk = useBulkRecords(listId);
-    const [purchaseOpen, setPurchaseOpen] = useState(false);
-    // La selección se limpia al CERRAR el diálogo tras crear la orden: limpiarla
-    // antes desmontaría la barra (y con ella el diálogo con el resultado).
-    const [purchaseDone, setPurchaseDone] = useState(false);
-    const restockResource =
-        storeMarker && (storeMarker.role === 'products' || storeMarker.role === 'variations') ? storeMarker.role : null;
+    // v0.1.213 — en una lista de tienda no se duplica ni se borra (se hace
+    // en WooCommerce), y sólo se ofrecen las columnas que se pueden cambiar.
+    const storeManaged = useStoreRules() !== null;
 
     if (selectedIds.length === 0) return null;
 
@@ -124,53 +117,26 @@ export function BulkActionsToolbar({
                 onDone={onClear}
             />
 
-            <DuplicateAction
-                listId={listId}
-                selectedIds={selectedIds}
-                onDone={onClear}
-            />
-
-            {restockResource && storeMarker && (
-                <>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="imcrm-gap-1.5"
-                        onClick={() => setPurchaseOpen(true)}
-                        data-testid="imcrm-bulk-purchase"
-                    >
-                        <Truck className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {__('Orden de compra')}
-                    </Button>
-                    {purchaseOpen && (
-                        <PurchaseOrderDialog
-                            open={purchaseOpen}
-                            onOpenChange={(o) => {
-                                setPurchaseOpen(o);
-                                if (!o && purchaseDone) {
-                                    setPurchaseDone(false);
-                                    onClear();
-                                }
-                            }}
-                            connectionId={storeMarker.connection_id}
-                            resource={restockResource}
-                            recordIds={selectedIds.slice(0, 200)}
-                            onCreated={() => setPurchaseDone(true)}
-                        />
-                    )}
-                </>
+            {!storeManaged && (
+                <DuplicateAction
+                    listId={listId}
+                    selectedIds={selectedIds}
+                    onDone={onClear}
+                />
             )}
 
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                disabled={bulk.isPending}
-                className="imcrm-gap-1.5 imcrm-text-destructive hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
-            >
-                <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                {bulk.isPending ? __('Eliminando…') : __('Eliminar')}
-            </Button>
+            {!storeManaged && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={bulk.isPending}
+                    className="imcrm-gap-1.5 imcrm-text-destructive hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
+                >
+                    <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {bulk.isPending ? __('Eliminando…') : __('Eliminar')}
+                </Button>
+            )}
         </div>
     );
 }
@@ -194,12 +160,18 @@ function UpdateFieldAction({
 }): JSX.Element {
     const fields = useFields(listId);
     const bulk = useBulkRecords(listId);
+    const storeRules = useStoreRules();
     const [open, setOpen] = useState(false);
     const [fieldSlug, setFieldSlug] = useState<string>('');
     const [value, setValue] = useState<unknown>('');
 
     const editableFields = (fields.data ?? []).filter(
-        (f) => f.type !== 'relation' && !isDerivedFieldType(f.type) && f.type !== 'file',
+        (f) =>
+            f.type !== 'relation'
+            && !isDerivedFieldType(f.type)
+            && f.type !== 'file'
+            // Lista de tienda: columnas propias o las que viajan (la fila decide el resto).
+            && storeColumnKind(storeRules, f.id) !== 'store_locked',
     );
     const selected = editableFields.find((f) => f.slug === fieldSlug) ?? null;
 

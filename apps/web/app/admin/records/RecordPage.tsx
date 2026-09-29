@@ -19,7 +19,9 @@ import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
+import { readStoreListMarker } from '@imagina-base/shared';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
+import { lockedReasonsFor, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
 import { Badge } from '@/components/ui/badge';
@@ -67,6 +69,14 @@ export function RecordPage(): JSX.Element {
     }, [record.data]);
 
     const [values, setValues] = useState<Record<string, unknown>>(initialValues);
+    // v0.1.213 — lista de una tienda: sin borrar y con los campos de WooCommerce de lectura.
+    const storeMarker = readStoreListMarker(list.data?.settings);
+    const storeRules = useMemo<StoreRules | null>(
+        () => (storeMarker && fields.data ? { marker: storeMarker, fields: fields.data } : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [JSON.stringify(storeMarker), fields.data],
+    );
+    const lockedReasons = useMemo(() => lockedReasonsFor(storeRules, fields.data ?? [], values), [storeRules, fields.data, values]);
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
@@ -127,15 +137,17 @@ export function RecordPage(): JSX.Element {
 
     if (useCrmLayout && fields.data) {
         return (
-            <RecordCrmLayout
-                list={list.data}
-                record={record.data}
-                fields={fields.data}
-                currentUserId={boot.user.id}
-                isAdmin={boot.user.capabilities.workspace_admin === true}
-                onDelete={() => void handleDelete()}
-                deleting={remove.isPending}
-            />
+            <StoreRulesContext.Provider value={storeRules}>
+                <RecordCrmLayout
+                    list={list.data}
+                    record={record.data}
+                    fields={fields.data}
+                    currentUserId={boot.user.id}
+                    isAdmin={boot.user.capabilities.workspace_admin === true}
+                    onDelete={() => void handleDelete()}
+                    deleting={remove.isPending}
+                />
+            </StoreRulesContext.Provider>
         );
     }
 
@@ -220,7 +232,7 @@ export function RecordPage(): JSX.Element {
                                 titleField && setValues((v) => ({ ...v, [titleField.slug]: next }))
                             }
                             fallback={title}
-                            editable={canEditRecords}
+                            editable={canEditRecords && !(titleField && lockedReasons[titleField.slug])}
                             className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
                         />
                         <Badge variant="outline" className="imcrm-shrink-0 imcrm-font-mono imcrm-text-xs">
@@ -229,15 +241,17 @@ export function RecordPage(): JSX.Element {
                     </div>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    <Button
-                        variant="ghost"
-                        className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                        onClick={handleDelete}
-                        disabled={remove.isPending}
-                    >
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                        {__('Eliminar')}
-                    </Button>
+                    {!storeRules && (
+                        <Button
+                            variant="ghost"
+                            className="imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
+                            onClick={handleDelete}
+                            disabled={remove.isPending}
+                        >
+                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                            {__('Eliminar')}
+                        </Button>
+                    )}
                     <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
                         <Save className="imcrm-h-4 imcrm-w-4" />
                         {update.isPending ? __('Guardando…') : __('Guardar cambios')}
@@ -291,6 +305,7 @@ export function RecordPage(): JSX.Element {
                                 fieldErrors={fieldErrors}
                                 density="compact"
                                 showTypeIcon
+                                lockedReasons={lockedReasons}
                             />
                         )}
 

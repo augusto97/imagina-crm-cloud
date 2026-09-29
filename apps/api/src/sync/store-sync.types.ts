@@ -1,9 +1,7 @@
 import {
     STORE_META_RESOURCES,
-    STORE_PURCHASE_LISTS,
     STORE_SYNC_RESOURCES,
     type StoreMetaResource,
-    type StorePurchaseList,
     type StoreSyncMode,
     type StoreSyncResource,
 } from '@imagina-base/shared';
@@ -22,7 +20,11 @@ export interface SyncSettings {
     write_back: boolean;
     store_url: string;
     store_name: string;
-    /** Recurso → id de la lista que lo recibe. */
+    /**
+     * Recurso → id de la lista que lo recibe. Desde el pack 5 las variaciones
+     * viven en la lista de productos y las líneas en la de pedidos (como
+     * subtareas): esos recursos apuntan a la MISMA lista que su padre.
+     */
     lists: Partial<Record<StoreSyncResource, number>>;
     /** Recurso → (slug del pack → id del campo). Por ID: renombrar no rompe nada. */
     fields: Partial<Record<StoreSyncResource, Record<string, number>>>;
@@ -32,14 +34,10 @@ export interface SyncSettings {
     folder_id: number | null;
     /** Umbral general de stock bajo de la tienda (v0.1.208). null = todavía no se leyó. */
     low_stock_amount: number | null;
-    /** Versión del pack creado (1 = v0.1.206, 2 = v0.1.208 con inventario). */
+    /** Versión del pack creado (ver `WOO_PACK_VERSION`). */
     pack_version: number;
     /** Tablero de inventario (pack 2). */
     inventory_dashboard_id: number | null;
-    /** v0.1.209 (pack 3) — listas de compras: id de cada una. */
-    purchase_lists: Partial<Record<StorePurchaseList, number>>;
-    /** v0.1.209 — slug del pack → id del campo, por lista de compras. */
-    purchase_fields: Partial<Record<StorePurchaseList, Record<string, number>>>;
 }
 
 export interface KeysetCursor {
@@ -129,20 +127,16 @@ export function readSettings(raw: unknown): SyncSettings {
             : null,
         pack_version: Number(s.pack_version) > 0 ? Number(s.pack_version) : 1,
         inventory_dashboard_id: Number(s.inventory_dashboard_id) > 0 ? Number(s.inventory_dashboard_id) : null,
-        ...readPurchase(s),
     };
 }
 
-function readPurchase(s: Record<string, unknown>): Pick<SyncSettings, 'purchase_lists' | 'purchase_fields'> {
-    const listsRaw = idMap(s.purchase_lists);
-    const fieldsRaw = obj(s.purchase_fields);
-    const purchase_lists: SyncSettings['purchase_lists'] = {};
-    const purchase_fields: SyncSettings['purchase_fields'] = {};
-    for (const k of STORE_PURCHASE_LISTS) {
-        if (listsRaw[k]) purchase_lists[k] = listsRaw[k];
-        if (fieldsRaw[k]) purchase_fields[k] = idMap(fieldsRaw[k]);
-    }
-    return { purchase_lists, purchase_fields };
+/**
+ * Las listas de compras que creaban los packs 3 y 4 (v0.1.209-210). El pack 5
+ * ya no las tiene: sólo las lee la migración (`upgradePack`) para decidir qué
+ * hacer con ellas.
+ */
+export function readLegacyPurchaseLists(raw: unknown): number[] {
+    return Object.values(idMap(obj(raw).purchase_lists));
 }
 
 function readCursor(v: unknown): KeysetCursor | null {

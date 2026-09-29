@@ -11,9 +11,10 @@ import type { StoreSyncResource } from '@imagina-base/shared';
  *    pedido de invitado también es de alguien. El cliente se identifica por
  *    `id:N` (registrado) o por `email:x` (invitado), así "cuánto me compró"
  *    no deja afuera a quien nunca creó cuenta.
- *  - **Productos variables**: el producto es el padre y cada variación
- *    (talla, color) es un registro propio vinculado a él. Una línea de pedido
- *    apunta a los DOS, así se suma por producto y por variación.
+ *  - **Productos variables** (v0.1.213): cada variación (talla, color) es
+ *    una SUBTAREA de su producto, en la misma lista. Una línea de pedido es
+ *    una SUBTAREA de su pedido y apunta al producto Y a la variación, así se
+ *    suma por producto y por variación.
  *  - **Fechas**: la API da `*_gmt` sin zona; se guardan como UTC explícito.
  */
 
@@ -31,8 +32,8 @@ export interface MappedItem {
     parentExternalId: string | null;
     /** slug del pack → valor crudo (lo valida el motor contra el campo real). */
     values: Record<string, unknown>;
-    /** slug del pack (campo relation) → a qué registro de la tienda apunta. */
-    relations: Record<string, ExtRef | null>;
+    /** slug del pack (campo relation) → a qué registro(s) de la tienda apunta. */
+    relations: Record<string, ExtRef | ExtRef[] | null>;
     /** Opciones que tienen que existir en un select/multi_select (categorías, estados de plugins). */
     options: Record<string, Array<{ value: string; label: string }>>;
     /** `meta_data` de la tienda: clave → valor (campos de otros plugins). */
@@ -207,7 +208,7 @@ function firstImage(v: unknown): string | null {
 // --- Inventario (v0.1.208) ---------------------------------------------------------
 
 /** Cómo está el inventario de un producto o variación, en una palabra. */
-export type InventoryState = 'agotado' | 'bajo' | 'en_stock' | 'por_encargo' | 'por_variacion' | 'sin_control';
+export type InventoryState = 'agotado' | 'bajo' | 'en_stock' | 'por_encargo' | 'sin_control';
 
 /** Umbral de stock bajo cuando la tienda no dice otro (el default de WooCommerce). */
 export const DEFAULT_LOW_STOCK = 2;
@@ -240,9 +241,6 @@ export function lowStockThreshold(v: WooJson, storeDefault: number | null): numb
  */
 export function inventoryState(v: WooJson, threshold: number): InventoryState {
     const status = str(v.stock_status);
-    // Un producto variable sin stock propio lo lleva en cada variación (talla,
-    // color): decir "sin control" sería falso — el inventario está un nivel abajo.
-    if (!managesStock(v) && v.type === 'variable') return 'por_variacion';
     if (!managesStock(v)) {
         if (status === 'outofstock') return 'agotado';
         if (status === 'onbackorder') return 'por_encargo';
@@ -290,39 +288,67 @@ export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedIte
     const categorias = terms(p.categories);
     const etiquetas = terms(p.tags);
     const manages = managesStock(p);
-    return item(
-        'products',
-        String(id),
-        {
-            nombre: nonEmpty(p.name) ?? `Producto ${id}`,
-            sku: nonEmpty(p.sku),
-            tipo: nonEmpty(p.type),
-            estado: nonEmpty(p.status),
-            precio: wooNumber(p.price),
-            precio_normal: wooNumber(p.regular_price),
-            precio_rebajado: wooNumber(p.sale_price),
-            stock: manages ? wooNumber(p.stock_quantity) : null,
-            estado_stock: nonEmpty(p.stock_status),
-            categorias: categorias.map((c) => c.value),
-            etiquetas: etiquetas.map((c) => c.value),
-            imagen: firstImage(p.images),
-            enlace: nonEmpty(p.permalink),
-            editar: inv.storeUrl ? orderAdminUrl(inv.storeUrl, id) : null,
-            woo_id: String(id),
-            modificado: wooDate(p.date_modified_gmt),
-            ...inventoryValues(p, inv.lowStockDefault ?? null),
+    const variable = p.type === 'variable';
+    const values: Record<string, unknown> = {
+        nombre: nonEmpty(p.name) ?? `Producto ${id}`,
+        sku: nonEmpty(p.sku),
+        tipo: nonEmpty(p.type),
+        estado: nonEmpty(p.status),
+        precio: wooNumber(p.price),
+        precio_normal: variable ? null : wooNumber(p.regular_price),
+        precio_rebajado: variable ? null : wooNumber(p.sale_price),
+        estado_stock: nonEmpty(p.stock_status),
+        categorias: categorias.map((c) => c.value),
+        etiquetas: etiquetas.map((c) => c.value),
+        imagen: firstImage(p.images),
+        enlace: nonEmpty(p.permalink),
+        editar: inv.storeUrl ? orderAdminUrl(inv.storeUrl, id) : null,
+        woo_id: String(id),
+        modificado: wooDate(p.date_modified_gmt),
+    };
+    if (variable) {
+        // El stock, su valor y su estado de un producto con variaciones son el
+        // RESUMEN de sus variaciones: los calcula el motor al traerlas
+        // (`recomputeVariableParents`). Escribirlos acá los pisaría.
+        values.controla_stock = false;
+    } else {
+        values.stock = manages ? wooNumber(p.stock_quantity) : null;
+        Object.assign(values, inventoryValues(p, inv.lowStockDefault ?? null));
+    }
+    return item('products', String(id), values, {
+        options: {
+            categorias,
+            etiquetas,
+            tipo: optionFor(p.type),
+            estado: optionFor(p.status),
+            estado_stock: optionFor(p.stock_status),
         },
-        {
-            options: {
-                categorias,
-                etiquetas,
-                tipo: optionFor(p.type),
-                estado: optionFor(p.status),
-                estado_stock: optionFor(p.stock_status),
-            },
-            meta: metaOf(p),
-        },
-    );
+        meta: metaOf(p),
+    });
+}
+
+/**
+ * El inventario de un producto con variaciones, resumido de sus variaciones:
+ * el stock y su valor se SUMAN, y el estado es el que más urge (si alguna
+ * talla está por agotarse, el producto aparece en «Para reponer» y al
+ * desplegarlo se ve cuál).
+ */
+export function summarizeVariations(
+    children: Array<{ stock: number | null; value: number | null; state: string | null }>,
+): { stock: number | null; value: number | null; state: InventoryState } {
+    const stocks = children.map((c) => c.stock).filter((n): n is number => n !== null);
+    const values = children.map((c) => c.value).filter((n): n is number => n !== null);
+    const states = new Set(children.map((c) => c.state));
+    let state: InventoryState = 'sin_control';
+    if (children.length > 0 && [...states].every((s) => s === 'agotado')) state = 'agotado';
+    else if (states.has('agotado') || states.has('bajo')) state = 'bajo';
+    else if (states.has('en_stock')) state = 'en_stock';
+    else if (states.has('por_encargo')) state = 'por_encargo';
+    return {
+        stock: stocks.length > 0 ? stocks.reduce((a, b) => a + b, 0) : null,
+        value: values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+        state,
+    };
 }
 
 /** «Color: Rojo · Talla: M». */
@@ -349,7 +375,8 @@ export function mapVariation(v: WooJson, parent: WooJson, inv: MapInventoryOptio
         'variations',
         String(id),
         {
-            nombre: parentName ? (opts.length ? `${parentName} — ${opts.join(' / ')}` : parentName) : `Variación ${id}`,
+            nombre: parentName ? (opts.length ? `${parentName} — ${opts.join(' / ')}` : parentName) : opts.length ? opts.join(' / ') : `Variación ${id}`,
+            tipo: 'variacion',
             atributos: variationAttributes(v),
             sku: nonEmpty(v.sku),
             precio: wooNumber(v.price),
@@ -367,8 +394,8 @@ export function mapVariation(v: WooJson, parent: WooJson, inv: MapInventoryOptio
             ...inventoryValues(v, inv.lowStockDefault ?? null),
         },
         {
+            // La variación es una SUBTAREA de su producto (v0.1.213).
             parentExternalId: String(parentId),
-            relations: { producto: { resource: 'products', externalId: String(parentId) } },
             options: { estado_stock: optionFor(v.stock_status), estado: optionFor(v.status) },
             meta: metaOf(v),
         },
@@ -409,9 +436,11 @@ export function mapOrder(o: WooJson, storeUrl: string): MappedItem {
         String(id),
         {
             numero: `#${str(o.number) || id}`,
+            tipo: 'pedido',
             estado: nonEmpty(o.status),
             fecha: wooDate(o.date_created_gmt),
             total: wooNumber(o.total),
+            cantidad: lines.reduce<number>((sum, l) => sum + (wooNumber(obj(l).quantity) ?? 0), 0),
             subtotal: lines.length > 0 ? Math.round(subtotal * 100) / 100 : null,
             envio: wooNumber(o.shipping_total),
             descuento: wooNumber(o.discount_total),
@@ -437,34 +466,42 @@ export function mapOrder(o: WooJson, storeUrl: string): MappedItem {
     );
 }
 
-export function mapLineItems(o: WooJson): MappedItem[] {
+/**
+ * Las líneas de un pedido: cada una es una SUBTAREA del pedido (v0.1.213) y
+ * copia el estado y la fecha del pedido — así un rollup «vendido en pedidos
+ * completados» filtra la línea sin cruzar otra relación. Apunta al producto
+ * y, si la tiene, a la variación: las dos viven en Productos.
+ */
+export function mapLineItems(o: WooJson, storeUrl?: string | null): MappedItem[] {
     const orderId = String(Number(o.id));
     const lines = Array.isArray(o.line_items) ? o.line_items : [];
     return lines.map((raw) => {
         const l = obj(raw);
         const productId = Number(l.product_id);
         const variationId = Number(l.variation_id);
+        const targets: ExtRef[] = [];
+        if (productId > 0) targets.push({ resource: 'products', externalId: String(productId) });
+        if (variationId > 0) targets.push({ resource: 'variations', externalId: String(variationId) });
         return item(
             'line_items',
             String(Number(l.id)),
             {
-                nombre: nonEmpty(l.name) ?? 'Producto',
+                numero: nonEmpty(l.name) ?? 'Producto',
+                tipo: 'linea',
                 sku: nonEmpty(l.sku),
                 cantidad: wooNumber(l.quantity),
                 precio: wooNumber(l.price),
                 total: wooNumber(l.total),
                 fecha: wooDate(o.date_created_gmt),
-                estado_pedido: nonEmpty(o.status),
+                estado: nonEmpty(o.status),
+                moneda: nonEmpty(o.currency),
                 woo_id: String(Number(l.id)),
+                enlace: storeUrl ? orderAdminUrl(storeUrl, Number(o.id)) : null,
             },
             {
                 parentExternalId: orderId,
-                relations: {
-                    pedido: { resource: 'orders', externalId: orderId },
-                    producto: productId > 0 ? { resource: 'products', externalId: String(productId) } : null,
-                    variacion: variationId > 0 ? { resource: 'variations', externalId: String(variationId) } : null,
-                },
-                options: { estado_pedido: optionFor(o.status) },
+                relations: { producto: targets.length > 0 ? targets : null },
+                options: { estado: optionFor(o.status) },
             },
         );
     });

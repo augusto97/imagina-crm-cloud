@@ -22,6 +22,7 @@ import { parseCsv } from './csv-parser';
 import { cleanNumberString, detectFieldType } from './field-type-detector';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
+import { assertNotStoreManaged } from '../lists/store-guard';
 import { ListsService } from '../lists/lists.service';
 import { RecordsRepository } from '../records/records.repository';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -50,6 +51,7 @@ export class ImportService {
         input: ImportRowsInput,
     ): Promise<ImportResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'import');
         const fields = await this.fields.list(tenantId, String(list.id));
         const byId = new Map(fields.map((f) => [f.id, f]));
 
@@ -143,6 +145,7 @@ export class ImportService {
     /** Inspecciona el CSV sin escribir nada. */
     async preview(tenantId: number, listIdOrSlug: string, csv: string): Promise<ImportCsvPreviewResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'import');
         const { headers, rows } = parseCsv(csv);
         if (headers.length === 0) {
             throw new BadRequestException({
@@ -189,6 +192,7 @@ export class ImportService {
         input: ImportCsvRunInput,
     ): Promise<ImportCsvRunResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'import');
         const parsed = parseCsv(input.csv);
         const headers = parsed.headers;
         let rows = parsed.rows;

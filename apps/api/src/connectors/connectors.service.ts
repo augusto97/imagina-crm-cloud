@@ -71,6 +71,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { automations, connections, lists, tenants, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { stripStoreMarkers } from '../lists/store-guard';
 import {
     connectionParts,
     joinUrl,
@@ -1536,6 +1537,8 @@ export class ConnectorsService {
             await tx
                 .delete(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
+            // Una tienda desconectada deja sus listas como listas comunes.
+            await stripStoreMarkers(tx, tenantId, id);
             await this.audit.logInTx(tx, {
                 tenantId,
                 userId,

@@ -38,6 +38,7 @@ import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordTitleInput } from './RecordTitleInput';
+import { lockedReasonsFor, useStoreRules } from './storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from './RecordMetaGrid';
 import { parseUtcDate } from '@/lib/utcDate';
@@ -114,6 +115,8 @@ export function RecordDetailDrawer({
     const update = useUpdateRecord(listId);
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     const remove = useDeleteRecord(listId);
+    // v0.1.213 — lista de una tienda: qué campos se editan en WooCommerce.
+    const storeRules = useStoreRules();
 
     const initialValues = useMemo<Record<string, unknown>>(() => {
         if (!record) return {};
@@ -121,6 +124,7 @@ export function RecordDetailDrawer({
     }, [record]);
 
     const [values, setValues] = useState<Record<string, unknown>>(initialValues);
+    const lockedReasons = useMemo(() => lockedReasonsFor(storeRules, fields, values), [storeRules, fields, values]);
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [tab, setTab] = useState<'comments' | 'activity'>('comments');
@@ -303,7 +307,7 @@ export function RecordDetailDrawer({
                                                     && setValues((v) => ({ ...v, [titleField.slug]: next }))
                                                 }
                                                 fallback={title}
-                                                editable={canEditRecords}
+                                                editable={canEditRecords && !(titleField && lockedReasons[titleField.slug])}
                                                 className="imcrm--ml-1.5"
                                             />
                                         </div>
@@ -355,6 +359,7 @@ export function RecordDetailDrawer({
                                             fieldErrors={fieldErrors}
                                             density="compact"
                                             showTypeIcon
+                                            lockedReasons={lockedReasons}
                                         />
                                     )}
 
@@ -378,15 +383,20 @@ export function RecordDetailDrawer({
                                 </div>
 
                                 <SheetFooter>
-                                    <Button
-                                        variant="ghost"
-                                        className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
-                                        onClick={handleDelete}
-                                        disabled={remove.isPending}
-                                    >
-                                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                        {__('Eliminar')}
-                                    </Button>
+                                    {storeRules ? (
+                                        // Los registros de una tienda se borran en WooCommerce.
+                                        <span className="imcrm-mr-auto" />
+                                    ) : (
+                                        <Button
+                                            variant="ghost"
+                                            className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
+                                            onClick={handleDelete}
+                                            disabled={remove.isPending}
+                                        >
+                                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                            {__('Eliminar')}
+                                        </Button>
+                                    )}
                                     <Button variant="outline" onClick={() => onOpenChange(false)}>
                                         {__('Cancelar')}
                                     </Button>

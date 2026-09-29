@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { readStoreListMarker } from '@imagina-base/shared';
 import {
     Check,
     Columns3,
@@ -82,8 +83,11 @@ export function ListPanelItem({
 
     const canManage = useCan(CAP.MANAGE_LISTS);
     const canAutomations = useCan(CAP.MANAGE_AUTOMATIONS) && moduleEnabled('automations');
-    const canCreate = useCan(CAP.CREATE_RECORDS);
-    const canImport = useCan(CAP.IMPORT_RECORDS);
+    // v0.1.213 — una lista de tienda no admite altas ni importaciones: sus
+    // registros nacen en WooCommerce.
+    const storeManaged = readStoreListMarker(list.settings) !== null;
+    const canCreate = useCan(CAP.CREATE_RECORDS) && !storeManaged;
+    const canImport = useCan(CAP.IMPORT_RECORDS) && !storeManaged;
 
     const [dialog, setDialog] = useState<ListDialog>(null);
 

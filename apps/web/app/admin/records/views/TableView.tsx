@@ -31,6 +31,8 @@ import type { FilterTree, RecordEntity } from '@/types/record';
 
 import { EditableCell } from '@/admin/records/EditableCell';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
+import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
+import { storeAccessFor, useStoreRules } from '@/admin/records/storeRules';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
@@ -158,8 +160,11 @@ export function TableView({
     // El backend rechaza un PATCH sin la cap con 403; acá deshabilitamos
     // el doble-click → input UX para evitar la confusión del 403-on-submit.
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
-    const canCreateRecords = useCan(CAP.CREATE_RECORDS);
-    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
+    // v0.1.213 — lista de una tienda: los registros se crean y se borran allá,
+    // y cada celda dice si se puede editar (mismas reglas que el backend).
+    const storeRules = useStoreRules();
+    const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
+    const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS) && storeRules === null;
     // Menú contextual de fila (click derecho) — v0.1.129.
     const [rowMenu, setRowMenu] = useState<RowMenuTarget | null>(null);
     // Subtareas (v0.1.132): qué padres están abiertos y sus hijos ya traídos.
@@ -220,6 +225,7 @@ export function TableView({
                 // v0.1.209 — la relación vive aparte de `fields` (ids vinculados).
                 accessorFn: (row) => (field.type === 'relation' ? row.relations?.[field.slug] : row.fields[field.slug]),
                 cell: (ctx) => {
+                    const access = storeAccessFor(storeRules, field, ctx.row.original);
                     const editable = (
                         <EditableCell
                             listId={listId}
@@ -227,6 +233,7 @@ export function TableView({
                             field={field}
                             value={ctx.getValue()}
                             canEdit={canEditRecords}
+                            lockedReason={access?.access === 'locked' ? access.reason : null}
                         />
                     );
                     // El chevron de subtareas vive en la PRIMERA columna de
@@ -286,7 +293,7 @@ export function TableView({
                 meta: { fieldId: null },
             },
         ];
-    }, [fields, listId, canEditRecords, expandedIds]);
+    }, [fields, listId, canEditRecords, expandedIds, storeRules]);
 
     // Footer aggregations: pedimos sum/avg/count/min/max para todos
     // los fields visibles que son numéricos / fecha / checkbox / etc.
@@ -660,6 +667,7 @@ export function TableView({
                                                             ? null
                                                             : flexRender(h.column.columnDef.header, h.getContext())}
                                                     </span>
+                                                    <StoreColumnBadge fieldId={fieldId} />
                                                     <SortIndicator dir={sortDir ?? null} index={sortIndex} multiCount={sort.length} />
                                                 </button>
                                             ) : h.isPlaceholder ? null : (

@@ -30,6 +30,8 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { storeColumnKind, useStoreRules } from './storeRules';
+
 /**
  * Menú contextual por columna en el header de la tabla (v0.1.74, completado
  * en v0.1.160 con las acciones que ClickUp ofrece y nosotros ya sabíamos
@@ -91,6 +93,11 @@ export function FieldHeaderMenu({
     const confirm = useConfirm();
     const toast = useToast();
     const navigate = useNavigate();
+    // v0.1.213 — una columna que viene de la tienda sólo cambia de nombre:
+    // no se borra (la próxima sincronización la necesita) ni se automatiza si
+    // es de sólo lectura (el motor la saltearía).
+    const storeKind = storeColumnKind(useStoreRules(), field.id);
+    const isStoreField = storeKind === 'store_locked' || storeKind === 'store_sync';
 
     const handleMove = async (to: 'start' | 'end'): Promise<void> => {
         const all = fields ?? [];
@@ -253,7 +260,7 @@ export function FieldHeaderMenu({
                         {__('Calcular')}
                     </DropdownMenuItem>
                 )}
-                {listSlug !== undefined && (
+                {listSlug !== undefined && storeKind !== 'store_locked' && (
                     <DropdownMenuItem
                         onSelect={() =>
                             // Con el campo en la URL, el editor abre con la
@@ -290,14 +297,16 @@ export function FieldHeaderMenu({
                     <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                     {__('Copiar ID de campo')}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                    danger
-                    disabled={del.isPending}
-                    onSelect={() => void handleDelete()}
-                >
-                    <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {__('Eliminar')}
-                </DropdownMenuItem>
+                {!isStoreField && (
+                    <DropdownMenuItem
+                        danger
+                        disabled={del.isPending}
+                        onSelect={() => void handleDelete()}
+                    >
+                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {__('Eliminar')}
+                    </DropdownMenuItem>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );

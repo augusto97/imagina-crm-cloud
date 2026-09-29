@@ -5,7 +5,7 @@ import {
     type StoreMetaResource,
     type StoreSyncResource,
 } from '@imagina-base/shared';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
 import { ActivityService, computeDiff } from '../activity/activity.service';
@@ -27,7 +27,7 @@ import {
     type SyncSettings,
     type SyncState,
 } from './store-sync.types';
-import { WOO_PAGE_SIZE, wooGet, wooGetPage, wooSend } from './woocommerce/woo-fetch';
+import { WOO_PAGE_SIZE, wooGetPage, wooSend } from './woocommerce/woo-fetch';
 import { buildWriteBack, isVariationPayload, parseWooTopic, type WooHookResource } from './woocommerce/woo-hooks';
 import {
     coerceMeta,
@@ -39,10 +39,12 @@ import {
     mapVariation,
     metaSample,
     suggestMetaType,
+    summarizeVariations,
     type ExtRef,
     type MappedItem,
     type WooJson,
 } from './woocommerce/woo-map';
+import { WOO_PARENT_RESOURCE } from './woocommerce/woo-pack';
 
 /**
  * Motor de sincronización con tiendas (v0.1.206, ADR-S24).
@@ -77,9 +79,6 @@ const MAX_PAGES_PER_RUN = 400;
 const INSERT_CHUNK = 500;
 
 export class SyncStopped extends Error {}
-
-/** v0.1.209 — Un ajuste de stock que no se pudo hacer (el motivo se muestra tal cual). */
-export class StockAdjustError extends Error {}
 
 interface ListTarget {
     listId: number;
@@ -282,6 +281,7 @@ export class StoreSyncEngine {
                     const parentId = String(Number(payload.parent_id));
                     const name = await this.productNameFromApp(ctx, parentId);
                     await this.upsert(ctx, 'variations', [mapVariation(payload, { id: Number(parentId), name }, this.inv(ctx))], {});
+                    await this.recomputeVariableParents(ctx, [parentId]);
                 } else {
                     await this.upsert(ctx, 'products', [mapProduct(payload, this.inv(ctx))], {});
                     // Un producto variable avisa como uno solo: sus variaciones se releen.
@@ -329,6 +329,7 @@ export class StoreSyncEngine {
                 [this.stub(variation ? 'variations' : 'products', id, { estado: 'trash' }, { estado: trash })],
                 { updateOnly: true },
             );
+            if (variation) await this.recomputeVariableParents(ctx, [String(Number(payload.parent_id))]);
         }
         // Un cliente borrado en la tienda queda como está: sus compras siguen siendo suyas.
     }
@@ -351,12 +352,14 @@ export class StoreSyncEngine {
      * devuelve se aplica sin disparar nada (puede normalizar un precio), y
      * el aviso que la tienda mande después no encuentra diferencias: así un
      * cambio nunca rebota en un bucle.
+     *
+     * v0.1.213 — en Productos conviven productos y variaciones (subtareas):
+     * qué es la fila lo dice su vínculo con la tienda, no la lista.
      */
     async push(
         tenantId: number,
         syncId: number,
         creds: IntegrationCreds,
-        resource: StoreMetaResource,
         recordId: number,
         changedFieldIds: number[],
     ): Promise<{ sent: string[] } | null> {
@@ -365,11 +368,15 @@ export class StoreSyncEngine {
         const { ctx, settings } = loaded;
         const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [link] = await tx
-                .select({ externalId: syncLinks.externalId, parent: syncLinks.parentExternalId })
+                .select({ resource: syncLinks.resource, externalId: syncLinks.externalId, parent: syncLinks.parentExternalId })
                 .from(syncLinks)
-                .where(and(eq(syncLinks.syncId, syncId), eq(syncLinks.resource, resource), eq(syncLinks.recordId, recordId)))
-                // Un cliente con cuenta puede tener también su vínculo de invitada: manda la cuenta.
-                .orderBy(sql`${syncLinks.externalId} LIKE 'id:%' DESC`)
+                .where(
+                    and(
+                        eq(syncLinks.syncId, syncId),
+                        eq(syncLinks.recordId, recordId),
+                        inArray(syncLinks.resource, ['products', 'variations', 'orders', 'customers']),
+                    ),
+                )
                 .limit(1);
             const [rec] = await tx
                 .select({ data: records.data })
@@ -379,21 +386,17 @@ export class StoreSyncEngine {
             return link && rec ? { link, data: rec.data } : null;
         });
         if (!found) return null;
+        const resource = found.link.resource as StoreMetaResource;
         const changed = new Set(changedFieldIds);
         const values: Record<string, unknown> = {};
         for (const [slug, fieldId] of Object.entries(settings.fields[resource] ?? {})) {
             if (changed.has(fieldId)) values[slug] = found.data[`f${fieldId}`] ?? null;
         }
-        const seen = ctx.state.meta[resource] ?? {};
-        const meta = Object.entries(settings.meta_map[resource] ?? {})
-            .filter(([, fieldId]) => changed.has(fieldId))
-            .map(([key, fieldId]) => ({ key, value: found.data[`f${fieldId}`] ?? null, sample: seen[key]?.sample ?? null }));
         const req = buildWriteBack({
             resource,
             externalId: found.link.externalId,
             parentExternalId: found.link.parent,
             changed: values,
-            meta,
         });
         if (!req) return null;
         const res = await wooSend(creds, 'PUT', req.path, req.body);
@@ -402,129 +405,16 @@ export class StoreSyncEngine {
             ctx.dispatch = false;
             const obj = res as WooJson;
             if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
-            else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj, settings.store_url)], {});
             else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj, this.inv(ctx))], {});
-            else {
-                const name = await this.productNameFromApp(ctx, String(found.link.parent));
-                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(found.link.parent), name }, this.inv(ctx))], {});
+            else if (resource === 'variations') {
+                const parent = String(found.link.parent);
+                const name = await this.productNameFromApp(ctx, parent);
+                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(parent), name }, this.inv(ctx))], {});
+                await this.recomputeVariableParents(ctx, [parent]);
             }
             for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
         }
         return { sent: req.fields };
-    }
-
-    /**
-     * v0.1.209 — SUMA (o resta) unidades al stock de un producto o variación
-     * en la tienda: lo que hace recibir una orden de compra y la columna
-     * «Sumar al stock».
-     *
-     * La API de WooCommerce sólo acepta el stock ABSOLUTO, así que se lee el
-     * de la tienda EN ESE MOMENTO (no el de la app, que puede estar atrasado
-     * por una venta que todavía no llegó) y se escribe lectura + diferencia.
-     * Entre las dos requests pasan milisegundos: es la única forma de sumar
-     * que tiene la API y la que usan los plugins de compras.
-     *
-     *  - Una variación cuyo stock lleva el producto padre («manage_stock:
-     *    parent») se suma en el PADRE: es donde vive la cuenta.
-     *  - Un producto variable no tiene stock propio: se rechaza (hay que
-     *    pedir la variación).
-     *  - Un producto que no llevaba la cuenta pasa a llevarla, arrancando en 0.
-     *
-     * Lo que la tienda devuelve se aplica al registro como cualquier dato de
-     * la tienda (dispara automatizaciones: «volvió a haber stock» es una
-     * novedad) y el movimiento queda escrito en «Último movimiento de stock».
-     */
-    async adjustStock(
-        tenantId: number,
-        syncId: number,
-        creds: IntegrationCreds,
-        resource: 'products' | 'variations',
-        recordId: number,
-        delta: number,
-        reason: string,
-    ): Promise<{ before: number; after: number; resource: 'products' | 'variations'; recordId: number }> {
-        const loaded = await this.context(tenantId, syncId, creds, '');
-        if (!loaded) throw new StockAdjustError('La tienda ya no se está sincronizando.');
-        const { ctx } = loaded;
-        ctx.dispatch = ctx.state.initial_done;
-        const link = await this.linkOf(ctx, resource, recordId);
-        if (!link) throw new StockAdjustError('Este registro no viene de la tienda: no hay a dónde sumar el stock.');
-
-        let target: { resource: 'products' | 'variations'; externalId: string; parent: string | null; recordId: number } = {
-            resource,
-            externalId: link.externalId,
-            parent: link.parent,
-            recordId,
-        };
-        const pathOf = (t: typeof target) =>
-            t.resource === 'products' ? `/products/${Number(t.externalId)}` : `/products/${Number(t.parent)}/variations/${Number(t.externalId)}`;
-        if (target.resource === 'variations' && !(Number(target.parent) > 0)) {
-            throw new StockAdjustError('No sabemos de qué producto es esta variación: sincronizá la tienda y probá de nuevo.');
-        }
-        let current = (await wooGet(creds, pathOf(target))).json as WooJson;
-        let note = '';
-        if (target.resource === 'variations' && current.manage_stock === 'parent') {
-            // El stock de esta variación lo lleva el producto padre.
-            const parentRecord = await this.recordOfLink(ctx, 'products', String(target.parent));
-            target = { resource: 'products', externalId: String(target.parent), parent: null, recordId: parentRecord ?? 0 };
-            current = (await wooGet(creds, pathOf(target))).json as WooJson;
-            note = ' (el stock lo lleva el producto)';
-        }
-        if (target.resource === 'products' && current.type === 'variable' && current.manage_stock !== true) {
-            throw new StockAdjustError('Es un producto con variaciones: el stock se suma en cada variación (talla, color…).');
-        }
-        const managed = current.manage_stock === true || current.manage_stock === 'parent';
-        const before = managed ? Math.trunc(Number(current.stock_quantity ?? 0)) || 0 : 0;
-        const after = before + Math.trunc(delta);
-        if (!managed) note += ' (la tienda no llevaba la cuenta: ahora sí)';
-        const res = (await wooSend(creds, 'PUT', pathOf(target), { manage_stock: true, stock_quantity: after })) as WooJson | null;
-
-        if (res && typeof res === 'object') {
-            if (target.resource === 'products') {
-                await this.upsert(ctx, 'products', [mapProduct(res, this.inv(ctx))], {});
-            } else {
-                const name = await this.productNameFromApp(ctx, String(target.parent));
-                await this.upsert(ctx, 'variations', [mapVariation(res, { id: Number(target.parent), name }, this.inv(ctx))], {});
-            }
-        }
-        const sign = delta > 0 ? `+${delta}` : String(delta);
-        const text = `${sign} ${reason}${note} → stock ${after}`.slice(0, 250);
-        await this.writeMovement(ctx, resource, recordId, text);
-        if (target.recordId > 0 && (target.resource !== resource || target.recordId !== recordId)) {
-            await this.writeMovement(ctx, target.resource, target.recordId, text);
-        }
-        for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
-        return { before, after, resource: target.resource, recordId: target.recordId };
-    }
-
-    /** Escribe «Último movimiento de stock» en un registro (con su rastro en la actividad). */
-    private async writeMovement(ctx: RunCtx, resource: 'products' | 'variations', recordId: number, text: string): Promise<void> {
-        const fieldId = ctx.settings.fields[resource]?.ultimo_movimiento;
-        const target = ctx.targets[resource];
-        if (!fieldId || !target) return;
-        const key = `f${fieldId}`;
-        await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
-            const [row] = await tx
-                .select({ data: records.data })
-                .from(records)
-                .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, recordId), isNull(records.deletedAt)))
-                .limit(1);
-            if (!row) return;
-            const after = { ...row.data, [key]: text };
-            await tx
-                .update(records)
-                .set({ data: after, updatedAt: new Date() })
-                .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, recordId)));
-            await this.activity.logInTx(tx, {
-                tenantId: ctx.tenantId,
-                listId: target.listId,
-                recordId,
-                userId: null,
-                action: 'record_updated',
-                diff: computeDiff(row.data, after),
-            });
-        });
-        ctx.touchedLists.add(target.listId);
     }
 
     private async linkOf(ctx: RunCtx, resource: StoreSyncResource, recordId: number) {
@@ -751,6 +641,7 @@ export class StoreSyncEngine {
                 );
             }
         }
+        if (variationsByParent.size > 0) await this.recomputeVariableParents(ctx, [...variationsByParent.keys()].map(String));
     }
 
     /** Trae TODAS las variaciones de un producto variable. Devuelve cuántas. */
@@ -783,7 +674,63 @@ export class StoreSyncEngine {
         }
         // Variaciones que el producto ya no tiene (se borró una talla).
         await this.removeStaleChildren(ctx, 'variations', String(parent.id), seen);
+        await this.recomputeVariableParents(ctx, [String(parent.id)]);
         return count;
+    }
+
+    /**
+     * v0.1.213 — El stock, su valor y el estado de inventario de un producto
+     * con variaciones son el RESUMEN de sus variaciones (sus subtareas): la
+     * suma de unidades, la suma del valor y el estado que más urge. Se
+     * recalcula cada vez que cambian sus variaciones. No dispara
+     * automatizaciones: la novedad ya la disparó la variación que cambió, y
+     * repetirla en el padre mandaría dos avisos por lo mismo.
+     */
+    async recomputeVariableParents(ctx: RunCtx, parentExternalIds: string[]): Promise<void> {
+        const target = ctx.targets.products;
+        const F = ctx.settings.fields.products ?? {};
+        if (!target || parentExternalIds.length === 0 || !F.stock || !F.estado_inventario) return;
+        const keys = { stock: `f${F.stock}`, value: F.valor_inventario ? `f${F.valor_inventario}` : null, state: `f${F.estado_inventario}` };
+        const changed = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const parents = await this.existingLinks(tx, ctx, 'products', [...new Set(parentExternalIds)]);
+            const parentIds = [...new Set(parents.values())];
+            if (parentIds.length === 0) return false;
+            const rows = await tx
+                .select({ id: records.id, parentId: records.parentId, data: records.data })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, ctx.tenantId),
+                        isNull(records.deletedAt),
+                        or(inArray(records.id, parentIds), inArray(records.parentId, parentIds)),
+                    ),
+                );
+            const tipoKey = F.tipo ? `f${F.tipo}` : null;
+            let any = false;
+            for (const parentId of parentIds) {
+                const parent = rows.find((r) => r.id === parentId);
+                // Sólo los productos con variaciones: uno simple lleva su propio stock.
+                if (!parent || (tipoKey && parent.data[tipoKey] !== 'variable')) continue;
+                const kids = rows.filter((r) => r.parentId === parentId);
+                const sum = summarizeVariations(
+                    kids.map((k) => ({
+                        stock: typeof k.data[keys.stock] === 'number' ? (k.data[keys.stock] as number) : null,
+                        value: keys.value && typeof k.data[keys.value] === 'number' ? (k.data[keys.value] as number) : null,
+                        state: typeof k.data[keys.state] === 'string' ? (k.data[keys.state] as string) : null,
+                    })),
+                );
+                const patch: Record<string, unknown> = { [keys.stock]: sum.stock, [keys.state]: sum.state };
+                if (keys.value) patch[keys.value] = sum.value;
+                if (Object.entries(patch).every(([k, v]) => sameValue(parent.data[k], v))) continue;
+                await tx
+                    .update(records)
+                    .set({ data: { ...parent.data, ...patch }, updatedAt: new Date() })
+                    .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, parentId)));
+                any = true;
+            }
+            return any;
+        });
+        if (changed) ctx.touchedLists.add(target.listId);
     }
 
     private async productNameFromApp(ctx: RunCtx, productId: string): Promise<string | null> {
@@ -835,7 +782,7 @@ export class StoreSyncEngine {
         await this.upsert(ctx, 'customers', dedupe(guests), { createOnly: true });
         // 2) Pedidos, 3) líneas.
         await this.upsert(ctx, 'orders', rows.map((o) => mapOrder(o, ctx.settings.store_url)), {});
-        const lineItems = rows.flatMap(mapLineItems);
+        const lineItems = rows.flatMap((o) => mapLineItems(o, ctx.settings.store_url));
         await this.upsert(ctx, 'line_items', lineItems, {});
         // 4) Las líneas que un pedido ya no tiene (se editó el pedido).
         for (const o of rows) {
@@ -949,7 +896,7 @@ export class StoreSyncEngine {
             const recordIds = [...new Set([...links.values()])];
             const current = recordIds.length
                 ? await tx
-                      .select({ id: records.id, data: records.data })
+                      .select({ id: records.id, data: records.data, parentId: records.parentId })
                       .from(records)
                       .where(
                           and(
@@ -960,6 +907,20 @@ export class StoreSyncEngine {
                       )
                 : [];
             const byId = new Map(current.map((r) => [r.id, r.data]));
+            const parentOf = new Map(current.map((r) => [r.id, r.parentId]));
+            // v0.1.213 — una variación cuelga de su producto y una línea de su
+            // pedido: son SUBTAREAS (mismo registro padre en la misma lista).
+            const parentRes = WOO_PARENT_RESOURCE[resource];
+            const parents = parentRes
+                ? await this.existingLinks(
+                      tx,
+                      ctx,
+                      parentRes,
+                      items.map((i) => i.parentExternalId).filter((x): x is string => !!x),
+                  )
+                : new Map<string, number>();
+            const parentFor = (item: MappedItem): number | null =>
+                item.parentExternalId ? (parents.get(item.parentExternalId) ?? null) : null;
 
             const toCreate: Array<{ item: MappedItem; data: Record<string, unknown> }> = [];
             const toUpdate: Array<{ item: MappedItem; id: number; before: Record<string, unknown>; after: Record<string, unknown> }> = [];
@@ -995,6 +956,7 @@ export class StoreSyncEngine {
                             tenantId: ctx.tenantId,
                             listId: target.listId,
                             data: c.data,
+                            parentId: parentFor(c.item),
                             createdBy: ctx.actorId,
                         })),
                     )
@@ -1039,6 +1001,21 @@ export class StoreSyncEngine {
                         action: 'record_updated',
                         diff: computeDiff(u.before, u.after),
                     });
+                }
+            }
+
+            // Una fila que llegó antes que su padre (un aviso de variación de
+            // un producto que todavía no se trajo) nace suelta: se engancha
+            // apenas el padre existe.
+            if (parentRes) {
+                for (const r of [...toUpdate, ...untouched]) {
+                    const want = parentFor(r.item);
+                    if (want !== null && parentOf.get(r.id) !== want) {
+                        await tx
+                            .update(records)
+                            .set({ parentId: want })
+                            .where(and(eq(records.tenantId, ctx.tenantId), eq(records.id, r.id)));
+                    }
                 }
             }
 
@@ -1196,10 +1173,10 @@ export class StoreSyncEngine {
         const relSlugs = new Set(rows.flatMap((r) => Object.keys(r.item.relations)));
         if (relSlugs.size === 0) return;
         // Targets por recurso, en una query por recurso.
+        const refsOf = (v: ExtRef | ExtRef[] | null | undefined): ExtRef[] => (!v ? [] : Array.isArray(v) ? v : [v]);
         const wanted = new Map<StoreSyncResource, Set<string>>();
         for (const r of rows) {
-            for (const ref of Object.values(r.item.relations)) {
-                if (!ref) continue;
+            for (const ref of Object.values(r.item.relations).flatMap(refsOf)) {
                 if (!wanted.has(ref.resource)) wanted.set(ref.resource, new Set());
                 wanted.get(ref.resource)!.add(ref.externalId);
             }
@@ -1209,7 +1186,7 @@ export class StoreSyncEngine {
             const links = await this.existingLinks(tx, ctx, res, [...ids]);
             for (const [ext, rid] of links) resolved.set(`${res}:${ext}`, rid);
         }
-        const refId = (ref: ExtRef | null) => (ref ? resolved.get(`${ref.resource}:${ref.externalId}`) : undefined);
+        const refId = (ref: ExtRef) => resolved.get(`${ref.resource}:${ref.externalId}`);
 
         for (const slug of relSlugs) {
             const field = target.fields.get(fieldMap[slug] ?? -1);
@@ -1226,9 +1203,12 @@ export class StoreSyncEngine {
                         ),
                     );
             }
-            const values = rows
-                .map((r) => ({ source: r.id, target: refId(r.item.relations[slug] ?? null) }))
-                .filter((v): v is { source: number; target: number } => v.target !== undefined);
+            // Una línea apunta a su producto Y a su variación (las dos en Productos).
+            const values = rows.flatMap((r) =>
+                [...new Set(refsOf(r.item.relations[slug]).map(refId).filter((t): t is number => t !== undefined))].map(
+                    (target, position) => ({ source: r.id, target, position }),
+                ),
+            );
             if (values.length > 0) {
                 await tx.insert(relations).values(
                     values.map((v) => ({
@@ -1236,7 +1216,7 @@ export class StoreSyncEngine {
                         fieldId: field.id,
                         sourceRecordId: v.source,
                         targetRecordId: v.target,
-                        position: 0,
+                        position: v.position,
                     })),
                 );
             }
@@ -1271,9 +1251,13 @@ export class StoreSyncEngine {
                 ...missing.map(([value, label], i) => ({ value, label, color: palette[(current.length + i) % palette.length] })),
             ];
             try {
-                const updated = await this.fields.update(ctx.tenantId, String(target.listId), String(field.id), {
-                    config: { ...field.config, options },
-                });
+                const updated = await this.fields.update(
+                    ctx.tenantId,
+                    String(target.listId),
+                    String(field.id),
+                    { config: { ...field.config, options } },
+                    { internal: true },
+                );
                 target.fields.set(updated.id, updated);
             } catch (err) {
                 ctx.warnings.add(`No se pudieron agregar opciones a «${field.label}»: ${err instanceof Error ? err.message : String(err)}`);

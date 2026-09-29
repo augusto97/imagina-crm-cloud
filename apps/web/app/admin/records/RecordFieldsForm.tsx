@@ -57,6 +57,11 @@ interface RecordFieldsFormProps {
      * campo junto al label de cada fila (estilo ClickUp).
      */
     showTypeIcon?: boolean;
+    /**
+     * v0.1.213 — slug → por qué ese campo no se puede cambiar (lista de una
+     * tienda). Se muestra de sólo lectura con el motivo.
+     */
+    lockedReasons?: Record<string, string>;
 }
 
 const NON_INLINE_TYPES: ReadonlyArray<string> = ['user', 'file', 'relation'];
@@ -76,6 +81,7 @@ export function RecordFieldsForm({
     onlyNonInline,
     density = 'comfortable',
     showTypeIcon = false,
+    lockedReasons,
 }: RecordFieldsFormProps): JSX.Element {
     const visible = fields
         .filter((f) => (onlyNonInline ? NON_INLINE_TYPES.includes(f.type) : true))
@@ -105,6 +111,7 @@ export function RecordFieldsForm({
                         onChange={(v) => setValue(field.slug, v)}
                         error={fieldErrors?.[field.slug]}
                         showTypeIcon={showTypeIcon}
+                        lockedReason={lockedReasons?.[field.slug] ?? null}
                     />
                 ))}
             </div>
@@ -113,7 +120,16 @@ export function RecordFieldsForm({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
-            {visible.map((field) => (
+            {visible.map((field) =>
+                lockedReasons?.[field.slug] ? (
+                    <div key={field.id} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" title={lockedReasons[field.slug]}>
+                        <span className="imcrm-text-sm imcrm-font-medium">{field.label}</span>
+                        <div className="imcrm-flex imcrm-min-h-[36px] imcrm-items-center imcrm-gap-1.5 imcrm-text-sm">
+                            <FieldValueDisplay field={field} value={values[field.slug]} />
+                        </div>
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{lockedReasons[field.slug]}</span>
+                    </div>
+                ) : (
                 <FieldInput
                     key={field.id}
                     listId={listId}
@@ -123,7 +139,8 @@ export function RecordFieldsForm({
                     onChange={(v) => setValue(field.slug, v)}
                     error={fieldErrors?.[field.slug]}
                 />
-            ))}
+                ),
+            )}
         </div>
     );
 }

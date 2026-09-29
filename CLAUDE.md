@@ -5068,6 +5068,79 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         color, buscador, pin, alta en la carpeta, abrir lista, "Abrir" desde el
         índice, vacía, inexistente, celular) + regresión de v0.1.211 28/28.
 
+  - [x] **Rediseño de la integración WooCommerce: la lista de la tienda es un
+        ESPEJO (v0.1.213, ADR-S24 pack 5, reporte del usuario: "es confuso…
+        productos en una lista y sus variaciones en otra… veo campos que no
+        deberían poderse editar… órdenes de compra, proveedores, todo eso no es
+        de WooCommerce")**. Decisiones tomadas con él: variaciones Y líneas como
+        subtareas; sólo precios, stock y estados editables; columnas propias
+        permitidas y marcadas.
+        (a) **Tres listas en vez de cinco (más tres de compras)**: Productos
+        con cada **variación como SUBTAREA** de su producto, Pedidos con cada
+        **línea como subtarea** de su pedido, y Clientes — el modelo de
+        subtareas de v0.1.132, así la tabla muestra el primer nivel y la
+        flechita despliega lo de adentro, con todo el ancho de la tabla (la
+        ficha flotante quedaba chica para ver variaciones). Una columna `tipo`
+        dice qué es cada fila y los tableros/rollups la filtran para no contar
+        dos veces; el producto variable muestra el RESUMEN de sus variaciones
+        (stock y valor sumados, estado más urgente) y el pie y los grupos
+        cuentan sólo el primer nivel (`AggregateService.run` ganó `rootsOnly`).
+        El motor sigue hablando de cinco recursos: `settings.lists.variations`
+        apunta a Productos y `line_items` a Pedidos.
+        (b) **La tienda manda**: en una lista marcada no se crean, borran ni
+        importan registros — rechazado en el API (403 `store_managed`), el
+        importador, las automatizaciones (`create_record` se saltea con el
+        motivo en el log), el asistente IA/MCP y las recurrencias (no se clona
+        ni se rueda una fecha de la tienda); la interfaz no ofrece esos
+        botones (toolbar, menú lateral, «Vinculados», menú contextual, edición
+        masiva) y el banner enlaza a «Crear en WooCommerce».
+        (c) **Qué se edita**: sólo precios, stock y estados (publicación,
+        estado del pedido) y sólo con «Editar desde la app». Las reglas son
+        PURAS en shared (`store-rules.ts`: `storeCellAccess` +
+        `storeValueError`), así el backend rechaza (403 `store_field_locked` /
+        400 `store_invalid_value`) con la MISMA función con la que la UI dibuja
+        el **candado y el motivo** en celdas, ficha, modal y layout CRM: un
+        variable no tiene precio propio, el rebajado no supera al normal, el
+        stock es entero, el estado de stock lo calcula WooCommerce si el stock
+        está controlado, las líneas no se tocan. Una automatización que intente
+        otra cosa saltea ESE campo con el motivo.
+        (d) **Columnas**: cada encabezado lleva su marca — candado (viene de la
+        tienda), flechas (se cambia acá y viaja) o lápiz (**sólo en Imagina**,
+        propia de la empresa, libre y nunca viaja). Una columna de la tienda
+        sólo cambia de nombre/descripción/índice (ni tipo, ni opciones, ni se
+        borra) en el menú del encabezado, el cuadro de edición y el
+        administrador de campos (badge «WooCommerce»); el backend tolera que un
+        formulario reenvíe los MISMOS valores (config comparada con claves
+        ordenadas: JSONB las reordena).
+        (e) **Banner** en cada lista de la tienda: de dónde viene, qué se puede
+        cambiar (según la lista y el interruptor) y un «¿Qué puedo cambiar?»
+        con la leyenda de las marcas.
+        (f) **Se retiró la reposición** de v0.1.209 (proveedores, órdenes y
+        líneas de compra, «Sumar al stock», «En camino»): no es de WooCommerce.
+        (g) **Migración automática** de las tiendas conectadas en su próxima
+        corrida (pack <5 → 5): campos que sobran fuera, rollups rearmados,
+        variaciones y líneas viejas dadas de baja y re-traídas como subtareas,
+        tableros recreados; las listas de compras VACÍAS se borran y las que
+        tienen datos QUEDAN como listas comunes. Bitácora `store_sync.migrate`.
+        (h) **Bug encontrado en el camino**: dejar de sincronizar (o borrar la
+        conexión) NUNCA quitaba la marca de las listas — con los bloqueos de
+        esta versión habrían quedado trabadas para siempre. Ahora se quita en
+        los dos caminos (`stripStoreMarkers`), la migración 0055 limpia las
+        huérfanas (144 en el entorno de desarrollo) y el cambio de «Editar
+        desde la app» o la desconexión avisan por realtime a las pestañas
+        abiertas (antes la marca vieja quedaba en caché). De paso se quitó la
+        vista «Todos» del pack, que duplicaba la pestaña «Todos» fija.
+        Tests: 7 de reglas en shared, 2 de la UI, 25 del mapeo y 24 de
+        integración de la sincronización (subtareas, pie y grupos, bloqueos,
+        edición que viaja, automatización que respeta las reglas, migración,
+        desconexión que deja las listas libres) + E2E navegador 30/30 contra la
+        tienda falsa (tres listas, flechita de variaciones y de líneas,
+        candados, sin «Nuevo registro», precio que llega a WooCommerce, nombre
+        rechazado, columna propia, administrador de campos, desconectar,
+        celular). **Límite de la verificación**: la prueba contra un
+        WooCommerce REAL sigue bloqueada por la política de red del entorno
+        (wordpress.org/GitHub 403, Docker Hub 429).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

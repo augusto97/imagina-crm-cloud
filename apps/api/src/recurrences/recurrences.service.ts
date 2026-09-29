@@ -7,7 +7,9 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    isStoreField,
     jsonbKeyForField,
+    readStoreListMarker,
     validateFieldValue,
     type Field,
     type RecurrenceDto,
@@ -87,6 +89,19 @@ export class RecurrencesService {
             throw validationFailed({ date_field_id: 'Campo de fecha inválido.' });
         }
 
+        // v0.1.213 — en una lista de tienda los registros nacen en WooCommerce
+        // (no se clonan) y sus fechas vienen de allá (la próxima
+        // sincronización pisaría la fecha rodada): sólo sobre columnas propias.
+        const storeMarker = readStoreListMarker(list.settings);
+        if (storeMarker) {
+            if (input.action_type === 'clone') {
+                throw validationFailed({ action_type: 'En una lista de la tienda no se clonan registros: se crean en WooCommerce.' });
+            }
+            if (isStoreField(storeMarker, dateField.id)) {
+                throw validationFailed({ date_field_id: 'Esa fecha viene de la tienda: usá una columna propia.' });
+            }
+        }
+
         const intervalN = Math.max(1, input.interval_n);
         // monthly_pattern sólo aplica a frequency=monthly (default same_day).
         const monthlyPattern =
@@ -115,7 +130,7 @@ export class RecurrencesService {
         if (input.update_status_field_id != null && input.update_status_field_id > 0) {
             const us = fields.find((f) => f.id === input.update_status_field_id);
             // Paridad con el plugin: un campo de reset inválido NO falla — se ignora.
-            if (us && (us.type === 'select' || us.type === 'checkbox')) {
+            if (us && (us.type === 'select' || us.type === 'checkbox') && !(storeMarker && isStoreField(storeMarker, us.id))) {
                 updateStatusFieldId = us.id;
                 updateStatusValue = String(input.update_status_value ?? '');
             }

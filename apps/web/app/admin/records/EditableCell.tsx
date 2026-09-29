@@ -36,6 +36,11 @@ interface EditableCellProps {
      * aunque el field type sea editable. Previene 403 backend en click.
      */
     canEdit?: boolean;
+    /**
+     * v0.1.213 — En una lista de tienda, por qué esta celda no se puede
+     * editar (lo calcula quien arma la fila con `storeAccessFor`). null = libre.
+     */
+    lockedReason?: string | null;
 }
 
 /**
@@ -62,8 +67,10 @@ function EditableCellInner({
     recordId,
     listId,
     value,
-    canEdit: canEditByUser = true,
+    canEdit: canEditByCaps = true,
+    lockedReason = null,
 }: EditableCellProps): JSX.Element {
+    const canEditByUser = canEditByCaps && lockedReason === null;
     const update = useUpdateRecord(listId);
     const wrapText = useWrapText();
     const relationTitles = useRelationTitlesFor(field.id);
@@ -221,7 +228,7 @@ function EditableCellInner({
                     canEdit && 'hover:imcrm-bg-accent/40 imcrm-rounded imcrm--mx-1 imcrm-px-1',
                     !canEdit && 'imcrm-cursor-default',
                 )}
-                title={canEdit ? __('Click para editar') : __('No editable inline')}
+                title={lockedReason ?? (canEdit ? __('Click para editar') : __('No editable inline'))}
             >
                 {renderCellValue(field, value)}
             </button>
@@ -272,6 +279,7 @@ export const EditableCell = memo(EditableCellInner, (prev, next) => {
         && prev.field.id === next.field.id
         && prev.value === next.value
         && prev.canEdit === next.canEdit
+        && prev.lockedReason === next.lockedReason
     );
 });
 

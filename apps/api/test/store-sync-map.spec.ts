@@ -3,13 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
 import { readSettings, readState } from '../src/sync/store-sync.types';
-import { buildWooPack, IDENTITY_FIELD_SLUGS, INVENTORY_FIELD_SLUGS, packAddition, PURCHASE_LIST_KEYS, RESTOCK_FIELD_SLUGS, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
-import { orderSeq, pendingOf, receiveTarget, suggestQuantity } from '../src/sync/store-purchasing.service';
+import { buildWooPack, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
 import {
     buildWriteBack,
     isVariationPayload,
     isWooPing,
-    metaOut,
     parseWooTopic,
     verifyWooSignature,
     wooHookTopics,
@@ -30,6 +28,7 @@ import {
     metaOf,
     metaSample,
     suggestMetaType,
+    summarizeVariations,
     wooDate,
     wooNumber,
 } from '../src/sync/woocommerce/woo-map';
@@ -118,26 +117,33 @@ describe('Mapeo WooCommerce → pack (puro)', () => {
             images: [{ src: 'https://t.co/a.jpg' }],
             meta_data: [{ key: 'garantia_meses', value: '3' }],
         });
-        expect(p.values).toMatchObject({ nombre: 'Camiseta', tipo: 'variable', precio: 30000, stock: null, categorias: ['ropa'], imagen: 'https://t.co/a.jpg' });
+        expect(p.values).toMatchObject({ nombre: 'Camiseta', tipo: 'variable', precio: 30000, categorias: ['ropa'], imagen: 'https://t.co/a.jpg' });
+        // Un producto con variaciones no escribe stock ni estado de inventario:
+        // son el resumen de sus variaciones (lo calcula el motor).
+        expect('stock' in p.values).toBe(false);
+        expect('estado_inventario' in p.values).toBe(false);
+        expect(p.values.precio_normal).toBeNull();
         expect(p.options.categorias).toEqual([{ value: 'ropa', label: 'Ropa' }]);
         expect(p.options.estado_stock).toEqual([{ value: 'wc-backorder-custom', label: 'Backorder custom' }]);
         expect(p.meta).toEqual({ garantia_meses: '3' });
     });
 
-    it('variación: registro propio vinculado al padre, con el nombre «Padre — opciones»', () => {
+    it('variación: SUBTAREA de su producto (v0.1.213), con el nombre «Padre — opciones»', () => {
         const v = mapVariation(
             { id: 22, parent_id: 20, price: '32000', manage_stock: true, stock_quantity: 4, attributes: [{ name: 'Color', option: 'Rojo' }, { name: 'Talla', option: 'M' }] },
             { id: 20, name: 'Camiseta' },
         );
         expect(v.parentExternalId).toBe('20');
-        expect(v.relations.producto).toEqual({ resource: 'products', externalId: '20' });
-        expect(v.values).toMatchObject({ nombre: 'Camiseta — Rojo / M', atributos: 'Color: Rojo · Talla: M', stock: 4, precio: 32000 });
+        expect(v.relations).toEqual({});
+        expect(v.values).toMatchObject({ nombre: 'Camiseta — Rojo / M', tipo: 'variacion', atributos: 'Color: Rojo · Talla: M', stock: 4, precio: 32000 });
     });
 
-    it('pedido y líneas: la línea apunta al pedido, al producto Y a la variación', () => {
+    it('pedido y líneas: la línea es SUBTAREA del pedido y apunta al producto Y a la variación', () => {
         const o = mapOrder(order, 'https://tienda.test/');
         expect(o.values).toMatchObject({
             numero: '#501',
+            tipo: 'pedido',
+            cantidad: 3,
             total: 48000,
             subtotal: 40000,
             cupones: 'VERANO',
@@ -147,16 +153,23 @@ describe('Mapeo WooCommerce → pack (puro)', () => {
         expect(o.relations.cliente).toEqual({ resource: 'customers', externalId: 'email:ana@correo.co' });
         expect(o.meta.nit).toBe('900999');
 
-        const lines = mapLineItems(order);
+        const lines = mapLineItems(order, 'https://tienda.test');
         expect(lines).toHaveLength(2);
         expect(lines[0]!.parentExternalId).toBe('501');
-        expect(lines[0]!.relations).toEqual({
-            pedido: { resource: 'orders', externalId: '501' },
-            producto: { resource: 'products', externalId: '10' },
-            variacion: null,
+        expect(lines[0]!.relations).toEqual({ producto: [{ resource: 'products', externalId: '10' }] });
+        expect(lines[1]!.relations.producto).toEqual([
+            { resource: 'products', externalId: '20' },
+            { resource: 'variations', externalId: '22' },
+        ]);
+        // La línea copia el estado y la fecha del pedido (los rollups de ventas filtran por ellos).
+        expect(lines[1]!.values).toMatchObject({
+            numero: 'Camiseta',
+            tipo: 'linea',
+            cantidad: 1,
+            estado: 'processing',
+            fecha: '2026-06-01T15:04:05Z',
+            enlace: 'https://tienda.test/wp-admin/post.php?post=501&action=edit',
         });
-        expect(lines[1]!.relations.variacion).toEqual({ resource: 'variations', externalId: '22' });
-        expect(lines[1]!.values).toMatchObject({ cantidad: 1, estado_pedido: 'processing', fecha: '2026-06-01T15:04:05Z' });
     });
 
     it('meta de otros plugins: tipo sugerido, ejemplo corto y coerción al tipo del campo', () => {
@@ -182,20 +195,49 @@ describe('Mapeo WooCommerce → pack (puro)', () => {
     });
 });
 
-describe('Pack de la tienda', () => {
-    it('cinco listas de la tienda + tres de compras, con sus dos tableros y la moneda de la tienda', () => {
-        const bp = buildWooPack({ storeName: 'Tienda', currency: 'COP', precision: 0, phoneCountry: 'CO' });
-        expect(bp.lists.map((l) => l.key)).toEqual([...Object.values(WOO_LIST_KEYS), ...Object.values(PURCHASE_LIST_KEYS)]);
-        for (const l of bp.lists.filter((x) => (Object.values(WOO_LIST_KEYS) as string[]).includes(x.key))) {
+describe('Pack de la tienda (v0.1.213)', () => {
+    const bp = buildWooPack({ storeName: 'Tienda', currency: 'COP', precision: 0, phoneCountry: 'CO' });
+
+    it('TRES listas (las variaciones y las líneas viven en la lista de su padre) y dos tableros', () => {
+        expect(bp.lists.map((l) => l.key)).toEqual(['clientes', 'productos', 'pedidos']);
+        expect(new Set(Object.values(WOO_LIST_KEYS))).toEqual(new Set(['clientes', 'productos', 'pedidos']));
+        for (const l of bp.lists) {
             // Cada lista tiene su woo_id indexado: es por donde se busca al sincronizar.
             const woo = l.fields.find((f) => f.slug === 'woo_id');
-            expect(woo, l.key).toBeDefined();
-            expect(woo!.is_indexed, l.key).toBe(true);
+            expect(woo?.is_indexed, l.key).toBe(true);
         }
-        // Ventas + inventario (v0.1.208).
         expect(bp.dashboards?.map((d) => d.name)).toEqual(['Ventas · Tienda', 'Inventario · Tienda']);
         const productos = bp.lists.find((l) => l.key === 'productos')!;
         expect(productos.fields.find((f) => f.slug === 'precio')!.config).toMatchObject({ currency: 'COP', precision: 0 });
+        // Nada de compras (no son de la tienda).
+        expect(bp.lists.some((l) => /compra|proveedor/.test(l.key))).toBe(false);
+    });
+
+    it('los rollups de ventas suman las LÍNEAS (subtareas de Pedidos) que apuntan al producto', () => {
+        const productos = bp.lists.find((l) => l.key === 'productos')!;
+        const vendidas = productos.fields.find((f) => f.slug === 'unidades_vendidas')!;
+        expect(vendidas.config).toMatchObject({
+            operation: 'sum',
+            relation_field_id: { $field: 'producto', $list: 'pedidos' },
+            target_field_id: { $field: 'cantidad', $list: 'pedidos' },
+        });
+        const tipo = productos.fields.find((f) => f.slug === 'tipo')!;
+        expect((tipo.config.options as Array<{ value: string }>).map((o) => o.value)).toContain('variacion');
+        // Los clientes suman sólo PEDIDOS (una línea no tiene cliente, pero se dice explícito).
+        const clientes = bp.lists.find((l) => l.key === 'clientes')!;
+        const total = clientes.fields.find((f) => f.slug === 'total_comprado')!;
+        expect(JSON.stringify(total.config)).toContain('"pedido"');
+    });
+
+    it('los tableros no cuentan dos veces: filtran por tipo de fila', () => {
+        const ventas = bp.dashboards![0]!;
+        const pedidos = ventas.widgets.find((w) => w.title === 'Pedidos')!;
+        expect(JSON.stringify(pedidos.config)).toContain('"pedido"');
+        const inv = bp.dashboards![1]!;
+        const valor = inv.widgets.find((w) => w.title === 'Valor en stock')!;
+        // El producto con variaciones ya es la suma de sus variaciones: se excluye.
+        expect(JSON.stringify(valor.config)).toContain('"variacion"');
+        expect(JSON.stringify(valor.config)).not.toContain('"variable"');
     });
 });
 
@@ -275,59 +317,36 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
         expect(isVariationPayload({ id: 20, parent_id: 0, type: 'variable', variations: [21] })).toBe(false);
     });
 
-    it('producto: sólo lo que cambió, rebaja vaciada = sin rebaja, stock vaciado = no se administra', () => {
-        expect(
-            buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { precio_normal: 35000 }, meta: [] }),
-        ).toEqual({ path: '/products/20', body: { regular_price: '35000' }, fields: ['Precio normal'] });
+    it('sólo precios, stock y estados viajan; lo demás se edita en WooCommerce', () => {
+        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { precio_normal: 35000 } })).toEqual({
+            path: '/products/20',
+            body: { regular_price: '35000' },
+            fields: ['Precio normal'],
+        });
         const r = buildWriteBack({
             resource: 'products',
             externalId: '20',
             parentExternalId: null,
-            changed: { precio_rebajado: null, stock: null, nombre: '   ', categorias: ['x'] },
-            meta: [],
+            changed: { precio_rebajado: null, stock: null, nombre: 'Otro', sku: 'X', categorias: ['x'] },
         })!;
-        expect(r.body).toEqual({ sale_price: '', manage_stock: false });
-        // Un nombre vacío no se manda (la tienda lo exige) y una columna fuera del catálogo tampoco.
-        expect(r.fields).toEqual(['Precio rebajado', 'Stock']);
-        // Una columna propia de la app: nada que mandar.
-        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { responsable: 3 }, meta: [] })).toBeNull();
+        // Rebaja vaciada = sin rebaja. Nombre, SKU y categorías NO viajan (v0.1.213).
+        expect(r.body).toEqual({ sale_price: '' });
+        expect(r.fields).toEqual(['Precio rebajado']);
+        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { responsable: 3 } })).toBeNull();
     });
 
-    it('variación, pedido y cliente van a su ruta; el invitado no tiene a quién', () => {
-        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: '20', changed: { stock: 7.9 }, meta: [] })).toMatchObject({
+    it('variación y pedido van a su ruta; los clientes no se editan desde la app', () => {
+        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: '20', changed: { stock: 7.9 } })).toMatchObject({
             path: '/products/20/variations/22',
             body: { manage_stock: true, stock_quantity: 7 },
         });
-        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: null, changed: { stock: 1 }, meta: [] })).toBeNull();
-        expect(buildWriteBack({ resource: 'orders', externalId: '501', parentExternalId: null, changed: { estado: 'completed', total: 9 }, meta: [] })).toEqual({
+        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: null, changed: { stock: 1 } })).toBeNull();
+        expect(buildWriteBack({ resource: 'orders', externalId: '501', parentExternalId: null, changed: { estado: 'completed', total: 9, nota_cliente: 'x' } })).toEqual({
             path: '/orders/501',
             body: { status: 'completed' },
             fields: ['Estado'],
         });
-        expect(buildWriteBack({ resource: 'customers', externalId: 'id:2', parentExternalId: null, changed: { telefono: '+57300', ciudad: 'Cali' }, meta: [] })).toMatchObject({
-            path: '/customers/2',
-            body: { billing: { phone: '+57300', city: 'Cali' } },
-        });
-        expect(buildWriteBack({ resource: 'customers', externalId: 'email:a@b.co', parentExternalId: null, changed: { telefono: '1' }, meta: [] })).toBeNull();
-    });
-
-    it('campos de otros plugins: sí/no con la convención que ya usaba la tienda, JSON como objeto', () => {
-        expect(metaOut(true, 'yes')).toBe('yes');
-        expect(metaOut(false, 'no')).toBe('no');
-        expect(metaOut(true, '1')).toBe('1');
-        expect(metaOut(false, null)).toBe('0');
-        expect(metaOut(12, null)).toBe('12');
-        expect(metaOut('{"a":1}', null)).toEqual({ a: 1 });
-        expect(metaOut('{roto', null)).toBe('{roto');
-        expect(metaOut(null, null)).toBe('');
-        const r = buildWriteBack({
-            resource: 'products',
-            externalId: '10',
-            parentExternalId: null,
-            changed: {},
-            meta: [{ key: 'garantia_meses', value: 24, sample: '12' }],
-        })!;
-        expect(r.body).toEqual({ meta_data: [{ key: 'garantia_meses', value: '24' }] });
+        expect(buildWriteBack({ resource: 'customers', externalId: 'id:2', parentExternalId: null, changed: { telefono: '+57300' } })).toBeNull();
     });
 });
 
@@ -356,7 +375,6 @@ describe('Inventario (puros, v0.1.208)', () => {
         expect(inventoryState({ manage_stock: false, stock_status: 'outofstock' }, 5)).toBe('agotado');
         expect(inventoryState({ manage_stock: false, stock_status: 'onbackorder' }, 5)).toBe('por_encargo');
         expect(inventoryState({ manage_stock: false, stock_status: 'instock' }, 5)).toBe('sin_control');
-        expect(inventoryState({ manage_stock: false, stock_status: 'instock', type: 'variable' }, 5)).toBe('por_variacion');
     });
 
     it('valor en stock = unidades × precio; sin control no hay valor; sin unidades vale 0', () => {
@@ -375,66 +393,29 @@ describe('Inventario (puros, v0.1.208)', () => {
 
     it('la edición en dos sentidos manda el umbral y el control de stock', () => {
         expect(
-            buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { umbral_stock: 7.6, controla_stock: true }, meta: [] })!.body,
+            buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { umbral_stock: 7.6, controla_stock: true } })!.body,
         ).toEqual({ low_stock_amount: 7, manage_stock: true });
         // Vaciar el umbral = volver al general de la tienda.
-        expect(
-            buildWriteBack({ resource: 'variations', externalId: '2', parentExternalId: '1', changed: { umbral_stock: null }, meta: [] })!.body,
-        ).toEqual({ low_stock_amount: null });
-        // El estado de inventario es DERIVADO: no viaja.
-        expect(buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' }, meta: [] })).toBeNull();
-    });
-
-    it('la actualización del pack agrega SÓLO lo que falta, derivado del pack completo', () => {
-        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
-        // Desde el pack 1: inventario + reposición + las listas de compras.
-        const add = packAddition(full, 1, true);
-        expect(add.lists.map((l) => l.key)).toEqual(['clientes', 'productos', 'variaciones', 'proveedores', 'compras', 'lineas_compra']);
-        const inv = add.lists.filter((l) => l.key === 'productos' || l.key === 'variaciones');
-        for (const l of inv) {
-            const allowed = [...INVENTORY_FIELD_SLUGS, ...RESTOCK_FIELD_SLUGS, ...(IDENTITY_FIELD_SLUGS[l.key] ?? [])];
-            expect(l.fields.every((fd) => allowed.includes(fd.slug))).toBe(true);
-            expect(l.views.map((v) => v.name)).toEqual(['Para reponer']);
-        }
-        expect(inv[0]!.fields.map((fd) => fd.slug)).toContain('stock_variaciones');
-        expect(inv[1]!.fields.map((fd) => fd.slug)).not.toContain('stock_variaciones');
-        expect(add.dashboards).toHaveLength(1);
-        expect(add.dashboards[0]!.name).toBe('Inventario · T');
-        // Desde el pack 2: sólo reposición (sin vistas ni tableros repetidos).
-        const add2 = packAddition(full, 2, true);
-        expect(add2.dashboards).toHaveLength(0);
-        expect(add2.lists.find((l) => l.key === 'productos')!.fields.map((fd) => fd.slug).sort()).toEqual(
-            [...RESTOCK_FIELD_SLUGS, ...IDENTITY_FIELD_SLUGS.productos!].sort(),
-        );
-        expect(add2.lists.find((l) => l.key === 'productos')!.views).toHaveLength(0);
-        expect(add2.lists.find((l) => l.key === PURCHASE_LIST_KEYS.lines)!.fields.length).toBeGreaterThan(8);
-        // Al día: nada. Sin ninguna lista: nada.
-        expect(packAddition(full, 4, true).lists).toHaveLength(0);
-        expect(packAddition(full, 1, false).lists).toHaveLength(0);
-    });
-
-    it('pack 3 → 4: sólo los identificadores, y sólo en las listas que existen', () => {
-        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
-        const add = packAddition(full, 3, true);
-        const byKey = Object.fromEntries(add.lists.map((l) => [l.key, l.fields.map((fd) => fd.slug).sort()]));
-        expect(byKey).toEqual({
-            clientes: ['editar'],
-            productos: ['editar'],
-            variaciones: ['editar', 'enlace'],
-            lineas_compra: ['sku'],
+        expect(buildWriteBack({ resource: 'variations', externalId: '2', parentExternalId: '1', changed: { umbral_stock: null } })!.body).toEqual({
+            low_stock_amount: null,
         });
-        expect(add.dashboards).toHaveLength(0);
-        expect(add.lists.every((l) => l.views.length === 0)).toBe(true);
-        // Una tienda que no trae clientes NO gana una lista de Clientes vacía.
-        const noCustomers = packAddition(full, 3, new Set(['productos', 'variaciones', 'pedidos', 'lineas']));
-        expect(noCustomers.lists.map((l) => l.key)).toEqual(['productos', 'variaciones']);
-        // Sin productos igual llegan los identificadores de los clientes.
-        expect(packAddition(full, 3, new Set(['clientes', 'pedidos'])).lists.map((l) => l.key)).toEqual(['clientes']);
-        // Las imágenes del pack se muestran como miniatura.
-        for (const key of ['productos', 'variaciones']) {
-            const img = full.lists.find((l) => l.key === key)!.fields.find((fd) => fd.slug === 'imagen')!;
-            expect(img.config).toEqual({ display: 'image' });
-        }
+        // El estado de inventario es DERIVADO: no viaja.
+        expect(buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' } })).toBeNull();
+    });
+
+    it('producto con variaciones: su inventario es el RESUMEN de sus variaciones', () => {
+        expect(
+            summarizeVariations([
+                { stock: 5, value: 50, state: 'en_stock' },
+                { stock: 1, value: 10, state: 'bajo' },
+                { stock: null, value: null, state: 'sin_control' },
+            ]),
+        ).toEqual({ stock: 6, value: 60, state: 'bajo' });
+        // Todas agotadas = agotado; alguna agotada = hay que reponer (bajo).
+        expect(summarizeVariations([{ stock: 0, value: 0, state: 'agotado' }, { stock: 0, value: 0, state: 'agotado' }]).state).toBe('agotado');
+        expect(summarizeVariations([{ stock: 0, value: 0, state: 'agotado' }, { stock: 9, value: 9, state: 'en_stock' }]).state).toBe('bajo');
+        expect(summarizeVariations([]).state).toBe('sin_control');
+        expect(summarizeVariations([{ stock: null, value: null, state: 'por_encargo' }])).toEqual({ stock: null, value: null, state: 'por_encargo' });
     });
 
     it('enlaces para identificar: editar en el panel, enlace de la variación', () => {
@@ -451,53 +432,5 @@ describe('Inventario (puros, v0.1.208)', () => {
         // Sin la dirección de la tienda no se inventa un enlace.
         expect(mapProduct({ id: 12, name: 'Taza' }).values.editar).toBeNull();
         expect(mapCustomer({ id: 7 }).values.editar).toBeNull();
-    });
-
-    it('el pack trae las listas de compras vinculadas a productos y variaciones', () => {
-        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
-        const lines = full.lists.find((l) => l.key === PURCHASE_LIST_KEYS.lines)!;
-        const rel = (slug: string) => (lines.fields.find((fd) => fd.slug === slug)!.config as { target_list_id: { $list: string } }).target_list_id.$list;
-        expect(rel('orden')).toBe('compras');
-        expect(rel('producto')).toBe('productos');
-        expect(rel('variacion')).toBe('variaciones');
-        const products = full.lists.find((l) => l.key === 'productos')!;
-        const enCamino = products.fields.find((fd) => fd.slug === 'en_camino')!;
-        expect(enCamino.type).toBe('rollup');
-        expect(enCamino.config).toMatchObject({ operation: 'sum', target_field_id: { $field: 'pendiente', $list: 'lineas_compra' } });
-    });
-});
-
-describe('Reposición (puros, v0.1.209)', () => {
-    it('recibir: «Recibida» lleva a lo recibido (o a lo pedido); «en parte» sólo con la cantidad escrita', () => {
-        expect(receiveTarget('recibida', 10, null)).toBe(10);
-        expect(receiveTarget('recibida', 10, 8)).toBe(8);
-        expect(receiveTarget('recibida', null, null)).toBe(0);
-        expect(receiveTarget('recibida_parcial', 10, null)).toBeNull();
-        expect(receiveTarget('recibida_parcial', 10, 3)).toBe(3);
-        expect(receiveTarget('enviada', 10, 3)).toBeNull();
-        expect(receiveTarget('cancelada', 10, 3)).toBeNull();
-        expect(receiveTarget('recibida', 10, -4)).toBe(0);
-    });
-
-    it('pendiente: sólo una orden pedida y no cerrada tiene algo en camino', () => {
-        expect(pendingOf('enviada', 10, 0)).toBe(10);
-        expect(pendingOf('recibida_parcial', 10, 4)).toBe(6);
-        expect(pendingOf('recibida_parcial', 10, 12)).toBe(0);
-        expect(pendingOf('borrador', 10, 0)).toBe(0);
-        expect(pendingOf('recibida', 10, 4)).toBe(0);
-        expect(pendingOf('cancelada', 10, 0)).toBe(0);
-    });
-
-    it('sugerencia: un mes de venta + la alerta − lo que hay − lo que viene, nunca menos de 1', () => {
-        expect(suggestQuantity(2, 0, 10, 5)).toBe(13);
-        expect(suggestQuantity(-3, 0, 0, 2)).toBe(5);
-        expect(suggestQuantity(50, 0, 10, 5)).toBe(1);
-        expect(suggestQuantity(null, 4, 3.5, 2)).toBe(2);
-    });
-
-    it('numeración de órdenes', () => {
-        expect(orderSeq('OC-0007')).toBe(7);
-        expect(orderSeq(' OC-12 ')).toBe(12);
-        expect(orderSeq('Pedido 7')).toBeNull();
     });
 });

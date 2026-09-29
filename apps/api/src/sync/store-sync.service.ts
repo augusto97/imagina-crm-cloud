@@ -1,38 +1,40 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     STORE_META_RESOURCES,
-    STORE_PURCHASE_LISTS,
     STORE_SYNC_RESOURCES,
+    type ListBlueprint,
     type MapStoreMetaInput,
     type Role,
     type SetupStoreSyncInput,
-    type StoreMetaKey,
     type StoreListMarker,
+    type StoreListRole,
+    type StoreMetaKey,
     type StoreMetaResource,
-    type StorePurchaseList,
     type StoreSyncResource,
     type StoreSyncStatus,
     type UnmapStoreMetaInput,
     type UpdateStoreSyncInput,
 } from '@imagina-base/shared';
-import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { wooStoreUrl } from '../connectors/woocommerce/wc-api';
 import { DRIZZLE, type Db } from '../db/client';
-import { connectionSyncs, dashboards, fields as fieldsTable, lists, syncLinks } from '../db/schema';
+import { connectionSyncs, dashboards, lists, records, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListGroupsService } from '../lists/list-groups.service';
 import { ListsService } from '../lists/lists.service';
+import { stripStoreMarkers } from '../lists/store-guard';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService } from '../templates/blueprint.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import { StoreRealtimeService } from './store-realtime.service';
 import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
-import { readSettings, readState, type SyncSettings } from './store-sync.types';
+import { readLegacyPurchaseLists, readSettings, readState, type SyncSettings } from './store-sync.types';
 import { wooGet } from './woocommerce/woo-fetch';
-import { buildWooPack, packAddition, PURCHASE_LIST_KEYS, WOO_LIST_KEYS, WOO_PACK_VERSION } from './woocommerce/woo-pack';
+import { buildWooPack, WOO_LIST_KEYS, WOO_PACK_VERSION, WOO_ROOT_RESOURCES } from './woocommerce/woo-pack';
 import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
 
 /**
@@ -57,6 +59,8 @@ export class StoreSyncService {
         private readonly engine: StoreSyncEngine,
         private readonly queue: StoreSyncQueue,
         private readonly realtime: StoreRealtimeService,
+        // v0.1.213 — avisar a las pestañas abiertas que la marca de sus listas cambió.
+        @Optional() private readonly rt?: RealtimeService,
     ) {}
 
     // ── Lectura ─────────────────────────────────────────────────────────────
@@ -86,7 +90,6 @@ export class StoreSyncService {
             lists: empty,
             dashboard_id: null,
             inventory_dashboard_id: null,
-            purchase_lists: { suppliers: null, orders: null, lines: null },
             folder_id: null,
             running: false,
             current: null,
@@ -116,7 +119,7 @@ export class StoreSyncService {
                 .from(syncLinks)
                 .where(eq(syncLinks.syncId, row.id))
                 .groupBy(syncLinks.resource);
-            const ids = [...Object.values(settings.lists), ...Object.values(settings.purchase_lists)].filter(
+            const ids = [...Object.values(settings.lists)].filter(
                 (v): v is number => typeof v === 'number',
             );
             const l = ids.length
@@ -174,13 +177,6 @@ export class StoreSyncService {
             lists: listsOut,
             dashboard_id: settings.dashboard_id,
             inventory_dashboard_id: settings.inventory_dashboard_id,
-            purchase_lists: Object.fromEntries(
-                STORE_PURCHASE_LISTS.map((k) => {
-                    const id = settings.purchase_lists[k];
-                    const l = id ? byId.get(id) : undefined;
-                    return [k, l ? { id: l.id, slug: l.slug, name: l.name } : null];
-                }),
-            ) as StoreSyncStatus['purchase_lists'],
             folder_id: settings.folder_id,
             running: state.running,
             current: state.current,
@@ -225,7 +221,7 @@ export class StoreSyncService {
         const storeName = storeLabel(conn.name);
         const shop = await this.storeFormat(creds);
 
-        // Una carpeta propia: las cinco listas y nada más, bien a la vista.
+        // Una carpeta propia: las tres listas y nada más, bien a la vista.
         const folder = await this.groups.create(tenantId, {
             name: `WooCommerce · ${storeName}`.slice(0, 120),
             icon: 'storefront',
@@ -252,21 +248,15 @@ export class StoreSyncService {
             low_stock_amount: shop.lowStock,
             pack_version: WOO_PACK_VERSION,
             inventory_dashboard_id: made.dashboardIds[1] ?? null,
-            purchase_lists: {},
-            purchase_fields: {},
         };
+        // Variaciones y líneas viven en la lista de su padre (como subtareas):
+        // mismo id de lista y mismo mapa de campos.
         for (const r of STORE_SYNC_RESOURCES) {
             const key = WOO_LIST_KEYS[r];
             const idx = pack.lists.findIndex((l) => l.key === key);
             const list = made.lists[idx];
             if (list) settings.lists[r] = list.id;
             settings.fields[r] = made.fieldIds[key] ?? {};
-        }
-        for (const k of STORE_PURCHASE_LISTS) {
-            const key = PURCHASE_LIST_KEYS[k];
-            const list = made.lists[pack.lists.findIndex((l) => l.key === key)];
-            if (list) settings.purchase_lists[k] = list.id;
-            settings.purchase_fields[k] = made.fieldIds[key] ?? {};
         }
         if (made.warnings.length > 0) this.logger.warn(`Pack de la tienda con avisos: ${made.warnings.join(' | ')}`);
 
@@ -363,206 +353,268 @@ export class StoreSyncService {
     }
 
     /**
-     * Actualiza el pack de una sincronización creada con una versión anterior
-     * (v0.1.208 el inventario, v0.1.209 la reposición): agrega lo que falta
-     * —campos, vistas, tableros y listas nuevas— SIN tocar lo que ya está, y
-     * encola una vuelta completa de productos para llenar lo nuevo.
-     * Idempotente y bajo el candado de la corrida (dos trabajos simultáneos no
-     * duplican campos). Devuelve si actualizó.
+     * v0.1.213 — MIGRA una sincronización creada con un pack anterior al
+     * pack 5. Idempotente y bajo el candado de la corrida. Devuelve si migró.
+     *
+     *  - Productos, Pedidos y Clientes se CONSERVAN (mismos ids: vistas,
+     *    favoritos, comentarios y columnas propias siguen donde estaban).
+     *  - Variaciones y Líneas de pedido pasan a ser SUBTAREAS de Productos y
+     *    Pedidos: sus listas viejas se borran y la vuelta completa que se
+     *    encola al terminar las vuelve a traer donde van. Son un espejo de la
+     *    tienda: no se pierde nada que no esté allá.
+     *  - Las columnas que dependían de esas listas (rollups de ventas, «En
+     *    camino», «Sumar al stock»…) se reemplazan por las del pack nuevo.
+     *  - Las listas de compras (proveedores, órdenes y líneas de compra) NO son
+     *    de la tienda: vacías se borran; con datos quedan como listas comunes,
+     *    desvinculadas — los datos de la empresa no se tocan.
+     *  - Los dos tableros del pack se rehacen (los viejos apuntaban a las
+     *    listas que ya no existen).
      */
     async upgradePack(tenantId: number, syncId: number, creds: IntegrationCreds): Promise<boolean> {
         const token = await this.engine.acquire(syncId);
         if (!token) return false;
-        // Qué hay que re-leer al terminar (los campos nuevos se llenan solos).
-        const only: StoreSyncResource[] = ['products'];
+        let connectionId = 0;
         try {
             const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1),
             );
             if (!row) return false;
+            connectionId = row.connectionId;
             const settings = readSettings(row.settings);
-            const from = settings.pack_version;
-            // Desde el pack 3 también clientes: su enlace «Editar en WooCommerce».
-            if (from < 4 && settings.resources.customers && settings.lists.customers) only.push('customers');
-            if (from >= WOO_PACK_VERSION) return false;
+            if (settings.pack_version >= WOO_PACK_VERSION) return false;
+            const actor = row.createdBy ?? 0;
             const shop = await this.storeFormat(creds);
             const full = buildWooPack({ storeName: settings.store_name, currency: shop.currency, precision: shop.precision, phoneCountry: shop.country });
+            const packFields = new Map(full.lists.map((l) => [l.key, l]));
+
+            const productsList = settings.lists.products ?? null;
+            const ordersList = settings.lists.orders ?? null;
+            const oldVariations = settings.lists.variations && settings.lists.variations !== productsList ? settings.lists.variations : null;
+            const oldLines = settings.lists.line_items && settings.lists.line_items !== ordersList ? settings.lists.line_items : null;
+
+            // 1) Columnas que dependían de las listas viejas: fuera (se recrean abajo).
+            const REBUILD: Record<string, string[]> = {
+                productos: ['unidades_vendidas', 'ingresos', 'vendidas_30d', 'cobertura_meses'],
+                pedidos: [],
+                clientes: [],
+            };
+            const keep = (key: string, slug: string) =>
+                (packFields.get(key)?.fields ?? []).some((f) => f.slug === slug) && !(REBUILD[key] ?? []).includes(slug);
+            for (const [resource, key] of [['products', 'productos'], ['orders', 'pedidos'], ['customers', 'clientes']] as const) {
+                const listId = settings.lists[resource];
+                const map = { ...(settings.fields[resource] ?? {}) };
+                if (!listId) continue;
+                for (const [slug, fieldId] of Object.entries(map)) {
+                    if (keep(key, slug)) continue;
+                    await this.fields.remove(tenantId, String(listId), String(fieldId), { internal: true }).catch(() => undefined);
+                    delete map[slug];
+                }
+                settings.fields[resource] = map;
+            }
+            // Opciones nuevas de los selects que ya existían (tipo «Variación»,
+            // tipo de fila del pedido…) y fuera la de «Por variación».
+            await this.mergePackOptions(tenantId, settings, full);
+
+            // 2) Lo nuevo del pack (campos y tableros), sobre las listas que quedan.
             const keyToListId = new Map<string, number>();
             const existing = new Map<string, Map<string, number>>();
-            for (const r of STORE_SYNC_RESOURCES) {
-                const key = WOO_LIST_KEYS[r];
+            for (const r of WOO_ROOT_RESOURCES) {
                 const listId = settings.lists[r];
-                if (listId) keyToListId.set(key, listId);
-                existing.set(key, new Map(Object.entries(settings.fields[r] ?? {})));
+                if (!listId) continue;
+                keyToListId.set(WOO_LIST_KEYS[r], listId);
+                existing.set(WOO_LIST_KEYS[r], new Map(Object.entries(settings.fields[r] ?? {})));
             }
-            for (const k of STORE_PURCHASE_LISTS) {
-                const listId = settings.purchase_lists[k];
-                if (listId) keyToListId.set(PURCHASE_LIST_KEYS[k], listId);
-                existing.set(PURCHASE_LIST_KEYS[k], new Map(Object.entries(settings.purchase_fields[k] ?? {})));
-            }
-            // Sólo se completan las listas que existen (una tienda que no trae
-            // clientes no gana una lista de Clientes vacía).
-            const addition = packAddition(full, from, new Set(keyToListId.keys()));
-            const made = await this.blueprints.extend(tenantId, row.createdBy ?? 0, addition, keyToListId, existing, {
+            const addition: ListBlueprint = {
+                version: full.version,
+                lists: full.lists
+                    .filter((l) => keyToListId.has(l.key))
+                    .map((l) => ({ ...l, views: [], automations: [], records: [] })),
+                // Sin productos no hay tablero de inventario; sin pedidos, no hay ventas.
+                dashboards: full.dashboards.filter((d) =>
+                    d.widgets.every((w) => w.list === 0 || keyToListId.has(w.list.$list)),
+                ),
+            };
+            const made = await this.blueprints.extend(tenantId, actor, addition, keyToListId, existing, {
                 groupId: settings.folder_id,
             });
-            if (made.warnings.length > 0) this.logger.warn(`Actualización del pack #${syncId}: ${made.warnings.join(' | ')}`);
+            if (made.warnings.length > 0) this.logger.warn(`Migración del pack #${syncId}: ${made.warnings.join(' | ')}`);
+
+            // 3) Las listas viejas y los tableros viejos.
+            const purchase = readLegacyPurchaseLists(row.settings);
+            const leftovers: string[] = [];
+            await this.tenantDb.withTenant(tenantId, async (tx) => {
+                // Los registros de variaciones y líneas se vuelven a traer como
+                // subtareas: los viejos se retiran con sus vínculos (así, aunque
+                // alguno no viviera en su lista aparte, no queda duplicado).
+                const old = await tx
+                    .select({ recordId: syncLinks.recordId })
+                    .from(syncLinks)
+                    .where(and(eq(syncLinks.syncId, syncId), inArray(syncLinks.resource, ['variations', 'line_items'])));
+                const oldIds = [...new Set(old.map((o) => o.recordId))];
+                for (let i = 0; i < oldIds.length; i += 1000) {
+                    await tx
+                        .update(records)
+                        .set({ deletedAt: new Date() })
+                        .where(and(eq(records.tenantId, tenantId), inArray(records.id, oldIds.slice(i, i + 1000))));
+                }
+                await tx
+                    .delete(syncLinks)
+                    .where(and(eq(syncLinks.syncId, syncId), inArray(syncLinks.resource, ['variations', 'line_items'])));
+                for (const id of [settings.dashboard_id, settings.inventory_dashboard_id]) {
+                    if (id) await tx.delete(dashboards).where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)));
+                }
+            });
+            for (const id of [oldVariations, oldLines]) {
+                if (id) await this.lists.remove(tenantId, String(id)).catch(() => undefined);
+            }
+            for (const id of purchase) {
+                const [{ n } = { n: 0 }] = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ n: sql<number>`count(*)::int` })
+                        .from(records)
+                        .where(and(eq(records.tenantId, tenantId), eq(records.listId, id), isNull(records.deletedAt))),
+                );
+                if (n === 0) {
+                    await this.lists.remove(tenantId, String(id)).catch(() => undefined);
+                } else {
+                    // Datos de la empresa: quedan como una lista común.
+                    await this.tenantDb.withTenant(tenantId, (tx) =>
+                        tx.update(lists).set({ settings: sql`${lists.settings} - 'store_sync'` }).where(and(eq(lists.tenantId, tenantId), eq(lists.id, id))),
+                    );
+                    leftovers.push(String(id));
+                }
+            }
+
+            // 4) Los ajustes nuevos.
             const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
                 const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
                 const s = readSettings(locked!.settings);
-                for (const r of STORE_SYNC_RESOURCES) {
+                for (const r of WOO_ROOT_RESOURCES) {
                     const got = made.fieldIds[WOO_LIST_KEYS[r]];
-                    if (got && Object.keys(got).length > 0) s.fields[r] = { ...(s.fields[r] ?? {}), ...got };
+                    s.fields[r] = { ...settings.fields[r], ...(got ?? {}) };
                 }
-                for (const k of STORE_PURCHASE_LISTS) {
-                    const key = PURCHASE_LIST_KEYS[k];
-                    if (made.createdLists[key]) s.purchase_lists[k] = made.createdLists[key];
-                    const got = made.fieldIds[key];
-                    if (got && Object.keys(got).length > 0) s.purchase_fields[k] = { ...(s.purchase_fields[k] ?? {}), ...got };
-                }
+                s.lists.variations = s.lists.products;
+                s.fields.variations = s.fields.products;
+                s.lists.line_items = s.lists.orders;
+                s.fields.line_items = s.fields.orders;
+                if (!s.lists.products) delete s.lists.variations;
+                if (!s.lists.orders) delete s.lists.line_items;
+                const ventas = addition.dashboards.findIndex((d) => !d.name.startsWith('Inventario'));
+                const inventario = addition.dashboards.findIndex((d) => d.name.startsWith('Inventario'));
+                s.dashboard_id = ventas >= 0 ? (made.dashboardIds[ventas] ?? null) : null;
+                s.inventory_dashboard_id = inventario >= 0 ? (made.dashboardIds[inventario] ?? null) : null;
                 s.pack_version = WOO_PACK_VERSION;
-                if (from < 2) {
-                    // El pack 1 armó las tablas del tablero de ventas con una clave que
-                    // el widget no lee (`columns`): mostraban las columnas por defecto.
-                    if (s.dashboard_id) await this.patchTables(tx, s.dashboard_id, (cfg) => {
-                        if (!Array.isArray(cfg.columns) || Array.isArray(cfg.visible_field_ids)) return null;
-                        const { columns, ...rest } = cfg;
-                        return { ...rest, visible_field_ids: columns };
-                    });
-                    s.inventory_dashboard_id = made.dashboardIds[0] ?? s.inventory_dashboard_id;
-                } else if (s.inventory_dashboard_id) {
-                    // Pack 2 → 3: las tablas «para reponer» suman «En camino» (lo
-                    // ya pedido a proveedores), así nadie pide dos veces lo mismo.
-                    const byList = new Map<number, number | undefined>();
-                    if (s.lists.products) byList.set(s.lists.products, s.fields.products?.en_camino);
-                    if (s.lists.variations) byList.set(s.lists.variations, s.fields.variations?.en_camino);
-                    await this.patchTables(tx, s.inventory_dashboard_id, (cfg, listId) => {
-                        const add = byList.get(listId);
-                        const cols = Array.isArray(cfg.visible_field_ids) ? (cfg.visible_field_ids as unknown[]) : null;
-                        if (!add || !cols || cols.includes(add)) return null;
-                        return { ...cfg, visible_field_ids: [...cols.slice(0, 2), add, ...cols.slice(2)] };
-                    });
-                }
-                if (from < 4) await this.upgradeIdentity(tx, tenantId, s, from);
                 s.low_stock_amount = shop.lowStock;
                 await tx
                     .update(connectionSyncs)
-                    .set({ settings: s as unknown as Record<string, unknown>, updatedAt: new Date() })
+                    .set({
+                        settings: s as unknown as Record<string, unknown>,
+                        // Las variaciones y las líneas se vuelven a traer enteras.
+                        state: sql`${connectionSyncs.state} || ${JSON.stringify({ variations_full_at: null, cursors: {} })}::jsonb`,
+                        updatedAt: new Date(),
+                    })
                     .where(eq(connectionSyncs.id, syncId));
+                await this.audit.logInTx(tx, {
+                    tenantId,
+                    userId: null,
+                    action: 'store_sync.migrate',
+                    targetType: 'connection',
+                    targetId: row.connectionId,
+                    targetLabel: settings.store_name,
+                    meta: { from: settings.pack_version, to: WOO_PACK_VERSION, purchase_lists_kept: leftovers },
+                });
                 return s;
             });
             await this.markLists(tenantId, row.connectionId, fresh);
         } finally {
             await this.engine.release(syncId, token);
         }
-        // Llenar los campos nuevos: una vuelta completa de productos (sin
-        // disparar automatizaciones: es una puesta al día).
-        this.queue.enqueueRun(tenantId, syncId, { full: true, only });
+        // Una vuelta completa trae las variaciones y las líneas como subtareas
+        // (sin disparar automatizaciones: es una puesta al día).
+        this.queue.enqueueRun(tenantId, syncId, { full: true, only: ['products', 'orders'] });
         this.realtime.forget(tenantId);
+        void connectionId;
         return true;
     }
 
     /**
-     * v0.1.210 (pack 3 → 4) — Lo que no se resuelve agregando campos:
-     *  - las columnas «Imagen» que ya existían pasan a mostrarse como
-     *    MINIATURA (`config.display = 'image'`);
-     *  - las líneas de compra que ya existían reciben el SKU de lo que piden
-     *    (de la variación o, si no, del producto). Las nuevas lo completa
-     *    `StorePurchasingService.normalizeLine` sola.
-     * Los enlaces de edición y el de las variaciones los llena la vuelta
-     * completa que se encola al terminar.
+     * Suma a los selects existentes las opciones del pack que les faltan (y
+     * quita las que el pack ya no usa: «Por variación» del inventario).
      */
-    private async upgradeIdentity(
-        tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
-        tenantId: number,
-        s: SyncSettings,
-        from: number,
-    ): Promise<void> {
-        const images = [s.fields.products?.imagen, s.fields.variations?.imagen].filter((x): x is number => !!x);
-        if (images.length > 0) {
-            await tx
-                .update(fieldsTable)
-                .set({ config: sql`${fieldsTable.config} || '{"display":"image"}'::jsonb` })
-                .where(and(eq(fieldsTable.tenantId, tenantId), inArray(fieldsTable.id, images)));
+    private async mergePackOptions(tenantId: number, settings: SyncSettings, full: ListBlueprint): Promise<void> {
+        for (const r of WOO_ROOT_RESOURCES) {
+            const listId = settings.lists[r];
+            const bl = full.lists.find((l) => l.key === WOO_LIST_KEYS[r]);
+            if (!listId || !bl) continue;
+            const current = await this.fields.listByListId(tenantId, listId);
+            for (const def of bl.fields) {
+                if (def.type !== 'select') continue;
+                const fieldId = settings.fields[r]?.[def.slug];
+                const field = current.find((f) => f.id === fieldId);
+                if (!field) continue;
+                const have = Array.isArray(field.config.options) ? (field.config.options as Array<{ value: string }>) : [];
+                const want = (def.config.options ?? []) as Array<{ value: string }>;
+                const next = [
+                    ...have.filter((o) => o.value !== 'por_variacion'),
+                    ...want.filter((o) => !have.some((h) => h.value === o.value)),
+                ];
+                if (next.length === have.length && next.every((o, i) => o.value === have[i]?.value)) continue;
+                await this.fields
+                    .update(tenantId, String(listId), String(field.id), { config: { ...field.config, options: next } }, { internal: true })
+                    .catch(() => undefined);
+            }
         }
-        const L = s.purchase_fields.lines ?? {};
-        const linesList = s.purchase_lists.lines;
-        const pSku = s.fields.products?.sku;
-        const vSku = s.fields.variations?.sku;
-        if (from < 3 || !linesList || !L.sku || (!pSku && !vSku)) return;
-        // Un solo UPDATE: la variación manda; si no hay, el producto.
-        await tx.execute(sql`
-            UPDATE records r
-               SET data = r.data || jsonb_build_object(${`f${L.sku}`}::text, src.sku),
-                   updated_at = now()
-              FROM (
-                    SELECT l.id,
-                           COALESCE(
-                               NULLIF(v.data ->> ${`f${vSku ?? 0}`}::text, ''),
-                               NULLIF(p.data ->> ${`f${pSku ?? 0}`}::text, '')
-                           ) AS sku
-                      FROM records l
-                      LEFT JOIN relations rv ON rv.source_record_id = l.id AND rv.field_id = ${L.variacion ?? 0}
-                      LEFT JOIN records v ON v.id = rv.target_record_id
-                      LEFT JOIN relations rp ON rp.source_record_id = l.id AND rp.field_id = ${L.producto ?? 0}
-                      LEFT JOIN records p ON p.id = rp.target_record_id
-                     WHERE l.tenant_id = ${tenantId} AND l.list_id = ${linesList} AND l.deleted_at IS NULL
-                   ) src
-             WHERE r.id = src.id AND src.sku IS NOT NULL
-        `);
-    }
-
-    /** Reescribe los widgets de TABLA de un tablero (`fix` devuelve null = sin cambios). */
-    private async patchTables(
-        tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
-        dashboardId: number,
-        fix: (cfg: Record<string, unknown>, listId: number) => Record<string, unknown> | null,
-    ): Promise<void> {
-        const [dash] = await tx.select({ widgets: dashboards.widgets }).from(dashboards).where(eq(dashboards.id, dashboardId));
-        if (!dash || !Array.isArray(dash.widgets)) return;
-        let changed = false;
-        const next = (dash.widgets as Array<Record<string, unknown>>).map((w) => {
-            if (w.type !== 'table') return w;
-            const out = fix((w.config ?? {}) as Record<string, unknown>, Number(w.list_id));
-            if (!out) return w;
-            changed = true;
-            return { ...w, config: out };
-        });
-        if (changed) await tx.update(dashboards).set({ widgets: next as never }).where(eq(dashboards.id, dashboardId));
     }
 
     /**
-     * v0.1.209 — Marca cada lista de la tienda con su conexión y su papel
-     * (`settings.store_sync`): la UI lo usa para ofrecer «Crear orden de
-     * compra» en Productos/Variaciones. Idempotente: sólo escribe donde falta
-     * o cambió (una lista cuyos ajustes se reescribieron sin la marca la
-     * recupera en la próxima vuelta).
+     * Marca cada lista de la tienda (`settings.store_sync`): de qué conexión es,
+     * qué guarda, si se puede editar desde la app y QUÉ columnas son de la
+     * tienda (v0.1.213). Con eso el backend rechaza lo que WooCommerce no
+     * permitiría y la interfaz lo bloquea antes (`store-rules.ts`).
+     * Idempotente: sólo escribe donde cambió.
      */
     async markLists(tenantId: number, connectionId: number, settings: SyncSettings): Promise<void> {
-        const roles: Array<[number, StoreListMarker['role']]> = [];
-        for (const r of STORE_SYNC_RESOURCES) if (settings.lists[r]) roles.push([settings.lists[r]!, r]);
-        const purchaseRole: Record<StorePurchaseList, StoreListMarker['role']> = {
-            suppliers: 'suppliers',
-            orders: 'purchase_orders',
-            lines: 'purchase_lines',
-        };
-        for (const k of STORE_PURCHASE_LISTS) if (settings.purchase_lists[k]) roles.push([settings.purchase_lists[k]!, purchaseRole[k]]);
-        if (roles.length === 0) return;
+        const markers: Array<[number, StoreListMarker]> = [];
+        const metaOf = (...rs: StoreMetaResource[]) => [...new Set(rs.flatMap((r) => Object.values(settings.meta_map[r] ?? {})))];
+        const roles: Array<[StoreListRole, StoreMetaResource[]]> = [
+            ['customers', ['customers']],
+            ['products', ['products', 'variations']],
+            ['orders', ['orders']],
+        ];
+        for (const [role, metaRes] of roles) {
+            const listId = settings.lists[role];
+            if (!listId) continue;
+            markers.push([
+                listId,
+                {
+                    connection_id: connectionId,
+                    role,
+                    store_name: settings.store_name,
+                    store_url: settings.store_url,
+                    write_back: settings.write_back,
+                    fields: settings.fields[role] ?? {},
+                    meta_fields: metaOf(...metaRes),
+                },
+            ]);
+        }
+        if (markers.length === 0) return;
         await this.tenantDb.withTenant(tenantId, async (tx) => {
-            for (const [listId, role] of roles) {
-                const marker = JSON.stringify({ store_sync: { connection_id: connectionId, role } });
+            for (const [listId, marker] of markers) {
+                const json = JSON.stringify({ store_sync: marker });
                 await tx
                     .update(lists)
-                    .set({ settings: sql`${lists.settings} || ${marker}::jsonb` })
+                    .set({ settings: sql`${lists.settings} || ${json}::jsonb` })
                     .where(
                         and(
                             eq(lists.tenantId, tenantId),
                             eq(lists.id, listId),
-                            sql`${lists.settings}->'store_sync' IS DISTINCT FROM ${marker}::jsonb->'store_sync'`,
+                            sql`${lists.settings}->'store_sync' IS DISTINCT FROM ${json}::jsonb->'store_sync'`,
                         ),
                     );
             }
         });
+        // Las pestañas abiertas vuelven a leer la marca (candados, banner, altas).
+        this.rt?.lists(tenantId);
     }
 
     // ── Cambios ─────────────────────────────────────────────────────────────
@@ -618,6 +670,8 @@ export class StoreSyncService {
             const creds = await this.credsOf(tenantId, connectionId).catch(() => null);
             await this.realtime.unregister(tenantId, row.id, creds);
         }
+        // «Editar desde la app» cambia qué columnas se pueden tocar.
+        if (input.write_back !== undefined) await this.markLists(tenantId, connectionId, readSettings(updated.settings));
         this.realtime.forget(tenantId);
         const fresh = (await this.findSync(tenantId, connectionId)) ?? updated;
         return this.toStatus(tenantId, fresh, conn.name);
@@ -669,6 +723,8 @@ export class StoreSyncService {
         this.realtime.forget(tenantId);
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.id, row.id));
+            // Las listas quedan como listas comunes: sin la marca, sin bloqueos.
+            await stripStoreMarkers(tx, tenantId, connectionId);
             await this.audit.logInTx(tx, {
                 tenantId,
                 userId,
@@ -678,6 +734,7 @@ export class StoreSyncService {
                 targetLabel: conn.name,
             });
         });
+        this.rt?.lists(tenantId);
     }
 
     // ── Campos de otros plugins ─────────────────────────────────────────────
@@ -728,6 +785,8 @@ export class StoreSyncService {
                 meta: { key: input.key, resource: input.resource },
             });
         });
+        // La columna nueva es de la tienda (sólo lectura).
+        await this.markLists(tenantId, row.connectionId, readSettings((await this.requireSync(tenantId, connectionId)).settings));
         // Para llenar los registros que ya estaban hay que volver a pasar por todos.
         const only: StoreSyncResource[] = input.resource === 'variations' ? ['products'] : [input.resource];
         this.queue.enqueueRun(tenantId, row.id, { full: true, only });
@@ -759,6 +818,8 @@ export class StoreSyncService {
                 .returning();
             return next!;
         });
+        // Deja de traerse: la columna pasa a ser propia de la empresa (editable).
+        await this.markLists(tenantId, row.connectionId, readSettings(updated.settings));
         this.realtime.forget(tenantId);
         return this.toStatus(tenantId, updated, conn.name);
     }
