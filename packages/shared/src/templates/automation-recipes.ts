@@ -279,6 +279,35 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
             ],
         },
     ),
+    recipe(
+        'stock-bajo',
+        'Aviso de stock bajo o agotado',
+        'Cuando un producto pasa a «Stock bajo» o «Agotado», manda un correo para reponer con las unidades que quedan y las vendidas en 30 días. Pensada para las listas de una tienda sincronizada (Productos o Variaciones). Completá el destinatario.',
+        'campos',
+        [
+            role('estado_inventario', 'Estado de inventario', ['select']),
+            role('nombre', 'Nombre del producto', ['text'], false),
+            role('stock', 'Stock', ['number'], false),
+            role('vendidas_30d', 'Vendidas en 30 días', ['number', 'rollup'], false),
+        ],
+        {
+            trigger_type: 'record_updated',
+            trigger_config: {
+                changed_fields: ['estado_inventario'],
+                field_filters: [{ slug: 'estado_inventario', op: 'in', value: ['bajo', 'agotado'] }],
+            },
+            actions: [
+                {
+                    type: 'send_email',
+                    config: {
+                        to: '',
+                        subject: 'Reponer: {{nombre}} ({{estado_inventario|label}})',
+                        body: '«{{nombre}}» está en {{estado_inventario|label}}.\n\nQuedan: {{stock}} unidades.\nVendidas en los últimos 30 días: {{vendidas_30d}}.',
+                    },
+                },
+            ],
+        },
+    ),
 ];
 
 export function systemAutomationTemplate(key: string): SystemAutomationTemplate | undefined {

@@ -18,7 +18,7 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { wooStoreUrl } from '../connectors/woocommerce/wc-api';
 import { DRIZZLE, type Db } from '../db/client';
-import { connectionSyncs, lists, syncLinks } from '../db/schema';
+import { connectionSyncs, dashboards, lists, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListGroupsService } from '../lists/list-groups.service';
 import { ListsService } from '../lists/lists.service';
@@ -29,7 +29,8 @@ import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
 import { readSettings, readState, type SyncSettings } from './store-sync.types';
 import { wooGet } from './woocommerce/woo-fetch';
-import { buildWooPack, WOO_LIST_KEYS } from './woocommerce/woo-pack';
+import { buildWooPack, inventoryAddition, WOO_LIST_KEYS, WOO_PACK_VERSION } from './woocommerce/woo-pack';
+import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
 
 /**
  * Sincronización con tiendas — lo que ve y toca la persona (v0.1.206,
@@ -81,6 +82,7 @@ export class StoreSyncService {
             resources: { customers: true, products: true, orders: true },
             lists: empty,
             dashboard_id: null,
+            inventory_dashboard_id: null,
             folder_id: null,
             running: false,
             current: null,
@@ -165,6 +167,7 @@ export class StoreSyncService {
             resources: settings.resources,
             lists: listsOut,
             dashboard_id: settings.dashboard_id,
+            inventory_dashboard_id: settings.inventory_dashboard_id,
             folder_id: settings.folder_id,
             running: state.running,
             current: state.current,
@@ -233,6 +236,9 @@ export class StoreSyncService {
             meta_map: {},
             dashboard_id: made.dashboardIds[0] ?? null,
             folder_id: folder.id,
+            low_stock_amount: shop.lowStock,
+            pack_version: WOO_PACK_VERSION,
+            inventory_dashboard_id: made.dashboardIds[1] ?? null,
         };
         for (const r of STORE_SYNC_RESOURCES) {
             const key = WOO_LIST_KEYS[r];
@@ -285,8 +291,11 @@ export class StoreSyncService {
     }
 
     /** Moneda, decimales y país de la tienda (para los campos de dinero y teléfono). */
-    private async storeFormat(creds: IntegrationCreds): Promise<{ currency: string; precision: number; country: string | null }> {
-        const out = { currency: 'USD', precision: 2, country: null as string | null };
+    private async storeFormat(
+        creds: IntegrationCreds,
+    ): Promise<{ currency: string; precision: number; country: string | null; lowStock: number }> {
+        const out = { currency: 'USD', precision: 2, country: null as string | null, lowStock: DEFAULT_LOW_STOCK };
+        out.lowStock = await this.storeLowStock(creds);
         try {
             const { json } = await wooGet(creds, '/settings/general');
             if (Array.isArray(json)) {
@@ -308,6 +317,97 @@ export class StoreSyncService {
             // ellos se usan valores por defecto (se pueden cambiar en cada campo).
         }
         return out;
+    }
+
+    /**
+     * El umbral general de «stock bajo» de la tienda (WooCommerce → Ajustes →
+     * Productos → Inventario). Sin permisos para leerlo, el default de
+     * WooCommerce (2).
+     */
+    private async storeLowStock(creds: IntegrationCreds): Promise<number> {
+        try {
+            const { json } = await wooGet(creds, '/settings/products');
+            if (Array.isArray(json)) {
+                const hit = json.find((s) => s && typeof s === 'object' && (s as { id?: unknown }).id === 'woocommerce_notify_low_stock_amount') as
+                    | { value?: unknown }
+                    | undefined;
+                const n = Number(hit?.value);
+                if (Number.isInteger(n) && n >= 0) return n;
+            }
+        } catch {
+            // Sin permiso de administrador de la tienda: el default.
+        }
+        return DEFAULT_LOW_STOCK;
+    }
+
+    /**
+     * v0.1.208 — Actualiza el pack de una sincronización creada ANTES del
+     * inventario: agrega los campos de inventario a Productos y Variaciones,
+     * la vista «Para reponer» y el tablero de Inventario, y encola una vuelta
+     * completa de productos para llenarlos. Idempotente y bajo el candado de
+     * la corrida (dos trabajos simultáneos no duplican campos). Devuelve si
+     * actualizó.
+     */
+    async upgradePack(tenantId: number, syncId: number, creds: IntegrationCreds): Promise<boolean> {
+        const token = await this.engine.acquire(syncId);
+        if (!token) return false;
+        try {
+            const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1),
+            );
+            if (!row) return false;
+            const settings = readSettings(row.settings);
+            if (settings.pack_version >= WOO_PACK_VERSION) return false;
+            const shop = await this.storeFormat(creds);
+            const full = buildWooPack({ storeName: settings.store_name, currency: shop.currency, precision: shop.precision, phoneCountry: shop.country });
+            const addition = inventoryAddition(full, settings.resources.products);
+            const keyToListId = new Map<string, number>();
+            const existing = new Map<string, Map<string, number>>();
+            for (const r of STORE_SYNC_RESOURCES) {
+                const key = WOO_LIST_KEYS[r];
+                const listId = settings.lists[r];
+                if (listId) keyToListId.set(key, listId);
+                existing.set(key, new Map(Object.entries(settings.fields[r] ?? {})));
+            }
+            const made = await this.blueprints.extend(tenantId, row.createdBy ?? 0, addition, keyToListId, existing);
+            if (made.warnings.length > 0) this.logger.warn(`Actualización del pack #${syncId}: ${made.warnings.join(' | ')}`);
+            await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
+                const s = readSettings(locked!.settings);
+                for (const r of ['products', 'variations'] as const) {
+                    const fresh = made.fieldIds[WOO_LIST_KEYS[r]];
+                    if (fresh) s.fields[r] = { ...(s.fields[r] ?? {}), ...fresh };
+                }
+                s.pack_version = WOO_PACK_VERSION;
+                // El pack 1 armó las tablas del tablero de ventas con una clave que
+                // el widget no lee (`columns`): mostraban las columnas por defecto.
+                if (s.dashboard_id) {
+                    const [dash] = await tx.select({ widgets: dashboards.widgets }).from(dashboards).where(eq(dashboards.id, s.dashboard_id));
+                    if (dash && Array.isArray(dash.widgets)) {
+                        const fixed = (dash.widgets as Array<Record<string, unknown>>).map((w) => {
+                            const cfg = (w.config ?? {}) as Record<string, unknown>;
+                            if (w.type !== 'table' || !Array.isArray(cfg.columns) || Array.isArray(cfg.visible_field_ids)) return w;
+                            const { columns, ...rest } = cfg;
+                            return { ...w, config: { ...rest, visible_field_ids: columns } };
+                        });
+                        await tx.update(dashboards).set({ widgets: fixed as never }).where(eq(dashboards.id, s.dashboard_id));
+                    }
+                }
+                s.low_stock_amount = shop.lowStock;
+                s.inventory_dashboard_id = made.dashboardIds[0] ?? s.inventory_dashboard_id;
+                await tx
+                    .update(connectionSyncs)
+                    .set({ settings: s as unknown as Record<string, unknown>, updatedAt: new Date() })
+                    .where(eq(connectionSyncs.id, syncId));
+            });
+        } finally {
+            await this.engine.release(syncId, token);
+        }
+        // Llenar los campos nuevos: una vuelta completa de productos (sin
+        // disparar automatizaciones: es una puesta al día).
+        this.queue.enqueueRun(tenantId, syncId, { full: true, only: ['products'] });
+        this.realtime.forget(tenantId);
+        return true;
     }
 
     // ── Cambios ─────────────────────────────────────────────────────────────
@@ -526,6 +626,11 @@ export class StoreSyncService {
                 last_error: err instanceof Error ? err.message : String(err),
             });
             return true;
+        }
+        if (readSettings(row.settings).pack_version < WOO_PACK_VERSION) {
+            await this.upgradePack(tenantId, syncId, creds).catch((err) =>
+                this.logger.warn(`No se pudo actualizar el pack #${syncId}: ${String(err)}`),
+            );
         }
         const ran = await this.engine.run(tenantId, syncId, creds, opts);
         // Modo tiempo real: cada vuelta (la red de seguridad horaria) revisa que

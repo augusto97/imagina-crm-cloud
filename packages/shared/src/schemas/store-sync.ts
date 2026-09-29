@@ -88,6 +88,8 @@ export const STORE_WRITE_BACK_FIELDS: Record<StoreMetaResource, Array<{ slug: st
         { slug: 'precio_rebajado', label: 'Precio rebajado' },
         { slug: 'stock', label: 'Stock' },
         { slug: 'estado_stock', label: 'Estado del stock' },
+        { slug: 'controla_stock', label: 'Controla stock' },
+        { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
         { slug: 'estado', label: 'Estado' },
     ],
     variations: [
@@ -96,6 +98,8 @@ export const STORE_WRITE_BACK_FIELDS: Record<StoreMetaResource, Array<{ slug: st
         { slug: 'precio_rebajado', label: 'Precio rebajado' },
         { slug: 'stock', label: 'Stock' },
         { slug: 'estado_stock', label: 'Estado del stock' },
+        { slug: 'controla_stock', label: 'Controla stock' },
+        { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
         { slug: 'estado', label: 'Estado' },
     ],
     orders: [
@@ -171,6 +175,8 @@ export const storeSyncStatusSchema = z.object({
     resources: z.object({ customers: z.boolean(), products: z.boolean(), orders: z.boolean() }),
     lists: z.record(storeSyncResourceSchema, listRefSchema),
     dashboard_id: idSchema.nullable(),
+    /** v0.1.208 — tablero de inventario. */
+    inventory_dashboard_id: idSchema.nullable().default(null),
     folder_id: idSchema.nullable(),
     running: z.boolean(),
     /** Qué está haciendo ahora («Trayendo pedidos…»). */

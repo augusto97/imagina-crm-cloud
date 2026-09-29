@@ -203,11 +203,90 @@ function firstImage(v: unknown): string | null {
     return nonEmpty(obj(list[0]).src);
 }
 
-export function mapProduct(p: WooJson): MappedItem {
+// --- Inventario (v0.1.208) ---------------------------------------------------------
+
+/** Cómo está el inventario de un producto o variación, en una palabra. */
+export type InventoryState = 'agotado' | 'bajo' | 'en_stock' | 'por_encargo' | 'por_variacion' | 'sin_control';
+
+/** Umbral de stock bajo cuando la tienda no dice otro (el default de WooCommerce). */
+export const DEFAULT_LOW_STOCK = 2;
+
+/**
+ * WooCommerce dice `manage_stock: true` si el producto lleva la cuenta, y en
+ * una variación `"parent"` si la lleva el producto padre (la API igual trae
+ * la cantidad). Las dos cuentan como "lleva stock".
+ */
+export function managesStock(v: WooJson): boolean {
+    return v.manage_stock === true || v.manage_stock === 'parent';
+}
+
+/**
+ * El umbral de "stock bajo" que aplica: el del producto (`low_stock_amount`)
+ * o, si no tiene, el general de la tienda. Un 0 es un umbral válido (avisar
+ * sólo al agotarse).
+ */
+export function lowStockThreshold(v: WooJson, storeDefault: number | null): number {
+    const own = wooNumber(v.low_stock_amount);
+    if (own !== null && own >= 0) return own;
+    return storeDefault !== null && storeDefault >= 0 ? storeDefault : DEFAULT_LOW_STOCK;
+}
+
+/**
+ * El estado de inventario que se lee de un vistazo. Sin control de stock
+ * manda el estado que declara la tienda (agotado / por encargo); con control,
+ * la cantidad contra el umbral. Un stock en cero o negativo con reservas
+ * permitidas es "por encargo", no "agotado": se sigue vendiendo.
+ */
+export function inventoryState(v: WooJson, threshold: number): InventoryState {
+    const status = str(v.stock_status);
+    // Un producto variable sin stock propio lo lleva en cada variación (talla,
+    // color): decir "sin control" sería falso — el inventario está un nivel abajo.
+    if (!managesStock(v) && v.type === 'variable') return 'por_variacion';
+    if (!managesStock(v)) {
+        if (status === 'outofstock') return 'agotado';
+        if (status === 'onbackorder') return 'por_encargo';
+        return 'sin_control';
+    }
+    const qty = wooNumber(v.stock_quantity) ?? 0;
+    if (qty <= 0) return status === 'onbackorder' || (str(v.backorders) !== '' && str(v.backorders) !== 'no') ? 'por_encargo' : 'agotado';
+    return qty <= threshold ? 'bajo' : 'en_stock';
+}
+
+/**
+ * Lo que el inventario vale a precio de venta (stock × precio). Se calcula al
+ * sincronizar —y no como campo calculado— porque así se SUMA en el tablero y
+ * se filtra como cualquier número. Sin control de stock no hay a qué
+ * multiplicar.
+ */
+export function inventoryValue(v: WooJson): number | null {
+    if (!managesStock(v)) return null;
+    const qty = wooNumber(v.stock_quantity);
+    const price = wooNumber(v.price);
+    if (qty === null || price === null || qty <= 0) return qty !== null && qty <= 0 ? 0 : null;
+    return Math.round(qty * price * 100) / 100;
+}
+
+function inventoryValues(v: WooJson, storeDefault: number | null): Record<string, unknown> {
+    const threshold = lowStockThreshold(v, storeDefault);
+    const own = wooNumber(v.low_stock_amount);
+    return {
+        controla_stock: managesStock(v),
+        umbral_stock: own !== null && own >= 0 ? own : null,
+        estado_inventario: inventoryState(v, threshold),
+        valor_inventario: inventoryValue(v),
+    };
+}
+
+export interface MapInventoryOptions {
+    /** Umbral general de la tienda (`woocommerce_notify_low_stock_amount`). */
+    lowStockDefault?: number | null;
+}
+
+export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedItem {
     const id = Number(p.id);
     const categorias = terms(p.categories);
     const etiquetas = terms(p.tags);
-    const manages = p.manage_stock === true;
+    const manages = managesStock(p);
     return item(
         'products',
         String(id),
@@ -227,6 +306,7 @@ export function mapProduct(p: WooJson): MappedItem {
             enlace: nonEmpty(p.permalink),
             woo_id: String(id),
             modificado: wooDate(p.date_modified_gmt),
+            ...inventoryValues(p, inv.lowStockDefault ?? null),
         },
         {
             options: {
@@ -255,12 +335,12 @@ export function variationAttributes(v: WooJson): string | null {
     );
 }
 
-export function mapVariation(v: WooJson, parent: WooJson): MappedItem {
+export function mapVariation(v: WooJson, parent: WooJson, inv: MapInventoryOptions = {}): MappedItem {
     const id = Number(v.id);
     const parentId = Number(parent.id ?? v.parent_id);
     const opts = (Array.isArray(v.attributes) ? v.attributes : []).map((a) => str(obj(a).option)).filter(Boolean);
     const parentName = nonEmpty(parent.name);
-    const manages = v.manage_stock === true;
+    const manages = managesStock(v);
     return item(
         'variations',
         String(id),
@@ -277,6 +357,7 @@ export function mapVariation(v: WooJson, parent: WooJson): MappedItem {
             imagen: nonEmpty(obj(v.image).src),
             woo_id: String(id),
             modificado: wooDate(v.date_modified_gmt),
+            ...inventoryValues(v, inv.lowStockDefault ?? null),
         },
         {
             parentExternalId: String(parentId),

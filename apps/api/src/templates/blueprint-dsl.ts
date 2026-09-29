@@ -58,6 +58,8 @@ export const lookup = (
         config: { relation_field_id: xref(relKey, relSlug), target_field_id: xref(otherKey, targetSlug) },
         description,
     });
+type RollupFilter = { slug: string; op: string; value: unknown };
+
 /** Rollup hacia adentro: agrega `targetSlug` de los registros de `relKey` que apuntan acá por `relSlug`. */
 export const rollup = (
     label: string,
@@ -67,27 +69,35 @@ export const rollup = (
     operation: 'count' | 'sum' | 'avg' | 'min' | 'max',
     targetSlug: string | null,
     description: string,
-    filter?: { slug: string; op: string; value: unknown },
-) =>
-    f(label, slug, 'rollup', {
+    /** Una condición o varias (en AND) sobre la otra lista. */
+    filter?: RollupFilter | RollupFilter[],
+) => {
+    const filters = filter === undefined ? [] : Array.isArray(filter) ? filter : [filter];
+    return f(label, slug, 'rollup', {
         config: {
             relation_field_id: xref(relKey, relSlug),
             operation,
             ...(targetSlug ? { target_field_id: xref(relKey, targetSlug) } : {}),
-            ...(filter
+            ...(filters.length > 0
                 ? {
                       filter_tree: {
                           type: 'group',
                           logic: 'and',
-                          children: [{ type: 'condition', field_id: xref(relKey, filter.slug), op: filter.op, value: filter.value }],
+                          children: filters.map((c) => ({ type: 'condition', field_id: xref(relKey, c.slug), op: c.op, value: c.value })),
                       },
                   }
                 : {}),
         },
         description,
     });
+};
 
-export const table = (name = 'Tabla', is_default = true) => ({ name, type: 'table' as const, config: {}, is_default });
+export const table = (name = 'Tabla', is_default = true, config: Record<string, unknown> = {}) => ({
+    name,
+    type: 'table' as const,
+    config,
+    is_default,
+});
 export const kanban = (name: string, bySlug: string) => ({
     name,
     type: 'kanban' as const,

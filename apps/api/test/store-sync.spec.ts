@@ -107,6 +107,19 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 }
                 return out;
             };
+            if (path === '/settings/products') {
+                return { status: 200, body: JSON.stringify([{ id: 'woocommerce_notify_low_stock_amount', value: '5' }]), headers: {} };
+            }
+            if (path === '/products' && q.get('include')) {
+                const ids = q.get('include')!.split(',').map(Number);
+                return page(store.products.filter((p) => ids.includes(Number(p.id))));
+            }
+            const vinc = /^\/products\/(\d+)\/variations$/.exec(path);
+            if (vinc && q.get('include')) {
+                const ids = q.get('include')!.split(',').map(Number);
+                store.calls.push({ url: `include-variations:${ids.join(',')}` });
+                return page((store.variations[Number(vinc[1])] ?? []).filter((v) => ids.includes(Number(v.id))));
+            }
             if (path === '/settings/general') {
                 return {
                     status: 200,
@@ -146,7 +159,8 @@ import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { connectionSyncs, lists, plans, records, relations, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
+import { connectionSyncs, dashboards, lists, plans, records, relations, savedViews, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
+import { INVENTORY_FIELD_SLUGS } from '../src/sync/woocommerce/woo-pack';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -267,8 +281,10 @@ function seedStore(orderCount: number): void {
     ];
     store.variations = {
         20: [
+            // S: stock 5 con el umbral general de la tienda (5) → stock bajo.
             { id: 21, parent_id: 20, price: '30000', manage_stock: true, stock_quantity: 5, stock_status: 'instock', attributes: [{ name: 'Talla', option: 'S' }], date_modified_gmt: tick(), meta_data: [] },
-            { id: 22, parent_id: 20, price: '32000', manage_stock: true, stock_quantity: 3, stock_status: 'instock', attributes: [{ name: 'Talla', option: 'M' }], date_modified_gmt: tick(), meta_data: [] },
+            // M: stock llevado por el PADRE ("parent") y en cero → agotado.
+            { id: 22, parent_id: 20, price: '32000', manage_stock: 'parent', stock_quantity: 0, stock_status: 'outofstock', attributes: [{ name: 'Talla', option: 'M' }], date_modified_gmt: tick(), meta_data: [] },
         ],
     };
     store.orders = [];
@@ -400,7 +416,17 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(st.store_name).toContain('Tienda Test');
         expect(Object.keys(st.lists).sort()).toEqual(['customers', 'line_items', 'orders', 'products', 'variations']);
         expect(st.dashboard_id).not.toBeNull();
+        expect(st.inventory_dashboard_id).not.toBeNull();
         expect(st.folder_id).not.toBeNull();
+        // v0.1.208 — la vista «Para reponer» nace en Productos y Variaciones
+        // (una config inválida se saltaba con un aviso en el log, en silencio).
+        const reponer = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(eq(savedViews.name, 'Para reponer')));
+        expect(reponer).toHaveLength(2);
+        const [invDash] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.inventory_dashboard_id!)));
+        expect((invDash!.widgets as unknown[]).length).toBe(11);
+        // Las tablas de los tableros eligen sus columnas (la clave que lee el widget).
+        const tables = (invDash!.widgets as Array<{ type: string; config: Record<string, unknown> }>).filter((w) => w.type === 'table');
+        expect(tables.every((w) => Array.isArray(w.config.visible_field_ids) && (w.config.visible_field_ids as unknown[]).length === 5)).toBe(true);
         expect(queue.runs).toEqual([{ tenantId, syncId, opts: { full: true } }]);
 
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
@@ -452,6 +478,29 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const keys = st.meta_keys.products ?? [];
         expect(keys.find((k) => k.key === 'garantia_meses')).toMatchObject({ private: false, suggested_type: 'number', field_id: null });
         expect(keys.find((k) => k.key === '_edit_lock')).toMatchObject({ private: true });
+
+        // v0.1.208 — INVENTARIO: estado, umbral general de la tienda (5), valor
+        // en stock, y la variación cuyo stock lleva el padre ("parent").
+        const inv = (resource: 'products' | 'variations', slug: string) => `f${fieldIds[resource]![slug]}`;
+        const byWoo = async (resource: 'products' | 'variations', wooId: string) =>
+            (await rows(tenantId, st.lists[resource]!.id)).find((r) => r[inv(resource, 'woo_id')] === wooId)!;
+        const taza10 = await byWoo('products', '10');
+        expect(taza10[inv('products', 'estado_inventario')]).toBe('en_stock');
+        expect(taza10[inv('products', 'controla_stock')]).toBe(true);
+        expect(taza10[inv('products', 'valor_inventario')]).toBe(50 * 20000);
+        const s21 = await byWoo('variations', '21');
+        expect(s21[inv('variations', 'estado_inventario')]).toBe('bajo');
+        const m22 = await byWoo('variations', '22');
+        expect(m22[inv('variations', 'estado_inventario')]).toBe('agotado');
+        expect(m22[inv('variations', 'controla_stock')]).toBe(true);
+        expect(m22[inv('variations', 'stock')]).toBe(0);
+        expect(st.inventory_dashboard_id).not.toBeNull();
+        // El producto variable suma el stock de sus variaciones (rollup).
+        const prods = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.products!.slug, { limit: 10 } as never);
+        const camiseta = prods.data.find((r) => r.data[inv('products', 'woo_id')] === '20')!;
+        expect(camiseta.data[inv('products', 'stock_variaciones')]).toBe(5);
+        // Un producto variable sin stock propio lo lleva en sus variaciones.
+        expect(camiseta.data[inv('products', 'estado_inventario')]).toBe('por_variacion');
     });
 
     it('re-correr no duplica nada, y lo que no cambió no se re-escribe', async () => {
@@ -524,6 +573,38 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         st = await svc.status(tenantId, adminId, 'admin', connId);
         // Cuatro personas, aunque haya cinco claves (el conteo es de registros).
         expect(st.progress.customers!.count).toBe(4);
+    });
+
+    it('inventario: una venta baja el stock SIN tocar la fecha del producto y el pedido lo trae igual', async () => {
+        // Lo que hace WooCommerce al vender una talla: baja el stock de la
+        // variación; el producto padre no cambia de fecha → el incremental por
+        // fecha jamás se enteraría. El pedido es la señal.
+        store.variations[20]![0]!.stock_quantity = 2;
+        store.products.find((p) => p.id === 10)!.stock_quantity = 40;
+        const venta = orderFor({ customerId: 1, email: 'ana@x.co', lines: [{ product: 10, qty: 1, price: 20000 }, { product: 20, variation: 21, qty: 1, price: 30000 }] });
+        venta.date_created_gmt = new Date().toISOString().slice(0, 19);
+        store.orders.push(venta);
+        const calls = store.calls.length;
+        dispatcher.events.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.last_error).toBeNull();
+        const k = (resource: 'products' | 'variations', slug: string) => `f${fieldIds[resource]![slug]}`;
+        const vars = await rows(tenantId, st.lists.variations!.id);
+        const s21 = vars.find((r) => r[k('variations', 'woo_id')] === '21')!;
+        expect(s21[k('variations', 'stock')]).toBe(2);
+        expect(s21[k('variations', 'estado_inventario')]).toBe('bajo');
+        const prods = await rows(tenantId, st.lists.products!.id);
+        expect(prods.find((r) => r[k('products', 'woo_id')] === '10')![k('products', 'stock')]).toBe(40);
+        // Pidió sólo lo vendido (por `include=`), no el catálogo entero.
+        expect(store.calls.slice(calls).some((c) => c.url === 'include-variations:21')).toBe(true);
+        // El cambio de stock dispara automatizaciones (p. ej. «Aviso de stock bajo»).
+        expect(dispatcher.events.some((e) => e.recordId === Number(s21.id) && e.trigger === 'record_updated')).toBe(true);
+        // Rotación: vendidas en 30 días y meses de cobertura (stock ÷ vendidas).
+        const list = await recordsService.list(tenantId, { userId: adminId, role: 'admin' }, st.lists.variations!.slug, { limit: 10 } as never);
+        const s21r = list.data.find((r) => r.id === Number(s21.id))!;
+        expect(s21r.data[k('variations', 'vendidas_30d')]).toBe(1);
+        expect(s21r.data[k('variations', 'cobertura_meses')]).toBe(2);
     });
 
     it('un campo de otro plugin se trae a una columna y se rellena en los registros existentes', async () => {
@@ -724,6 +805,61 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(st.realtime.active).toBe(false);
         expect(store.webhooks).toHaveLength(0);
         await expect(realtime.receive(token, { 'x-wc-webhook-topic': 'order.updated' }, '{}', {})).rejects.toThrow(/Not found/);
+    });
+
+    it('actualización del pack: una sincronización creada ANTES del inventario recibe campos, vista y tablero solos', async () => {
+        // Simula el pack 1 (v0.1.206): sin campos de inventario, sin vista ni tablero.
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+        const settings = row!.settings as Record<string, unknown> & { fields: Record<string, Record<string, number>> };
+        for (const r of ['products', 'variations'] as const) {
+            for (const slug of INVENTORY_FIELD_SLUGS) {
+                const id = settings.fields[r]?.[slug];
+                if (!id) continue;
+                await fieldsService.remove(tenantId, String(st.lists[r]!.id), String(id));
+                delete settings.fields[r]![slug];
+            }
+        }
+        // El pack 1 guardaba las columnas de las tablas del tablero de ventas en `columns`.
+        const [sales] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.dashboard_id!)));
+        const oldWidgets = (sales!.widgets as Array<{ type: string; config: Record<string, unknown> }>).map((w) => {
+            if (w.type !== 'table') return w;
+            const { visible_field_ids, ...rest } = w.config;
+            return { ...w, config: { ...rest, columns: visible_field_ids } };
+        });
+        await withTenant(pg.db, tenantId, async (tx) => {
+            await tx.update(dashboards).set({ widgets: oldWidgets }).where(eq(dashboards.id, st.dashboard_id!));
+            await tx.delete(savedViews).where(eq(savedViews.name, 'Para reponer'));
+            await tx.delete(dashboards).where(eq(dashboards.id, st.inventory_dashboard_id!));
+            await tx
+                .update(connectionSyncs)
+                .set({ settings: { ...settings, pack_version: 1, inventory_dashboard_id: null, low_stock_amount: null } })
+                .where(eq(connectionSyncs.id, syncId));
+        });
+        queue.runs.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+        const s2 = after!.settings as { pack_version: number; low_stock_amount: number; inventory_dashboard_id: number; fields: Record<string, Record<string, number>> };
+        expect(s2.pack_version).toBe(2);
+        expect(s2.low_stock_amount).toBe(5);
+        expect(s2.inventory_dashboard_id).toBeGreaterThan(0);
+        for (const slug of INVENTORY_FIELD_SLUGS) expect(s2.fields.products![slug], slug).toBeGreaterThan(0);
+        const views = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(eq(savedViews.name, 'Para reponer')));
+        expect(views).toHaveLength(2);
+        const [salesAfter] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.id, st.dashboard_id!)));
+        for (const w of salesAfter!.widgets as Array<{ type: string; config: Record<string, unknown> }>) {
+            if (w.type !== 'table') continue;
+            expect(w.config.columns).toBeUndefined();
+            expect((w.config.visible_field_ids as unknown[]).length).toBe(4);
+        }
+        // Encola la vuelta completa de productos que llena los campos nuevos.
+        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products'] } });
+        expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products'] })).toBe(true);
+        const vars = await rows(tenantId, st.lists.variations!.id);
+        expect(vars.every((v) => typeof v[`f${s2.fields.variations!.estado_inventario}`] === 'string')).toBe(true);
+        // Una segunda vuelta no vuelve a actualizar nada.
+        queue.runs.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        expect(queue.runs).toHaveLength(0);
     });
 
     it('otra empresa no ve la sincronización ni sus vínculos (RLS)', async () => {

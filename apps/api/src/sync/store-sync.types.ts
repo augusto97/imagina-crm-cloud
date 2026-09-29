@@ -28,6 +28,12 @@ export interface SyncSettings {
     meta_map: Partial<Record<StoreMetaResource, Record<string, number>>>;
     dashboard_id: number | null;
     folder_id: number | null;
+    /** Umbral general de stock bajo de la tienda (v0.1.208). null = todavía no se leyó. */
+    low_stock_amount: number | null;
+    /** Versión del pack creado (1 = v0.1.206, 2 = v0.1.208 con inventario). */
+    pack_version: number;
+    /** Tablero de inventario (pack 2). */
+    inventory_dashboard_id: number | null;
 }
 
 export interface KeysetCursor {
@@ -50,6 +56,8 @@ export interface SyncState {
     cursors: Partial<Record<'products' | 'orders', KeysetCursor | null>>;
     customers_full_at: string | null;
     variations_full_at: string | null;
+    /** Último barrido completo de productos (el stock que cambió sin tocar la fecha). */
+    products_full_at: string | null;
     initial_done: boolean;
     last_run_at: string | null;
     last_success_at: string | null;
@@ -110,6 +118,11 @@ export function readSettings(raw: unknown): SyncSettings {
         meta_map,
         dashboard_id: Number(s.dashboard_id) > 0 ? Number(s.dashboard_id) : null,
         folder_id: Number(s.folder_id) > 0 ? Number(s.folder_id) : null,
+        low_stock_amount: Number.isFinite(Number(s.low_stock_amount)) && s.low_stock_amount !== null && s.low_stock_amount !== undefined && Number(s.low_stock_amount) >= 0
+            ? Number(s.low_stock_amount)
+            : null,
+        pack_version: Number(s.pack_version) > 0 ? Number(s.pack_version) : 1,
+        inventory_dashboard_id: Number(s.inventory_dashboard_id) > 0 ? Number(s.inventory_dashboard_id) : null,
     };
 }
 
@@ -152,6 +165,7 @@ export function readState(raw: unknown): SyncState {
         cursors: { products: readCursor(cursors.products), orders: readCursor(cursors.orders) },
         customers_full_at: strOrNull(s.customers_full_at),
         variations_full_at: strOrNull(s.variations_full_at),
+        products_full_at: strOrNull(s.products_full_at),
         initial_done: s.initial_done === true,
         last_run_at: strOrNull(s.last_run_at),
         last_success_at: strOrNull(s.last_success_at),

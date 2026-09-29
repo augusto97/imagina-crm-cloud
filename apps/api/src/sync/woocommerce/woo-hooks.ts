@@ -164,6 +164,15 @@ export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
             case 'estado_stock':
                 body.stock_status = text(value);
                 break;
+            case 'controla_stock':
+                body.manage_stock = value === true;
+                break;
+            case 'umbral_stock': {
+                // Vacío = volver al umbral general de la tienda.
+                const n = wooNumber(value);
+                body.low_stock_amount = n === null ? null : Math.max(0, Math.trunc(n));
+                break;
+            }
             case 'estado':
                 body.status = text(value);
                 break;

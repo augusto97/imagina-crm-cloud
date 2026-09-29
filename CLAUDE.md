@@ -4826,6 +4826,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         precio editado en la app llega a la tienda con un solo envío, volver a
         intervalos borra los avisos, móvil sin desborde).
 
+  - [x] **Inventario de la tienda (v0.1.208, ADR-S24, pedido del usuario:
+        "es muy importante el tema de inventarios")**: la sincronización ya
+        traía el stock, pero no servía para GESTIONAR inventario — y tenía un
+        hueco real. (a) **El hueco**: una venta baja el stock de una
+        VARIACIÓN sin tocar la fecha de modificación del producto, así que el
+        incremental por `modified_after` no la veía hasta el barrido. Ahora
+        cada pedido nuevo o modificado **refresca el stock de lo que vendió**
+        (`refreshStock`: un GET por lote con `include=` —≤100 ids— a
+        `/products` y a `/products/{padre}/variations`), también cuando el
+        pedido llega por aviso en tiempo real; y una vez por día se barren
+        TODOS los productos (plugins que cambian stock sin pasar por un
+        pedido). (b) **Estado de inventario derivado** al mapear: agotado /
+        bajo / en stock / por encargo (stock ≤ 0 con reservas permitidas) /
+        **por variación** (producto variable sin stock propio — antes decía
+        "sin control", que era falso) / sin control. El umbral de "bajo" es el
+        del producto o, si no tiene, el general de la tienda
+        (`/settings/products`, leído al conectar; default 2). Columnas nuevas
+        en productos y variaciones: Controla stock, Alerta de stock bajo,
+        Estado de inventario, **Valor en stock** (cantidad × precio), y por
+        rollup/computed **Vendidas (30 días)** (líneas de pedidos pagados del
+        último mes) y **Meses de cobertura** (stock ÷ vendidas); el producto
+        variable además suma el stock y el valor de sus variaciones.
+        (c) **Vista «Para reponer»** (bajo + agotado, ordenada por stock),
+        kanban «Por inventario» y **tablero «Inventario · Tienda»** (11
+        widgets: agotados, bajos, por encargo, sin control, unidades, valor,
+        vendidas; reparto por estado; y dos tablas de lo que hay que reponer),
+        con botón «Inventario» en la pantalla de la tienda. (d) **Editar
+        desde la app** gana Controla stock y Alerta de stock bajo (vacío =
+        vuelve al umbral de la tienda). Receta nueva de automatización
+        **«Stock bajo»**: aviso por correo cuando el estado pasa a bajo o
+        agotado. (e) **Versión del pack**: las tiendas ya conectadas se
+        actualizan SOLAS en la próxima corrida (`BlueprintService.extend`,
+        bajo el lock de la sincronización) agregando sólo lo que falta, y se
+        dispara un barrido completo de productos para llenar las columnas.
+        **Tres bugs atrapados en el camino**: (1) la vista con un
+        `filter_tree` cuya raíz era una condición suelta NO validaba y el pack
+        la salteaba en silencio — la raíz tiene que ser un grupo (ahora el
+        test del alta exige que las vistas existan); (2) las tablas del
+        tablero de Ventas de v0.1.206 usaban `columns`, clave que el widget
+        ignora (la real es `visible_field_ids`) → salían con columnas por
+        defecto; corregido en el pack y **reparado** en los tableros ya
+        creados por la actualización; (3) el mapeo se llamaba como
+        `rows.map(mapProduct)` y le pasaba el ÍNDICE como opciones. 8 tests
+        nuevos (puros de estado/umbral/valor + integración: una venta baja el
+        stock sin tocar la fecha del producto → vendidas 1, cobertura 2; la
+        actualización del pack agrega campos/vistas/tablero, repara las
+        tablas y es idempotente) — 725 API, 154 front, 66 shared en verde —
+        + E2E navegador 18/18 contra la tienda falsa (estados, valor, «Para
+        reponer», tablero, venta que baja el stock en vivo) y regresión de
+        tiempo real 23/23 y sincronización 25/25.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
