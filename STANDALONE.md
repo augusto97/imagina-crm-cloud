@@ -1325,6 +1325,60 @@ borrar variaciones) o que la próxima sincronización pisaría en silencio.
   QUEDAN como listas comunes (sin la marca) — los datos nunca se pierden
   (ADR-S09). Queda en la bitácora (`store_sync.migrate`).
 
+**Columnas editables elegibles + prueba contra un WooCommerce real
+(v0.1.214).** El usuario preguntó si cada cliente podía elegir qué se edita
+desde la app (el nombre de los productos, la categoría, las etiquetas). Se
+convirtió la lista fija de v0.1.213 en un **catálogo** (`STORE_EDITABLE_CATALOG`
+en shared) del que la empresa elige por lista:
+
+- **Catálogo** — productos: precios, stock, control de stock, estado del stock,
+  alerta de stock bajo y publicación (vienen prendidas: es lo de v0.1.213) +
+  nombre, SKU, categorías y etiquetas; pedidos: estado (prendido) + nota del
+  cliente, email y teléfono de facturación; clientes: nombre, email, teléfono,
+  empresa y ciudad (sólo los que tienen CUENTA: un invitado no tiene a quién
+  editar); y cualquier **campo de otro plugin** traído a columna (`meta:<id>`).
+  Lo que NO está en el catálogo no se puede habilitar: datos que calcula la
+  tienda (totales, líneas, estado de inventario) o sin forma segura de
+  escribirse (la dirección armada, el país como código).
+- **Dónde vive.** `connection_syncs.settings.editable[rol]` (sin clave = lo de
+  por defecto, así una tienda ya conectada no cambia) y viaja a la marca de la
+  lista (`store_sync.editable`), que es lo que leen `storeCellAccess` en el
+  backend y en la interfaz: siguen siendo UNA función. Se elige desde la
+  página de la tienda y desde Ajustes → Campos de cada lista (la misma
+  elección vista desde dos lugares). Prender/apagar UNA columna viaja como
+  `editable_toggle` y se aplica sobre lo guardado bajo el lock de la fila: si
+  la pantalla mandara la lista entera, una caché vieja (otra pestaña, otra
+  persona) pisaría la elección — lo atrapó el E2E.
+- **Categorías y etiquetas** — la API de WooCommerce sólo acepta `[{id}]` (el
+  nombre es de sólo lectura), así que el motor resuelve cada slug a su id y
+  CREA el término que falte (con `term_exists` → se busca por nombre). La
+  opción nueva se crea desde el selector con el slug que le va a dar WordPress
+  (`wpTermSlug`), así al volver de la tienda es la misma opción y no una copia.
+- **Un rechazo vuelve atrás.** Si la tienda rechaza un envío con 4xx (un SKU
+  repetido, un email que no acepta), se relee el objeto y la app queda con el
+  valor de la TIENDA; el motivo queda en «El último cambio no llegó a la
+  tienda». Antes el valor quedaba distinto en los dos lados.
+- **Renombrar un producto con variaciones relee sus variaciones** (su nombre
+  lleva el del producto).
+- **Crear una opción al vuelo** (`POST /lists/:l/fields/:f/options`) — el
+  «Crear» del selector de opciones llamaba a un endpoint que la nube nunca
+  implementó (el plugin lo tenía): crear una opción desde la tabla o la ficha
+  fallaba en TODAS las listas. En una lista de la tienda sólo lo aceptan
+  categorías y etiquetas habilitadas.
+
+La prueba contra un **WooCommerce 11 real** (WordPress + WooCommerce en el
+entorno, no la tienda simulada) encontró además: (a) el nombre del sitio se
+perdía porque el índice `/wp-json/` de una tienda real pesa >1 MB y pasaba el
+tope de lectura → se pide con `?_fields=name`; (b) WordPress sólo entrega
+avisos a los puertos **80, 443 y 8080** (`wp_safe_remote_post`, error «A valid
+URL was not provided» que queda sólo en el log de la tienda) → la app lo
+detecta ANTES de registrar y dice por qué no puede ir en tiempo real, y la red
+de seguridad horaria avisa si la tienda había DESACTIVADO avisos por fallas de
+entrega; (c) borrar la CONEXIÓN (no sólo dejar de sincronizar) dejaba los
+avisos registrados en la tienda llamando a una URL muerta → un hook previo al
+borrado (`ConnectorsService.onBeforeRemove`) los saca mientras todavía hay
+credenciales.
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
 tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
@@ -1335,4 +1389,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.26.0 (rediseño de la tienda: tres listas con subtareas, espejo de sólo lectura salvo precios/stock/estados — ADR-S24)
+**Versión del documento:** 1.27.0 (columnas editables elegibles por lista de la tienda + prueba contra un WooCommerce real — ADR-S24)

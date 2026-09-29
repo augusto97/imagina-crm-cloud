@@ -22,6 +22,8 @@ import {
     ROLLUP_NUMERIC_TYPES,
     readStoreListMarker,
     slugify,
+    storeEditableSlugs,
+    storeFieldSlug,
     validateFieldValue,
     type CreateFieldInput,
     type Field,
@@ -495,6 +497,66 @@ export class FieldsService {
         return rows.map(toField);
     }
 
+    /**
+     * Agrega UNA opción a un select/multi_select (v0.1.214). Es lo que usa el
+     * «Crear "x"» del selector de opciones de la tabla y la ficha: el plugin lo
+     * tenía (`POST …/options`) y la nube nunca lo implementó, así que crear
+     * una opción al vuelo fallaba. Una opción que ya existe no se duplica.
+     *
+     * En una lista de la tienda sólo las categorías y etiquetas aceptan una
+     * opción nueva, y sólo si la empresa habilitó editarlas: la opción nueva se
+     * CREA en WooCommerce al guardar el producto.
+     */
+    async appendOption(
+        tenantId: number,
+        listIdOrSlug: string,
+        fieldIdOrSlug: string,
+        input: { value: string; label?: string; color?: string },
+    ): Promise<Field> {
+        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.resolveField(tx, tenantId, listId, fieldIdOrSlug));
+        if (current.type !== 'select' && current.type !== 'multi_select') {
+            throw new BadRequestException({
+                code: 'invalid_field_type',
+                message: 'Sólo los campos de selección tienen opciones.',
+                data: { status: 400 },
+            });
+        }
+        const typed = input.value.trim().slice(0, 190);
+        let value = typed;
+        if (value === '') {
+            throw new BadRequestException({ code: 'invalid_option', message: 'La opción no puede estar vacía.', data: { status: 400 } });
+        }
+        const marker = await this.storeMarker(tenantId, listId);
+        if (marker) {
+            const slug = storeFieldSlug(marker, current.id);
+            const open = slug !== null && ['categorias', 'etiquetas'].includes(slug) && marker.write_back && storeEditableSlugs(marker).includes(slug);
+            if (slug !== null && !open) {
+                throw new BadRequestException({
+                    code: 'store_field_locked',
+                    message: `«${current.label}» viene de la tienda: sus opciones las define WooCommerce.`,
+                    data: { status: 400 },
+                });
+            }
+            // El valor de una categoría/etiqueta de la tienda es su SLUG: la nueva
+            // nace con el que le va a dar WordPress, así al volver de la tienda
+            // es la misma opción (y no una copia con otro valor).
+            if (slug !== null) value = wpTermSlug(value) || value;
+        }
+        const config = (current.config ?? {}) as Record<string, unknown>;
+        const options = Array.isArray(config.options) ? (config.options as Array<Record<string, unknown>>) : [];
+        if (options.some((o) => String(o.value) === value)) return this.get(tenantId, String(listId), String(current.id));
+        const label = (input.label ?? '').trim().slice(0, 190) || typed;
+        const color = typeof input.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(input.color) ? input.color : undefined;
+        return this.update(
+            tenantId,
+            String(listId),
+            String(current.id),
+            { config: { ...config, options: [...options, { value, label, ...(color ? { color } : {}) }] } },
+            { internal: true },
+        );
+    }
+
     /** El marcador de lista de tienda (v0.1.213), o null si es una lista común. */
     private async storeMarker(tenantId: number, listId: number): Promise<StoreListMarker | null> {
         const list = await this.lists.get(tenantId, String(listId));
@@ -839,4 +901,16 @@ function canonicalJson(v: unknown): string {
             ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
             : val,
     );
+}
+
+/** El slug que WordPress le da a un término (`sanitize_title`, lo esencial). */
+export function wpTermSlug(name: string): string {
+    return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-{2,}/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 190);
 }

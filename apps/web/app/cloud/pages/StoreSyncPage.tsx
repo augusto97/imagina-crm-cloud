@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
     STORE_META_FIELD_TYPES,
     STORE_META_RESOURCES,
     STORE_SYNC_INTERVALS,
     STORE_SYNC_RESOURCE_LABEL,
-    STORE_WRITE_BACK_FIELDS,
+    type StoreListRole,
     type StoreMetaKey,
     type StoreMetaResource,
     type StoreSyncResource,
@@ -15,6 +15,7 @@ import {
 import { AlertTriangle, ArrowLeft, ArrowLeftRight, Boxes, CheckCircle2, ChevronDown, ChevronRight, LayoutDashboard, Loader2, RefreshCw, Zap } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { StoreEditableColumns } from '@/cloud/components/StoreEditableColumns';
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,10 +89,22 @@ export function StoreSyncPage(): JSX.Element {
         queryKey: key,
         queryFn: () => api.storeSyncStatus(id),
         enabled: Number.isInteger(id) && id > 0,
+        // Al entrar siempre se relee: la elección de columnas o «Editar desde la
+        // app» pudo cambiar desde la lista (o en otra pestaña).
+        refetchOnMount: 'always',
         // Mientras corre (o espera turno) se pregunta seguido; en reposo, cada tanto.
         refetchInterval: (q) => (q.state.data?.running || queuedFrom ? 2000 : 30_000),
     });
     const data = query.data;
+    // «Elegir qué columnas se editan» (banner de la lista) llega con ?seccion=editar.
+    const [params] = useSearchParams();
+    const jumpTo = params.get('seccion');
+    const configured = data?.configured === true;
+    useEffect(() => {
+        if (jumpTo !== 'editar' || !configured) return;
+        const t = window.setTimeout(() => document.getElementById('editar')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+        return () => window.clearTimeout(t);
+    }, [jumpTo, configured]);
     useEffect(() => {
         if (!queuedFrom || !data) return;
         // Ya la tomó el worker (o pasaron 2 minutos: el cartel no queda pegado).
@@ -502,6 +515,10 @@ function Configured({
                     setError(null);
                     update.mutate({ write_back: on });
                 }}
+                onEditable={(role, slug, on) => {
+                    setError(null);
+                    update.mutate({ editable_toggle: { role, slug, on } });
+                }}
             />
 
             <MetaSection status={status} connectionId={connectionId} onChange={onChange} onQueued={onQueued} onError={onErr} />
@@ -625,11 +642,13 @@ function WriteBackSection({
     pending,
     busy,
     onToggle,
+    onEditable,
 }: {
     status: StoreSyncStatus;
     pending: boolean | undefined;
     busy: boolean;
     onToggle: (on: boolean) => void;
+    onEditable: (role: StoreListRole, slug: string, on: boolean) => void;
 }): JSX.Element {
     const wb = status.write_back_status;
     // Optimista de verdad: el estado de la mutación de React Query se notifica
@@ -640,10 +659,6 @@ function WriteBackSection({
         if (!busy) setLocal(null);
     }, [busy]);
     const on = local ?? pending ?? status.write_back;
-    const groups = [
-        { label: __('Productos y variaciones'), fields: STORE_WRITE_BACK_FIELDS.products.map((f) => f.label) },
-        { label: __('Pedidos'), fields: STORE_WRITE_BACK_FIELDS.orders.map((f) => f.label) },
-    ];
     return (
         <section className="imcrm-space-y-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-write-back">
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-3">
@@ -654,7 +669,7 @@ function WriteBackSection({
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                         {__(
-                            'Cambiá un precio, el stock o el estado de un pedido o de un producto en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
+                            'Cambiá un precio, el stock, el nombre de un producto o el estado de un pedido en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
                         )}
                     </p>
                 </div>
@@ -688,19 +703,15 @@ function WriteBackSection({
                     {on ? __('Activado') : __('Desactivado')}
                 </label>
             </div>
-            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
-                {groups.map((g) => (
-                    <div key={g.label} className="imcrm-text-xs">
-                        <p className="imcrm-font-medium">{g.label}</p>
-                        <p className="imcrm-text-muted-foreground">{g.fields.join(' · ')}</p>
-                    </div>
-                ))}
+            <div className="imcrm-space-y-2 imcrm-border-t imcrm-border-border imcrm-pt-3" id="editar">
+                <p className="imcrm-text-sm imcrm-font-medium">{__('Columnas que se editan desde la app')}</p>
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__(
+                        'Elegí qué se puede cambiar desde cada lista. Lo que no marques se sigue editando en WooCommerce. Además, cada fila acepta lo que acepta la tienda: un producto con variaciones no tiene precio ni stock propio (se cambian en cada variación) y con el stock controlado el estado del stock lo calcula WooCommerce. Necesita una clave con permiso de Lectura/Escritura.',
+                    )}
+                </p>
+                <StoreEditableColumns status={status} busy={busy} onToggle={onEditable} />
             </div>
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__(
-                    'Nada más: el nombre, el SKU, las imágenes, las variaciones, los clientes y los totales se editan en WooCommerce, así nunca queda en la app algo que la tienda no tiene. Además, cada fila acepta lo que acepta la tienda: un producto con variaciones no tiene precio ni stock propio (se cambian en cada variación) y con el stock controlado el estado del stock lo calcula WooCommerce. Necesita una clave con permiso de Lectura/Escritura.',
-                )}
-            </p>
             {(wb.pushed > 0 || wb.failed > 0) && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-store-write-back-stats">
                     {formatNumber(wb.pushed)} {wb.pushed === 1 ? __('cambio enviado') : __('cambios enviados')}

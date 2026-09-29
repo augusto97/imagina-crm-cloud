@@ -12,9 +12,11 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    appendFieldOptionSchema,
     createFieldSchema,
     reorderFieldsSchema,
     updateFieldSchema,
+    type AppendFieldOptionInput,
     type CreateFieldInput,
     type Field,
     type ReorderFieldsInput,
@@ -137,6 +139,18 @@ export class FieldsController {
             });
         }
         return updated;
+    }
+
+    /** Agrega una opción al vuelo (el «Crear» del selector de opciones). */
+    @Post(':field/options')
+    @RequireCapability('manage_fields')
+    appendOption(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('field') field: string,
+        @Body(new ZodValidationPipe(appendFieldOptionSchema)) body: AppendFieldOptionInput,
+    ): Promise<Field> {
+        return this.fields.appendOption(tenantId(req), list, field, body);
     }
 
     @Delete(':field')

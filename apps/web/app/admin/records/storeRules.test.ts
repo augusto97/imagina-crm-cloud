@@ -15,6 +15,7 @@ const marker = (write_back: boolean): StoreListMarker => ({
     write_back,
     fields: { nombre: 1, precio_normal: 2, tipo: 3, controla_stock: 4 },
     meta_fields: [],
+    editable: null,
 });
 const rules = (wb: boolean): StoreRules => ({ marker: marker(wb), fields });
 

@@ -1,15 +1,20 @@
+import { defaultStoreEditable } from '@imagina-base/shared';
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
-import { readSettings, readState } from '../src/sync/store-sync.types';
+import { readSettings, readState, roleOfResource } from '../src/sync/store-sync.types';
 import { buildWooPack, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
 import {
     buildWriteBack,
+    splitPersonName,
+    type WriteBackInput,
     isVariationPayload,
     isWooPing,
     parseWooTopic,
     verifyWooSignature,
+    wooDeliveryUrlProblem,
+    wooDisabledHooksMessage,
     wooHookTopics,
 } from '../src/sync/woocommerce/woo-hooks';
 import {
@@ -62,6 +67,11 @@ const order = {
         { id: 9002, name: 'Camiseta', product_id: 20, variation_id: 22, quantity: 1, subtotal: '0', total: '0', price: 0, sku: '' },
     ],
 };
+
+
+/** El envío con las columnas de por defecto (las de v0.1.213) salvo que el test elija otras. */
+const wb = (i: Omit<WriteBackInput, 'editable'> & { editable?: string[] }) =>
+    buildWriteBack({ editable: defaultStoreEditable(roleOfResource(i.resource)), ...i });
 
 describe('Mapeo WooCommerce → pack (puro)', () => {
     it('números y fechas de la API', () => {
@@ -318,12 +328,12 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
     });
 
     it('sólo precios, stock y estados viajan; lo demás se edita en WooCommerce', () => {
-        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { precio_normal: 35000 } })).toEqual({
+        expect(wb({ resource: 'products', externalId: '20', parentExternalId: null, changed: { precio_normal: 35000 } })).toEqual({
             path: '/products/20',
             body: { regular_price: '35000' },
             fields: ['Precio normal'],
         });
-        const r = buildWriteBack({
+        const r = wb({
             resource: 'products',
             externalId: '20',
             parentExternalId: null,
@@ -332,21 +342,86 @@ describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
         // Rebaja vaciada = sin rebaja. Nombre, SKU y categorías NO viajan (v0.1.213).
         expect(r.body).toEqual({ sale_price: '' });
         expect(r.fields).toEqual(['Precio rebajado']);
-        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { responsable: 3 } })).toBeNull();
+        expect(wb({ resource: 'products', externalId: '20', parentExternalId: null, changed: { responsable: 3 } })).toBeNull();
+    });
+
+    it('columnas habilitadas por la empresa: nombre, SKU, categorías, etiquetas y plugins (v0.1.214)', () => {
+        const editable = ['nombre', 'sku', 'categorias', 'etiquetas', 'meta:77'];
+        const r = wb({
+            resource: 'products',
+            externalId: '20',
+            parentExternalId: null,
+            changed: { nombre: '  Taza grande ', sku: 'TZ-2', categorias: ['cocina'], etiquetas: ['regalo', 'nuevo'], precio_normal: 10 },
+            editable,
+            terms: { categorias: [16], etiquetas: [19, 33] },
+            meta: [
+                { key: 'garantia', fieldId: 77, value: true, sample: 'yes' },
+                { key: 'otro', fieldId: 78, value: 'x', sample: null },
+            ],
+        })!;
+        // El precio no está habilitado en esta elección: no viaja.
+        expect(r.body).toEqual({
+            name: 'Taza grande',
+            sku: 'TZ-2',
+            categories: [{ id: 16 }],
+            tags: [{ id: 19 }, { id: 33 }],
+            meta_data: [{ key: 'garantia', value: 'yes' }],
+        });
+        expect(r.fields).toEqual(['Nombre', 'SKU', 'Categorías', 'Etiquetas', 'garantia']);
+        // En una variación: el nombre y las categorías son del producto.
+        const v = wb({
+            resource: 'variations',
+            externalId: '22',
+            parentExternalId: '20',
+            changed: { nombre: 'X', categorias: ['a'], sku: 'V-1' },
+            editable,
+            terms: { categorias: [1] },
+        })!;
+        expect(v.body).toEqual({ sku: 'V-1' });
+        // Sin los ids resueltos, las categorías no se mandan (nunca `[{id: undefined}]`).
+        expect(wb({ resource: 'products', externalId: '20', parentExternalId: null, changed: { categorias: ['a'] }, editable })).toBeNull();
+    });
+
+    it('clientes con cuenta y datos del pedido, sólo si se habilitaron', () => {
+        const c = wb({
+            resource: 'customers',
+            externalId: 'id:2',
+            parentExternalId: null,
+            changed: { nombre: 'Ana María López', email: 'ana@x.co', telefono: '+57300', ciudad: 'Cali', region: 'VAC' },
+            editable: ['nombre', 'email', 'telefono', 'ciudad'],
+        })!;
+        expect(c.path).toBe('/customers/2');
+        expect(c.body).toEqual({
+            first_name: 'Ana',
+            last_name: 'María López',
+            email: 'ana@x.co',
+            billing: { first_name: 'Ana', last_name: 'María López', phone: '+57300', city: 'Cali' },
+        });
+        // Una invitada no tiene cuenta: no hay a quién editar.
+        expect(wb({ resource: 'customers', externalId: 'email:a@b.co', parentExternalId: null, changed: { telefono: '1' }, editable: ['telefono'] })).toBeNull();
+        const o = wb({
+            resource: 'orders',
+            externalId: '501',
+            parentExternalId: null,
+            changed: { estado: 'completed', nota_cliente: 'Dejar en portería', email: 'b@x.co' },
+            editable: ['nota_cliente', 'email'],
+        })!;
+        expect(o.body).toEqual({ customer_note: 'Dejar en portería', billing: { email: 'b@x.co' } });
+        expect(splitPersonName('  Ana ')).toEqual({ first_name: 'Ana', last_name: '' });
     });
 
     it('variación y pedido van a su ruta; los clientes no se editan desde la app', () => {
-        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: '20', changed: { stock: 7.9 } })).toMatchObject({
+        expect(wb({ resource: 'variations', externalId: '22', parentExternalId: '20', changed: { stock: 7.9 } })).toMatchObject({
             path: '/products/20/variations/22',
             body: { manage_stock: true, stock_quantity: 7 },
         });
-        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: null, changed: { stock: 1 } })).toBeNull();
-        expect(buildWriteBack({ resource: 'orders', externalId: '501', parentExternalId: null, changed: { estado: 'completed', total: 9, nota_cliente: 'x' } })).toEqual({
+        expect(wb({ resource: 'variations', externalId: '22', parentExternalId: null, changed: { stock: 1 } })).toBeNull();
+        expect(wb({ resource: 'orders', externalId: '501', parentExternalId: null, changed: { estado: 'completed', total: 9, nota_cliente: 'x' } })).toEqual({
             path: '/orders/501',
             body: { status: 'completed' },
             fields: ['Estado'],
         });
-        expect(buildWriteBack({ resource: 'customers', externalId: 'id:2', parentExternalId: null, changed: { telefono: '+57300' } })).toBeNull();
+        expect(wb({ resource: 'customers', externalId: 'id:2', parentExternalId: null, changed: { telefono: '+57300' } })).toBeNull();
     });
 });
 
@@ -393,14 +468,14 @@ describe('Inventario (puros, v0.1.208)', () => {
 
     it('la edición en dos sentidos manda el umbral y el control de stock', () => {
         expect(
-            buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { umbral_stock: 7.6, controla_stock: true } })!.body,
+            wb({ resource: 'products', externalId: '1', parentExternalId: null, changed: { umbral_stock: 7.6, controla_stock: true } })!.body,
         ).toEqual({ low_stock_amount: 7, manage_stock: true });
         // Vaciar el umbral = volver al general de la tienda.
-        expect(buildWriteBack({ resource: 'variations', externalId: '2', parentExternalId: '1', changed: { umbral_stock: null } })!.body).toEqual({
+        expect(wb({ resource: 'variations', externalId: '2', parentExternalId: '1', changed: { umbral_stock: null } })!.body).toEqual({
             low_stock_amount: null,
         });
         // El estado de inventario es DERIVADO: no viaja.
-        expect(buildWriteBack({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' } })).toBeNull();
+        expect(wb({ resource: 'products', externalId: '1', parentExternalId: null, changed: { estado_inventario: 'bajo' } })).toBeNull();
     });
 
     it('producto con variaciones: su inventario es el RESUMEN de sus variaciones', () => {
@@ -432,5 +507,17 @@ describe('Inventario (puros, v0.1.208)', () => {
         // Sin la dirección de la tienda no se inventa un enlace.
         expect(mapProduct({ id: 12, name: 'Taza' }).values.editar).toBeNull();
         expect(mapCustomer({ id: 7 }).values.editar).toBeNull();
+    });
+
+    it('avisos: WordPress sólo entrega a 80/443/8080 (probado contra un WooCommerce real)', () => {
+        expect(wooDeliveryUrlProblem('https://app.test/api/v1/public/store-hooks/x')).toBeNull();
+        expect(wooDeliveryUrlProblem('http://app.test/api/v1/public/store-hooks/x')).toBeNull();
+        expect(wooDeliveryUrlProblem('http://app.test:8080/h')).toBeNull();
+        expect(wooDeliveryUrlProblem('https://app.test:8443/h')).toMatch(/puertos 80, 443 y 8080.*8443/);
+        expect(wooDeliveryUrlProblem('http://localhost:5174/h')).toMatch(/5174/);
+        expect(wooDeliveryUrlProblem('no es una url')).toMatch(/no es válida/);
+        expect(wooDeliveryUrlProblem('ftp://app.test/h')).toMatch(/http/);
+        expect(wooDisabledHooksMessage(1, 'https://app.test')).toMatch(/desactivado 1 aviso porque.*https:\/\/app\.test/);
+        expect(wooDisabledHooksMessage(3, 'https://app.test')).toMatch(/3 avisos/);
     });
 });

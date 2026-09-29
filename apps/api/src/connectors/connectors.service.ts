@@ -1517,6 +1517,18 @@ export class ConnectorsService {
      * se rechaza diciendo EXACTAMENTE cuáles. Es la pregunta que las
      * plataformas grandes contestan mal y acá sale gratis.
      */
+    /**
+     * Limpieza de otros módulos antes de borrar una conexión (v0.1.214: la
+     * sincronización con tiendas saca sus avisos de WooCommerce). Se registra
+     * así —y no inyectando ese módulo acá— porque él ya depende de éste.
+     * Best-effort: una tienda caída no impide borrar la conexión.
+     */
+    private readonly beforeRemove: Array<(tenantId: number, connectionId: number) => Promise<void>> = [];
+
+    onBeforeRemove(fn: (tenantId: number, connectionId: number) => Promise<void>): void {
+        this.beforeRemove.push(fn);
+    }
+
     async remove(
         tenantId: number,
         userId: number,
@@ -1532,6 +1544,11 @@ export class ConnectorsService {
                 message: `La conexión «${current.name}» la usan ${usage.length} automatización(es).`,
                 data: { status: 409, usage },
             });
+        }
+        for (const fn of this.beforeRemove) {
+            await fn(tenantId, id).catch((err: unknown) =>
+                this.logger.warn(`Limpieza antes de borrar la conexión #${id}: ${err instanceof Error ? err.message : String(err)}`),
+            );
         }
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             await tx

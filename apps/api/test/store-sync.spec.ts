@@ -27,6 +27,7 @@ const store = vi.hoisted(() => ({
     ignoreModifiedAfter: false,
     webhooks: [] as Row[],
     readOnly: false,
+    terms: { categories: [] as Row[], tags: [] as Row[] },
 }));
 vi.mock('../src/common/safe-fetch', async (importOriginal) => {
     const real = await importOriginal<typeof import('../src/common/safe-fetch')>();
@@ -58,9 +59,27 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                     else if (wh) Object.assign(wh, input);
                     return ok(wh ?? {});
                 }
+                const tax = /^\/products\/(categories|tags)$/.exec(p);
+                if (tax && method === 'POST') {
+                    const list = store.terms[tax[1] as 'categories' | 'tags'];
+                    if (list.some((t) => String(t.name).toLowerCase() === String(input.name).toLowerCase())) {
+                        return { status: 400, body: '{"code":"term_exists","message":"Ya existe un término con ese nombre."}', headers: {} };
+                    }
+                    const t = { id: store.nextId++, name: input.name, slug: input.slug ?? String(input.name).toLowerCase() };
+                    list.push(t);
+                    return { status: 201, body: JSON.stringify(t), headers: {} };
+                }
                 const apply = (o: Row | undefined) => {
                     if (!o) return { status: 404, body: '{"code":"not_found","message":"ID no válido"}', headers: {} };
-                    const { billing, meta_data, ...rest } = input as Row & { billing?: Row; meta_data?: Row[] };
+                    const { billing, meta_data, categories, tags, ...rest } = input as Row & { billing?: Row; meta_data?: Row[]; categories?: Row[]; tags?: Row[] };
+                    if (typeof rest.sku === 'string' && rest.sku !== '') {
+                        const all = [...store.products, ...Object.values(store.variations).flat()];
+                        if (all.some((x) => x !== o && x.sku === rest.sku)) {
+                            return { status: 400, body: '{"code":"product_invalid_sku","message":"SKU no válido o duplicado."}', headers: {} };
+                        }
+                    }
+                    if (categories) o.categories = categories.map((c) => store.terms.categories.find((t) => t.id === c.id)).filter(Boolean);
+                    if (tags) o.tags = tags.map((c) => store.terms.tags.find((t) => t.id === c.id)).filter(Boolean);
                     Object.assign(o, rest);
                     if (billing) o.billing = { ...(o.billing as Row), ...billing };
                     for (const md of meta_data ?? []) {
@@ -116,6 +135,18 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
             const oneVar = /^\/products\/(\d+)\/variations\/(\d+)$/.exec(path);
             if (oneVar) {
                 const hit = (store.variations[Number(oneVar[1])] ?? []).find((v) => v.id === Number(oneVar[2]));
+                return hit ? { status: 200, body: JSON.stringify(hit), headers: {} } : { status: 404, body: '{"code":"not_found","message":"ID no válido"}', headers: {} };
+            }
+            const taxGet = /^\/products\/(categories|tags)$/.exec(path);
+            if (taxGet) {
+                let list = store.terms[taxGet[1] as 'categories' | 'tags'];
+                if (q.get('slug')) list = list.filter((t) => t.slug === q.get('slug'));
+                if (q.get('search')) list = list.filter((t) => String(t.name).toLowerCase().includes(q.get('search')!.toLowerCase()));
+                return page(list);
+            }
+            const oneCustomer = /^\/customers\/(\d+)$/.exec(path);
+            if (oneCustomer) {
+                const hit = store.customers.find((x) => x.id === Number(oneCustomer[1]));
                 return hit ? { status: 200, body: JSON.stringify(hit), headers: {} } : { status: 404, body: '{"code":"not_found","message":"ID no válido"}', headers: {} };
             }
             if (path === '/settings/products') {
@@ -287,10 +318,17 @@ function seedStore(orderCount: number): void {
     store.clock = Date.UTC(2026, 0, 1);
     store.nextId = 10_000;
     store.ignoreModifiedAfter = false;
+    store.terms = {
+        categories: [
+            { id: 16, name: 'Cocina', slug: 'cocina' },
+            { id: 17, name: 'Ropa', slug: 'ropa' },
+        ],
+        tags: [{ id: 19, name: 'Regalo', slug: 'regalo' }],
+    };
     store.customers = [customer(1, 'Ana', 'ana@x.co'), customer(2, 'Beto', 'beto@x.co'), customer(3, 'Caro', 'caro@x.co')];
     store.products = [
-        { id: 10, name: 'Taza', type: 'simple', status: 'publish', price: '20000', regular_price: '20000', manage_stock: true, stock_quantity: 50, stock_status: 'instock', categories: [{ name: 'Cocina', slug: 'cocina' }], date_modified_gmt: tick(), meta_data: [{ key: 'garantia_meses', value: '12' }, { key: '_edit_lock', value: 'x' }] },
-        { id: 20, name: 'Camiseta', type: 'variable', status: 'publish', price: '30000', stock_status: 'instock', categories: [{ name: 'Ropa', slug: 'ropa' }], date_modified_gmt: tick(), meta_data: [] },
+        { id: 10, name: 'Taza', type: 'simple', status: 'publish', price: '20000', regular_price: '20000', manage_stock: true, stock_quantity: 50, stock_status: 'instock', categories: [{ id: 16, name: 'Cocina', slug: 'cocina' }], tags: [{ id: 19, name: 'Regalo', slug: 'regalo' }], date_modified_gmt: tick(), meta_data: [{ key: 'garantia_meses', value: '12' }, { key: '_edit_lock', value: 'x' }] },
+        { id: 20, name: 'Camiseta', type: 'variable', status: 'publish', price: '30000', stock_status: 'instock', categories: [{ id: 17, name: 'Ropa', slug: 'ropa' }], date_modified_gmt: tick(), meta_data: [] },
     ];
     store.variations = {
         20: [
@@ -337,7 +375,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         rds = await startRedis();
         redis = new Redis(rds.url);
         tenantDb = new TenantDb(pg.db);
-        const env = loadEnv({ SECRETS_KEY: KEY });
+        const env = loadEnv({ SECRETS_KEY: KEY, APP_BASE_URL: 'https://app.test' });
         const rt = new RealtimeService();
         const audit = new AuditService(tenantDb);
         const listsService = new ListsService(tenantDb, new ListsRepository(), rt);
@@ -651,7 +689,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(taza[`f${mapped.field_id}`]).toBe(12);
         await expect(
             recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(taza.id), { data: { [`f${mapped.field_id}`]: 24 } } as never),
-        ).rejects.toThrow(/Se edita en WooCommerce/);
+        ).rejects.toThrow(/Viene de WooCommerce/);
         // Dejar de traerla: la columna queda y pasa a ser propia (editable).
         st = await svc.unmapMeta(tenantId, adminId, 'admin', connId, { resource: 'products', key: 'garantia_meses' });
         await recordsService.update(tenantId, admin(), st.lists.products!.slug, Number(taza.id), { data: { [`f${mapped.field_id}`]: 24 } } as never);
@@ -822,9 +860,12 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const [lst] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, st.lists.products!.id)));
         expect((lst!.settings as { store_sync: { write_back: boolean } }).store_sync.write_back).toBe(true);
 
-        // Nombre y SKU siguen siendo de la tienda.
+        // Nombre y SKU no vienen habilitados: hay que elegirlos (v0.1.214).
         await expect(
             recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'nombre')]: 'Otra' } } as never),
+        ).rejects.toThrow(/habilitala/);
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'tipo')]: 'variable' } } as never),
         ).rejects.toThrow(/Se edita en WooCommerce/);
         // Un producto con variaciones no tiene precio propio.
         await expect(
@@ -879,7 +920,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const customers = await rows(tenantId, st.lists.customers!.id);
         await expect(
             recordsService.update(tenantId, admin(), st.lists.customers!.slug, Number(customers[0]!.id), { data: { [k('customers', 'telefono')]: '+573009998877' } } as never),
-        ).rejects.toThrow(/Se edita en WooCommerce/);
+        ).rejects.toThrow(/habilitala/);
 
         queue.pushes.length = 0;
         await recordsService.update(tenantId, admin(), st.lists.orders!.slug, Number(pedido.id), { data: { [k('orders', 'estado')]: 'on-hold' } } as never);
@@ -890,6 +931,89 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         st = await svc.status(tenantId, adminId, 'admin', connId);
         expect(st.write_back_status.failed).toBe(1);
         expect(st.write_back_status.last_error).toMatch(/permiso de escritura/);
+    });
+
+    it('columnas elegidas por la empresa: nombre, SKU y etiquetas (una nueva se crea en la tienda); clientes con cuenta; un rechazo vuelve al valor de la tienda', async () => {
+        const products = st.lists.products!.slug;
+        const defaults = st.editable.products;
+        expect(defaults).toContain('precio_normal');
+        expect(defaults).not.toContain('nombre');
+        // Un slug fuera del catálogo se descarta al guardar.
+        st = await svc.update(tenantId, adminId, 'admin', connId, {
+            editable: { products: [...defaults, 'nombre', 'sku', 'etiquetas', 'tipo'], customers: ['telefono'] },
+        });
+        expect(st.editable.products).toEqual([...defaults, 'nombre', 'sku', 'etiquetas']);
+        expect(st.editable.customers).toEqual(['telefono']);
+        expect(st.editable.orders).toEqual(['estado']);
+        // Prender/apagar UNA columna se aplica sobre lo guardado (no sobre una caché vieja).
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'sku', on: false } });
+        expect(st.editable.products).toEqual([...defaults, 'nombre', 'etiquetas']);
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'tipo', on: true } });
+        expect(st.editable.products).not.toContain('tipo');
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'sku', on: true } });
+        const [lst] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, st.lists.products!.id)));
+        expect((lst!.settings as { store_sync: { editable: string[] } }).store_sync.editable).toContain('nombre');
+
+        const t0 = await tree(tenantId, st.lists.products!.id);
+        const taza = t0.roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const camiseta = t0.roots.find((x) => x[k('products', 'woo_id')] === '20')!;
+        const s21 = t0.children.find((x) => x[k('products', 'woo_id')] === '21')!;
+        // El nombre de una variación sale de su producto.
+        await expect(
+            recordsService.update(tenantId, admin(), products, Number(s21.id), { data: { [k('products', 'nombre')]: 'X' } } as never),
+        ).rejects.toThrow(/variación/);
+        // Las categorías no se habilitaron: su opción nueva tampoco se puede crear.
+        await expect(fieldsService.appendOption(tenantId, products, String(F.products!.categorias), { value: 'Hogar' })).rejects.toThrow(/define WooCommerce/);
+
+        // Etiqueta nueva: la opción nace con el slug que le va a dar WordPress.
+        const tagField = await fieldsService.appendOption(tenantId, products, String(F.products!.etiquetas), { value: 'Oferta Verano' });
+        expect((tagField.config as { options: Array<{ value: string; label: string }> }).options).toContainEqual({ value: 'oferta-verano', label: 'Oferta Verano' });
+
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(taza.id), {
+            data: { [k('products', 'nombre')]: 'Taza grande', [k('products', 'etiquetas')]: ['regalo', 'oferta-verano'] },
+        } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        let calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const put = store.calls.slice(calls).find((c) => c.method === 'PUT' && c.url.includes('/products/10'))!;
+        const newTag = store.terms.tags.find((t) => t.slug === 'oferta-verano')!;
+        expect(newTag).toMatchObject({ name: 'Oferta Verano' });
+        expect(JSON.parse(put.body!)).toEqual({ name: 'Taza grande', tags: [{ id: 19 }, { id: newTag.id }] });
+        const after = (await tree(tenantId, st.lists.products!.id)).roots.find((x) => x.id === taza.id)!;
+        expect(after[k('products', 'nombre')]).toBe('Taza grande');
+        expect(after[k('products', 'etiquetas')]).toEqual(['regalo', 'oferta-verano']);
+
+        // Renombrar un producto con variaciones relee sus variaciones (su nombre lleva el del producto).
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(camiseta.id), { data: { [k('products', 'nombre')]: 'Camiseta nueva' } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        await realtime.processPush(queue.pushes[0]!);
+        const renamed = (await tree(tenantId, st.lists.products!.id)).children.find((x) => x.id === s21.id)!;
+        expect(String(renamed[k('products', 'nombre')])).toContain('Camiseta nueva');
+
+        // Un SKU repetido: la tienda lo rechaza y la app vuelve al valor de la tienda.
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'sku')]: 'CAM-S' } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        await realtime.processPush(queue.pushes[0]!);
+        st = await svc.status(tenantId, adminId, 'admin', connId);
+        expect(st.write_back_status.last_error).toMatch(/SKU no válido o duplicado.*quedó el valor que tiene la tienda/);
+        const back = (await tree(tenantId, st.lists.products!.id)).roots.find((x) => x.id === taza.id)!;
+        expect(back[k('products', 'sku')] ?? null).toBeNull();
+
+        // Cliente con cuenta: su teléfono viaja a la cuenta de la tienda.
+        const customers = await rows(tenantId, st.lists.customers!.id);
+        const ana = customers.find((c) => c[k('customers', 'woo_id')] === '1')!;
+        queue.pushes.length = 0;
+        await recordsService.update(tenantId, admin(), st.lists.customers!.slug, Number(ana.id), { data: { [k('customers', 'telefono')]: '+573009998877' } } as never);
+        await vi.waitFor(() => expect(queue.pushes).toHaveLength(1));
+        calls = store.calls.length;
+        await realtime.processPush(queue.pushes[0]!);
+        const putC = store.calls.slice(calls).find((c) => c.method === 'PUT')!;
+        expect(putC.url).toContain('/wc/v3/customers/1');
+        expect(JSON.parse(putC.body!)).toEqual({ billing: { phone: '+573009998877' } });
+        expect((store.customers[0]!.billing as Row).phone).toBe('+573009998877');
     });
 
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {
@@ -982,6 +1106,22 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             tx.select({ n: sql<number>`count(*)::int` }).from(records).innerJoin(lists, eq(lists.id, records.listId)).where(isNull(records.deletedAt)),
         );
         expect(total[0]!.n).toBeLessThanOrEqual(30);
+    });
+
+    it('borrar la CONEXIÓN saca sus avisos de la tienda (no quedan llamando a una URL muerta)', async () => {
+        const c3 = await connect(otherTenant);
+        await svc.setup(otherTenant, adminId, 'admin', c3, {
+            resources: { customers: true, products: true, orders: true },
+            orders_since: null,
+            mode: 'realtime',
+            interval_minutes: 60,
+        });
+        const id3 = await syncIdOf(otherTenant, c3);
+        const [hook] = await pg.db.select().from(storeHooks).where(eq(storeHooks.syncId, id3));
+        const mine = () => store.webhooks.filter((w) => String(w.delivery_url).endsWith(`/${hook!.token}`));
+        expect(mine()).toHaveLength(10);
+        await connectors.remove(otherTenant, adminId, 'admin', c3, true);
+        expect(mine()).toHaveLength(0);
     });
 
     it('dejar de sincronizar conserva las listas y sus datos (y ya se pueden editar libremente)', async () => {

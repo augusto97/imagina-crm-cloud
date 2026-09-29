@@ -130,13 +130,18 @@ export function OptionPicker({
         append.mutate(
             { fieldId: field.id, value, label: value },
             {
-                onSuccess: () => {
-                    // Auto-selecciona la opción recién creada.
+                onSuccess: (updated) => {
+                    // Auto-selecciona la opción recién creada. El valor lo decide el
+                    // servidor (v0.1.214: una etiqueta de la tienda nace con el slug
+                    // que le va a dar WordPress), así que se toma de la respuesta.
+                    const options = ((updated?.config as { options?: FieldOption[] } | undefined)?.options ?? []) as FieldOption[];
+                    const created = options.find((o) => o.value === value) ?? [...options].reverse().find((o) => o.label === value);
+                    const picked = created?.value ?? value;
                     if (mode === 'single') {
-                        onChange(value);
+                        onChange(picked);
                         setOpen(false);
                     } else {
-                        const next = [...Array.from(currentSet), value];
+                        const next = [...Array.from(currentSet), picked];
                         onChange(next);
                         setSearch('');
                     }

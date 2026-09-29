@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { storeCellAccess, storeValueError } from './store-rules';
-import { storeListMarkerSchema } from './store-sync';
+import { defaultStoreEditable, normalizeStoreEditable, storeListMarkerSchema } from './store-sync';
 
 const products = storeListMarkerSchema.parse({
     connection_id: 1,
@@ -26,9 +26,13 @@ const row = (v: Record<string, unknown>) => (slug: string) => v[slug];
 describe('storeCellAccess', () => {
     it('columnas propias: libres; de la tienda no editables: bloqueadas', () => {
         expect(storeCellAccess(products, 99, row({})).access).toBe('own');
-        expect(storeCellAccess(products, 10, row({ tipo: 'simple' }))).toEqual({ access: 'locked', reason: 'Se edita en WooCommerce.' });
+        // Nombre y SKU se PUEDEN habilitar, pero por defecto no lo están.
+        const name = storeCellAccess(products, 10, row({ tipo: 'simple' }));
+        expect(name.access === 'locked' && name.reason).toMatch(/habilitala/);
         expect(storeCellAccess(products, 19, row({ tipo: 'simple' })).access).toBe('locked');
-        // Un campo de otro plugin también es de la tienda (sólo lectura).
+        // El tipo no está en el catálogo: nunca se edita desde acá.
+        expect(storeCellAccess(products, 11, row({ tipo: 'simple' }))).toEqual({ access: 'locked', reason: 'Se edita en WooCommerce.' });
+        // Un campo de otro plugin también es de la tienda (sólo lectura hasta habilitarlo).
         expect(storeCellAccess(products, 30, row({ tipo: 'simple' })).access).toBe('locked');
     });
 
@@ -63,7 +67,47 @@ describe('storeCellAccess', () => {
         expect(storeCellAccess(orders, 5, row({ tipo: 'linea' })).access).toBe('locked');
         expect(storeCellAccess(orders, 6, row({ tipo: 'pedido' })).access).toBe('locked');
         const customers = storeListMarkerSchema.parse({ connection_id: 1, role: 'customers', write_back: true, fields: { email: 7 } });
-        expect(storeCellAccess(customers, 7, row({})).access).toBe('locked');
+        expect(storeCellAccess(customers, 7, row({ registrado: true })).access).toBe('locked');
+    });
+
+    it('columnas habilitadas por la empresa (v0.1.214)', () => {
+        const chosen = { ...products, editable: ['nombre', 'sku', 'meta:30', 'precio_normal'] };
+        expect(storeCellAccess(chosen, 10, row({ tipo: 'simple' })).access).toBe('editable');
+        expect(storeCellAccess(chosen, 19, row({ tipo: 'variacion' })).access).toBe('editable');
+        expect(storeCellAccess(chosen, 30, row({ tipo: 'simple' })).access).toBe('editable');
+        // El nombre de una variación sale de su producto.
+        const v = storeCellAccess(chosen, 10, row({ tipo: 'variacion' }));
+        expect(v.access === 'locked' && v.reason).toMatch(/variación/);
+        // Deshabilitar una de las de por defecto la bloquea.
+        expect(storeCellAccess(chosen, 14, row({ tipo: 'simple', controla_stock: true })).access).toBe('locked');
+        // Un slug que no está en el catálogo no se habilita aunque venga en la lista.
+        const typed = { ...products, editable: ['tipo'] };
+        expect(storeCellAccess(typed, 11, row({ tipo: 'simple' })).access).toBe('locked');
+        // Categorías y etiquetas: del producto, no de la variación.
+        const cats = storeListMarkerSchema.parse({ ...products, fields: { ...products.fields, categorias: 40 }, editable: ['categorias'] });
+        expect(storeCellAccess(cats, 40, row({ tipo: 'variable' })).access).toBe('editable');
+        expect(storeCellAccess(cats, 40, row({ tipo: 'variacion' })).access).toBe('locked');
+    });
+
+    it('clientes: sólo los que tienen cuenta', () => {
+        const customers = storeListMarkerSchema.parse({
+            connection_id: 1,
+            role: 'customers',
+            write_back: true,
+            fields: { nombre: 7, email: 8 },
+            editable: ['nombre', 'email'],
+        });
+        expect(storeCellAccess(customers, 7, row({ registrado: true })).access).toBe('editable');
+        const guest = storeCellAccess(customers, 7, row({ registrado: false }));
+        expect(guest.access === 'locked' && guest.reason).toMatch(/invitado/);
+        expect(storeValueError(customers, 8, '', row({}))).toMatch(/no puede quedar vacío/);
+        expect(storeValueError(customers, 7, '  ', row({}))).toMatch(/nombre/);
+    });
+
+    it('normalizeStoreEditable: sólo catálogo y campos de plugins traídos', () => {
+        expect(normalizeStoreEditable('products', ['nombre', 'tipo', 'nombre', 'meta:30', 'meta:99'], [30])).toEqual(['nombre', 'meta:30']);
+        expect(defaultStoreEditable('orders')).toEqual(['estado']);
+        expect(defaultStoreEditable('customers')).toEqual([]);
     });
 });
 
