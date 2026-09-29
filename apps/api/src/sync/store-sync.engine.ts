@@ -276,7 +276,7 @@ export class StoreSyncEngine {
                 // Una venta (o una cancelación que repone) mueve el stock de lo vendido.
                 if (settings.resources.products) await this.refreshStock(ctx, [payload]);
             } else if (parsed.resource === 'customer' && settings.resources.customers) {
-                await this.upsert(ctx, 'customers', [mapCustomer(payload)], {});
+                await this.upsert(ctx, 'customers', [mapCustomer(payload, settings.store_url)], {});
             } else if (parsed.resource === 'product' && settings.resources.products) {
                 if (isVariationPayload(payload)) {
                     const parentId = String(Number(payload.parent_id));
@@ -402,7 +402,7 @@ export class StoreSyncEngine {
             ctx.dispatch = false;
             const obj = res as WooJson;
             if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
-            else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj)], {});
+            else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj, settings.store_url)], {});
             else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj, this.inv(ctx))], {});
             else {
                 const name = await this.productNameFromApp(ctx, String(found.link.parent));
@@ -612,7 +612,7 @@ export class StoreSyncEngine {
                 ['orderby', 'id'],
                 ['order', full ? 'asc' : 'desc'],
             ]);
-            const items = res.rows.map(mapCustomer);
+            const items = res.rows.map((c) => mapCustomer(c, ctx.settings.store_url));
             const outcome = await this.upsert(ctx, 'customers', items, {});
             done += items.length;
             await this.progress(ctx, 'customers', done, res.total);
@@ -691,7 +691,7 @@ export class StoreSyncEngine {
     }
 
     private inv(ctx: RunCtx) {
-        return { lowStockDefault: ctx.settings.low_stock_amount };
+        return { lowStockDefault: ctx.settings.low_stock_amount, storeUrl: ctx.settings.store_url };
     }
 
     /**

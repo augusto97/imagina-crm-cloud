@@ -40,6 +40,7 @@ import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup, type HScrollGroup } from './hscrollGroup';
 import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
+import { isImageUrlField } from '@/lib/imageProxy';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -515,6 +516,8 @@ function defaultSizeForColumn(c: ColumnDef): number {
     if (c.id === 'id') return 70;
     if (c.id === 'updated_at') return 170;
     const t = c.field?.type ?? 'text';
+    // v0.1.210 — un enlace que se ve como miniatura no necesita ancho de URL.
+    if (t === 'url' && isImageUrlField(c.field?.config)) return 90;
     switch (t) {
         case 'checkbox':     return 90;
         case 'number':

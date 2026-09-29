@@ -5,12 +5,15 @@ import { FILE_STORAGE, LocalFileStorage } from './file-storage';
 import { S3FileStorage } from './s3-file-storage';
 import { FilesController, SignedFilesController } from './files.controller';
 import { FilesService } from './files.service';
+import { ImageProxyController } from './image-proxy.controller';
+import { ImageProxyService } from './image-proxy';
 
 @Module({
     imports: [AuthModule],
-    controllers: [FilesController, SignedFilesController],
+    controllers: [FilesController, SignedFilesController, ImageProxyController],
     providers: [
         FilesService,
+        ImageProxyService,
         {
             provide: FILE_STORAGE,
             inject: [ENV],

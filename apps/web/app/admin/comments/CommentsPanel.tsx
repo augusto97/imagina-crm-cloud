@@ -15,6 +15,7 @@ import {
 import { ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import type { CommentEntity } from '@/types/comment';
+import { parseUtcDate } from '@/lib/utcDate';
 
 /**
  * Hilo de comentarios para un registro específico.
@@ -282,7 +283,7 @@ function CommentItem({
                         )}
                     </span>
                     <span className="imcrm-text-muted-foreground">
-                        {new Date(comment.created_at + 'Z').toLocaleString()}
+                        {parseUtcDate(comment.created_at).toLocaleString()}
                     </span>
                     {wasEdited && (
                         <span className="imcrm-text-muted-foreground">{__('(editado)')}</span>

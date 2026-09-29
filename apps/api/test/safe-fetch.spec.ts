@@ -127,3 +127,33 @@ describe('withContentLength (fix del 411)', () => {
         expect(seen[1]).toEqual({ te: null, cl: '7' }); // con el fix
     });
 });
+
+describe('safeWebhookFetch binario (v0.1.210, proxy de miniaturas)', () => {
+    it('devuelve los bytes tal cual (una imagen no es texto)', async () => {
+        const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe, 0x00, 0xc3]);
+        const server: Server = createServer((_req, res) => {
+            res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(bytes.length) });
+            res.end(bytes);
+        });
+        await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+        const port = (server.address() as { port: number }).port;
+        const prev = process.env.DEV_ALLOW_PRIVATE_EGRESS;
+        process.env.DEV_ALLOW_PRIVATE_EGRESS = '1';
+        try {
+            const res = await safeWebhookFetch(`http://127.0.0.1:${port}/a.png`, {
+                method: 'GET',
+                captureBody: true,
+                binary: true,
+                maxCaptureBytes: 1024,
+            });
+            expect(res.status).toBe(200);
+            expect(res.contentType).toBe('image/png');
+            expect(res.bytes!.equals(bytes)).toBe(true);
+            expect(res.body).toBeUndefined();
+        } finally {
+            if (prev === undefined) delete process.env.DEV_ALLOW_PRIVATE_EGRESS;
+            else process.env.DEV_ALLOW_PRIVATE_EGRESS = prev;
+            await new Promise<void>((r) => server.close(() => r()));
+        }
+    });
+});

@@ -95,7 +95,11 @@ export const fieldConfigSchemas = {
         highlight_overdue: z.boolean().optional(),
     }),
     checkbox: z.object({}),
-    url: z.object({}),
+    /**
+     * v0.1.210 — `display: 'image'` muestra la URL como MINIATURA (la foto de
+     * un producto); `link` (default) como enlace.
+     */
+    url: z.object({ display: z.enum(['link', 'image']).optional() }),
     email: z.object({}),
     user: z.object({}),
     relation: z.object({ target_list_id: idSchema.optional() }),

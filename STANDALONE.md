@@ -1251,6 +1251,21 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
   que usa la sección «Vinculados» de la ficha y la resolución de títulos de
   los campos relation en la tabla (una query por columna y página).
 
+- **Identificadores (v0.1.210, pack 4).** Cada registro de la tienda se puede
+  reconocer y abrir del otro lado: «Editar en WooCommerce» en productos,
+  variaciones (el enlace va al PRODUCTO padre: WordPress edita las
+  variaciones adentro de su producto) y clientes registrados; el enlace
+  público de la variación; y el SKU en la línea de compra, que se completa
+  solo (al proveedor se le pide por SKU). La foto del producto se ve como
+  MINIATURA (`config.display = 'image'` de un campo URL, elegible también en
+  cualquier campo URL propio) y se pide por `GET /media/image?url=` — un
+  proxy con sesión, por `safeWebhookFetch` (guard anti-SSRF, redirecciones
+  re-validadas), sólo tipos de imagen sin script (SVG afuera) y hasta 5 MB.
+  Es un proxy y no un `<img>` directo porque la CSP del SPA es
+  `img-src 'self'`: abrirla exigiría tocar el proxy del servidor a mano (la
+  auto-actualización no lo toca) y dejaría que el texto de un registro
+  dispare pedidos del navegador a terceros.
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
 tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
@@ -1261,4 +1276,4 @@ instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.24.0 (reposición con órdenes de compra — ADR-S24)
+**Versión del documento:** 1.25.0 (identificadores de la tienda y proxy de miniaturas — ADR-S24)

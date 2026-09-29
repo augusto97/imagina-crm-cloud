@@ -105,7 +105,11 @@ export function FieldConfigEditor({
     if (type === 'duration') {
         return <DurationEditor config={config} onChange={onChange} />;
     }
-    // url/email/user/file: no requieren config extra en MVP.
+    // v0.1.210 — un enlace puede mostrarse como miniatura (la foto de un producto).
+    if (type === 'url') {
+        return <UrlDisplayEditor config={config} onChange={onChange} />;
+    }
+    // email/user/file: no requieren config extra.
     return null;
 }
 
@@ -457,6 +461,26 @@ function DurationEditor({ config, onChange }: SubProps): JSX.Element {
             </Select>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                 {__('Se puede escribir de cualquier forma (90, 1:30, 1h 30m): siempre se guarda en minutos.')}
+            </p>
+        </div>
+    );
+}
+
+function UrlDisplayEditor({ config, onChange }: SubProps): JSX.Element {
+    const display = config.display === 'image' ? 'image' : 'link';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+            <Label>{__('Mostrar como')}</Label>
+            <Select
+                value={display}
+                onChange={(e) => onChange({ ...config, display: e.target.value === 'image' ? 'image' : undefined })}
+                data-testid="imcrm-url-display"
+            >
+                <option value="link">{__('Enlace')}</option>
+                <option value="image">{__('Imagen (miniatura)')}</option>
+            </Select>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Con «Imagen», la dirección de una foto (.jpg, .png, .webp…) se ve como miniatura en la tabla y en la ficha.')}
             </p>
         </div>
     );

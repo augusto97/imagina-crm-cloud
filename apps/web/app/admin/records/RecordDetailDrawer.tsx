@@ -40,6 +40,7 @@ import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordTitleInput } from './RecordTitleInput';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from './RecordMetaGrid';
+import { parseUtcDate } from '@/lib/utcDate';
 
 interface RecordDetailDrawerProps {
     listId: number;
@@ -74,7 +75,7 @@ function readAsidePref(): boolean {
 /** Timestamps del API vienen naive-UTC (`YYYY-MM-DD HH:MM:SS`). */
 function formatCreatedDate(value: string | null | undefined): string {
     if (!value) return '—';
-    const d = new Date(value + 'Z');
+    const d = parseUtcDate(value);
     return Number.isNaN(d.getTime())
         ? value
         : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });

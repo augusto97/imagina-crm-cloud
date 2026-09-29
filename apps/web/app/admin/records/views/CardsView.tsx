@@ -7,6 +7,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
+import { proxiedImageUrl } from '@/lib/imageProxy';
 
 /**
  * Vista Cards (Fase 12.A+): grid de tarjetas. Cada tarjeta muestra:
@@ -58,7 +59,7 @@ export function CardsView({
     // está set, recolectamos todos los IDs de cover de los records
     // visibles en un solo fetch a /files?ids=... (ADR-S16).
     const coverIds = useMemo(() => {
-        if (! coverField) return [];
+        if (! coverField || coverField.type === 'url') return [];
         return records
             .map((r) => normalizeAttachmentId(r.fields[coverField.slug]))
             .filter((id): id is number => id !== null && id > 0);
@@ -79,15 +80,17 @@ export function CardsView({
     return (
         <div className={cn('imcrm-grid imcrm-gap-3', SIZE_CLASSES[size])}>
             {records.map((rec) => {
-                const coverId = coverField ? normalizeAttachmentId(rec.fields[coverField.slug]) : null;
+                const coverId = coverField && coverField.type !== 'url' ? normalizeAttachmentId(rec.fields[coverField.slug]) : null;
                 const cover = coverId !== null ? attachments.data?.get(coverId) ?? null : null;
+                // v0.1.210 — portada desde un enlace de imagen: por el proxy (CSP `img-src 'self'`).
+                const urlCover = coverField?.type === 'url' ? proxiedImageUrl(rec.fields[coverField.slug]) : null;
                 return (
                     <Card
                         key={rec.id}
                         record={rec}
                         primaryField={primary}
                         extraFields={extraFields}
-                        coverUrl={cover?.thumbUrl ?? cover?.url ?? null}
+                        coverUrl={urlCover ?? cover?.thumbUrl ?? cover?.url ?? null}
                         onClick={() => onCardClick(rec)}
                     />
                 );
@@ -136,7 +139,7 @@ function Card({
             {coverUrl ? (
                 <div
                     className="imcrm-relative imcrm-aspect-[16/9] imcrm-w-full imcrm-bg-muted"
-                    style={{ backgroundImage: `url(${coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    style={{ backgroundImage: `url("${coverUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
                     aria-hidden
                 />
             ) : (

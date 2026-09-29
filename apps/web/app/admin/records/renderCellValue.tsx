@@ -11,6 +11,9 @@ import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/thro
 import type { FieldEntity } from '@/types/field';
 
 import { extractFieldOptions, type FieldOption } from './fieldOptions';
+import { UrlImage } from '@/components/fields/UrlImage';
+import { isImageUrlField } from '@/lib/imageProxy';
+import { parseUtcDate } from '@/lib/utcDate';
 
 /**
  * Render de un chip de opción (select / multi_select). Si la opción
@@ -155,6 +158,9 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         return <>{formatDuration(value, fmt)}</>;
     }
 
+    if (field.type === 'url' && typeof value === 'string' && isImageUrlField(field.config)) {
+        return <UrlImage value={value} />;
+    }
     if (field.type === 'url' && typeof value === 'string') {
         return (
             <a
@@ -214,7 +220,7 @@ function isOverdueDateValue(type: string, value: string): boolean {
         return value.slice(0, 10) < today;
     }
     if (type === 'datetime') {
-        const d = new Date(value.replace(' ', 'T') + 'Z');
+        const d = parseUtcDate(value);
         if (Number.isNaN(d.getTime())) return false;
         return d.getTime() < Date.now();
     }

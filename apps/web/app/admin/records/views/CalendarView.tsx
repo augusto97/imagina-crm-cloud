@@ -7,6 +7,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
+import { parseUtcDate } from '@/lib/utcDate';
 
 /**
  * Vista Calendar: mes actual con cada record colocado en el día de su
@@ -348,7 +349,7 @@ function parseToLocalIso(raw: string): string | null {
         return raw;
     }
     // datetime → asumir UTC (el back lo guarda así en CLAUDE.md §11).
-    const ts = Date.parse(raw.replace(' ', 'T') + 'Z');
+    const ts = parseUtcDate(raw).getTime();
     if (Number.isNaN(ts)) return null;
     return toLocalIso(new Date(ts));
 }

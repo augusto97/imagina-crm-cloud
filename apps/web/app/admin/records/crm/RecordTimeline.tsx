@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils';
 import { colorFromString, initialsFromValue } from '@/lib/recordCategorize';
 import type { ActivityEntity } from '@/types/activity';
 import type { CommentEntity, CommentKind, CommentMetadata } from '@/types/comment';
+import { parseUtcDate } from '@/lib/utcDate';
 
 interface RecordTimelineProps {
     listId: number;
@@ -432,7 +433,7 @@ function ModeFields({
 
 function parseTimestamp(s: string | null): number {
     if (! s) return 0;
-    return new Date(s + 'Z').getTime();
+    return parseUtcDate(s).getTime();
 }
 
 function relativeTime(ts: number): string {

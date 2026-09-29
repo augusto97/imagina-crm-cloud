@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
 import { readSettings, readState } from '../src/sync/store-sync.types';
-import { buildWooPack, INVENTORY_FIELD_SLUGS, packAddition, PURCHASE_LIST_KEYS, RESTOCK_FIELD_SLUGS, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
+import { buildWooPack, IDENTITY_FIELD_SLUGS, INVENTORY_FIELD_SLUGS, packAddition, PURCHASE_LIST_KEYS, RESTOCK_FIELD_SLUGS, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
 import { orderSeq, pendingOf, receiveTarget, suggestQuantity } from '../src/sync/store-purchasing.service';
 import {
     buildWriteBack,
@@ -389,24 +389,68 @@ describe('Inventario (puros, v0.1.208)', () => {
         const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
         // Desde el pack 1: inventario + reposición + las listas de compras.
         const add = packAddition(full, 1, true);
-        expect(add.lists.map((l) => l.key)).toEqual(['productos', 'variaciones', 'proveedores', 'compras', 'lineas_compra']);
-        for (const l of add.lists.slice(0, 2)) {
-            expect(l.fields.every((fd) => INVENTORY_FIELD_SLUGS.includes(fd.slug) || RESTOCK_FIELD_SLUGS.includes(fd.slug))).toBe(true);
+        expect(add.lists.map((l) => l.key)).toEqual(['clientes', 'productos', 'variaciones', 'proveedores', 'compras', 'lineas_compra']);
+        const inv = add.lists.filter((l) => l.key === 'productos' || l.key === 'variaciones');
+        for (const l of inv) {
+            const allowed = [...INVENTORY_FIELD_SLUGS, ...RESTOCK_FIELD_SLUGS, ...(IDENTITY_FIELD_SLUGS[l.key] ?? [])];
+            expect(l.fields.every((fd) => allowed.includes(fd.slug))).toBe(true);
             expect(l.views.map((v) => v.name)).toEqual(['Para reponer']);
         }
-        expect(add.lists[0]!.fields.map((fd) => fd.slug)).toContain('stock_variaciones');
-        expect(add.lists[1]!.fields.map((fd) => fd.slug)).not.toContain('stock_variaciones');
+        expect(inv[0]!.fields.map((fd) => fd.slug)).toContain('stock_variaciones');
+        expect(inv[1]!.fields.map((fd) => fd.slug)).not.toContain('stock_variaciones');
         expect(add.dashboards).toHaveLength(1);
         expect(add.dashboards[0]!.name).toBe('Inventario · T');
         // Desde el pack 2: sólo reposición (sin vistas ni tableros repetidos).
         const add2 = packAddition(full, 2, true);
         expect(add2.dashboards).toHaveLength(0);
-        expect(add2.lists.find((l) => l.key === 'productos')!.fields.map((fd) => fd.slug).sort()).toEqual([...RESTOCK_FIELD_SLUGS].sort());
+        expect(add2.lists.find((l) => l.key === 'productos')!.fields.map((fd) => fd.slug).sort()).toEqual(
+            [...RESTOCK_FIELD_SLUGS, ...IDENTITY_FIELD_SLUGS.productos!].sort(),
+        );
         expect(add2.lists.find((l) => l.key === 'productos')!.views).toHaveLength(0);
         expect(add2.lists.find((l) => l.key === PURCHASE_LIST_KEYS.lines)!.fields.length).toBeGreaterThan(8);
-        // Al día: nada. Sin productos sincronizados: nada.
-        expect(packAddition(full, 3, true).lists.every((l) => l.fields.length === 0)).toBe(true);
+        // Al día: nada. Sin ninguna lista: nada.
+        expect(packAddition(full, 4, true).lists).toHaveLength(0);
         expect(packAddition(full, 1, false).lists).toHaveLength(0);
+    });
+
+    it('pack 3 → 4: sólo los identificadores, y sólo en las listas que existen', () => {
+        const full = buildWooPack({ storeName: 'T', currency: 'COP', precision: 0, phoneCountry: null });
+        const add = packAddition(full, 3, true);
+        const byKey = Object.fromEntries(add.lists.map((l) => [l.key, l.fields.map((fd) => fd.slug).sort()]));
+        expect(byKey).toEqual({
+            clientes: ['editar'],
+            productos: ['editar'],
+            variaciones: ['editar', 'enlace'],
+            lineas_compra: ['sku'],
+        });
+        expect(add.dashboards).toHaveLength(0);
+        expect(add.lists.every((l) => l.views.length === 0)).toBe(true);
+        // Una tienda que no trae clientes NO gana una lista de Clientes vacía.
+        const noCustomers = packAddition(full, 3, new Set(['productos', 'variaciones', 'pedidos', 'lineas']));
+        expect(noCustomers.lists.map((l) => l.key)).toEqual(['productos', 'variaciones']);
+        // Sin productos igual llegan los identificadores de los clientes.
+        expect(packAddition(full, 3, new Set(['clientes', 'pedidos'])).lists.map((l) => l.key)).toEqual(['clientes']);
+        // Las imágenes del pack se muestran como miniatura.
+        for (const key of ['productos', 'variaciones']) {
+            const img = full.lists.find((l) => l.key === key)!.fields.find((fd) => fd.slug === 'imagen')!;
+            expect(img.config).toEqual({ display: 'image' });
+        }
+    });
+
+    it('enlaces para identificar: editar en el panel, enlace de la variación', () => {
+        const store = 'https://tienda.test/';
+        const p = mapProduct({ id: 12, name: 'Taza', permalink: 'https://tienda.test/p/taza' }, { storeUrl: store });
+        expect(p.values.editar).toBe('https://tienda.test/wp-admin/post.php?post=12&action=edit');
+        expect(p.values.enlace).toBe('https://tienda.test/p/taza');
+        // La variación se edita dentro de su producto.
+        const v = mapVariation({ id: 21, permalink: 'https://tienda.test/p/cam?attribute_color=rojo' }, { id: 20, name: 'Camiseta' }, { storeUrl: store });
+        expect(v.values.editar).toBe('https://tienda.test/wp-admin/post.php?post=20&action=edit');
+        expect(v.values.enlace).toBe('https://tienda.test/p/cam?attribute_color=rojo');
+        const c = mapCustomer({ id: 7, email: 'a@b.co' }, store);
+        expect(c.values.editar).toBe('https://tienda.test/wp-admin/user-edit.php?user_id=7');
+        // Sin la dirección de la tienda no se inventa un enlace.
+        expect(mapProduct({ id: 12, name: 'Taza' }).values.editar).toBeNull();
+        expect(mapCustomer({ id: 7 }).values.editar).toBeNull();
     });
 
     it('el pack trae las listas de compras vinculadas a productos y variaciones', () => {

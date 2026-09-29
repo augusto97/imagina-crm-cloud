@@ -17,6 +17,7 @@ import { useDashboards, useDuplicateDashboard } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
 
 import { DashboardCreateDialog } from './DashboardCreateDialog';
+import { parseUtcDate } from '@/lib/utcDate';
 
 export function DashboardsIndexPage(): JSX.Element {
     const dashboards = useDashboards();
@@ -116,7 +117,7 @@ export function DashboardsIndexPage(): JSX.Element {
                                         {sprintf(
                                             /* translators: %s: date */
                                             __('Editado %s'),
-                                            new Date(d.updated_at + 'Z').toLocaleDateString(),
+                                            parseUtcDate(d.updated_at).toLocaleDateString(),
                                         )}
                                     </span>
                                 </CardContent>

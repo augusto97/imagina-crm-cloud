@@ -37,6 +37,7 @@ import { FooterAggregateCell, type AggregateKind } from './FooterAggregateCell';
 import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup } from './hscrollGroup';
 import { usePageStickyTop, useStuckSentinel } from './stickyTop';
+import { isImageUrlField } from '@/lib/imageProxy';
 
 
 /** Tipos que el backend no ordena (ver `NON_SORTABLE` en records.service). */
@@ -243,7 +244,8 @@ export function TableView({
                         </RecordNameCell>
                     );
                 },
-                size: defaultSizeForType(field.type),
+                // v0.1.210 — una miniatura no necesita el ancho de una URL.
+                size: field.type === 'url' && isImageUrlField(field.config) ? 90 : defaultSizeForType(field.type),
                 minSize: 80,
                 maxSize: 800,
                 meta: { fieldId: field.id, primary: field.is_primary, sortable: !UNSORTABLE.includes(field.type) },

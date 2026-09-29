@@ -123,7 +123,7 @@ export function guestKey(email: string): string {
     return `email:${email.trim().toLowerCase()}`;
 }
 
-export function mapCustomer(c: WooJson): MappedItem {
+export function mapCustomer(c: WooJson, storeUrl?: string | null): MappedItem {
     const billing = obj(c.billing);
     const id = Number(c.id);
     const email = nonEmpty(c.email) ?? nonEmpty(billing.email);
@@ -142,6 +142,7 @@ export function mapCustomer(c: WooJson): MappedItem {
             registrado: true,
             fecha_alta: wooDate(c.date_created_gmt),
             woo_id: String(id),
+            editar: storeUrl ? userAdminUrl(storeUrl, id) : null,
         },
         { meta: metaOf(c) },
     );
@@ -280,6 +281,8 @@ function inventoryValues(v: WooJson, storeDefault: number | null): Record<string
 export interface MapInventoryOptions {
     /** Umbral general de la tienda (`woocommerce_notify_low_stock_amount`). */
     lowStockDefault?: number | null;
+    /** v0.1.210 — Dirección de la tienda, para el enlace «Editar en WooCommerce». */
+    storeUrl?: string | null;
 }
 
 export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedItem {
@@ -304,6 +307,7 @@ export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedIte
             etiquetas: etiquetas.map((c) => c.value),
             imagen: firstImage(p.images),
             enlace: nonEmpty(p.permalink),
+            editar: inv.storeUrl ? orderAdminUrl(inv.storeUrl, id) : null,
             woo_id: String(id),
             modificado: wooDate(p.date_modified_gmt),
             ...inventoryValues(p, inv.lowStockDefault ?? null),
@@ -355,6 +359,9 @@ export function mapVariation(v: WooJson, parent: WooJson, inv: MapInventoryOptio
             estado_stock: nonEmpty(v.stock_status),
             estado: nonEmpty(v.status),
             imagen: nonEmpty(obj(v.image).src),
+            enlace: nonEmpty(v.permalink),
+            // Una variación se edita DENTRO de su producto en el panel de WooCommerce.
+            editar: inv.storeUrl && Number.isInteger(parentId) && parentId > 0 ? orderAdminUrl(inv.storeUrl, parentId) : null,
             woo_id: String(id),
             modificado: wooDate(v.date_modified_gmt),
             ...inventoryValues(v, inv.lowStockDefault ?? null),
@@ -378,8 +385,17 @@ function optionFor(v: unknown): Array<{ value: string; label: string }> {
     return [{ value, label: label.charAt(0).toUpperCase() + label.slice(1) }];
 }
 
+/**
+ * Pantalla de edición en el panel de WordPress. Pedidos y productos son
+ * «posts» (la misma URL; con HPOS WordPress redirige el pedido a su pantalla
+ * nueva), los clientes son usuarios.
+ */
 export function orderAdminUrl(storeUrl: string, id: number): string {
     return `${storeUrl.replace(/\/+$/, '')}/wp-admin/post.php?post=${id}&action=edit`;
+}
+
+export function userAdminUrl(storeUrl: string, id: number): string {
+    return `${storeUrl.replace(/\/+$/, '')}/wp-admin/user-edit.php?user_id=${id}`;
 }
 
 export function mapOrder(o: WooJson, storeUrl: string): MappedItem {
