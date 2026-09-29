@@ -1,8 +1,8 @@
 import { createContext, useContext } from 'react';
 import {
     isStoreField,
-    STORE_EDITABLE_SLUGS,
     storeCellAccess,
+    storeEditableSlugs,
     storeFieldSlug,
     type StoreCellAccess,
     type StoreListMarker,
@@ -65,7 +65,7 @@ export function storeColumnKind(rules: StoreRules | null, fieldId: number): 'sto
     if (!rules) return null;
     if (!isStoreField(rules.marker, fieldId)) return 'own';
     const slug = storeFieldSlug(rules.marker, fieldId);
-    const editable = rules.marker.write_back && slug !== null && STORE_EDITABLE_SLUGS[rules.marker.role].includes(slug);
+    const editable = rules.marker.write_back && slug !== null && storeEditableSlugs(rules.marker).includes(slug);
     return editable ? 'store_sync' : 'store_locked';
 }
 

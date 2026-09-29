@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ArrowLeftRight, ChevronDown, ChevronUp, ExternalLink, Lock, PencilLine, Store } from 'lucide-react';
-import { STORE_WRITE_BACK_FIELDS, type StoreListMarker } from '@imagina-base/shared';
+import { STORE_EDITABLE_CATALOG, storeEditableSlugs, type StoreListMarker } from '@imagina-base/shared';
 
 import { __, sprintf } from '@/lib/i18n';
 
@@ -15,12 +15,13 @@ import { __, sprintf } from '@/lib/i18n';
 export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.Element {
     const [open, setOpen] = useState(false);
     const where = marker.store_name || __('la tienda');
-    const editable =
-        marker.role === 'products'
-            ? STORE_WRITE_BACK_FIELDS.products.map((f) => f.label.toLowerCase())
-            : marker.role === 'orders'
-              ? [__('el estado del pedido')]
-              : [];
+    // v0.1.214 — lo que la empresa habilitó en esta lista (o lo de por defecto).
+    const chosen = storeEditableSlugs(marker);
+    const editable = STORE_EDITABLE_CATALOG[marker.role].filter((c) => chosen.includes(c.slug)).map((c) => __(c.label).toLowerCase());
+    const metaCount = chosen.filter((s) => s.startsWith('meta:') && marker.meta_fields.includes(Number(s.slice(5)))).length;
+    if (metaCount > 0) editable.push(metaCount === 1 ? __('un campo de otro plugin') : sprintf(__('%d campos de otros plugins'), metaCount));
+    const canChoose = STORE_EDITABLE_CATALOG[marker.role].length > 0 || marker.meta_fields.length > 0;
+    const listing = joinList(editable);
     const children =
         marker.role === 'products'
             ? __('Las variaciones (talla, color…) están dentro de cada producto: desplegalo con la flechita.')
@@ -47,10 +48,8 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                 </span>
                 <span className="imcrm-text-muted-foreground">
                     {marker.write_back && editable.length > 0
-                        ? marker.role === 'orders'
-                            ? __('Podés cambiar el estado del pedido: el cambio viaja a la tienda.')
-                            : __('Podés cambiar precios, stock y estados: el cambio viaja a la tienda.')
-                        : editable.length > 0
+                        ? sprintf(__('Podés cambiar %s: el cambio viaja a la tienda.'), listing)
+                        : canChoose
                           ? __('Sólo lectura: los cambios se hacen en WooCommerce.')
                           : __('Los datos se editan en WooCommerce.')}
                 </span>
@@ -89,13 +88,20 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                             )}
                         </li>
                         {children && <li>{children}</li>}
-                        {editable.length > 0 && (
+                        {canChoose && (
                             <li>
-                                {marker.write_back
-                                    ? sprintf(__('Desde acá se puede cambiar: %s. El cambio se manda a la tienda.'), editable.join(', '))
-                                    : marker.role === 'orders'
-                                      ? __('Para cambiar el estado de un pedido desde acá, activá «Editar desde la app» en los ajustes de la tienda.')
-                                      : __('Para cambiar precios, stock o estados desde acá, activá «Editar desde la app» en los ajustes de la tienda.')}
+                                {marker.write_back && editable.length > 0
+                                    ? sprintf(__('Desde acá se puede cambiar: %s. El cambio se manda a la tienda.'), listing)
+                                    : marker.write_back
+                                      ? __('Todavía no habilitaste ninguna columna para editar desde acá.')
+                                      : __('Para cambiar datos desde acá, activá «Editar desde la app» en los ajustes de la tienda.')}{' '}
+                                <Link
+                                    to={`/settings/stores/${marker.connection_id}?seccion=editar`}
+                                    className="imcrm-text-primary hover:imcrm-underline"
+                                    data-testid="store-list-banner-choose"
+                                >
+                                    {__('Elegir qué columnas se editan')}
+                                </Link>
                             </li>
                         )}
                         <li>{__('Podés sumar columnas propias (una nota, un responsable): son sólo de Imagina y nunca viajan a la tienda.')}</li>
@@ -115,4 +121,10 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
             )}
         </div>
     );
+}
+
+/** «a», «a y b», «a, b y c». */
+function joinList(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    return `${items.slice(0, -1).join(', ')} ${__('y')} ${items[items.length - 1]}`;
 }

@@ -73,6 +73,26 @@ describe('FieldsService (Postgres real + RLS)', () => {
         expect(precio.config).toMatchObject({ currency: 'USD' });
     });
 
+    it('agregar una opción al vuelo (el «Crear» del selector): se suma una vez y sólo a selects (v0.1.214)', async () => {
+        const estado = await service.create(tenantA, 'clientes', {
+            label: 'Estado',
+            type: 'multi_select',
+            config: { options: [{ value: 'activo', label: 'Activo' }] },
+        });
+        const next = await service.appendOption(tenantA, 'clientes', String(estado.id), { value: ' Oferta Verano ', color: '#ff0000' });
+        expect((next.config as { options: unknown[] }).options).toEqual([
+            { value: 'activo', label: 'Activo' },
+            { value: 'Oferta Verano', label: 'Oferta Verano', color: '#ff0000' },
+        ]);
+        // Repetirla no la duplica.
+        const same = await service.appendOption(tenantA, 'clientes', 'estado', { value: 'Oferta Verano' });
+        expect((same.config as { options: unknown[] }).options).toHaveLength(2);
+        const nombre = await service.create(tenantA, 'clientes', { label: 'Nombre', type: 'text' });
+        await expect(service.appendOption(tenantA, 'clientes', String(nombre.id), { value: 'x' })).rejects.toThrow(/selección/);
+        // Otra empresa no la alcanza.
+        await expect(service.appendOption(tenantB, 'clientes', String(estado.id), { value: 'x' })).rejects.toThrow();
+    });
+
     it('config inválida para el tipo → 400', async () => {
         await expect(
             service.create(tenantA, 'clientes', {

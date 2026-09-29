@@ -1,6 +1,8 @@
 import {
+    STORE_LIST_ROLES,
     STORE_META_RESOURCES,
     STORE_SYNC_RESOURCES,
+    type StoreListRole,
     type StoreMetaResource,
     type StoreSyncMode,
     type StoreSyncResource,
@@ -18,6 +20,11 @@ export interface SyncSettings {
     mode: StoreSyncMode;
     interval_minutes: number;
     write_back: boolean;
+    /**
+     * v0.1.214 — columnas que se editan desde la app, por lista (slugs del
+     * catálogo y `meta:<id>`). Sin clave para una lista = lo de por defecto.
+     */
+    editable: Partial<Record<StoreListRole, string[]>>;
     store_url: string;
     store_name: string;
     /**
@@ -73,6 +80,18 @@ export interface SyncState {
     write_back: { pushed: number; failed: number; last_at: string | null; last_error: string | null };
 }
 
+/** Qué recursos de la tienda (con `meta_data`) viven en cada lista. */
+export const META_RESOURCES_OF: Record<StoreListRole, StoreMetaResource[]> = {
+    customers: ['customers'],
+    products: ['products', 'variations'],
+    orders: ['orders'],
+};
+
+/** A qué lista va cada recurso que se puede editar desde la app. */
+export function roleOfResource(resource: StoreMetaResource): StoreListRole {
+    return resource === 'variations' ? 'products' : resource;
+}
+
 function obj(v: unknown): Record<string, unknown> {
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
@@ -105,6 +124,12 @@ export function readSettings(raw: unknown): SyncSettings {
     const metaRaw = obj(s.meta_map);
     for (const r of STORE_META_RESOURCES) if (metaRaw[r]) meta_map[r] = idMap(metaRaw[r]);
     const interval = Number(s.interval_minutes);
+    const editable: SyncSettings['editable'] = {};
+    const editableRaw = obj(s.editable);
+    for (const r of STORE_LIST_ROLES) {
+        const v = editableRaw[r];
+        if (Array.isArray(v)) editable[r] = v.filter((x): x is string => typeof x === 'string');
+    }
     return {
         resources: {
             customers: res.customers !== false,
@@ -115,6 +140,7 @@ export function readSettings(raw: unknown): SyncSettings {
         mode: s.mode === 'realtime' ? 'realtime' : 'interval',
         interval_minutes: Number.isInteger(interval) && interval > 0 ? interval : 15,
         write_back: s.write_back === true,
+        editable,
         store_url: typeof s.store_url === 'string' ? s.store_url : '',
         store_name: typeof s.store_name === 'string' ? s.store_name : '',
         lists,

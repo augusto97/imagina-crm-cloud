@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
+    defaultStoreEditable,
+    normalizeStoreEditable,
     STORE_META_RESOURCES,
     STORE_SYNC_RESOURCES,
     type ListBlueprint,
@@ -32,7 +34,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { StoreRealtimeService } from './store-realtime.service';
 import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
-import { readLegacyPurchaseLists, readSettings, readState, type SyncSettings } from './store-sync.types';
+import { META_RESOURCES_OF, readLegacyPurchaseLists, readSettings, readState, type SyncSettings } from './store-sync.types';
 import { wooGet } from './woocommerce/woo-fetch';
 import { buildWooPack, WOO_LIST_KEYS, WOO_PACK_VERSION, WOO_ROOT_RESOURCES } from './woocommerce/woo-pack';
 import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
@@ -61,7 +63,19 @@ export class StoreSyncService {
         private readonly realtime: StoreRealtimeService,
         // v0.1.213 — avisar a las pestañas abiertas que la marca de sus listas cambió.
         @Optional() private readonly rt?: RealtimeService,
-    ) {}
+    ) {
+        // Borrar la CONEXIÓN (no sólo dejar de sincronizar) también tiene que
+        // sacar los avisos de la tienda: si no, WooCommerce sigue llamando a
+        // una URL muerta hasta desactivarlos solo (lo encontró la prueba contra
+        // un WooCommerce real, v0.1.214). Se hace ANTES de borrar: después ya
+        // no hay credenciales para hablarle a la tienda.
+        this.connectors.onBeforeRemove(async (tenantId, connectionId) => {
+            const row = await this.findSync(tenantId, connectionId);
+            if (!row) return;
+            await this.realtime.unregister(tenantId, row.id, await this.credsOf(tenantId, connectionId).catch(() => null));
+            this.realtime.forget(tenantId);
+        });
+    }
 
     // ── Lectura ─────────────────────────────────────────────────────────────
 
@@ -85,6 +99,7 @@ export class StoreSyncService {
             mode: 'interval',
             interval_minutes: 15,
             write_back: false,
+            editable: { customers: defaultStoreEditable('customers'), products: defaultStoreEditable('products'), orders: defaultStoreEditable('orders') },
             orders_since: null,
             resources: { customers: true, products: true, orders: true },
             lists: empty,
@@ -172,6 +187,11 @@ export class StoreSyncService {
             mode: settings.mode,
             interval_minutes: settings.interval_minutes,
             write_back: settings.write_back,
+            editable: {
+                customers: settings.editable.customers ?? defaultStoreEditable('customers'),
+                products: settings.editable.products ?? defaultStoreEditable('products'),
+                orders: settings.editable.orders ?? defaultStoreEditable('orders'),
+            },
             orders_since: settings.orders_since,
             resources: settings.resources,
             lists: listsOut,
@@ -238,6 +258,7 @@ export class StoreSyncService {
             mode: input.mode,
             interval_minutes: input.interval_minutes,
             write_back: false,
+            editable: {},
             store_url: storeUrl,
             store_name: storeName,
             lists: {},
@@ -576,11 +597,7 @@ export class StoreSyncService {
     async markLists(tenantId: number, connectionId: number, settings: SyncSettings): Promise<void> {
         const markers: Array<[number, StoreListMarker]> = [];
         const metaOf = (...rs: StoreMetaResource[]) => [...new Set(rs.flatMap((r) => Object.values(settings.meta_map[r] ?? {})))];
-        const roles: Array<[StoreListRole, StoreMetaResource[]]> = [
-            ['customers', ['customers']],
-            ['products', ['products', 'variations']],
-            ['orders', ['orders']],
-        ];
+        const roles = Object.entries(META_RESOURCES_OF) as Array<[StoreListRole, StoreMetaResource[]]>;
         for (const [role, metaRes] of roles) {
             const listId = settings.lists[role];
             if (!listId) continue;
@@ -594,6 +611,7 @@ export class StoreSyncService {
                     write_back: settings.write_back,
                     fields: settings.fields[role] ?? {},
                     meta_fields: metaOf(...metaRes),
+                    editable: settings.editable[role] ?? null,
                 },
             ]);
         }
@@ -644,6 +662,19 @@ export class StoreSyncService {
             if (input.mode !== undefined) settings.mode = input.mode;
             if (input.interval_minutes !== undefined) settings.interval_minutes = input.interval_minutes;
             if (input.write_back !== undefined) settings.write_back = input.write_back;
+            // Qué columnas se editan: sólo las del catálogo de esa lista o los
+            // campos de plugins que ya se traen a columnas.
+            for (const [r, slugs] of Object.entries(input.editable ?? {}) as Array<[StoreListRole, string[] | undefined]>) {
+                if (!slugs) continue;
+                const metaIds = META_RESOURCES_OF[r].flatMap((m) => Object.values(settings.meta_map[m] ?? {}));
+                settings.editable[r] = normalizeStoreEditable(r, slugs, metaIds);
+            }
+            if (input.editable_toggle) {
+                const { role: r, slug, on } = input.editable_toggle;
+                const current = settings.editable[r] ?? defaultStoreEditable(r);
+                const metaIds = META_RESOURCES_OF[r].flatMap((m) => Object.values(settings.meta_map[m] ?? {}));
+                settings.editable[r] = normalizeStoreEditable(r, on ? [...current, slug] : current.filter((x) => x !== slug), metaIds);
+            }
             const minutes = settings.mode === 'realtime' ? 60 : settings.interval_minutes;
             const [next] = await tx
                 .update(connectionSyncs)
@@ -670,8 +701,8 @@ export class StoreSyncService {
             const creds = await this.credsOf(tenantId, connectionId).catch(() => null);
             await this.realtime.unregister(tenantId, row.id, creds);
         }
-        // «Editar desde la app» cambia qué columnas se pueden tocar.
-        if (input.write_back !== undefined) await this.markLists(tenantId, connectionId, readSettings(updated.settings));
+        // «Editar desde la app» y la elección de columnas cambian qué se puede tocar.
+        if (input.write_back !== undefined || input.editable !== undefined || input.editable_toggle !== undefined) await this.markLists(tenantId, connectionId, readSettings(updated.settings));
         this.realtime.forget(tenantId);
         const fresh = (await this.findSync(tenantId, connectionId)) ?? updated;
         return this.toStatus(tenantId, fresh, conn.name);

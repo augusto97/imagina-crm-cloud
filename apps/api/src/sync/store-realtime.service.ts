@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { STORE_WRITE_BACK_FIELDS, type StoreMetaResource } from '@imagina-base/shared';
+import { defaultStoreEditable, type StoreListRole, type StoreMetaResource } from '@imagina-base/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 
+import { devPrivateEgressAllowed } from '../common/safe-fetch';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import type { IntegrationCreds } from '../connectors/integration-calls';
@@ -12,9 +13,16 @@ import type { RecordChange } from '../records/record-change-hub';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { StoreSyncEngine } from './store-sync.engine';
 import { StoreSyncQueue, type StoreSyncHookJob, type StoreSyncPushJob } from './store-sync.queue';
-import { readSettings, readState, type SyncSettings } from './store-sync.types';
+import { META_RESOURCES_OF, readSettings, readState, type SyncSettings } from './store-sync.types';
 import { WooApiError, wooGetPage, wooSend } from './woocommerce/woo-fetch';
-import { isWooPing, parseWooTopic, verifyWooSignature, wooHookTopics } from './woocommerce/woo-hooks';
+import {
+    isWooPing,
+    parseWooTopic,
+    verifyWooSignature,
+    wooDeliveryUrlProblem,
+    wooDisabledHooksMessage,
+    wooHookTopics,
+} from './woocommerce/woo-hooks';
 
 /** Lo que el listener de cambios necesita saber de una lista sincronizada. */
 interface WriteTarget {
@@ -81,6 +89,17 @@ export class StoreRealtimeService {
      */
     async register(tenantId: number, syncId: number, creds: IntegrationCreds, settings: SyncSettings): Promise<number[]> {
         const { token, secret } = await this.credentials(tenantId, syncId);
+        // Una dirección a la que WordPress no entrega (puerto fuera de 80/443/8080)
+        // se rechaza ANTES de registrar: si no, la app diría «en tiempo real» y la
+        // tienda descartaría cada aviso en silencio.
+        const problem = devPrivateEgressAllowed() ? null : wooDeliveryUrlProblem(this.deliveryUrl(token));
+        if (problem) {
+            throw new BadRequestException({
+                code: 'store_hooks_failed',
+                message: `La tienda no va a poder avisar en tiempo real: ${problem}`,
+                data: { status: 400 },
+            });
+        }
         const created: number[] = [];
         try {
             for (const topic of wooHookTopics(settings)) {
@@ -133,10 +152,15 @@ export class StoreRealtimeService {
             const page = await wooGetPage(creds, '/webhooks', [['per_page', '100']]);
             const ours = page.rows.filter((w) => w.delivery_url === url);
             const ids: number[] = [];
+            // `disabled` es lo que WooCommerce pone tras varias entregas fallidas
+            // (`paused` es una pausa manual): se cuentan para decirlo en pantalla,
+            // en vez de reactivarlos en silencio cada hora para siempre.
+            let disabled = 0;
             for (const topic of wooHookTopics(settings)) {
                 const hit = ours.find((w) => w.topic === topic);
                 if (hit) {
                     ids.push(Number(hit.id));
+                    if (hit.status === 'disabled') disabled++;
                     if (hit.status !== 'active') {
                         await wooSend(creds, 'PUT', `/webhooks/${Number(hit.id)}`, { status: 'active' });
                     }
@@ -151,7 +175,10 @@ export class StoreRealtimeService {
                     if (Number(res?.id) > 0) ids.push(Number(res!.id));
                 }
             }
-            await this.saveRealtime(tenantId, syncId, { webhook_ids: ids, error: null });
+            await this.saveRealtime(tenantId, syncId, {
+                webhook_ids: ids,
+                error: disabled > 0 ? wooDisabledHooksMessage(disabled, new URL(url).origin) : null,
+            });
         } catch (err) {
             await this.saveRealtime(tenantId, syncId, { error: `No pudimos revisar los avisos de la tienda: ${explain(err)}` });
         }
@@ -260,13 +287,24 @@ export class StoreRealtimeService {
             const settings = readSettings(row.settings);
             if (!settings.write_back) continue;
             // Productos y variaciones comparten lista (v0.1.213): se juntan sus
-            // columnas editables; qué es cada fila lo resuelve el envío.
-            for (const resource of Object.keys(STORE_WRITE_BACK_FIELDS) as StoreMetaResource[]) {
-                const listId = settings.lists[resource];
+            // columnas; qué es cada fila lo resuelve el envío. Sólo cuentan las
+            // columnas que la empresa habilitó (v0.1.214).
+            for (const [role, resources] of Object.entries(META_RESOURCES_OF) as Array<[StoreListRole, StoreMetaResource[]]>) {
+                const listId = settings.lists[role];
                 if (!listId) continue;
-                const packFields = settings.fields[resource] ?? {};
-                const ids = byList.get(listId)?.fieldIds ?? new Set<number>();
-                for (const f of STORE_WRITE_BACK_FIELDS[resource]) if (packFields[f.slug]) ids.add(packFields[f.slug]!);
+                const enabled = settings.editable[role] ?? defaultStoreEditable(role);
+                const ids = new Set<number>();
+                for (const resource of resources) {
+                    const packFields = settings.fields[resource] ?? {};
+                    for (const slug of enabled) {
+                        if (slug.startsWith('meta:')) {
+                            const id = Number(slug.slice(5));
+                            if (Object.values(settings.meta_map[resource] ?? {}).includes(id)) ids.add(id);
+                        } else if (packFields[slug]) {
+                            ids.add(packFields[slug]!);
+                        }
+                    }
+                }
                 if (ids.size > 0) byList.set(listId, { syncId: row.id, fieldIds: ids });
             }
         }

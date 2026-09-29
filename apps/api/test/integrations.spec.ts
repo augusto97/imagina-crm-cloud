@@ -433,7 +433,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
                     ? { status: 200, body: '[{"id":1}]' }
                     : { status: 401, body: '{"code":"woocommerce_rest_cannot_view","message":"No podés listar"}' };
             }
-            if (call.url === 'https://tienda.test/wp-json/') return { status: 200, body: '{"name":"Tienda Test"}' };
+            if (call.url === 'https://tienda.test/wp-json/?_fields=name') return { status: 200, body: '{"name":"Tienda Test"}' };
             if (call.url.startsWith('https://tienda.test/wp-json/wc/v3/orders/77')) {
                 return { status: 200, body: '{"id":77,"status":"completed"}' };
             }

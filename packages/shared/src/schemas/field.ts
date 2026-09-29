@@ -293,6 +293,14 @@ export const createFieldSchema = z.object({
 export type CreateFieldInput = z.infer<typeof createFieldSchema>;
 
 /** Patch de campo. El `type` NO se cambia acá (requiere migración de datos). */
+/** Una opción nueva para un select/multi_select, creada al vuelo desde la tabla o la ficha. */
+export const appendFieldOptionSchema = z.object({
+    value: z.string().trim().min(1).max(190),
+    label: z.string().max(190).optional(),
+    color: z.string().max(20).optional(),
+});
+export type AppendFieldOptionInput = z.infer<typeof appendFieldOptionSchema>;
+
 export const updateFieldSchema = z
     .object({
         label: z.string().trim().min(1).max(190),

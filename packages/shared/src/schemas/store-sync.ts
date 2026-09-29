@@ -74,40 +74,93 @@ export const updateStoreSyncSchema = z.object({
     enabled: z.boolean().optional(),
     /** Fase 3: los cambios hechos en la app viajan a la tienda. */
     write_back: z.boolean().optional(),
+    /**
+     * v0.1.214 — qué columnas se editan desde la app, por lista (reemplaza la
+     * elección de ESA lista; las que no vienen quedan como estaban).
+     */
+    editable: z
+        .object({
+            customers: z.array(z.string().max(60)).max(100),
+            products: z.array(z.string().max(60)).max(100),
+            orders: z.array(z.string().max(60)).max(100),
+        })
+        .partial()
+        .optional(),
+    /**
+     * Prender o apagar UNA columna, aplicado en el servidor sobre lo guardado
+     * (no sobre lo que la pantalla tenía en caché): así dos pestañas o dos
+     * personas no se pisan la elección.
+     */
+    editable_toggle: z
+        .object({ role: z.enum(['customers', 'products', 'orders']), slug: z.string().min(1).max(60), on: z.boolean() })
+        .optional(),
 });
 export type UpdateStoreSyncInput = z.infer<typeof updateStoreSyncSchema>;
 
 /**
- * Qué columnas se pueden editar en la app y viajan a la tienda (v0.1.213:
- * PRECIOS, STOCK y ESTADOS — y nada más). Todo lo demás se edita en
- * WooCommerce: el nombre, el SKU, las imágenes, el tipo de producto, las
- * variaciones, los datos del cliente. Lo que se puede cambiar además depende
- * de la FILA (un producto con variaciones no tiene precio propio): esas
- * reglas viven en `store-rules.ts`, compartidas por el backend (que rechaza)
- * y la interfaz (que bloquea la celda y dice por qué).
+ * Columnas que se PUEDEN editar desde la app y viajar a la tienda (v0.1.214).
+ *
+ * v0.1.213 dejó fijo «precios, stock y estados»; ahora cada empresa elige,
+ * por lista, cuáles habilita (`defaultOn` = lo que viene prendido — el mismo
+ * set de v0.1.213, así una tienda ya conectada no cambia de comportamiento).
+ * Lo que NO está en este catálogo no se puede habilitar: son datos que la
+ * tienda calcula (totales, líneas, estado de inventario) o que no tienen una
+ * forma segura de escribirse (la dirección armada, el país como código).
+ * Qué FILA acepta qué (un producto variable no tiene precio propio, un
+ * invitado no tiene cuenta) sigue en `store-rules.ts`.
  */
-export const STORE_WRITE_BACK_FIELDS: Record<StoreMetaResource, Array<{ slug: string; label: string }>> = {
+export interface StoreEditableColumn {
+    slug: string;
+    label: string;
+    /** Viene habilitada si la empresa nunca eligió. */
+    defaultOn: boolean;
+    /** Aclaración que se muestra junto al interruptor. */
+    hint?: string;
+}
+
+export const STORE_EDITABLE_CATALOG: Record<StoreListRole, readonly StoreEditableColumn[]> = {
     products: [
-        { slug: 'precio_normal', label: 'Precio normal' },
-        { slug: 'precio_rebajado', label: 'Precio rebajado' },
-        { slug: 'stock', label: 'Stock' },
-        { slug: 'controla_stock', label: 'Controla stock' },
-        { slug: 'estado_stock', label: 'Estado del stock' },
-        { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
-        { slug: 'estado', label: 'Publicación' },
+        { slug: 'precio_normal', label: 'Precio normal', defaultOn: true },
+        { slug: 'precio_rebajado', label: 'Precio rebajado', defaultOn: true },
+        { slug: 'stock', label: 'Stock', defaultOn: true },
+        { slug: 'controla_stock', label: 'Controla stock', defaultOn: true },
+        { slug: 'estado_stock', label: 'Estado del stock', defaultOn: true },
+        { slug: 'umbral_stock', label: 'Alerta de stock bajo', defaultOn: true },
+        { slug: 'estado', label: 'Publicación', defaultOn: true },
+        { slug: 'nombre', label: 'Nombre', defaultOn: false, hint: 'Del producto. El nombre de una variación sale de su producto y sus atributos.' },
+        { slug: 'sku', label: 'SKU', defaultOn: false, hint: 'WooCommerce lo rechaza si otro producto ya lo usa.' },
+        { slug: 'categorias', label: 'Categorías', defaultOn: false, hint: 'Una categoría nueva se crea en la tienda.' },
+        { slug: 'etiquetas', label: 'Etiquetas', defaultOn: false, hint: 'Una etiqueta nueva se crea en la tienda.' },
     ],
-    variations: [
-        { slug: 'precio_normal', label: 'Precio normal' },
-        { slug: 'precio_rebajado', label: 'Precio rebajado' },
-        { slug: 'stock', label: 'Stock' },
-        { slug: 'controla_stock', label: 'Controla stock' },
-        { slug: 'estado_stock', label: 'Estado del stock' },
-        { slug: 'umbral_stock', label: 'Alerta de stock bajo' },
-        { slug: 'estado', label: 'Publicación' },
+    orders: [
+        { slug: 'estado', label: 'Estado', defaultOn: true },
+        { slug: 'nota_cliente', label: 'Nota del cliente', defaultOn: false },
+        { slug: 'email', label: 'Email', defaultOn: false, hint: 'El de facturación del pedido.' },
+        { slug: 'telefono', label: 'Teléfono', defaultOn: false, hint: 'El de facturación del pedido.' },
     ],
-    orders: [{ slug: 'estado', label: 'Estado' }],
-    customers: [],
+    customers: [
+        { slug: 'nombre', label: 'Nombre', defaultOn: false, hint: 'La primera palabra va como nombre y el resto como apellido.' },
+        { slug: 'email', label: 'Email', defaultOn: false },
+        { slug: 'telefono', label: 'Teléfono', defaultOn: false },
+        { slug: 'empresa', label: 'Empresa', defaultOn: false },
+        { slug: 'ciudad', label: 'Ciudad', defaultOn: false },
+    ],
 };
+
+/** Lo que viene habilitado si la empresa nunca eligió (lo de v0.1.213). */
+export function defaultStoreEditable(role: StoreListRole): string[] {
+    return STORE_EDITABLE_CATALOG[role].filter((c) => c.defaultOn).map((c) => c.slug);
+}
+
+/**
+ * Lo que se guarda al elegir: sólo slugs del catálogo o campos de plugins
+ * traídos a columnas (`meta:<id del campo>`), sin repetidos.
+ */
+export function normalizeStoreEditable(role: StoreListRole, slugs: readonly string[], metaFieldIds: readonly number[]): string[] {
+    const known = new Set(STORE_EDITABLE_CATALOG[role].map((c) => c.slug));
+    const meta = new Set(metaFieldIds.map((id) => `meta:${id}`));
+    return [...new Set(slugs)].filter((s) => known.has(s) || meta.has(s));
+}
 
 export const runStoreSyncSchema = z.object({
     /** true = vuelve a recorrer TODO (no sólo lo que cambió). */
@@ -154,8 +207,13 @@ export const storeListMarkerSchema = z.object({
     write_back: z.boolean().default(false),
     /** slug del pack → id del campo: las columnas que son de la tienda. */
     fields: z.record(z.string(), idSchema).default({}),
-    /** Campos de otros plugins traídos a columnas (también de la tienda, de sólo lectura). */
+    /** Campos de otros plugins traídos a columnas (también de la tienda). */
     meta_fields: z.array(idSchema).default([]),
+    /**
+     * v0.1.214 — columnas habilitadas para editar desde la app (slugs del
+     * catálogo y `meta:<id>`). null = lo que viene por defecto.
+     */
+    editable: z.array(z.string()).nullable().default(null),
 });
 export type StoreListMarker = z.infer<typeof storeListMarkerSchema>;
 
@@ -196,6 +254,10 @@ export const storeSyncStatusSchema = z.object({
     mode: storeSyncModeSchema,
     interval_minutes: z.number().int(),
     write_back: z.boolean(),
+    /** v0.1.214 — columnas habilitadas para editar desde la app, por lista. */
+    editable: z
+        .object({ customers: z.array(z.string()), products: z.array(z.string()), orders: z.array(z.string()) })
+        .default({ customers: [], products: [], orders: [] }),
     orders_since: z.string().nullable(),
     resources: z.object({ customers: z.boolean(), products: z.boolean(), orders: z.boolean() }),
     lists: z.record(storeSyncResourceSchema, listRefSchema),

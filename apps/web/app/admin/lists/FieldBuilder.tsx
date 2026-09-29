@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { StoreEditableColumnsCard } from '@/cloud/components/StoreEditableColumns';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
@@ -272,6 +273,14 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+            {/* v0.1.214 — qué columnas de la tienda se editan desde la app. */}
+            {storeMarker && (
+                <StoreEditableColumnsCard
+                    connectionId={storeMarker.connection_id}
+                    role={storeMarker.role}
+                    fieldLabel={(id) => (fields.data ?? []).find((f) => f.id === id)?.label}
+                />
+            )}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <div className="imcrm-relative imcrm-min-w-[180px] imcrm-flex-1 sm:imcrm-max-w-xs">
                     <Search

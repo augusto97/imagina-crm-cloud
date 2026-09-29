@@ -80,7 +80,11 @@ export function wooUrl(
 /** Raíz de la API de WordPress (de ahí sale el nombre de la tienda). */
 export function wooSiteIndexUrl(creds: IntegrationCreds): string {
     const base = wooStoreUrl(creds.fields.store_url ?? '');
-    return styleOf(creds) === 'plain' ? `${base}/?rest_route=/` : `${base}/wp-json/`;
+    // `_fields=name`: el índice completo de una tienda real lista TODAS las
+    // rutas (1,2 MB en un WooCommerce recién instalado, más con plugins) y
+    // pasaba el tope de lectura — el nombre se perdía y la conexión quedaba
+    // con el dominio. Con el filtro son ~20 bytes (WordPress ≥ 4.9.8).
+    return styleOf(creds) === 'plain' ? `${base}/?rest_route=/&_fields=name` : `${base}/wp-json/?_fields=name`;
 }
 
 export function wooHeaders(creds: IntegrationCreds, json = false): Record<string, string> {

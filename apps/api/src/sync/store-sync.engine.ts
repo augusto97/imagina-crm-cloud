@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+    defaultStoreEditable,
     validateFieldValue,
     type Field,
     type StoreMetaResource,
@@ -21,13 +22,14 @@ import type { IntegrationCreds } from '../connectors/integration-calls';
 import {
     metaResourceOf,
     readSettings,
+    roleOfResource,
     readState,
     type KeysetCursor,
     type MetaSeen,
     type SyncSettings,
     type SyncState,
 } from './store-sync.types';
-import { WOO_PAGE_SIZE, wooGetPage, wooSend } from './woocommerce/woo-fetch';
+import { WOO_PAGE_SIZE, WooApiError, wooGet, wooGetPage, wooSend } from './woocommerce/woo-fetch';
 import { buildWriteBack, isVariationPayload, parseWooTopic, type WooHookResource } from './woocommerce/woo-hooks';
 import {
     coerceMeta,
@@ -377,6 +379,8 @@ export class StoreSyncEngine {
                         inArray(syncLinks.resource, ['products', 'variations', 'orders', 'customers']),
                     ),
                 )
+                // Una clienta con cuenta tiene además su vínculo de invitada: manda la cuenta.
+                .orderBy(sql`${syncLinks.externalId} LIKE 'id:%' DESC`)
                 .limit(1);
             const [rec] = await tx
                 .select({ data: records.data })
@@ -387,34 +391,130 @@ export class StoreSyncEngine {
         });
         if (!found) return null;
         const resource = found.link.resource as StoreMetaResource;
+        const role = roleOfResource(resource);
+        const editable = settings.editable[role] ?? defaultStoreEditable(role);
         const changed = new Set(changedFieldIds);
         const values: Record<string, unknown> = {};
         for (const [slug, fieldId] of Object.entries(settings.fields[resource] ?? {})) {
             if (changed.has(fieldId)) values[slug] = found.data[`f${fieldId}`] ?? null;
+        }
+        const seen = ctx.state.meta[resource] ?? {};
+        const meta = Object.entries(settings.meta_map[resource] ?? {})
+            .filter(([, fieldId]) => changed.has(fieldId))
+            .map(([key, fieldId]) => ({ key, fieldId, value: found.data[`f${fieldId}`] ?? null, sample: seen[key]?.sample ?? null }));
+        // Categorías y etiquetas: la API sólo acepta ids, así que se buscan (o
+        // se crean) antes de armar el pedido.
+        const terms: { categorias?: number[]; etiquetas?: number[] } = {};
+        if (resource === 'products') {
+            for (const slug of ['categorias', 'etiquetas'] as const) {
+                if (!(slug in values) || !editable.includes(slug)) continue;
+                const fieldId = settings.fields.products?.[slug];
+                const field = fieldId ? ctx.targets.products?.fields.get(fieldId) : undefined;
+                terms[slug] = await this.resolveTerms(
+                    creds,
+                    slug === 'categorias' ? 'categories' : 'tags',
+                    Array.isArray(values[slug]) ? (values[slug] as unknown[]).map(String) : [],
+                    optionLabels(field),
+                );
+            }
         }
         const req = buildWriteBack({
             resource,
             externalId: found.link.externalId,
             parentExternalId: found.link.parent,
             changed: values,
+            editable,
+            meta,
+            terms,
         });
         if (!req) return null;
-        const res = await wooSend(creds, 'PUT', req.path, req.body);
+        let res: unknown;
+        try {
+            res = await wooSend(creds, 'PUT', req.path, req.body);
+        } catch (err) {
+            // La tienda lo RECHAZÓ (un SKU repetido, un email que no acepta): la
+            // app no puede quedarse con un valor que la tienda no tiene, así que
+            // se vuelve a leer el objeto y se deja lo que dice la tienda.
+            if (err instanceof WooApiError && err.status >= 400 && err.status < 500) {
+                const current = await wooGet(creds, req.path).catch(() => null);
+                const obj = current?.json;
+                if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+                    await this.applyStoreObject(ctx, resource, found.link.parent, obj as WooJson, false);
+                    throw new WooApiError(`${err.message} En la app quedó el valor que tiene la tienda.`, err.status);
+                }
+            }
+            throw err;
+        }
         // La tienda devuelve el objeto como quedó: se aplica sin disparar nada.
         if (res && typeof res === 'object' && !Array.isArray(res)) {
-            ctx.dispatch = false;
-            const obj = res as WooJson;
-            if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
-            else if (resource === 'products') await this.upsert(ctx, 'products', [mapProduct(obj, this.inv(ctx))], {});
-            else if (resource === 'variations') {
-                const parent = String(found.link.parent);
-                const name = await this.productNameFromApp(ctx, parent);
-                await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(parent), name }, this.inv(ctx))], {});
-                await this.recomputeVariableParents(ctx, [parent]);
-            }
-            for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+            await this.applyStoreObject(ctx, resource, found.link.parent, res as WooJson, 'name' in req.body);
         }
         return { sent: req.fields };
+    }
+
+    /**
+     * Aplica el objeto tal como lo tiene la tienda (después de un envío, o para
+     * volver atrás uno rechazado), sin disparar automatizaciones. Si cambió el
+     * nombre de un producto con variaciones, se releen sus variaciones: su
+     * nombre («Camiseta — Rojo / M») lleva el del producto.
+     */
+    private async applyStoreObject(
+        ctx: RunCtx,
+        resource: StoreMetaResource,
+        parentExternalId: string | null,
+        obj: WooJson,
+        renamed: boolean,
+    ): Promise<void> {
+        const settings = ctx.settings;
+        ctx.dispatch = false;
+        if (resource === 'orders') await this.upsert(ctx, 'orders', [mapOrder(obj, settings.store_url)], {});
+        else if (resource === 'customers') await this.upsert(ctx, 'customers', [mapCustomer(obj, settings.store_url)], {});
+        else if (resource === 'products') {
+            await this.upsert(ctx, 'products', [mapProduct(obj, this.inv(ctx))], {});
+            if (renamed && obj.type === 'variable') await this.syncVariationsOf(ctx, obj);
+        } else if (resource === 'variations') {
+            const parent = String(parentExternalId);
+            const name = await this.productNameFromApp(ctx, parent);
+            await this.upsert(ctx, 'variations', [mapVariation(obj, { id: Number(parent), name }, this.inv(ctx))], {});
+            await this.recomputeVariableParents(ctx, [parent]);
+        }
+        for (const listId of ctx.touchedLists) this.realtime.records(ctx.tenantId, listId);
+    }
+
+    /**
+     * Los ids de la tienda de un conjunto de categorías o etiquetas (por su
+     * slug, que es el valor de la opción en la app). Las que no existen se
+     * CREAN con la etiqueta de la opción: así «añadir una etiqueta» desde la
+     * app funciona igual que en WooCommerce.
+     */
+    private async resolveTerms(
+        creds: IntegrationCreds,
+        taxonomy: 'categories' | 'tags',
+        slugs: string[],
+        labels: Map<string, string>,
+    ): Promise<number[]> {
+        const ids: number[] = [];
+        for (const slug of [...new Set(slugs)].slice(0, 50)) {
+            const label = labels.get(slug) ?? slug;
+            const found = await wooGetPage(creds, `/products/${taxonomy}`, [['slug', slug], ['per_page', '1']]);
+            let id = Number(found.rows[0]?.id);
+            if (!(id > 0)) {
+                try {
+                    const made = await wooSend(creds, 'POST', `/products/${taxonomy}`, { name: label, slug });
+                    id = Number((made as WooJson | null)?.id);
+                } catch (err) {
+                    // Ya existe con ese NOMBRE pero otro slug (`term_exists`): se usa ese.
+                    const byName = await wooGetPage(creds, `/products/${taxonomy}`, [['search', label], ['per_page', '20']]).catch(() => null);
+                    id = Number(byName?.rows.find((t) => String(t.name ?? '').toLowerCase() === label.toLowerCase())?.id);
+                    if (!(id > 0)) throw err;
+                }
+            }
+            if (!(id > 0)) {
+                throw new WooApiError(`No pudimos ${taxonomy === 'categories' ? 'crear la categoría' : 'crear la etiqueta'} «${label}» en la tienda.`, 400);
+            }
+            ids.push(id);
+        }
+        return ids;
     }
 
     private async linkOf(ctx: RunCtx, resource: StoreSyncResource, recordId: number) {
@@ -1351,3 +1451,15 @@ function dedupe(items: MappedItem[]): MappedItem[] {
 }
 
 export type { RunCtx };
+
+/** value → etiqueta de las opciones de un select/multi_select. */
+function optionLabels(field: Field | undefined): Map<string, string> {
+    const out = new Map<string, string>();
+    const options = (field?.config as { options?: unknown } | undefined)?.options;
+    if (Array.isArray(options)) {
+        for (const o of options as Array<{ value?: unknown; label?: unknown }>) {
+            if (typeof o.value === 'string') out.set(o.value, typeof o.label === 'string' && o.label !== '' ? o.label : o.value);
+        }
+    }
+    return out;
+}

@@ -1,4 +1,4 @@
-import type { StoreListMarker, StoreListRole } from './store-sync';
+import { defaultStoreEditable, STORE_EDITABLE_CATALOG, type StoreListMarker, type StoreListRole } from './store-sync';
 
 /**
  * Qué se puede hacer en una lista de la tienda (v0.1.213, ADR-S24).
@@ -9,8 +9,9 @@ import type { StoreListMarker, StoreListRole } from './store-sync';
  * próxima sincronización lo pisaría o lo dejaría huérfano. Por eso:
  *
  *  - **Registros**: no se crean ni se borran acá — se hace en WooCommerce.
- *  - **Columnas de la tienda**: de sólo lectura, salvo precios, stock y
- *    estados (y sólo con «Editar desde la app» activado).
+ *  - **Columnas de la tienda**: de sólo lectura, salvo las que la empresa
+ *    habilitó (v0.1.214; por defecto precios, stock y estados) y sólo con
+ *    «Editar desde la app» activado.
  *  - **Columnas propias** (una nota, un responsable): libres. Nunca viajan.
  *
  * Y lo editable depende de la FILA, porque WooCommerce no acepta lo mismo en
@@ -21,12 +22,17 @@ import type { StoreListMarker, StoreListRole } from './store-sync';
  * así nunca dicen cosas distintas.
  */
 
-/** Las columnas editables de cada lista (por su slug del pack). */
+/** Las columnas que se PUEDEN habilitar en cada lista (por su slug del pack). */
 export const STORE_EDITABLE_SLUGS: Record<StoreListRole, readonly string[]> = {
-    products: ['precio_normal', 'precio_rebajado', 'stock', 'controla_stock', 'estado_stock', 'umbral_stock', 'estado'],
-    orders: ['estado'],
-    customers: [],
+    products: STORE_EDITABLE_CATALOG.products.map((c) => c.slug),
+    orders: STORE_EDITABLE_CATALOG.orders.map((c) => c.slug),
+    customers: STORE_EDITABLE_CATALOG.customers.map((c) => c.slug),
 };
+
+/** Las columnas que la empresa habilitó en esta lista (o las de por defecto). */
+export function storeEditableSlugs(marker: StoreListMarker): readonly string[] {
+    return marker.editable ?? defaultStoreEditable(marker.role);
+}
 
 /** Estados de pedido que se pueden elegir desde la app (los demás los pone la tienda). */
 export const STORE_SETTABLE_ORDER_STATUSES = ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed'] as const;
@@ -65,11 +71,18 @@ const HOW_TO_EDIT = 'Se edita en WooCommerce.';
 export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: StoreRowGetter): StoreCellAccess {
     const slug = storeFieldSlug(marker, fieldId);
     if (slug === null) return { access: 'own' };
-    if (!STORE_EDITABLE_SLUGS[marker.role].includes(slug)) return { access: 'locked', reason: HOW_TO_EDIT };
+    const isMeta = slug.startsWith('meta:');
+    if (!isMeta && !STORE_EDITABLE_SLUGS[marker.role].includes(slug)) return { access: 'locked', reason: HOW_TO_EDIT };
     if (!marker.write_back) {
         return {
             access: 'locked',
             reason: 'Viene de WooCommerce. Para cambiarla desde acá, activá «Editar desde la app» en la página de la tienda.',
+        };
+    }
+    if (!storeEditableSlugs(marker).includes(slug)) {
+        return {
+            access: 'locked',
+            reason: 'Viene de WooCommerce. Para cambiarla desde acá, habilitala en «Columnas que se editan desde la app» (ajustes de la tienda).',
         };
     }
     const kind = typeof row('tipo') === 'string' ? (row('tipo') as string) : '';
@@ -78,6 +91,13 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
         if (kind === 'linea') return { access: 'locked', reason: 'Las líneas de un pedido se editan en WooCommerce.' };
         return { access: 'editable' };
     }
+    if (marker.role === 'customers') {
+        if (row('registrado') !== true) {
+            return { access: 'locked', reason: 'Compró como invitado: no tiene una cuenta en la tienda que se pueda editar.' };
+        }
+        return { access: 'editable' };
+    }
+    if (isMeta) return { access: 'editable' };
 
     // Productos y variaciones.
     const ownStock = kind === 'simple' || kind === 'variacion';
@@ -101,6 +121,14 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
             if (managed) return { access: 'locked', reason: 'Con el stock controlado, WooCommerce calcula este estado solo.' };
             return { access: 'editable' };
         case 'estado':
+        case 'sku':
+            return { access: 'editable' };
+        case 'nombre':
+            if (kind === 'variacion') return { access: 'locked', reason: 'El nombre de una variación sale de su producto y sus atributos: cambiá el del producto.' };
+            return { access: 'editable' };
+        case 'categorias':
+        case 'etiquetas':
+            if (kind === 'variacion') return { access: 'locked', reason: 'Las categorías y etiquetas son del producto: se cambian en el producto.' };
             return { access: 'editable' };
         default:
             return { access: 'locked', reason: HOW_TO_EDIT };
@@ -164,6 +192,12 @@ export function storeValueError(
         }
         case 'estado_stock':
             if (empty || !['instock', 'outofstock', 'onbackorder'].includes(String(value))) return 'Elegí un estado del stock.';
+            return null;
+        case 'nombre':
+            if (empty || String(value).trim() === '') return 'El nombre no puede quedar vacío.';
+            return null;
+        case 'email':
+            if (marker.role === 'customers' && (empty || String(value).trim() === '')) return 'El email de una cuenta de la tienda no puede quedar vacío.';
             return null;
         case 'estado': {
             if (marker.role === 'orders') {

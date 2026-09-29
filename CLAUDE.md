@@ -5141,6 +5141,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         WooCommerce REAL sigue bloqueada por la política de red del entorno
         (wordpress.org/GitHub 403, Docker Hub 429).
 
+  - [x] **Columnas editables elegibles + prueba contra un WooCommerce REAL
+        (v0.1.214, ADR-S24, pregunta del usuario: "¿puedo elegir qué campos se
+        editan? un cliente quizás quiera cambiarle el nombre a los productos, la
+        categoría o añadir una etiqueta")**. La lista fija de v0.1.213 (precios,
+        stock y estados) pasa a ser un **catálogo** del que cada empresa elige
+        por lista (`STORE_EDITABLE_CATALOG` en shared): productos gana nombre,
+        SKU, categorías y etiquetas; pedidos, nota del cliente, email y
+        teléfono; clientes con cuenta, nombre, email, teléfono, empresa y
+        ciudad; y cualquier campo de otro plugin traído a columna. Lo de
+        v0.1.213 viene prendido (una tienda conectada no cambia). Se elige en la
+        página de la tienda y en **Ajustes → Campos** de cada lista; vive en
+        `settings.editable` y viaja a la marca de la lista, así la MISMA
+        `storeCellAccess` decide en el backend y en la interfaz (candado con
+        «habilitala en…»). Prender/apagar una columna viaja como
+        `editable_toggle` y se aplica sobre lo guardado (una caché vieja no pisa
+        la elección — lo atrapó el E2E). **Categorías y etiquetas**: la API sólo
+        acepta ids, así que se resuelven por slug y la que falta se CREA en la
+        tienda; la opción nueva nace con el slug que le va a dar WordPress. **Un
+        rechazo vuelve atrás**: si WooCommerce rechaza un envío (SKU repetido)
+        se relee el objeto y la app queda con el valor de la tienda, con el
+        motivo a la vista. Renombrar un producto variable relee sus variaciones.
+        **Bug latente de paso**: el «Crear» del selector de opciones llamaba a
+        `POST …/fields/:f/options`, que la nube nunca implementó — crear una
+        opción al vuelo fallaba en TODAS las listas; ahora existe.
+        **Prueba contra un WooCommerce 11.1.2 real** (WordPress + WooCommerce
+        levantados en el entorno con PHP y MariaDB, al habilitarse la red
+        «Personalizado»): encontró tres bugs que la tienda simulada no podía
+        mostrar — (a) el nombre del sitio se perdía (el índice `/wp-json/` de
+        una tienda real pesa >1 MB) → `?_fields=name`; (b) WordPress sólo
+        entrega avisos a los puertos 80/443/8080 y el error queda sólo en su
+        log → la app lo detecta antes de registrar y avisa si la tienda
+        DESACTIVÓ avisos por fallas; (c) borrar la conexión dejaba los avisos
+        registrados llamando a una URL muerta → se sacan antes de borrar.
+        E2E 34/34 contra la tienda real (conectar, tiempo real con 10 avisos,
+        variaciones y líneas como subtareas, precio/stock/estado que viajan,
+        pedido y precio que llegan solos, nombre, etiqueta nueva creada en
+        WooCommerce, categoría, SKU repetido que vuelve atrás, teléfono de la
+        clienta, invitado bloqueado, elección desde la tienda y desde la lista,
+        banner, borrar la conexión sin dejar avisos). Tests: 7 de reglas en
+        shared, 5 del envío puro, 2 de integración (elección + envío completo;
+        borrar conexión) y 1 del endpoint de opciones — 739 API, 169 front y
+        76 shared en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
