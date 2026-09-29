@@ -1,3 +1,4 @@
+import { storeBulkOperationSchema, type StoreBulkOperationInput } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createHmac } from 'node:crypto';
 import Redis from 'ioredis';
@@ -102,6 +103,26 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                     touchRow(o);
                     return ok(o);
                 };
+                // Lotes (v0.1.217): cada elemento se aplica como un PUT suelto; un error va en su elemento.
+                const batchOf = (find: (id: number) => Row | undefined) => {
+                    const out = ((input.update as Row[] | undefined) ?? []).map((item) => {
+                        const { id, ...rest } = item;
+                        const saved = input;
+                        Object.keys(input).forEach((key) => delete (input as Row)[key]);
+                        Object.assign(input, rest);
+                        const r = apply(find(Number(id)));
+                        Object.keys(input).forEach((key) => delete (input as Row)[key]);
+                        Object.assign(input, saved);
+                        const parsed = JSON.parse(r.body) as Row;
+                        return r.status >= 400 ? { id, error: { code: parsed.code, message: parsed.message } } : parsed;
+                    });
+                    return ok({ update: out });
+                };
+                if (p === '/products/batch' && method === 'POST') return batchOf((id) => store.products.find((x) => x.id === id));
+                if ((m = /^\/products\/(\d+)\/variations\/batch$/.exec(p)) && method === 'POST') {
+                    const list = store.variations[Number(m[1])] ?? [];
+                    return batchOf((id) => list.find((v) => v.id === id));
+                }
                 if ((m = /^\/products\/(\d+)\/variations\/(\d+)$/.exec(p))) {
                     return apply((store.variations[Number(m[1])] ?? []).find((v) => v.id === Number(m![2])));
                 }
@@ -159,6 +180,10 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 const hit = store.customers.find((x) => x.id === Number(oneCustomer[1]));
                 return hit ? { status: 200, body: JSON.stringify(hit), headers: {} } : { status: 404, body: '{"code":"not_found","message":"ID no válido"}', headers: {} };
             }
+            if (path === '/products/attributes') return page([{ id: 1, name: 'Color', slug: 'pa_color' }]);
+            if (path === '/products/attributes/1/terms') return page([{ id: 70, name: 'Rojo', slug: 'rojo' }, { id: 71, name: 'Azul', slug: 'azul' }]);
+            if (path === '/products/shipping_classes') return page([{ id: 80, name: 'Frágil', slug: 'fragil' }]);
+            if (path === '/taxes/classes') return page([{ slug: 'reducida', name: 'Tasa reducida' }]);
             if (path === '/settings/products') {
                 return { status: 200, body: JSON.stringify([{ id: 'woocommerce_notify_low_stock_amount', value: '5' }]), headers: {} };
             }
@@ -227,6 +252,7 @@ import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
+import { StoreBulkService } from '../src/sync/store-bulk.service';
 import { StoreSyncEngine } from '../src/sync/store-sync.engine';
 import { StoreSyncQueue, type StoreSyncPushJob } from '../src/sync/store-sync.queue';
 import { StoreRealtimeService } from '../src/sync/store-realtime.service';
@@ -376,6 +402,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
     let dispatcher: CapturingDispatcher;
     let queue: CapturingQueue;
     let realtime: StoreRealtimeService;
+    let bulk: StoreBulkService;
     let tenantId: number;
     let otherTenant: number;
     let adminId: number;
@@ -425,6 +452,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         queue = new CapturingQueue();
         realtime = new StoreRealtimeService(tenantDb, pg.db, env, engine, queue);
         svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime);
+        bulk = new StoreBulkService(tenantDb, listsService, fieldsService, recordsService, connectors, engine, audit);
         realtime.setCredsResolver((t, s) => svc.credsForSync(t, s));
         hub.subscribe((c) => realtime.onRecordChange(c));
 
@@ -1043,6 +1071,101 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         // WordPress lo limpió y lo hizo único (ya existía «camiseta»).
         expect(tz2[k('products', 'slug_url')]).toBe('camiseta-2');
         expect(tz2[k('products', 'enlace')]).toBe('https://tienda.test/producto/camiseta-2/');
+    });
+
+    it('edición masiva de la tienda: por lotes, desde lo que la tienda tiene, variaciones incluidas (v0.1.217)', async () => {
+        const products = st.lists.products!.slug;
+        const ops = (list: StoreBulkOperationInput[]) => list.map((o) => storeBulkOperationSchema.parse(o));
+        // Las categorías se editan desde la app sólo si la empresa lo habilitó.
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'categorias', on: true } });
+        const t0 = await tree(tenantId, st.lists.products!.id);
+        const taza = t0.roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const camiseta = t0.roots.find((x) => x[k('products', 'woo_id')] === '20')!;
+        const tazaStore = store.products.find((p) => p.id === 10)!;
+        tazaStore.regular_price = '20000';
+        tazaStore.sale_price = '';
+        const stock0 = Number(tazaStore.stock_quantity);
+        const s21 = store.variations[20]!.find((v) => v.id === 21)!;
+        s21.regular_price = '30000';
+        store.variations[20]!.find((v) => v.id === 22)!.regular_price = '32000';
+        const s21Stock = Number(s21.stock_quantity);
+
+        const operations = ops([
+            { op: 'regular_price', change: { kind: 'percent', amount: 10, round: { multiple: 1000, mode: 'up', adjust: -100 } } },
+            { op: 'stock', kind: 'add', amount: 5 },
+            { op: 'categories', mode: 'add', values: ['Ofertas Julio'] },
+            { op: 'featured', value: true },
+            { op: 'attribute', mode: 'add', attribute: { id: 1, name: 'Color' }, options: ['Rojo'] },
+        ]);
+
+        // Catálogo: lo que la pantalla ofrece para elegir.
+        const cat = await bulk.catalog(tenantId, products);
+        expect(cat.categories.map((c) => c.slug)).toContain('cocina');
+        expect(cat.attributes).toEqual([{ id: 1, name: 'Color', slug: 'pa_color' }]);
+        expect(cat.shipping_classes).toEqual([{ slug: 'fragil', name: 'Frágil' }]);
+        expect(await bulk.attributeTerms(tenantId, products, 1)).toContainEqual({ slug: 'azul', name: 'Azul' });
+
+        // Vista previa: cuenta las variaciones del producto variable y no crea nada.
+        const preview = await bulk.preview(tenantId, admin(), products, { ids: [Number(taza.id), Number(camiseta.id)] }, operations, true);
+        expect(preview.products).toBe(2);
+        expect(preview.variations).toBe(2);
+        expect(preview.record_ids.sort()).toEqual([Number(taza.id), Number(camiseta.id)].sort());
+        const tz = preview.sample.find((x) => x.kind === 'product' && x.changes.some((c) => c.label === 'Precio normal'))!;
+        expect(tz.changes).toContainEqual({ label: 'Precio normal', before: '20000', after: '22900' });
+        expect(tz.changes.find((c) => c.label === 'Categorías')?.after).toContain('Ofertas Julio (nueva)');
+        expect(store.terms.categories.some((t) => t.name === 'Ofertas Julio')).toBe(false);
+        const cam = preview.sample.find((x) => x.title === 'Camiseta nueva')!;
+        expect(cam.notes.join(' ')).toMatch(/cada variación/);
+
+        // Aplicar: un lote de productos y uno de variaciones.
+        const calls = store.calls.length;
+        const res = await bulk.apply(tenantId, admin(), products, preview.record_ids, operations, true);
+        expect(res.failed).toEqual([]);
+        expect(res.updated).toBe(4);
+        const posts = store.calls.slice(calls).filter((c) => c.method === 'POST');
+        const prodBatch = posts.find((c) => c.url.includes('/products/batch'))!;
+        const created = store.terms.categories.find((t) => t.name === 'Ofertas Julio')!;
+        expect(created).toBeTruthy();
+        const upd = (JSON.parse(prodBatch.body!) as { update: Row[] }).update;
+        expect(upd.find((u) => u.id === 10)).toMatchObject({
+            regular_price: '22900',
+            stock_quantity: stock0 + 5,
+            featured: true,
+            categories: [{ id: 16 }, { id: created.id }],
+        });
+        // El producto variable: sin precio ni stock propios, sí lo demás.
+        const camUpd = upd.find((u) => u.id === 20)!;
+        expect(camUpd.regular_price).toBeUndefined();
+        expect(camUpd.stock_quantity).toBeUndefined();
+        expect(camUpd.attributes).toEqual([{ id: 1, position: 0, visible: true, variation: false, options: ['Rojo'] }]);
+        const varBatch = posts.find((c) => c.url.includes('/products/20/variations/batch'))!;
+        const vupd = (JSON.parse(varBatch.body!) as { update: Row[] }).update;
+        // 30.000 × 1,1 = 33.000 → 33.900; la M hereda el stock del padre: sólo precio.
+        expect(vupd.find((u) => u.id === 21)).toMatchObject({ regular_price: '33900', stock_quantity: s21Stock + 5 });
+        expect(vupd.find((u) => u.id === 22)).toEqual({ id: 22, regular_price: '35900' });
+
+        // Lo que devolvió la tienda quedó en la app (espejo), con la opción nueva.
+        const t1 = await tree(tenantId, st.lists.products!.id);
+        const tazaAfter = t1.roots.find((x) => x.id === taza.id)!;
+        expect(tazaAfter[k('products', 'precio_normal')]).toBe(22900);
+        expect(tazaAfter[k('products', 'stock')]).toBe(stock0 + 5);
+        expect(tazaAfter[k('products', 'categorias')]).toContain(created.slug);
+        expect(t1.children.find((x) => x[k('products', 'woo_id')] === '21')![k('products', 'precio_normal')]).toBe(33900);
+
+        // Columna no habilitada: la operación no corre y la vista previa lo avisa.
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'precio_normal', on: false } });
+        const blocked = await bulk.preview(tenantId, admin(), products, { ids: [Number(taza.id)] }, ops([{ op: 'regular_price', change: { kind: 'add', amount: 100 } }]), true);
+        expect(blocked.warnings[0]).toMatch(/no habilitó/);
+        const r2 = await bulk.apply(tenantId, admin(), products, [Number(taza.id)], ops([{ op: 'regular_price', change: { kind: 'add', amount: 100 } }]), true);
+        expect(r2.updated).toBe(0);
+        expect(tazaStore.regular_price).toBe('22900');
+        st = await svc.update(tenantId, adminId, 'admin', connId, { editable_toggle: { role: 'products', slug: 'precio_normal', on: true } });
+
+        // Un rechazo de la tienda en UN elemento no tira el lote.
+        store.products.find((p) => p.id === 20)!.sku = 'DUP';
+        const r3 = await bulk.apply(tenantId, admin(), products, [Number(taza.id)], ops([{ op: 'name', kind: 'append', text: '!' }]), false);
+        expect(r3.updated).toBe(1);
+        expect(tazaStore.name).toMatch(/!$/);
     });
 
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {

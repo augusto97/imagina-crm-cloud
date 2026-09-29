@@ -68,7 +68,8 @@ export type AuditAction =
     | 'store_sync.migrate'
     | 'store_sync.update'
     | 'store_sync.delete'
-    | 'store_sync.map_meta';
+    | 'store_sync.map_meta'
+    | 'store_sync.bulk_edit';
 
 export interface AuditEntryDto {
     id: number;

@@ -8,6 +8,8 @@ import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { RecordChangeHub } from '../records/record-change-hub';
+import { StoreBulkController } from './store-bulk.controller';
+import { StoreBulkService } from './store-bulk.service';
 import { StoreHooksController } from './store-hooks.controller';
 import { StoreRealtimeService } from './store-realtime.service';
 import { StoreSyncController } from './store-sync.controller';
@@ -22,8 +24,8 @@ import { StoreSyncService } from './store-sync.service';
  */
 @Module({
     imports: [AuthModule, ActivityModule, AutomationsModule, BillingModule, FieldsModule, ListsModule, RecordsModule, TemplatesModule],
-    controllers: [StoreSyncController, StoreHooksController],
-    providers: [StoreSyncEngine, StoreSyncService, StoreRealtimeService, StoreSyncQueue, StoreSyncQueueBootstrap],
+    controllers: [StoreSyncController, StoreHooksController, StoreBulkController],
+    providers: [StoreBulkService, StoreSyncEngine, StoreSyncService, StoreRealtimeService, StoreSyncQueue, StoreSyncQueueBootstrap],
     exports: [StoreSyncService, StoreSyncEngine],
 })
 export class StoreSyncModule implements OnModuleInit {

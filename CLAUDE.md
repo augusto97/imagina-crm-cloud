@@ -5244,6 +5244,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         tres cambios encadenados, 230 por filtro en dos tandas con avance,
         errores listados, punto de miles, celular).
 
+  - [x] **Edición masiva de la tienda WooCommerce (v0.1.217, ADR-S24, segunda
+        mitad del pedido: "en productos quiero todo lo que se puede hacer en
+        lote: precios, categorías, etiquetas, atributos y más")**: la edición
+        de v0.1.216 escribe columnas de la APP; la tienda tiene mucho que la app
+        no refleja (atributos, peso, medidas, clase de envío, visibilidad,
+        destacado, reservas, fechas de la rebaja). Módulo propio que opera
+        SOBRE WOOCOMMERCE: **«Editar en la tienda»** (barra de selección, y en
+        Personalizar vista para todo lo que coincide con los filtros) en la
+        lista de Productos con «Editar desde la app» encendido. Operaciones
+        agrupadas como en el panel de WooCommerce: **precios** (normal y
+        rebajado: poner, sumar, restar, subir/bajar %, con el mismo redondeo a
+        la grilla de v0.1.216; rebaja como % de descuento sobre el normal o
+        quitarla; programar la rebaja desde/hasta), **inventario** (stock
+        poner/sumar/restar, controlar stock, estado del stock, reservas, alerta
+        de stock bajo), **publicación** (estado, visibilidad en el catálogo,
+        destacado), **organización** (categorías y etiquetas agregar/quitar/
+        reemplazar sin pisar las demás —la que no existe se CREA en la tienda al
+        aplicar—, **atributos** globales o propios con sus valores, nombre con
+        prefijo/sufijo/buscar-reemplazar), **envío e impuestos** (peso, medidas,
+        clase de envío, estado y clase de impuesto) y **campos de otros
+        plugins** (`meta_data` por clave). Reglas: se calcula sobre el objeto
+        FRESCO de la tienda (no la copia de la app, que puede venir atrasada por
+        una venta); los productos variables se editan **por variación**
+        (opcional, default sí); la escritura va por la **API batch** (100 por
+        pedido — un producto rechazado vuelve con su motivo y no tira a los
+        demás); un atributo que usan las variaciones no se reemplaza ni se
+        quita (rompería las variaciones); un rebajado ≥ normal se descarta con
+        nota; una variación que hereda el stock del padre se saltea; y respeta
+        el catálogo de columnas editables de v0.1.214 (una operación sobre una
+        columna no habilitada aparece deshabilitada con el motivo). Vista previa
+        con antes → después y notas por producto/variación, aplicación en
+        tandas de 25 con avance, y lo que devuelve la tienda se refleja en la
+        app con el mismo upsert de la sincronización (dispara automatizaciones:
+        es un cambio real). Bitácora `store_sync.bulk_edit`. El plan es PURO
+        (`planBulkUpdate`, `woo-bulk.ts`) y lo comparten vista previa y
+        aplicación. 9 tests unitarios del plan + 1 de integración con la tienda
+        simulada (precio ±% redondeado, categoría nueva creada, atributo,
+        destacado) — 756 API, 178 front y 91 shared en verde — + E2E navegador
+        25/25 contra un **WooCommerce 11.1.2 real** (precios ±% redondeados por
+        variación, stock +3, categoría nueva creada conservando las existentes,
+        atributo global Material, destacado, rebaja de 25 % programada en las
+        variaciones, atributo de variación protegido, alcance «todos los de la
+        vista» que toca un producto no seleccionado, celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

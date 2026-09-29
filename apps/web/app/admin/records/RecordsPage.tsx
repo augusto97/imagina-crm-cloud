@@ -42,6 +42,7 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { BulkEditDialog } from './bulk/BulkEditDialog';
+import { StoreBulkDialog } from './bulk/StoreBulkDialog';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
@@ -260,6 +261,8 @@ export function RecordsPage(): JSX.Element {
     const [importOpen, setImportOpen] = useState(false);
     // v0.1.216 — edición masiva (selección o todo lo que coincide con la vista).
     const [bulkEditOpen, setBulkEditOpen] = useState(false);
+    // v0.1.217 — edición masiva EN la tienda (lista de productos de WooCommerce).
+    const [storeBulkOpen, setStoreBulkOpen] = useState(false);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
@@ -289,6 +292,7 @@ export function RecordsPage(): JSX.Element {
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
+    const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -872,6 +876,21 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onExport={() => setExportOpen(true)}
                     canBulkEdit={canBulkEdit}
                     onBulkEdit={() => setBulkEditOpen(true)}
+                    onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
+                />
+            )}
+
+            {storeMarker && canStoreBulk && (
+                <StoreBulkDialog
+                    open={storeBulkOpen}
+                    onOpenChange={setStoreBulkOpen}
+                    listId={list.data.id}
+                    marker={storeMarker}
+                    selectedIds={selectedIds}
+                    filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    matchingCount={records.data?.meta?.total ?? null}
+                    onDone={() => setSelectedIds([])}
                 />
             )}
 
@@ -1084,6 +1103,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
                         onBulkEdit={() => setBulkEditOpen(true)}
+                        onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                     />
 
                     <FieldCreateDialog
