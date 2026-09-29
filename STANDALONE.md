@@ -1394,6 +1394,38 @@ re-traería las variaciones y rehacería los tableros sin motivo. De paso:
 así que la marca quedaba vieja hasta la corrida siguiente (también en la
 migración de v0.1.213); ahora relee después de actualizar.
 
+**Edición masiva en la tienda (v0.1.217).** La edición masiva genérica
+(ADR-S25) escribe columnas de la APP, y una tienda tiene mucho que la app no
+refleja como columna (atributos, peso, medidas, clase de envío, visibilidad,
+destacado, reservas, fechas de la rebaja). Para eso hay un módulo propio que
+opera SOBRE WOOCOMMERCE: `POST /lists/:l/store-bulk/preview|apply`
+(`bulk_actions`, sólo en la lista de Productos y con «Editar desde la app»
+encendido). Reglas: (a) **se calcula sobre el objeto FRESCO de la tienda**,
+no sobre la copia de la app (que puede venir atrasada por una venta), leído en
+lotes de `include=` ≤100; (b) **los productos variables se editan por
+variación** (`include_variations`, default sí): un precio o un stock se aplica
+a cada variación, y el producto padre no tiene precio propio; (c) la escritura
+va por la **API batch** (`/products/batch` y
+`/products/{padre}/variations/batch`, 100 por pedido) — un producto rechazado
+no tira a los demás y vuelve con su motivo; (d) **el plan es puro**
+(`planBulkUpdate` en `woo-bulk.ts`): de las operaciones y el objeto sale el
+cuerpo exacto, los cambios legibles y las notas (rebajado ≥ normal se
+descarta, una variación que hereda el stock del padre se saltea); la vista
+previa y la aplicación lo comparten; (e) **categorías y etiquetas** se agregan
+o quitan sin pisar las demás (la API reemplaza la lista entera, así que se
+manda la lista completa resultante); una que no existe se CREA en la tienda
+sólo al aplicar — la vista previa la muestra como «(nueva)» con un id
+provisorio negativo; (f) **atributos**: WooCommerce reemplaza el arreglo
+entero, así que se arma completo; uno que usan las variaciones no se
+reemplaza ni se quita (rompería las variaciones), sólo se le pueden sumar
+opciones; (g) respeta el **catálogo de columnas editables**
+(`BULK_OP_COLUMN`: si la empresa no habilitó «Nombre», no se renombra en
+lote); (h) lo que devuelve la tienda se aplica a la app con
+`engine.applyStoreObjects` (el mismo upsert de la sincronización, que sí
+dispara automatizaciones — es un cambio real), recalculando los resúmenes de
+los productos variables. Bitácora `store_sync.bulk_edit`. El cliente aplica en
+tandas de 25 productos con avance.
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
 tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
@@ -1459,4 +1491,4 @@ en lote (ver la nota de ADR-S24 de v0.1.217).
 
 ---
 
-**Versión del documento:** 1.29.0 (edición masiva con operaciones y vista previa — ADR-S25)
+**Versión del documento:** 1.30.0 (edición masiva en la tienda WooCommerce — nota de ADR-S24)

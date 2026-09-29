@@ -313,7 +313,7 @@ export function BulkEditDialog({
     );
 }
 
-function ScopeChip({ active, onClick, label, testId }: { active: boolean; onClick: () => void; label: string; testId: string }): JSX.Element {
+export function ScopeChip({ active, onClick, label, testId }: { active: boolean; onClick: () => void; label: string; testId: string }): JSX.Element {
     return (
         <button
             type="button"
@@ -651,7 +651,7 @@ function OperationInputs({
     }
 }
 
-function Segmented({
+export function Segmented({
     value,
     onChange,
     options,

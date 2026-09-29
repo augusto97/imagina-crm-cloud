@@ -453,6 +453,36 @@ export class StoreSyncEngine {
     }
 
     /**
+     * v0.1.217 — Lo que devolvió una edición masiva de la tienda (productos y
+     * variaciones ya escritos), aplicado a las listas de una vez. A diferencia
+     * de un envío desde la app, acá SÍ se disparan automatizaciones: el cambio
+     * nació en la tienda y es la primera vez que la app lo ve (un aviso de
+     * «stock bajo» tiene que enterarse de un ajuste de stock en lote).
+     */
+    async applyStoreObjects(
+        tenantId: number,
+        syncId: number,
+        creds: IntegrationCreds,
+        products: WooJson[],
+        variations: Array<{ parentId: string; obj: WooJson }>,
+    ): Promise<void> {
+        const loaded = await this.context(tenantId, syncId, creds, '');
+        if (!loaded) return;
+        const { ctx } = loaded;
+        if (products.length > 0) await this.upsert(ctx, 'products', products.map((p) => mapProduct(p, this.inv(ctx))), {});
+        const byParent = new Map<string, WooJson[]>();
+        for (const v of variations) byParent.set(v.parentId, [...(byParent.get(v.parentId) ?? []), v.obj]);
+        for (const [parentId, list] of byParent) {
+            const name = await this.productNameFromApp(ctx, parentId);
+            await this.upsert(ctx, 'variations', list.map((v) => mapVariation(v, { id: Number(parentId), name }, this.inv(ctx))), {});
+        }
+        if (byParent.size > 0) await this.recomputeVariableParents(ctx, [...byParent.keys()]);
+        // Un producto variable renombrado: el nombre de sus variaciones lleva el suyo.
+        for (const p of products) if (p.type === 'variable') await this.syncVariationsOf(ctx, p);
+        for (const listId of ctx.touchedLists) this.realtime.records(tenantId, listId);
+    }
+
+    /**
      * Aplica el objeto tal como lo tiene la tienda (después de un envío, o para
      * volver atrás uno rechazado), sin disparar automatizaciones. Si cambió el
      * nombre de un producto con variaciones, se releen sus variaciones: su
@@ -487,7 +517,7 @@ export class StoreSyncEngine {
      * CREAN con la etiqueta de la opción: así «añadir una etiqueta» desde la
      * app funciona igual que en WooCommerce.
      */
-    private async resolveTerms(
+    async resolveTerms(
         creds: IntegrationCreds,
         taxonomy: 'categories' | 'tags',
         slugs: string[],

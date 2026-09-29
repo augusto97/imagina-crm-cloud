@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Trash2, Wand2, X } from 'lucide-react';
+import { Copy, Store, Trash2, Wand2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useBulkRecords, useCreateRecord } from '@/hooks/useRecords';
@@ -15,6 +15,8 @@ interface BulkActionsToolbarProps {
     onClear: () => void;
     /** Abre la edición masiva (v0.1.216) sobre la selección. */
     onBulkEdit: () => void;
+    /** v0.1.217 — en la lista de productos de una tienda: editar EN WooCommerce. */
+    onStoreBulk?: () => void;
 }
 
 /**
@@ -37,6 +39,7 @@ export function BulkActionsToolbar({
     selectedIds,
     onClear,
     onBulkEdit,
+    onStoreBulk,
 }: BulkActionsToolbarProps): JSX.Element | null {
     const bulk = useBulkRecords(listId);
     // v0.1.213 — en una lista de tienda no se duplica ni se borra (se hace
@@ -103,6 +106,19 @@ export function BulkActionsToolbar({
             </span>
 
             <div className="imcrm-h-5 imcrm-w-px imcrm-bg-border imcrm-mx-1" aria-hidden />
+
+            {onStoreBulk && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5 imcrm-text-[#7F54B3] hover:imcrm-text-[#7F54B3]"
+                    onClick={onStoreBulk}
+                    data-testid="imcrm-store-bulk-open"
+                >
+                    <Store className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Editar en la tienda')}
+                </Button>
+            )}
 
             <Button
                 variant="ghost"

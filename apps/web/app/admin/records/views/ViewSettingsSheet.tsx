@@ -11,6 +11,7 @@ import {
     Group,
     Settings,
     Star,
+    Store,
     Trash2,
     WrapText,
     Zap,
@@ -97,6 +98,8 @@ interface ViewSettingsSheetProps {
     /** v0.1.216 — edición masiva de todo lo que coincide con la vista. */
     canBulkEdit: boolean;
     onBulkEdit: () => void;
+    /** v0.1.217 — lista de productos de una tienda: editar EN WooCommerce. */
+    onStoreBulk?: () => void;
 }
 
 /**
@@ -145,6 +148,7 @@ export function ViewSettingsSheet({
     onExport,
     canBulkEdit,
     onBulkEdit,
+    onStoreBulk,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -430,6 +434,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onExport();
+                                    }}
+                                />
+                            )}
+                            {onStoreBulk && (
+                                <RowButton
+                                    icon={Store}
+                                    label={__('Editar en la tienda')}
+                                    value={__('Precios, stock, categorías, atributos…')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onStoreBulk();
                                     }}
                                 />
                             )}
