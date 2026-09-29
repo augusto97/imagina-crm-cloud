@@ -1169,13 +1169,48 @@ ventas, dentro de una carpeta propia, y las mantiene al día desde la tienda.
 - **Los datos son de la empresa (ADR-S09).** Dejar de sincronizar o
   desconectar la tienda conserva las listas y todo lo traído.
 
+**Fase 3 (v0.1.207) — tiempo real y edición en los dos sentidos.**
+
+- **Avisos de la tienda (webhooks).** En modo tiempo real se registra en la
+  tienda un aviso por tema (pedidos, productos y clientes: creado/actualizado/
+  borrado/restaurado) apuntando a `POST /public/store-hooks/:token`. La tabla
+  `store_hooks` (migración 0054, SIN RLS, como `automation_hooks`) guarda
+  token → sincronización y el secreto de firma CIFRADO con `SECRETS_KEY`.
+  Cada entrega se verifica con `base64(HMAC-SHA256)` sobre el cuerpo CRUDO en
+  tiempo constante (firma mala → 401; token desconocido → 404 opaco, y la
+  tienda apaga el aviso sola); el «ping» sin tema se contesta 200 porque sin
+  eso WooCommerce no crea el aviso. La respuesta no espera a escribir: el
+  aviso se encola (WooCommerce corta a los 5 s y desactiva el aviso tras
+  varias entregas fallidas), y la ruta tiene un cupo de rate limit 10× el
+  general porque los avisos llegan en ráfaga desde una sola IP.
+- **Red de seguridad.** En tiempo real igual se sincroniza cada hora, y en esa
+  vuelta los avisos que la tienda desactivó se reactivan y los que faltan se
+  vuelven a crear. Si la tienda no acepta los avisos (clave de sólo lectura,
+  la tienda no llega a este servidor), el modo NO cambia y se dice por qué;
+  en el alta, cae a intervalos con el motivo a la vista.
+- **Un borrado en la tienda no borra nada acá**: el registro queda con estado
+  «trash» (ADR-S09); un borrado de algo que nunca se trajo no crea nada.
+- **Edición en los dos sentidos (opt-in).** `RecordChangeHub` (módulo global)
+  avisa en proceso cuando una PERSONA o una AUTOMATIZACIÓN cambia un
+  registro; si vive en una lista de la tienda con la edición activada, se
+  encola el envío. **Sólo viaja lo que cambió** (mandar el registro entero
+  pisaría, por ejemplo, un stock que la tienda bajó con una venta que todavía
+  no llegó) y los valores se leen al enviar (si la edición se revirtió, se
+  manda lo que la tienda ya tenía: inocuo). Las columnas que viajan están en
+  `STORE_WRITE_BACK_FIELDS` (shared) más la meta traída a columnas; totales,
+  líneas e invitados son de sólo lectura. **Sin bucles por construcción**: el
+  motor de sincronización escribe por su propio camino y nunca emite en el
+  hub, así que lo que llega de la tienda no vuelve; y el aviso que la tienda
+  manda tras recibir el cambio no encuentra diferencias.
+
 **Consecuencias.** La sincronización corre en su propia cola de BullMQ con un
 tick por minuto (cross-tenant por la conexión base, cada corrida dentro de su
-tenant, como las recurrencias). El modo por intervalos pregunta cada N
-minutos; los avisos en tiempo real (webhooks de la tienda) y la edición en
-los dos sentidos quedan para la fase siguiente. Migrar una empresa lleva la
-sincronización con ids re-mapeados.
+tenant, como las recurrencias), más los trabajos `hook` (avisos) y `push`
+(envíos a la tienda). La URL de los avisos se arma con `APP_BASE_URL`: la
+tienda tiene que poder llegar a ese dominio. Migrar una empresa lleva la
+sincronización con ids re-mapeados; los avisos NO viajan (son de la
+instancia de origen) y se vuelven a registrar en la primera vuelta.
 
 ---
 
-**Versión del documento:** 1.21.0 (sincronización con tiendas WooCommerce — ADR-S24)
+**Versión del documento:** 1.22.0 (tiempo real y edición en los dos sentidos — ADR-S24 fase 3)

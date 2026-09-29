@@ -24,6 +24,7 @@ import { ListGroupsService } from '../lists/list-groups.service';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BlueprintService } from '../templates/blueprint.service';
+import { StoreRealtimeService } from './store-realtime.service';
 import { StoreSyncEngine, type RunOptions } from './store-sync.engine';
 import { StoreSyncQueue } from './store-sync.queue';
 import { readSettings, readState, type SyncSettings } from './store-sync.types';
@@ -51,6 +52,7 @@ export class StoreSyncService {
         private readonly audit: AuditService,
         private readonly engine: StoreSyncEngine,
         private readonly queue: StoreSyncQueue,
+        private readonly realtime: StoreRealtimeService,
     ) {}
 
     // ── Lectura ─────────────────────────────────────────────────────────────
@@ -90,7 +92,8 @@ export class StoreSyncService {
             last_error: null,
             warnings: [],
             meta_keys: { customers: [], products: [], variations: [], orders: [] },
-            realtime: { active: false, received: 0, last_received_at: null, error: null },
+            realtime: { active: false, received: 0, last_received_at: null, error: null, webhooks: 0 },
+            write_back_status: { pushed: 0, failed: 0, last_at: null, last_error: null },
         };
     }
 
@@ -178,7 +181,9 @@ export class StoreSyncService {
                 received: state.realtime.received,
                 last_received_at: state.realtime.last_received_at,
                 error: state.realtime.error,
+                webhooks: state.realtime.webhook_ids.length,
             },
+            write_back_status: state.write_back,
         };
     }
 
@@ -263,8 +268,20 @@ export class StoreSyncService {
             });
             return created!;
         });
+        let current = row;
+        if (input.mode === 'realtime') {
+            try {
+                await this.realtime.register(tenantId, row.id, creds, settings);
+            } catch (err) {
+                // Sin avisos (clave de sólo lectura, tienda que no llega a este
+                // servidor…): la tienda igual se sincroniza por intervalos, y la
+                // pantalla dice por qué no quedó en tiempo real.
+                current = await this.fallbackToInterval(tenantId, row.id, err);
+            }
+        }
         this.queue.enqueueRun(tenantId, row.id, { full: true });
-        return this.toStatus(tenantId, row, conn.name);
+        const fresh = (await this.findSync(tenantId, connectionId)) ?? current;
+        return this.toStatus(tenantId, fresh, conn.name);
     }
 
     /** Moneda, decimales y país de la tienda (para los campos de dinero y teléfono). */
@@ -304,6 +321,12 @@ export class StoreSyncService {
     ): Promise<StoreSyncStatus> {
         const conn = await this.requireStore(tenantId, userId, role, connectionId);
         const row = await this.requireSync(tenantId, connectionId);
+        const before = readSettings(row.settings);
+        // Pasar a tiempo real registra los avisos ANTES de cambiar nada: si la
+        // tienda no los acepta, el modo no cambia y la persona ve el motivo.
+        if (input.mode === 'realtime' && before.mode !== 'realtime') {
+            await this.realtime.register(tenantId, row.id, await this.credsOf(tenantId, connectionId), before);
+        }
         const updated = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [locked] = await tx
                 .select()
@@ -336,7 +359,43 @@ export class StoreSyncService {
             });
             return next!;
         });
-        return this.toStatus(tenantId, updated, conn.name);
+        if (input.mode === 'interval' && before.mode === 'realtime') {
+            const creds = await this.credsOf(tenantId, connectionId).catch(() => null);
+            await this.realtime.unregister(tenantId, row.id, creds);
+        }
+        this.realtime.forget(tenantId);
+        const fresh = (await this.findSync(tenantId, connectionId)) ?? updated;
+        return this.toStatus(tenantId, fresh, conn.name);
+    }
+
+    /** El modo tiempo real no se pudo activar: queda por intervalos, con el motivo a la vista. */
+    private async fallbackToInterval(tenantId: number, syncId: number, err: unknown) {
+        const message = err instanceof BadRequestException ? String((err.getResponse() as { message?: unknown }).message ?? err.message) : err instanceof Error ? err.message : String(err);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
+            const s = readSettings(locked!.settings);
+            s.mode = 'interval';
+            const [next] = await tx
+                .update(connectionSyncs)
+                .set({
+                    settings: s as unknown as Record<string, unknown>,
+                    state: sql`${connectionSyncs.state} || ${JSON.stringify({ realtime: { ...readState(locked!.state).realtime, error: message } })}::jsonb`,
+                    nextRunAt: new Date(Date.now() + s.interval_minutes * 60_000),
+                    updatedAt: new Date(),
+                })
+                .where(eq(connectionSyncs.id, syncId))
+                .returning();
+            return next!;
+        });
+    }
+
+    /** Credenciales de la tienda de una sincronización (para la cola). `null` si ya no se pueden leer. */
+    async credsForSync(tenantId: number, syncId: number): Promise<IntegrationCreds | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ connectionId: connectionSyncs.connectionId, enabled: connectionSyncs.enabled }).from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1),
+        );
+        if (!row || !row.enabled) return null;
+        return this.credsOf(tenantId, row.connectionId).catch(() => null);
     }
 
     async runNow(tenantId: number, userId: number, role: Role, connectionId: number, full: boolean): Promise<StoreSyncStatus> {
@@ -350,6 +409,9 @@ export class StoreSyncService {
     async remove(tenantId: number, userId: number, role: Role, connectionId: number): Promise<void> {
         const conn = await this.requireStore(tenantId, userId, role, connectionId);
         const row = await this.requireSync(tenantId, connectionId);
+        // Los avisos de la tienda se borran (best-effort): no tiene sentido que siga llamando.
+        await this.realtime.unregister(tenantId, row.id, await this.credsOf(tenantId, connectionId).catch(() => null));
+        this.realtime.forget(tenantId);
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.id, row.id));
             await this.audit.logInTx(tx, {
@@ -414,6 +476,7 @@ export class StoreSyncService {
         // Para llenar los registros que ya estaban hay que volver a pasar por todos.
         const only: StoreSyncResource[] = input.resource === 'variations' ? ['products'] : [input.resource];
         this.queue.enqueueRun(tenantId, row.id, { full: true, only });
+        this.realtime.forget(tenantId);
         const fresh = await this.requireSync(tenantId, connectionId);
         return this.toStatus(tenantId, fresh, conn.name);
     }
@@ -441,6 +504,7 @@ export class StoreSyncService {
                 .returning();
             return next!;
         });
+        this.realtime.forget(tenantId);
         return this.toStatus(tenantId, updated, conn.name);
     }
 
@@ -463,7 +527,13 @@ export class StoreSyncService {
             });
             return true;
         }
-        return this.engine.run(tenantId, syncId, creds, opts);
+        const ran = await this.engine.run(tenantId, syncId, creds, opts);
+        // Modo tiempo real: cada vuelta (la red de seguridad horaria) revisa que
+        // los avisos sigan activos en la tienda.
+        if (ran && readSettings(row.settings).mode === 'realtime') {
+            await this.realtime.ensure(tenantId, syncId, creds, readSettings(row.settings));
+        }
+        return ran;
     }
 
     /**

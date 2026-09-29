@@ -1,8 +1,18 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { emptyMaps, remapSyncSettings } from '../src/platform/tenant-transfer.remap';
 import { readSettings, readState } from '../src/sync/store-sync.types';
 import { buildWooPack, WOO_LIST_KEYS } from '../src/sync/woocommerce/woo-pack';
+import {
+    buildWriteBack,
+    isVariationPayload,
+    isWooPing,
+    metaOut,
+    parseWooTopic,
+    verifyWooSignature,
+    wooHookTopics,
+} from '../src/sync/woocommerce/woo-hooks';
 import {
     coerceMeta,
     customerFromOrder,
@@ -221,5 +231,96 @@ describe('Estado de la sincronización (lectores tolerantes)', () => {
         expect(out.folder_id).toBe(40);
         expect(out.dashboard_id).toBeNull();
         expect(out.store_url).toBe('https://t.co');
+    });
+});
+
+describe('Tiempo real y edición en los dos sentidos (puros, v0.1.207)', () => {
+    it('temas según lo que se trae, y parseo de temas', () => {
+        expect(wooHookTopics({ resources: { customers: false, products: false, orders: true } })).toEqual([
+            'order.created',
+            'order.updated',
+            'order.deleted',
+            'order.restored',
+        ]);
+        expect(wooHookTopics({ resources: { customers: true, products: true, orders: true } })).toHaveLength(10);
+        expect(parseWooTopic('product.updated')).toEqual({ resource: 'product', event: 'updated' });
+        expect(parseWooTopic('coupon.created')).toBeNull();
+        expect(parseWooTopic(undefined)).toBeNull();
+    });
+
+    it('firma: HMAC-SHA256 en base64 sobre el cuerpo CRUDO, en tiempo constante', () => {
+        const raw = '{"id":1, "status":"completed"}';
+        const sig = createHmac('sha256', 's3cr3t').update(raw).digest('base64');
+        expect(verifyWooSignature('s3cr3t', raw, sig)).toBe(true);
+        // Re-serializar el JSON (sin el espacio) ya no coincide.
+        expect(verifyWooSignature('s3cr3t', JSON.stringify(JSON.parse(raw)), sig)).toBe(false);
+        expect(verifyWooSignature('otro', raw, sig)).toBe(false);
+        expect(verifyWooSignature('s3cr3t', raw, undefined)).toBe(false);
+        expect(verifyWooSignature('s3cr3t', raw, 'no-es-base64-valido!!')).toBe(false);
+        expect(verifyWooSignature('', raw, sig)).toBe(false);
+    });
+
+    it('ping y variaciones por su forma', () => {
+        expect(isWooPing(undefined, 'webhook_id=12')).toBe(true);
+        expect(isWooPing('', { webhook_id: '12' })).toBe(true);
+        expect(isWooPing('order.created', { webhook_id: '12' })).toBe(false);
+        expect(isVariationPayload({ id: 21, parent_id: 20, type: 'variation' })).toBe(true);
+        expect(isVariationPayload({ id: 21, parent_id: 20 })).toBe(true);
+        expect(isVariationPayload({ id: 20, parent_id: 0, type: 'variable', variations: [21] })).toBe(false);
+    });
+
+    it('producto: sólo lo que cambió, rebaja vaciada = sin rebaja, stock vaciado = no se administra', () => {
+        expect(
+            buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { precio_normal: 35000 }, meta: [] }),
+        ).toEqual({ path: '/products/20', body: { regular_price: '35000' }, fields: ['Precio normal'] });
+        const r = buildWriteBack({
+            resource: 'products',
+            externalId: '20',
+            parentExternalId: null,
+            changed: { precio_rebajado: null, stock: null, nombre: '   ', categorias: ['x'] },
+            meta: [],
+        })!;
+        expect(r.body).toEqual({ sale_price: '', manage_stock: false });
+        // Un nombre vacío no se manda (la tienda lo exige) y una columna fuera del catálogo tampoco.
+        expect(r.fields).toEqual(['Precio rebajado', 'Stock']);
+        // Una columna propia de la app: nada que mandar.
+        expect(buildWriteBack({ resource: 'products', externalId: '20', parentExternalId: null, changed: { responsable: 3 }, meta: [] })).toBeNull();
+    });
+
+    it('variación, pedido y cliente van a su ruta; el invitado no tiene a quién', () => {
+        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: '20', changed: { stock: 7.9 }, meta: [] })).toMatchObject({
+            path: '/products/20/variations/22',
+            body: { manage_stock: true, stock_quantity: 7 },
+        });
+        expect(buildWriteBack({ resource: 'variations', externalId: '22', parentExternalId: null, changed: { stock: 1 }, meta: [] })).toBeNull();
+        expect(buildWriteBack({ resource: 'orders', externalId: '501', parentExternalId: null, changed: { estado: 'completed', total: 9 }, meta: [] })).toEqual({
+            path: '/orders/501',
+            body: { status: 'completed' },
+            fields: ['Estado'],
+        });
+        expect(buildWriteBack({ resource: 'customers', externalId: 'id:2', parentExternalId: null, changed: { telefono: '+57300', ciudad: 'Cali' }, meta: [] })).toMatchObject({
+            path: '/customers/2',
+            body: { billing: { phone: '+57300', city: 'Cali' } },
+        });
+        expect(buildWriteBack({ resource: 'customers', externalId: 'email:a@b.co', parentExternalId: null, changed: { telefono: '1' }, meta: [] })).toBeNull();
+    });
+
+    it('campos de otros plugins: sí/no con la convención que ya usaba la tienda, JSON como objeto', () => {
+        expect(metaOut(true, 'yes')).toBe('yes');
+        expect(metaOut(false, 'no')).toBe('no');
+        expect(metaOut(true, '1')).toBe('1');
+        expect(metaOut(false, null)).toBe('0');
+        expect(metaOut(12, null)).toBe('12');
+        expect(metaOut('{"a":1}', null)).toEqual({ a: 1 });
+        expect(metaOut('{roto', null)).toBe('{roto');
+        expect(metaOut(null, null)).toBe('');
+        const r = buildWriteBack({
+            resource: 'products',
+            externalId: '10',
+            parentExternalId: null,
+            changed: {},
+            meta: [{ key: 'garantia_meses', value: 24, sample: '12' }],
+        })!;
+        expect(r.body).toEqual({ meta_data: [{ key: 'garantia_meses', value: '24' }] });
     });
 });

@@ -43,6 +43,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
+import { RecordChangeHub } from './record-change-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
 
@@ -80,6 +81,7 @@ export class RecordsService {
         // Optional + al final: los specs que instancian RecordsService a mano
         // (posicional) siguen funcionando sin el módulo de recurrencias.
         @Optional() private readonly recurrences?: RecurrencesService,
+        @Optional() private readonly changes?: RecordChangeHub,
     ) {}
 
     async create(
@@ -368,6 +370,8 @@ export class RecordsService {
             after: row.data,
             before: result.before, // para changed_fields
         });
+        // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data });
         // Recurrencias con trigger status_change: fire-and-forget (no bloquea
         // la respuesta del update; un fallo se loguea y no rompe la mutación).
         void this.recurrences

@@ -57,6 +57,8 @@ export interface SyncState {
     warnings: string[];
     meta: Partial<Record<StoreMetaResource, Record<string, MetaSeen>>>;
     realtime: { received: number; last_received_at: string | null; error: string | null; webhook_ids: number[] };
+    /** Fase 3: lo editado en la app que viajó (o no) a la tienda. */
+    write_back: { pushed: number; failed: number; last_at: string | null; last_error: string | null };
 }
 
 function obj(v: unknown): Record<string, unknown> {
@@ -140,6 +142,7 @@ export function readState(raw: unknown): SyncState {
         if (Object.keys(out).length > 0) meta[r] = out;
     }
     const rt = obj(s.realtime);
+    const wb = obj(s.write_back);
     return {
         running: s.running === true,
         current: (STORE_SYNC_RESOURCES as readonly string[]).includes(String(s.current))
@@ -162,6 +165,12 @@ export function readState(raw: unknown): SyncState {
             webhook_ids: Array.isArray(rt.webhook_ids)
                 ? rt.webhook_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
                 : [],
+        },
+        write_back: {
+            pushed: Number(wb.pushed) || 0,
+            failed: Number(wb.failed) || 0,
+            last_at: strOrNull(wb.last_at),
+            last_error: strOrNull(wb.last_error),
         },
     };
 }

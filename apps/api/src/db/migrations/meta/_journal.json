@@ -379,6 +379,13 @@
       "when": 1784200000022,
       "tag": "0053_store_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784200000023,
+      "tag": "0054_store_hooks",
+      "breakpoints": true
     }
   ]
 }
