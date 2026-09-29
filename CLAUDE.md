@@ -5008,6 +5008,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         portada de Tarjetas, «Mostrar como: Imagen») y regresiones de
         reposición 24/24 e inventario 18/18.
 
+  - [x] **Índice de listas y Favoritos agrupados por carpeta (v0.1.211,
+        pedido del usuario con captura: "sólo hay un menú donde se ven todas;
+        sería bueno agruparlas por espacio de trabajo, y Favoritos también")**:
+        la página de Listas era una grilla plana de TODAS las listas (con 308
+        listas, ilegible) aunque el menú lateral ya las ordenaba por carpeta
+        desde v0.1.130. Ahora: (a) **Listas agrupadas por carpeta** — las
+        mismas del panel ("Espacio de trabajo"), en el mismo orden, con su
+        cuadrado de icono y color; cada sección se pliega (persistido por
+        dispositivo) con su contador y **"Nueva lista aquí"** (el alta nace en
+        esa carpeta, v0.1.173); "Sin carpeta" va al final. Selector **Por
+        carpeta / Todas** (en "Todas" cada tarjeta muestra el chip de su
+        carpeta), **buscador** sin acentos por nombre, slug, descripción o
+        nombre de la carpeta (buscando, las carpetas plegadas se abren: esconder
+        un resultado detrás de una sección cerrada confunde) y **pin para
+        anclar** a favoritos desde la tarjeta. La tarjeta muestra el icono y
+        color REALES de la lista (antes, el mismo icono genérico para todas) y
+        la fecha en el formato regional de la empresa. Los tiles "Documentadas"
+        y "Slug ocupados" (que no decían nada útil) pasan a **Carpetas** (con
+        cuántas listas están sueltas) y **Ancladas**. (b) **Favoritos por
+        carpeta o por tipo**, en la página Y en su panel lateral: por carpeta =
+        una sección por carpeta con las listas ancladas, después las sueltas y
+        al final los dashboards (no viven en carpetas); por tipo = Listas /
+        Dashboards. La elección es UNA sola compartida entre página y panel
+        (`usePersistedChoice`: store externo sobre localStorage con
+        `useSyncExternalStore` — cambiarla en un lado repinta el otro al
+        instante). Piezas puras compartidas y testeadas: `sectionsByFolder`
+        (orden por `position`, carpetas vacías fuera, una carpeta desconocida
+        cae a "sin carpeta" en vez de hacer desaparecer la lista),
+        `matchesListQuery` y `favoriteSections` (respeta el orden en que se
+        anclaron y descarta ids borrados); `ViewSwitch` (control segmentado) e
+        `IconSquare`/`FolderSquare` reusables. Sin cambios de backend. 6 tests
+        unitarios (171 front en verde) + E2E navegador 28/28 (secciones en
+        orden con el color de la carpeta y de la lista, plegar persiste,
+        búsqueda por lista y por carpeta, alta desde la carpeta, "Todas" con
+        chip y persistencia, anclar desde la tarjeta, favoritos por carpeta con
+        dashboards al final, por tipo, página y panel sincronizados en los dos
+        sentidos, celular sin desborde y con el pin visible sin hover).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
