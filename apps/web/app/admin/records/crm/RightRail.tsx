@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import type { ResolvedLayout, RightRailBlock } from '@/lib/crmTemplates';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
+import { parseUtcDate } from '@/lib/utcDate';
 
 interface RightRailProps {
     listId: number;
@@ -348,5 +349,5 @@ function Card({
 
 function parseTimestamp(s: string | null): number {
     if (! s) return 0;
-    return new Date(s + 'Z').getTime();
+    return parseUtcDate(s).getTime();
 }

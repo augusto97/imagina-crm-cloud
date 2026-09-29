@@ -6,6 +6,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 
 interface RecordMetaGridProps {
     record: RecordEntity;
@@ -95,9 +96,12 @@ function MetaCell({ icon: Icon, label, children }: MetaCellProps): JSX.Element {
     );
 }
 
-/** Timestamps del API vienen naive-UTC (`YYYY-MM-DD HH:MM:SS`). */
+/**
+ * Timestamps del API: naive-UTC (`YYYY-MM-DD HH:MM:SS`) o ya con `Z` (el
+ * adaptador la agrega). Con el formato regional de la empresa, como el resto
+ * de la app (v0.1.210: antes usaba el del navegador).
+ */
 function formatTimestamp(value: string | null | undefined): string {
     if (!value) return '—';
-    const d = new Date(value + 'Z');
-    return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+    return formatDateTimeStr(value);
 }

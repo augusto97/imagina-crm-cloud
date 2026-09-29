@@ -13,6 +13,9 @@ import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantForm
 import { __ } from '@/lib/i18n';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
 import type { FieldEntity } from '@/types/field';
+import { UrlImage } from '@/components/fields/UrlImage';
+import { isImageUrlField } from '@/lib/imageProxy';
+import { toUtcIso } from '@/lib/utcDate';
 
 interface FieldValueDisplayProps {
     field: FieldEntity;
@@ -68,7 +71,7 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
         case 'email':
             return <EmailDisplay value={value} />;
         case 'url':
-            return <UrlDisplay value={value} />;
+            return isImageUrlField(field.config) ? <UrlImage value={value} size="card" /> : <UrlDisplay value={value} />;
         case 'user':
             return <UserDisplay value={value} />;
         case 'file':
@@ -146,8 +149,11 @@ function NumberDisplay({ field, value }: { field: FieldEntity; value: unknown })
 
 function DateDisplay({ value, kind }: { value: unknown; kind: 'date' | 'datetime' }): JSX.Element {
     if (typeof value !== 'string') return <span>{String(value)}</span>;
-    // `date` viene como `YYYY-MM-DD`; `datetime` como `YYYY-MM-DD HH:MM:SS` UTC.
-    const iso = kind === 'datetime' ? value.replace(' ', 'T') + 'Z' : value;
+    // `date` viene como `YYYY-MM-DD`; `datetime` como `YYYY-MM-DD HH:MM:SS` UTC
+    // o en ISO completo (`…T12:04:00Z`, lo que escribe la sincronización con
+    // una tienda y la API). v0.1.210: antes se le sumaba otra `Z` a un valor
+    // que ya la traía, la fecha no se podía leer y se mostraba cruda.
+    const iso = kind === 'datetime' ? toUtcIso(value) : value;
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return <span>{value}</span>;
 

@@ -30,6 +30,7 @@ import { useList } from '@/hooks/useLists';
 import { useRecord, useRecords } from '@/hooks/useRecords';
 import { useSavedViews } from '@/hooks/useSavedViews';
 import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
+import { isImageUrlField } from '@/lib/imageProxy';
 import { parseMultiBucket } from '@/lib/multiBucket';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -495,7 +496,8 @@ const applyView = (view: SavedViewEntity | null): void => {
         const id = activeView?.config.card_cover_field_id;
         if (! id) return null;
         const f = fields.data.find((x) => x.id === id);
-        return f && f.type === 'file' ? f : null;
+        // v0.1.210 — también un enlace que se muestra como imagen.
+        return f && (f.type === 'file' || (f.type === 'url' && isImageUrlField(f.config))) ? f : null;
     }, [isCards, fields.data, activeView?.config.card_cover_field_id]);
 
     if (list.isLoading || fields.isLoading) {

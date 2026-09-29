@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { colorFromString, initialsFromValue } from '@/lib/recordCategorize';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
+import { parseUtcDate } from '@/lib/utcDate';
 
 export interface RecordHeaderData {
     titleField: FieldEntity | null;
@@ -214,7 +215,7 @@ export function RecordHeader({
                             {sprintf(
                                 __('Creado %s'),
                                 record.created_at
-                                    ? new Date(record.created_at + 'Z').toLocaleString()
+                                    ? parseUtcDate(record.created_at).toLocaleString()
                                     : '—',
                             )}
                         </p>
@@ -276,7 +277,7 @@ export function RecordHeader({
                                         /* translators: %s: localized creation date */
                                         __('Creado %s'),
                                         record.created_at
-                                            ? new Date(record.created_at + 'Z').toLocaleString()
+                                            ? parseUtcDate(record.created_at).toLocaleString()
                                             : '—',
                                     )}
                                 </p>
@@ -295,7 +296,7 @@ function formatFieldValue(field: FieldEntity, value: unknown): string | null {
     if (typeof value === 'string') return value;
     if (typeof value === 'number') return String(value);
     if (field.type === 'date' || field.type === 'datetime') {
-        const d = new Date(field.type === 'date' ? String(value) : String(value) + 'Z');
+        const d = field.type === 'date' ? new Date(String(value)) : parseUtcDate(String(value));
         if (!Number.isNaN(d.getTime())) return d.toLocaleDateString();
     }
     return null;

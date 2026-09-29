@@ -42,6 +42,12 @@ export interface SafeFetchOptions {
      * cuerpo llega COMPLETO (sin el recorte de caracteres del probador).
      */
     maxCaptureBytes?: number;
+    /**
+     * Con `captureBody`: devolver el cuerpo como BYTES (`bytes`) en vez de
+     * texto. Lo usa el proxy de miniaturas (v0.1.210): una imagen decodificada
+     * como UTF-8 se corrompe.
+     */
+    binary?: boolean;
 }
 
 export interface SafeFetchResult {
@@ -53,6 +59,8 @@ export interface SafeFetchResult {
     headers?: Record<string, string>;
     /** El cuerpo superó el tope y llegó cortado. */
     truncated?: boolean;
+    /** Sólo con `captureBody` + `binary`: el cuerpo tal cual llegó. */
+    bytes?: Buffer;
 }
 
 /**
@@ -118,11 +126,12 @@ export async function safeWebhookFetch(
                 const chunks: Buffer[] = [];
                 const done = (): SafeFetchResult => {
                     if (!opts.captureBody) return { status };
-                    const text = Buffer.concat(chunks).toString('utf8');
                     const headers: Record<string, string> = {};
                     for (const [k, v] of Object.entries(res.headers)) {
                         if (v !== undefined) headers[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
                     }
+                    if (opts.binary) return { status, contentType, headers, truncated, bytes: Buffer.concat(chunks) };
+                    const text = Buffer.concat(chunks).toString('utf8');
                     return {
                         status,
                         contentType,

@@ -4954,6 +4954,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         nombre → celular) y regresiones de sincronización 25/25, tiempo real
         23/23 e inventario 18/18.
 
+  - [x] **Identificar cada cosa de la tienda (v0.1.210, ADR-S24, pregunta del
+        usuario: "¿trae los id o sku? ¿el link del producto y cosas así?" →
+        "sí, hacelo todo")**: ya traía ID de WooCommerce y SKU en productos,
+        variaciones y líneas de pedido, y «Ver en WooCommerce» sólo en
+        pedidos. Faltaba lo que se usa para reconocer y abrir cada cosa:
+        (a) **«Editar en WooCommerce»** en productos, variaciones y clientes
+        registrados (el de la variación abre su PRODUCTO: WordPress edita las
+        variaciones adentro del padre); (b) el **enlace público de cada
+        variación** (WooCommerce lo manda y no se guardaba); (c) el **SKU en la
+        línea de la orden de compra**, que se completa solo desde la variación
+        o el producto (al proveedor se le pide por SKU); (d) la **foto como
+        miniatura** en la tabla, la ficha y como portada de Tarjetas, pegada al
+        nombre en las tiendas nuevas. La miniatura es una opción de cualquier
+        campo URL («Mostrar como: Imagen», `config.display = 'image'`).
+        **Por qué un proxy de imágenes** (`GET /media/image?url=`, con sesión):
+        la CSP del SPA es `img-src 'self'`, así que en producción el navegador
+        BLOQUEA una foto de otro dominio — en desarrollo no se nota (no hay
+        CSP). Abrir la CSP exigía tocar el proxy del servidor a mano (la
+        auto-actualización no lo toca) y dejaría que el texto de un registro
+        dispare pedidos a terceros. El proxy pide por `safeWebhookFetch` (guard
+        anti-SSRF; ganó `binary` para devolver bytes), sigue hasta 3
+        redirecciones re-validando cada una, sirve SÓLO tipos de imagen que no
+        ejecutan nada (SVG afuera: ejecuta script) hasta 5 MB, con `nosniff`,
+        `CSP: sandbox` y cache privada de un día; cualquier cosa rara → 404
+        opaco y la UI cae al enlace de texto.
+        **Actualización automática (pack 4)**: `packAddition` ahora sabe qué
+        listas EXISTEN (una tienda que no sincroniza clientes no gana una lista
+        de Clientes vacía), las columnas «Imagen» existentes pasan a miniatura,
+        las líneas de compra ya hechas reciben su SKU con un solo UPDATE, y se
+        re-leen productos y clientes para llenar los enlaces.
+        **Cuatro bugs encontrados en el camino**: (1) en la respuesta anterior
+        le dije al usuario que la imagen «sí se puede usar de portada» en
+        Tarjetas — no era cierto: la portada sólo aceptaba campos Archivo (en
+        el panel de la vista Y en la página, que la descartaba de nuevo);
+        ahora también un enlace de imagen. (2) Toda fecha-hora que llega en
+        ISO completo (`…T12:04:00Z`, lo que escribe la sincronización y la
+        API) se mostraba CRUDA en la ficha: `DateDisplay` le sumaba otra `Z`
+        (`…ZZ` → fecha inválida). El mismo `+ 'Z'` a ciegas estaba en 11
+        lugares más (tabla, calendario, cabecera CRM, comentarios, campana,
+        historial…); ahora todos usan `parseUtcDate` (`lib/utcDate`), y
+        «Creado/Actualizado» de la ficha respetan el formato regional. (3) El
+        `loading="lazy"` de la miniatura nunca disparaba dentro del scroller
+        propio de la app (el `<main>`, no la ventana): la imagen no se pedía;
+        se quitó. (4) La columna de imagen nacía con ancho de URL (220 px);
+        ahora 90. 7 tests de API (pack 3→4 y enlaces puros, proxy: URLs,
+        tipos, redirecciones, SVG/HTML/truncado/destino interno → 404, bytes
+        reales por socket, e integración de la actualización con el SKU
+        rellenado y los enlaces de la vuelta completa) — 743 API — y 4 del
+        front (proxy y fechas; 165) + E2E navegador 18/18 contra la tienda
+        falsa (que ahora sirve imágenes de verdad: la miniatura CARGA por el
+        proxy, SVG → 404, sin sesión → 401, enlaces exactos, SKU en la orden,
+        portada de Tarjetas, «Mostrar como: Imagen») y regresiones de
+        reposición 24/24 e inventario 18/18.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

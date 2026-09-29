@@ -73,7 +73,7 @@ const LOW_OR_OUT = ['agotado', 'bajo'];
  * al stock» y «En camino»). Una sincronización creada antes se ACTUALIZA sola
  * a la versión nueva.
  */
-export const WOO_PACK_VERSION = 3;
+export const WOO_PACK_VERSION = 4;
 
 /** Los slugs que agregó el pack 2 (lo que falta en una sincronización vieja). */
 export const INVENTORY_FIELD_SLUGS = [
@@ -88,6 +88,18 @@ export const INVENTORY_FIELD_SLUGS = [
 ];
 /** Los slugs que agregó el pack 3 a Productos y Variaciones. */
 export const RESTOCK_FIELD_SLUGS = ['sumar_stock', 'en_camino', 'ultimo_movimiento'];
+/**
+ * v0.1.210 — Lo que sirve para IDENTIFICAR cada registro en la tienda: el
+ * enlace de edición en el panel de WooCommerce, el enlace público de la
+ * variación y el SKU en la línea de compra (al proveedor se le pide por SKU).
+ * Por lista (clave del pack), porque Clientes también suma uno.
+ */
+export const IDENTITY_FIELD_SLUGS: Record<string, string[]> = {
+    clientes: ['editar'],
+    productos: ['editar'],
+    variaciones: ['enlace', 'editar'],
+    lineas_compra: ['sku'],
+};
 /** Las listas de compras (key del pack) que agregó el pack 3. */
 export const PURCHASE_LIST_KEYS = { suppliers: 'proveedores', orders: 'compras', lines: 'lineas_compra' } as const;
 export const INVENTORY_VIEW_NAME = 'Para reponer';
@@ -127,6 +139,9 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
             is_indexed: true,
             description: 'El número del registro en la tienda. Lo usan las acciones de WooCommerce ({{woo_id}}).',
         });
+    const editLink = (what: string) =>
+        f('Editar en WooCommerce', 'editar', 'url', { description: `Abre ${what} en el panel de administración de la tienda.` });
+    const image = () => f('Imagen', 'imagen', 'url', { config: { display: 'image' } });
     const paid = { slug: 'estado_pedido', op: 'in', value: PAID_STATUSES };
     const paidOrders = { slug: 'estado', op: 'in', value: PAID_STATUSES };
     const paidTree = { type: 'condition', field_id: ref('estado'), op: 'in', value: PAID_STATUSES };
@@ -153,6 +168,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     }),
                     f('Cliente desde', 'fecha_alta', 'datetime'),
                     wooId(),
+                    editLink('la ficha del cliente (sólo los que tienen cuenta)'),
                     rollup('Pedidos', 'pedidos', 'pedidos', 'cliente', 'count', null, 'Todos sus pedidos, en cualquier estado.'),
                     rollup('Total comprado', 'total_comprado', 'pedidos', 'cliente', 'sum', 'total',
                         'Suma de sus pedidos completados o en proceso.', paidOrders),
@@ -170,6 +186,8 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 '#7F54B3',
                 [
                     f('Nombre', 'nombre', 'text'),
+                    // La foto junto al nombre: es lo primero que se mira para reconocer un producto.
+                    image(),
                     f('SKU', 'sku', 'text', { is_indexed: true }),
                     select('Tipo', 'tipo', PRODUCT_TYPE),
                     select('Publicación', 'estado', PRODUCT_STATUS),
@@ -186,8 +204,8 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                         'Lo que valen, a precio de venta, las unidades de todas sus variaciones.'),
                     f('Categorías', 'categorias', 'multi_select', { config: { options: [] } }),
                     f('Etiquetas', 'etiquetas', 'multi_select', { config: { options: [] } }),
-                    f('Imagen', 'imagen', 'url'),
-                    f('Enlace', 'enlace', 'url'),
+                    f('Enlace', 'enlace', 'url', { description: 'La página del producto en la tienda (lo que ve el cliente).' }),
+                    editLink('el producto'),
                     wooId(),
                     f('Modificado en la tienda', 'modificado', 'datetime'),
                     rollup('Unidades vendidas', 'unidades_vendidas', 'lineas', 'producto', 'sum', 'cantidad',
@@ -209,6 +227,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 '#7F54B3',
                 [
                     f('Nombre', 'nombre', 'text'),
+                    image(),
                     f('Producto', 'producto', 'relation', { config: { target_list_id: listRef('productos') } }),
                     f('Atributos', 'atributos', 'text'),
                     f('SKU', 'sku', 'text', { is_indexed: true }),
@@ -220,7 +239,8 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     ...inventoryFields('lineas', 'variacion', o),
                     ...restockFields('variacion', 'Unidades de esta variación pedidas a proveedores que todavía no llegaron.'),
                     select('Publicación', 'estado', PRODUCT_STATUS),
-                    f('Imagen', 'imagen', 'url'),
+                    f('Enlace', 'enlace', 'url', { description: 'La página de la variación en la tienda (lo que ve el cliente).' }),
+                    editLink('el producto de esta variación (las variaciones se editan dentro de su producto)'),
                     wooId(),
                     f('Modificado en la tienda', 'modificado', 'datetime'),
                     rollup('Unidades vendidas', 'unidades_vendidas', 'lineas', 'variacion', 'sum', 'cantidad',
@@ -430,6 +450,10 @@ function purchaseLists(money: (label: string, slug: string) => BlueprintField): 
             '#7F54B3',
             [
                 f('Artículo', 'articulo', 'text', { description: 'Se completa solo con el producto o la variación elegida.' }),
+                f('SKU', 'sku', 'text', {
+                    is_indexed: true,
+                    description: 'El SKU del producto o la variación: se completa solo (al proveedor se le pide por SKU).',
+                }),
                 f('Orden de compra', 'orden', 'relation', { config: { target_list_id: listRef(K.orders) } }),
                 f('Producto', 'producto', 'relation', { config: { target_list_id: listRef('productos') } }),
                 f('Variación', 'variacion', 'relation', {
@@ -498,34 +522,52 @@ export function inventoryDashboard(storeName: string) {
  *  - desde el pack 1: los campos de inventario de Productos y Variaciones,
  *    su vista «Para reponer» y el tablero de Inventario;
  *  - desde el pack 2 (o 1): las columnas de reposición y las tres listas de
- *    compras.
- * Sin productos no hay inventario que reponer: sólo lo de inventario queda
- * fuera, igual que antes.
+ *    compras;
+ *  - desde el pack 3 (o antes): los identificadores (`IDENTITY_FIELD_SLUGS`).
+ * Sin productos no hay inventario que reponer: lo de inventario y compras
+ * queda fuera, pero los identificadores de las otras listas sí llegan.
  */
-export function packAddition(full: Blueprint, fromVersion: number, withProducts: boolean): Blueprint {
-    if (!withProducts) return { version: full.version, lists: [], dashboards: [] };
-    const slugs = new Set<string>([
-        ...(fromVersion < 2 ? INVENTORY_FIELD_SLUGS : []),
-        ...(fromVersion < 3 ? RESTOCK_FIELD_SLUGS : []),
-    ]);
-    const purchaseKeys = new Set<string>(fromVersion < 3 ? Object.values(PURCHASE_LIST_KEYS) : []);
+export function packAddition(
+    full: Blueprint,
+    fromVersion: number,
+    present: boolean | ReadonlySet<string>,
+): Blueprint {
+    // `present`: qué listas del pack EXISTEN (por su clave). Sólo se agregan
+    // campos a listas que ya están: una tienda que no sincroniza clientes no
+    // tiene por qué ganar una lista de Clientes vacía en la actualización.
+    // `true` = todas (los tests).
+    const has = (key: string): boolean => present === true || (present !== false && present.has(key));
+    const withProducts = has('productos');
+    const slugsFor = (key: string): Set<string> => {
+        const out = new Set<string>();
+        if (withProducts && (key === 'productos' || key === 'variaciones')) {
+            if (fromVersion < 2) INVENTORY_FIELD_SLUGS.forEach((x) => out.add(x));
+            if (fromVersion < 3) RESTOCK_FIELD_SLUGS.forEach((x) => out.add(x));
+        }
+        if (fromVersion < 4) (IDENTITY_FIELD_SLUGS[key] ?? []).forEach((x) => out.add(x));
+        return out;
+    };
+    const purchaseKeys = new Set<string>(withProducts && fromVersion < 3 ? Object.values(PURCHASE_LIST_KEYS) : []);
     const lists: Blueprint['lists'] = [];
     for (const l of full.lists) {
         if (purchaseKeys.has(l.key)) {
             lists.push({ ...l, automations: [], records: [] });
-        } else if (l.key === 'productos' || l.key === 'variaciones') {
-            lists.push({
-                ...l,
-                fields: l.fields.filter((fd) => slugs.has(fd.slug)),
-                views: fromVersion < 2 ? l.views.filter((v) => v.name === INVENTORY_VIEW_NAME) : [],
-                automations: [],
-                records: [],
-            });
+            continue;
         }
+        if (!has(l.key)) continue;
+        const slugs = slugsFor(l.key);
+        const views =
+            withProducts && fromVersion < 2 && (l.key === 'productos' || l.key === 'variaciones')
+                ? l.views.filter((v) => v.name === INVENTORY_VIEW_NAME)
+                : [];
+        const fields = l.fields.filter((fd) => slugs.has(fd.slug));
+        if (fields.length === 0 && views.length === 0) continue;
+        lists.push({ ...l, fields, views, automations: [], records: [] });
     }
     return {
         version: full.version,
         lists,
-        dashboards: fromVersion < 2 ? full.dashboards.filter((d) => d.name.startsWith(INVENTORY_DASHBOARD_PREFIX)) : [],
+        dashboards:
+            withProducts && fromVersion < 2 ? full.dashboards.filter((d) => d.name.startsWith(INVENTORY_DASHBOARD_PREFIX)) : [],
     };
 }

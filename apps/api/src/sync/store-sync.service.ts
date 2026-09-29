@@ -21,7 +21,7 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { wooStoreUrl } from '../connectors/woocommerce/wc-api';
 import { DRIZZLE, type Db } from '../db/client';
-import { connectionSyncs, dashboards, lists, syncLinks } from '../db/schema';
+import { connectionSyncs, dashboards, fields as fieldsTable, lists, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListGroupsService } from '../lists/list-groups.service';
 import { ListsService } from '../lists/lists.service';
@@ -373,6 +373,8 @@ export class StoreSyncService {
     async upgradePack(tenantId: number, syncId: number, creds: IntegrationCreds): Promise<boolean> {
         const token = await this.engine.acquire(syncId);
         if (!token) return false;
+        // Qué hay que re-leer al terminar (los campos nuevos se llenan solos).
+        const only: StoreSyncResource[] = ['products'];
         try {
             const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).limit(1),
@@ -380,11 +382,11 @@ export class StoreSyncService {
             if (!row) return false;
             const settings = readSettings(row.settings);
             const from = settings.pack_version;
+            // Desde el pack 3 también clientes: su enlace «Editar en WooCommerce».
+            if (from < 4 && settings.resources.customers && settings.lists.customers) only.push('customers');
             if (from >= WOO_PACK_VERSION) return false;
             const shop = await this.storeFormat(creds);
             const full = buildWooPack({ storeName: settings.store_name, currency: shop.currency, precision: shop.precision, phoneCountry: shop.country });
-            // Con la lista de productos (el pack la crea siempre; sólo falta si alguien la borró).
-            const addition = packAddition(full, from, settings.lists.products !== undefined);
             const keyToListId = new Map<string, number>();
             const existing = new Map<string, Map<string, number>>();
             for (const r of STORE_SYNC_RESOURCES) {
@@ -398,6 +400,9 @@ export class StoreSyncService {
                 if (listId) keyToListId.set(PURCHASE_LIST_KEYS[k], listId);
                 existing.set(PURCHASE_LIST_KEYS[k], new Map(Object.entries(settings.purchase_fields[k] ?? {})));
             }
+            // Sólo se completan las listas que existen (una tienda que no trae
+            // clientes no gana una lista de Clientes vacía).
+            const addition = packAddition(full, from, new Set(keyToListId.keys()));
             const made = await this.blueprints.extend(tenantId, row.createdBy ?? 0, addition, keyToListId, existing, {
                 groupId: settings.folder_id,
             });
@@ -405,9 +410,9 @@ export class StoreSyncService {
             const fresh = await this.tenantDb.withTenant(tenantId, async (tx) => {
                 const [locked] = await tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)).for('update');
                 const s = readSettings(locked!.settings);
-                for (const r of ['products', 'variations'] as const) {
+                for (const r of STORE_SYNC_RESOURCES) {
                     const got = made.fieldIds[WOO_LIST_KEYS[r]];
-                    if (got) s.fields[r] = { ...(s.fields[r] ?? {}), ...got };
+                    if (got && Object.keys(got).length > 0) s.fields[r] = { ...(s.fields[r] ?? {}), ...got };
                 }
                 for (const k of STORE_PURCHASE_LISTS) {
                     const key = PURCHASE_LIST_KEYS[k];
@@ -438,6 +443,7 @@ export class StoreSyncService {
                         return { ...cfg, visible_field_ids: [...cols.slice(0, 2), add, ...cols.slice(2)] };
                     });
                 }
+                if (from < 4) await this.upgradeIdentity(tx, tenantId, s, from);
                 s.low_stock_amount = shop.lowStock;
                 await tx
                     .update(connectionSyncs)
@@ -451,9 +457,59 @@ export class StoreSyncService {
         }
         // Llenar los campos nuevos: una vuelta completa de productos (sin
         // disparar automatizaciones: es una puesta al día).
-        this.queue.enqueueRun(tenantId, syncId, { full: true, only: ['products'] });
+        this.queue.enqueueRun(tenantId, syncId, { full: true, only });
         this.realtime.forget(tenantId);
         return true;
+    }
+
+    /**
+     * v0.1.210 (pack 3 → 4) — Lo que no se resuelve agregando campos:
+     *  - las columnas «Imagen» que ya existían pasan a mostrarse como
+     *    MINIATURA (`config.display = 'image'`);
+     *  - las líneas de compra que ya existían reciben el SKU de lo que piden
+     *    (de la variación o, si no, del producto). Las nuevas lo completa
+     *    `StorePurchasingService.normalizeLine` sola.
+     * Los enlaces de edición y el de las variaciones los llena la vuelta
+     * completa que se encola al terminar.
+     */
+    private async upgradeIdentity(
+        tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
+        tenantId: number,
+        s: SyncSettings,
+        from: number,
+    ): Promise<void> {
+        const images = [s.fields.products?.imagen, s.fields.variations?.imagen].filter((x): x is number => !!x);
+        if (images.length > 0) {
+            await tx
+                .update(fieldsTable)
+                .set({ config: sql`${fieldsTable.config} || '{"display":"image"}'::jsonb` })
+                .where(and(eq(fieldsTable.tenantId, tenantId), inArray(fieldsTable.id, images)));
+        }
+        const L = s.purchase_fields.lines ?? {};
+        const linesList = s.purchase_lists.lines;
+        const pSku = s.fields.products?.sku;
+        const vSku = s.fields.variations?.sku;
+        if (from < 3 || !linesList || !L.sku || (!pSku && !vSku)) return;
+        // Un solo UPDATE: la variación manda; si no hay, el producto.
+        await tx.execute(sql`
+            UPDATE records r
+               SET data = r.data || jsonb_build_object(${`f${L.sku}`}::text, src.sku),
+                   updated_at = now()
+              FROM (
+                    SELECT l.id,
+                           COALESCE(
+                               NULLIF(v.data ->> ${`f${vSku ?? 0}`}::text, ''),
+                               NULLIF(p.data ->> ${`f${pSku ?? 0}`}::text, '')
+                           ) AS sku
+                      FROM records l
+                      LEFT JOIN relations rv ON rv.source_record_id = l.id AND rv.field_id = ${L.variacion ?? 0}
+                      LEFT JOIN records v ON v.id = rv.target_record_id
+                      LEFT JOIN relations rp ON rp.source_record_id = l.id AND rp.field_id = ${L.producto ?? 0}
+                      LEFT JOIN records p ON p.id = rp.target_record_id
+                     WHERE l.tenant_id = ${tenantId} AND l.list_id = ${linesList} AND l.deleted_at IS NULL
+                   ) src
+             WHERE r.id = src.id AND src.sku IS NOT NULL
+        `);
     }
 
     /** Reescribe los widgets de TABLA de un tablero (`fix` devuelve null = sin cambios). */

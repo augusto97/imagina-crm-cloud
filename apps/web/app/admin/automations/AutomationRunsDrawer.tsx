@@ -20,6 +20,7 @@ import type {
     AutomationRunEntity,
     AutomationRunStatus,
 } from '@/types/automation';
+import { parseUtcDate } from '@/lib/utcDate';
 
 /**
  * Drawer lateral que muestra el historial reciente de ejecuciones de una
@@ -107,7 +108,7 @@ function RunCard({ run }: { run: AutomationRunEntity }): JSX.Element {
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <RunStatusBadge status={run.status} />
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {started ? new Date(started + 'Z').toLocaleString() : '—'}
+                    {started ? parseUtcDate(started).toLocaleString() : '—'}
                 </span>
             </div>
             {run.record_id !== null && (

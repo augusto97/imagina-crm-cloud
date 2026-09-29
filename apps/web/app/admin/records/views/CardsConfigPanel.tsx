@@ -3,6 +3,7 @@ import { Select } from '@/components/ui/select';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+import { isImageUrlField } from '@/lib/imageProxy';
 
 interface CardsConfigPanelProps {
     fields: FieldEntity[];
@@ -37,7 +38,8 @@ export function CardsConfigPanel({
     onSizeChange,
 }: CardsConfigPanelProps): JSX.Element {
     const candidateFields = fields.filter((f) => f.type !== 'relation');
-    const fileFields = fields.filter((f) => f.type === 'file');
+    // v0.1.210 — también un enlace que se muestra como imagen (la foto de un producto).
+    const fileFields = fields.filter((f) => f.type === 'file' || (f.type === 'url' && isImageUrlField(f.config)));
 
     return (
         <>
@@ -95,7 +97,7 @@ export function CardsConfigPanel({
                 </Select>
                 {fileFields.length === 0 && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Necesitás un campo tipo Archivo para usar portada.')}
+                        {__('Necesitás un campo tipo Archivo, o un Enlace que se muestre como imagen, para usar portada.')}
                     </p>
                 )}
             </div>

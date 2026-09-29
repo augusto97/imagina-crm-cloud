@@ -17,6 +17,7 @@ import { useLists } from '@/hooks/useLists';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { parseUtcDate } from '@/lib/utcDate';
 
 export function ListsIndexPage(): JSX.Element {
     const lists = useLists();
@@ -26,7 +27,7 @@ export function ListsIndexPage(): JSX.Element {
     const stats = useMemo(() => {
         const all = lists.data ?? [];
         const last7d = all.filter((l) => {
-            const d = new Date(l.updated_at + 'Z').getTime();
+            const d = parseUtcDate(l.updated_at).getTime();
             return Date.now() - d < 7 * 24 * 60 * 60 * 1000;
         }).length;
         const withDescription = all.filter((l) => l.description && l.description.trim() !== '').length;
@@ -156,7 +157,7 @@ function ListCard({
                 <span className="imcrm-text-muted-foreground">
                     {sprintf(
                         __('Editado %s'),
-                        new Date(list.updated_at + 'Z').toLocaleDateString(),
+                        parseUtcDate(list.updated_at).toLocaleDateString(),
                     )}
                 </span>
             </footer>

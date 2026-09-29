@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ActivityEntity } from '@/types/activity';
+import { parseUtcDate } from '@/lib/utcDate';
 
 const SEEN_AT_KEY = 'imcrm:mentions-seen-at';
 
@@ -44,7 +45,7 @@ export function NotificationBell(): JSX.Element {
 
     const items = mentions.data ?? [];
     const unread = items.filter((m) => {
-        const ts = m.created_at ? Date.parse(m.created_at + 'Z') : 0;
+        const ts = m.created_at ? parseUtcDate(m.created_at).getTime() : 0;
         return ts > seenAt;
     }).length;
 
@@ -133,7 +134,7 @@ export function NotificationBell(): JSX.Element {
                                     </p>
                                     <p className="imcrm-mt-1 imcrm-text-[10px] imcrm-text-muted-foreground">
                                         {m.created_at
-                                            ? new Date(m.created_at + 'Z').toLocaleString()
+                                            ? parseUtcDate(m.created_at).toLocaleString()
                                             : ''}
                                     </p>
                                 </li>

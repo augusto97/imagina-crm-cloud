@@ -170,7 +170,7 @@ import { PlansService } from '../src/billing/plans.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { connectionSyncs, dashboards, lists, plans, records, relations, savedViews, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
+import { connectionSyncs, dashboards, fields, lists, plans, records, relations, savedViews, storeHooks, syncLinks, tenants, users, memberships } from '../src/db/schema';
 import { INVENTORY_FIELD_SLUGS, RESTOCK_FIELD_SLUGS } from '../src/sync/woocommerce/woo-pack';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
@@ -298,7 +298,7 @@ function seedStore(orderCount: number): void {
     store.variations = {
         20: [
             // S: stock 5 con el umbral general de la tienda (5) → stock bajo.
-            { id: 21, parent_id: 20, price: '30000', manage_stock: true, stock_quantity: 5, stock_status: 'instock', attributes: [{ name: 'Talla', option: 'S' }], date_modified_gmt: tick(), meta_data: [] },
+            { id: 21, parent_id: 20, sku: 'CAM-S', permalink: 'https://tienda.test/camiseta/?attribute_talla=S', price: '30000', manage_stock: true, stock_quantity: 5, stock_status: 'instock', attributes: [{ name: 'Talla', option: 'S' }], date_modified_gmt: tick(), meta_data: [] },
             // M: stock llevado por el PADRE ("parent") y en cero → agotado.
             { id: 22, parent_id: 20, price: '32000', manage_stock: 'parent', stock_quantity: 0, stock_status: 'outofstock', attributes: [{ name: 'Talla', option: 'M' }], date_modified_gmt: tick(), meta_data: [] },
         ],
@@ -884,6 +884,8 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             .list(tenantId, admin(), String(S.purchase_lists.lines), { limit: 10, related_to: `${L.orden}:${made.order_id}` } as never)
             .then((r) => r.data);
         expect(line!.data[`f${L.articulo}`]).toMatch(/Camiseta/);
+        // v0.1.210 — el SKU de la variación viaja a la línea (al proveedor se le pide por SKU).
+        expect(line!.data[`f${L.sku}`]).toBe('CAM-S');
         expect(line!.data[`f${L.subtotal}`]).toBe(120000);
         expect(line!.data[`f${L.pendiente}`]).toBe(10);
         // La variación trae su producto padre: «En camino» del producto también la cuenta.
@@ -1050,7 +1052,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
         const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
         const s2 = after!.settings as { pack_version: number; low_stock_amount: number; inventory_dashboard_id: number; fields: Record<string, Record<string, number>> };
-        expect(s2.pack_version).toBe(3);
+        expect(s2.pack_version).toBe(4);
         expect(s2.low_stock_amount).toBe(5);
         expect(s2.inventory_dashboard_id).toBeGreaterThan(0);
         for (const slug of INVENTORY_FIELD_SLUGS) expect(s2.fields.products![slug], slug).toBeGreaterThan(0);
@@ -1063,7 +1065,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             expect((w.config.visible_field_ids as unknown[]).length).toBe(4);
         }
         // Encola la vuelta completa de productos que llena los campos nuevos.
-        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products'] } });
+        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: expect.arrayContaining(['products']) } });
         expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products'] })).toBe(true);
         const vars = await rows(tenantId, st.lists.variations!.id);
         expect(vars.every((v) => typeof v[`f${s2.fields.variations!.estado_inventario}`] === 'string')).toBe(true);
@@ -1115,7 +1117,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             purchase_lists: Record<string, number>;
             purchase_fields: Record<string, Record<string, number>>;
         };
-        expect(s3.pack_version).toBe(3);
+        expect(s3.pack_version).toBe(4);
         for (const slug of RESTOCK_FIELD_SLUGS) expect(s3.fields.variations![slug], slug).toBeGreaterThan(0);
         expect(Object.keys(s3.purchase_lists).sort()).toEqual(['lines', 'orders', 'suppliers']);
         expect(s3.purchase_fields.lines!.pendiente).toBeGreaterThan(0);
@@ -1133,6 +1135,72 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
             const res = w.list_id === st.lists.products!.id ? 'products' : 'variations';
             expect(w.config.visible_field_ids).toContain(s3.fields[res]!.en_camino);
         });
+        // Idempotente.
+        queue.runs.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        expect(queue.runs).toHaveLength(0);
+    });
+
+    it('actualización del pack 3 → 4: enlaces de edición, enlace de la variación, miniaturas y SKU en las compras ya hechas', async () => {
+        // Una compra hecha con el pack 3 (su línea todavía sin SKU).
+        const s21 = await byWooId('variations', '21');
+        await purchasing.createOrder(tenantId, admin(), connId, {
+            resource: 'variations',
+            items: [{ record_id: Number(s21.id), quantity: 2 }],
+            supplier_name: 'Textiles SA',
+            status: 'borrador',
+        });
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connectionSyncs).where(eq(connectionSyncs.id, syncId)));
+        const settings = row!.settings as Record<string, unknown> & {
+            fields: Record<string, Record<string, number>>;
+            purchase_lists: Record<string, number>;
+            purchase_fields: Record<string, Record<string, number>>;
+            store_url: string;
+        };
+        // Simula el pack 3 (v0.1.209): sin identificadores y con la imagen como enlace.
+        const drop: Array<[string, number, string]> = [
+            ['products', st.lists.products!.id, 'editar'],
+            ['variations', st.lists.variations!.id, 'editar'],
+            ['variations', st.lists.variations!.id, 'enlace'],
+            ['customers', st.lists.customers!.id, 'editar'],
+        ];
+        for (const [r, listId, slug] of drop) {
+            await fieldsService.remove(tenantId, String(listId), String(settings.fields[r]![slug]));
+            delete settings.fields[r]![slug];
+        }
+        await fieldsService.remove(tenantId, String(settings.purchase_lists.lines), String(settings.purchase_fields.lines!.sku));
+        delete settings.purchase_fields.lines!.sku;
+        const images = [settings.fields.products!.imagen!, settings.fields.variations!.imagen!];
+        await withTenant(pg.db, tenantId, async (tx) => {
+            await tx.update(fields).set({ config: {} }).where(inArray(fields.id, images));
+            await tx.update(connectionSyncs).set({ settings: { ...settings, pack_version: 3 } }).where(eq(connectionSyncs.id, syncId));
+        });
+
+        queue.runs.length = 0;
+        expect(await svc.runJob(tenantId, syncId, {})).toBe(true);
+        const S = await settingsNow();
+        expect((S as unknown as { pack_version: number }).pack_version).toBe(4);
+        for (const [r, , slug] of drop) expect(S.fields[r as 'products']![slug], `${r}.${slug}`).toBeGreaterThan(0);
+        // Las imágenes pasan a verse como miniatura.
+        const imgCfg = await withTenant(pg.db, tenantId, (tx) => tx.select({ config: fields.config }).from(fields).where(inArray(fields.id, images)));
+        expect(imgCfg.every((f) => (f.config as { display?: string }).display === 'image')).toBe(true);
+        // Las líneas de compra que ya existían reciben el SKU de lo que piden.
+        const L = S.purchase_fields.lines!;
+        expect(L.sku).toBeGreaterThan(0);
+        const lines = await rows(tenantId, S.purchase_lists.lines!);
+        expect(lines.length).toBeGreaterThan(0);
+        expect(lines.every((l) => l[`f${L.sku}`] === 'CAM-S')).toBe(true);
+        // Se re-leen productos Y clientes para llenar los enlaces nuevos.
+        expect(queue.runs).toContainEqual({ tenantId, syncId, opts: { full: true, only: ['products', 'customers'] } });
+        expect(await svc.runJob(tenantId, syncId, { full: true, only: ['products', 'customers'] })).toBe(true);
+        const base = settings.store_url.replace(/\/+$/, '');
+        const taza = await byWooId('products', '10');
+        expect(taza[`f${S.fields.products!.editar}`]).toBe(`${base}/wp-admin/post.php?post=10&action=edit`);
+        const talla = await byWooId('variations', '21');
+        expect(talla[`f${S.fields.variations!.editar}`]).toBe(`${base}/wp-admin/post.php?post=20&action=edit`);
+        expect(talla[`f${S.fields.variations!.enlace}`]).toBe('https://tienda.test/camiseta/?attribute_talla=S');
+        const ana = (await rows(tenantId, st.lists.customers!.id)).find((r) => r[`f${S.fields.customers!.woo_id}`] === '1')!;
+        expect(ana[`f${S.fields.customers!.editar}`]).toBe(`${base}/wp-admin/user-edit.php?user_id=1`);
         // Idempotente.
         queue.runs.length = 0;
         expect(await svc.runJob(tenantId, syncId, {})).toBe(true);

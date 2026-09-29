@@ -298,6 +298,7 @@ export class StorePurchasingService {
             const data = line.data;
             const patch: Record<string, unknown> = {};
             // El artículo es el nombre de lo vinculado; sin vínculo, lo que escribió la persona.
+            // (`nameOf` lee un campo de texto del vinculado: también sirve para el SKU.)
             const nameOf = async (id: number | null, nameField: number | undefined) => {
                 if (!id || !nameField) return null;
                 const [row] = await tx.select({ data: records.data }).from(records).where(eq(records.id, id)).limit(1);
@@ -308,6 +309,11 @@ export class StorePurchasingService {
                 (await nameOf(variationId, ctx.settings.fields.variations?.nombre)) ??
                 (await nameOf(productId, ctx.settings.fields.products?.nombre));
             if (L.articulo && name && data[k(L.articulo)] !== name) patch[k(L.articulo)] = name;
+            // v0.1.210 — el SKU viaja a la línea: al proveedor se le pide por SKU.
+            const sku =
+                (await nameOf(variationId, ctx.settings.fields.variations?.sku)) ??
+                (await nameOf(productId, ctx.settings.fields.products?.sku));
+            if (L.sku && sku && data[k(L.sku)] !== sku) patch[k(L.sku)] = sku;
 
             const qty = num(data[k(L.cantidad)]);
             const cost = num(data[k(L.costo)]);
