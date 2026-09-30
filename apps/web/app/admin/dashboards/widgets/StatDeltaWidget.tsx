@@ -1,4 +1,4 @@
-import { Loader2, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
+import { Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
@@ -6,6 +6,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { WidgetError } from './WidgetError';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface StatDeltaWidgetProps {
@@ -31,10 +32,7 @@ export function StatDeltaWidget({ dashboardId, widget }: StatDeltaWidgetProps): 
                 {data.isLoading ? (
                     <Loader2 className="imcrm-h-6 imcrm-w-6 imcrm-animate-spin imcrm-text-muted-foreground" />
                 ) : data.isError ? (
-                    <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-destructive">
-                        <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
-                        {__('Error al cargar')}
-                    </span>
+                    <WidgetError error={data.error} />
                 ) : data.data && 'previous' in data.data ? (
                     <Body
                         value={data.data.value}

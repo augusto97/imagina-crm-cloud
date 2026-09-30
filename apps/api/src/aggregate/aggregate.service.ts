@@ -14,6 +14,7 @@ import {
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
+import { withComputedExprs } from '../records/computed-sql';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
@@ -76,7 +77,7 @@ export class AggregateService {
         if (req.field_id !== undefined && !field) {
             throw badRequest('field_id no pertenece a la lista');
         }
-        const fieldsById = acl.strip(await this.filterableFields(tenantId, list.id, fields));
+        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
         this.assertMetricCompat(req.metric, field, fieldsById);
 
         const filterWhere = compileFilterTree(fieldsById, req.filter_tree, new Date());
@@ -113,7 +114,7 @@ export class AggregateService {
                     ? timeBucketExpr(groupField, req.time_bucket)
                     : groupField.type === 'multi_select'
                         ? multiSelectSetExpr(groupField.id)
-                        : isThroughField(groupField.type)
+                        : isThroughField(groupField.type) || groupField.type === 'computed'
                             ? throughGroupExpr(groupField, fieldsById)
                             : fieldTextExpr(groupField.id);
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -224,7 +225,7 @@ export class AggregateService {
         const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
-        const fieldsById = acl.strip(await this.filterableFields(tenantId, list.id, fields));
+        const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
         const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, new Date());
         const baseWhere = and(
             eq(records.tenantId, tenantId),
@@ -391,6 +392,10 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'lookup') return [];
+    // v0.1.229 — un computed numérico con expresión SQL se suma como número.
+    if (type === 'computed') {
+        return ff?.expr ? ['count', 'count_empty', 'sum', 'avg', 'min', 'max'] : ['count', 'count_empty', 'count_unique'];
+    }
     if (NUMERIC_TYPES.includes(type)) {
         return ['count', 'count_empty', 'count_unique', 'sum', 'avg', 'min', 'max'];
     }
@@ -443,7 +448,9 @@ function throughGroupExpr(field: Field, byId: Map<number, FilterableField>): SQL
     const expr = byId.get(field.id)?.expr;
     if (!expr) {
         throw badRequest(
-            `El campo «${field.label}» no está configurado del todo (falta la relación o el campo destino): no se puede agrupar por él.`,
+            field.type === 'computed'
+                ? `El campo calculado «${field.label}» no se puede agrupar: sólo los cálculos numéricos (suma, resta, producto, división) tienen valor agrupable.`
+                : `El campo «${field.label}» no está configurado del todo (falta la relación o el campo destino): no se puede agrupar por él.`,
         );
     }
     return sql`(${expr})::text`;

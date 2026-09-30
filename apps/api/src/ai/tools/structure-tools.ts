@@ -64,6 +64,7 @@ import { ListsService } from '../../lists/lists.service';
 import { TenantDb } from '../../tenancy/tenant-db.service';
 import { BlueprintService } from '../../templates/blueprint.service';
 import { ViewsService } from '../../views/views.service';
+import { isNumericComputed } from '../../records/computed-sql';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -1109,8 +1110,21 @@ export class StructureTools implements AiProposalApplier {
             if (FIELD_METRICS.includes(metric) && !metricField) {
                 throw new AiToolError(`${where}: la métrica ${metric} necesita metric_field.`);
             }
-            if (metricField && (metric === 'sum' || metric === 'avg') && !NUMERIC_TYPES.includes(metricField.type)) {
-                throw new AiToolError(`${where}: ${metric} sólo aplica a campos numéricos («${metricField.slug}» es ${metricField.type}).`);
+            if (metricField && (metric === 'sum' || metric === 'avg' || metric === 'min' || metric === 'max')) {
+                // v0.1.229 — un computed sólo se agrega si es ARITMÉTICO (suma,
+                // resta, producto, división, valor absoluto): los de fecha y
+                // concat no tienen valor numérico en SQL y el widget fallaría.
+                const ok = metricField.type === 'computed'
+                    ? isNumericComputed(metricField)
+                    : NUMERIC_TYPES.includes(metricField.type)
+                        || ((metric === 'min' || metric === 'max') && (metricField.type === 'date' || metricField.type === 'datetime'));
+                if (!ok) {
+                    throw new AiToolError(
+                        metricField.type === 'computed'
+                            ? `${where}: «${metricField.slug}» es un cálculo que no da un número (fecha o texto); ${metric} no aplica.`
+                            : `${where}: ${metric} sólo aplica a campos numéricos («${metricField.slug}» es ${metricField.type}).`,
+                    );
+                }
             }
             const config: Record<string, unknown> = { metric };
             if (metricField) config.metric_field_id = metricField.id;

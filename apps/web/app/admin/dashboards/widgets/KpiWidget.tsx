@@ -10,7 +10,6 @@ import {
     Star,
     Target,
     TrendingUp,
-    TriangleAlert,
     Users,
     Zap,
     type LucideIcon,
@@ -22,6 +21,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { WidgetError } from './WidgetError';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface KpiWidgetProps {
@@ -100,13 +100,7 @@ export function KpiWidget({ dashboardId, widget }: KpiWidgetProps): JSX.Element 
                 {data.isLoading ? (
                     <Loader2 className="imcrm-h-6 imcrm-w-6 imcrm-animate-spin imcrm-text-muted-foreground" />
                 ) : data.isError ? (
-                    <span
-                        className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-text-destructive"
-                        title={(data.error as Error).message}
-                    >
-                        <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
-                        {__('Error al cargar')}
-                    </span>
+                    <WidgetError error={data.error} />
                 ) : data.data && 'value' in data.data ? (
                     <Body
                         value={data.data.value}

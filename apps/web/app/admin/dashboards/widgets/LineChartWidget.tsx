@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { useWidgetData } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { WidgetError } from './WidgetError';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface LineChartWidgetProps {
@@ -61,13 +62,7 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
                         <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" />
                     </div>
                 ) : data.isError ? (
-                    <div
-                        className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-gap-1 imcrm-text-xs imcrm-text-destructive"
-                        title={(data.error as Error).message}
-                    >
-                        <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
-                        {__('Error')}
-                    </div>
+                    <WidgetError error={data.error} />
                 ) : rows.length > 0 ? (
                     <SparkLine
                         rows={rows}

@@ -139,7 +139,21 @@ export function useWidgetData(dashboardId: number | undefined, widgetId: string 
             widgetId !== undefined &&
             widgetId !== '',
         staleTime: 30 * 1000,
-        select: (all: Record<string, WidgetData>): WidgetData | undefined =>
-            widgetId ? all[widgetId] : undefined,
+        // v0.1.229 — el bundle trae el error de CADA widget por separado
+        // (`{ __error }`): tirarlo desde `select` pone en error SÓLO al widget
+        // que lo tiene; los demás siguen con su dato.
+        select: (all: Record<string, WidgetData>): WidgetData | undefined => {
+            const one = widgetId ? all[widgetId] : undefined;
+            const failed = widgetErrorOf(one);
+            if (failed !== null) throw new Error(failed);
+            return one;
+        },
     });
+}
+
+/** Mensaje de error de un widget dentro del bundle, o `null` si trajo datos. */
+export function widgetErrorOf(entry: unknown): string | null {
+    if (typeof entry !== 'object' || entry === null || !('__error' in entry)) return null;
+    const msg = (entry as { __error: unknown }).__error;
+    return typeof msg === 'string' && msg !== '' ? msg : 'No se pudo calcular este widget.';
 }

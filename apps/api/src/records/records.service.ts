@@ -50,6 +50,7 @@ import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type Fi
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
+import { withComputedExprs } from './computed-sql';
 import { RelationsRepository } from './relations.repository';
 import { BillingService } from '../billing/billing.service';
 
@@ -228,14 +229,17 @@ export class RecordsService {
             // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
             // con el valor), aunque después la respuesta lo quite de `data`.
             const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
-            const fieldsById = new Map<number, FilterableField>(
-                [
-                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
-                    ...this.fields.through.filterableFor(plans, tenantId),
-                    // v0.1.188 — la vista agrupada compone su búsqueda como
-                    // filter tree y necesita el pseudo-campo de la descripción.
-                    descriptionSearchFilterable(),
-                ].filter(([id]) => !hiddenIds.has(id)),
+            const fieldsById = withComputedExprs(
+                new Map<number, FilterableField>(
+                    [
+                        ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                        ...this.fields.through.filterableFor(plans, tenantId),
+                        // v0.1.188 — la vista agrupada compone su búsqueda como
+                        // filter tree y necesita el pseudo-campo de la descripción.
+                        descriptionSearchFilterable(),
+                    ].filter(([id]) => !hiddenIds.has(id)),
+                ),
+                fields,
             );
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
@@ -466,12 +470,15 @@ export class RecordsService {
             } else {
                 // SEC-25: tampoco se apunta una edición en lote por un campo oculto.
                 const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
-                const fieldsById = new Map<number, FilterableField>(
-                    [
-                        ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
-                        ...this.fields.through.filterableFor(plans, tenantId),
-                        descriptionSearchFilterable(),
-                    ].filter(([id]) => !hiddenIds.has(id)),
+                const fieldsById = withComputedExprs(
+                    new Map<number, FilterableField>(
+                        [
+                            ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                            ...this.fields.through.filterableFor(plans, tenantId),
+                            descriptionSearchFilterable(),
+                        ].filter(([id]) => !hiddenIds.has(id)),
+                    ),
+                    fields,
                 );
                 where = andWhere(
                     compileFilterTree(fieldsById, target.filter_tree, new Date()),
@@ -1225,7 +1232,10 @@ function parseFieldSort(
         const m = /^field_(\d+):(asc|desc)$/.exec(part.trim());
         if (!m) continue;
         const field = fieldsById.get(Number(m[1]));
-        if (!field || NON_SORTABLE.includes(field.type)) continue;
+        if (!field) continue;
+        // v0.1.229 — un computed numérico con expresión SQL sí ordena.
+        const computedWithExpr = field.type === 'computed' && field.expr !== undefined;
+        if (NON_SORTABLE.includes(field.type) && !computedWithExpr) continue;
         // Un rollup sin subconsulta (config sin resolver) no ordena.
         if (field.type === 'rollup' && !field.expr) continue;
         const expr = fieldTypedExpr(field);

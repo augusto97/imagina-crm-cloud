@@ -5755,6 +5755,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         firma de releases, rol de Postgres no superusuario, CSP sin
         `unsafe-inline`).
 
+  - [x] **Tableros: campos calculados que se suman + un widget roto no tumba
+        al resto (v0.1.229, reporte del usuario con captura: "dañaste los
+        dashboards, todo sale en Error")**: no era una regresión de los
+        releases de seguridad. El tablero «Inventario de fajas» (armado por el
+        asistente) sumaba «Valor en inventario», un campo **calculado** (stock
+        × costo), y el motor de agregados no sabía sumar calculados — se
+        confirmó contra la instancia del usuario por el MCP («sum sólo aplica a
+        campos numéricos»). Y como el bundle del tablero evaluaba todos los
+        widgets con un `Promise.all`, ese único widget tumbaba a los diez.
+        Arreglos: (a) **los calculados aritméticos se traducen a SQL**
+        (`records/computed-sql.ts`: sum, product, subtract, divide, abs, con la
+        misma semántica de vacíos que el evaluador de shared, encadenables y
+        con rollups numéricos como entrada) → se **suman, promedian, filtran,
+        ordenan y agrupan** en widgets, pie, listado y edición masiva, igual
+        que un rollup; los de fecha y `concat` siguen sin sumarse, con el
+        motivo; (b) la expresión se arma sobre los campos YA recortados por el
+        ACL: si una entrada del cálculo está oculta para el rol, el calculado
+        no se agrega ni filtra (sería un oráculo); (c) **cada widget se evalúa
+        aislado**: uno mal configurado devuelve `{ __error }` y SÓLO ese
+        widget muestra «No se pudo calcular» con el motivo a la vista (antes
+        todos decían «Error» y el mensaje estaba escondido en un tooltip); los
+        errores internos se loguean y salen genéricos; (d) el diálogo del
+        widget ofrece los calculados numéricos como métrica sumable, y el
+        asistente/MCP ya no propone sumar un calculado de fecha o texto.
+        6 tests de integración (paridad con el evaluador JS incluida la fila
+        sin costo, filtro, agrupado, orden, entrada oculta, bundle aislado) + 1
+        del front + E2E navegador 9/9 con un tablero como el del reporte (KPI
+        24.400 sumando el calculado, el widget roto con su motivo y el resto
+        intacto, barras por proveedor, tabla ordenada por el calculado).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
