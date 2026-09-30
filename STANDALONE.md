@@ -372,6 +372,24 @@ estable: tipear en el buscador ya no re-dibuja todas las filas.
   la del cliente — sin eso, confiar en el proxy equivale a confiar en
   cualquiera. OJO: un número (hop-count) NO sirve; desde fastify 5.12 significa
   "no confiar en nadie" y rompería el proxy legítimo en silencio.
+- **Egreso anti-SSRF** (`safeWebhookFetch`, SEC-03 → SEC-23 en v0.1.225): toda
+  petición saliente con destino elegido por un tenant pasa por el guard. Se
+  valida la IP por NÚMEROS, no por texto: el literal IPv6 viene con corchetes en
+  `URL.hostname` (sin quitarlos, `[::ffff:a9fe:a9fe]` saltaba el control entero
+  porque node no llama a `lookup` para IPs literales), y toda IPv6 que embebe
+  una IPv4 (mapped, compatible, NAT64, 6to4) decide por esa IPv4. Sólo unicast
+  global IPv6. El llamador no puede fijar `Host` ni cabeceras de framing, y hay
+  tope de tiempo TOTAL además del de inactividad. El admin de Caddy va en un
+  socket unix, no en `localhost:2019`.
+- **Sesiones del portal** (SEC-24, v0.1.225): canjear un enlace del portal abre
+  una sesión ATADA a la empresa del enlace (`portalTenantId`) que sólo sirve
+  para `/portal/*`; el rol `client` no pasa por `TenantGuard`. El enlace no se
+  emite para superadmins ni cuentas desactivadas, y a quien lo pide sólo se le
+  devuelve si la cuenta es de su empresa (recién creada o ya cliente suya): una
+  cuenta que existía por su cuenta lo recibe sólo por correo. La consola de
+  plataforma exige una sesión abierta con contraseña (`via: 'password'`).
+- Las decisiones del rate limit se toman sobre el PATH, nunca sobre `req.url`
+  (trae la query: `?/health` salteaba el límite, SEC-28).
 - Secrets fuera del repo (env / SOPS). CSP estricta. Cookies httpOnly+secure.
 - Auditoría: `activity` registra todo (ya existe el diseño en el plugin).
 - Backups cifrados; restore drill mensual.
@@ -1643,4 +1661,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.37.0 (vista agrupada en una sola vuelta — nota de §13)
+**Versión del documento:** 1.38.0 (seguridad: egreso anti-SSRF por IPv6, sesiones del portal acotadas y rate limit por path — §14)

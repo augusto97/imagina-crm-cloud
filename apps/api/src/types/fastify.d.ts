@@ -8,6 +8,13 @@ declare module 'fastify' {
         sessionToken?: string;
         /** Si la sesión es de impersonación: userId del operador. */
         impersonatedBy?: number;
+        /**
+         * SEC-24 — la sesión salió de un enlace del portal: es de ESA empresa y
+         * sólo vale para `/portal/*`.
+         */
+        portalTenantId?: number;
+        /** SEC-24 — cómo se abrió la sesión (ver SessionData.via). */
+        sessionVia?: 'password' | 'portal';
         /** Seteado por TenantGuard. */
         tenant?: TenantContext;
     }

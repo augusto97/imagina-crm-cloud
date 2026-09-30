@@ -38,7 +38,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { PortalService } from './portal.service';
+import { PortalService, type PortalActor } from './portal.service';
 
 @Controller()
 export class PortalController {
@@ -127,10 +127,14 @@ export class PortalController {
     @Post('portal/consume')
     @HttpCode(200)
     async consume(
+        @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(consumeMagicLinkSchema)) input: ConsumeMagicLinkInput,
         @Res({ passthrough: true }) reply: FastifyReply,
     ): Promise<{ ok: true }> {
-        const { sessionToken } = await this.portal.consume(input.token);
+        const { sessionToken } = await this.portal.consume(input.token, {
+            userAgent: String(req.headers['user-agent'] ?? ''),
+            ip: req.ip,
+        });
         reply.setCookie(SESSION_COOKIE, sessionToken, {
             httpOnly: true,
             // SEC-14: en producción SIEMPRE Secure.
@@ -146,7 +150,7 @@ export class PortalController {
     @Get('portal/me')
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<PortalBoot> {
-        return this.portal.me(req.authUserId!);
+        return this.portal.me(portalActor(req));
     }
 
     // --- Endpoints de los bloques del portal (client autenticado) ----------
@@ -162,13 +166,13 @@ export class PortalController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(portalUpdateMeSchema)) input: PortalUpdateMeInput,
     ): Promise<{ ok: true }> {
-        return this.portal.updateMe(req.authUserId!, input);
+        return this.portal.updateMe(portalActor(req), input);
     }
 
     @Get('portal/me/comments')
     @UseGuards(SessionGuard)
     async myComments(@Req() req: FastifyRequest): Promise<{ data: CommentDto[] }> {
-        return { data: await this.portal.myComments(req.authUserId!) };
+        return { data: await this.portal.myComments(portalActor(req)) };
     }
 
     @Post('portal/me/comments')
@@ -178,7 +182,7 @@ export class PortalController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(portalCommentSchema)) input: PortalCommentInput,
     ): Promise<{ data: CommentDto }> {
-        return { data: await this.portal.createMyComment(req.authUserId!, input) };
+        return { data: await this.portal.createMyComment(portalActor(req), input) };
     }
 
     @Get('portal/me/activity')
@@ -187,7 +191,7 @@ export class PortalController {
         @Req() req: FastifyRequest,
         @Query('limit') limit?: string,
     ): Promise<{ data: ActivityDto[] }> {
-        return { data: await this.portal.myActivity(req.authUserId!, Number(limit ?? 50)) };
+        return { data: await this.portal.myActivity(portalActor(req), Number(limit ?? 50)) };
     }
 
     /** Records de otra lista visibles bajo el scope del portal. */
@@ -199,7 +203,7 @@ export class PortalController {
         @Query('page') page?: string,
         @Query('per_page') perPage?: string,
     ) {
-        return this.portal.listRecords(req.authUserId!, slug, Number(page ?? 1), Number(perPage ?? 10));
+        return this.portal.listRecords(portalActor(req), slug, Number(page ?? 1), Number(perPage ?? 10));
     }
 
     /** Totales bajo el scope del portal (KPI / stats grid). */
@@ -210,6 +214,11 @@ export class PortalController {
         @Param('slug') slug: string,
         @Query('fields') fields?: string,
     ) {
-        return { data: await this.portal.aggregates(req.authUserId!, slug, fields ?? '') };
+        return { data: await this.portal.aggregates(portalActor(req), slug, fields ?? '') };
     }
+}
+
+/** SEC-24 — quién llama al portal: el usuario y la empresa de su enlace. */
+function portalActor(req: FastifyRequest): PortalActor {
+    return { userId: req.authUserId!, tenantId: req.portalTenantId ?? null };
 }

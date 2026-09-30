@@ -76,9 +76,14 @@ export const issueMagicLinkSchema = z.object({
 export type IssueMagicLinkInput = z.infer<typeof issueMagicLinkSchema>;
 
 export const magicLinkResultSchema = z.object({
-    token: z.string(),
+    /**
+     * SEC-24 (v0.1.225): `null` cuando la cuenta ya existía fuera de esta
+     * empresa — el enlace abre una sesión de ESA persona y sólo le llega a ella
+     * por correo; a quien lo emite no se le devuelve.
+     */
+    token: z.string().nullable(),
     /** Ruta pública del SPA para consumir el token (`/portal/acceso?token=…`). */
-    path: z.string(),
+    path: z.string().nullable(),
     /**
      * v0.1.150 — ¿el correo salió DE VERDAD? Antes el fallo se tragaba con un
      * `.catch()` y la UI decía "Acceso enviado por email" igual: el admin creía

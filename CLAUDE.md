@@ -5529,6 +5529,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         búsqueda sin grupos vacíos, total de la edición masiva, abrir un
         registro, multi_select) y la vista plana sin cambios.
 
+  - [x] **Release de seguridad: SSRF por IPv6 y toma de cuentas por el portal
+        (v0.1.225, auditoría integral pedida por el usuario)**: siete revisiones
+        en paralelo por frente (auth, tenancy/ACL, inyección, egreso, archivos y
+        endpoints públicos, secretos/despliegue, portal/IA/automatizaciones) y
+        cada hallazgo verificado a mano antes de tocar código. Este release trae
+        los TRES críticos; el resto va en los siguientes.
+        (a) **SEC-24 — cualquiera se logueaba como el superadmin** (reproducido
+        de punta a punta contra la API local): registrarse (quien se registra es
+        admin de su empresa), crear una lista y un registro, pedir un enlace del
+        portal para el email del superadmin → la respuesta DEVOLVÍA el token →
+        canjearlo abría una sesión normal de esa cuenta → `/platform/*` entero
+        (copias con los secretos del servidor, impersonar, restaurar). El guard
+        de SEC-01 sólo rechazaba cuentas con membresía de equipo, y el
+        superadmin no tiene ninguna; lo mismo valía para usuarios sin workspace
+        y para el cliente de OTRA empresa (que además quedaba viendo el portal
+        de cualquiera de las dos: `WHERE user_id LIMIT 1`). Arreglo en capas:
+        el enlace no se emite para superadmins ni cuentas desactivadas; a quien
+        lo pide sólo se le DEVUELVE si la cuenta es de su empresa (recién creada
+        o ya cliente suya) — si existía por su cuenta le llega sólo por correo;
+        canjearlo abre una sesión ATADA a la empresa del enlace
+        (`portalTenantId`) que `SessionGuard` limita a `/portal/*` + logout;
+        `requireLink` busca el vínculo en ESA empresa (una sesión vieja con dos
+        vínculos es ambigua → 404, no "el primero"); quitar el acceso cierra
+        sólo las sesiones del portal de esa empresa; `TenantGuard` rechaza el
+        rol `client` (antes leía listas, campos, vistas y la config del portal
+        con sólo mandar `X-Tenant-Id`); y la consola de plataforma exige una
+        sesión abierta CON CONTRASEÑA (`via: 'password'`), así cualquier sesión
+        acuñada por el agujero antes de actualizar queda afuera (el operador
+        vuelve a entrar una vez).
+        (b) **SEC-23 — el guard anti-SSRF no miraba los literales IPv6**:
+        `URL.hostname` trae el IPv6 CON corchetes, `isIP('[::1]')` da 0 y node
+        no llama a `lookup` para IPs literales → `http://[::ffff:a9fe:a9fe]/`
+        llegaba a la metadata del cloud y `http://[::ffff:7f00:1]:2019/` al
+        admin de Caddy (reescribir el proxy de TODOS los tenants), con el cuerpo
+        de la respuesta visible en el probador de webhooks. Ahora la IP se
+        valida por NÚMEROS (`ipv6Hextets`: mapped en hex o sin comprimir,
+        IPv4-compatible, NAT64, 6to4 deciden por la IPv4 embebida; Teredo,
+        documentación, discard y todo lo que no sea unicast global afuera) +
+        rangos IPv4 que faltaban (198.18/15, 198.51.100/24, 203.0.113/24,
+        192.88.99/24); el llamador no puede fijar `Host` ni las cabeceras de
+        framing; tope de tiempo TOTAL (el de node es de inactividad: un servidor
+        que gotea un byte retenía al worker); y el admin de Caddy pasa a un
+        socket unix. (c) **SEC-28 — `?/health` salteaba el rate limit**: el
+        allowList de los probes miraba `req.url` entero (con query), así que
+        `POST /auth/register?/health` o `/auth/forgot-password?/health` corrían
+        sin límite; ahora todo se decide sobre el path.
+        Tests: 7 nuevos del guard (18 en el spec) + 5 de SEC-24 en el spec del
+        portal (superadmin rechazado, token que no vuelve para una cuenta ajena,
+        cliente de dos empresas con cada sesión en la suya, revocar en A no saca
+        de B, cuenta desactivada) + verificación en vivo del ataque completo:
+        el enlace para el superadmin rebota 403, la sesión robada ANTES del fix
+        recibe `reauth_required`, el login real entra, y una sesión de portal
+        contra la API de la app responde `portal_session_scope`.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

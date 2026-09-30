@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isBlockedAddress, safeWebhookFetch, withContentLength } from '../src/common/safe-fetch';
+import { ipv6Hextets, isBlockedAddress, safeWebhookFetch, stripUnsafeHeaders, withContentLength } from '../src/common/safe-fetch';
 import { createServer, request, type Server } from 'node:http';
 
 describe('isBlockedAddress (guard anti-SSRF, SEC-03)', () => {
@@ -43,6 +43,49 @@ describe('isBlockedAddress (guard anti-SSRF, SEC-03)', () => {
 
     it('permite IPv6 público', () => {
         expect(isBlockedAddress('2606:4700:4700::1111')).toBe(false);
+        expect(isBlockedAddress('[2a01:4f8::1]')).toBe(false);
+        expect(isBlockedAddress('::ffff:8.8.8.8')).toBe(false);
+        expect(isBlockedAddress('64:ff9b::8.8.8.8')).toBe(false);
+    });
+
+    it('SEC-23: bloquea toda IPv6 que EMBEBE una IPv4 interna, en cualquier notación', () => {
+        for (const ip of [
+            '[::1]', // con corchetes, como lo devuelve URL.hostname
+            '::ffff:7f00:1', // mapped en hex
+            '0:0:0:0:0:ffff:7f00:0001', // mapped sin comprimir
+            '[::ffff:a9fe:a9fe]', // metadata cloud, mapped hex con corchetes
+            '::7f00:1', // IPv4-compatible
+            '::127.0.0.1',
+            '64:ff9b::a9fe:a9fe', // NAT64 → metadata
+            '64:ff9b:1::1', // NAT64 de uso local
+            '2002:7f00:1::', // 6to4 → loopback
+            '2002:a9fe:a9fe::1', // 6to4 → metadata
+            '2001::1', // Teredo
+            '2001:db8::1', // documentación
+            'fec0::1', // site-local
+            '100::1', // discard
+            'fd00:ec2::254', // metadata AWS por IPv6 (ULA)
+            '::', // unspecified
+        ]) {
+            expect(isBlockedAddress(ip), ip).toBe(true);
+        }
+    });
+
+    it('SEC-23: bloquea los rangos IPv4 de benchmark/documentación y la metadata de Alibaba', () => {
+        for (const ip of ['198.18.0.1', '198.19.255.1', '198.51.100.7', '203.0.113.9', '192.88.99.1', '100.100.100.200', '255.255.255.255']) {
+            expect(isBlockedAddress(ip), ip).toBe(true);
+        }
+    });
+
+    it('ipv6Hextets normaliza todas las notaciones a los mismos 8 números', () => {
+        const ref = [0, 0, 0, 0, 0, 0xffff, 0x7f00, 1];
+        expect(ipv6Hextets('::ffff:127.0.0.1')).toEqual(ref);
+        expect(ipv6Hextets('::ffff:7f00:1')).toEqual(ref);
+        expect(ipv6Hextets('0:0:0:0:0:ffff:7f00:0001')).toEqual(ref);
+        expect(ipv6Hextets('[::ffff:7f00:1]')).toEqual(ref);
+        expect(ipv6Hextets('fe80::1%eth0')).toEqual([0xfe80, 0, 0, 0, 0, 0, 0, 1]);
+        expect(ipv6Hextets('1::2::3')).toBeNull();
+        expect(ipv6Hextets('1:2:3:4:5:6:7:8:9')).toBeNull();
     });
 
     it('bloquea entradas no-IP (defensa)', () => {
@@ -72,6 +115,36 @@ describe('safeWebhookFetch (SEC-03)', () => {
         await expect(
             safeWebhookFetch('http://127.0.0.1:6379/', { timeoutMs: 2000 }),
         ).rejects.toThrow(/interna|bloqueada|SSRF/i);
+    });
+
+    it('SEC-23: un literal IPv6 entre corchetes pasa por el guard (antes ni se miraba)', async () => {
+        // Antes estos llegaban a `connect` directo: el lookup no corre para IPs
+        // literales y la validación del literal comparaba `[::1]` con corchetes.
+        for (const url of [
+            'http://[::1]:3001/',
+            'http://[::ffff:127.0.0.1]:2019/load',
+            'http://[::ffff:a9fe:a9fe]/latest/meta-data/',
+            'http://[::7f00:1]/',
+            'http://[64:ff9b::a9fe:a9fe]/',
+            'http://[2002:7f00:1::]/',
+        ]) {
+            await expect(safeWebhookFetch(url, { timeoutMs: 2000 }), url).rejects.toThrow(/SSRF/);
+        }
+    });
+});
+
+describe('stripUnsafeHeaders (SEC-23)', () => {
+    it('saca Host y las cabeceras de framing, conserva el resto', () => {
+        expect(
+            stripUnsafeHeaders({
+                Host: 'localhost:2019',
+                'Content-Length': '5',
+                'Transfer-Encoding': 'chunked',
+                Connection: 'close',
+                Authorization: 'Bearer x',
+                'X-Custom': '1',
+            }),
+        ).toEqual({ Authorization: 'Bearer x', 'X-Custom': '1' });
     });
 });
 

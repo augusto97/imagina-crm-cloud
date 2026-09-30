@@ -19,6 +19,13 @@
 # on-demand los sirve (el `ask` valida el slug contra la DB).
 
 {
+    # SEC-23 (v0.1.225): el API de administración de Caddy escuchaba en
+    # localhost:2019 y con él se reescribe TODO el proxy (rutas, TLS). Cualquier
+    # proceso que alcance loopback —p. ej. un bypass SSRF— lo controlaba. En un
+    # socket unix sólo lo usa quien tiene permisos sobre el archivo (`caddy
+    # reload` lee esta misma dirección, así que la recarga sigue funcionando).
+    admin unix//var/lib/caddy/admin.sock
+
     on_demand_tls {
         ask http://127.0.0.1:3001/api/v1/public/domains/check
     }

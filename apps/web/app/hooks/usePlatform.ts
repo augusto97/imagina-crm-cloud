@@ -43,6 +43,15 @@ export function useIsSuperadmin() {
                 await api.get<PlatformStats>('/platform/stats');
                 return true;
             } catch (err) {
+                // SEC-24 (v0.1.225): la consola exige una sesión abierta con
+                // contraseña. Una sesión anterior al fix no trae esa marca: se
+                // cierra y se vuelve al login UNA vez (si no, el operador
+                // simplemente dejaría de ver "Plataforma" sin saber por qué).
+                if (err instanceof ApiError && err.code === 'reauth_required') {
+                    await api.post('/auth/logout', {}).catch(() => undefined);
+                    window.location.reload();
+                    return false;
+                }
                 if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return false;
                 throw err;
             }

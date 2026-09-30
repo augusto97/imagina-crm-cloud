@@ -1,6 +1,7 @@
 import {
     CanActivate,
     ExecutionContext,
+    ForbiddenException,
     Injectable,
     UnauthorizedException,
 } from '@nestjs/common';
@@ -8,6 +9,12 @@ import type { FastifyRequest } from 'fastify';
 import { SessionService } from './session.service';
 
 export const SESSION_COOKIE = 'imbase_session';
+
+/** Rutas que una sesión del portal puede usar: el portal y cerrar sesión. */
+export function isPortalPath(url: string): boolean {
+    const path = url.split('?')[0] ?? '';
+    return path.startsWith('/api/v1/portal/') || path === '/api/v1/auth/logout';
+}
 
 /**
  * Autenticación por sesión opaca: cookie httpOnly (SPA) o `Authorization:
@@ -30,6 +37,21 @@ export class SessionGuard implements CanActivate {
         req.authUserId = session.userId;
         req.sessionToken = token;
         req.impersonatedBy = session.impersonatedBy;
+        req.sessionVia = session.via;
+        // SEC-24 (v0.1.225): una sesión abierta con un enlace del portal sólo
+        // sirve para el portal. Sin este corte, el enlace de una cuenta que no
+        // era cliente (el caso del superadmin) daba acceso a TODO lo que esa
+        // cuenta podía hacer.
+        if (session.portalTenantId !== undefined) {
+            req.portalTenantId = session.portalTenantId;
+            if (!isPortalPath(req.url)) {
+                throw new ForbiddenException({
+                    code: 'portal_session_scope',
+                    message: 'Esta sesión es del portal del cliente',
+                    data: { status: 403 },
+                });
+            }
+        }
         return true;
     }
 

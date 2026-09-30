@@ -70,6 +70,18 @@ export class TenantGuard implements CanActivate {
         if (!membership) {
             throw new ForbiddenException('No sos miembro de ese workspace');
         }
+        // SEC-24 (v0.1.225): el rol `client` es SÓLO portal. Sus endpoints
+        // (`/portal/*`) resuelven la empresa por el vínculo, nunca por este
+        // header — así que un cliente no tiene nada que hacer en la API de la
+        // app (antes leía listas, campos, vistas y la configuración del portal
+        // con sólo mandar X-Tenant-Id).
+        if (membership.role === 'client') {
+            throw new ForbiddenException({
+                code: 'client_role_portal_only',
+                message: 'Tu acceso a esta empresa es sólo por el portal del cliente',
+                data: { status: 403 },
+            });
+        }
 
         const status = membership.status as BillingStatus;
 
