@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { loadEnv } from '../src/config/env';
-import { users } from '../src/db/schema';
+import { memberships, personalAccessTokens, users } from '../src/db/schema';
 import { MailService } from '../src/mail/mail.service';
 import {
     startPostgres,
@@ -130,6 +130,15 @@ describe('AuthService (Postgres + Redis reales)', () => {
         expect(await sessions.get(tokenB)).not.toBeNull();
 
         // Simula el flujo real: se emite el token de reset y se consume.
+        // SEC-26 (v0.1.226): un token de acceso (MCP) creado con la sesión
+        // robada también cae.
+        const [ana] = await pg.db.select().from(users).where(eq(users.email, 'ana@acme.test')).limit(1);
+        const [m] = await pg.db.select().from(memberships).where(eq(memberships.userId, ana!.id)).limit(1);
+        const [pat] = await pg.db
+            .insert(personalAccessTokens)
+            .values({ userId: ana!.id, tenantId: m!.tenantId, name: 'robado', prefix: 'ib_pat_x', tokenHash: 'a'.repeat(64) })
+            .returning({ id: personalAccessTokens.id });
+
         await auth.requestPasswordReset('ana@acme.test');
         const key = (await redis.keys('pwreset:*'))[0];
         expect(key).toBeDefined();
@@ -138,6 +147,13 @@ describe('AuthService (Postgres + Redis reales)', () => {
 
         // Las dos sesiones previas quedaron muertas...
         expect(await sessions.get(tokenA)).toBeNull();
+        const [patAfter] = await pg.db
+            .select({ revokedAt: personalAccessTokens.revokedAt })
+            .from(personalAccessTokens)
+            .where(eq(personalAccessTokens.id, pat!.id));
+        expect(patAfter!.revokedAt).not.toBeNull();
+        // El enlace de reset es de un solo uso.
+        await expect(auth.resetPassword(resetToken, 'otra-clave-789')).rejects.toThrow();
         expect(await sessions.get(tokenB)).toBeNull();
         // ...y la contraseña nueva es la que vale.
         const fresh = await loginOk(auth, { email: 'ana@acme.test', password: 'nueva-clave-456' });
@@ -446,6 +462,43 @@ describe('AuthService (Postgres + Redis reales)', () => {
                     code,
                 }),
             ).rejects.toBeInstanceOf(UnauthorizedException);
+        });
+
+        // SEC-26 (v0.1.226) — un código TOTP vale UNA vez, aunque llegue con un
+        // desafío nuevo (antes valía ~90 s, el ancho de la ventana ±1).
+        it('el mismo código no se acepta dos veces, ni con un desafío nuevo', async () => {
+            const userId = await newAccount();
+            const [u] = await pg.db.select().from(users).where(eq(users.id, userId)).limit(1);
+            const setup = await auth.setupTwoFactor(userId);
+            await auth.enableTwoFactor(userId, totp(setup.secret));
+            const code = totp(setup.secret);
+            const c1 = (await auth.login({ email: u!.email, password: PASSWORD })) as { challenge: string };
+            expect((await auth.verifyTwoFactorLogin({ challenge: c1.challenge, code })).token).toBeTruthy();
+            const c2 = (await auth.login({ email: u!.email, password: PASSWORD })) as { challenge: string };
+            await expect(auth.verifyTwoFactorLogin({ challenge: c2.challenge, code })).rejects.toBeInstanceOf(
+                UnauthorizedException,
+            );
+        });
+
+        // SEC-26 — el tope de 5 intentos era POR DESAFÍO y cada login con la
+        // contraseña correcta emite uno nuevo: sin tope por usuario, quien
+        // tenía la contraseña probaba códigos sin fin.
+        it('10 códigos malos entre varios desafíos bloquean al usuario (aunque después acierte)', async () => {
+            const userId = await newAccount();
+            const [u] = await pg.db.select().from(users).where(eq(users.id, userId)).limit(1);
+            const setup = await auth.setupTwoFactor(userId);
+            await auth.enableTwoFactor(userId, totp(setup.secret));
+            for (let round = 0; round < 3; round++) {
+                const c = (await auth.login({ email: u!.email, password: PASSWORD })) as { challenge: string };
+                for (let i = 0; i < 4; i++) {
+                    await expect(auth.verifyTwoFactorLogin({ challenge: c.challenge, code: '000000' })).rejects.toThrow();
+                }
+            }
+            const c = (await auth.login({ email: u!.email, password: PASSWORD })) as { challenge: string };
+            await expect(
+                auth.verifyTwoFactorLogin({ challenge: c.challenge, code: totp(setup.secret) }),
+            ).rejects.toMatchObject({ response: { code: 'mfa_locked' } });
+            await redis.del(`mfafail:${userId}`);
         });
 
         it('desactivar exige la contraseña y devuelve la cuenta al login simple', async () => {

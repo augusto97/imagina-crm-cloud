@@ -274,6 +274,24 @@ describe('Listas públicas embebibles', () => {
         expect(page.data.map((r) => r.data.nombre).sort()).toEqual(['Ana', 'Carla']);
         expect((await pub.getMeta(cfg.token)).view_name).toBe('Grandes');
 
+        // SEC-25 (v0.1.226): si la vista deja de poder aplicarse, NO se muestra
+        // nada (antes: vista borrada o filtro sobre un campo desconocido → la
+        // lista ENTERA a la vista).
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(savedViews).set({
+                config: {
+                    filter_tree: {
+                        type: 'group',
+                        logic: 'and',
+                        children: [{ type: 'condition', field_id: 999999, op: 'gte', value: 200 }],
+                    },
+                },
+            }).where(eq(savedViews.id, view.id)),
+        );
+        expect((await pub.getRecords(cfg.token, {})).data).toHaveLength(0);
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(savedViews).where(eq(savedViews.id, view.id)));
+        expect((await pub.getRecords(cfg.token, {})).data).toHaveLength(0);
+
         // Sin vista publicada vuelven los tres, y el nombre de vista queda en null.
         const all = await publish({ view_id: null });
         expect((await pub.getRecords(all.token, {})).data).toHaveLength(3);

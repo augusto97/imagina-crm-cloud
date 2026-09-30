@@ -26,7 +26,7 @@ export class RecordsGroupedController {
         @Query() q: Record<string, unknown>,
     ): Promise<unknown> {
         const groupBy = intParam(q.group_by, 'group_by');
-        return this.grouped.groups(tenantId(req), list, groupBy, parseFilter(q.filter_tree), typeof q.search === 'string' ? q.search : undefined);
+        return this.grouped.groups(tenantId(req), actor(req), list, groupBy, parseFilter(q.filter_tree), typeof q.search === 'string' ? q.search : undefined);
     }
 
     @Get('grouped-bundle')

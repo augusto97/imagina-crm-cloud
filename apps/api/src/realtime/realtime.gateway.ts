@@ -73,7 +73,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         }
         const isMember = await this.tenantDb.withUser(userId, async (tx) => {
             const [row] = await tx
-                .select({ tenantId: memberships.tenantId })
+                .select({ tenantId: memberships.tenantId, role: memberships.role })
                 .from(memberships)
                 .where(
                     and(
@@ -82,7 +82,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
                     ),
                 )
                 .limit(1);
-            return row !== undefined;
+            // SEC-25 (v0.1.226): el rol `client` es sólo portal — no recibe los
+            // avisos de toda la empresa (qué listas cambian y cuándo).
+            return row !== undefined && row.role !== 'client';
         });
         if (!isMember) {
             return { ok: false };
@@ -101,7 +103,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         const token = readCookie(raw, SESSION_COOKIE);
         if (!token) return null;
         const session = await this.sessions.get(token).catch(() => null);
-        return session?.userId ?? null;
+        // SEC-24/25: una sesión del portal no abre el socket de la app.
+        if (!session || session.portalTenantId !== undefined) return null;
+        return session.userId;
     }
 }
 

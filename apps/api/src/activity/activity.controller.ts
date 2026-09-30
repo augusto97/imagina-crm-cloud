@@ -26,6 +26,7 @@ export class ActivityController {
         return this.activity.list(req.tenant!.tenantId, list, {
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
+            viewer: { role: req.tenant!.role, userId: req.authUserId! },
         });
     }
 
@@ -43,6 +44,7 @@ export class ActivityController {
             recordId: id,
             cursor: cursor ? Number(cursor) : undefined,
             limit: limit ? Number(limit) : undefined,
+            viewer: { role: req.tenant!.role, userId: req.authUserId! },
         });
     }
 }

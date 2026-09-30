@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { ActivityAction, ActivityDto } from '@imagina-base/shared';
+import { jsonbKeyForField, type ActivityAction, type ActivityDto, type Role } from '@imagina-base/shared';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/client';
+import { activity, fields as fieldsTable, records } from '../db/schema';
+import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ActivityRepository, type ActivityRow } from './activity.repository';
@@ -57,21 +60,58 @@ export class ActivityService {
     async list(
         tenantId: number,
         listIdOrSlug: string,
-        opts: { recordId?: number; cursor?: number; limit?: number },
+        opts: { recordId?: number; cursor?: number; limit?: number; viewer?: { role: Role; userId: number } },
     ): Promise<{ data: ActivityDto[]; meta: { next_cursor: string | null } }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const limit = Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.list(tx, tenantId, list.id, {
+        const { rows, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-25 (v0.1.226): la actividad es una LECTURA de los registros
+            // (el alta guarda TODOS sus valores en el diff). Se muestra sólo la
+            // de los registros que esta persona puede ver, sin los campos que
+            // su rol tiene ocultos.
+            let where;
+            let hiddenKeys = new Set<string>();
+            if (opts.viewer) {
+                const perms = effectivePermissions(list.settings, opts.viewer.role, opts.viewer.userId);
+                const assignmentId = resolvePermissions(list.settings).assignment_field_id;
+                const scope = scopeWhere(perms.view, opts.viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+                if (scope) {
+                    where = inArray(
+                        activity.recordId,
+                        tx
+                            .select({ id: records.id })
+                            .from(records)
+                            .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), scope)),
+                    );
+                }
+                if (perms.fields_hidden.length > 0) {
+                    const hidden = await tx
+                        .select({ id: fieldsTable.id })
+                        .from(fieldsTable)
+                        .where(
+                            and(
+                                eq(fieldsTable.listId, list.id),
+                                inArray(fieldsTable.slug, perms.fields_hidden),
+                            ),
+                        );
+                    hiddenKeys = new Set(hidden.map((h) => jsonbKeyForField(h.id)));
+                }
+            }
+            const rows = await this.repo.list(tx, tenantId, list.id, {
                 recordId: opts.recordId,
                 cursor: opts.cursor,
                 limit: limit + 1,
-            }),
-        );
+                where: where ?? sql`true`,
+            });
+            return { rows, hiddenKeys };
+        });
         const hasMore = rows.length > limit;
         const page = hasMore ? rows.slice(0, limit) : rows;
         const nextCursor = hasMore ? String(page[page.length - 1]!.id) : null;
-        return { data: page.map(toActivity), meta: { next_cursor: nextCursor } };
+        return {
+            data: page.map((r) => toActivity(hiddenKeys.size > 0 ? { ...r, diff: stripKeys(r.diff, hiddenKeys) } : r)),
+            meta: { next_cursor: nextCursor },
+        };
     }
 }
 
@@ -88,4 +128,10 @@ function toActivity(row: ActivityRow): ActivityDto {
         diff: row.diff,
         created_at: row.createdAt.toISOString(),
     };
+}
+
+/** El diff sin las claves `f{id}` de los campos ocultos para quien mira. */
+function stripKeys(diff: unknown, hidden: Set<string>): Record<string, unknown> {
+    if (!diff || typeof diff !== 'object') return {};
+    return Object.fromEntries(Object.entries(diff as Record<string, unknown>).filter(([k]) => !hidden.has(k)));
 }

@@ -18,7 +18,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BillingService } from '../billing/billing.service';
-import { FilesService, type AttachmentDto } from './files.service';
+import { type FileActor, FilesService, type AttachmentDto } from './files.service';
 import { contentDispositionHeader, safeDisposition } from './safe-content-type';
 
 /**
@@ -143,7 +143,7 @@ export class FilesController {
             .split(',')
             .map((s) => Number(s.trim()))
             .filter((n) => Number.isInteger(n) && n > 0);
-        return { data: await this.files.resolve(req.tenant!.tenantId, parsed) };
+        return { data: await this.files.resolve(req.tenant!.tenantId, parsed, fileActor(req)) };
     }
 
     /** Descarga streameada (inline; el browser decide por content-type). */
@@ -154,7 +154,7 @@ export class FilesController {
         @Param('id', ParseIntPipe) id: number,
         @Res() reply: FastifyReply,
     ): Promise<void> {
-        const file = await this.files.openDownload(req.tenant!.tenantId, id);
+        const file = await this.files.openDownload(req.tenant!.tenantId, id, fileActor(req));
         await streamFile(file, reply);
     }
 
@@ -165,6 +165,10 @@ export class FilesController {
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<void> {
-        await this.files.remove(req.tenant!.tenantId, id);
+        await this.files.remove(req.tenant!.tenantId, id, fileActor(req));
     }
+}
+
+function fileActor(req: FastifyRequest): FileActor {
+    return { userId: req.authUserId!, role: req.tenant!.role };
 }

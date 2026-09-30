@@ -1,9 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { roleHasCapability, type Role } from '@imagina-base/shared';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
-import { attachments } from '../db/schema';
+import { attachments, records } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { FILE_STORAGE, type FileStorage } from './file-storage';
 
@@ -19,6 +20,28 @@ export interface AttachmentDto {
 }
 
 const MAX_BATCH = 100;
+
+/** Quién pide un archivo (SEC-25). Sin actor = uso interno (sin recorte). */
+export interface FileActor {
+    userId: number;
+    role: Role;
+}
+
+/**
+ * SEC-25 (v0.1.226) — qué adjuntos puede ver alguien. Los ids son
+ * secuenciales: sin esto, un agente que sólo ve SUS registros bajaba todos
+ * los archivos de la empresa probando `/files/1`, `/files/2`… Quien ve todos
+ * los registros (`view_records`) ve todos los archivos; quien ve sólo lo suyo
+ * ve lo que SUBIÓ y lo que cuelga de un registro SUYO.
+ */
+function readableBy(tenantId: number, actor: FileActor | undefined): SQL | undefined {
+    if (!actor || roleHasCapability(actor.role, 'view_records')) return undefined;
+    return sql`(${attachments.createdBy} = ${actor.userId} OR EXISTS (
+        SELECT 1 FROM ${records} r
+        WHERE r.tenant_id = ${tenantId} AND r.created_by = ${actor.userId} AND r.deleted_at IS NULL
+          AND jsonb_path_exists(r.data, '$.*[*] ? (@ == $x)', jsonb_build_object('x', ${attachments.id}))
+    ))`;
+}
 
 /**
  * Archivos propios (ADR-S16). Metadata en `attachments` (RLS); bytes detrás
@@ -112,7 +135,7 @@ export class FilesService {
     }
 
     /** Resuelve un batch de IDs (para tarjetas/galerías — 1 request). */
-    async resolve(tenantId: number, ids: number[]): Promise<AttachmentDto[]> {
+    async resolve(tenantId: number, ids: number[], actor?: FileActor): Promise<AttachmentDto[]> {
         const unique = Array.from(new Set(ids.filter((n) => Number.isInteger(n) && n > 0))).slice(
             0,
             MAX_BATCH,
@@ -122,7 +145,7 @@ export class FilesService {
             tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique)))
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique), readableBy(tenantId, actor)))
                 .orderBy(desc(attachments.id)),
         );
         return rows.map(toDto);
@@ -132,12 +155,13 @@ export class FilesService {
     async openDownload(
         tenantId: number,
         id: number,
+        actor?: FileActor,
     ): Promise<{ stream: Readable; filename: string; mime: string; size: number }> {
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id)))
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), readableBy(tenantId, actor)))
                 .limit(1),
         );
         if (!row) throw fileNotFound(id);
@@ -156,14 +180,25 @@ export class FilesService {
         };
     }
 
-    async remove(tenantId: number, id: number): Promise<void> {
+    async remove(tenantId: number, id: number, actor?: FileActor): Promise<void> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [found] = await tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id)))
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), readableBy(tenantId, actor)))
                 .limit(1);
             if (!found) return null;
+            // SEC-25: borrar un archivo es irreversible (se van los bytes). Lo
+            // borra quien lo subió o quien puede editar TODOS los registros —
+            // antes un agente con "sólo lo suyo" borraba adjuntos ajenos y el
+            // logo de la empresa recorriendo ids.
+            if (actor && found.createdBy !== actor.userId && !roleHasCapability(actor.role, 'edit_records')) {
+                throw new ForbiddenException({
+                    code: 'file_not_yours',
+                    message: 'Sólo quien subió el archivo (o quien edita todos los registros) puede borrarlo',
+                    data: { status: 403 },
+                });
+            }
             await tx.delete(attachments).where(eq(attachments.id, found.id));
             return found;
         });

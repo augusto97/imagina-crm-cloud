@@ -1,6 +1,7 @@
 import { createConnection } from 'node:net';
-import { lookup } from 'node:dns/promises';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { resolvePublicHost } from '../common/safe-fetch';
+import { ENV, type Env } from '../config/env';
 import type { SmtpDiagnostic, SmtpPortProbe } from '@imagina-base/shared';
 
 /**
@@ -38,13 +39,22 @@ const GREETING_TIMEOUT_MS = 2_500;
 @Injectable()
 export class SmtpProbeService {
     private readonly logger = new Logger(SmtpProbeService.name);
+    private readonly allowPrivate: boolean;
+
+    constructor(@Optional() @Inject(ENV) env?: Pick<Env, 'SMTP_ALLOW_PRIVATE_HOSTS'>) {
+        this.allowPrivate = env?.SMTP_ALLOW_PRIVATE_HOSTS === true;
+    }
 
     async diagnose(input: { host: string; port: number; secure: boolean }): Promise<SmtpDiagnostic> {
         const host = input.host.trim();
         const base = { host, port: input.port, secure: input.secure };
 
-        const resolved = await resolveHost(host);
-        if (!resolved.ok) {
+        // SEC-27 (v0.1.226): el diagnóstico conecta DESDE EL SERVIDOR, así que
+        // sólo contra direcciones públicas (antes bloqueaba sólo link-local: con
+        // `127.0.0.1` y cualquier puerto servía de escáner de la red interna,
+        // y devolvía el banner). La conexión va FIJADA a la IP validada.
+        const resolved = await resolvePublicHost(host, { allowPrivate: this.allowPrivate });
+        if (!resolved.ok && resolved.reason === 'dns') {
             return {
                 ...base,
                 dns: { ok: false, addresses: [], error: resolved.error },
@@ -53,20 +63,21 @@ export class SmtpProbeService {
                 hints: dnsHints(host, resolved.error),
             };
         }
-        if (resolved.addresses.some(isLinkLocal)) {
+        if (!resolved.ok) {
             return {
                 ...base,
                 dns: { ok: false, addresses: resolved.addresses, error: 'dirección no permitida' },
                 ports: [],
                 verdict: 'dns_failed',
                 hints: [
-                    'El nombre del servidor apunta a una dirección interna reservada. Escribí el host real de tu proveedor de correo.',
+                    'El nombre del servidor apunta a una dirección interna (privada o reservada). El SMTP de tu empresa tiene que ser un servidor accesible desde internet: escribí el host real de tu proveedor de correo.',
                 ],
             };
         }
 
         const ports = [...new Set([input.port, ...STANDARD_PORTS])].sort((a, b) => a - b);
-        const probes = await Promise.all(ports.map((port) => this.probe(host, port)));
+        const target = resolved.address;
+        const probes = await Promise.all(ports.map((port) => this.probe(target, port)));
 
         return { ...base, dns: { ok: true, addresses: resolved.addresses }, ports: probes, ...verdictFor(base, probes) };
     }
@@ -131,18 +142,6 @@ export function isLinkLocal(ip: string): boolean {
     if (mapped) return /^169\.254\./.test(mapped[1]!);
     const p3 = lower.slice(0, 3);
     return p3 === 'fe8' || p3 === 'fe9' || p3 === 'fea' || p3 === 'feb';
-}
-
-async function resolveHost(
-    host: string,
-): Promise<{ ok: true; addresses: string[] } | { ok: false; error: string }> {
-    try {
-        const list = await lookup(host, { all: true });
-        if (list.length === 0) return { ok: false, error: 'sin direcciones' };
-        return { ok: true, addresses: list.map((a) => a.address) };
-    } catch (err) {
-        return { ok: false, error: (err as NodeJS.ErrnoException).code ?? String(err) };
-    }
 }
 
 function dnsHints(host: string, error: string): string[] {

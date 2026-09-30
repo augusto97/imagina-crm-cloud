@@ -58,6 +58,7 @@ export class RecordsAggregatesController {
             fieldIds,
             filter_tree,
             group_by_field_id: Number.isInteger(groupBy) && (groupBy as number) > 0 ? groupBy : undefined,
+            viewer: { role: req.tenant!.role, userId: req.authUserId! },
         });
     }
 }

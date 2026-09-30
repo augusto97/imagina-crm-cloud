@@ -19,6 +19,15 @@ const envSchema = z.object({
         .positive()
         .default(60 * 60 * 24 * 30),
     COOKIE_SECURE: boolFromString,
+    /**
+     * SEC-27 (v0.1.226) — el SMTP PROPIO de una empresa (y el diagnóstico)
+     * sólo puede apuntar a direcciones públicas: antes una empresa ponía
+     * `127.0.0.1:25` y relayaba por el MTA local del servidor, o escaneaba la
+     * red interna con el botón "Diagnosticar". Una instalación self-hosted con
+     * un relay interno de verdad lo habilita con `1`. (El SMTP de PLATAFORMA lo
+     * configura el operador y no pasa por este control.)
+     */
+    SMTP_ALLOW_PRIVATE_HOSTS: boolFromString,
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),

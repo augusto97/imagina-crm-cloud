@@ -24,12 +24,12 @@ import {
     type VerifyTwoFactorInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { impersonationLog, memberships, tenants, users } from '../db/schema';
+import { impersonationLog, memberships, personalAccessTokens, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
@@ -37,6 +37,7 @@ import { SessionService, type ActiveSession } from './session.service';
 import {
     generateBackupCodes,
     generateTotpSecret,
+    matchTotp,
     normalizeBackupCode,
     otpauthUri,
     verifyTotp,
@@ -77,6 +78,12 @@ const MFA_MAX_TRIES = 5;
 const totpPendingKey = (userId: number): string => `totpsetup:${userId}`;
 const mfaKey = (challenge: string): string => `mfa:${challenge}`;
 const mfaTriesKey = (challenge: string): string => `mfatries:${challenge}`;
+/** SEC-26 — fallos de segundo factor por USUARIO (no por desafío). */
+const mfaUserFailKey = (userId: number): string => `mfafail:${userId}`;
+/** SEC-26 — última ventana TOTP aceptada (anti-reutilización). */
+const totpLastKey = (userId: number): string => `totplast:${userId}`;
+const MFA_USER_MAX_FAILS = 10;
+const MFA_USER_LOCK_SECONDS = 15 * 60;
 
 const sha256Hex = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -155,6 +162,11 @@ export class AuthService implements OnModuleInit {
             .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
             .limit(1);
         if (!user) return;
+        // SEC-26 (v0.1.226): freno POR DIRECCIÓN (compartido entre nodos). El
+        // rate limit por IP no alcanza: con IPs rotativas se inundaba la casilla
+        // de alguien con correos de reset de la plataforma. Silencioso, como
+        // el resto del endpoint (no revela si la cuenta existe).
+        if (!(await this.withinMailBudget(`pwreset-rl:${user.id}`, 3, 3600))) return;
 
         const token = randomBytes(32).toString('base64url');
         await this.redis.set(resetKey(token), String(user.id), 'EX', RESET_TTL_SECONDS);
@@ -169,9 +181,22 @@ export class AuthService implements OnModuleInit {
         this.logger.log(`Reset de contraseña solicitado para userId=${user.id}`);
     }
 
+    /** Cupo de correos de cuenta por clave en una ventana (Redis, entre nodos). */
+    private async withinMailBudget(key: string, max: number, windowSeconds: number): Promise<boolean> {
+        const n = await this.redis.incr(key);
+        if (n === 1) await this.redis.expire(key, windowSeconds);
+        if (n > max) {
+            this.logger.warn(`Correos de cuenta frenados (${key})`);
+            return false;
+        }
+        return true;
+    }
+
     /** Consume el token y setea la nueva contraseña. Token de un solo uso. */
     async resetPassword(token: string, password: string): Promise<void> {
-        const userId = await this.redis.get(resetKey(token));
+        // SEC-26: un solo uso ATÓMICO (GETDEL), como el magic link y la
+        // verificación de email — get+del dejaba una carrera.
+        const userId = await this.redis.getdel(resetKey(token));
         if (!userId) {
             throw new BadRequestException({
                 code: 'invalid_reset_token',
@@ -181,13 +206,20 @@ export class AuthService implements OnModuleInit {
         }
         const passwordHash = await argon2.hash(password);
         await this.db.update(users).set({ passwordHash }).where(eq(users.id, Number(userId)));
-        await this.redis.del(resetKey(token));
         // SEC-22 (v0.1.113): cambiar la contraseña REVOCA todas las sesiones
         // abiertas. Sin esto, quien hubiera robado una sesión seguía dentro
         // después de que la víctima "recuperaba" la cuenta (el TTL de sesión
         // es de 30 días deslizantes → acceso persistente).
         await this.sessions.destroyAllForUser(Number(userId));
-        this.logger.log(`Contraseña restablecida para userId=${userId} (sesiones revocadas)`);
+        // SEC-26 (v0.1.226): y los TOKENS de acceso (MCP pegados y conexiones
+        // OAuth). Quien robó una sesión podía crear uno sin vencimiento y
+        // seguir entrando por el MCP después de que la víctima recuperara la
+        // cuenta. Recuperar la cuenta = asumir que alguien más la tuvo.
+        await this.db
+            .update(personalAccessTokens)
+            .set({ revokedAt: new Date() })
+            .where(and(eq(personalAccessTokens.userId, Number(userId)), isNull(personalAccessTokens.revokedAt)));
+        this.logger.log(`Contraseña restablecida para userId=${userId} (sesiones y tokens revocados)`);
     }
 
     // ─────────── Gestión de usuarios por el operador (ADR-S15 F2) ───────────
@@ -582,10 +614,35 @@ export class AuthService implements OnModuleInit {
             throw new UnauthorizedException('Código inválido');
         }
 
+        // SEC-26 (v0.1.226): tope de fallos POR USUARIO. El de arriba es por
+        // desafío, y cada login con la contraseña correcta emite uno nuevo:
+        // quien ya tiene la contraseña probaba códigos sin límite.
+        const failKey = mfaUserFailKey(user.id);
+        if (Number((await this.redis.get(failKey)) ?? 0) >= MFA_USER_MAX_FAILS) {
+            throw new UnauthorizedException({
+                code: 'mfa_locked',
+                message: 'Demasiados códigos incorrectos. Esperá 15 minutos y volvé a intentar.',
+                data: { status: 401 },
+            });
+        }
+
         const secret = decryptSecret(user.totpSecret, this.env.SECRETS_KEY);
-        let ok = verifyTotp(secret, input.code);
+        let ok = false;
+        const step = matchTotp(secret, input.code);
+        if (step !== null) {
+            // Un código vale UNA vez: se guarda la última ventana usada y no se
+            // acepta ninguna igual o anterior (`SET … GET` atómico).
+            const prev = await this.redis.set(totpLastKey(user.id), String(step), 'EX', 300, 'GET');
+            ok = prev === null || Number(prev) < step;
+            if (!ok && prev !== null) await this.redis.set(totpLastKey(user.id), prev, 'EX', 300);
+        }
         if (!ok) ok = await this.consumeBackupCode(user.id, user.totpBackupCodes ?? [], input.code);
-        if (!ok) throw new UnauthorizedException('Código inválido');
+        if (!ok) {
+            const fails = await this.redis.incr(failKey);
+            if (fails === 1) await this.redis.expire(failKey, MFA_USER_LOCK_SECONDS);
+            throw new UnauthorizedException('Código inválido');
+        }
+        await this.redis.del(failKey);
 
         await this.redis.del(mfaKey(input.challenge), mfaTriesKey(input.challenge));
         const token = await this.sessions.create(user.id, {
@@ -615,7 +672,14 @@ export class AuthService implements OnModuleInit {
         const idx = hashes.findIndex((h) => safeEqualHex(h, digest));
         if (idx === -1) return false;
         const rest = hashes.filter((_, i) => i !== idx);
-        await this.db.update(users).set({ totpBackupCodes: rest }).where(eq(users.id, userId));
+        // SEC-26: UPDATE condicional — sólo consume si el código SIGUE en la
+        // lista. Dos requests en paralelo con el mismo código: gana una.
+        const updated = await this.db
+            .update(users)
+            .set({ totpBackupCodes: rest })
+            .where(and(eq(users.id, userId), sql`${users.totpBackupCodes} @> ${JSON.stringify([hashes[idx]])}::jsonb`))
+            .returning({ id: users.id });
+        if (updated.length === 0) return false;
         this.logger.warn(`Código de respaldo consumido por el usuario ${userId} (quedan ${rest.length})`);
         return true;
     }
@@ -757,6 +821,9 @@ export class AuthService implements OnModuleInit {
     async sendEmailVerification(userId: number): Promise<void> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user || user.emailVerifiedAt !== null) return;
+        // SEC-26: registrarse con la dirección de otra persona y apretar
+        // "Reenviar" en loop la inundaba. Tope por cuenta.
+        if (!(await this.withinMailBudget(`verify-rl:${user.id}`, 5, 3600))) return;
 
         const token = randomBytes(32).toString('base64url');
         await this.redis.set(verifyKey(token), String(user.id), 'EX', VERIFY_TTL_SECONDS);

@@ -160,18 +160,21 @@ export class PublicListsService {
             .from(savedViews)
             .where(and(eq(savedViews.id, viewId), eq(savedViews.listId, listId)))
             .limit(1);
-        if (!view) return { sql: undefined, name: null };
+        // SEC-25 (v0.1.226): la vista publicada ACOTA lo que se ve; si no se
+        // puede aplicar, no se muestra NADA (antes, vista borrada, filtro que ya
+        // no compila o una condición sobre un campo que el filtro público no
+        // entiende —lookup/rollup— dejaban la lista ENTERA a la vista).
+        if (!view) return { sql: sql`false`, name: null };
         const tree = (view.config as Record<string, unknown>).filter_tree;
         if (tree === undefined || tree === null) return { sql: undefined, name: view.name };
         const byId = new Map<number, FilterableField>(
             fieldRows.map((f) => [f.id, { id: f.id, type: f.type as FilterableField['type'] }] as const),
         );
+        if (conditionFieldIds(tree).some((id) => !byId.has(id))) return { sql: sql`false`, name: view.name };
         try {
             return { sql: compileFilterTree(byId, tree as never, new Date()), name: view.name };
         } catch {
-            // Un filtro que ya no compila (campo borrado, operador viejo) no
-            // debe tumbar la página pública.
-            return { sql: undefined, name: view.name };
+            return { sql: sql`false`, name: view.name };
         }
     }
 
@@ -285,4 +288,12 @@ export class PublicListsService {
             return { data, meta: { next_cursor: hasMore ? String(offset + limit) : null } };
         });
     }
+}
+
+/** Los `field_id` de todas las condiciones de un filter tree (a cualquier profundidad). */
+function conditionFieldIds(node: unknown): number[] {
+    if (!node || typeof node !== 'object') return [];
+    const n = node as { type?: string; field_id?: unknown; children?: unknown[] };
+    if (n.type === 'condition') return [Number(n.field_id)];
+    return Array.isArray(n.children) ? n.children.flatMap(conditionFieldIds) : [];
 }

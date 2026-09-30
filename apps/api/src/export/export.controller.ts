@@ -1,5 +1,5 @@
-import { BadRequestException, Controller, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
-import { filterTreeSchema, type FilterGroup } from '@imagina-base/shared';
+import { BadRequestException, Controller, ForbiddenException, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { filterTreeSchema, roleHasCapability, type FilterGroup } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -62,6 +62,18 @@ export class ExportController {
             return;
         }
 
+        // SEC-25 (v0.1.226): el bundle JSON es la copia ESTRUCTURAL de la lista
+        // (todos los registros con todos sus campos + settings: permisos,
+        // plantilla del portal, publicación). No pasa por el ACL por lista, así
+        // que es para quien administra listas; el resto exporta en CSV, que sí
+        // respeta su scope y sus campos ocultos.
+        if (!roleHasCapability(req.tenant!.role, 'manage_lists')) {
+            throw new ForbiddenException({
+                code: 'export_json_requires_manage_lists',
+                message: 'El export completo (JSON) es para quien administra listas; exportá en CSV',
+                data: { status: 403 },
+            });
+        }
         reply.raw.writeHead(200, {
             'content-type': 'application/json; charset=utf-8',
             'content-disposition': 'attachment; filename="export.json"',
