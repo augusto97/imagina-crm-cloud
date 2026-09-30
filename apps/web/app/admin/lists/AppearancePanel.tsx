@@ -52,7 +52,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
             // por una fracción de segundo.
             qc.removeQueries({ queryKey: recordsKeys.forList(list.id) });
             toast.success(
-                next === 'crm' ? __('Layout CRM activado') : __('Layout Lista activado'),
+                next === 'crm' ? __('Ficha diseñada activada') : __('Ficha simple activada'),
             );
         } catch (err) {
             if (err instanceof Error) toast.error(__('No se pudo cambiar el layout'), err.message);
@@ -96,8 +96,8 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                     <LayoutOption
                         active={currentLayout === 'crm'}
                         disabled={update.isPending}
-                        title={__('Ficha de cliente')}
-                        description={__('Encabezado con avatar y datos destacados, más historial al costado.')}
+                        title={__('Ficha diseñada')}
+                        description={__('Portada, etapas, pestañas y gráficos de los registros vinculados. Se guarda sola.')}
                         Icon={UserSquare2}
                         onClick={() => void setLayout('crm')}
                     />
@@ -109,7 +109,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                             <h4 className="imcrm-text-sm imcrm-font-semibold">{__('Plantilla')}</h4>
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    'Cada plantilla decide qué campos van al frente y cuáles quedan en el detalle. Los que no encajan en ningún lugar aparecen agrupados en "Otros".',
+                                    '«Automática» arma la ficha sola con tus campos y relaciones: cifras destacadas, etapas y una pestaña con gráficos por cada lista vinculada. Las demás son puntos de partida por tipo de registro.',
                                 )}
                             </p>
                         </div>

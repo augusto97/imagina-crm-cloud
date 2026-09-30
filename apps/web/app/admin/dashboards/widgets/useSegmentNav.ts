@@ -1,4 +1,7 @@
+import { useContext } from 'react';
 import { useNavigate } from 'react-router';
+
+import { WidgetDataOverrideContext } from '@/hooks/useDashboards';
 
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
@@ -13,6 +16,9 @@ import type { WidgetSpec } from '@/types/dashboard';
  * o grupo por fecha bucketeada (un label `2026-07` no es un valor eq).
  */
 export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | null {
+    // v0.1.230 — en la ficha (datos inyectados, acotados a los vinculados) el
+    // click-through abriría la lista ENTERA filtrada por el valor: engañoso.
+    const injected = useContext(WidgetDataOverrideContext) !== null;
     const navigate = useNavigate();
     const lists = useLists();
     const fields = useFields(widget.list_id > 0 ? widget.list_id : undefined);
@@ -20,7 +26,7 @@ export function useSegmentNav(widget: WidgetSpec): ((label: string) => void) | n
     const groupFieldId = typeof widget.config.group_by_field_id === 'number'
         ? widget.config.group_by_field_id
         : undefined;
-    if (groupFieldId === undefined) return null;
+    if (injected || groupFieldId === undefined) return null;
 
     const field = fields.data?.find((f) => f.id === groupFieldId);
     if (!field || field.type === 'date' || field.type === 'datetime') return null;

@@ -45,6 +45,8 @@ interface RecordTimelineProps {
     recordId: number;
     currentUserId: number;
     isAdmin: boolean;
+    /** v0.1.230 — el bloque "Comentarios" de la ficha arranca filtrado. */
+    initialFilter?: Filter;
 }
 
 type Filter = 'all' | 'comments' | 'changes';
@@ -93,6 +95,7 @@ export function RecordTimeline({
     recordId,
     currentUserId,
     isAdmin,
+    initialFilter = 'all',
 }: RecordTimelineProps): JSX.Element {
     const comments = useComments(listId, recordId);
     const activity = useRecordActivity(listId, recordId);
@@ -110,7 +113,7 @@ export function RecordTimeline({
     // para no resetar al cambiar de tab — si el user pegó un asunto
     // y se cambió a "Llamada" por error, no perdemos lo escrito.
     const [meta, setMeta] = useState<CommentMetadata>({});
-    const [filter, setFilter] = useState<Filter>('all');
+    const [filter, setFilter] = useState<Filter>(initialFilter);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editDraft, setEditDraft] = useState('');
 

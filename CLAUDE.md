@@ -5785,6 +5785,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         24.400 sumando el calculado, el widget roto con su motivo y el resto
         intacto, barras por proveedor, tabla ordenada por el calculado).
 
+  - [x] **Ficha del registro rediseñada — fase A: modelo v3, formas por tipo y
+        datos vinculados (v0.1.230, ADR-S26, pedido del usuario: "los diseños
+        que se hacen con el editor son muy básicos… reconstruilo")**. Primera
+        de tres entregas (B: editor nuevo; C: portal del cliente + asistente).
+        (a) **Modelo v3** (`settings.record_layout_v3`, shared): páginas
+        (pestañas) → secciones con columnas que suman 12 → una pila de bloques
+        por columna, todo referenciado por ID; validado en el servidor al
+        guardar. 20 tipos de bloque: campo, propiedades, etapas, descripción,
+        archivos, resumen, **vinculados**, **gráfico**, comentarios, actividad,
+        título, texto, aviso, imagen, galería, botón, insertado, divisor,
+        espacio y acceso al portal. (b) **Formas de mostrar cada tipo**
+        (`FIELD_DISPLAYS`): un porcentaje como barra, anillo o medidor; una
+        fecha como relativa, cuenta regresiva o hoja de calendario; un importe
+        como cifra grande o barra hacia una meta; un select como etapas… y una
+        forma que el tipo no admite cae a la de siempre. (c) **Gráficos de los
+        registros VINCULADOS**: `POST /lists/:l/records/:id/layout-data`
+        calcula en UN request los gráficos y tablas de la ficha acotados a lo
+        vinculado a ESE registro, en los dos sentidos de la relación
+        (`relatedScopeSql`, ahora en el motor de agregados y en el listado),
+        con el ACL de quien mira y cada bloque aislado; los dibujan los MISMOS
+        componentes de los tableros (`WidgetDataOverrideContext` les inyecta
+        los datos; el renderer se extrajo a `WidgetRenderer.tsx`). Los
+        vinculados se ven como tabla, lista, tarjetas, tablero por estado,
+        línea de tiempo o galería, con "Agregar" que nace vinculado. (d) **La
+        ficha nueva** (`RecordLayoutView`, reemplaza a `RecordCrmLayout`):
+        portada con el acento, avatar, título editable, línea de contexto,
+        propiedades clave como chips editables, **etapas clickeables**,
+        pestañas en la URL (`?tab=`), secciones que se apilan en el celular,
+        5 temas (default/minimal/corporate/fresh/warm) y **guardado automático
+        campo por campo** (sin botón; un cambio pendiente no lo pisa la
+        respuesta del servidor). (e) **Nadie pierde su diseño**: sin v3
+        guardada, la plantilla v2 elegida (personalizada o integrada) se
+        CONVIERTE al vuelo (`migrateCrmV2ToV3`) y la "Automática" pasa a ser
+        un generador nuevo (`autoRecordLayout`): cifras destacadas, detalles y
+        una pestaña por cada lista vinculada con total, suma, dona por estado,
+        evolución mensual y la tabla. Tests: 5 de shared (conversión, ficha
+        automática, validación) + 3 del front + 5 de integración del endpoint
+        (dos sentidos, orden/total, bloques aislados, campos ocultos del rol,
+        registro base fuera de alcance, validación al guardar) + E2E navegador
+        22/22 (cabecera, etapas que guardan, edición que guarda sola, pestaña
+        de facturas con KPIs/dona/área/tabla, plantilla v3 guardada con cuenta
+        regresiva/medidor/aviso/tablero/tarjetas/barras, integrada convertida,
+        modo oscuro y celular sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

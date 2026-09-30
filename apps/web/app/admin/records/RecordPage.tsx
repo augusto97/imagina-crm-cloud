@@ -14,7 +14,7 @@ import {
 
 import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
-import { RecordCrmLayout } from '@/admin/records/crm/RecordCrmLayout';
+import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
@@ -129,16 +129,17 @@ export function RecordPage(): JSX.Element {
     }
 
     // Layout opt-in: cuando la lista tiene `settings.record_layout
-    // === 'crm'`, renderea el panel estilo CRM (header con avatar +
-    // sidebar de propiedades + timeline). Default 'classic' = form
-    // lineal de toda la vida.
+    // === 'crm'`, la ficha DISEÑADA (plantillas v3, v0.1.230: cabecera,
+    // pestañas, secciones, gráficos de los vinculados). Default 'classic'
+    // = form lineal de toda la vida.
     const recordLayout = (list.data.settings as { record_layout?: string })?.record_layout;
     const useCrmLayout = recordLayout === 'crm';
 
     if (useCrmLayout && fields.data) {
         return (
             <StoreRulesContext.Provider value={storeRules}>
-                <RecordCrmLayout
+                <RecordLayoutView
+                    key={record.data.id}
                     list={list.data}
                     record={record.data}
                     fields={fields.data}

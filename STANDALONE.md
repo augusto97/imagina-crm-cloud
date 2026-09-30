@@ -1729,6 +1729,58 @@ operaciones de la edición masiva de la tienda (ADR-S24):
   creadas (`{delete}`) salvo las que se modificaron después en la tienda
   (`date_modified_gmt`), y la app las saca al releer el producto.
 
+
+### ADR-S26 — Plantillas v3 de la ficha: secciones, formas por tipo y datos vinculados (v0.1.230)
+
+**Contexto.** La ficha "CRM" (plantilla v2) era un grid de bloques sueltos
+con coordenadas `x/y/w/pos` y los campos referenciados por SLUG. No podía
+expresar lo que se espera de una ficha moderna: pestañas, secciones con
+columnas, cada campo mostrado de la forma que corresponde a su tipo y —sobre
+todo— gráficos e indicadores de los registros VINCULADOS (las facturas de este
+cliente por estado). El usuario lo calificó, con razón, de "mediocre".
+
+**Decisión.** Modelo nuevo, `settings.record_layout_v3` (schema en
+`packages/shared/src/schemas/record-layout.ts`):
+
+```
+{ v: 3, theme, header, pages: [{ id, name, sections: [{ columns: [8,4], blocks: [[…],[…]] }] }] }
+```
+
+- **Secciones con columnas que suman 12** y una PILA de bloques por columna —
+  no hay coordenadas que se desalineen—. Se valida en el servidor al guardar
+  (400 `invalid_record_layout`).
+- **Todo por ID** (`field_id`, `list_id`): regla de oro nº 1.
+- **Formas por tipo** (`FIELD_DISPLAYS`, shared): cada tipo declara cómo se
+  puede mostrar (porcentaje → barra/anillo/medidor; fecha → relativa/cuenta
+  regresiva/hoja de calendario; select → etiqueta/etapas…). Una forma que el
+  tipo no admite cae a la primera (`resolveDisplay`): un campo que cambió de
+  tipo no rompe la ficha.
+- **Fuentes de datos** (`LayoutDataSource`): el registro, los vinculados por
+  una relation (el sentido se DEDUCE: si el campo es de esta lista son sus
+  destinos; si es de otra, los que apuntan acá; `direction` sólo para la
+  relación de una lista consigo misma) o una lista entera.
+- **Un bundle por ficha**: `POST /lists/:l/records/:id/layout-data` calcula en
+  UN request los gráficos y tablas de vinculados (regla de oro nº 8), cada
+  bloque AISLADO (`{ __error }` propio). Viaja la config de los bloques y no un
+  id de plantilla para que el editor previsualice lo no guardado — por eso el
+  servidor valida la fuente (la relación tiene que tocar la lista del
+  registro), exige ver el registro base (404 si no) y calcula con el ACL de
+  quien mira. El acotamiento es `relatedScopeSql` (records/related-scope.ts),
+  que usan el motor de agregados y el listado de registros: los gráficos usan
+  el MISMO motor que los tableros (`DashboardsService.computeLooseWidget`) y
+  el front los dibuja con los MISMOS componentes (`WidgetDataOverrideContext`
+  les inyecta los datos).
+- **Compatibilidad**: nada se migra en la base. La ficha usa, en orden, la v3
+  guardada → la v2 elegida (personalizada o integrada) convertida al vuelo
+  (`migrateCrmV2ToV3`, pura, con tests) → la automática (`autoRecordLayout`,
+  pura: cabecera con etapas y chips, cifras, detalles y una pestaña por
+  relación con KPIs, dona por estado, evolución mensual y tabla).
+- **Se guarda sola**, campo por campo (`useRecordAutosave`), sin botón.
+
+**Consecuencias.** El editor (fase B) y el portal del cliente (fase C) escriben
+y leen este mismo modelo. La v2 queda como formato de ENTRADA (conversión)
+mientras exista el editor anterior.
+
 ---
 
-**Versión del documento:** 1.42.0 (computed numéricos agregables en SQL + widgets aislados en el tablero — ADR-S19)
+**Versión del documento:** 1.43.0 (plantillas v3 de la ficha: secciones, formas por tipo y datos vinculados — ADR-S26)

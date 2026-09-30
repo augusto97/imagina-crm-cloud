@@ -122,9 +122,21 @@ export function useDeleteDashboard() {
  * tablero) y `select` entrega a cada widget su propio dato. El shape de retorno
  * es el mismo UseQueryResult<WidgetData> de antes (PERF-03).
  */
+/**
+ * v0.1.230 — datos de widgets INYECTADOS: la ficha del registro dibuja sus
+ * gráficos con los MISMOS componentes de los tableros, pero los datos vienen
+ * de su propio bundle (acotado a los registros vinculados). Con este
+ * contexto presente, `useWidgetData` no pide nada: lee de acá.
+ */
+export interface WidgetDataOverride {
+    get(widgetId: string): { data: WidgetData | undefined; isLoading: boolean; error: Error | null };
+}
+export const WidgetDataOverrideContext = createContext<WidgetDataOverride | null>(null);
+
 export function useWidgetData(dashboardId: number | undefined, widgetId: string | undefined) {
     const globalPeriod = useContext(DashboardGlobalPeriodContext);
-    return useQuery({
+    const override = useContext(WidgetDataOverrideContext);
+    const query = useQuery({
         queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0, globalPeriod),
         queryFn: async () => {
             const res = await api.post<Record<string, WidgetData>>(
@@ -134,6 +146,7 @@ export function useWidgetData(dashboardId: number | undefined, widgetId: string 
             return res.data;
         },
         enabled:
+            override === null &&
             dashboardId !== undefined &&
             dashboardId > 0 &&
             widgetId !== undefined &&
@@ -149,6 +162,11 @@ export function useWidgetData(dashboardId: number | undefined, widgetId: string 
             return one;
         },
     });
+    if (override !== null && widgetId !== undefined) {
+        const o = override.get(widgetId);
+        return { ...query, data: o.data, isLoading: o.isLoading, isError: o.error !== null, error: o.error } as typeof query;
+    }
+    return query;
 }
 
 /** Mensaje de error de un widget dentro del bundle, o `null` si trajo datos. */

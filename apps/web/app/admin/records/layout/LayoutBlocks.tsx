@@ -1,0 +1,510 @@
+import { useMemo, useState } from 'react';
+import { ChevronDown, ExternalLink, Info, Pencil, TriangleAlert, CircleCheck, Lightbulb } from 'lucide-react';
+import {
+    CHART_KIND_WIDGET,
+    layoutChartKindSchema,
+    resolveEmbed,
+    type LayoutBlock,
+    type LayoutDataSource,
+} from '@imagina-base/shared';
+
+import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
+import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
+import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { RecordTimeline } from '@/admin/records/crm/RecordTimeline';
+import { StatsBlock } from '@/admin/records/crm/RightRail';
+import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
+import { RecordDescription } from '@/admin/records/description/RecordDescription';
+import { adminGallerySrc, adminImageSrc, GalleryBlockView, ImageBlockView } from '@/admin/template-editor-core/ImageBlockForm';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useRelationPaths } from '@/hooks/useRelationPaths';
+import { blockStyleClass, blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
+import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { __ } from '@/lib/i18n';
+import { useTheme } from '@/lib/theme';
+import { cn } from '@/lib/utils';
+import type { WidgetSpec } from '@/types/dashboard';
+import type { FieldEntity } from '@/types/field';
+
+import { FieldDisplay, optionsOf } from './FieldDisplay';
+import { useLayoutCtx } from './LayoutContext';
+import { surfaceClass, tint } from './layoutTheme';
+import { RelatedBlockView } from './RelatedBlockView';
+
+/** Bloques que se dibujan SIN tarjeta (son parte del flujo de la página). */
+// Resumen/actividad/comentarios traen su propia tarjeta (los componentes de
+// siempre): envolverlos en otra dejaba una caja dentro de otra.
+const BARE: ReadonlySet<string> = new Set(['heading', 'divider', 'spacer', 'button', 'notice', 'stages', 'portal_access', 'record_stats', 'activity', 'comments']);
+
+/**
+ * v0.1.230 — Un bloque de la ficha dentro de su marco (tarjeta del tema,
+ * título, capa de estilo compartida con los tableros).
+ */
+export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const dark = useTheme().resolved === 'dark';
+    const style = readBlockStyle({ style: block.style });
+    const styled = block.style !== undefined && Object.keys(block.style).length > 0;
+    const card = block.type === 'field' ? block.config.card === true : !BARE.has(block.type);
+    const title = blockTitle(block, ctx.fieldsById);
+    const collapsible = block.type === 'fields' && block.config.collapsible !== false && title !== null;
+    const [open, setOpen] = useState(block.config.collapsed !== true);
+
+    const body = <BlockBody block={block} />;
+    if (!card) {
+        return (
+            <div className={blockStyleClass(style)} style={styled ? blockStyleCss(style, { dark }) : undefined} data-block={block.type}>
+                {body}
+            </div>
+        );
+    }
+    return (
+        <section
+            data-block={block.type}
+            className={cn(
+                'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-overflow-hidden',
+                !styled && surfaceClass(ctx.theme.surface),
+                blockStyleClass(style),
+            )}
+            style={{ borderRadius: ctx.theme.radius, ...(styled ? blockStyleCss(style, { dark }) : {}) }}
+        >
+            {title !== null && (
+                <header
+                    className={cn(
+                        'imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4 imcrm-pt-3',
+                        !open && 'imcrm-pb-3',
+                    )}
+                >
+                    {collapsible ? (
+                        <button
+                            type="button"
+                            onClick={() => setOpen((o) => !o)}
+                            className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-left"
+                            aria-expanded={open}
+                        >
+                            <ChevronDown className={cn('imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-transform', !open && 'imcrm--rotate-90')} />
+                            <BlockTitle text={title} />
+                        </button>
+                    ) : (
+                        <BlockTitle text={title} />
+                    )}
+                </header>
+            )}
+            {open && <div className={cn('imcrm-min-w-0 imcrm-flex-1', padFor(block))}>{body}</div>}
+        </section>
+    );
+}
+
+function BlockTitle({ text }: { text: string }): JSX.Element {
+    return <h3 className="imcrm-truncate imcrm-text-[13px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">{text}</h3>;
+}
+
+/** Relleno interno según el tipo (las filas de campos van al ras). */
+function padFor(block: LayoutBlock): string {
+    if (block.type === 'fields' || block.type === 'files') return 'imcrm-py-1.5';
+    if (block.type === 'related') return 'imcrm-pt-2';
+    return 'imcrm-p-4';
+}
+
+function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): string | null {
+    // Los gráficos dibujan su propio encabezado (el de los tableros).
+    if (block.type === 'chart') return null;
+    if (block.title !== undefined && block.title !== '') return block.title;
+    switch (block.type) {
+        case 'field': {
+            const f = fieldsById.get(Number(block.config.field_id));
+            return f ? f.label : null;
+        }
+        case 'files':
+            return __('Archivos');
+        default:
+            return null;
+    }
+}
+
+function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const c = block.config;
+    switch (block.type) {
+        case 'field':
+            return <FieldBlock block={block} />;
+        case 'fields':
+            return <FieldsBlock ids={idList(c.field_ids)} layout={String(c.layout ?? 'list')} columns={Number(c.columns ?? 2)} />;
+        case 'files': {
+            const ids = idList(c.field_ids);
+            const fileIds = ids.length > 0 ? ids : ctx.fields.filter((f) => f.type === 'file').map((f) => f.id);
+            return <FieldsBlock ids={fileIds} layout="list" columns={1} />;
+        }
+        case 'stages':
+            return <StagesBlock fieldId={Number(c.field_id)} />;
+        case 'description':
+            return (
+                <RecordDescription
+                    listKey={ctx.list.slug}
+                    listSlug={ctx.list.slug}
+                    recordId={ctx.record.id}
+                    editable={ctx.canEdit && !ctx.preview}
+                />
+            );
+        case 'record_stats':
+            return (
+                <StatsBlock
+                    listId={ctx.list.id}
+                    record={ctx.record}
+                    mode={c.mode === 'custom' ? 'custom' : 'auto'}
+                    items={Array.isArray(c.items) ? (c.items as never) : []}
+                />
+            );
+        case 'activity':
+        case 'comments':
+            return (
+                <RecordTimeline
+                    listId={ctx.list.id}
+                    recordId={ctx.record.id}
+                    currentUserId={ctx.currentUserId}
+                    isAdmin={ctx.isAdmin}
+                    initialFilter={block.type === 'comments' ? 'comments' : 'all'}
+                />
+            );
+        case 'chart':
+            return <ChartBlock block={block} />;
+        case 'related':
+            return <RelatedBlockView block={block} />;
+        case 'heading':
+            return <HeadingBlock text={String(c.text ?? block.title ?? '')} level={Number(c.level ?? 2)} subtitle={typeof c.subtitle === 'string' ? c.subtitle : undefined} />;
+        case 'text':
+            return <TextBlock block={block} />;
+        case 'notice':
+            return <NoticeBlock tone={String(c.tone ?? 'info')} text={String(c.text ?? '')} title={block.title} />;
+        case 'divider':
+            return <DividerBlock label={typeof c.label === 'string' ? c.label : undefined} />;
+        case 'spacer':
+            return <div style={{ height: Math.max(4, Math.min(240, Number(c.height ?? 24))) }} aria-hidden />;
+        case 'button':
+            return <ButtonBlock block={block} />;
+        case 'image': {
+            const cfg = { ...c, image_file_id: c.file_id ?? c.image_file_id };
+            return <ImageBlockView config={cfg} src={adminImageSrc(cfg)} />;
+        }
+        case 'gallery':
+            return <GalleryBlockView config={c} resolveSrc={adminGallerySrc} />;
+        case 'embed':
+            return <EmbedBlock block={block} />;
+        case 'portal_access':
+            return <PortalAccessButton list={ctx.list} record={ctx.record} />;
+        default:
+            return null;
+    }
+}
+
+function idList(raw: unknown): number[] {
+    return Array.isArray(raw) ? raw.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+}
+
+// ── Campos ───────────────────────────────────────────────────────────────
+
+/** Un campo con la forma elegida; lápiz para editarlo sin salir de la tarjeta. */
+function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const field = ctx.fieldsById.get(Number(block.config.field_id));
+    if (!field) return <MissingField />;
+    const c = block.config;
+    const value = ctx.values[field.slug];
+    const locked = ctx.lockedReasons[field.slug] ?? null;
+    const editable = ctx.canEdit && !ctx.preview && locked === null && !['computed', 'lookup', 'rollup'].includes(field.type);
+    const Icon = fieldTypeIcon(field.type);
+    const showLabel = c.card !== true && c.label !== 'hidden';
+    return (
+        <div className="imcrm-group imcrm-relative imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
+            {showLabel && (
+                <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {block.title ?? field.label}
+                </span>
+            )}
+            <div className="imcrm-min-w-0">
+                <FieldDisplay
+                    field={field}
+                    value={value}
+                    display={typeof c.display === 'string' ? c.display : undefined}
+                    goal={typeof c.goal === 'number' ? c.goal : undefined}
+                    prefix={typeof c.prefix === 'string' ? c.prefix : undefined}
+                    suffix={typeof c.suffix === 'string' ? c.suffix : undefined}
+                    accent={ctx.theme.accent}
+                />
+            </div>
+            {editable && (
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <button
+                            type="button"
+                            className="imcrm-absolute imcrm-right-0 imcrm-top-0 imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition-opacity hover:imcrm-bg-accent hover:imcrm-text-foreground focus-visible:imcrm-opacity-100 group-hover:imcrm-opacity-100"
+                            aria-label={`${__('Editar')} ${field.label}`}
+                        >
+                            <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="imcrm-w-[360px] imcrm-p-1">
+                        <CompactFieldRow
+                            field={field}
+                            listId={ctx.list.id}
+                            recordId={ctx.record.id}
+                            value={value}
+                            onChange={(v) => ctx.setValue(field.slug, v)}
+                            error={ctx.errors[field.slug]}
+                        />
+                    </PopoverContent>
+                </Popover>
+            )}
+            {ctx.errors[field.slug] && <span className="imcrm-text-xs imcrm-text-destructive">{ctx.errors[field.slug]}</span>}
+        </div>
+    );
+}
+
+/** Propiedades editables en lista, grilla o apiladas (se guardan solas). */
+export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: string; columns: number }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const list = ids.map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined);
+    if (list.length === 0) return <p className="imcrm-px-4 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground">{__('Sin campos en este bloque.')}</p>;
+    const cols = layout === 'grid' ? Math.max(1, Math.min(3, columns)) : 1;
+    return (
+        <div
+            className={cn('imcrm-grid imcrm-grid-cols-1', cols >= 2 && 'md:imcrm-grid-cols-2', cols >= 3 && 'xl:imcrm-grid-cols-3', cols >= 2 && 'md:imcrm-gap-x-2')}
+        >
+            {list.map((f) => (
+                <CompactFieldRow
+                    key={f.id}
+                    field={f}
+                    listId={ctx.list.id}
+                    recordId={ctx.record.id}
+                    value={ctx.values[f.slug]}
+                    onChange={(v) => ctx.setValue(f.slug, v)}
+                    error={ctx.errors[f.slug]}
+                    showTypeIcon={cols === 1}
+                    lockedReason={!ctx.canEdit || ctx.preview ? (ctx.preview ? null : __('No tenés permiso para editar este registro')) : ctx.lockedReasons[f.slug] ?? null}
+                />
+            ))}
+        </div>
+    );
+}
+
+function MissingField(): JSX.Element {
+    return <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('El campo de este bloque ya no existe.')}</p>;
+}
+
+/** Etapas de un select, clickeables: la forma más clara de mostrar un proceso. */
+export function StagesBlock({ fieldId, compact = false }: { fieldId: number; compact?: boolean }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const field = ctx.fieldsById.get(fieldId);
+    if (!field || field.type !== 'select') return null;
+    const opts = optionsOf(field);
+    const current = ctx.values[field.slug];
+    const idx = opts.findIndex((o) => o.value === current);
+    const editable = ctx.canEdit && !ctx.preview && (ctx.lockedReasons[field.slug] ?? null) === null;
+    return (
+        <nav aria-label={field.label} className="imcrm-flex imcrm-w-full imcrm-min-w-0 imcrm-overflow-x-auto imcrm-rounded-lg">
+            <ol className="imcrm-flex imcrm-w-full imcrm-min-w-max imcrm-gap-1">
+                {opts.map((o, i) => {
+                    const done = idx >= 0 && i < idx;
+                    const active = i === idx;
+                    return (
+                        <li key={o.value} className="imcrm-min-w-[92px] imcrm-flex-1">
+                            <button
+                                type="button"
+                                disabled={!editable}
+                                onClick={() => ctx.setValue(field.slug, active ? null : o.value)}
+                                className={cn(
+                                    'imcrm-group/stage imcrm-flex imcrm-w-full imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-md imcrm-px-2.5 imcrm-text-left imcrm-transition-colors',
+                                    compact ? 'imcrm-py-1.5' : 'imcrm-py-2',
+                                    editable && 'hover:imcrm-bg-accent',
+                                    active && 'imcrm-bg-card imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border',
+                                )}
+                                aria-current={active ? 'step' : undefined}
+                                title={editable ? `${__('Pasar a')} ${o.label}` : o.label}
+                            >
+                                <span
+                                    className="imcrm-h-1.5 imcrm-w-full imcrm-rounded-full imcrm-transition-colors"
+                                    style={{ background: done || active ? ctx.theme.accent : 'hsl(var(--imcrm-muted))', opacity: done ? 0.55 : 1 }}
+                                />
+                                <span
+                                    className={cn(
+                                        'imcrm-truncate imcrm-text-xs',
+                                        active ? 'imcrm-font-semibold imcrm-text-foreground' : 'imcrm-text-muted-foreground',
+                                    )}
+                                >
+                                    {o.label}
+                                </span>
+                            </button>
+                        </li>
+                    );
+                })}
+            </ol>
+        </nav>
+    );
+}
+
+// ── Gráficos ─────────────────────────────────────────────────────────────
+
+/** Lista de la que leen los datos de una fuente (la necesitan los gráficos para colores y etiquetas). */
+export function useSourceListId(source: LayoutDataSource | undefined): number {
+    const ctx = useLayoutCtx();
+    const paths = useRelationPaths(source?.kind === 'related' ? ctx.list.id : undefined);
+    return useMemo(() => {
+        if (!source) return 0;
+        if (source.kind === 'list') return source.list_id;
+        if (source.kind === 'record') return ctx.list.id;
+        const own = ctx.fieldsById.get(source.field_id);
+        if (own && source.direction !== 'reverse') return Number((own.config as { target_list_id?: unknown }).target_list_id ?? 0);
+        if (own) return ctx.list.id;
+        const p = (paths.data ?? []).find((x) => x.relation_field_id === source.field_id);
+        return p ? p.list_id : 0;
+    }, [source, ctx.fieldsById, ctx.list.id, paths.data]);
+}
+
+const CHART_HEIGHT: Record<string, number> = { kpi: 118, gauge: 190, stat_delta: 118, table: 300, bar: 280, pie: 280, line: 260, area: 260, funnel: 260 };
+
+function ChartBlock({ block }: { block: LayoutBlock }): JSX.Element {
+    const source = block.config.source as LayoutDataSource | undefined;
+    const listId = useSourceListId(source);
+    const kind = layoutChartKindSchema.catch('kpi').parse(block.config.kind);
+    const spec: WidgetSpec = {
+        id: block.id,
+        type: CHART_KIND_WIDGET[kind] as WidgetSpec['type'],
+        list_id: listId,
+        title: block.title ?? '',
+        config: block.config,
+        layout: { x: 0, y: 0, w: 12, h: 4 },
+    };
+    return (
+        <div className="imcrm-flex imcrm-flex-col" style={{ height: CHART_HEIGHT[kind] ?? 260 }}>
+            <WidgetRenderer dashboardId={0} widget={spec} />
+        </div>
+    );
+}
+
+// ── Contenido ────────────────────────────────────────────────────────────
+
+function HeadingBlock({ text, level, subtitle }: { text: string; level: number; subtitle?: string }): JSX.Element {
+    const cls = level <= 1 ? 'imcrm-text-2xl' : level === 2 ? 'imcrm-text-lg' : 'imcrm-text-base';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-pt-2">
+            <h2 className={cn(cls, 'imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground')}>{text}</h2>
+            {subtitle && <p className="imcrm-text-sm imcrm-text-muted-foreground">{subtitle}</p>}
+        </div>
+    );
+}
+
+function TextBlock({ block }: { block: LayoutBlock }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const c = block.config;
+    let raw = typeof c.content === 'string' ? c.content : '';
+    if (c.source === 'field') {
+        const f = ctx.fieldsById.get(Number(c.field_id));
+        const v = f ? ctx.values[f.slug] : undefined;
+        raw = typeof v === 'string' ? v : '';
+    }
+    if (raw === '') return <p className="imcrm-text-sm imcrm-italic imcrm-text-muted-foreground">{__('Sin contenido.')}</p>;
+    return (
+        <div
+            className="imcrm-prose-sm imcrm-text-sm imcrm-leading-relaxed imcrm-text-foreground"
+            // renderMarkdown escapa el HTML antes de aplicar el formato.
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(raw) }}
+        />
+    );
+}
+
+const NOTICE_TONES: Record<string, { icon: typeof Info; cls: string }> = {
+    info: { icon: Info, cls: 'imcrm-border-sky-500/25 imcrm-bg-sky-500/10 imcrm-text-sky-900 dark:imcrm-text-sky-200' },
+    success: { icon: CircleCheck, cls: 'imcrm-border-emerald-500/25 imcrm-bg-emerald-500/10 imcrm-text-emerald-900 dark:imcrm-text-emerald-200' },
+    warning: { icon: TriangleAlert, cls: 'imcrm-border-amber-500/30 imcrm-bg-amber-500/10 imcrm-text-amber-900 dark:imcrm-text-amber-200' },
+    tip: { icon: Lightbulb, cls: 'imcrm-border-violet-500/25 imcrm-bg-violet-500/10 imcrm-text-violet-900 dark:imcrm-text-violet-200' },
+};
+
+function NoticeBlock({ tone, text, title }: { tone: string; text: string; title?: string }): JSX.Element {
+    const t = NOTICE_TONES[tone] ?? NOTICE_TONES.info!;
+    const Icon = t.icon;
+    return (
+        <div className={cn('imcrm-flex imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-px-4 imcrm-py-3', t.cls)} role="note">
+            <Icon className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5 imcrm-text-sm">
+                {title && <strong className="imcrm-font-semibold">{title}</strong>}
+                <span className="imcrm-whitespace-pre-wrap">{text}</span>
+            </div>
+        </div>
+    );
+}
+
+function DividerBlock({ label }: { label?: string }): JSX.Element {
+    if (!label) return <hr className="imcrm-my-1 imcrm-border-border" />;
+    return (
+        <div className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-py-1">
+            <span className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">{label}</span>
+            <span className="imcrm-h-px imcrm-flex-1 imcrm-bg-border" />
+        </div>
+    );
+}
+
+function ButtonBlock({ block }: { block: LayoutBlock }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const c = block.config;
+    let target = typeof c.target === 'string' ? c.target : '';
+    if (c.target_source === 'field') {
+        const f = ctx.fieldsById.get(Number(c.target_field_id));
+        const v = f ? ctx.values[f.slug] : undefined;
+        target = typeof v === 'string' ? v : '';
+    }
+    const action = String(c.action ?? 'url');
+    const href = action === 'mailto' ? `mailto:${target}` : action === 'tel' ? `tel:${target}` : target;
+    const label = String(c.label ?? __('Abrir'));
+    const variant = String(c.variant ?? 'default');
+    const cls = cn(
+        'imcrm-inline-flex imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-rounded-md imcrm-px-4 imcrm-py-2 imcrm-text-sm imcrm-font-semibold imcrm-transition-colors',
+        variant === 'outline' ? 'imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-foreground hover:imcrm-bg-accent' : 'imcrm-text-white hover:imcrm-opacity-90',
+        target === '' && 'imcrm-pointer-events-none imcrm-opacity-50',
+    );
+    const style = variant === 'outline' ? undefined : { background: ctx.theme.accent };
+    if (action === 'copy') {
+        return (
+            <button type="button" className={cls} style={style} onClick={() => void navigator.clipboard?.writeText(target)}>
+                {label}
+            </button>
+        );
+    }
+    return (
+        <a href={href || undefined} target={action === 'url' ? '_blank' : undefined} rel="noreferrer" className={cls} style={style}>
+            {label}
+            {action === 'url' && <ExternalLink className="imcrm-h-3.5 imcrm-w-3.5 imcrm-opacity-80" />}
+        </a>
+    );
+}
+
+function EmbedBlock({ block }: { block: LayoutBlock }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const c = block.config;
+    let url = typeof c.url === 'string' ? c.url : '';
+    if (c.source === 'field') {
+        const f = ctx.fieldsById.get(Number(c.field_id));
+        const v = f ? ctx.values[f.slug] : undefined;
+        url = typeof v === 'string' ? v : '';
+    }
+    const embed = resolveEmbed(url);
+    if (!embed) {
+        return (
+            <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                {url ? __('Ese enlace no se puede insertar (YouTube, Vimeo, Loom, Figma o Google Drive).') : __('Sin enlace para insertar.')}
+            </p>
+        );
+    }
+    return (
+        <div className="imcrm-relative imcrm-w-full imcrm-overflow-hidden imcrm-rounded-lg" style={{ aspectRatio: '16 / 9', background: tint(ctx.theme.accent, 8) }}>
+            <iframe
+                src={embed.src}
+                title={block.title ?? embed.provider}
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
+                allow="fullscreen; picture-in-picture"
+                loading="lazy"
+                className="imcrm-absolute imcrm-inset-0 imcrm-h-full imcrm-w-full imcrm-border-0"
+            />
+        </div>
+    );
+}

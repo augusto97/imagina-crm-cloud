@@ -17,6 +17,7 @@ import { AggregateService } from '../aggregate/aggregate.service';
 import { dashboards, lists } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { hiddenFieldsFor } from '../lists/list-acl';
+import type { RelatedScope } from '../records/related-scope';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
@@ -201,11 +202,27 @@ export class DashboardsService {
         return Object.fromEntries(entries);
     }
 
+    /**
+     * v0.1.230 — evalúa un widget "suelto" (no guardado en un tablero): los
+     * gráficos de la ficha del registro, acotados a los registros vinculados
+     * a ese registro. Mismo motor, mismo ACL, mismo shape de respuesta — así
+     * la ficha reusa los componentes de los tableros tal cual.
+     */
+    computeLooseWidget(
+        tenantId: number,
+        viewer: DashboardViewer,
+        widget: WidgetSpec,
+        related?: RelatedScope,
+    ): Promise<unknown> {
+        return this.computeWidget(tenantId, viewer, widget, undefined, related);
+    }
+
     private async computeWidget(
         tenantId: number,
         viewer: DashboardViewer,
         widget: WidgetSpec,
         periodOverride?: string,
+        related?: RelatedScope,
     ): Promise<unknown> {
         // v0.1.98 — los widgets de CONTENIDO (título/texto/imagen/separador/
         // espaciador) no evalúan datos: el front renderiza desde su config.
@@ -213,7 +230,7 @@ export class DashboardsService {
         // SEC-25 (v0.1.226): cada widget agrega lo que QUIEN MIRA puede ver
         // (scope de su rol en la lista + sin campos ocultos), igual que la
         // tabla. Antes un tablero compartido sumaba la lista entera.
-        const acl = { viewer: { role: viewer.role as Role, userId: viewer.userId } };
+        const acl = { viewer: { role: viewer.role as Role, userId: viewer.userId }, related };
         const cfg = widget.config as Record<string, unknown>;
         const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);
@@ -274,7 +291,7 @@ export class DashboardsService {
                 tenantId,
                 list,
                 { metric, field_id: metricFieldId, filter_tree: filterTree },
-                { dateFieldId, periodDays: Number(cfg.period_days) || 30, viewer: acl.viewer },
+                { dateFieldId, periodDays: Number(cfg.period_days) || 30, viewer: acl.viewer, related },
             );
             return { ...d, metric };
         }
@@ -283,7 +300,7 @@ export class DashboardsService {
             // v0.1.97 — tabla REAL: reusa RecordsService.list (ACL del viewer:
             // scope por rol + campos ocultos ya stripped) y traduce data
             // f{id}→slug al shape {columns, rows} que consume la UI.
-            return this.computeTable(tenantId, viewer, widget, filterTree);
+            return this.computeTable(tenantId, viewer, widget, filterTree, related);
         }
 
         // charts (bar/pie/line/area/funnel): agrupado. Si el campo agrupado es
@@ -314,6 +331,7 @@ export class DashboardsService {
         viewer: DashboardViewer,
         widget: WidgetSpec,
         filterTree: AggregateRequest['filter_tree'],
+        related?: RelatedScope,
     ): Promise<{ columns: Array<{ label: string; slug: string; type: string }>; rows: Array<{ id: number; fields: Record<string, unknown> }> }> {
         const cfg = widget.config as Record<string, unknown>;
         // SEC-25: las columnas ocultas para el rol de quien mira no se listan
@@ -350,6 +368,7 @@ export class DashboardsService {
                 sort: sortFieldId !== undefined ? `field_${sortFieldId}:${sortDir}` : undefined,
                 filter_tree: filterTree,
             },
+            { related },
         );
 
         const rows = page.data.map((rec) => {
