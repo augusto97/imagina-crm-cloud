@@ -85,18 +85,21 @@ export function PlatformTransfersCard(): JSX.Element {
     const [target, setTarget] = useState<string | null>(null);
     const [slug, setSlug] = useState('');
     const [name, setName] = useState('');
+    const [trustCredentials, setTrustCredentials] = useState(false);
     const [result, setResult] = useState<ImportTenantResult | null>(null);
     const importM = useMutation({
         mutationFn: (file: string) =>
             api.transferImport(file, {
                 ...(slug.trim() ? { slug: slug.trim() } : {}),
                 ...(name.trim() ? { name: name.trim() } : {}),
+                trust_credentials: trustCredentials,
             }),
         onSuccess: (r) => {
             setResult(r);
             setTarget(null);
             setSlug('');
             setName('');
+            setTrustCredentials(false);
             setNotice({ kind: 'ok', text: `Importada como «${r.name}» (${r.slug}).` });
             invalidate();
         },
@@ -365,6 +368,24 @@ export function PlatformTransfersCard(): JSX.Element {
                                                     />
                                                 </div>
                                             </div>
+                                            <label className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    className="imcrm-mt-0.5"
+                                                    data-testid="transfer-trust-credentials"
+                                                    checked={trustCredentials}
+                                                    onChange={(e) => setTrustCredentials(e.target.checked)}
+                                                />
+                                                <span>
+                                                    Conservar las contraseñas de las cuentas nuevas
+                                                    <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
+                                                        Marcalo sólo si el archivo lo exportó un servidor tuyo. Si no,
+                                                        las cuentas nuevas nacen sin contraseña y cada persona entra
+                                                        con «¿Olvidaste tu contraseña?» — así nadie puede crear una
+                                                        cuenta con el correo de otro y una contraseña elegida por él.
+                                                    </span>
+                                                </span>
+                                            </label>
                                             <div className="imcrm-mt-2 imcrm-flex imcrm-gap-2">
                                                 <Button
                                                     size="sm"

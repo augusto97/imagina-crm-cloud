@@ -250,6 +250,7 @@ export class OauthService {
             client_name: pending.client_name,
             scope: pending.scope,
             redirect_host: hostOf(pending.redirect_uri),
+            redirect_known: isKnownRedirect(pending.redirect_uri),
             expires_at: new Date(pending.created_at + REQUEST_TTL_SECONDS * 1000).toISOString(),
         };
     }
@@ -377,6 +378,29 @@ function reqKey(id: string): string {
 function codeKey(code: string): string {
     return `oauthcode:${sha256Hex(code)}`;
 }
+/**
+ * Destinos que reconocemos: los de Claude (web, escritorio y celular vuelven
+ * por claude.ai / claude.com) y la propia computadora (loopback: Claude Code,
+ * Cursor, MCP Inspector). Cualquier otro se muestra con advertencia.
+ */
+export function isKnownRedirect(uri: string): boolean {
+    let u: URL;
+    try {
+        u = new URL(uri);
+    } catch {
+        return false;
+    }
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+        const host = u.hostname.toLowerCase();
+        if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') return true;
+        if (u.protocol !== 'https:') return false;
+        return KNOWN_REDIRECT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+    }
+    return false;
+}
+
+const KNOWN_REDIRECT_HOSTS = ['claude.ai', 'claude.com', 'anthropic.com'];
+
 function hostOf(uri: string): string {
     try {
         const u = new URL(uri);

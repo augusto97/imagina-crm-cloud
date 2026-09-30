@@ -51,6 +51,7 @@ import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { RelationsRepository } from './relations.repository';
+import { BillingService } from '../billing/billing.service';
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
 export interface Actor {
@@ -87,6 +88,10 @@ export class RecordsService {
         // (posicional) siguen funcionando sin el módulo de recurrencias.
         @Optional() private readonly recurrences?: RecurrencesService,
         @Optional() private readonly changes?: RecordChangeHub,
+        // v0.1.228 (SEC-31) — límite de registros del plan acá y no sólo en el
+        // controller: el asistente IA/MCP, "actualizar desde archivo" y otros
+        // caminos internos crean por este método y se salteaban el tope.
+        @Optional() private readonly billing?: BillingService,
     ) {}
 
     async create(
@@ -106,6 +111,7 @@ export class RecordsService {
                 data: { status: 403 },
             });
         }
+        await this.billing?.assertCanCreateRecord(tenantId);
         const fields = await this.fields.listByListId(tenantId, listId);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.

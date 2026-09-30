@@ -44,7 +44,7 @@ export class RecurrencesController {
         @Param('list') list: string,
         @Query('ids') ids: string | undefined,
     ): Promise<Record<string, RecurrenceDto[]>> {
-        return this.recurrences.batchByRecords(tenantId(req), list, parseIds(ids));
+        return this.recurrences.batchByRecords(tenantId(req), list, parseIds(ids), actorOf(req));
     }
 
     @Get('records/:recordId/recurrences')
@@ -55,7 +55,7 @@ export class RecurrencesController {
         @Param('recordId', ParseIntPipe) recordId: number,
     ): Promise<{ data: RecurrenceDto[] }> {
         return this.recurrences
-            .listForRecord(tenantId(req), list, recordId)
+            .listForRecord(tenantId(req), list, recordId, actorOf(req))
             .then((data) => ({ data }));
     }
 
@@ -68,7 +68,7 @@ export class RecurrencesController {
         @Param('recordId', ParseIntPipe) recordId: number,
         @Body(new ZodValidationPipe(recurrenceUpsertSchema)) input: RecurrenceUpsertInput,
     ): Promise<RecurrenceDto> {
-        return this.recurrences.upsert(tenantId(req), list, recordId, input);
+        return this.recurrences.upsert(tenantId(req), list, recordId, input, actorOf(req));
     }
 
     @Delete('records/:recordId/recurrences/:rid')
@@ -80,12 +80,17 @@ export class RecurrencesController {
         @Param('recordId', ParseIntPipe) recordId: number,
         @Param('rid', ParseIntPipe) rid: number,
     ): Promise<void> {
-        await this.recurrences.delete(tenantId(req), list, recordId, rid);
+        await this.recurrences.delete(tenantId(req), list, recordId, rid, actorOf(req));
     }
 }
 
 function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
+}
+
+/** Quién pide: el alcance por fila del ACL de la lista se aplica con esto. */
+function actorOf(req: FastifyRequest): { userId: number; role: NonNullable<FastifyRequest['tenant']>['role'] } {
+    return { userId: req.authUserId!, role: req.tenant!.role };
 }
 
 /** Parsea `?ids=1,2,3` a números positivos únicos (cap defensivo). */

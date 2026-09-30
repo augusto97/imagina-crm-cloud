@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { PersonalTokenScope } from '@imagina-base/shared';
-import { Loader2, Plug, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Loader2, Plug, ShieldCheck } from 'lucide-react';
 
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { api, useSession } from '@/cloud/session';
@@ -139,6 +139,20 @@ function Consent({
                         </p>
                     </div>
                 </div>
+
+                {!req.redirect_known && (
+                    <div
+                        className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-amber-300 imcrm-bg-amber-50 imcrm-p-2.5 imcrm-text-xs imcrm-text-amber-900 dark:imcrm-border-amber-700 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-100"
+                        data-testid="imcrm-oauth-unknown"
+                    >
+                        <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                        <span>
+                            {__('No reconocemos esta app. El acceso a tu cuenta se enviará a')}{' '}
+                            <span className="imcrm-font-mono imcrm-font-semibold">{req.redirect_host}</span>.{' '}
+                            {__('El nombre que ves arriba lo eligió quien la registró: autorizá sólo si VOS empezaste la conexión desde esa app y confiás en ese sitio.')}
+                        </span>
+                    </div>
+                )}
 
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                     <label htmlFor="oauth-ws" className="imcrm-text-xs imcrm-font-medium">{__('Workspace')}</label>

@@ -26,6 +26,7 @@ import {
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
+import { BillingService } from '../billing/billing.service';
 import { automationRuns, lists, records } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
 import { MailService } from '../mail/mail.service';
@@ -89,6 +90,8 @@ export class AutomationEngine {
         @Optional() private readonly changes?: RecordChangeHub,
         // v0.1.221 — para encolar la acción «Editar en lote».
         @Optional() private readonly dispatcher?: AutomationDispatcher,
+        // v0.1.228 — límite de registros del plan para create_record.
+        @Optional() private readonly billing?: BillingService,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -490,9 +493,31 @@ export class AutomationEngine {
                 // los campos relation se sincronizan en la tabla `relations`
                 // con targets verificados vivos en su lista destino.
                 const targetList = Number(cfg.target_list ?? cfg.list_id ?? ctx.listId) || ctx.listId;
+                // SEC-31 (v0.1.228): la lista destino tiene que ser DE ESTA
+                // empresa. El id viene de la config (editable a mano o por la
+                // API) y `records.list_id` referencia la tabla compartida sin
+                // mirar el tenant: con el id de una lista ajena se creaba una
+                // fila huérfana colgando de ella.
+                const [target] = await tx
+                    .select({ settings: lists.settings })
+                    .from(lists)
+                    .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetList)))
+                    .limit(1);
+                if (!target) {
+                    return fail('create_record', `La lista destino (#${targetList}) no existe en esta empresa.`);
+                }
                 // Una lista de tienda no admite altas: sus registros nacen en WooCommerce.
-                if (await this.storeMarkerOf(tx, ctx.tenantId, targetList)) {
+                if (readStoreListMarker(target.settings)) {
                     return skip('create_record', 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.');
+                }
+                // El límite de registros del plan vale también para lo que crea
+                // una automatización (si no, sería la forma de saltearlo).
+                if (this.billing) {
+                    try {
+                        await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
+                    } catch (err) {
+                        return fail('create_record', err instanceof Error ? err.message : 'Límite de registros del plan alcanzado.');
+                    }
                 }
                 const rawValues = (cfg.values as Record<string, unknown>) ?? {};
                 const targetFields = await this.fields.listByList(tx, ctx.tenantId, targetList);

@@ -24,6 +24,10 @@ PAYPAL_WEBHOOK_ID=...       # id del webhook creado en el dashboard
   `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED/DENIED/REFUNDED`,
   `BILLING.SUBSCRIPTION.ACTIVATED/SUSPENDED/CANCELLED`. Copiar el **Webhook ID**
   a `PAYPAL_WEBHOOK_ID` (se usa para verificar la firma vía API oficial).
+- `CHECKOUT.ORDER.APPROVED` es **obligatorio** (v0.1.228): cuando llega, la app
+  CAPTURA la orden y activa el plan sólo si PayPal confirma el cobro
+  (`COMPLETED`). Sin ese evento suscripto las órdenes quedan aprobadas y sin
+  cobrar, y el plan no se activa.
 
 ### Mercado Pago
 ```

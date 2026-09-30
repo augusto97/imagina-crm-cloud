@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import {
     EXPORT_ID_HEADER,
     EXPORT_PARENT_HEADER,
@@ -6,6 +6,7 @@ import {
     IMPORT_PARENT_COLUMN,
     isDataField,
     jsonbKeyForField,
+    roleHasCapability,
     validateFieldValue,
     type Field,
     type ImportCsvCellWarning,
@@ -16,12 +17,14 @@ import {
     type ImportResult,
     type ImportRowError,
     type ImportRowsInput,
+    type Role,
     type SelectOption,
 } from '@imagina-base/shared';
 import { parseCsv } from './csv-parser';
 import { cleanNumberString, detectFieldType } from './field-type-detector';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
+import { effectivePermissions, hiddenFieldsFor } from '../lists/list-acl';
 import { assertNotStoreManaged } from '../lists/store-guard';
 import { ListsService } from '../lists/lists.service';
 import { RecordsRepository } from '../records/records.repository';
@@ -46,13 +49,16 @@ export class ImportService {
 
     async importRows(
         tenantId: number,
-        actorId: number,
+        actor: ImportActor,
         listIdOrSlug: string,
         input: ImportRowsInput,
     ): Promise<ImportResult> {
+        const actorId = actor.userId;
         const list = await this.lists.get(tenantId, listIdOrSlug);
         assertNotStoreManaged(list, 'import');
-        const fields = await this.fields.list(tenantId, String(list.id));
+        assertCanCreate(list.settings, actor);
+        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
+        const fields = (await this.fields.list(tenantId, String(list.id))).filter((f) => !hidden.has(f.slug));
         const byId = new Map(fields.map((f) => [f.id, f]));
 
         // El mapeo debe apuntar a campos de datos de la lista.
@@ -189,12 +195,28 @@ export class ImportService {
      */
     async runCsv(
         tenantId: number,
-        actorId: number,
+        actor: ImportActor,
         listIdOrSlug: string,
         input: ImportCsvRunInput,
     ): Promise<ImportCsvRunResult> {
+        const actorId = actor.userId;
         const list = await this.lists.get(tenantId, listIdOrSlug);
         assertNotStoreManaged(list, 'import');
+        // SEC-30 (v0.1.228): el import es una forma de CREAR registros — y de
+        // crear CAMPOS y OPCIONES. Antes bastaba `import_records` (que tiene
+        // el manager) para todo: se salteaba el "puede crear" de la lista, los
+        // campos ocultos a ese rol y el `manage_fields` que la interfaz exige
+        // para tocar el esquema.
+        assertCanCreate(list.settings, actor);
+        const canManageFields = roleHasCapability(actor.role, 'manage_fields');
+        if (input.new_fields.length > 0 && !canManageFields) {
+            throw new ForbiddenException({
+                code: 'import_new_fields_forbidden',
+                message: 'Tu rol no puede crear campos: mapeá las columnas a campos que ya existen o pedíselo a un administrador.',
+                data: { status: 403 },
+            });
+        }
+        const hidden = hiddenFieldsFor(list.settings, actor.role, actor.userId);
         const parsed = parseCsv(input.csv);
         const headers = parsed.headers;
         let rows = parsed.rows;
@@ -232,12 +254,23 @@ export class ImportService {
             }
         }
 
-        let listFields = await this.importableFields(tenantId, list.id);
+        let listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
+        for (const [colIdx, slug] of [...mapping]) {
+            if (hidden.has(slug)) {
+                mapping.delete(colIdx);
+                errors.push({ row: 0, message: `La columna «${headers[colIdx] ?? slug}» apunta a un campo que tu rol no puede ver: se ignoró.` });
+            }
+        }
 
-        // 2. Auto-expandir opciones de selects/multi_selects.
-        const expandedOptions = await this.expandSelectOptions(tenantId, list.id, rows, mapping, listFields);
+        // 2. Auto-expandir opciones de selects/multi_selects — es cambiar el
+        //    esquema, así que sólo con `manage_fields` (igual que el «Crear»
+        //    del selector de opciones). Sin ese permiso, un valor que no es
+        //    opción queda como error de la fila.
+        const expandedOptions = canManageFields
+            ? await this.expandSelectOptions(tenantId, list.id, rows, mapping, listFields)
+            : {};
         if (Object.keys(expandedOptions).length > 0) {
-            listFields = await this.importableFields(tenantId, list.id);
+            listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
         }
         const bySlug = new Map(listFields.map((f) => [f.slug, f]));
 
@@ -744,4 +777,20 @@ function makeOptionSlug(label: string, usedSlugs: string[]): string {
     let i = 2;
     while (usedSlugs.includes(`${base}_${i}`)) i++;
     return `${base}_${i}`;
+}
+
+export interface ImportActor {
+    userId: number;
+    role: Role;
+}
+
+/** El ACL de la lista tiene que dejarle CREAR registros a esta persona. */
+function assertCanCreate(settings: Record<string, unknown>, actor: ImportActor): void {
+    if (!effectivePermissions(settings, actor.role, actor.userId).create) {
+        throw new ForbiddenException({
+            code: 'forbidden_create',
+            message: 'Tu rol no puede crear registros en esta lista',
+            data: { status: 403 },
+        });
+    }
 }

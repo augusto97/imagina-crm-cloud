@@ -105,11 +105,13 @@ export class AutomationsService {
     }
 
     async get(tenantId: number, listIdOrSlug: string, id: number): Promise<Automation> {
-        await this.lists.get(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findById(tx, tenantId, id),
         );
-        if (!row) throw notFound(id);
+        // SEC-31 (v0.1.228): la automatización tiene que ser de ESTA lista
+        // (la ruta la nombra); antes cualquier id de la empresa servía.
+        if (!row || row.listId !== list.id) throw notFound(id);
         return toAutomation(row);
     }
 
@@ -184,10 +186,10 @@ export class AutomationsService {
         id: number,
         patch: UpdateAutomationInput,
     ): Promise<Automation> {
-        await this.lists.get(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
-            if (!current) throw notFound(id);
+            if (!current || current.listId !== list.id) throw notFound(id);
             const changes: Partial<typeof import('../db/schema').automations.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
             if (patch.description !== undefined) changes.description = patch.description ?? null;
@@ -204,10 +206,12 @@ export class AutomationsService {
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<void> {
-        await this.lists.get(tenantId, listIdOrSlug);
-        const deleted = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.remove(tx, tenantId, id),
-        );
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.repo.findById(tx, tenantId, id);
+            if (!current || current.listId !== list.id) return false;
+            return this.repo.remove(tx, tenantId, id);
+        });
         if (!deleted) throw notFound(id);
         await this.scheduler.remove(id);
     }

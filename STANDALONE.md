@@ -405,6 +405,25 @@ estable: tipear en el buscador ya no re-dibuja todas las filas.
   interna.
 - Las decisiones del rate limit se toman sobre el PATH, nunca sobre `req.url`
   (trae la query: `?/health` salteaba el límite, SEC-28).
+- **Pagos** (SEC-29, v0.1.228): una orden de PayPal aprobada se CAPTURA antes
+  de activar el plan; sólo una captura `COMPLETED` activa.
+- **Importaciones** (SEC-30, v0.1.228): el archivo de una empresa no puede traer
+  symlinks (se leerían archivos del servidor) y las cuentas NUEVAS no heredan
+  contraseña/verificación/2FA del archivo salvo que el operador marque que
+  viene de un servidor de confianza. El import CSV respeta el "puede crear" de
+  la lista, los campos ocultos al rol y `manage_fields` para crear campos u
+  opciones.
+- **Automatizaciones e IA** (SEC-31, v0.1.228): la lista destino de "crear
+  registro" tiene que ser de la empresa; el límite de registros del plan se
+  aplica en `RecordsService.create` (vale para IA/MCP, "actualizar desde
+  archivo", automatizaciones y recurrencias); una propuesta de IA se aplica
+  una sola vez (candado); los accesos por persona que propone la IA se
+  mezclan con los existentes; una automatización se lee/cambia/borra sólo
+  desde su lista; y poner/ver recurrencias exige alcanzar la fila con el ACL.
+- **Dominios y OAuth** (SEC-32, v0.1.228): dominio propio con prueba de
+  propiedad por TXT (ver ADR-S17); el `authorize` del OAuth ya no redirige
+  solo con un error (era un open redirect con registro abierto) y la pantalla
+  "Autorizar" advierte cuando el destino no es Claude ni esta computadora.
 - **Las cabeceras de seguridad no dependen del proxy** (v0.1.227): la
   auto-actualización no toca la config del proxy (es de root), así que lo que
   sólo vivía ahí no llegaba a los servidores ya instalados — y en un panel tipo
@@ -666,6 +685,16 @@ Los magic links del portal salen por el dominio del tenant
 `APP_BASE_URL`. La cookie de sesión es por-dominio (sin cambios: mismo origen).
 Se rechazan como dominio propio la base y sus subdominios (reservados para el
 nivel a). Gestión en Ajustes → Marca (solo admin), con verificación en vivo.
+
+**Propiedad del dominio (SEC-32, v0.1.228).** Pedir un dominio ya NO lo
+activa: queda como pedido pendiente en `tenants.settings.domain_claim` (con un
+código por empresa) y `tenants.custom_domain` sólo guarda dominios
+VERIFICADOS. El cliente crea el TXT `_imagina-verify.<dominio>` =
+`imagina-verify=<código>` y toca "Verificar propiedad": recién ahí el dominio
+entra a `custom_domain` (certificado, marca y magic links). Si otra empresa lo
+tenía, pasa a quien probó ser dueño del DNS. Así nadie "reserva" el dominio de
+otra empresa (antes el UNIQUE lo bloqueaba para el dueño real). Los dominios ya
+configurados antes de esta versión se conservan activos.
 
 ---
 
@@ -1684,4 +1713,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.40.0 (seguridad: cabeceras de seguridad desde la propia app, sin depender del proxy — §14)
+**Versión del documento:** 1.41.0 (seguridad: pagos, importaciones, automatizaciones/IA, dominios y OAuth — §14, ADR-S17)

@@ -35,6 +35,7 @@ export type AuditAction =
     | 'billing.plan_change'
     | 'workspace.smtp_change'
     | 'workspace.domain_change'
+    | 'workspace.domain_verified'
     | 'import.run'
     | 'list.duplicate'
     | 'template.create'

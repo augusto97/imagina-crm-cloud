@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCESS_TTL_MS, OauthService, REFRESH_TTL_MS } from '../src/ai/oauth.service';
+import { ACCESS_TTL_MS, isKnownRedirect, OauthService, REFRESH_TTL_MS } from '../src/ai/oauth.service';
 import {
     OauthError,
     extractClientCredentials,
@@ -24,6 +24,18 @@ function pkce(): { verifier: string; challenge: string } {
 }
 
 describe('OAuth util (puro)', () => {
+    it('SEC-32: destinos conocidos (Claude y loopback) vs. cualquier otro', () => {
+        expect(isKnownRedirect('https://claude.ai/api/mcp/auth_callback')).toBe(true);
+        expect(isKnownRedirect('https://app.claude.com/cb')).toBe(true);
+        expect(isKnownRedirect('http://127.0.0.1:33418/callback')).toBe(true);
+        expect(isKnownRedirect('http://localhost:6274/oauth/callback')).toBe(true);
+        expect(isKnownRedirect('https://claude.ai.evil.com/cb')).toBe(false);
+        expect(isKnownRedirect('https://evilclaude.ai/cb')).toBe(false);
+        expect(isKnownRedirect('http://claude.ai/cb')).toBe(false);
+        expect(isKnownRedirect('https://atacante.test/cb')).toBe(false);
+        expect(isKnownRedirect('cursor://callback')).toBe(false);
+    });
+
     it('redirect URIs: https siempre, http sólo en loopback, esquemas de app nativa; nada peligroso', () => {
         expect(isAllowedRedirectUri('https://claude.ai/api/mcp/auth_callback')).toBe(true);
         expect(isAllowedRedirectUri('http://localhost:53421/callback')).toBe(true);
@@ -181,7 +193,7 @@ describe('Servidor OAuth 2.1 del MCP (v0.1.184, Postgres + Redis reales)', () =>
         const ok = await oauth.startAuthorization(ORIGIN, { ...base, scope: 'read' });
         expect(ok.kind).toBe('consent');
         const req = await oauth.getRequest((ok as { requestId: string }).requestId);
-        expect(req).toMatchObject({ client_name: 'Claude', scope: 'read', redirect_host: 'claude.ai' });
+        expect(req).toMatchObject({ client_name: 'Claude', scope: 'read', redirect_host: 'claude.ai', redirect_known: true });
         await expect(oauth.getRequest('no-existe-0000000000')).rejects.toMatchObject({ status: 404 });
     });
 

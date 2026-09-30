@@ -14,10 +14,13 @@ import {
     type Field,
     type RecurrenceDto,
     type RecurrenceUpsertInput,
+    type Role,
 } from '@imagina-base/shared';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -25,6 +28,8 @@ import { RecordsRepository } from '../records/records.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { comparableDate, hasTimeComponent, nextOccurrence, nowUtc } from './date-roller';
 import { RecurrencesRepository, type RecurrenceRow } from './recurrences.repository';
+import { BillingService } from '../billing/billing.service';
+import { effectivePermissions, resolvePermissions, rowInScope, scopeWhere } from '../lists/list-acl';
 
 /** Resultado interno de un fire (para emitir realtime/automations tras el tx). */
 interface FireOutcome {
@@ -66,6 +71,8 @@ export class RecurrencesService {
          * sin tick no la necesitan.
          */
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
+        // v0.1.228 (SEC-31) — el clon cuenta contra el límite de registros del plan.
+        @Optional() private readonly billing?: BillingService,
     ) {}
 
     /**
@@ -80,8 +87,10 @@ export class RecurrencesService {
         listIdOrSlug: string,
         recordId: number,
         input: RecurrenceUpsertInput,
+        actor?: RecurrenceActor,
     ): Promise<RecurrenceDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        if (actor) await this.assertReachable(tenantId, list, recordId, actor, 'edit');
         const fields = await this.fields.listByListId(tenantId, list.id);
 
         const dateField = fields.find((f) => f.id === input.date_field_id);
@@ -169,8 +178,10 @@ export class RecurrencesService {
         tenantId: number,
         listIdOrSlug: string,
         recordId: number,
+        actor?: RecurrenceActor,
     ): Promise<RecurrenceDto[]> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        if (actor) await this.assertReachable(tenantId, list, recordId, actor, 'view');
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.listForRecord(tx, tenantId, recordId),
         );
@@ -186,11 +197,25 @@ export class RecurrencesService {
         tenantId: number,
         listIdOrSlug: string,
         recordIds: number[],
+        actor?: RecurrenceActor,
     ): Promise<Record<string, RecurrenceDto[]>> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.batchForRecords(tx, tenantId, list.id, recordIds),
-        );
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            let ids = recordIds;
+            if (actor) {
+                const scope = effectivePermissions(list.settings, actor.role, actor.userId).view;
+                if (scope !== 'all' && ids.length > 0) {
+                    const where = scopeWhere(scope, actor.userId, assignmentKeyOf(list.settings));
+                    const visible = await tx
+                        .select({ id: records.id })
+                        .from(records)
+                        .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ids), where));
+                    const ok = new Set(visible.map((r) => r.id));
+                    ids = ids.filter((id) => ok.has(id));
+                }
+            }
+            return ids.length > 0 ? this.repo.batchForRecords(tx, tenantId, list.id, ids) : [];
+        });
         const out: Record<string, RecurrenceDto[]> = {};
         for (const id of recordIds) out[String(id)] = [];
         for (const row of rows) {
@@ -204,8 +229,10 @@ export class RecurrencesService {
         listIdOrSlug: string,
         recordId: number,
         id: number,
+        actor?: RecurrenceActor,
     ): Promise<void> {
-        await this.lists.get(tenantId, listIdOrSlug);
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        if (actor) await this.assertReachable(tenantId, list, recordId, actor, 'edit');
         const deleted = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.delete(tx, tenantId, recordId, id),
         );
@@ -213,6 +240,40 @@ export class RecurrencesService {
             throw new NotFoundException({
                 code: 'recurrence_not_found',
                 message: `Recurrencia ${id} no encontrada`,
+                data: { status: 404 },
+            });
+        }
+    }
+
+    /**
+     * SEC-31 (v0.1.228): una recurrencia REESCRIBE el registro cada vez que
+     * dispara (o lo clona), así que ponerla es editarlo. Antes bastaba la
+     * capability (`edit_own_records` del agente) y no se miraba de quién era
+     * la fila: un agente dejaba programados cambios sobre registros ajenos.
+     * Mismo criterio que el update: 404 si el alcance del rol no la cubre.
+     */
+    private async assertReachable(
+        tenantId: number,
+        list: { id: number; settings: Record<string, unknown> },
+        recordId: number,
+        actor: RecurrenceActor,
+        action: 'view' | 'edit',
+    ): Promise<void> {
+        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.recordsRepo.findById(tx, tenantId, list.id, recordId),
+        );
+        const scope = effectivePermissions(list.settings, actor.role, actor.userId)[action];
+        const key = assignmentKeyOf(list.settings);
+        const reach =
+            row !== null &&
+            rowInScope(scope, actor.userId, {
+                createdBy: row.createdBy,
+                assignmentValue: key ? (row.data as Record<string, unknown>)[key] : null,
+            });
+        if (!reach) {
+            throw new NotFoundException({
+                code: 'record_not_found',
+                message: `Registro ${recordId} no encontrado`,
                 data: { status: 404 },
             });
         }
@@ -292,6 +353,14 @@ export class RecurrencesService {
         const firedAt = nowUtc();
 
         if (rec.actionType === 'clone') {
+            if (this.billing) {
+                try {
+                    await this.billing.assertCanCreateRecords(tenantId, 1);
+                } catch {
+                    this.logger.warn(`recurrencia ${rec.id}: límite de registros del plan alcanzado, no se clonó`);
+                    return null;
+                }
+            }
             // Clone: record nuevo con el data completo del original + fecha
             // rodada (+ reset de estado si está configurado).
             const data = { ...(record.data as Record<string, unknown>), [dateKey]: nextDate, ...statusPatch };
@@ -464,4 +533,14 @@ function recordNotFound(id: number): NotFoundException {
         message: `Registro ${id} no encontrado`,
         data: { status: 404 },
     });
+}
+
+export interface RecurrenceActor {
+    userId: number;
+    role: Role;
+}
+
+function assignmentKeyOf(settings: Record<string, unknown>): string | null {
+    const id = resolvePermissions(settings).assignment_field_id;
+    return id ? jsonbKeyForField(id) : null;
 }

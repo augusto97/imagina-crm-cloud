@@ -344,6 +344,13 @@ export const oauthAuthorizationRequestSchema = z.object({
     scope: personalTokenScopeSchema,
     /** Host del cliente (dominio del redirect) para que la persona sepa a quién autoriza. */
     redirect_host: z.string(),
+    /**
+     * SEC-32 (v0.1.228): ¿el destino es uno conocido (Claude, o esta misma
+     * computadora para las apps de escritorio)? El nombre del cliente lo
+     * elige quien lo registra — "Claude" puede ser cualquiera —, así que lo
+     * que de verdad identifica a quién se le da el acceso es el destino.
+     */
+    redirect_known: z.boolean().default(false),
     expires_at: z.string(),
 });
 export type OauthAuthorizationRequest = z.infer<typeof oauthAuthorizationRequestSchema>;

@@ -5680,6 +5680,81 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         otro sitio bloqueado en app y portal) y HSTS por curl (sale con
         `X-Forwarded-Proto: https`, no sale por HTTP).
 
+  - [x] **Release de seguridad III: pagos, importaciones, automatizaciones/IA,
+        dominios y OAuth (v0.1.228, tercera tanda de la auditoría)**: cada
+        hallazgo verificado en el código antes de tocarlo.
+        (a) **SEC-29 — PayPal activaba el plan sin cobrar**: con `intent:
+        CAPTURE` una orden APROBADA todavía no mueve plata; el webhook
+        `CHECKOUT.ORDER.APPROVED` activaba el plan y nadie capturaba nunca la
+        orden. Ahora la aprobación dispara la CAPTURA (idempotente con
+        `PayPal-Request-Id`, y si otro reintento ya la capturó se consulta la
+        orden) y el plan se activa sólo con `COMPLETED`; una captura PENDING
+        tampoco activa. El runbook marca ese evento como obligatorio.
+        (b) **SEC-30 — importaciones**: un archivo de empresa armado a mano
+        podía traer un **symlink** (`files/x → .env`) y el import lo seguía al
+        leer los bytes del adjunto — un archivo del SERVIDOR quedaba como
+        adjunto descargable. Ahora lo extraído se recorre con `lstat` y
+        cualquier cosa que no sea carpeta o archivo común rechaza el archivo.
+        Y las cuentas **nuevas** heredaban del archivo la contraseña (hash), el
+        email verificado y el 2FA: quien arma el archivo elegía la contraseña
+        de un email ajeno que todavía no existía acá — y cuando otra empresa
+        invitaba a esa persona, la invitación caía en su cuenta. Por defecto
+        nacen sin contraseña utilizable ni verificación (entran por "olvidé mi
+        contraseña"); el operador puede marcar en la consola que el archivo
+        viene de un servidor de confianza. El **import CSV** ahora respeta el
+        "puede crear" de la lista, ignora con aviso las columnas mapeadas a
+        campos ocultos para ese rol, y crear campos u OPCIONES exige
+        `manage_fields` (un manager tenía `import_records` y con eso tocaba el
+        esquema); el diálogo ya no ofrece "Crear campo nuevo" a quien no puede.
+        (c) **SEC-31 — automatizaciones e IA**: "crear registro" aceptaba el id
+        de una lista de OTRA empresa (`records.list_id` referencia la tabla
+        compartida sin mirar el tenant) — ahora la lista destino se busca en la
+        empresa y si no está el run falla con el motivo. El **límite de
+        registros del plan** se mudó a `RecordsService.create`: el asistente
+        IA/MCP, "actualizar desde archivo", las automatizaciones y los clones
+        de recurrencias creaban sin tope. Aplicar una **propuesta de IA** dos
+        veces en paralelo la ejecutaba dos veces (candado `SET NX` + relectura
+        adentro). `propose_set_list_permissions` REEMPLAZABA el mapa de accesos
+        por persona: "dale acceso a Ana" le sacaba el acceso a todos los demás
+        — ahora `users` agrega/cambia, `remove_users` quita, y se mezcla contra
+        lo guardado al aplicar. Una automatización se lee/cambia/borra sólo
+        desde SU lista. Y las **recurrencias** sólo miraban la capability: un
+        agente (`edit_own_records`) programaba cambios o clones sobre registros
+        ajenos — ahora poner/ver/quitar exige alcanzar la fila con el ACL.
+        (d) **SEC-32 — dominios y OAuth**: un dominio propio quedaba activo
+        apenas se escribía, y como es único cualquier empresa podía "reservar"
+        el dominio de otra. Ahora pedirlo lo deja PENDIENTE
+        (`settings.domain_claim`, con un código por empresa) y se activa recién
+        cuando aparece el TXT `_imagina-verify.<dominio>`; si otra empresa lo
+        tenía, pasa a quien probó ser dueño del DNS. Los dominios ya
+        configurados se conservan. Card de Ajustes → Marca en dos pasos
+        (verificar propiedad + apuntar). En el **OAuth del MCP**, `authorize`
+        redirigía SOLO con un error a la redirect_uri del cliente — con
+        registro abierto (DCR), un open redirect con nuestro dominio adelante;
+        ahora el error se muestra en texto y al cliente sólo se vuelve tras
+        Autorizar/Cancelar. La pantalla "Autorizar" **advierte** cuando el
+        destino no es Claude (claude.ai/claude.com) ni esta computadora
+        (loopback): el nombre del cliente lo elige quien lo registra, el
+        destino es lo que identifica a quién se le da el acceso.
+        (e) De paso: el mensaje del límite del plan decía "El import supera…"
+        también fuera del import. Tests: PayPal (5), import de empresa
+        (symlink, credenciales con y sin confianza), CSV (manager sin campos/
+        opciones/ocultos/crear), automatizaciones (lista ajena, alcance por
+        lista), IA (merge de accesos, doble aplicación en paralelo),
+        recurrencias (agente sobre fila ajena), dominios (reescritos: pendiente
+        → mismatch → verificado → transferencia) y OAuth (destinos conocidos) +
+        E2E navegador 11/11 (dominio pendiente con su TXT, Caddy no emite
+        certificado sin verificar, authorize con error → 400 sin redirect,
+        advertencia en el consentimiento, casilla de confianza destildada).
+        **Queda para la cuarta tanda**: cuota de correo por destinatario y
+        remitente del SMTP de plataforma, escape HTML de Gmail/Outlook, límite
+        por token del webhook entrante y solo-lectura, desconectar el realtime
+        al revocar, CSRF de login, límites por cuenta en cambio de contraseña/
+        borrado/2FA, `portal/request-access`, fuga por relation/lookup, y
+        endurecimientos de despliegue (lista blanca del `.env` en el restore,
+        firma de releases, rol de Postgres no superusuario, CSP sin
+        `unsafe-inline`).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

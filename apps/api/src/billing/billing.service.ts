@@ -92,7 +92,7 @@ export class BillingService {
         if (count + additional > limit) {
             throw new ForbiddenException({
                 code: 'plan_limit_reached',
-                message: `El import supera el límite de ${limit} registros del plan ${plan} (tenés ${count}, intentás agregar ${additional})`,
+                message: `Se superaría el límite de ${limit} registros del plan ${plan} (tenés ${count}, se agregarían ${additional})`,
                 data: { status: 403, errors: { plan: 'límite de registros' } },
             });
         }

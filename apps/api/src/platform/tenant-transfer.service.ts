@@ -4,6 +4,7 @@ import {
     createReadStream,
     createWriteStream,
     existsSync,
+    lstatSync,
     mkdirSync,
     readdirSync,
     readFileSync,
@@ -30,6 +31,7 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import * as argon2 from 'argon2';
 import { isEncrypted } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
@@ -352,6 +354,12 @@ export class TenantTransferService {
             // `--no-same-owner`: el tar viene de otro servidor, los uid/gid de
             // adentro no significan nada acá.
             await this.tar(['-xf', file, '--no-same-owner', '-C', work]);
+            // SEC-30 (v0.1.228): un archivo armado a mano puede traer un
+            // symlink (`files/x → /opt/imagina-base/shared/.env`); al leer los
+            // bytes del adjunto se seguiría el enlace y un archivo del SERVIDOR
+            // terminaría como adjunto descargable de la empresa. Una
+            // exportación nuestra sólo tiene carpetas y archivos comunes.
+            assertOnlyRegularFiles(work);
             const manifest = await this.parseManifest(work);
             const writtenKeys: string[] = [];
 
@@ -451,6 +459,16 @@ export class TenantTransferService {
         // 2. Usuarios: se reusa la cuenta si el email ya existe acá (la misma
         //    persona puede estar ya en el servidor destino por otra empresa).
         const userRows = await this.readAll(rows('users'));
+        // SEC-30 (v0.1.228): la contraseña (hash), el email verificado y el
+        // segundo factor de una cuenta NUEVA salen del archivo. Si el archivo
+        // no lo armó un servidor de confianza, quien lo armó elige la
+        // contraseña de cualquier email que todavía no exista acá — y cuando
+        // otra empresa invite a esa persona, la invitación cae en una cuenta
+        // que controla él. Por defecto las cuentas nuevas nacen SIN contraseña
+        // utilizable ni verificación: la persona entra con "olvidé mi
+        // contraseña", que prueba que el correo es suyo.
+        const trustCredentials = input.trust_credentials === true;
+        const unusableHash = trustCredentials ? null : await argon2.hash(randomBytes(32).toString('hex'));
         let usersCreated = 0;
         let usersLinked = 0;
         for (const u of userRows) {
@@ -471,14 +489,14 @@ export class TenantTransferService {
                     email: String(u.email),
                     // El hash de argon2 se describe a sí mismo: es portable,
                     // así que la persona conserva su contraseña.
-                    passwordHash: String(u.passwordHash),
+                    passwordHash: unusableHash ?? String(u.passwordHash),
                     name: String(u.name ?? ''),
                     locale: String(u.locale ?? 'es'),
-                    emailVerifiedAt: this.date(u.emailVerifiedAt),
+                    emailVerifiedAt: trustCredentials ? this.date(u.emailVerifiedAt) : null,
                     emailSignature: (u.emailSignature as string | null) ?? null,
-                    totpSecret: sameKey ? ((u.totpSecret as string | null) ?? null) : null,
-                    totpEnabledAt: sameKey ? this.date(u.totpEnabledAt) : null,
-                    totpBackupCodes: sameKey ? ((u.totpBackupCodes as string[] | null) ?? null) : null,
+                    totpSecret: trustCredentials && sameKey ? ((u.totpSecret as string | null) ?? null) : null,
+                    totpEnabledAt: trustCredentials && sameKey ? this.date(u.totpEnabledAt) : null,
+                    totpBackupCodes: trustCredentials && sameKey ? ((u.totpBackupCodes as string[] | null) ?? null) : null,
                 })
                 .returning({ id: users.id });
             maps.user.set(Number(u.id), ins!.id);
@@ -1016,6 +1034,11 @@ export class TenantTransferService {
             );
         }
 
+        if (!trustCredentials && usersCreated > 0) {
+            warnings.push(
+                `${usersCreated} cuenta(s) nueva(s) se crearon SIN contraseña: cada persona entra con «¿Olvidaste tu contraseña?» (así se comprueba que el correo es suyo). Para conservar las contraseñas, importá marcando que el archivo viene de un servidor de confianza.`,
+            );
+        }
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
@@ -1288,5 +1311,30 @@ export class TenantTransferService {
             p.on('error', reject);
             p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err.slice(0, 200)))));
         });
+    }
+}
+
+/**
+ * SEC-30 (v0.1.228): recorre lo extraído y rechaza cualquier cosa que no sea
+ * carpeta o archivo común (symlinks, dispositivos, FIFOs). `lstat` para NO
+ * seguir el enlace al mirarlo.
+ */
+export function assertOnlyRegularFiles(root: string): void {
+    const stack = [root];
+    while (stack.length > 0) {
+        const dir = stack.pop()!;
+        for (const name of readdirSync(dir)) {
+            const full = path.join(dir, name);
+            const st = lstatSync(full);
+            if (st.isDirectory()) {
+                stack.push(full);
+            } else if (!st.isFile()) {
+                throw new BadRequestException({
+                    code: 'bad_archive',
+                    message: `El archivo trae una entrada que no es un archivo común (${path.relative(root, full)}): no es una exportación de empresa válida.`,
+                    data: { status: 400 },
+                });
+            }
+        }
     }
 }

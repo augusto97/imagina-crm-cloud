@@ -462,6 +462,35 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(doc.permissions.agent).toMatchObject({ view: 'own', create: true, fields_hidden: ['estado'] });
         expect(doc.permissions.viewer!.view).toBe('none');
         expect(doc.users.map((u) => u.user_id)).toEqual([adminId]);
+
+        // SEC-31 (v0.1.228): sumar a OTRA persona no le quita el acceso a la
+        // que ya estaba; y quitar exige nombrarla.
+        const [ub] = await pg.db.insert(users).values({ email: 'bea@cfg.local', name: 'Bea', passwordHash: 'x' }).returning();
+        await pg.db.insert(memberships).values({ tenantId, userId: ub!.id, role: 'agent' });
+        const add = json(await call('propose_set_list_permissions', {
+            list: 'clientes',
+            users: [{ user_id: ub!.id, view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] }],
+        }));
+        await apply(add.proposal_id);
+        const after = await lists.getPermissions(tenantId, 'clientes');
+        expect(after.users.map((u) => u.user_id).sort()).toEqual([adminId, ub!.id].sort());
+
+        const remove = json(await call('propose_set_list_permissions', { list: 'clientes', remove_users: [adminId] }));
+        await apply(remove.proposal_id);
+        const final = await lists.getPermissions(tenantId, 'clientes');
+        expect(final.users.map((u) => u.user_id)).toEqual([ub!.id]);
+    });
+
+    it('SEC-31: aplicar la MISMA propuesta dos veces en paralelo la ejecuta una sola vez', async () => {
+        const p = json(await call('propose_create_list', { lists: [{ name: 'Doble aplicación', fields: [{ label: 'Nombre', type: 'text' }] }] }));
+        const [a, b] = await Promise.all([
+            call('apply_proposal', { proposal_id: p.proposal_id }),
+            call('apply_proposal', { proposal_id: p.proposal_id }),
+        ]);
+        const errors = [a, b].filter((r) => (r as { isError?: boolean }).isError === true);
+        expect(errors).toHaveLength(1);
+        const all = await lists.list(tenantId);
+        expect(all.filter((l) => l.name === 'Doble aplicación')).toHaveLength(1);
     });
 
     it('propose_configure_public_sharing: publicar exige campos visibles y avisa que expone datos', async () => {

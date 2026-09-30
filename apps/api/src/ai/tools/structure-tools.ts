@@ -254,6 +254,7 @@ interface SetPermissionsSpec {
     list: string;
     roles?: Partial<Record<(typeof CONFIGURABLE_ROLES)[number], z.infer<typeof permissionSpec>>>;
     users?: Array<z.infer<typeof permissionSpec> & { user_id: number }>;
+    remove_users?: number[];
     assignment_field_slug?: string | null;
 }
 
@@ -288,7 +289,20 @@ type Payload =
     | { kind: 'delete_view'; listId: number; listSlug: string; viewId: number }
     | { kind: 'delete_list'; listId: number; listSlug: string }
     // v0.1.201 — ACL por rol / por persona, y publicación al mundo.
-    | { kind: 'set_list_permissions'; listId: number; listSlug: string; input: UpdateListPermissionsInput }
+    | {
+          kind: 'set_list_permissions';
+          listId: number;
+          listSlug: string;
+          input: UpdateListPermissionsInput;
+          /**
+           * SEC-31 (v0.1.228): los accesos por persona se aplican como
+           * CAMBIOS sobre lo que haya al aplicar (agregar/cambiar + quitar),
+           * no como una foto que reemplaza el mapa entero. Antes, "dale
+           * acceso a Ana" le sacaba el acceso a todos los demás.
+           */
+          usersSet?: Record<string, RolePermissions>;
+          usersRemove?: number[];
+      }
     | { kind: 'configure_public_sharing'; listId: number; listSlug: string; input: UpdatePublicListInput };
 
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
@@ -576,7 +590,12 @@ export class StructureTools implements AiProposalApplier {
                     .array(z.object({ user_id: z.number().int().positive() }).and(permissionSpec))
                     .max(50)
                     .optional()
-                    .describe('Accesos POR PERSONA. Reemplaza la lista guardada: mandá todos los que deben quedar, o [] para dejar sólo los roles'),
+                    .describe('Accesos POR PERSONA a agregar o cambiar. Los que ya tienen acceso y no mandás se CONSERVAN'),
+                remove_users: z
+                    .array(z.number().int().positive())
+                    .max(50)
+                    .optional()
+                    .describe('Ids de personas a las que se les QUITA el acceso propio a esta lista (vuelven a lo que diga su rol)'),
                 assignment_field_slug: z
                     .string()
                     .max(63)
@@ -1735,7 +1754,18 @@ export class StructureTools implements AiProposalApplier {
                 return { message: 'Vista eliminada.', links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }], warnings: [] };
             }
             case 'set_list_permissions': {
-                const doc = await this.lists.updatePermissions(ctx.tenantId, String(payload.listId), payload.input);
+                const input: UpdateListPermissionsInput = { ...payload.input };
+                if (payload.usersSet !== undefined || payload.usersRemove !== undefined) {
+                    // Se mezcla contra lo guardado AHORA (no contra la foto de
+                    // cuando se propuso): nadie pierde un acceso que no se nombró.
+                    const now = await this.lists.getPermissions(ctx.tenantId, String(payload.listId));
+                    const merged: Record<string, RolePermissions> = {};
+                    for (const u of now.users) merged[String(u.user_id)] = u.permissions;
+                    for (const id of payload.usersRemove ?? []) delete merged[String(id)];
+                    Object.assign(merged, payload.usersSet ?? {});
+                    input.users = merged;
+                }
+                const doc = await this.lists.updatePermissions(ctx.tenantId, String(payload.listId), input);
                 const roles = Object.keys(doc.permissions).length;
                 return {
                     message: `Permisos de la lista actualizados (${roles} rol${roles === 1 ? '' : 'es'}${Object.keys(doc.users ?? {}).length ? `, ${Object.keys(doc.users).length} persona(s)` : ''}).`,
@@ -1852,28 +1882,47 @@ export class StructureTools implements AiProposalApplier {
             }
             patch.permissions = roles;
         }
-        if (input.users !== undefined) {
+        let usersSet: Record<string, RolePermissions> | undefined;
+        let usersRemove: number[] | undefined;
+        if (input.users !== undefined || input.remove_users !== undefined) {
             // Sólo miembros de la empresa: el service lo re-valida, pero acá
             // el modelo recibe el motivo y puede corregir.
             const members = await this.lists.workspaceMembers(ctx.tenantId);
             const byId = new Map(members.map((m) => [m.id, m]));
-            const users: Record<string, RolePermissions> = {};
-            for (const u of input.users) {
+            const before = new Map(current.users.map((u) => [u.user_id, u.permissions]));
+            usersSet = {};
+            for (const u of input.users ?? []) {
                 const member = byId.get(u.user_id);
                 if (!member) {
                     throw new AiToolError(
                         `El usuario #${u.user_id} no es miembro de esta empresa. Pedí la lista con list_members.`,
                     );
                 }
-                users[String(u.user_id)] = {
+                usersSet[String(u.user_id)] = {
                     view: u.view, create: u.create, edit: u.edit, delete: u.delete,
                     fields_hidden: checkHidden(u.fields_hidden ?? [], member.name || member.email),
                 };
-                changes.push({ label: member.name || member.email, from: null, to: describeScope(users[String(u.user_id)]!) });
+                const prev = before.get(u.user_id);
+                changes.push({
+                    label: member.name || member.email,
+                    from: prev ? describeScope(prev) : null,
+                    to: describeScope(usersSet[String(u.user_id)]!),
+                });
             }
-            patch.users = users;
-            if (input.users.length === 0) {
-                changes.push({ label: 'Accesos por persona', from: `${Object.keys(current.users ?? {}).length}`, to: '0' });
+            usersRemove = [];
+            for (const id of input.remove_users ?? []) {
+                const had = current.users.find((u) => u.user_id === id);
+                if (!had) {
+                    throw new AiToolError(
+                        `El usuario #${id} no tiene un acceso propio en «${list.name}»: no hay nada que quitar.`,
+                    );
+                }
+                usersRemove.push(id);
+                changes.push({ label: had.name || had.email, from: describeScope(had.permissions), to: 'sin acceso propio (vuelve a su rol)' });
+            }
+            const kept = current.users.filter((u) => !usersRemove!.includes(u.user_id) && !usersSet![String(u.user_id)]);
+            if (kept.length > 0) {
+                changes.push({ label: 'Otros accesos por persona', from: null, to: `se conservan (${kept.map((u) => u.name || u.email).join(', ')})` });
             }
         }
         if (input.assignment_field_slug !== undefined) {
@@ -1890,8 +1939,8 @@ export class StructureTools implements AiProposalApplier {
             patch.assignment_field_id = id;
             changes.push({ label: 'Campo de asignación', from: current.assignment_field_id === null ? '(ninguno)' : String(current.assignment_field_id), to: input.assignment_field_slug ?? '(ninguno)' });
         }
-        if (Object.keys(patch).length === 0) {
-            throw new AiToolError('No hay nada que cambiar: mandá `roles`, `users` o `assignment_field_slug`.');
+        if (Object.keys(patch).length === 0 && usersSet === undefined) {
+            throw new AiToolError('No hay nada que cambiar: mandá `roles`, `users`, `remove_users` o `assignment_field_slug`.');
         }
 
         return this.saveProposal(ctx, {
@@ -1902,7 +1951,7 @@ export class StructureTools implements AiProposalApplier {
             destructive: changes.some((c) => String(c.to).startsWith('sin acceso')),
             listSlug: list.slug,
             preview: { changes },
-            payload: { kind: 'set_list_permissions', listId: list.id, listSlug: list.slug, input: patch },
+            payload: { kind: 'set_list_permissions', listId: list.id, listSlug: list.slug, input: patch, usersSet, usersRemove },
         });
     }
 

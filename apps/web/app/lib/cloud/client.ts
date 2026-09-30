@@ -105,6 +105,7 @@ import {
     createViewSchema,
     customDomainInputSchema,
     domainDnsReportSchema,
+    domainVerifyResultSchema,
     exportBundleSchema,
     fieldSchema,
     importResultSchema,
@@ -171,6 +172,7 @@ import {
     type CreateViewInput,
     type CustomDomainInput,
     type DomainDnsReport,
+    type DomainVerifyResult,
     type ExportBundle,
     type Field,
     type ImportResult,
@@ -656,6 +658,10 @@ export class CloudClient {
     /** Quita el dominio propio (sólo admin). */
     tenantDomainClear(): Promise<TenantDomain> {
         return this.request('DELETE', '/workspaces/current/domain', { schema: tenantDomainSchema });
+    }
+    /** SEC-32 — comprueba el TXT del dominio pedido y, si está, lo activa (admin). */
+    tenantDomainVerify(): Promise<DomainVerifyResult> {
+        return this.request('POST', '/workspaces/current/domain/verify', { body: {}, schema: domainVerifyResultSchema });
     }
     /** Verificación en vivo del apuntamiento DNS del dominio propio (admin). */
     tenantDomainDns(): Promise<DomainDnsReport> {

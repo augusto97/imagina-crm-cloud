@@ -58,7 +58,18 @@ export class OauthController {
         try {
             const start = await this.oauth.startAuthorization(origin, query);
             if (start.kind === 'redirect') {
-                void reply.redirect(start.to, 302);
+                // SEC-32 (v0.1.228): el registro de clientes es abierto (DCR),
+                // así que la redirect_uri la eligió cualquiera: redirigir SOLO
+                // con el error, sin que la persona haga nada, convertía este
+                // endpoint en un open redirect con nuestro dominio adelante
+                // (el típico link de phishing "de confianza"). El error se
+                // muestra acá; al cliente sólo se vuelve tras una decisión
+                // de la persona (Autorizar / Cancelar).
+                const err = new URL(start.to).searchParams;
+                void reply
+                    .code(400)
+                    .header('Content-Type', 'text/plain; charset=utf-8')
+                    .send(`No se pudo iniciar la autorización (${err.get('error') ?? 'invalid_request'}): ${err.get('error_description') ?? ''}`);
                 return;
             }
             void reply.redirect(`${origin}${OAUTH_PATHS.consentPage}?req=${encodeURIComponent(start.requestId)}`, 302);

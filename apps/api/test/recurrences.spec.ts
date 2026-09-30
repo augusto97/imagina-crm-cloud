@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -430,5 +430,28 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         expect(fromB).toHaveLength(0);
         const fromA = await withTenant(pg.db, tenantA, (tx) => tx.select().from(recurrences));
         expect(fromA).toHaveLength(1);
+    });
+
+    // SEC-31 (v0.1.228): una recurrencia reescribe el registro al disparar,
+    // así que ponerla exige alcanzar ESA fila con el ACL de la lista.
+    it('un agente no programa ni ve recurrencias de registros ajenos', async () => {
+        const ajeno = await newRecord({ [key('nombre')]: 'De otro', [key('vence')]: '2030-01-15' });
+        const agent = { userId: admin.userId + 1000, role: 'agent' as const };
+        const spec = {
+            date_field_id: f.vence!.id,
+            frequency: 'daily' as const,
+            interval_n: 1,
+            trigger_type: 'schedule' as const,
+            action_type: 'update' as const,
+        };
+        await expect(service.upsert(tenantA, 'tareas', ajeno, spec, agent)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.listForRecord(tenantA, 'tareas', ajeno, agent)).rejects.toBeInstanceOf(NotFoundException);
+
+        // El admin sí la pone; el agente no la ve en el batch ni la borra.
+        const dto = await service.upsert(tenantA, 'tareas', ajeno, spec, admin);
+        const batch = await service.batchByRecords(tenantA, 'tareas', [ajeno], agent);
+        expect(batch[String(ajeno)]).toEqual([]);
+        await expect(service.delete(tenantA, 'tareas', ajeno, dto.id, agent)).rejects.toBeInstanceOf(NotFoundException);
+        expect((await service.batchByRecords(tenantA, 'tareas', [ajeno], admin))[String(ajeno)]).toHaveLength(1);
     });
 });
