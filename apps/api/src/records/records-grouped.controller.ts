@@ -38,13 +38,15 @@ export class RecordsGroupedController {
     ): Promise<unknown> {
         const groupBy = intParam(q.group_by, 'group_by');
         const perPage = Number(q.per_page) > 0 ? Math.min(200, Number(q.per_page)) : 50;
-        const expanded = csv(q.expanded);
+        const expanded = keyList(q.expanded);
         const aggregateFieldIds = csv(q.aggregate_fields)
             .map((s) => Number(s))
             .filter((n) => Number.isInteger(n) && n > 0);
         return this.grouped.groupedBundle(tenantId(req), actor(req), list, {
             groupBy,
             expanded,
+            expandAll: q.expand === 'all',
+            collapsed: keyList(q.collapsed),
             filterTree: parseFilter(q.filter_tree),
             search: typeof q.search === 'string' ? q.search : undefined,
             perPage,
@@ -69,6 +71,25 @@ function intParam(v: unknown, name: string): number {
 function csv(v: unknown): string[] {
     if (typeof v !== 'string' || v.trim() === '') return [];
     return v.split(',').map((s) => s.trim()).filter((s) => s !== '');
+}
+/**
+ * Lista de claves de grupo. Viaja como JSON (`["a","b"]`) porque la clave de
+ * un grupo multi_select ES un JSON con comas (`["vip", "promo"]`) y separarla
+ * por comas la partía: esos grupos nunca llegaban con sus filas. La forma
+ * separada por comas se sigue aceptando para las claves simples.
+ */
+export function keyList(v: unknown): string[] {
+    if (typeof v !== 'string' || v.trim() === '') return [];
+    const raw = v.trim();
+    if (raw.startsWith('[')) {
+        try {
+            const parsed: unknown = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string').slice(0, 500);
+        } catch {
+            // Cae a la forma separada por comas.
+        }
+    }
+    return csv(raw);
 }
 function parseFilter(v: unknown): FilterGroup | undefined {
     if (typeof v !== 'string' || v.trim() === '') return undefined;

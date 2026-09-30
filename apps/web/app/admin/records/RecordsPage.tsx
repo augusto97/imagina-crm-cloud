@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
@@ -90,6 +90,7 @@ import { CalendarView } from './views/CalendarView';
 import { CardsView } from './views/CardsView';
 import { KanbanView } from './views/KanbanView';
 import { GroupedTableView } from './views/GroupedTableView';
+import { useEventCallback } from '@/hooks/useEventCallback';
 
 import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
@@ -186,6 +187,24 @@ export function RecordsPage(): JSX.Element {
     // total. Si total <= per_page, el dataset completo está en
     // baseRecords y filtramos client-side. Si no, disparamos un
     // searchQuery server-side aparte (solo cuando hay search activo).
+    // v0.1.224 — en la tabla AGRUPADA las filas las trae el bundle agrupado
+    // (una request con grupos + filas + agregados). El listado plano no se usa
+    // ahí, pero se pedía igual —con y sin búsqueda— y encima la vista esperaba
+    // a que llegara antes de montarse: cada búsqueda costaba requests de más
+    // y la primera carga iba en serie.
+    const activeViewType = activeViewId !== null
+        ? views.data?.find((x) => x.id === activeViewId)?.type
+        : undefined;
+    const groupedMode = activeViewType !== 'kanban'
+        && activeViewType !== 'calendar'
+        && activeViewType !== 'cards'
+        && state.groupByFieldId !== null
+        && !state.spreadsheet;
+    const [groupedStatus, setGroupedStatus] = useState<{ total: number | null; fetching: boolean }>({
+        total: null,
+        fetching: false,
+    });
+
     const baseQuery = useMemo(() => {
         const base = buildRecordsQuery({ ...state, search: '' });
         if (activeViewId !== null) {
@@ -207,7 +226,7 @@ export function RecordsPage(): JSX.Element {
     // cuando el primer fetch sale, el `state` ya refleja la vista
     // default — un solo round-trip.
     const baseRecords = useRecords(
-        viewApplied ? listSlug : undefined,
+        viewApplied && !groupedMode ? listSlug : undefined,
         baseQuery,
     );
 
@@ -235,7 +254,7 @@ export function RecordsPage(): JSX.Element {
     }, [state, debouncedSearch, activeViewId, views.data]);
 
     const serverSearch = useRecords(
-        useServerSearch ? listSlug : undefined,
+        useServerSearch && !groupedMode ? listSlug : undefined,
         serverSearchQuery,
     );
 
@@ -255,6 +274,10 @@ export function RecordsPage(): JSX.Element {
         }
         return serverSearch;
     }, [hasSearch, clientSearchable, baseRecords, serverSearch, state.search, fields.data]);
+    // Lo que abarca "todos los que coinciden" (acciones masivas) y el spinner
+    // del buscador: en modo agrupado lo informa el bundle.
+    const matchingCount = groupedMode ? groupedStatus.total : records.data?.meta?.total ?? null;
+    const listFetching = groupedMode ? groupedStatus.fetching : records.isFetching;
     const [createOpen, setCreateOpen] = useState(false);
     // Prefill del diálogo de creación (modo agrupado: "+ Agregar tarea"
     // dentro del grupo "Hecho" abre el form con estado=hecho seteado).
@@ -351,6 +374,36 @@ export function RecordsPage(): JSX.Element {
         setEditingField(field);
         setFieldDialogOpen(true);
     };
+
+    // v0.1.224 — callbacks de IDENTIDAD ESTABLE para la tabla agrupada (que va
+    // memoizada): con funciones inline cada letra del buscador re-dibujaba
+    // todas las filas de todos los grupos.
+    type GroupedProps = ComponentProps<typeof GroupedTableView>;
+    const onGroupedRowClick = useEventCallback((record: RecordEntity) => setDrawerRecordId(record.id));
+    const onGroupedColumnVisibility = useEventCallback((next: GroupedProps['columnVisibility']) =>
+        setState((s) => ({ ...s, columnVisibility: next })),
+    );
+    const onGroupedColumnSizing = useEventCallback((next: NonNullable<GroupedProps['columnSizing']>) =>
+        setState((s) => ({ ...s, columnSizing: next })),
+    );
+    const onGroupedCollapsed = useEventCallback((next: string[]) =>
+        setState((s) => ({ ...s, collapsedGroups: next })),
+    );
+    const onGroupedFooterAggregates = useEventCallback((next: Record<string, string>) =>
+        setState((s) => ({ ...s, footerAggregates: next })),
+    );
+    const onGroupedAddColumn = useEventCallback(openFieldCreate);
+    const onGroupedEditField = useEventCallback(openFieldEdit);
+    const onGroupedAddRecord = useEventCallback((groupField: FieldEntity, bucketValue: string | null) => {
+        // Prefill: crear desde el grupo "Hecho" → el form abre con estado=hecho.
+        setCreateDefaults(prefillForGroup(groupField, bucketValue));
+        setCreateOpen(true);
+    });
+    const onGroupedCreateSubtask = useEventCallback((record: RecordEntity) => {
+        setCreateDefaults(undefined);
+        setCreateParentId(record.id);
+        setCreateOpen(true);
+    });
 
     // Reset al cambiar de lista.
     useEffect(() => {
@@ -774,7 +827,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                             />
                         </div>
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                            {records.isFetching && !records.isLoading && (
+                            {listFetching && !records.isLoading && (
                                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                             )}
                             {/* Búsqueda angosta (200px) que crece al enfocar. */}
@@ -794,7 +847,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                                   visualmente todos se ven igual de
                                   reactivos — no es problema.
                                 */}
-                                {(records.isFetching || state.search !== debouncedSearch) && (
+                                {(listFetching || state.search !== debouncedSearch) && (
                                     <Loader2 className="imcrm-pointer-events-none imcrm-absolute imcrm-right-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                                 )}
                             </div>
@@ -949,7 +1002,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     selectedIds={selectedIds}
                     filterTree={state.filterTree}
                     search={debouncedSearch}
-                    matchingCount={records.data?.meta?.total ?? null}
+                    matchingCount={matchingCount}
                     onDone={() => setSelectedIds([])}
                 />
             )}
@@ -962,7 +1015,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     selectedIds={selectedIds}
                     filterTree={state.filterTree}
                     search={debouncedSearch}
-                    matchingCount={records.data?.meta?.total ?? null}
+                    matchingCount={matchingCount}
                     onDone={() => setSelectedIds([])}
                 />
             )}
@@ -976,7 +1029,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     selectedIds={selectedIds}
                     filterTree={state.filterTree}
                     search={debouncedSearch}
-                    matchingCount={records.data?.meta?.total ?? null}
+                    matchingCount={matchingCount}
                     canEditMatching={canBulkEdit}
                     isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
                     initialDrafts={bulkEditPreset?.drafts}
@@ -994,7 +1047,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     selectedIds={selectedIds}
                     filterTree={state.filterTree}
                     search={debouncedSearch}
-                    matchingCount={records.data?.meta?.total ?? null}
+                    matchingCount={matchingCount}
                     canActMatching={canBulkEdit}
                     onDone={() => setSelectedIds([])}
                 />
@@ -1024,7 +1077,10 @@ const applyView = (view: SavedViewEntity | null): void => {
 
             {fields.data && fields.data.length > 0 && (
                 <>
-                    {records.isLoading ? (
+                    {/* Hasta aplicar la vista guardada no se sabe qué vista va (en
+                        modo agrupado el listado plano ni se pide): montar la
+                        tabla plana un instante disparaba sus agregados de más. */}
+                    {!viewApplied || records.isLoading ? (
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-6 imcrm-text-sm imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
                             {__('Cargando registros…')}
@@ -1082,40 +1138,24 @@ const applyView = (view: SavedViewEntity | null): void => {
                                     search={debouncedSearch}
                                     selectedIds={selectedIds}
                                     onSelectionChange={setSelectedIds}
-                                    onRowClick={(record) => setDrawerRecordId(record.id)}
+                                    onRowClick={onGroupedRowClick}
                                     columnVisibility={state.columnVisibility}
-                                    onColumnVisibilityChange={(next) =>
-                                        setState((s) => ({ ...s, columnVisibility: next }))
-                                    }
+                                    onColumnVisibilityChange={onGroupedColumnVisibility}
                                     columnSizing={state.columnSizing}
-                                    onColumnSizingChange={(next) =>
-                                        setState((s) => ({ ...s, columnSizing: next }))
-                                    }
+                                    onColumnSizingChange={onGroupedColumnSizing}
                                     columnOrder={state.columnOrder}
                                     collapsedGroups={state.collapsedGroups}
-                                    onCollapsedGroupsChange={(next) =>
-                                        setState((s) => ({ ...s, collapsedGroups: next }))
-                                    }
-                                    onAddColumn={openFieldCreate}
-                                    onEditField={canManageList ? openFieldEdit : undefined}
-                                    onAddRecord={!canCreateRecords ? undefined : (groupField, bucketValue) => {
-                                        // Prefill: crear desde el grupo "Hecho"
-                                        // → el form abre con estado=hecho.
-                                        setCreateDefaults(prefillForGroup(groupField, bucketValue));
-                                        setCreateOpen(true);
-                                    }}
+                                    onCollapsedGroupsChange={onGroupedCollapsed}
+                                    onAddColumn={onGroupedAddColumn}
+                                    onEditField={canManageList ? onGroupedEditField : undefined}
+                                    onAddRecord={canCreateRecords ? onGroupedAddRecord : undefined}
                                     wrapText={state.wrapText}
                                     density={state.density}
                                     fontSize={state.fontSize}
-                                    onCreateSubtask={!canCreateRecords ? undefined : (record) => {
-                                        setCreateDefaults(undefined);
-                                        setCreateParentId(record.id);
-                                        setCreateOpen(true);
-                                    }}
+                                    onCreateSubtask={canCreateRecords ? onGroupedCreateSubtask : undefined}
                                     footerAggregates={state.footerAggregates}
-                                    onFooterAggregatesChange={(next) =>
-                                        setState((s) => ({ ...s, footerAggregates: next }))
-                                    }
+                                    onFooterAggregatesChange={onGroupedFooterAggregates}
+                                    onStatusChange={setGroupedStatus}
                                 />
                             ) : (
                                 <TableView

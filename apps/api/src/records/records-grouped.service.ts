@@ -7,6 +7,13 @@ import { DESCRIPTION_SEARCH_FIELD_ID } from './query-builder';
 import { RecordsService, type Actor } from './records.service';
 
 const NULL_KEY = '__null__';
+/** Tope de grupos que se abren solos (el resto se pide al abrirlo). */
+const MAX_AUTO_EXPANDED = 40;
+/**
+ * Grupos que se arman en paralelo por request. Cada uno usa una conexión del
+ * pool (10) mientras corre: 3 deja lugar a las demás requests.
+ */
+const GROUP_CONCURRENCY = 3;
 
 interface GroupBucket {
     value: string | null;
@@ -60,6 +67,14 @@ export class RecordsGroupedService {
         opts: {
             groupBy: number;
             expanded: string[];
+            /**
+             * v0.1.224 — abrir TODOS los grupos que devuelva esta consulta salvo
+             * los `collapsed`. Antes el front pedía primero los grupos y después,
+             * con otra request, las filas de los abiertos: al buscar, los grupos
+             * nuevos aparecían vacíos entre las dos vueltas.
+             */
+            expandAll?: boolean;
+            collapsed?: string[];
             filterTree?: FilterGroup;
             search?: string;
             perPage: number;
@@ -76,8 +91,19 @@ export class RecordsGroupedService {
         const fields = await this.fields.list(tenantId, listKey);
         const toSlug = new Map(fields.map((f) => [`f${f.id}`, f.slug]));
 
+        // Sólo grupos que EXISTEN en esta consulta: con una búsqueda, los que
+        // estaban abiertos antes y ya no tienen filas costaban dos consultas
+        // cada uno para devolver nada.
+        const present = new Set(buckets.map((b) => b.value ?? NULL_KEY));
+        const collapsed = new Set(opts.collapsed ?? []);
+        const keys = opts.expandAll
+            ? buckets.map((b) => b.value ?? NULL_KEY).filter((k) => !collapsed.has(k)).slice(0, MAX_AUTO_EXPANDED)
+            : [...new Set(opts.expanded)].filter((k) => present.has(k));
+
         const expanded: Record<string, unknown> = {};
-        for (const key of opts.expanded) {
+        // Los grupos se arman de a GROUP_CONCURRENCY en paralelo (antes, uno
+        // tras otro: con 14 grupos abiertos eran 28 viajes a la base en fila).
+        await mapLimit(keys, GROUP_CONCURRENCY, async (key) => {
             const isNull = key === NULL_KEY;
             // v0.1.190 — multi_select agrupa por COMBINACIÓN (como ClickUp):
             // la clave es el JSON del set y las filas del grupo son las que
@@ -142,7 +168,7 @@ export class RecordsGroupedService {
                 });
             }
             expanded[key] = entry;
-        }
+        });
 
         return { buckets, meta: { ...meta, total_groups: buckets.length, total_records: totalRecords }, expanded };
     }
@@ -236,4 +262,16 @@ function mapKeys(data: Record<string, unknown>, toSlug: Map<string, string>): Re
 
 function stripZ(value: string): string {
     return value.replace(/Z$/, '');
+}
+
+/** `items.map(fn)` con a lo sumo `limit` promesas en vuelo. */
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+    let next = 0;
+    const worker = async (): Promise<void> => {
+        while (next < items.length) {
+            const item = items[next++] as T;
+            await fn(item);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }

@@ -5481,6 +5481,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         variación con costo 27.900 y sin costo intacta; Color × Talla con XL
         crea 3 de 6 con precio y stock, el producto gana la talla, llegan como
         subtareas, y deshacer las borra de la tienda y de la app).
+  - [x] **Búsqueda en la vista agrupada sin grupos vacíos ni esperas (v0.1.224,
+        reporte del usuario: "carga los resultados agrupados pero siguen
+        viéndose las agrupaciones vacías y a los segundos se oculta lo
+        vacío")**. Reproducido con 3.000 registros y latencia simulada: al
+        cambiar de búsqueda los grupos nuevos se veían VACÍOS ≈500 ms. Cuatro
+        causas, todas corregidas:
+        (a) **Dos vueltas en serie**: el front pedía los grupos y, con esa
+        respuesta, recién las filas de los abiertos — cada búsqueda costaba
+        dos requests seguidas, y entre medio los grupos nuevos no tenían
+        filas, así que además cada uno disparaba su propia request de filas
+        y otra de agregados (14 de más). Ahora `grouped-bundle` acepta
+        `expand=all` + `collapsed=[…]`: UNA request trae grupos, filas y pie
+        de todos los abiertos; mientras llega la nueva, la anterior se ve
+        atenuada en vez de vaciarse.
+        (b) **El servidor armaba los grupos de a uno**: dos viajes a la base
+        por grupo, en fila, incluso para grupos que la búsqueda ya había
+        dejado sin filas. Ahora sólo los presentes en la consulta, de a 3 en
+        paralelo (tope de 40 que se abren solos).
+        (c) **Requests de más**: en modo agrupado la página pedía igual el
+        listado PLANO (con y sin búsqueda) y encima esperaba su respuesta
+        para montar la vista — la primera carga iba en serie. Ya no se pide;
+        el total de "todos los que coinciden" (acciones masivas) y el
+        spinner del buscador los informa el bundle. La tabla plana tampoco
+        se monta un instante antes de aplicar la vista guardada (disparaba
+        sus agregados).
+        (d) **Tipear trababa la pantalla**: cada letra re-dibujaba todas las
+        filas de todos los grupos (7 letras = 3 s de hilo principal
+        bloqueado en desarrollo). La vista agrupada va memoizada con
+        callbacks de identidad estable (`useEventCallback`), y la sincronía
+        del scroll horizontal ya no fuerza un recálculo de layout por cada
+        grupo que se monta (era lo más caro del perfil).
+        **Dos bugs de paso**: la clave de un grupo multi_select es un JSON con
+        comas (`["promo", "vip"]`) y viajaba separada por comas, así que esos
+        grupos NUNCA llegaban con sus filas en el bundle (ahora las claves
+        van como lista JSON); y un multi_select VACIADO queda como `null` JSON,
+        que el filtro "está vacío" no contemplaba — el grupo "(Sin valor)"
+        contaba el registro pero no lo mostraba.
+        Medido con el build de producción y 150 ms de latencia: antes 2
+        bundles + 14 requests por grupo, grupos vacíos ≈500 ms y el
+        resultado completo ≈900 ms después de dejar de tipear; ahora 1
+        request, nunca vacío y ≈580 ms (localmente el endpoint con 14 grupos
+        abiertos bajó de ≈250 a ≈60 ms). Tests: bundle en una vuelta con
+        multi_select y "(Sin valor)" vaciado, claves JSON del query, y la
+        sincronía de scroll sin tocar layout — 778 API y 181 front en verde —
+        + E2E navegador 15/15 (una sola request al cargar, plegar/desplegar,
+        búsqueda sin grupos vacíos, total de la edición masiva, abrir un
+        registro, multi_select) y la vista plana sin cambios.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

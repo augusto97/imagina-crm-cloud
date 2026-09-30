@@ -345,6 +345,18 @@ Monitoreo: Sentry (front+back) · uptime externo · pg_stat_statements
 Presupuestos = contrato: CI corre benchmarks contra un dataset seed de 100k
 records y falla el build si se rompen.
 
+**Vista agrupada en UNA vuelta (v0.1.224).** `grouped-bundle` acepta
+`expand=all` + `collapsed=[…]` (lista JSON): trae los grupos, las filas de
+TODOS los abiertos y sus agregados en una sola request. Antes el front pedía
+los grupos y, con la respuesta, las filas de los abiertos: cada búsqueda eran
+dos vueltas en serie y los grupos que traía la búsqueda nueva se veían vacíos
+entre medio (y además disparaban una request de filas y otra de agregados por
+grupo). En el servidor sólo se arman los grupos presentes en la consulta, de a
+3 en paralelo (tope 40 que se abren solos). Las claves de grupo viajan como
+JSON porque la de un multi_select es un JSON con comas. En modo agrupado el
+listado plano no se pide, y la tabla va memoizada con callbacks de identidad
+estable: tipear en el buscador ya no re-dibuja todas las filas.
+
 ---
 
 ## 14. Seguridad
@@ -1631,4 +1643,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.36.0 (tienda: precio desde el costo y variaciones en lote — nota de ADR-S24)
+**Versión del documento:** 1.37.0 (vista agrupada en una sola vuelta — nota de §13)
