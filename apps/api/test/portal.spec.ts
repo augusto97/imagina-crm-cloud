@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import Redis from 'ioredis';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import { memberships, tenants, users } from '../src/db/schema';
@@ -53,13 +54,15 @@ describe('PortalService (Postgres + Redis reales)', () => {
     let portal: PortalService;
     let mailbox: CapturingMailTransport;
     let tenantId: number;
+    /** SEC-24 — quién llama al portal: el cliente, atado a la empresa de su enlace. */
+    const actor = (userId: number) => ({ userId, tenantId });
     let recordId: number;
     let fieldId: number;
 
     beforeAll(async () => {
         [pg, redisBox] = await Promise.all([startPostgres(), startRedis()]);
         redis = new Redis(redisBox.url);
-        const env = loadEnv({ REDIS_URL: redisBox.url });
+        const env = loadEnv({ REDIS_URL: redisBox.url, PLATFORM_SUPERADMINS: 'root@plataforma.test' });
         tenantDb = new TenantDb(pg.db);
         listsService = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsService = new FieldsService(tenantDb, new FieldsRepository(), listsService, rt);
@@ -137,11 +140,11 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(mailbox.sent.at(-1)).toMatchObject({ to: 'cliente@acme.test' });
         expect(mailbox.sent.at(-1)?.text).toContain(link.token);
 
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
         expect(session).not.toBeNull();
 
-        const boot = await portal.me(session!.userId);
+        const boot = await portal.me(actor(session!.userId));
         expect(boot.list_name).toBe('Clientes');
         expect(boot.record.id).toBe(recordId);
         expect(boot.record.data[`f${fieldId}`]).toBe('ACME Corp');
@@ -155,9 +158,9 @@ describe('PortalService (Postgres + Redis reales)', () => {
             settings: { portal_template: { blocks: [{ type: 'hero' }, { type: 'faq' }] } },
         });
         const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'c2@acme.test' });
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
-        const boot = await portal.me(session!.userId);
+        const boot = await portal.me(actor(session!.userId));
         expect(boot.template).toEqual([{ type: 'hero' }, { type: 'faq' }]);
     });
 
@@ -184,9 +187,9 @@ describe('PortalService (Postgres + Redis reales)', () => {
             },
         });
         const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'img@acme.test' });
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
-        const boot = await portal.me(session!.userId);
+        const boot = await portal.me(actor(session!.userId));
 
         type RawBlock = { config: Record<string, unknown> };
         const [uploaded, external, nested] = boot.template as unknown as RawBlock[];
@@ -222,9 +225,9 @@ describe('PortalService (Postgres + Redis reales)', () => {
             },
         });
         const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'gal@acme.test' });
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
-        const boot = await portal.me(session!.userId);
+        const boot = await portal.me(actor(session!.userId));
 
         type RawBlock = { config: Record<string, unknown> };
         const [gallery] = boot.template as unknown as RawBlock[];
@@ -239,24 +242,24 @@ describe('PortalService (Postgres + Redis reales)', () => {
     /** Sesión de cliente lista para usar (issue + consume). */
     async function clientSession(email: string, recId: number = recordId): Promise<number> {
         const link = await portal.issue(tenantId, 'clientes', { record_id: recId, email });
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
         return session!.userId;
     }
 
     it('comments: el cliente lista y crea notas de SU record', async () => {
         const uid = await clientSession('coment@acme.test');
-        expect(await portal.myComments(uid)).toHaveLength(0);
-        const created = await portal.createMyComment(uid, { content: 'Hola, ¿novedades?' });
+        expect(await portal.myComments(actor(uid))).toHaveLength(0);
+        const created = await portal.createMyComment(actor(uid), { content: 'Hola, ¿novedades?' });
         expect(created).toMatchObject({ record_id: recordId, user_id: uid, kind: 'note' });
         expect((created as { content?: string }).content).toBe('Hola, ¿novedades?');
-        const items = await portal.myComments(uid);
+        const items = await portal.myComments(actor(uid));
         expect(items).toHaveLength(1);
     });
 
     it('activity: timeline del record del cliente', async () => {
         const uid = await clientSession('act@acme.test');
-        const items = await portal.myActivity(uid, 50);
+        const items = await portal.myActivity(actor(uid), 50);
         // Al menos el record_created del seed.
         expect(items.length).toBeGreaterThan(0);
         expect(items.every((a) => a.record_id === recordId)).toBe(true);
@@ -265,7 +268,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
     it('updateMe: whitelist del template — sin editable_form nadie edita; slug fuera → 403', async () => {
         const uid = await clientSession('edit@acme.test');
         // El template actual no tiene editable_form → 403.
-        await expect(portal.updateMe(uid, { fields: { nombre: 'Hackeado' } })).rejects.toBeInstanceOf(
+        await expect(portal.updateMe(actor(uid), { fields: { nombre: 'Hackeado' } })).rejects.toBeInstanceOf(
             ForbiddenException,
         );
         // Habilitamos edición SOLO de `nombre`.
@@ -276,13 +279,13 @@ describe('PortalService (Postgres + Redis reales)', () => {
                 },
             },
         });
-        await portal.updateMe(uid, { fields: { nombre: 'ACME Renovada' } });
-        const boot = await portal.me(uid);
+        await portal.updateMe(actor(uid), { fields: { nombre: 'ACME Renovada' } });
+        const boot = await portal.me(actor(uid));
         expect(boot.record.data[`f${fieldId}`]).toBe('ACME Renovada');
         // Slug fuera de la whitelist → 403 explícito.
         const extra = await fieldsService.create(tenantId, 'clientes', { label: 'Interno', type: 'text', slug: 'interno' });
         void extra;
-        await expect(portal.updateMe(uid, { fields: { interno: 'x' } })).rejects.toBeInstanceOf(
+        await expect(portal.updateMe(actor(uid), { fields: { interno: 'x' } })).rejects.toBeInstanceOf(
             ForbiddenException,
         );
         // Valor inválido → 400.
@@ -295,7 +298,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
                 },
             },
         });
-        await expect(portal.updateMe(uid, { fields: { cupo: 'no-numero' } })).rejects.toBeInstanceOf(
+        await expect(portal.updateMe(actor(uid), { fields: { cupo: 'no-numero' } })).rejects.toBeInstanceOf(
             BadRequestException,
         );
     });
@@ -319,18 +322,18 @@ describe('PortalService (Postgres + Redis reales)', () => {
         await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 250, [`f${cliRel.id}`]: [recordId] } });
         await recordsService.create(tenantId, admin, 'pedidos', { data: { [`f${monto.id}`]: 999, [`f${cliRel.id}`]: [otro.id] } });
 
-        const page = await portal.listRecords(uid, 'pedidos', 1, 10);
+        const page = await portal.listRecords(actor(uid), 'pedidos', 1, 10);
         expect(page.meta.total).toBe(2);
         expect(page.data.map((r) => r.fields.monto).sort()).toEqual([100, 250]);
 
-        const agg = await portal.aggregates(uid, 'pedidos', String(monto.id));
+        const agg = await portal.aggregates(actor(uid), 'pedidos', String(monto.id));
         expect(agg.totals.monto).toMatchObject({ count: 2, sum: 350 });
 
         // Lista sin vínculo con el cliente → fail-closed (vacío), nunca todo.
         await listsService.create(tenantId, { name: 'Secretos' });
         const sf = await fieldsService.create(tenantId, 'secretos', { label: 'Dato', type: 'text', slug: 'dato' });
         await recordsService.create(tenantId, admin, 'secretos', { data: { [`f${sf.id}`]: 'confidencial' } });
-        const closed = await portal.listRecords(uid, 'secretos', 1, 10);
+        const closed = await portal.listRecords(actor(uid), 'secretos', 1, 10);
         expect(closed.meta.total).toBe(0);
         expect(closed.data).toHaveLength(0);
     });
@@ -350,7 +353,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
         // Emitido pero todavía no usado: el admin necesita distinguirlo.
         expect(nuevo!.last_access_at).toBeNull();
 
-        await portal.consume(link.token);
+        await portal.consume(link.token!);
         const used = await portal.accessFor(tenantId, 'clientes', recordId);
         expect(used.users.find((u) => u.email === 'registrado@acme.test')!.last_access_at).not.toBeNull();
     });
@@ -360,7 +363,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             record_id: recordId,
             email: 'revocar@acme.test',
         });
-        const { sessionToken } = await portal.consume(link.token);
+        const { sessionToken } = await portal.consume(link.token!);
         const session = await sessions.get(sessionToken);
         expect(session).not.toBeNull();
         const userId = session!.userId;
@@ -370,7 +373,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(await sessions.get(sessionToken)).toBeNull();
         const list = await portal.accessFor(tenantId, 'clientes', recordId);
         expect(list.users.map((u) => u.email)).not.toContain('revocar@acme.test');
-        await expect(portal.me(userId)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(portal.me(actor(userId))).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('relatedOptions detecta las listas vinculadas y `me` sólo expone las habilitadas', async () => {
@@ -385,14 +388,14 @@ describe('PortalService (Postgres + Redis reales)', () => {
         expect(options.some((o) => o.slug === 'secretos')).toBe(false);
 
         // Sin elección explícita, el cliente no ve ninguna otra lista.
-        expect((await portal.me(uid)).related_lists).toEqual([]);
+        expect((await portal.me(actor(uid))).related_lists).toEqual([]);
 
         // El admin habilita "Pedidos" → aparece en el portal del cliente.
         const clientes = await listsService.get(tenantId, 'clientes');
         await listsService.update(tenantId, 'clientes', {
             settings: { ...clientes.settings, portal: { enabled: true, related_lists: [pedidos!.list_id] } },
         });
-        const boot = await portal.me(uid);
+        const boot = await portal.me(actor(uid));
         expect(boot.related_lists.map((r) => r.slug)).toEqual(['pedidos']);
     });
 
@@ -428,15 +431,15 @@ describe('PortalService (Postgres + Redis reales)', () => {
             record_id: recordId,
             email: 'otro@acme.test',
         });
-        await portal.consume(link.token);
-        await expect(portal.consume(link.token)).rejects.toBeInstanceOf(NotFoundException);
+        await portal.consume(link.token!);
+        await expect(portal.consume(link.token!)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('re-emitir para el mismo email reusa el usuario y actualiza el vínculo', async () => {
         const a = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'cliente@acme.test' });
-        const { sessionToken } = await portal.consume(a.token);
+        const { sessionToken } = await portal.consume(a.token!);
         const session = await sessions.get(sessionToken);
-        const boot = await portal.me(session!.userId);
+        const boot = await portal.me(actor(session!.userId));
         expect(boot.record.id).toBe(recordId);
     });
 
@@ -453,5 +456,76 @@ describe('PortalService (Postgres + Redis reales)', () => {
         await expect(
             portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'admin@acme.test' }),
         ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    // SEC-24 (v0.1.225) — el enlace del portal era una forma de loguearse como
+    // CUALQUIER cuenta que no fuera de equipo: el superadmin (sin membresías),
+    // un usuario sin workspace o el cliente de OTRA empresa.
+    describe('SEC-24: el enlace del portal no entrega cuentas ajenas', () => {
+        it('rechaza el email de un superadmin de plataforma', async () => {
+            await pg.db.insert(users).values({ email: 'root@plataforma.test', passwordHash: 'x', name: 'Root' });
+            await expect(
+                portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'Root@Plataforma.test' }),
+            ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+
+        it('a una cuenta que ya existía por su cuenta le llega por correo, pero el token NO vuelve a quien lo pide', async () => {
+            await pg.db.insert(users).values({ email: 'suelto@otro.test', passwordHash: 'x', name: 'Suelto' });
+            const before = mailbox.sent.length;
+            const res = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'suelto@otro.test' });
+            expect(res.token).toBeNull();
+            expect(res.path).toBeNull();
+            expect(mailbox.sent.length).toBe(before + 1);
+            expect(mailbox.sent.at(-1)!.to).toBe('suelto@otro.test');
+        });
+
+        it('una cuenta NUEVA o que ya era cliente de esta empresa sí devuelve el token (compartir a mano)', async () => {
+            const first = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'nuevo24@acme.test' });
+            expect(first.token).not.toBeNull();
+            const again = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'nuevo24@acme.test' });
+            expect(again.token).not.toBeNull();
+        });
+
+        it('la sesión queda atada a la empresa del enlace: el cliente de dos empresas ve la correcta', async () => {
+            // Empresa B con el mismo cliente.
+            const [tb] = await pg.db.insert(tenants).values({ slug: 'beta', name: 'Beta' }).returning();
+            const tenantB = tb!.id;
+            const listB = await listsService.create(tenantB, { name: 'Cuentas' });
+            await listsService.update(tenantB, listB.slug, { settings: { portal_template: [{ type: 'client_data' }] } });
+            const fb = await fieldsService.create(tenantB, listB.slug, { label: 'Nombre', type: 'text', slug: 'nombre' });
+            const recB = await recordsService.create(tenantB, { userId: admin.userId, role: 'admin' }, listB.slug, {
+                data: { [`f${fb.id}`]: 'Registro de Beta' },
+            });
+
+            const inA = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'dos@empresas.test' });
+            const { sessionToken: tokA } = await portal.consume(inA.token!);
+            // B: la cuenta ya existía (cliente de A) → el token no vuelve, sólo el correo.
+            const inB = await portal.issue(tenantB, listB.slug, { record_id: recB.id, email: 'dos@empresas.test' });
+            expect(inB.token).toBeNull();
+            const mailB = mailbox.sent.at(-1)!;
+            const tokenB = /token=([A-Za-z0-9_-]+)/.exec(mailB.text ?? '')![1]!;
+            const { sessionToken: tokB } = await portal.consume(tokenB);
+
+            const sA = await sessions.get(tokA);
+            const sB = await sessions.get(tokB);
+            expect(sA!.portalTenantId).toBe(tenantId);
+            expect(sB!.portalTenantId).toBe(tenantB);
+            const bootA = await portal.me({ userId: sA!.userId, tenantId: sA!.portalTenantId! });
+            const bootB = await portal.me({ userId: sB!.userId, tenantId: sB!.portalTenantId! });
+            expect(bootA.record.id).toBe(recordId);
+            expect(bootB.record.id).toBe(recB.id);
+            // Una sesión vieja (sin empresa) con dos vínculos es ambigua → 404, no "la primera".
+            await expect(portal.me({ userId: sA!.userId, tenantId: null })).rejects.toBeInstanceOf(NotFoundException);
+            // Quitar el acceso en A no saca al cliente de B.
+            await portal.revokeAccess(tenantId, 'clientes', sA!.userId);
+            expect(await sessions.get(tokA)).toBeNull();
+            expect(await sessions.get(tokB)).not.toBeNull();
+        });
+
+        it('un enlace de una cuenta desactivada no abre sesión', async () => {
+            const res = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'baja24@acme.test' });
+            await pg.db.update(users).set({ disabledAt: new Date() }).where(eq(users.email, 'baja24@acme.test'));
+            await expect(portal.consume(res.token!)).rejects.toBeInstanceOf(NotFoundException);
+        });
     });
 });

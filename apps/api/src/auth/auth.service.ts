@@ -460,7 +460,7 @@ export class AuthService implements OnModuleInit {
         // registro (se puede reenviar desde Ajustes).
         void this.sendEmailVerification(result.user.id).catch(() => undefined);
 
-        const token = await this.sessions.create(result.user.id);
+        const token = await this.sessions.create(result.user.id, { via: 'password' });
         return {
             user: this.toSessionUser(result.user),
             memberships: [
@@ -539,7 +539,7 @@ export class AuthService implements OnModuleInit {
             return { mfa_required: true, challenge };
         }
 
-        const token = await this.sessions.create(user.id, meta);
+        const token = await this.sessions.create(user.id, { ...meta, via: 'password' });
         return {
             user: this.toSessionUser(user),
             memberships: await this.membershipsOf(user.id),
@@ -591,6 +591,7 @@ export class AuthService implements OnModuleInit {
         const token = await this.sessions.create(user.id, {
             userAgent: parsed.userAgent,
             ip: parsed.ip,
+            via: 'password',
         });
         return {
             user: this.toSessionUser(user),

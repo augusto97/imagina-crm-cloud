@@ -49,20 +49,27 @@ async function bootstrap(): Promise<void> {
         '/auth/reset-password',
         '/portal/consume',
     ];
+    // SEC-28 (v0.1.225): las decisiones se toman sobre el PATH, nunca sobre
+    // `req.url` entero — trae la query string, y `POST /auth/register?/health`
+    // matcheaba el allowList de los health probes y salteaba el límite.
+    const pathOf = (url: string): string => url.split('?')[0] ?? '';
+    const HEALTH_PATHS = new Set(['/api/v1/health', '/api/v1/health/live', '/api/v1/health/ready']);
     await app.register(fastifyRateLimit, {
         global: true,
-        max: (req) =>
-            sensitivePaths.some((p) => req.url.includes(p))
+        max: (req) => {
+            const path = pathOf(req.url);
+            return sensitivePaths.some((p) => path.endsWith(p))
                 ? env.RATE_LIMIT_AUTH_MAX
                 : // v0.1.207 — los avisos de una tienda llegan todos de la misma IP y
                   // en ráfagas (una edición masiva de productos); WooCommerce APAGA el
                   // aviso tras varias entregas fallidas. Van firmados (HMAC) y con token.
-                  req.url.includes('/public/store-hooks/')
+                  path.startsWith('/api/v1/public/store-hooks/')
                   ? env.RATE_LIMIT_MAX * 10
-                  : env.RATE_LIMIT_MAX,
+                  : env.RATE_LIMIT_MAX;
+        },
         timeWindow: '1 minute',
         // No limitar los health probes (evita 429/503 espurios del monitoreo).
-        allowList: (req) => req.url.includes('/health'),
+        allowList: (req) => HEALTH_PATHS.has(pathOf(req.url)),
     });
 
     // Compresión de respuestas (gzip/deflate/brotli). Las respuestas JSON del

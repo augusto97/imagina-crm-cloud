@@ -18,6 +18,20 @@ export interface SessionData {
     /** v0.1.116 — contexto del dispositivo, para el panel de sesiones activas. */
     userAgent?: string;
     ip?: string;
+    /**
+     * SEC-24 (v0.1.225) — la sesión se abrió canjeando un enlace del PORTAL de
+     * esta empresa. No es una sesión de cuenta: SessionGuard la limita a
+     * `/portal/*`, así que no sirve para la app, la consola de plataforma ni
+     * para cambiar contraseña/tokens de esa cuenta.
+     */
+    portalTenantId?: number;
+    /**
+     * SEC-24 — cómo se abrió la sesión. `password` = login con contraseña (y
+     * 2FA si la cuenta lo tiene). La consola de plataforma exige `password`:
+     * así las sesiones abiertas ANTES de v0.1.225 (sin marca, entre ellas las
+     * que pudo haber acuñado el enlace del portal) tienen que volver a entrar.
+     */
+    via?: 'password' | 'portal';
 }
 
 /** Sesión activa tal como la ve el dueño de la cuenta (nunca expone el token). */
@@ -58,13 +72,18 @@ export class SessionService {
         return createHash('sha256').update(token).digest('hex').slice(0, 16);
     }
 
-    async create(userId: number, meta: { userAgent?: string; ip?: string } = {}): Promise<string> {
+    async create(
+        userId: number,
+        meta: { userAgent?: string; ip?: string; portalTenantId?: number; via?: 'password' | 'portal' } = {},
+    ): Promise<string> {
         const token = randomBytes(32).toString('base64url');
         const data: SessionData = {
             userId,
             createdAt: new Date().toISOString(),
             userAgent: (meta.userAgent ?? '').slice(0, 200),
             ip: (meta.ip ?? '').slice(0, 60),
+            ...(meta.portalTenantId !== undefined ? { portalTenantId: meta.portalTenantId, via: 'portal' as const } : {}),
+            ...(meta.via === 'password' ? { via: 'password' as const } : {}),
         };
         await this.redis.set(this.key(token), JSON.stringify(data), 'EX', this.env.SESSION_TTL_SECONDS);
         // Registrar el token en el set del usuario (para revocación masiva). El
@@ -82,6 +101,23 @@ export class SessionService {
             await this.redis.del(...tokens.map((t) => this.key(t)));
         }
         await this.redis.del(this.userKey(userId));
+    }
+
+    /** SEC-24 — revoca sólo las sesiones del portal de UNA empresa. */
+    async destroyPortalSessions(userId: number, tenantId: number): Promise<number> {
+        const tokens = await this.redis.smembers(this.userKey(userId));
+        if (tokens.length === 0) return 0;
+        const raws = await this.redis.mget(...tokens.map((t) => this.key(t)));
+        const doomed = tokens.filter((_, i) => {
+            const raw = raws[i];
+            if (!raw) return false;
+            return (JSON.parse(raw) as SessionData).portalTenantId === tenantId;
+        });
+        if (doomed.length > 0) {
+            await this.redis.del(...doomed.map((t) => this.key(t)));
+            await this.redis.srem(this.userKey(userId), ...doomed);
+        }
+        return doomed.length;
     }
 
     async get(token: string): Promise<SessionData | null> {

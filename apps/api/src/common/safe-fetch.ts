@@ -97,17 +97,22 @@ export async function safeWebhookFetch(
 
     // Node NO llama a `lookup` cuando el hostname ya es una IP literal, así que
     // el guard del lookup se saltaría con `http://169.254.169.254/`. Validamos
-    // la IP literal acá. (`URL.hostname` devuelve IPv6 sin corchetes.)
-    if (isIP(url.hostname) && isBlockedAddress(url.hostname) && !devPrivateEgressAllowed()) {
-        throw new BadRequestException(
-            `SSRF: destino de red interna bloqueado (${url.hostname})`,
-        );
+    // la IP literal acá.
+    //
+    // SEC-23 (v0.1.225): `URL.hostname` devuelve el IPv6 CON corchetes
+    // (`[::1]`), así que `isIP` daba 0 y un literal IPv6 no pasaba por NINGÚN
+    // control — `http://[::ffff:a9fe:a9fe]/` llegaba a la metadata del cloud y
+    // `http://[::ffff:7f00:1]:2019/` al admin de Caddy. Se quitan los
+    // corchetes antes de validar.
+    const literal = bareHost(url.hostname);
+    if (isIP(literal) && isBlockedAddress(literal) && !devPrivateEgressAllowed()) {
+        throw new BadRequestException(`SSRF: destino de red interna bloqueado (${literal})`);
     }
 
     const method = (opts.method ?? 'POST').toUpperCase();
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-    const headers = withContentLength(opts.headers ?? {}, method, opts.body);
+    const headers = withContentLength(stripUnsafeHeaders(opts.headers ?? {}), method, opts.body);
     const hasBody = opts.body !== undefined && method !== 'GET' && method !== 'HEAD';
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest;
 
@@ -155,6 +160,15 @@ export async function safeWebhookFetch(
                 res.on('error', () => resolve(done()));
             },
         );
+        // `setTimeout` del request es de INACTIVIDAD: un servidor que gotea un
+        // byte cada pocos segundos lo renueva para siempre y retiene al worker.
+        // SEC-23: además hay un tope TOTAL.
+        const totalMs = Math.max(timeoutMs * 3, 30_000);
+        const deadline = setTimeout(() => {
+            req.destroy(new Error(`Webhook excedió el tiempo total de ${totalMs}ms`));
+        }, totalMs);
+        deadline.unref();
+        req.on('close', () => clearTimeout(deadline));
         req.on('error', (err) => reject(err));
         req.setTimeout(timeoutMs, () => {
             req.destroy(new Error(`Webhook excedió el timeout de ${timeoutMs}ms`));
@@ -223,40 +237,149 @@ function guardedLookup(hostname: string, options: unknown, callback: LookupCb): 
     });
 }
 
-/** Bloquea IPs no enrutables públicamente (loopback, privadas, link-local…). */
+/** `[::1]` → `::1` (el hostname de un URL trae el IPv6 entre corchetes). */
+export function bareHost(hostname: string): string {
+    return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+}
+
+/**
+ * Cabeceras que el LLAMADOR no puede fijar (SEC-23). `host` redirige la
+ * petición a otro virtual host del destino (con loopback alcanzable era la
+ * llave del admin de Caddy); las de framing (`content-length`,
+ * `transfer-encoding`, `connection`…) las arma node y dejarlas pasar abre
+ * request smuggling contra el destino.
+ */
+const UNSAFE_HEADERS = new Set([
+    'host',
+    'content-length',
+    'transfer-encoding',
+    'connection',
+    'keep-alive',
+    'upgrade',
+    'te',
+    'trailer',
+    'proxy-authorization',
+    'proxy-connection',
+]);
+
+export function stripUnsafeHeaders(headers: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+        if (!UNSAFE_HEADERS.has(k.trim().toLowerCase())) out[k] = v;
+    }
+    return out;
+}
+
+/**
+ * Bloquea IPs no enrutables públicamente (loopback, privadas, link-local,
+ * metadata cloud, rangos de documentación/benchmark, y cualquier IPv6 que
+ * EMBEBA una IPv4 bloqueada). Acepta el IPv6 con o sin corchetes.
+ */
 export function isBlockedAddress(ip: string): boolean {
-    const version = isIP(ip);
-    if (version === 4) return isBlockedV4(ip);
-    if (version === 6) return isBlockedV6(ip);
+    const bare = bareHost(ip.trim());
+    const version = isIP(bare);
+    if (version === 4) return isBlockedV4(bare);
+    if (version === 6) return isBlockedV6(bare);
     return true; // desconocido → bloquear por seguridad
 }
 
-function isBlockedV4(ip: string): boolean {
+function v4Octets(ip: string): [number, number, number, number] | null {
     const parts = ip.split('.').map((n) => Number(n));
-    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
-        return true;
-    }
-    const [a, b] = parts as [number, number, number, number];
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    return parts as [number, number, number, number];
+}
+
+function isBlockedV4(ip: string): boolean {
+    const o = v4Octets(ip);
+    return o === null ? true : isBlockedV4Octets(o);
+}
+
+function isBlockedV4Octets([a, b, c]: [number, number, number, number]): boolean {
     if (a === 0) return true; // 0.0.0.0/8
     if (a === 10) return true; // 10.0.0.0/8 privada
     if (a === 127) return true; // loopback
     if (a === 169 && b === 254) return true; // link-local + metadata cloud
     if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 privada
     if (a === 192 && b === 168) return true; // 192.168.0.0/16 privada
-    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+    if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (y 100.100.100.200, metadata Alibaba)
     if (a === 192 && b === 0) return true; // 192.0.0.0/24 + 192.0.2.0/24
-    if (a >= 224) return true; // multicast (224/4) y reservado (240/4)
+    if (a === 192 && b === 88 && c === 99) return true; // 192.88.99.0/24 relay 6to4
+    if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 benchmark
+    if (a === 198 && b === 51 && c === 100) return true; // 198.51.100.0/24 documentación
+    if (a === 203 && b === 0 && c === 113) return true; // 203.0.113.0/24 documentación
+    if (a >= 224) return true; // multicast (224/4), reservado (240/4) y broadcast
     return false;
 }
 
+/**
+ * IPv6 → 8 hextetos (acepta `::` y la cola IPv4 punteada). `null` si no
+ * parsea. Se trabaja sobre NÚMEROS, no sobre el texto: `::ffff:7f00:1`,
+ * `::ffff:127.0.0.1` y `0:0:0:0:0:ffff:7f00:0001` son la misma dirección y un
+ * match por regex sobre el texto dejaba pasar las dos últimas.
+ */
+export function ipv6Hextets(ip: string): number[] | null {
+    let s = bareHost(ip.trim().toLowerCase());
+    const zone = s.indexOf('%');
+    if (zone >= 0) s = s.slice(0, zone);
+    // Cola IPv4 punteada (`::ffff:1.2.3.4`): son los DOS últimos hextetos.
+    let v4: number[] = [];
+    const lastColon = s.lastIndexOf(':');
+    if (lastColon < 0) return null;
+    const last = s.slice(lastColon + 1);
+    if (last.includes('.')) {
+        const o = v4Octets(last);
+        if (!o) return null;
+        v4 = [(o[0] << 8) | o[1], (o[2] << 8) | o[3]];
+        s = s.slice(0, lastColon + 1);
+        if (!s.endsWith('::')) s = s.slice(0, -1);
+    }
+    const want = 8 - v4.length;
+    const parse = (part: string): number[] =>
+        part === '' ? [] : part.split(':').map((h) => (/^[0-9a-f]{1,4}$/.test(h) ? parseInt(h, 16) : NaN));
+    const halves = s.split('::');
+    if (halves.length > 2) return null;
+    let groups: number[];
+    if (halves.length === 2) {
+        const head = parse(halves[0]!);
+        const rest = parse(halves[1]!);
+        const fill = want - head.length - rest.length;
+        if (fill < 0) return null;
+        groups = [...head, ...new Array<number>(fill).fill(0), ...rest];
+    } else {
+        groups = parse(s);
+    }
+    const out = [...groups, ...v4];
+    if (out.length !== 8 || out.some((h) => Number.isNaN(h))) return null;
+    return out;
+}
+
+function embeddedV4(h1: number, h2: number): [number, number, number, number] {
+    return [h1 >> 8, h1 & 0xff, h2 >> 8, h2 & 0xff];
+}
+
 function isBlockedV6(ip: string): boolean {
-    const lower = ip.toLowerCase();
-    if (lower === '::1' || lower === '::') return true; // loopback / unspecified
-    const mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (mapped) return isBlockedV4(mapped[1]!); // IPv4-mapped
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // fc00::/7 ULA
-    const p3 = lower.slice(0, 3);
-    if (p3 === 'fe8' || p3 === 'fe9' || p3 === 'fea' || p3 === 'feb') return true; // fe80::/10 link-local
-    if (lower.startsWith('ff')) return true; // ff00::/8 multicast
+    const h = ipv6Hextets(ip);
+    if (!h) return true;
+    const [h0, h1, h2, h3, h4, h5, h6, h7] = h as [number, number, number, number, number, number, number, number];
+    // ::/96 — unspecified, loopback e IPv4-compatible (deprecado): todo afuera.
+    if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0) return true;
+    // ::ffff:0:0/96 IPv4-mapped — decide la IPv4 embebida.
+    if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0xffff) {
+        return isBlockedV4Octets(embeddedV4(h6, h7));
+    }
+    // 64:ff9b::/96 NAT64 — decide la IPv4 embebida; 64:ff9b:1::/48 es de uso local.
+    if (h0 === 0x64 && h1 === 0xff9b) {
+        if (h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0) return isBlockedV4Octets(embeddedV4(h6, h7));
+        return true;
+    }
+    // 100::/64 discard.
+    if (h0 === 0x100 && h1 === 0 && h2 === 0 && h3 === 0) return true;
+    // 2002::/16 6to4 — la IPv4 va en los hextetos 1-2.
+    if (h0 === 0x2002) return isBlockedV4Octets(embeddedV4(h1, h2));
+    // 2001::/32 Teredo (IPv4 ofuscada), 2001:db8::/32 documentación, 2001:10::/28 ORCHID.
+    if (h0 === 0x2001 && (h1 === 0 || h1 === 0xdb8 || (h1 & 0xfff0) === 0x10)) return true;
+    // Sólo unicast global (2000::/3). Eso deja afuera ULA fc00::/7, link-local
+    // fe80::/10, site-local fec0::/10, multicast ff00::/8 y todo lo reservado.
+    if ((h0 & 0xe000) !== 0x2000) return true;
     return false;
 }

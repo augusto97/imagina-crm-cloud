@@ -74,10 +74,10 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
     const issue = useMutation({
         mutationFn: async (
             to: string,
-        ): Promise<{ token: string; path: string; email_sent?: boolean; email_error?: string | null }> => {
+        ): Promise<{ token: string | null; path: string | null; email_sent?: boolean; email_error?: string | null }> => {
             const res = await api.post<{
-                token: string;
-                path: string;
+                token: string | null;
+                path: string | null;
                 email_sent?: boolean;
                 email_error?: string | null;
             }>(
@@ -96,8 +96,14 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
             if (data.email_sent === false) {
                 toast.error(
                     __('El enlace se generó, pero el correo no salió'),
-                    data.email_error ?? __('Revisá el SMTP en Ajustes → Correo.'),
+                    data.path
+                        ? (data.email_error ?? __('Revisá el SMTP en Ajustes → Correo.'))
+                        : __('Esa cuenta ya existía fuera de esta empresa, así que el enlace sólo viaja por correo. Revisá el SMTP en Ajustes → Correo y volvé a enviarlo.'),
                 );
+            } else if (!data.path) {
+                // SEC-24: la cuenta ya existía por su cuenta; el enlace le llega
+                // sólo al dueño del correo (no se muestra para copiar).
+                toast.success(__('Enlace de acceso enviado por correo a'), to);
             } else {
                 toast.success(__('Enlace de acceso enviado a'), to);
             }
