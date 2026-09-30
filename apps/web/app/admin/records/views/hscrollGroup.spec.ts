@@ -80,4 +80,27 @@ describe('createHScrollGroup', () => {
         expect(b.scrollLeft).toBe(60);
         expect(g.members()).toEqual([a]);
     });
+
+    it('sumar un miembro sin scroll horizontal no toca scrollLeft (no fuerza layout, v0.1.224)', () => {
+        const g = createHScrollGroup();
+        const a = scroller();
+        g.add(a);
+        let reads = 0;
+        let writes = 0;
+        const b = document.createElement('div');
+        Object.defineProperty(b, 'scrollLeft', {
+            get: () => {
+                reads++;
+                return 0;
+            },
+            set: () => {
+                writes++;
+            },
+        });
+        g.add(b);
+        // Leer o escribir scrollLeft recalcula el layout de la página: con
+        // 14 grupos montándose eran 14 layouts forzados seguidos.
+        expect(reads).toBe(0);
+        expect(writes).toBe(0);
+    });
 });

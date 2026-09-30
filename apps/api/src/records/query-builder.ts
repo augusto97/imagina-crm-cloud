@@ -343,10 +343,14 @@ function compileMultiSelect(
 ): SQL | undefined {
     const arr = sql`(${dataRef} -> ${keyLit(key)})`;
     switch (op) {
+        // v0.1.224 — vacío = sin clave, `[]` o `null` JSON (lo que queda al
+        // vaciar el campo). Antes el `null` JSON no contaba: el grupo
+        // "(Sin valor)" de la vista agrupada contaba el registro pero no lo
+        // mostraba, y el filtro "está vacío" no lo encontraba.
         case 'is_null':
-            return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;
+            return emptyArray(arr);
         case 'is_not_null':
-            return sql`(${arr} IS NOT NULL AND ${arr} <> '[]'::jsonb)`;
+            return sql`NOT ${emptyArray(arr)}`;
         // v0.1.190 — `eq`/`neq` con un ARRAY comparan el CONJUNTO exacto
         // (sin importar el orden ni duplicados): es lo que necesita la vista
         // agrupada, cuyo grupo es la combinación de opciones, como en
@@ -393,9 +397,14 @@ function compileJsonArrayPresence(key: string, op: FilterOperator, dataRef: Data
     }
 }
 
+/** Un multi_select sin opciones: sin clave, `null` JSON o `[]`. */
+function emptyArray(arr: SQL): SQL {
+    return sql`(${arr} IS NULL OR jsonb_typeof(${arr}) <> 'array' OR ${arr} = '[]'::jsonb)`;
+}
+
 /** Igualdad de conjuntos: `arr ⊇ set AND arr ⊆ set`; el set vacío = sin opciones. */
 function exactSet(arr: SQL, values: string[]): SQL {
-    if (values.length === 0) return sql`(${arr} IS NULL OR ${arr} = '[]'::jsonb)`;
+    if (values.length === 0) return emptyArray(arr);
     const set = sql`to_jsonb(${textArray(values)})`;
     return sql`(${arr} @> ${set} AND ${arr} <@ ${set})`;
 }

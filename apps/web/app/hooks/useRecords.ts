@@ -135,7 +135,13 @@ export interface GroupedBundleResponse {
 interface UseGroupedBundleArgs {
     listId: string | number | undefined;
     groupBy: number | undefined;
-    expanded: string[];
+    /** Grupos a abrir. Se ignora con `collapsed` (modo "todos salvo…"). */
+    expanded?: string[];
+    /**
+     * v0.1.224 — abrir TODOS los grupos de la consulta salvo éstos, en UNA
+     * sola request (antes había que pedir los grupos y después sus filas).
+     */
+    collapsed?: string[];
     filterTree?: unknown;
     search?: string;
     perPage?: number;
@@ -145,7 +151,8 @@ interface UseGroupedBundleArgs {
 export function useRecordsGroupedBundle({
     listId,
     groupBy,
-    expanded,
+    expanded = [],
+    collapsed,
     filterTree,
     search,
     perPage = 50,
@@ -155,11 +162,16 @@ export function useRecordsGroupedBundle({
         group_by: groupBy,
         per_page: perPage,
     };
-    // Stable order in expanded → stable key (avoid useless refetch
-    // cuando el user toggles otro bucket en otro orden).
-    const sortedExpanded = [...expanded].sort();
-    if (sortedExpanded.length > 0) {
-        params.expanded = sortedExpanded;
+    // Orden estable → key estable (sin refetch inútil al abrir/cerrar en
+    // otro orden). Las claves viajan como JSON: la de un grupo multi_select
+    // es un JSON con comas y separada por comas se partía.
+    if (collapsed !== undefined) {
+        params.expand = 'all';
+        const sortedCollapsed = [...collapsed].sort();
+        if (sortedCollapsed.length > 0) params.collapsed = JSON.stringify(sortedCollapsed);
+    } else {
+        const sortedExpanded = [...expanded].sort();
+        if (sortedExpanded.length > 0) params.expanded = JSON.stringify(sortedExpanded);
     }
     if (filterTree) {
         params.filter_tree = JSON.stringify(filterTree);

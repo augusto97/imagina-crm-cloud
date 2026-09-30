@@ -31,6 +31,13 @@ export interface HScrollGroup {
 export function createHScrollGroup(): HScrollGroup {
     const els = new Set<HTMLElement>();
     const written = new WeakMap<HTMLElement, number>();
+    // Posición actual del grupo. v0.1.224 — al sumar un miembro se LEÍA el
+    // `scrollLeft` de otro, y leerlo (o escribirlo) obliga al navegador a
+    // recalcular el layout de toda la página en el acto: con 14 grupos
+    // montándose tras una búsqueda eran 14 layouts forzados seguidos (lo más
+    // caro del perfil). Con la posición recordada, en el caso común (nadie
+    // scrolleó en horizontal) el alta no toca el layout.
+    let current = 0;
 
     const write = (el: HTMLElement, x: number): void => {
         if (el.scrollLeft === x) return;
@@ -39,6 +46,7 @@ export function createHScrollGroup(): HScrollGroup {
     };
     const broadcast = (from: HTMLElement): void => {
         const x = from.scrollLeft;
+        current = x;
         for (const el of els) if (el !== from) write(el, x);
     };
 
@@ -46,12 +54,7 @@ export function createHScrollGroup(): HScrollGroup {
         add(el) {
             els.add(el);
             // Al entrar se alinea con lo que ya está scrolleado.
-            for (const other of els) {
-                if (other !== el) {
-                    write(el, other.scrollLeft);
-                    break;
-                }
-            }
+            if (current !== 0) write(el, current);
             const onScroll = (): void => {
                 const w = written.get(el);
                 if (w !== undefined && el.scrollLeft === w) return; // eco de una copia

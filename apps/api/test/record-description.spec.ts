@@ -154,7 +154,9 @@ describe('Descripción del registro (v0.1.133)', () => {
         })) as { buckets: Array<{ value: string | null; count: number }>; expanded: Record<string, { records: { data: Array<{ id: number }> } }> };
         expect(bundle.buckets).toEqual([{ value: 'a', count: 1 }]);
         expect(bundle.expanded.a?.records.data.map((r) => r.id)).toEqual([conDesc.id]);
-        expect(bundle.expanded.b?.records.data).toEqual([]);
+        // v0.1.224 — un grupo pedido que la búsqueda dejó sin filas ya no se
+        // calcula (costaba dos consultas para devolver nada).
+        expect(bundle.expanded.b).toBeUndefined();
     });
 
     it('vista agrupada por multi_select (v0.1.190): un grupo por COMBINACIÓN con sus filas, sin duplicar', async () => {
@@ -197,6 +199,64 @@ describe('Descripción del registro (v0.1.133)', () => {
         expect(bundle.expanded.__null__?.records.data.map((r) => r.id)).toEqual([ninguna.id]);
         expect(bundle.meta.total_records).toBe(4);
         expect(bundle.meta.total_groups).toBe(3);
+    });
+
+    it('bundle en UNA vuelta (v0.1.224): todos los grupos abiertos salvo los cerrados, también multi_select', async () => {
+        // Antes el front pedía los grupos y, con otra request, las filas de los
+        // abiertos: al buscar, los grupos nuevos se veían vacíos entre medio.
+        const tags = await fields_.create(tenantId, 'tareas', {
+            label: 'Etiquetas',
+            type: 'multi_select',
+            slug: 'etiquetas',
+            config: { options: [{ value: 'vip', label: 'VIP' }, { value: 'promo', label: 'Promo' }] },
+        });
+        const k = `f${tags.id}`;
+        const ambos = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ambos', [k]: ['vip', 'promo'] } });
+        const soloVip = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Solo VIP', [k]: ['vip'] } });
+        const ninguna = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Ninguna' } });
+        // Vaciado: queda `null` JSON. Cae en "(Sin valor)" y tiene que VERSE ahí.
+        const vaciada = await recs.create(tenantId, admin, 'tareas', { data: { [titleKey]: 'Vaciada', [k]: ['promo'] } });
+        await recs.update(tenantId, admin, 'tareas', vaciada.id, { data: { [k]: [] } });
+        const grouped = new RecordsGroupedService(recs, new AggregateService(new TenantDb(pg.db), lists_, fields_), lists_, fields_);
+        type Bundle = {
+            buckets: Array<{ value: string | null; count: number }>;
+            expanded: Record<string, { records: { data: Array<{ id: number }> }; aggregates?: unknown }>;
+        };
+        const all = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: tags.id,
+            expanded: [],
+            expandAll: true,
+            // La clave de un grupo multi_select es un JSON CON COMAS: por eso
+            // viaja como lista JSON y no separada por comas.
+            collapsed: ['__null__'],
+            perPage: 50,
+            aggregateFieldIds: [titleKey.slice(1)].map(Number),
+        })) as Bundle;
+        expect(Object.keys(all.expanded).sort()).toEqual(['["promo", "vip"]', '["vip"]']);
+        const nulls = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: tags.id,
+            expanded: ['__null__'],
+            perPage: 50,
+            aggregateFieldIds: [],
+        })) as Bundle;
+        expect(nulls.buckets.find((b) => b.value === null)?.count).toBe(2);
+        expect(nulls.expanded.__null__?.records.data.map((r) => r.id).sort()).toEqual([ninguna.id, vaciada.id].sort());
+        expect(all.expanded['["promo", "vip"]']?.records.data.map((r) => r.id)).toEqual([ambos.id]);
+        expect(all.expanded['["vip"]']?.records.data.map((r) => r.id)).toEqual([soloVip.id]);
+        expect(all.expanded['["vip"]']?.aggregates).toBeDefined();
+
+        // Con búsqueda: sólo se arman los grupos que existen en ESA consulta.
+        const hit = (await grouped.groupedBundle(tenantId, admin, 'tareas', {
+            groupBy: tags.id,
+            expanded: [],
+            expandAll: true,
+            collapsed: [],
+            search: 'solo',
+            perPage: 50,
+            aggregateFieldIds: [],
+        })) as Bundle;
+        expect(hit.buckets).toEqual([{ value: '["vip"]', count: 1 }]);
+        expect(Object.keys(hit.expanded)).toEqual(['["vip"]']);
     });
 
     it('lo que se persiste pasa por la whitelist (nada de `javascript:` ni nodos raros)', async () => {

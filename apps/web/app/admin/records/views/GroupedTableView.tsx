@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Inbox, KeyRound, Loader2, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -122,6 +122,8 @@ interface GroupedTableViewProps {
      * todos los buckets, igual que ClickUp). Si está vacío o sin
      * `onFooterAggregatesChange`, no se renderea el footer.
      */
+    /** v0.1.224 — total que coincide + si está cargando (para la página). */
+    onStatusChange?: (status: { total: number | null; fetching: boolean }) => void;
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
     /** "Ajustar texto" — ver `WrapTextContext`. */
@@ -151,7 +153,7 @@ interface GroupedTableViewProps {
  *
  * Por simplicidad no usamos TanStack Table aquí (sí en `TableView`).
  */
-export function GroupedTableView({
+function GroupedTableViewImpl({
     listId,
     listSlug,
     fields,
@@ -174,6 +176,7 @@ export function GroupedTableView({
     onCreateSubtask,
     footerAggregates,
     onFooterAggregatesChange,
+    onStatusChange,
     wrapText = false,
     density = null,
     fontSize = null,
@@ -235,19 +238,19 @@ export function GroupedTableView({
         [fields],
     );
 
-    // Bundle endpoint: una sola request reemplaza el patrón antiguo
-    // (1 + N + N) de groups + records-por-bucket + aggregates-por-
-    // bucket. La lista `expanded` se deriva en dos fases:
-    //   1) Primer render: empty → bundle solo trae buckets meta.
-    //   2) useEffect ve los buckets, calcula los abiertos, setea
-    //      `pendingExpanded` → bundle refetcha con expanded completo.
-    // `keepPreviousData` mantiene UI estable mientras la 2da pasada
-    // está en vuelo.
-    const [pendingExpanded, setPendingExpanded] = useState<string[]>([]);
+    // Bundle endpoint: UNA request trae los grupos, las filas de los
+    // abiertos y sus agregados. v0.1.224 — se piden "todos abiertos salvo
+    // los cerrados" en vez de la lista de abiertos: antes esa lista salía de
+    // la respuesta anterior, así que cada búsqueda eran DOS vueltas y los
+    // grupos que traía la búsqueda nueva se veían vacíos entre medio.
+    const collapsedRaw = useMemo(
+        () => [...collapsedSet].filter((k) => ! openLocally.has(k)).map(localToRawKey),
+        [collapsedSet, openLocally],
+    );
     const bundle = useRecordsGroupedBundle({
         listId,
         groupBy: groupByField.id,
-        expanded: pendingExpanded,
+        collapsed: collapsedRaw,
         filterTree: filterTreeParam,
         search,
         aggregateFieldIds,
@@ -255,27 +258,13 @@ export function GroupedTableView({
 
     const buckets = bundle.data?.buckets ?? [];
     const expandedMap = bundle.data?.expanded ?? {};
-
+    // Mientras llega la respuesta de OTRA consulta (búsqueda o filtro
+    // nuevos) se sigue mostrando la anterior, atenuada.
+    const showingStale = bundle.isPlaceholderData;
+    const matchingTotal = showingStale ? null : bundle.data?.meta.total_records ?? null;
     useEffect(() => {
-        if (! bundle.data) return;
-        const next = buckets
-            .filter((b) => isOpen(bucketKey(b)))
-            .map((b) => bucketRawKey(b));
-        // Cambia → setPending. Comparación shallow ordenada (el hook
-        // ordena `expanded` antes del fetch, así que el orden no
-        // afecta el cache; pero igual evitamos setState innecesario).
-        let changed = next.length !== pendingExpanded.length;
-        if (! changed) {
-            for (let i = 0; i < next.length; i++) {
-                if (next[i] !== pendingExpanded[i]) {
-                    changed = true;
-                    break;
-                }
-            }
-        }
-        if (changed) setPendingExpanded(next);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bundle.data, openLocally, collapsedSet]);
+        onStatusChange?.({ total: matchingTotal, fetching: bundle.isFetching });
+    }, [onStatusChange, matchingTotal, bundle.isFetching]);
 
     const toggleGroup = (key: string): void => {
         const willBeOpen = ! isOpen(key);
@@ -390,7 +379,13 @@ export function GroupedTableView({
                 página (pedido del usuario, v0.1.70) — los buckets crecen
                 a su alto natural. */}
             <HScrollSyncContext.Provider value={hScrollSync}>
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-pb-2">
+                <div
+                    className={cn(
+                        'imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-pb-2 imcrm-transition-opacity',
+                        showingStale && 'imcrm-opacity-60',
+                    )}
+                    aria-busy={showingStale}
+                >
                     {buckets.map((bucket) => {
                         const key = bucketKey(bucket);
                         const rawKey = bucketRawKey(bucket);
@@ -692,11 +687,15 @@ function GroupBucketSection({
         return q;
     }, [bucketTree, page, search]);
 
-    const fallbackEnabled = isOpen && ! usePrefetched;
+    // Mientras el bundle está en vuelo NO se pide grupo por grupo: la
+    // respuesta ya trae las filas de todos los abiertos (v0.1.224 — antes,
+    // al cambiar la búsqueda, cada grupo nuevo disparaba su propia request
+    // de filas y de agregados además del bundle).
+    const fallbackEnabled = isOpen && ! usePrefetched && (page > 1 || ! bundleFetching);
     const fallbackRecords = useRecords(fallbackEnabled ? listId : undefined, fallbackQuery);
 
     const fallbackAggregates = useAggregates({
-        listSlug: useAggregatesPrefetched ? undefined : (isOpen ? listSlug : undefined),
+        listSlug: useAggregatesPrefetched || bundleFetching ? undefined : (isOpen ? listSlug : undefined),
         fieldIds: aggregateFieldIds,
         filterTree: bucketTree,
     });
@@ -1333,6 +1332,11 @@ function bucketRawKey(bucket: RecordGroupBucket): string {
     return bucket.value === null ? '__null__' : bucket.value;
 }
 
+/** Key local (`v:valor` / `__null__`) → key cruda del backend. */
+function localToRawKey(key: string): string {
+    return key.startsWith('v:') ? key.slice(2) : key;
+}
+
 /**
  * Para reportar correctamente el filtro al backend cuando el usuario
  * expande un bucket: `multi_select` necesita `contains` (la columna es
@@ -1399,3 +1403,12 @@ function formatBucketLabel(field: FieldEntity, value: string | null): string {
 }
 
 export { renderCellValue };
+
+/**
+ * v0.1.224 — memoizada: la página se re-dibuja con cada letra del buscador
+ * (el input vive ahí), y sin esto cada letra re-dibujaba todas las filas de
+ * todos los grupos. Los callbacks que recibe son de identidad estable
+ * (`useEventCallback` en RecordsPage), así que sólo se re-dibuja cuando
+ * cambian sus datos.
+ */
+export const GroupedTableView = memo(GroupedTableViewImpl);
