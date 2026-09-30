@@ -11,6 +11,7 @@ import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
 import { initTheme } from '@/lib/theme';
+import { blockCrossOriginFraming } from '@/lib/frameGuard';
 import '@/styles/globals.css';
 
 // Tema claro/oscuro (v0.1.112): el script inline de index.html ya pintó el
@@ -47,7 +48,8 @@ initDomainBoot();
  * el gate y la app; los providers de toast/confirm envuelven login + app.
  */
 const container = document.getElementById('root');
-if (container) {
+// v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
+if (container && !blockCrossOriginFraming(container)) {
     const resetToken = getResetToken();
     const verifyToken = getVerifyToken();
     const oauthRequestId = getOauthRequestId();

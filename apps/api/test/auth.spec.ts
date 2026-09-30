@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
 import { SessionService } from '../src/auth/session.service';
 import { loadEnv } from '../src/config/env';
-import { memberships, personalAccessTokens, users } from '../src/db/schema';
+import { memberships, personalAccessTokens, tenants, users } from '../src/db/schema';
 import { MailService } from '../src/mail/mail.service';
 import {
     startPostgres,
@@ -296,6 +296,18 @@ describe('AuthService (Postgres + Redis reales)', () => {
         expect(me.user.id).toBe(login.user.id);
         expect(me.memberships).toHaveLength(1);
         expect(me.token).toBeUndefined();
+    });
+
+    it('un acceso de PORTAL (rol client) no aparece entre los workspaces de la app', async () => {
+        const login = await loginOk(auth, { email: 'ana@acme.test', password: 'secreto-123' });
+        const [other] = await pg.db
+            .insert(tenants)
+            .values({ slug: 'portal-ajeno', name: 'Portal ajeno' })
+            .returning({ id: tenants.id });
+        await pg.db.insert(memberships).values({ tenantId: other!.id, userId: login.user.id, role: 'client' });
+        const me = await auth.me(login.user.id);
+        expect(me.memberships.map((m) => m.tenant_slug)).not.toContain('portal-ajeno');
+        expect(me.memberships).toHaveLength(1);
     });
 
     // SEC-04: un email de PLATFORM_SUPERADMINS no puede reclamarse vía registro

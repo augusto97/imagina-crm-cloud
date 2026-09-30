@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import path from 'node:path';
+import { EMBED_FRAME_HOSTS } from '@imagina-base/shared';
 
 /**
  * Fallback SPA en el dev server (espeja lo que hace Caddy en prod): las
@@ -46,6 +47,55 @@ function spaFallback(): Plugin {
 }
 
 /**
+ * v0.1.227 — CSP del SPA dentro del propio HTML (`<meta http-equiv>`).
+ *
+ * Hasta acá la CSP sólo existía si el operador copiaba las cabeceras de
+ * `deploy/nginx.conf`/`Caddyfile` a su servidor — y la auto-actualización no
+ * toca el proxy (es de root). En un panel tipo ServerAvatar, donde se pegan
+ * sólo los `location`, quedaba afuera. Ahora viaja en el bundle: cada release
+ * la trae. Si el proxy TAMBIÉN manda la suya, el navegador aplica las dos
+ * (la intersección) — no se contradicen.
+ *
+ * Lo que un `<meta>` NO puede: `frame-ancestors` (el navegador lo ignora ahí)
+ * — el anti-encuadre lo cubre `lib/frameGuard.ts` en el cliente.
+ *
+ * `img-src https:`: los bloques de imagen del page-builder (ficha y portal)
+ * aceptan una URL externa y no pasan por el proxy de imágenes (el portal no
+ * tiene sesión de miembro). Una imagen no ejecuta nada; lo que importa acá es
+ * que ningún SCRIPT de otro origen pueda cargarse.
+ */
+export const SPA_CSP = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    `frame-src 'self' ${EMBED_FRAME_HOSTS.join(' ')}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+].join('; ');
+
+function cspMeta(): Plugin {
+    return {
+        name: 'imagina-csp-meta',
+        // Sólo en el build: el dev server de vite inyecta scripts y un
+        // WebSocket de HMR que esta política cortaría.
+        apply: 'build',
+        transformIndexHtml(html) {
+            const meta = `<meta http-equiv="Content-Security-Policy" content="${SPA_CSP}" />`;
+            // Después del charset (tiene que quedar en los primeros 1024 bytes)
+            // y ANTES de cualquier <script>: una CSP por meta sólo rige para lo
+            // que viene después de ella en el documento.
+            const out = html.replace(/(<meta charset="utf-8"\s*\/?>)/i, `$1\n        ${meta}`);
+            if (out === html) throw new Error('imagina-csp-meta: el index.html no tiene <meta charset>');
+            return out;
+        },
+    };
+}
+
+/**
  * Build/dev STANDALONE del SPA cloud de Imagina Base (sin WordPress). El
  * config `vite.config.ts` sigue produciendo el bundle del plugin (WP); este
  * sirve el shell propio (login + workspace + listas + tabla) contra el
@@ -59,7 +109,7 @@ export default defineConfig({
     // "process is not defined".
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') },
     root: __dirname,
-    plugins: [react(), spaFallback()],
+    plugins: [react(), spaFallback(), cspMeta()],
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './app'),

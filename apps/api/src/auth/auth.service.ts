@@ -24,7 +24,7 @@ import {
     type VerifyTwoFactorInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
@@ -919,7 +919,11 @@ export class AuthService implements OnModuleInit {
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
-                .where(eq(memberships.userId, userId));
+                // v0.1.227 — el acceso de PORTAL (rol client) no es un workspace
+                // de la app de equipo: el TenantGuard lo rechaza (SEC-24), así
+                // que listarlo sólo hacía que la app abriera una empresa donde
+                // todo responde 403. El portal tiene su propia entrada.
+                .where(and(eq(memberships.userId, userId), ne(memberships.role, 'client')));
             return rows.map((r) => ({
                 tenant_id: r.tenantId,
                 tenant_slug: r.tenantSlug,

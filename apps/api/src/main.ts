@@ -105,6 +105,23 @@ async function bootstrap(): Promise<void> {
         }
         done();
     });
+    // v0.1.227 — HSTS lo manda el propio API (antes sólo el proxy, y en un panel
+    // como ServerAvatar esa cabecera no estaba). El navegador la guarda para
+    // TODO el host sin importar qué respuesta la trajo, y la SPA pide al API
+    // apenas carga: desde la primera visita el dominio queda fijado a HTTPS.
+    // Sólo en producción y sólo sobre HTTPS (por RFC, sobre HTTP se ignora; y
+    // el protocolo sale del `X-Forwarded-Proto` del proxy de confianza).
+    // SIN `includeSubDomains` a propósito: si la app vive en el dominio raíz,
+    // eso forzaría HTTPS durante un año en TODOS los subdominios del operador
+    // (otras apps suyas que quizás no lo tienen). Eso lo decide el proxy.
+    if (env.NODE_ENV === 'production') {
+        fastify.addHook('onSend', (req, reply, payload, done) => {
+            if (req.protocol === 'https' && !reply.hasHeader('strict-transport-security')) {
+                void reply.header('Strict-Transport-Security', 'max-age=31536000');
+            }
+            done(null, payload);
+        });
+    }
     // La metadata de descubrimiento OAuth (RFC 8414/9728) vive en la RAÍZ del
     // host por definición — fuera del prefijo del API.
     app.setGlobalPrefix('api/v1', {
