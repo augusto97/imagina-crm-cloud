@@ -3,6 +3,10 @@ import {
     importCsvPreviewSchema,
     importCsvRunSchema,
     importRowsSchema,
+    importUpdateSchema,
+    type ImportUpdateInput,
+    type ImportUpdatePreview,
+    type ImportUpdateResult,
     type ImportCsvPreviewInput,
     type ImportCsvPreviewResult,
     type ImportCsvRunInput,
@@ -16,6 +20,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { ImportUpdateService } from './import-update.service';
 import { ImportService } from './import.service';
 
 /**
@@ -25,7 +30,36 @@ import { ImportService } from './import.service';
 @Controller('lists/:list/import')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class ImportController {
-    constructor(private readonly importService: ImportService) {}
+    constructor(
+        private readonly importService: ImportService,
+        private readonly updater: ImportUpdateService,
+    ) {}
+
+    /**
+     * v0.1.219 — Actualizar registros existentes desde un archivo: vista
+     * previa (todo el archivo) y aplicación por tramos de hasta 200 filas.
+     */
+    @Post('update/preview')
+    @HttpCode(200)
+    @RequireCapability('import_records')
+    updatePreview(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(importUpdateSchema)) input: ImportUpdateInput,
+    ): Promise<ImportUpdatePreview> {
+        return this.updater.preview(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role }, list, input);
+    }
+
+    @Post('update')
+    @HttpCode(200)
+    @RequireCapability('import_records')
+    update(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(importUpdateSchema)) input: ImportUpdateInput,
+    ): Promise<ImportUpdateResult> {
+        return this.updater.apply(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role }, list, input);
+    }
 
     @Post()
     @HttpCode(200)
@@ -47,7 +81,7 @@ export class ImportController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(importCsvPreviewSchema)) input: ImportCsvPreviewInput,
     ): Promise<ImportCsvPreviewResult> {
-        return this.importService.preview(req.tenant!.tenantId, list, input.csv);
+        return this.importService.preview(req.tenant!.tenantId, list, input.csv, input.mode);
     }
 
     /** Paso 2: mapping confirmado + campos nuevos → bulk insert. */

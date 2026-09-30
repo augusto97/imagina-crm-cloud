@@ -5322,6 +5322,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         un WooCommerce 11.1.2 real** (precio, stock, destacado, categorías y
         atributo de vuelta; la variación cambiada después, respetada).
 
+  - [x] **Actualizar registros desde un archivo (v0.1.219, ADR-S25)**: «la
+        lista de precios del proveedor», «el stock que mandó el depósito». Un
+        CSV ya no sólo crea filas: **empareja** cada fila con un registro que
+        existe por una columna clave —el **ID** de la app (la columna del
+        export) o un campo único de texto, email, teléfono, enlace o número
+        (SKU, email, documento)— y cambia sólo las columnas elegidas.
+        Diálogo propio «Actualizar desde un archivo» (Personalizar vista, y
+        un enlace desde «Importar»): elegir la columna clave (se sugiere sola
+        la del ID o un SKU/código/email), qué columna actualiza qué campo,
+        «una celda vacía vacía el campo» y «crear los que no existen»
+        (upsert). **Vista previa** con cuántos cambian, cuántos ya estaban
+        así, las filas sin registro (con su clave) y los errores por fila —
+        clave repetida en el archivo («ya aparece en la fila 3») o que
+        coincide con varios registros, valor que el campo no acepta— y un
+        ejemplo antes → después con las etiquetas de las opciones. Se aplica
+        en tramos de 200 filas con avance y queda en el **historial de
+        ediciones masivas**: un archivo equivocado se **deshace** entero
+        desde el resultado. La clave se compara normalizada igual en JS y en
+        SQL (sin espacios ni mayúsculas; teléfono por dígitos; número como
+        número) y sólo empareja lo que la persona puede editar. **Funciona en
+        la lista de productos de una tienda** —donde el import no se permite—:
+        cada cambio pasa por las reglas de lo que la tienda acepta (la vista
+        previa lo avisa por fila con `storeRuleError`, ahora compartido) y
+        viaja a WooCommerce; crear queda para las listas comunes. 4 tests de
+        integración (SKU con mayúsculas/espacios en dos tramos + deshacer, por
+        ID con vaciar, upsert con la clave guardada, clave inválida y valor
+        que el campo no acepta) — 763 API, 178 front y 94 shared en verde —
+        + E2E navegador 20/20 (260 productos, 250
+        filas del proveedor, 3 sin registro, 1 repetida, avance, deshacer,
+        upsert, celular) y **12/12 contra un WooCommerce 11.1.2 real**
+        (precios por SKU —uno con espacios y en minúsculas— llegan a la
+        tienda; el producto variable avisa que no tiene precio propio; crear
+        se rechaza; deshacer devuelve los precios en WooCommerce).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

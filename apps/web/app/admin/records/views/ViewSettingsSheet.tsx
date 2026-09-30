@@ -7,6 +7,7 @@ import {
     Download,
     FileUp,
     Filter,
+    FileSpreadsheet,
     Grid3x3,
     Group,
     History,
@@ -103,6 +104,8 @@ interface ViewSettingsSheetProps {
     onStoreBulk?: () => void;
     /** v0.1.218 — historial de ediciones masivas (con deshacer). */
     onBulkHistory?: () => void;
+    /** v0.1.219 — actualizar registros existentes desde un archivo. */
+    onCsvUpdate?: () => void;
 }
 
 /**
@@ -153,6 +156,7 @@ export function ViewSettingsSheet({
     onBulkEdit,
     onStoreBulk,
     onBulkHistory,
+    onCsvUpdate,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -460,6 +464,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onBulkEdit();
+                                    }}
+                                />
+                            )}
+                            {onCsvUpdate && (
+                                <RowButton
+                                    icon={FileSpreadsheet}
+                                    label={__('Actualizar desde un archivo')}
+                                    value={__('Por ID o SKU')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onCsvUpdate();
                                     }}
                                 />
                             )}
