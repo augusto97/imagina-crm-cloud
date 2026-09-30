@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
     CONTENT_WIDGET_TYPES,
     dateRangePresetSchema,
@@ -185,8 +185,18 @@ export class DashboardsService {
         const override = parsePeriodOverride(typeof periodPreset === 'string' ? periodPreset : undefined) !== undefined
             ? periodPreset
             : undefined;
+        // v0.1.229 — cada widget se evalúa AISLADO: uno mal configurado (una
+        // métrica que no aplica, un campo borrado) devuelve su propio error y
+        // el resto del tablero se dibuja. Antes el Promise.all rechazaba el
+        // bundle entero y TODOS los widgets salían en rojo.
         const entries = await Promise.all(
-            dash.widgets.map(async (w) => [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const),
+            dash.widgets.map(async (w) => {
+                try {
+                    return [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const;
+                } catch (err) {
+                    return [w.id, { __error: widgetErrorMessage(err) }] as const;
+                }
+            }),
         );
         return Object.fromEntries(entries);
     }
@@ -434,4 +444,22 @@ function numOrUndef(v: unknown): number | undefined {
 
 function notFound(id: number): NotFoundException {
     return new NotFoundException({ code: 'dashboard_not_found', message: `Dashboard ${id} no encontrado`, data: { status: 404 } });
+}
+
+/**
+ * Mensaje legible del error de UN widget (v0.1.229). Los errores de dominio
+ * (400 del motor de agregados: "sum sólo aplica a campos numéricos") viajan
+ * tal cual; cualquier otra cosa se loguea y sale genérica — un error de base
+ * no tiene por qué llegarle al navegador.
+ */
+function widgetErrorMessage(err: unknown): string {
+    if (err instanceof HttpException) {
+        const res = err.getResponse();
+        if (typeof res === 'object' && res !== null && typeof (res as { message?: unknown }).message === 'string') {
+            return (res as { message: string }).message;
+        }
+        return err.message;
+    }
+    Logger.error(`widget: ${err instanceof Error ? err.stack ?? err.message : String(err)}`, 'DashboardsService');
+    return 'No se pudo calcular este widget.';
 }

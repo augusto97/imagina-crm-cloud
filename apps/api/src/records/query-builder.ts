@@ -99,7 +99,9 @@ function compileCondition(
     // correlacionada que le armó el motor (rollup, y desde v0.1.200 también
     // lookup). Si no la tiene —config a medias, relación borrada, lookup
     // hacia un `computed`— no es filtrable y la condición se descarta.
-    if (isThroughField(field.type)) {
+    // v0.1.229 — también un `computed` numérico (su expresión la arma
+    // `withComputedExprs`); sin expresión se descarta como antes.
+    if (isThroughField(field.type) || field.type === 'computed') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
     if (!isDataField(field.type) || NON_FILTERABLE.includes(field.type)) {

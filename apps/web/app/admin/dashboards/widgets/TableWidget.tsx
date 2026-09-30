@@ -1,5 +1,5 @@
 import { formatDuration, formatPhone } from '@imagina-base/shared';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
@@ -10,6 +10,7 @@ import { useWidgetData } from '@/hooks/useDashboards';
 import type { FieldEntity } from '@/types/field';
 import type { WidgetSpec } from '@/types/dashboard';
 
+import { WidgetError } from './WidgetError';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface TableWidgetProps {
@@ -42,10 +43,7 @@ export function TableWidget({ dashboardId, widget }: TableWidgetProps): JSX.Elem
                         <Loader2 className="imcrm-h-5 imcrm-w-5 imcrm-animate-spin imcrm-text-muted-foreground" />
                     </div>
                 ) : data.isError ? (
-                    <div className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-1.5 imcrm-py-6 imcrm-text-xs imcrm-text-destructive">
-                        <TriangleAlert className="imcrm-h-4 imcrm-w-4" />
-                        {__('Error al cargar')}
-                    </div>
+                    <WidgetError error={data.error} />
                 ) : data.data && 'rows' in data.data ? (
                     <Body
                         columns={data.data.columns}

@@ -130,10 +130,13 @@ export function WidgetFormDialog({
     // como metric en KPI/Charts/StatDelta — RecordAggregator soporta
     // count/count_unique/count_empty para todos, sum/avg/min/max/etc
     // según tipo. El picker filtra qué cálculos se ofrecen.
+    // v0.1.229 — un computed ARITMÉTICO (suma, resta, producto, división,
+    // valor absoluto) ya se agrega en el servidor como un número: se ofrece
+    // como tal. Los de fecha/concat siguen afuera.
     const aggregatableFields = useMemo<FieldOpt[]>(
         () => (fields.data ?? [])
-            .filter((f) => f.type !== 'relation' && f.type !== 'computed' && f.type !== 'lookup')
-            .map((f) => ({ id: f.id, label: f.label, type: f.type })),
+            .filter((f) => f.type !== 'relation' && f.type !== 'lookup' && (f.type !== 'computed' || isNumericComputedOp(f.config)))
+            .map((f) => ({ id: f.id, label: f.label, type: f.type === 'computed' ? 'number' : f.type })),
         [fields.data],
     );
 
@@ -681,6 +684,14 @@ export function WidgetFormDialog({
  * El campo "(Todos los registros)" es un caso especial: field_id = 0 con
  * metric = 'count' → COUNT(*) sin filtrar columna.
  */
+/** Operaciones de `computed` con valor numérico en SQL (espejo de `computed-sql.ts`). */
+const NUMERIC_COMPUTED_OPS = new Set(['sum', 'product', 'subtract', 'divide', 'abs']);
+
+function isNumericComputedOp(config: unknown): boolean {
+    const op = typeof config === 'object' && config !== null ? (config as { operation?: unknown }).operation : undefined;
+    return typeof op === 'string' && NUMERIC_COMPUTED_OPS.has(op);
+}
+
 interface FieldOpt {
     id: number;
     label: string;

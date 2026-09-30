@@ -772,6 +772,24 @@ no puede apuntar a otro lookup/rollup): obligaría a resolver grafos en cada
 lectura. Un `computed` sí puede usar un rollup como entrada ("cobrado =
 total − deuda"), porque los valores through se inyectan antes de evaluar.
 
+**Computed numéricos en SQL (v0.1.229).** Un `computed` se evalúa en JS en
+cada lectura, así que el motor de agregados, los filtros y el orden no lo
+veían: un tablero que sumaba «valor = stock × costo» respondía «sum sólo
+aplica a campos numéricos» (y, como el bundle del tablero evaluaba todo con un
+`Promise.all`, un solo widget así tumbaba TODOS los del tablero). Las
+operaciones aritméticas (`sum`, `product`, `subtract`, `divide`, `abs`) se
+traducen a una expresión SQL sobre las entradas tipadas (`records/computed-sql.ts`,
+misma semántica que el evaluador de shared: sum/product ignoran vacíos y dan
+NULL si todos lo están, subtract propaga el vacío, divide por cero da NULL),
+encadenables y con rollups numéricos como entrada; con eso el computed se
+suma/promedia en widgets y pie, se filtra ("margen < 0"), se ordena y se
+agrupa, exactamente como un rollup. Las de fecha y `concat` siguen sin
+expresión. La expresión se arma sobre el mapa de campos YA recortado por el
+ACL: si una entrada está oculta para el rol, el computed no se agrega ni se
+filtra (sería un oráculo sobre la entrada oculta). Y el bundle del tablero
+evalúa cada widget aislado: uno mal configurado devuelve su propio error
+(`{ __error }`, visible en ese widget con el motivo) y el resto se dibuja.
+
 ### ADR-S20 — Copias completas, restauración y migración de servidor (v0.1.179)
 
 **Contexto.** El backup lógico (§14, `scripts/backup.sh`) y el PITR protegen
@@ -1713,4 +1731,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.41.0 (seguridad: pagos, importaciones, automatizaciones/IA, dominios y OAuth — §14, ADR-S17)
+**Versión del documento:** 1.42.0 (computed numéricos agregables en SQL + widgets aislados en el tablero — ADR-S19)
