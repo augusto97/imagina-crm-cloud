@@ -1,3 +1,4 @@
+import { relatedScopeSql, type RelatedScope } from '../records/related-scope';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
     type AggregateMetric,
@@ -66,7 +67,7 @@ export class AggregateService {
          * grupo sumaba filas que no se ven. Los tableros cuentan TODO y filtran
          * por tipo cuando hace falta.
          */
-        opts: { rootsOnly?: boolean; viewer?: AggregateViewer } = {},
+        opts: { rootsOnly?: boolean; viewer?: AggregateViewer; related?: RelatedScope } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
@@ -88,6 +89,8 @@ export class AggregateService {
             opts.rootsOnly ? isNull(records.parentId) : undefined,
             acl.scope,
             filterWhere,
+            // v0.1.230 — sólo los vinculados a un registro (bloques de la ficha).
+            opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
         );
 
         const aggExpr = this.metricExpr(req.metric, field, fieldsById);
@@ -160,7 +163,7 @@ export class AggregateService {
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
-        opts: { dateFieldId: number; periodDays: number; viewer?: AggregateViewer },
+        opts: { dateFieldId: number; periodDays: number; viewer?: AggregateViewer; related?: RelatedScope },
     ): Promise<{
         value: number | string | null;
         previous: number | string | null;
@@ -191,8 +194,8 @@ export class AggregateService {
         };
 
         const [cur, prev] = await Promise.all([
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }, { viewer: opts.viewer }),
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }, { viewer: opts.viewer }),
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }, { viewer: opts.viewer, related: opts.related }),
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }, { viewer: opts.viewer, related: opts.related }),
         ]);
 
         const value = cur.value ?? 0;

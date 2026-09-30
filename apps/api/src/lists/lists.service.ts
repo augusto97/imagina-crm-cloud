@@ -3,6 +3,7 @@ import {
     listSlugSchema,
     slugify,
     TITLE_FIELD_TYPES,
+    recordLayoutV3Schema,
     type CreateListInput,
     type FieldType,
     type List,
@@ -263,6 +264,22 @@ export class ListsService {
                         throw new BadRequestException({
                             code: 'invalid_title_field',
                             message: 'El campo de título tiene que ser un campo de texto de esta lista',
+                            data: { status: 400 },
+                        });
+                    }
+                }
+                // v0.1.230 — la plantilla v3 de la ficha se valida acá: el
+                // editor y el asistente escriben el mismo shape y una plantilla
+                // rota no se guarda (antes una v2 inválida se aceptaba y la
+                // ficha caía en silencio al diseño por defecto).
+                const v3 = (patch.settings as Record<string, unknown>).record_layout_v3;
+                if (v3 !== undefined && v3 !== null) {
+                    const parsed = recordLayoutV3Schema.safeParse(v3);
+                    if (!parsed.success) {
+                        const issue = parsed.error.issues[0];
+                        throw new BadRequestException({
+                            code: 'invalid_record_layout',
+                            message: `El diseño de la ficha no es válido: ${issue?.message ?? 'forma inesperada'} (${(issue?.path ?? []).join('.')})`,
                             data: { status: 400 },
                         });
                     }

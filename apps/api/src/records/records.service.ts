@@ -52,6 +52,7 @@ import { RecordChangeHub } from './record-change-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { withComputedExprs } from './computed-sql';
 import { RelationsRepository } from './relations.repository';
+import { relatedScopeSql, type RelatedScope } from './related-scope';
 import { BillingService } from '../billing/billing.service';
 
 /** Quién ejecuta la acción — para el scoping de "own records" (CONTRACT §6). */
@@ -206,6 +207,12 @@ export class RecordsService {
         actor: Actor,
         listIdOrSlug: string,
         query: ListRecordsQuery,
+        /**
+         * v0.1.230 — sólo los vinculados a un registro por una relación, en
+         * cualquiera de los dos sentidos (bloques de la ficha). Interno: no
+         * viaja como query param.
+         */
+        opts: { related?: RelatedScope } = {},
     ): Promise<RecordsPage> {
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
@@ -249,7 +256,10 @@ export class RecordsService {
             const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
             // v0.1.209 — una selección de filas y los vinculados a un registro.
-            const pickW = pickWhere(tenantId, fields, query);
+            const pickW = andWhere(
+                pickWhere(tenantId, fields, query),
+                opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
+            );
             const where = andWhere(andWhere(andWhere(filterWhere, searchWhere), scopeW), pickW);
 
             // Orden por CAMPO (`sort=field_{id}:{dir},...`): expresiones
@@ -264,7 +274,7 @@ export class RecordsService {
             const parent =
                 query.parent !== undefined
                     ? query.parent
-                    : query.include_subtasks === true || query.ids !== undefined || query.related_to !== undefined
+                    : query.include_subtasks === true || query.ids !== undefined || query.related_to !== undefined || opts.related !== undefined
                         ? ('any' as const)
                         : ('roots' as const);
             const listed = await this.repo.list(tx, tenantId, list.id, {

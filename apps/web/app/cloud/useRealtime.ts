@@ -11,6 +11,7 @@ import { useSession } from '@/cloud/session';
 import { fieldsKeys } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
+import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
 
 /**
@@ -61,6 +62,9 @@ export function useRealtime(): void {
                 case 'records':
                     if (ev.listId !== undefined) invalidateForList(qc, recordsKeys.all, ev.listId);
                     else void qc.invalidateQueries({ queryKey: recordsKeys.all });
+                    // v0.1.230 — los gráficos y vinculados de una ficha abierta
+                    // leen OTRAS listas: un cambio en cualquiera puede moverlos.
+                    void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
                     break;
                 case 'views':
                     if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);

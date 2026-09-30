@@ -2,21 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ArrowLeft, BarChart3, CalendarRange, Copy, LayoutTemplate, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
-import { BarChartWidget } from '@/admin/dashboards/widgets/BarChartWidget';
-import {
-    DividerWidget,
-    HeadingWidget,
-    ImageWidget,
-    SpacerWidget,
-    TextWidget,
-} from '@/admin/dashboards/widgets/ContentWidgets';
-import { FunnelWidget } from '@/admin/dashboards/widgets/FunnelWidget';
-import { GaugeWidget } from '@/admin/dashboards/widgets/GaugeWidget';
-import { KpiWidget } from '@/admin/dashboards/widgets/KpiWidget';
-import { LineChartWidget } from '@/admin/dashboards/widgets/LineChartWidget';
-import { PieChartWidget } from '@/admin/dashboards/widgets/PieChartWidget';
-import { StatDeltaWidget } from '@/admin/dashboards/widgets/StatDeltaWidget';
-import { TableWidget } from '@/admin/dashboards/widgets/TableWidget';
+import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
 import { PortalPageSettingsButton } from '@/admin/lists/portal-template-editor/PortalPageSettings';
 
@@ -590,46 +576,6 @@ export function DashboardPage(): JSX.Element {
         </div>
         </DashboardGlobalPeriodContext.Provider>
     );
-}
-
-function WidgetRenderer({
-    dashboardId,
-    widget,
-}: {
-    dashboardId: number;
-    widget: WidgetSpec;
-}): JSX.Element {
-    switch (widget.type) {
-        case 'heading':
-            return <HeadingWidget widget={widget} />;
-        case 'text':
-            return <TextWidget widget={widget} />;
-        case 'image':
-            return <ImageWidget widget={widget} />;
-        case 'divider':
-            return <DividerWidget />;
-        case 'spacer':
-            return <SpacerWidget />;
-        case 'kpi':
-            return <KpiWidget dashboardId={dashboardId} widget={widget} />;
-        case 'gauge':
-            return <GaugeWidget dashboardId={dashboardId} widget={widget} />;
-        case 'chart_bar':
-            return <BarChartWidget dashboardId={dashboardId} widget={widget} />;
-        case 'chart_pie':
-            return <PieChartWidget dashboardId={dashboardId} widget={widget} />;
-        case 'chart_area':
-            return <LineChartWidget dashboardId={dashboardId} widget={widget} area />;
-        case 'stat_delta':
-            return <StatDeltaWidget dashboardId={dashboardId} widget={widget} />;
-        case 'table':
-            return <TableWidget dashboardId={dashboardId} widget={widget} />;
-        case 'funnel':
-            return <FunnelWidget dashboardId={dashboardId} widget={widget} />;
-        case 'chart_line':
-        default:
-            return <LineChartWidget dashboardId={dashboardId} widget={widget} />;
-    }
 }
 
 /**

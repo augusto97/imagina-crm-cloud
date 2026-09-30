@@ -665,7 +665,7 @@ class V2Builder {
 const autoTemplate: CrmTemplate = {
     id: 'auto',
     name: 'Automática',
-    description: 'Categorización conservadora por tipo de campo. 3 columnas balanceadas.',
+    description: 'Se arma sola con tus campos y relaciones: cifras, etapas, detalles y gráficos de los vinculados.',
     resolve: (fields) => {
         const b = new LayoutBuilder(fields);
         const titleField = b.pickTitle();
@@ -2745,6 +2745,20 @@ export function getResolvedV2(
         ? tpl.resolveV2(fields)
         : migrateV1toV2(layoutToV1Config(tpl.resolve(fields)));
     return resolveV2(v2Config, fields);
+}
+
+/**
+ * v0.1.230 — la plantilla v2 SIN resolver (slugs, bloques con x/y/w/pos),
+ * que es lo que convierte `migrateCrmV2ToV3` a la v3. Misma elección que
+ * `getResolvedV2`: la personalizada o la integrada elegida.
+ */
+export function getV2Config(
+    settings: { crm_template_id?: string; crm_template_custom?: unknown },
+    fields: FieldEntity[],
+): CustomTemplateConfigV2 {
+    if (settings.crm_template_id === CUSTOM_TEMPLATE_ID) return ensureV2(settings.crm_template_custom);
+    const tpl = getTemplate(settings.crm_template_id);
+    return tpl.resolveV2 ? tpl.resolveV2(fields) : migrateV1toV2(layoutToV1Config(tpl.resolve(fields)));
 }
 
 /**

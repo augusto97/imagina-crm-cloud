@@ -375,7 +375,7 @@ function MarkdownEditView({
  * NO soporta tablas, imágenes, blockquotes, etc. Si el user quiere
  * más, puede usar el bloque embed o crear un PR para extender.
  */
-function renderMarkdown(input: string): string {
+export function renderMarkdown(input: string): string {
     if (! input) return '';
     let text = input;
     // 1. Escape HTML primero.
