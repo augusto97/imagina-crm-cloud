@@ -4,9 +4,11 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { guardRedis } from '../redis/redis.util';
-import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
+import { AutomationBulkRunner } from './automation-bulk-runner.service';
+import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { AutomationsService } from './automations.service';
 
 interface SchedulerJobData {
     tenantId: number;
@@ -37,6 +39,8 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
         private readonly scheduler: AutomationScheduler,
         private readonly engine: AutomationEngine,
         private readonly recurrences: RecurrencesService,
+        private readonly bulkRunner: AutomationBulkRunner,
+        private readonly automations: AutomationsService,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -65,6 +69,8 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     } else if (job.name === 'webhook') {
                         const d = job.data as SchedulerJobData & { payload: Record<string, unknown> };
                         await this.engine.runWebhook(d.tenantId, d.automationId, d.payload);
+                    } else if (job.name === 'bulk-edit') {
+                        await this.bulkRunner.run(job.data as BulkEditJob);
                     } else if (job.name === RECURRENCES_TICK_JOB) {
                         await this.recurrences.tick();
                     } else {
@@ -85,6 +91,11 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 { pattern: RECURRENCES_TICK_PATTERN },
                 { name: RECURRENCES_TICK_JOB, data: {} },
             );
+            // v0.1.221 — Re-registra los horarios en segundo plano (no demora el arranque).
+            void this.automations
+                .resyncSchedules()
+                .then((n) => n > 0 && this.logger.log(`Horarios de automatizaciones sincronizados: ${n}`))
+                .catch((err) => this.logger.warn(`No se pudieron sincronizar los horarios: ${String(err)}`));
             this.logger.log('Cola de automatizaciones lista');
         } catch (err) {
             this.logger.warn(`Automatizaciones deshabilitadas (sin Redis): ${String(err)}`);

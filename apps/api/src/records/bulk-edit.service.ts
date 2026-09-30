@@ -25,6 +25,15 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { BulkHistoryService, type BulkItemInput } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
 
+export interface AutomationBulkOutcome {
+    total: number;
+    changed: number;
+    unchanged: number;
+    failed: number;
+    errors: string[];
+    edit_id: number | null;
+}
+
 /** Cuántos ejemplos muestra la vista previa y cuántos errores lista. */
 const SAMPLE_SIZE = 25;
 const ERROR_LIST = 50;
@@ -95,6 +104,11 @@ export class BulkEditService {
         ids: number[],
         operations: BulkOperation[],
         editId?: number,
+        /**
+         * v0.1.221 — la corre una automatización: su nombre encabeza el
+         * resumen del historial y los cambios no re-disparan automatizaciones.
+         */
+        opts: { summaryPrefix?: string; noAutomations?: boolean } = {},
     ): Promise<BulkEditResult> {
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, { ids }, BULK_EDIT_APPLY_CHUNK);
         const ctx = this.context(loaded.list, loaded.fields, actor, operations);
@@ -113,7 +127,7 @@ export class BulkEditService {
             loaded.list.id,
             'records',
             editId,
-            summarizeBulkOperations(operations, labelOf),
+            (opts.summaryPrefix ?? '') + summarizeBulkOperations(operations, labelOf),
             operations,
         );
         const items: BulkItemInput[] = [];
@@ -128,7 +142,7 @@ export class BulkEditService {
                 continue;
             }
             try {
-                const saved = await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true });
+                const saved = await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true, noAutomations: opts.noAutomations });
                 result.succeeded.push(row.id);
                 // El DESPUÉS es lo que quedó guardado (ya validado y normalizado),
                 // no el pedido: así, al deshacer, «sigue igual» se compara bien.
@@ -153,6 +167,46 @@ export class BulkEditService {
         // Un solo aviso de realtime por tanda (no uno por fila).
         if (result.succeeded.length > 0) this.realtime.records(tenantId, loaded.list.id);
         return result;
+    }
+
+    /**
+     * v0.1.221 — La acción «Editar en lote» de una automatización: resuelve
+     * todo lo que coincide con su filtro EN ESTE MOMENTO y lo edita en tandas,
+     * como si lo hiciera una persona admin (validación, reglas de la tienda,
+     * bitácora, historial con deshacer) pero sin volver a disparar
+     * automatizaciones con esos cambios.
+     */
+    async runForAutomation(
+        tenantId: number,
+        listId: number,
+        automationName: string,
+        target: BulkEditTarget,
+        operations: BulkOperation[],
+    ): Promise<AutomationBulkOutcome> {
+        const system: Actor = { userId: 0, role: 'admin' };
+        const preview = await this.preview(tenantId, system, String(listId), target, operations);
+        const outcome: AutomationBulkOutcome = {
+            total: preview.total,
+            changed: 0,
+            unchanged: preview.unchanged,
+            failed: preview.error_count,
+            errors: preview.errors.slice(0, 5).map((e) => `${e.title}: ${e.message}`),
+            edit_id: null,
+        };
+        let editId: number | undefined;
+        for (let i = 0; i < preview.ids.length; i += BULK_EDIT_APPLY_CHUNK) {
+            const res = await this.apply(tenantId, system, String(listId), preview.ids.slice(i, i + BULK_EDIT_APPLY_CHUNK), operations, editId, {
+                summaryPrefix: `Automatización «${automationName}»: `,
+                noAutomations: true,
+            });
+            editId = res.edit_id ?? editId;
+            outcome.changed += res.succeeded.length;
+            outcome.unchanged += res.unchanged.length;
+            outcome.failed += res.failed.length;
+            for (const f of res.failed) if (outcome.errors.length < 5) outcome.errors.push(`#${f.id}: ${f.message}`);
+        }
+        outcome.edit_id = editId ?? null;
+        return outcome;
     }
 
     // ── Detalles ─────────────────────────────────────────────────────────────

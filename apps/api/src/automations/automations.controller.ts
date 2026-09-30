@@ -66,6 +66,18 @@ export class AutomationsController {
         return this.automations.testWebhook(req.tenant!.tenantId, list, input);
     }
 
+    /** v0.1.221 — «Ejecutar ahora» de una automatización programada. */
+    @Post(':id/run')
+    @HttpCode(202)
+    @RequireCapability('manage_automations')
+    runNow(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ queued: true }> {
+        return this.automations.runNow(req.tenant!.tenantId, list, id);
+    }
+
     @Post()
     @HttpCode(201)
     @RequireCapability('manage_automations')

@@ -7,7 +7,7 @@ import {
 } from '@imagina-base/shared';
 
 import { __ } from '@/lib/i18n';
-import { getTenantFormat, type NumberFormatId } from '@/lib/tenantFormat';
+import { formatNumber, getTenantFormat, type NumberFormatId } from '@/lib/tenantFormat';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 /**
@@ -235,4 +235,76 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
     const parsed = bulkOperationSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? __('Revisá la operación.') };
     return { ok: true, operation: parsed.data };
+}
+
+/**
+ * v0.1.221 — La inversa de `draftToOperation`: vuelve a abrir en el editor una
+ * operación ya guardada (la acción «Editar en lote» de una automatización).
+ * Los números salen con los separadores de la empresa, que es como se leen.
+ */
+export function operationToDraft(o: BulkOperation): BulkDraft {
+    const d: BulkDraft = { ...newDraft(), field_id: o.field_id, op: o.op };
+    const n = (v: number): string => formatNumber(v, { maxFrac: 6 });
+    switch (o.op) {
+        case 'set':
+            d.value = o.value;
+            break;
+        case 'add':
+        case 'subtract':
+            d.amount = n(o.amount);
+            break;
+        case 'multiply':
+            d.amount = n(o.factor);
+            break;
+        case 'divide':
+            d.amount = n(o.divisor);
+            break;
+        case 'percent':
+            d.amount = n(Math.abs(o.percent));
+            d.mode = o.percent < 0 ? 'down' : 'up';
+            break;
+        case 'round':
+            d.amount = n(o.multiple);
+            d.mode = o.mode;
+            d.adjust = n(o.adjust ?? 0);
+            break;
+        case 'calc': {
+            const side = (s: { field_id: number } | { value: number }) => ('field_id' in s ? { field_id: s.field_id } : { value: n(s.value) });
+            d.left = side(o.left);
+            d.right = side(o.right);
+            d.operator = o.operator;
+            break;
+        }
+        case 'copy':
+            d.source_field_id = o.source_field_id;
+            break;
+        case 'prepend':
+        case 'append':
+            d.text = o.text;
+            break;
+        case 'replace':
+            d.find = o.find;
+            d.replace = o.replace;
+            d.case_sensitive = o.case_sensitive;
+            break;
+        case 'text_case':
+            d.mode = o.mode;
+            break;
+        case 'add_options':
+        case 'remove_options':
+            d.values = [...o.values];
+            break;
+        case 'shift_date':
+            d.amount = n(Math.abs(o.amount));
+            d.mode = o.amount < 0 ? 'back' : 'forward';
+            d.unit = o.unit;
+            break;
+        case 'add_links':
+        case 'remove_links':
+            d.ids = [...o.ids];
+            break;
+        default:
+            break;
+    }
+    return d;
 }

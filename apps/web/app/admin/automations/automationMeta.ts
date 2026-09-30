@@ -8,10 +8,13 @@ import {
     Plug,
     Replace,
     Sparkles,
+    Wand2,
     Webhook,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
+
+import { scheduleParts } from '@imagina-base/shared';
 
 import { __, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -77,6 +80,11 @@ export const ACTION_META: Record<string, StepMeta> = {
         title: 'Crear un registro',
         description: 'Crea un registro nuevo en esta u otra lista, con valores del registro origen.',
     },
+    bulk_edit: {
+        icon: Wand2,
+        title: 'Editar en lote',
+        description: 'Cambia muchos registros de la lista de una vez (sumar, porcentajes, poner valores…), por ejemplo cada semana.',
+    },
     send_email: {
         icon: Mail,
         title: 'Enviar un correo',
@@ -138,12 +146,26 @@ function offsetHuman(offsetMinutes: number): string {
     return sprintf(__('%1$d min %2$s'), abs, suffix);
 }
 
-const SCHEDULE_LABELS: Record<string, string> = {
-    hourly: 'cada hora',
-    twicedaily: 'dos veces al día',
-    daily: 'todos los días',
-    weekly: 'cada semana',
-};
+const WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+/** v0.1.221 — «cada lunes a las 07:30» (con la misma lectura que el motor). */
+export function describeSchedule(config: Record<string, unknown>): string {
+    if (typeof config.cron === 'string' && config.cron.trim() !== '') return sprintf(__('según «%s»'), config.cron.trim());
+    const p = scheduleParts(config);
+    const hhmm = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+    switch (p.frequency) {
+        case 'hourly':
+            return p.minute === 0 ? __('cada hora') : sprintf(__('cada hora, al minuto %02d'), p.minute);
+        case 'twicedaily':
+            return sprintf(__('dos veces al día (%1$s y 12 horas después)'), hhmm);
+        case 'weekly':
+            return sprintf(__('cada %1$s a las %2$s'), __(WEEKDAY_NAMES[p.weekday] ?? ''), hhmm);
+        case 'monthly':
+            return sprintf(__('el día %1$d de cada mes a las %2$s'), p.day, hhmm);
+        default:
+            return sprintf(__('todos los días a las %s'), hhmm);
+    }
+}
 
 /**
  * Frase humana del trigger, ej.:
@@ -175,10 +197,8 @@ export function summarizeTrigger(
                 ? __('Cuando cambia un campo')
                 : sprintf(__('Cuando cambia «%s»'), fieldLabel(fields, slug));
         }
-        case 'scheduled': {
-            const freq = typeof config.frequency === 'string' ? config.frequency : 'daily';
-            return sprintf(__('De forma programada, %s'), __(SCHEDULE_LABELS[freq] ?? freq));
-        }
+        case 'scheduled':
+            return sprintf(__('De forma programada, %s'), describeSchedule(config));
         case 'due_date_reached': {
             const slug = typeof config.due_field === 'string' ? config.due_field : '';
             const offset = typeof config.offset_minutes === 'number' ? config.offset_minutes : 0;
@@ -242,6 +262,11 @@ export function summarizeAction(
                 ? sprintf(__('Crea un registro en «%s»'), listName)
                 : __('Crea un registro en esta lista');
             return values > 0 ? `${base} · ${sprintf(__('%d valores'), values)}` : base;
+        }
+        case 'bulk_edit': {
+            const n = Array.isArray(cfg.operations) ? cfg.operations.length : 0;
+            const base = cfg.filter_tree ? __('Edita en lote los que cumplen el filtro') : __('Edita en lote toda la lista');
+            return n > 0 ? `${base} · ${sprintf(n === 1 ? __('%d cambio') : __('%d cambios'), n)}` : base;
         }
         case 'send_email': {
             const to = typeof cfg.to === 'string' ? cfg.to : '';

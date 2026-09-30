@@ -5,6 +5,7 @@ import { ListsModule } from '../lists/lists.module';
 import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { RecurrencesModule } from '../recurrences/recurrences.module';
+import { AutomationBulkRunner } from './automation-bulk-runner.service';
 import { AutomationDispatcher } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
@@ -32,6 +33,7 @@ import { AutomationsService } from './automations.service';
         AutomationDispatcher,
         AutomationScheduler,
         AutomationEngine,
+        AutomationBulkRunner,
         AutomationsQueueBootstrap,
         FieldsRepository,
         RecordsRepository,

@@ -13,6 +13,17 @@ export interface TriggerEvent {
     before?: Record<string, unknown>;
 }
 
+/** v0.1.221 — la acción «Editar en lote» de una automatización, lista para el worker. */
+export interface BulkEditJob {
+    tenantId: number;
+    automationId: number;
+    automationName: string;
+    listId: number;
+    filter_tree: unknown;
+    search?: string;
+    operations: unknown[];
+}
+
 /**
  * Encola eventos de trigger para el motor de automatizaciones. Igual patrón
  * que RealtimeService: si la cola no está seteada (tests unitarios), es no-op.
@@ -34,6 +45,21 @@ export class AutomationDispatcher {
         this.queue.add('webhook', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
             this.logger.error(`No se pudo encolar el webhook entrante: ${String(err)}`);
         });
+    }
+
+    /**
+     * v0.1.221 — encola la acción «Editar en lote» de una automatización
+     * (job 'bulk-edit'). Corre FUERA de la transacción del motor: si no, las
+     * escrituras de la edición esperarían locks que esa misma transacción
+     * tiene tomados (p. ej. un «Actualizar campo» previo sobre el registro).
+     * Devuelve false si no hay cola (sin Redis): la acción falla con motivo.
+     */
+    dispatchBulkEdit(data: BulkEditJob): boolean {
+        if (!this.queue) return false;
+        this.queue.add('bulk-edit', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+            this.logger.error(`No se pudo encolar la edición masiva: ${String(err)}`);
+        });
+        return true;
     }
 
     dispatch(event: TriggerEvent): void {

@@ -114,7 +114,7 @@ export class BulkHistoryService {
                     .from(bulkEdits)
                     .where(and(eq(bulkEdits.tenantId, tenantId), eq(bulkEdits.id, editId)))
                     .limit(1);
-                if (row && row.listId === listId && row.userId === userId && row.kind === kind) return row.id;
+                if (row && row.listId === listId && (row.userId ?? 0) === userId && row.kind === kind) return row.id;
                 throw new BadRequestException({ code: 'bulk_edit_mismatch', message: 'Esa edición masiva no es de esta lista.', data: { status: 400 } });
             }
             // Limpieza: lo que pasó los 30 días ya no se deshace.
@@ -123,7 +123,8 @@ export class BulkHistoryService {
                 .where(and(eq(bulkEdits.tenantId, tenantId), lt(bulkEdits.createdAt, sql`now() - make_interval(days => ${BULK_HISTORY_DAYS})`)));
             const [created] = await tx
                 .insert(bulkEdits)
-                .values({ tenantId, listId, userId, kind, summary, operations })
+                // v0.1.221 — una automatización escribe como usuario 0: queda sin autor.
+                .values({ tenantId, listId, userId: userId > 0 ? userId : null, kind, summary, operations })
                 .returning({ id: bulkEdits.id });
             return created!.id;
         });

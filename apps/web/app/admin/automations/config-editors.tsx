@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
+import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { useEmailSignature } from '@/hooks/useEmailSignature';
@@ -19,7 +20,7 @@ import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import type { Connection, ConnectorParam } from '@imagina-base/shared';
+import { scheduleParts, type Connection, type ConnectorParam } from '@imagina-base/shared';
 import type {
     ActionMeta,
     ActionSpec,
@@ -110,8 +111,11 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (c.to_value !== undefined && c.to_value !== null && c.to_value !== '') {
         out.to_value = c.to_value;
     }
-    // scheduled
+    // scheduled (v0.1.221: además hora, día, zona horaria y un cron avanzado)
     if (typeof c.frequency === 'string' && c.frequency !== '') out.frequency = c.frequency;
+    for (const k of ['hour', 'minute', 'weekday', 'day'] as const) if (typeof c[k] === 'number') out[k] = c[k];
+    if (typeof c.tz === 'string' && c.tz !== '') out.tz = c.tz;
+    if (typeof c.cron === 'string' && c.cron.trim() !== '') out.cron = c.cron.trim();
     // due_date_reached
     if (typeof c.due_field === 'string' && c.due_field !== '') out.due_field = c.due_field;
     if (typeof c.offset_minutes === 'number') out.offset_minutes = c.offset_minutes;
@@ -137,7 +141,7 @@ export function helpForTrigger(triggerType: string): string {
         case 'field_changed':
             return __('Se ejecuta cuando un campo específico cambia, opcionalmente con condiciones sobre el valor previo o nuevo. Ejemplo: "cuando status pasa de lead a won".');
         case 'scheduled':
-            return __('Se ejecuta de forma recurrente (cada hora, dos veces al día, diario o semanal). En cada tick recorre todos los registros activos de la lista — útil para reportes periódicos o limpieza programada.');
+            return __('Corre en el horario que elijas, sin un registro en particular: ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche), crear un registro de resumen o avisar por correo.');
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
         default:
@@ -496,24 +500,108 @@ function ScheduledConfig({
     config: TriggerConfig;
     onChange: (next: TriggerConfig) => void;
 }): JSX.Element {
-    const frequency = typeof config.frequency === 'string' ? config.frequency : 'daily';
+    // v0.1.221 — hora, día y zona horaria: antes sólo se elegía la
+    // frecuencia y el servidor nunca la registraba (leía un `cron` que nadie
+    // escribía). `scheduleParts` (shared) es la misma lectura que usa el motor.
+    const p = scheduleParts(config);
+    const set = (patch: Record<string, unknown>): void =>
+        onChange({ ...config, ...patch, tz: typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone() });
+    const time = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+    const hasCron = typeof config.cron === 'string' && config.cron.trim() !== '';
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
             <Label>{__('Frecuencia')}</Label>
-            <Select
-                value={frequency}
-                onChange={(e) => onChange({ ...config, frequency: e.target.value })}
-            >
-                <option value="hourly">{__('Cada hora')}</option>
-                <option value="twicedaily">{__('Dos veces al día')}</option>
-                <option value="daily">{__('Diariamente')}</option>
-                <option value="weekly">{__('Semanalmente')}</option>
-            </Select>
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                <Select
+                    className="imcrm-w-auto"
+                    value={p.frequency}
+                    onChange={(e) => set({ frequency: e.target.value })}
+                    disabled={hasCron}
+                    data-testid="imcrm-schedule-frequency"
+                >
+                    <option value="hourly">{__('Cada hora')}</option>
+                    <option value="twicedaily">{__('Dos veces al día')}</option>
+                    <option value="daily">{__('Todos los días')}</option>
+                    <option value="weekly">{__('Una vez por semana')}</option>
+                    <option value="monthly">{__('Una vez por mes')}</option>
+                </Select>
+                {p.frequency === 'weekly' && (
+                    <Select className="imcrm-w-auto" value={String(p.weekday)} onChange={(e) => set({ weekday: Number(e.target.value) })} disabled={hasCron} data-testid="imcrm-schedule-weekday">
+                        {WEEKDAYS.map((d, i) => (
+                            <option key={d} value={i}>
+                                {sprintf(__('los %s'), d)}
+                            </option>
+                        ))}
+                    </Select>
+                )}
+                {p.frequency === 'monthly' && (
+                    <Select className="imcrm-w-auto" value={String(p.day)} onChange={(e) => set({ day: Number(e.target.value) })} disabled={hasCron} data-testid="imcrm-schedule-day">
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>
+                                {sprintf(__('el día %d'), d)}
+                            </option>
+                        ))}
+                    </Select>
+                )}
+                {p.frequency === 'hourly' ? (
+                    <Select className="imcrm-w-auto" value={String(p.minute)} onChange={(e) => set({ minute: Number(e.target.value) })} disabled={hasCron}>
+                        {[0, 15, 30, 45].map((m) => (
+                            <option key={m} value={m}>
+                                {sprintf(__('al minuto %02d'), m)}
+                            </option>
+                        ))}
+                    </Select>
+                ) : (
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm">
+                        {__('a las')}
+                        <Input
+                            type="time"
+                            className="imcrm-w-28"
+                            value={time}
+                            disabled={hasCron}
+                            onChange={(e) => {
+                                const [h, m] = e.target.value.split(':').map(Number);
+                                if (Number.isInteger(h) && Number.isInteger(m)) set({ hour: h, minute: m });
+                            }}
+                            data-testid="imcrm-schedule-time"
+                        />
+                    </label>
+                )}
+            </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('La automatización se evalúa en cada tick contra todos los registros activos de la lista.')}
+                {sprintf(__('Hora de %s.'), typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone())}{' '}
+                {p.frequency === 'twicedaily' ? sprintf(__('Corre a las %1$s y 12 horas después.'), time) : ''}
             </p>
+            {hasCron && (
+                <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                    {__('Este horario usa una expresión cron (abajo). Borrala para elegir la frecuencia de la lista.')}
+                </p>
+            )}
+            <details className="imcrm-text-xs" open={hasCron || undefined}>
+                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Avanzado: expresión cron')}</summary>
+                <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Input
+                        value={typeof config.cron === 'string' ? config.cron : ''}
+                        placeholder="0 9 * * 1-5"
+                        onChange={(e) => onChange({ ...config, cron: e.target.value, tz: typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone() })}
+                        data-testid="imcrm-schedule-cron"
+                    />
+                    <span className="imcrm-text-muted-foreground">{__('Si la completás, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
+                </div>
+            </details>
         </div>
     );
+}
+
+const WEEKDAYS = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
+
+/** La zona horaria del navegador (la de quien configura el horario). */
+export function browserTimeZone(): string {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+        return 'UTC';
+    }
 }
 
 /**
@@ -798,6 +886,8 @@ export function ActionConfigEditor({
                 <UpdateFieldConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'create_record' ? (
                 <CreateRecordConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'bulk_edit' ? (
+                <BulkEditActionConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'call_webhook' ? (
                 <CallWebhookConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'connector_action' ? (

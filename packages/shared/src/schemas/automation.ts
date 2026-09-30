@@ -59,6 +59,7 @@ export const AUTOMATION_ACTIONS = [
     'call_webhook',
     'update_field',
     'create_record',
+    'bulk_edit',
     'if_else',
 ] as const;
 
@@ -237,3 +238,57 @@ export const webhookTestResultSchema = z.object({
     sample_record_id: z.number().nullable().default(null),
 });
 export type WebhookTestResult = z.infer<typeof webhookTestResultSchema>;
+
+// --- Trigger «En un horario» (v0.1.221) ---
+// La UI guarda una FRECUENCIA legible (la del plugin: cada hora, dos veces al
+// día, diario, semanal) más hora, día y zona horaria; el motor necesita un
+// cron. Esta función es la ÚNICA traducción entre las dos, así el editor y
+// el scheduler no pueden desalinearse. Un `cron` explícito siempre manda.
+export const SCHEDULE_FREQUENCIES = ['hourly', 'twicedaily', 'daily', 'weekly', 'monthly'] as const;
+export type ScheduleFrequency = (typeof SCHEDULE_FREQUENCIES)[number];
+
+function schedInt(v: unknown, min: number, max: number, fallback: number): number {
+    const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+}
+
+export interface ScheduleParts {
+    frequency: ScheduleFrequency;
+    hour: number;
+    minute: number;
+    /** 0 = domingo … 6 = sábado. */
+    weekday: number;
+    /** 1-28 (los meses cortos no tienen 29-31). */
+    day: number;
+}
+
+/** Lee la frecuencia del config con defaults: diario a las 9:00. */
+export function scheduleParts(cfg: Record<string, unknown>): ScheduleParts {
+    const f = cfg.frequency;
+    return {
+        frequency: (SCHEDULE_FREQUENCIES as readonly unknown[]).includes(f) ? (f as ScheduleFrequency) : 'daily',
+        hour: schedInt(cfg.hour, 0, 23, 9),
+        minute: schedInt(cfg.minute, 0, 59, 0),
+        weekday: schedInt(cfg.weekday, 0, 6, 1),
+        day: schedInt(cfg.day, 1, 28, 1),
+    };
+}
+
+/** El cron de una automatización programada (en su zona horaria `tz`). */
+export function scheduleCron(cfg: Record<string, unknown>): string {
+    const cron = typeof cfg.cron === 'string' ? cfg.cron.trim() : '';
+    if (cron !== '') return cron;
+    const p = scheduleParts(cfg);
+    switch (p.frequency) {
+        case 'hourly':
+            return `${p.minute} * * * *`;
+        case 'twicedaily':
+            return `${p.minute} ${Math.min(p.hour, (p.hour + 12) % 24)},${Math.max(p.hour, (p.hour + 12) % 24)} * * *`;
+        case 'weekly':
+            return `${p.minute} ${p.hour} * * ${p.weekday}`;
+        case 'monthly':
+            return `${p.minute} ${p.hour} ${p.day} * *`;
+        default:
+            return `${p.minute} ${p.hour} * * *`;
+    }
+}

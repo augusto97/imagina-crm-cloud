@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { automationRuns, automations, fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
-import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
+import { AutomationBulkRunner } from '../src/automations/automation-bulk-runner.service';
+import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
+import { BulkEditService } from '../src/records/bulk-edit.service';
+import { BulkHistoryService } from '../src/records/bulk-history.service';
 import { AutomationEngine } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
 import { AutomationsService } from '../src/automations/automations.service';
@@ -721,6 +724,134 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(diario.data).toHaveLength(1);
         const runs = await automationsService.runsById(tenantId, auto.id, {});
         expect(runs.data[0]).toMatchObject({ status: 'success', record_id: null });
+    });
+
+    it('v0.1.221 — bulk_edit: se encola, edita lo que coincide, queda en el historial y no re-dispara automatizaciones', async () => {
+        // Cola falsa: lo que el motor encola y lo que la edición despacharía.
+        const jobs: Array<{ name: string; data: unknown }> = [];
+        const queue = { add: (name: string, data: unknown) => (jobs.push({ name, data }), Promise.resolve()) };
+        const dispatcher = new AutomationDispatcher();
+        dispatcher.setQueue(queue as never);
+        const eng = new AutomationEngine(
+            tenantDb,
+            new AutomationsRepository(),
+            new FieldsRepository(),
+            new RecordsRepository(),
+            new RelationsRepository(),
+            new MailService(loadEnv(), new CapturingMailTransport()),
+            connectors,
+            undefined,
+            dispatcher,
+        );
+        // Las ediciones de la acción pasan por un RecordsService cuyo dispatcher
+        // también va a la cola falsa: así se ve si re-dispararía algo.
+        const recs = new RecordsService(
+            tenantDb,
+            new RecordsRepository(),
+            listsService,
+            fieldsService,
+            rt,
+            new ActivityService(tenantDb, new ActivityRepository(), listsService),
+            dispatcher,
+            new RelationsRepository(),
+        );
+        const history = new BulkHistoryService(tenantDb, listsService, recs, rt, new AuditService(tenantDb));
+        const bulk = new BulkEditService(recs, rt, history);
+        const runner = new AutomationBulkRunner({ get: () => bulk } as never, tenantDb, new AutomationsRepository());
+
+        const a = await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 1000, [key('estado')]: 'nueva' } });
+        const b = await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 2000, [key('estado')]: 'nueva' } });
+        const c = await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 3000, [key('estado')]: 'vip' } });
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Subir nuevas',
+            trigger_type: 'scheduled',
+            trigger_config: { cron: '0 9 * * 1' },
+            actions: [
+                {
+                    type: 'bulk_edit',
+                    config: {
+                        filter_tree: {
+                            type: 'group',
+                            logic: 'and',
+                            children: [{ type: 'condition', field_id: f.estado!.id, op: 'eq', value: 'nueva' }],
+                        },
+                        operations: [{ op: 'percent', field_id: f.monto!.id, percent: 10 }],
+                    },
+                },
+            ],
+        });
+
+        await eng.runScheduled(tenantId, auto.id);
+        const job = jobs.find((j) => j.name === 'bulk-edit');
+        expect(job).toBeTruthy();
+        const runs1 = await automationsService.runsById(tenantId, auto.id, {});
+        expect(runs1.data[0]!.actions_log[0]).toMatchObject({ action: 'bulk_edit', status: 'success' });
+        expect(runs1.data[0]!.actions_log[0]!.message).toMatch(/en curso/);
+
+        jobs.length = 0;
+        const entry = await runner.run(job!.data as BulkEditJob);
+        expect(entry).toMatchObject({ status: 'success' });
+        expect(entry.message).toMatch(/Cambió 2 de 2/);
+        expect((await recordsService.get(tenantId, admin, 'deals', a.id)).data[key('monto')]).toBe(1100);
+        expect((await recordsService.get(tenantId, admin, 'deals', b.id)).data[key('monto')]).toBe(2200);
+        expect((await recordsService.get(tenantId, admin, 'deals', c.id)).data[key('monto')]).toBe(3000);
+        // Los cambios de la acción no dispararon automatizaciones.
+        expect(jobs.filter((j) => j.name === 'event' && (j.data as TriggerEvent).trigger === 'record_updated')).toHaveLength(0);
+
+        // Corrida propia con el resultado, y la edición en el historial, sin autor y deshacible por un admin.
+        const runs2 = await automationsService.runsById(tenantId, auto.id, {});
+        expect(runs2.data).toHaveLength(2);
+        const log = await history.list(tenantId, admin, 'deals');
+        expect(log[0]).toMatchObject({ kind: 'records', user_id: null, item_count: 2, can_revert: true });
+        expect(log[0]!.summary).toMatch(/^Automatización «Subir nuevas»: /);
+        const agentView = await history.list(tenantId, { userId: admin.userId, role: 'agent' }, 'deals');
+        expect(agentView[0]!.can_revert).toBe(false);
+        const rev = await history.revertPreview(tenantId, admin, 'deals', log[0]!.id);
+        await history.revertApply(tenantId, admin, 'deals', log[0]!.id, rev.item_ids, false);
+        expect((await recordsService.get(tenantId, admin, 'deals', a.id)).data[key('monto')]).toBe(1000);
+
+        // Una configuración rota falla con motivo, sin encolar nada.
+        const broken = await automationsService.create(tenantId, 'deals', {
+            name: 'Rota',
+            trigger_type: 'scheduled',
+            trigger_config: { cron: '0 9 * * 1' },
+            actions: [{ type: 'bulk_edit', config: { operations: [{ op: 'percent', field_id: f.monto!.id }] } }],
+        });
+        await eng.runScheduled(tenantId, broken.id);
+        const runs3 = await automationsService.runsById(tenantId, broken.id, {});
+        expect(runs3.data[0]).toMatchObject({ status: 'failed' });
+        expect(jobs.filter((j) => j.name === 'bulk-edit')).toHaveLength(0);
+    });
+
+    it('v0.1.221 — scheduled: el horario que guarda el editor (frecuencia + hora + zona) se registra de verdad', async () => {
+        const upserts: Array<{ id: string; repeat: Record<string, unknown> }> = [];
+        const queue = {
+            upsertJobScheduler: (id: string, repeat: Record<string, unknown>) => (upserts.push({ id, repeat }), Promise.resolve()),
+            removeJobScheduler: () => Promise.resolve(true),
+            add: () => Promise.resolve(),
+        };
+        const scheduler = new AutomationScheduler();
+        scheduler.setQueue(queue as never);
+        const svc = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, scheduler, hookStore, connectors);
+        // Lo que guarda el editor: SIN cron (antes el scheduler sólo leía `cron` y no registraba nada).
+        const auto = await svc.create(tenantId, 'deals', {
+            name: 'Lunes',
+            trigger_type: 'scheduled',
+            trigger_config: { frequency: 'weekly', weekday: 1, hour: 7, minute: 30, tz: 'America/Bogota' },
+            actions: [{ type: 'update_field', config: { values: {} } }],
+        });
+        expect(upserts.at(-1)).toEqual({ id: `sched:${auto.id}`, repeat: { pattern: '30 7 * * 1', tz: 'America/Bogota' } });
+        // Una zona inválida no rompe: corre en UTC.
+        await svc.update(tenantId, 'deals', auto.id, { trigger_config: { frequency: 'daily', tz: 'Marte/Olimpo' } });
+        expect(upserts.at(-1)!.repeat).toEqual({ pattern: '0 9 * * *' });
+        // El resync de arranque re-registra las activas de todas las empresas.
+        upserts.length = 0;
+        expect(await svc.resyncSchedules()).toBeGreaterThanOrEqual(1);
+        expect(upserts.some((u) => u.id === `sched:${auto.id}`)).toBe(true);
+        // «Ejecutar ahora»: sólo para programadas.
+        expect(await svc.runNow(tenantId, 'deals', auto.id)).toEqual({ queued: true });
+        const other = await svc.create(tenantId, 'deals', { name: 'Alta', trigger_type: 'record_created', actions: [{ type: 'update_field', config: { values: {} } }] });
+        await expect(svc.runNow(tenantId, 'deals', other.id)).rejects.toThrow(/horario/);
     });
 
     it('due_date_reached: dispara para records vencidos y no re-dispara (dedup por runs)', async () => {
