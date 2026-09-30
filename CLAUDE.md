@@ -5581,7 +5581,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de B, cuenta desactivada) + verificación en vivo del ataque completo:
         el enlace para el superadmin rebota 403, la sesión robada ANTES del fix
         recibe `reauth_required`, el login real entra, y una sesión de portal
-        contra la API de la app responde `portal_session_scope`.
+        contra la API de la app responde `portal_session_scope` — 788 API en
+        verde.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
