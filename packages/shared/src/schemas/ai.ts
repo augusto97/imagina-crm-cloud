@@ -164,6 +164,9 @@ export const AI_PROPOSAL_KINDS = [
     // una lista y su publicación al mundo.
     'set_list_permissions',
     'configure_public_sharing',
+    // v0.1.222 — edición masiva con OPERACIONES (sumar, %, redondear,
+    // calcular…), la misma de la interfaz: vista previa y deshacer.
+    'bulk_edit_records',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;
@@ -295,6 +298,8 @@ export const AI_TOOL_NAMES = [
     'propose_delete_list',
     'list_dashboards',
     'list_automation_runs',
+    // v0.1.222
+    'propose_bulk_edit',
 ] as const;
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
 

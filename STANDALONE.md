@@ -1592,6 +1592,21 @@ horario» («cada lunes, subir 5 % los precios de X»), sirve con cualquiera.
 - **Ejecutar ahora** (`POST /lists/:l/automations/:id/run`, sólo
   programadas): encola la misma corrida que el horario.
 
+**Edición masiva desde el asistente y el MCP (v0.1.222).** Herramienta
+`propose_bulk_edit` (capability `bulk_actions`) en el MISMO registro de
+herramientas (ADR-S21): operaciones por SLUG en el vocabulario del modelo
+(`translateBulkOps` las lleva a `BulkOperation`; opciones de select por value o
+etiqueta), destino por filtros / búsqueda / ids —o `all_records: true`, que
+tiene que pedirse explícitamente— y vista previa calculada con
+`BulkEditService.preview` (la misma de la interfaz): la tarjeta muestra el
+antes → después real de una muestra, cuántos ya estaban así y cuáles no se
+pueden. Aplicar corre por `BulkEditService.apply` en tandas → queda en el
+historial de la lista con **Deshacer**. Las automatizaciones que propone el
+asistente aceptan la acción `bulk_edit` con `filters`/`operations` por slug
+(`translateBulkEditActions`, también dentro de `if_else`); una
+automatización dentro de una lista NUEVA (pack de `create_list`) no puede
+llevarla porque sus campos todavía no tienen id.
+
 ---
 
-**Versión del documento:** 1.34.0 (edición en lote programada + horarios reales — nota de ADR-S25)
+**Versión del documento:** 1.35.0 (edición masiva desde el asistente y el MCP — nota de ADR-S25)

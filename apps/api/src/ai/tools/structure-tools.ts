@@ -76,6 +76,7 @@ import {
     type PortalBlockSpec,
     type PortalBuildContext,
 } from './list-config';
+import { translateBulkEditActions } from './bulk-ops';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
@@ -230,6 +231,7 @@ const automationSpec = z.object({
                 'update_field {values: {slug: valor}} | create_record {target_list: slug, values: {slug: valor}} | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
                 'connector_action {connection_id, action_key, values: {param: valor}} — usá las que lista `connectors` en get_list_schema | ' +
+                'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
         ),
@@ -290,7 +292,7 @@ type Payload =
     | { kind: 'configure_public_sharing'; listId: number; listSlug: string; input: UpdatePublicListInput };
 
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
-type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records'>;
+type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records'>;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     create_list: 'manage_lists',
@@ -798,6 +800,9 @@ export class StructureTools implements AiProposalApplier {
             const automations = (spec.automations ?? []).map((a) => {
                 const parsed = createAutomationSchema.safeParse({ ...a, is_active: a.is_active ?? true });
                 if (!parsed.success) throw new AiToolError(`Automatización «${a.name}»: ${zodIssues(parsed.error)}`);
+                if (JSON.stringify(parsed.data.actions).includes('"bulk_edit"')) {
+                    throw new AiToolError(`Automatización «${a.name}»: «Editar en lote» necesita los campos ya creados. Creá primero la lista y después proponé la automatización con propose_create_automation.`);
+                }
                 this.validateAutomationSlugs(parsed.data, new Set(fieldTypeBySlug.keys()), (target) => {
                     if (keys.has(target)) return { $list: target } as unknown as number;
                     const l = existingBySlug.get(target);
@@ -1168,6 +1173,8 @@ export class StructureTools implements AiProposalApplier {
             is_active: input.is_active ?? true,
         });
         if (!parsed.success) throw new AiToolError(zodIssues(parsed.error));
+        // v0.1.222 — «Editar en lote» llega por slug: se traduce a ids.
+        translateBulkEditActions(parsed.data.actions as unknown[], fields, list.name);
         const slugs = new Set(fields.map((f) => f.slug));
         this.validateAutomationSlugs(parsed.data, slugs, (target) => {
             const l = bySlug.get(target);
@@ -1411,6 +1418,7 @@ export class StructureTools implements AiProposalApplier {
                 is_active: patch.is_active ?? auto.is_active,
             });
             if (!merged.success) throw new AiToolError(zodIssues(merged.error));
+            translateBulkEditActions(merged.data.actions as unknown[], fields, list.name);
             this.validateAutomationSlugs(merged.data, new Set(fields.map((f) => f.slug)), (target) => {
                 const l = bySlug.get(target);
                 if (!l) throw new AiToolError(`La lista destino «${target}» no existe. Listas: ${lists.map((x) => x.slug).join(', ')}.`);
@@ -2274,6 +2282,9 @@ export class StructureTools implements AiProposalApplier {
                         for (const v of Object.values((cfg.values as Record<string, unknown>) ?? {})) checkTags(v);
                         break;
                     }
+                    case 'bulk_edit':
+                        // Ya traducida a ids por translateBulkEditActions.
+                        break;
                     case 'if_else':
                         checkCondition(cfg.condition);
                         walk((cfg.then_actions as unknown[]) ?? []);
