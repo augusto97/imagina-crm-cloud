@@ -12,13 +12,14 @@ import { RecordsRepository } from './records.repository';
 import { RelationsRepository } from './relations.repository';
 import { RecordsService } from './records.service';
 import { BulkEditService } from './bulk-edit.service';
+import { BulkStructureService } from './bulk-structure.service';
 import { BulkHistoryController } from './bulk-history.controller';
 import { BulkHistoryService } from './bulk-history.service';
 
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule, AggregateModule, RecurrencesModule],
     controllers: [RecordsController, RecordsGroupedController, BulkHistoryController],
-    providers: [RecordsService, BulkEditService, BulkHistoryService, RecordsRepository, RelationsRepository, RecordsGroupedService],
+    providers: [RecordsService, BulkEditService, BulkStructureService, BulkHistoryService, RecordsRepository, RelationsRepository, RecordsGroupedService],
     exports: [RecordsService, BulkHistoryService],
 })
 export class RecordsModule {}

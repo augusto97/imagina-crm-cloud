@@ -135,7 +135,7 @@ export function RelationPicker({
     );
 }
 
-function RelationSearch({
+export function RelationSearch({
     target,
     selected,
     onToggle,

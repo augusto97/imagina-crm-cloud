@@ -15,7 +15,12 @@ export const BULK_REVERT_CHUNK = 100;
 /** Cuántos días se conserva una edición en el historial. */
 export const BULK_HISTORY_DAYS = 30;
 
-export const BULK_EDIT_KINDS = ['records', 'store'] as const;
+/**
+ * - `records`: cambios de columnas de la app · `store`: cambios en WooCommerce
+ * - `move` / `delete` / `duplicate` (v0.1.220): mover de padre, borrar y
+ *   duplicar en lote — cada uno sabe deshacerse a su manera.
+ */
+export const BULK_EDIT_KINDS = ['records', 'store', 'move', 'delete', 'duplicate'] as const;
 export type BulkEditKind = (typeof BULK_EDIT_KINDS)[number];
 
 export interface BulkEditLog {

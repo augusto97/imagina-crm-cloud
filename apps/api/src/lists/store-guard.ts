@@ -14,7 +14,7 @@ import { lists } from '../db/schema';
  */
 export function assertNotStoreManaged(
     list: { settings: Record<string, unknown> },
-    action: 'create' | 'delete' | 'import',
+    action: 'create' | 'delete' | 'import' | 'move',
 ): StoreListMarker | null {
     const marker = readStoreListMarker(list.settings);
     if (!marker) return null;
@@ -23,6 +23,7 @@ export function assertNotStoreManaged(
         create: `Esta lista viene de ${where}: los registros nuevos se crean en WooCommerce y llegan solos.`,
         delete: `Esta lista viene de ${where}: los registros se borran en WooCommerce.`,
         import: `Esta lista viene de ${where}: no se le pueden importar filas (se crean en WooCommerce).`,
+        move: `Esta lista viene de ${where}: qué es variación de qué lo decide WooCommerce.`,
     }[action];
     throw new ForbiddenException({ code: 'store_managed', message: what, data: { status: 403 } });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { readStoreListMarker } from '@imagina-base/shared';
+import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     Download,
@@ -42,6 +42,8 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { BulkEditDialog } from './bulk/BulkEditDialog';
+import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
+import { BulkStructureDialog } from './bulk/BulkStructureDialog';
 import { BulkHistorySheet } from './bulk/BulkHistorySheet';
 import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
 import { StoreBulkDialog } from './bulk/StoreBulkDialog';
@@ -269,6 +271,10 @@ export function RecordsPage(): JSX.Element {
     const [bulkHistoryOpen, setBulkHistoryOpen] = useState(false);
     // v0.1.219 — actualizar registros existentes desde un archivo.
     const [csvUpdateOpen, setCsvUpdateOpen] = useState(false);
+    // v0.1.220 — mover como subtareas / duplicar / borrar en lote, y el
+    // atajo «Asignar» (la edición masiva ya apuntada al campo de persona).
+    const [structure, setStructure] = useState<{ action: BulkStructureAction; matching: boolean } | null>(null);
+    const [bulkEditPreset, setBulkEditPreset] = useState<{ title: string; drafts: BulkDraft[] } | null>(null);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
@@ -305,6 +311,22 @@ export function RecordsPage(): JSX.Element {
     const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!storeMarker || storeMarker.write_back === true);
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
+    const canDeleteAny = useCan(CAP.DELETE_RECORDS);
+    const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
+    // Reestructurar (mover/duplicar/borrar) no aplica a las listas de la tienda:
+    // eso se hace en WooCommerce.
+    const structureActions: Partial<Record<BulkStructureAction, () => void>> | undefined = storeMarker
+        ? undefined
+        : {
+              ...(canEditAny || canEditOwn ? { move: () => setStructure({ action: 'move', matching: false }) } : {}),
+              ...(canCreateRecords ? { duplicate: () => setStructure({ action: 'duplicate', matching: false }) } : {}),
+              ...(canDeleteAny || canDeleteOwn ? { delete: () => setStructure({ action: 'delete', matching: false }) } : {}),
+          };
+    // «Asignar»: el primer campo de persona que se pueda escribir.
+    const assignField =
+        canEditAny || canEditOwn
+            ? (fields.data ?? []).find((f) => f.type === 'user' && storeColumnKind(storeRules, f.id) !== 'store_locked') ?? null
+            : null;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [drawerRecordId, setDrawerRecordId] = useState<number | null>(null);
@@ -887,7 +909,13 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onImport={() => setImportOpen(true)}
                     onExport={() => setExportOpen(true)}
                     canBulkEdit={canBulkEdit}
-                    onBulkEdit={() => setBulkEditOpen(true)}
+                    onBulkEdit={() => {
+                        setBulkEditPreset(null);
+                        setBulkEditOpen(true);
+                    }}
+                    onDeleteMatching={
+                        canBulkEdit && structureActions?.delete ? () => setStructure({ action: 'delete', matching: true }) : undefined
+                    }
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                     onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
@@ -934,6 +962,23 @@ const applyView = (view: SavedViewEntity | null): void => {
                     matchingCount={records.data?.meta?.total ?? null}
                     canEditMatching={canBulkEdit}
                     isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
+                    initialDrafts={bulkEditPreset?.drafts}
+                    title={bulkEditPreset?.title}
+                    onDone={() => setSelectedIds([])}
+                />
+            )}
+
+            {list.data && (
+                <BulkStructureDialog
+                    action={structure?.action ?? null}
+                    preferMatching={structure?.matching}
+                    onClose={() => setStructure(null)}
+                    listId={list.data.id}
+                    selectedIds={selectedIds}
+                    filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    matchingCount={records.data?.meta?.total ?? null}
+                    canActMatching={canBulkEdit}
                     onDone={() => setSelectedIds([])}
                 />
             )}
@@ -1127,11 +1172,25 @@ const applyView = (view: SavedViewEntity | null): void => {
                     )}
 
                     <BulkActionsToolbar
-                        listId={list.data.id}
                         selectedIds={selectedIds}
                         onClear={() => setSelectedIds([])}
-                        onBulkEdit={() => setBulkEditOpen(true)}
+                        onBulkEdit={() => {
+                            setBulkEditPreset(null);
+                            setBulkEditOpen(true);
+                        }}
                         onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
+                        onStructure={structureActions}
+                        onAssign={
+                            assignField
+                                ? () => {
+                                      setBulkEditPreset({
+                                          title: sprintf(__('Asignar «%s»'), assignField.label),
+                                          drafts: [{ ...newDraft(), field_id: assignField.id, op: 'set' }],
+                                      });
+                                      setBulkEditOpen(true);
+                                  }
+                                : undefined
+                        }
                     />
 
                     <FieldCreateDialog

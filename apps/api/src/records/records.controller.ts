@@ -17,6 +17,12 @@ import {
     bulkEditApplySchema,
     bulkEditPreviewSchema,
     bulkRecordsSchema,
+    bulkStructureApplySchema,
+    bulkStructurePreviewSchema,
+    type BulkStructureApplyInput,
+    type BulkStructurePreview,
+    type BulkStructurePreviewInput,
+    type BulkStructureResult,
     type BulkEditApplyInput,
     type BulkEditPreview,
     type BulkEditPreviewInput,
@@ -41,6 +47,7 @@ import { BillingService } from '../billing/billing.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BulkEditService } from './bulk-edit.service';
+import { BulkStructureService } from './bulk-structure.service';
 import { RecordsService, type Actor, type RecordsPage } from './records.service';
 
 /**
@@ -55,6 +62,7 @@ export class RecordsController {
         private readonly records: RecordsService,
         private readonly billing: BillingService,
         private readonly bulkEdit: BulkEditService,
+        private readonly bulkStructure: BulkStructureService,
     ) {}
 
     @Get()
@@ -103,6 +111,43 @@ export class RecordsController {
         @Body(new ZodValidationPipe(bulkEditApplySchema)) input: BulkEditApplyInput,
     ): Promise<BulkEditResult> {
         return this.bulkEdit.apply(tenantId(req), actor(req), list, input.ids, input.operations, input.edit_id);
+    }
+
+    /**
+     * Acciones de estructura en lote (v0.1.220): mover como subtareas,
+     * duplicar y borrar. La capability fina (crear / editar / borrar, y
+     * `bulk_actions` para actuar por filtro) la resuelve el service según la
+     * acción pedida.
+     */
+    @Post('bulk-structure/preview')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records', 'create_records', 'delete_records', 'delete_own_records')
+    bulkStructurePreview(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(bulkStructurePreviewSchema)) input: BulkStructurePreviewInput,
+    ): Promise<BulkStructurePreview> {
+        return this.bulkStructure.preview(tenantId(req), actor(req), list, input.action, input.target, input.parent_id, input.include_subtasks);
+    }
+
+    @Post('bulk-structure')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records', 'create_records', 'delete_records', 'delete_own_records')
+    bulkStructureApply(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(bulkStructureApplySchema)) input: BulkStructureApplyInput,
+    ): Promise<BulkStructureResult> {
+        return this.bulkStructure.apply(
+            tenantId(req),
+            actor(req),
+            list,
+            input.action,
+            input.ids,
+            input.parent_id,
+            input.include_subtasks,
+            input.edit_id,
+        );
     }
 
     @Get(':id')

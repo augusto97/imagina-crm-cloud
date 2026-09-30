@@ -28,7 +28,7 @@ import {
     type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
 import { memberships, mentions, records } from '../db/schema';
@@ -419,11 +419,19 @@ export class RecordsService {
         listIdOrSlug: string,
         target: BulkEditTarget,
         cap: number,
+        /** v0.1.220 — con qué alcance del rol: editar (default) o borrar. */
+        scope: 'edit' | 'delete' = 'edit',
     ): Promise<{
         list: List;
         fields: Field[];
         total: number;
-        rows: Array<{ id: number; data: Record<string, unknown>; relations: Record<number, number[]> }>;
+        rows: Array<{
+            id: number;
+            data: Record<string, unknown>;
+            relations: Record<number, number[]>;
+            parentId: number | null;
+            updatedAt: string;
+        }>;
     }> {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
@@ -431,7 +439,7 @@ export class RecordsService {
             const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
             const perms = effectivePermissions(list.settings, actor.role, actor.userId);
             const assignmentId = resolvePermissions(list.settings).assignment_field_id;
-            const scopeW = scopeWhere(perms.edit, actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+            const scopeW = scopeWhere(perms[scope], actor.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
             let where: SQL | undefined;
             let parent: 'roots' | 'any';
             if ('ids' in target) {
@@ -469,7 +477,13 @@ export class RecordsService {
                 const byField = rels.get(r.id);
                 const relations: Record<number, number[]> = {};
                 for (const id of relFieldIds) relations[id] = byField?.get(id) ?? [];
-                return { id: r.id, data: withComputed(fields, r).data as Record<string, unknown>, relations };
+                return {
+                    id: r.id,
+                    data: withComputed(fields, r).data as Record<string, unknown>,
+                    relations,
+                    parentId: r.parentId ?? null,
+                    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
+                };
             });
             return { list, fields, total, rows };
         });
@@ -606,6 +620,84 @@ export class RecordsService {
                 snippet,
             })),
         );
+    }
+
+    /**
+     * v0.1.220 — Mover un registro bajo otro padre (o sacarlo al primer
+     * nivel con `null`). Mismas reglas que el alta de una subtarea: un solo
+     * nivel — el padre tiene que ser de primer nivel, y un registro que YA
+     * tiene subtareas no puede pasar a ser subtarea.
+     */
+    async setParent(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+        parentId: number | null,
+        opts: { silent?: boolean } = {},
+    ): Promise<void> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        assertNotStoreManaged(list, 'move');
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.repo.findById(tx, tenantId, list.id, id);
+            if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
+            if (parentId !== null) {
+                if (parentId === id) throw subtaskError('subtask_self', 'Un registro no puede ser subtarea de sí mismo.');
+                const parent = await this.repo.findById(tx, tenantId, list.id, parentId);
+                if (!parent) throw recordNotFound(parentId);
+                if (parent.parentId !== null) throw subtaskError('subtask_depth', 'Una subtarea no puede tener subtareas.');
+                const [kids] = await tx
+                    .select({ n: sql<number>`count(*)::int` })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), eq(records.parentId, id), isNull(records.deletedAt)));
+                if ((kids?.n ?? 0) > 0) {
+                    throw subtaskError('subtask_has_children', 'Tiene subtareas propias: una subtarea no puede tener subtareas.');
+                }
+            }
+            await tx
+                .update(records)
+                .set({ parentId, updatedAt: sql`now()` })
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, id)));
+        });
+        if (!opts.silent) this.realtime.records(tenantId, list.id);
+    }
+
+    /**
+     * v0.1.220 — Volver a la vida un registro borrado (deshacer un borrado
+     * masivo): el registro, las subtareas que se fueron con él y sus vínculos
+     * salientes (los que el borrado limpió), sólo hacia registros que sigan
+     * vivos.
+     */
+    async restoreDeleted(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        id: number,
+        snapshot: { children: number[]; relations: Record<string, number[]> },
+        opts: { silent?: boolean } = {},
+    ): Promise<void> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const rel = splitRelationValues(fields, snapshot.relations);
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), eq(records.id, id), isNotNull(records.deletedAt)))
+                .limit(1);
+            if (!row || !this.aclCanReach(list, actor, 'delete', row)) throw recordNotFound(id);
+            const ids = [id, ...snapshot.children];
+            await tx
+                .update(records)
+                .set({ deletedAt: null, updatedAt: sql`now()` })
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ids)));
+            for (const { field, targetListId, ids: targets } of rel.values) {
+                const alive = targets.length > 0 ? await this.relationsRepo.existingInList(tx, tenantId, targetListId, targets) : new Set<number>();
+                await this.relationsRepo.sync(tx, tenantId, field.id, id, targets.filter((t) => alive.has(t)));
+            }
+            await this.activity.logInTx(tx, { tenantId, listId: list.id, recordId: id, userId: actor.userId, action: 'record_created' });
+        });
+        if (!opts.silent) this.realtime.records(tenantId, list.id);
     }
 
     async remove(
@@ -1008,6 +1100,10 @@ function mergeData(
         else merged[key] = value;
     }
     return merged;
+}
+
+function subtaskError(code: string, message: string): BadRequestException {
+    return new BadRequestException({ code, message, data: { status: 400 } });
 }
 
 function recordNotFound(id: number): NotFoundException {

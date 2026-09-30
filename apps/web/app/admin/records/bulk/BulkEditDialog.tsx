@@ -56,6 +56,10 @@ interface BulkEditDialogProps {
     canEditMatching: boolean;
     /** Columnas que no se pueden escribir (p. ej. las de la tienda que no viajan). */
     isLocked?: (field: FieldEntity) => boolean;
+    /** v0.1.220 — cambios con los que arranca (p. ej. «Asignar»: el campo de persona ya elegido). */
+    initialDrafts?: BulkDraft[];
+    /** v0.1.220 — título del diálogo (default «Edición masiva»). */
+    title?: string;
     onDone?: () => void;
 }
 
@@ -80,6 +84,8 @@ export function BulkEditDialog({
     matchingCount,
     canEditMatching,
     isLocked,
+    initialDrafts,
+    title,
     onDone,
 }: BulkEditDialogProps): JSX.Element {
     const [drafts, setDrafts] = useState<BulkDraft[]>([newDraft()]);
@@ -97,7 +103,7 @@ export function BulkEditDialog({
     // Cada vez que se abre arranca limpio (y con la selección de ese momento).
     useEffect(() => {
         if (!open) return;
-        setDrafts([newDraft()]);
+        setDrafts(initialDrafts && initialDrafts.length > 0 ? initialDrafts : [newDraft()]);
         setScope(selectedIds.length > 0 ? 'selection' : 'matching');
         setPhase('edit');
         setFormError(null);
@@ -175,7 +181,7 @@ export function BulkEditDialog({
                         <div className="imcrm-min-w-0">
                             <Dialog.Title className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-base imcrm-font-semibold">
                                 <Wand2 className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" aria-hidden />
-                                {__('Edición masiva')}
+                                {title ?? __('Edición masiva')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
                                 {targetLabel}
