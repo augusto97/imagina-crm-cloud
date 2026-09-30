@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { BulkApplyProgress } from '@/hooks/useBulkEdit';
+import { useFields } from '@/hooks/useFields';
 import { useStoreAttributeTerms, useStoreBulkApply, useStoreBulkCatalog, useStoreBulkPreview } from '@/hooks/useStoreBulk';
 import { ApiError } from '@/lib/api';
 import { __, _n, sprintf } from '@/lib/i18n';
@@ -506,6 +507,8 @@ function StoreOpInputs({
                 </div>
             );
         }
+        case 'price_from_field':
+            return <PriceFromFieldInputs draft={draft} set={set} listId={listId} index={index} num={num} row={row} cur={cur} />;
         case 'sale_dates':
             return row(
                 <>
@@ -672,6 +675,93 @@ function StoreOpInputs({
     }
 }
 
+/** Tipos de columna de los que se puede sacar un precio (los mismos que acepta el backend). */
+const PRICE_SOURCE_TYPES = new Set(['number', 'currency', 'percent', 'computed', 'rollup', 'lookup']);
+
+/**
+ * v0.1.223 — «Precio = columna × margen + suma», con redondeo: el costo de
+ * cada producto (o de cada variación) sale de una columna de la lista.
+ */
+function PriceFromFieldInputs({
+    draft,
+    set,
+    listId,
+    index,
+    num,
+    row,
+    cur,
+}: {
+    draft: StoreDraft;
+    set: (patch: Partial<StoreDraft>) => void;
+    listId: number;
+    index: number;
+    num: (key: keyof StoreDraft, placeholder: string, suffix?: string, width?: string) => JSX.Element;
+    row: (children: ReactNode) => JSX.Element;
+    cur: string;
+}): JSX.Element {
+    const fields = useFields(listId);
+    const sources = (fields.data ?? []).filter((f) => PRICE_SOURCE_TYPES.has(f.type));
+    return (
+        <div className="imcrm-space-y-2">
+            {row(
+                <>
+                    <Select
+                        value={draft.price ?? 'regular'}
+                        onChange={(e) => set({ price: e.target.value as 'regular' | 'sale' })}
+                        className="imcrm-w-44"
+                        aria-label={__('Qué precio')}
+                    >
+                        <option value="regular">{__('Precio normal')}</option>
+                        <option value="sale">{__('Precio rebajado')}</option>
+                    </Select>
+                    <span className="imcrm-text-sm">=</span>
+                    <Select
+                        value={draft.sourceFieldId ? String(draft.sourceFieldId) : ''}
+                        onChange={(e) => set({ sourceFieldId: e.target.value === '' ? null : Number(e.target.value) })}
+                        className="imcrm-w-48"
+                        aria-label={__('Columna')}
+                        data-testid={`imcrm-store-bulk-source-${index}`}
+                    >
+                        <option value="">{__('— Columna —')}</option>
+                        {sources.map((f) => (
+                            <option key={f.id} value={f.id}>
+                                {f.label}
+                            </option>
+                        ))}
+                    </Select>
+                    <span className="imcrm-text-sm">×</span>
+                    {num('factor', '1,3', undefined, 'imcrm-w-24')}
+                    <span className="imcrm-text-sm">+</span>
+                    {num('amount', '0', cur, 'imcrm-w-32')}
+                </>,
+            )}
+            {sources.length === 0 && (
+                <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                    {__('La lista no tiene columnas numéricas. Agregá una columna propia (p. ej. «Costo», de moneda) y cargala en cada producto o variación.')}
+                </p>
+            )}
+            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
+                <input type="checkbox" checked={draft.round === true} onChange={(e) => set({ round: e.target.checked })} data-testid={`imcrm-store-bulk-round-${index}`} />
+                {__('Redondear el resultado')}
+            </label>
+            {draft.round &&
+                row(
+                    <>
+                        <Select value={draft.roundMode ?? 'up'} onChange={(e) => set({ roundMode: e.target.value })} className="imcrm-w-40" aria-label={__('Hacia dónde')}>
+                            <option value="up">{__('Hacia arriba')}</option>
+                            <option value="nearest">{__('Al más cercano')}</option>
+                            <option value="down">{__('Hacia abajo')}</option>
+                        </Select>
+                        <span className="imcrm-text-sm">{__('a múltiplos de')}</span>
+                        {num('roundMultiple', '1000', undefined, 'imcrm-w-28')}
+                        <span className="imcrm-text-sm">{__('más')}</span>
+                        {num('roundAdjust', '-100', undefined, 'imcrm-w-28')}
+                    </>,
+                )}
+        </div>
+    );
+}
+
 function AttributeInputs({
     draft,
     set,
@@ -752,7 +842,7 @@ function AttributeInputs({
 }
 
 /** Elegir de la tienda (con sus nombres) o escribir uno nuevo. */
-function TermPicker({
+export function TermPicker({
     options,
     values,
     onChange,

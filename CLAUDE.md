@@ -5455,6 +5455,33 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         automatización mensual propuesta y guardada con ids, «Ejecutar ahora»
         y la libreta bajó 5 %).
 
+  - [x] **Tienda: precio desde el costo y crear variaciones en lote (v0.1.223,
+        ADR-S24, última entrega del pedido "hacé todo")**: (a) operación nueva
+        en «Editar en la tienda»: **«Precio según una columna (costo ×
+        margen)»** — precio normal o rebajado = columna × factor + suma, con el
+        mismo redondeo a terminar en 900. La columna suele ser una propia
+        («Costo», sólo en Imagina) y se toma la de CADA variación, así cada
+        talla se calcula con su costo; lo que no tiene costo queda igual y se
+        dice. (b) **«Crear variaciones»** (barra de selección y Personalizar
+        vista en la lista de productos): se eligen atributos —globales de la
+        tienda o propios del producto— y sus valores (Color: Rojo, Azul ×
+        Talla: M, L, XL), precio, stock inicial y estado; cada producto
+        variable recibe SÓLO las combinaciones que le faltan (una variación
+        «cualquier talla» cuenta como existente), los valores nuevos se suman a
+        sus atributos sin quitar nada, se escribe por lote y las variaciones
+        llegan solas a la app como subtareas. Se **deshace** desde el resultado
+        o el historial: borra las creadas en WooCommerce salvo las que alguien
+        tocó después. 2 tests puros del planificador (costo × margen con
+        redondeo, sin costo, rebajado, variable/columna bloqueada;
+        combinaciones, existentes, «cualquiera», simple, tope) + 1 de
+        integración con la tienda simulada (costos por objeto, columna no
+        numérica, crear sólo lo que falta, repetir no duplica, deshacer) + 1
+        del front — 774 API, 180 front y 96 shared en verde — + E2E 16/16
+        contra un **WooCommerce 11.1.2 real** (taza 18.000 × 1,35 → 24.900,
+        variación con costo 27.900 y sin costo intacta; Color × Talla con XL
+        crea 3 de 6 con precio y stock, el producto gana la talla, llegan como
+        subtareas, y deshacer las borra de la tienda y de la app).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

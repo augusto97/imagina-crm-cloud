@@ -20,7 +20,7 @@ export const BULK_HISTORY_DAYS = 30;
  * - `move` / `delete` / `duplicate` (v0.1.220): mover de padre, borrar y
  *   duplicar en lote — cada uno sabe deshacerse a su manera.
  */
-export const BULK_EDIT_KINDS = ['records', 'store', 'move', 'delete', 'duplicate'] as const;
+export const BULK_EDIT_KINDS = ['records', 'store', 'move', 'delete', 'duplicate', 'store_create'] as const;
 export type BulkEditKind = (typeof BULK_EDIT_KINDS)[number];
 
 export interface BulkEditLog {
@@ -148,7 +148,7 @@ export function summarizeBulkOperations(ops: readonly SummaryOp[], labelOf: (fie
 type StoreSummaryOp = { op: string } & Record<string, unknown>;
 
 /** Lo mismo para la edición masiva de la tienda (v0.1.217). */
-export function summarizeStoreBulkOperations(ops: readonly StoreSummaryOp[]): string {
+export function summarizeStoreBulkOperations(ops: readonly StoreSummaryOp[], labelOf: (fieldId: number) => string = (id) => `#${id}`): string {
     const change = (c: unknown): string => {
         const ch = (c ?? {}) as { kind?: string; amount?: number };
         const a = num(ch.amount);
@@ -184,6 +184,7 @@ export function summarizeStoreBulkOperations(ops: readonly StoreSummaryOp[]): st
         tax_class: 'Clase de impuesto',
         name: 'Nombre',
         meta: 'Campo',
+        price_from_field: 'Precio',
     };
     const parts = ops.map((o) => {
         const label = LABEL[o.op] ?? o.op;
@@ -200,6 +201,12 @@ export function summarizeStoreBulkOperations(ops: readonly StoreSummaryOp[]): st
             case 'name': return `${label}: ${o.kind === 'prepend' ? 'anteponer' : o.kind === 'append' ? 'agregar al final' : 'reemplazar'} «${brief(o.text)}»`;
             case 'meta': return `${label} ${String(o.key)}: ${brief(o.value)}`;
             case 'sale_dates': return `${label}: ${brief(o.from)} → ${brief(o.to)}`;
+            case 'price_from_field': {
+                const factor = Number(o.factor ?? 1);
+                const add = Number(o.add ?? 0);
+                const r = o.round as { multiple?: number } | undefined;
+                return `${o.price === 'sale' ? 'Precio rebajado' : 'Precio normal'}: = «${labelOf(Number(o.field_id))}»${factor !== 1 ? ` × ${num(factor)}` : ''}${add !== 0 ? ` ${add > 0 ? '+' : '−'} ${num(Math.abs(add))}` : ''}${r?.multiple ? `, redondeado a ${num(r.multiple)}` : ''}`;
+            }
             case 'dimensions': return label;
             default: return `${label}: ${brief(o.value)}`;
         }

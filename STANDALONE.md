@@ -1607,6 +1607,28 @@ asistente aceptan la acción `bulk_edit` con `filters`/`operations` por slug
 automatización dentro de una lista NUEVA (pack de `create_list`) no puede
 llevarla porque sus campos todavía no tienen id.
 
+
+**Tienda: precio desde el costo y variaciones en lote (v0.1.223).** Dos
+operaciones de la edición masiva de la tienda (ADR-S24):
+
+- **`price_from_field`** — precio normal o rebajado = `columna de la app ×
+  factor + suma`, con el mismo redondeo a grilla. La columna es típicamente
+  una propia «sólo en Imagina» (el costo) y se lee POR OBJETO: la de cada
+  variación para las variaciones (cada talla puede costar distinto), vía
+  `sync_links` → registro, con el alcance de la persona. Sin valor → ese objeto
+  queda como está, con nota; una columna inexistente o no numérica es 400. El
+  planificador sigue siendo puro (`BulkPlanContext.source`).
+- **Crear variaciones** (`/store-bulk/variations/preview|apply`): atributos
+  (global por id o propio por nombre) × valores → combinaciones
+  (`variationCombos`, shared; tope 100 por producto). `planVariations` (puro)
+  saltea las que ya existen —una variación sin ese atributo («cualquier Talla»)
+  cubre todos sus valores— y suma los valores nuevos a los atributos del
+  producto SIN quitar nada. Sólo productos variables. Escribe con
+  `/variations/batch {create}` y el espejo se actualiza por `applyStoreObjects`.
+  **Deshacer** es un kind propio del historial (`store_create`): borra las
+  creadas (`{delete}`) salvo las que se modificaron después en la tienda
+  (`date_modified_gmt`), y la app las saca al releer el producto.
+
 ---
 
-**Versión del documento:** 1.35.0 (edición masiva desde el asistente y el MCP — nota de ADR-S25)
+**Versión del documento:** 1.36.0 (tienda: precio desde el costo y variaciones en lote — nota de ADR-S24)

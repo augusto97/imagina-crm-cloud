@@ -2,6 +2,12 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Req, UseGua
 import {
     storeBulkApplySchema,
     storeBulkPreviewSchema,
+    storeVariationsApplySchema,
+    storeVariationsPreviewSchema,
+    type StoreVariationsApplyInput,
+    type StoreVariationsPreview,
+    type StoreVariationsPreviewInput,
+    type StoreVariationsResult,
     type StoreBulkApplyInput,
     type StoreBulkCatalog,
     type StoreBulkPreview,
@@ -61,6 +67,29 @@ export class StoreBulkController {
         @Body(new ZodValidationPipe(storeBulkApplySchema)) input: StoreBulkApplyInput,
     ): Promise<StoreBulkResult> {
         return this.bulk.apply(req.tenant!.tenantId, actor(req), list, input.ids, input.operations, input.include_variations, input.edit_id);
+    }
+
+    /** v0.1.223 — Crear variaciones en lote a partir de combinaciones de atributos. */
+    @Post('variations/preview')
+    @HttpCode(200)
+    previewVariations(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(storeVariationsPreviewSchema)) input: StoreVariationsPreviewInput,
+    ): Promise<StoreVariationsPreview> {
+        const { target, ...spec } = input;
+        return this.bulk.previewVariations(req.tenant!.tenantId, actor(req), list, target, spec);
+    }
+
+    @Post('variations/apply')
+    @HttpCode(200)
+    applyVariations(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(storeVariationsApplySchema)) input: StoreVariationsApplyInput,
+    ): Promise<StoreVariationsResult> {
+        const { ids, edit_id, ...spec } = input;
+        return this.bulk.applyVariations(req.tenant!.tenantId, actor(req), list, ids, spec, edit_id);
     }
 }
 

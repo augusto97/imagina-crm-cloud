@@ -11,6 +11,7 @@ import {
     Grid3x3,
     Group,
     History,
+    Layers,
     Settings,
     Star,
     Store,
@@ -102,6 +103,8 @@ interface ViewSettingsSheetProps {
     onBulkEdit: () => void;
     /** v0.1.217 — lista de productos de una tienda: editar EN WooCommerce. */
     onStoreBulk?: () => void;
+    /** v0.1.223 — crear variaciones en lote en la tienda. */
+    onStoreVariations?: () => void;
     /** v0.1.218 — historial de ediciones masivas (con deshacer). */
     onBulkHistory?: () => void;
     /** v0.1.219 — actualizar registros existentes desde un archivo. */
@@ -157,6 +160,7 @@ export function ViewSettingsSheet({
     canBulkEdit,
     onBulkEdit,
     onStoreBulk,
+    onStoreVariations,
     onBulkHistory,
     onCsvUpdate,
     onDeleteMatching,
@@ -456,6 +460,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onStoreBulk();
+                                    }}
+                                />
+                            )}
+                            {onStoreVariations && (
+                                <RowButton
+                                    icon={Layers}
+                                    label={__('Crear variaciones')}
+                                    value={__('Combinaciones de atributos')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onStoreVariations();
                                     }}
                                 />
                             )}

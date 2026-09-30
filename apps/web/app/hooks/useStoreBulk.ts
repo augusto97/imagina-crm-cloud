@@ -6,6 +6,9 @@ import {
     type StoreBulkPreview,
     type StoreBulkResult,
     type StoreBulkTarget,
+    type StoreVariationAttribute,
+    type StoreVariationsPreview,
+    type StoreVariationsResult,
 } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
@@ -71,6 +74,54 @@ export function useStoreBulkApply(listId: number) {
                     out.skipped.push(...res.skipped);
                 } catch (err) {
                     // Una tanda caída no tira las demás: se informa y se sigue.
+                    out.failed.push({ title: `${chunk.length} registros`, message: err instanceof Error ? err.message : 'Error' });
+                }
+                onProgress?.({ done: Math.min(ids.length, i + chunk.length), total: ids.length });
+            }
+            return out;
+        },
+        onSettled: () => {
+            invalidateForList(qc, recordsKeys.all, listId);
+            void qc.invalidateQueries({ queryKey: bulkHistoryKeys.forList(listId) });
+        },
+    });
+}
+
+/** v0.1.223 — Crear variaciones en lote: lo que se manda además de los productos. */
+export interface VariationsSpecInput {
+    attributes: StoreVariationAttribute[];
+    regular_price: number | null;
+    stock: number | null;
+    status: 'publish' | 'private';
+}
+
+export function useStoreVariationsPreview(listId: number) {
+    return useMutation<StoreVariationsPreview, Error, { target: StoreBulkTarget } & VariationsSpecInput>({
+        mutationFn: async (body) => (await api.post<StoreVariationsPreview>(`/lists/${listId}/store-bulk/variations/preview`, body)).data,
+    });
+}
+
+export function useStoreVariationsApply(listId: number) {
+    const qc = useQueryClient();
+    return useMutation<StoreVariationsResult, Error, { ids: number[]; spec: VariationsSpecInput; onProgress?: (p: BulkApplyProgress) => void }>({
+        mutationFn: async ({ ids, spec, onProgress }) => {
+            const out: StoreVariationsResult = { created: 0, skipped: [], failed: [], edit_id: null };
+            onProgress?.({ done: 0, total: ids.length });
+            for (let i = 0; i < ids.length; i += STORE_BULK_APPLY_CHUNK) {
+                const chunk = ids.slice(i, i + STORE_BULK_APPLY_CHUNK);
+                try {
+                    const res = (
+                        await api.post<StoreVariationsResult>(`/lists/${listId}/store-bulk/variations/apply`, {
+                            ids: chunk,
+                            ...spec,
+                            ...(out.edit_id ? { edit_id: out.edit_id } : {}),
+                        })
+                    ).data;
+                    out.edit_id = res.edit_id ?? out.edit_id;
+                    out.created += res.created;
+                    out.failed.push(...res.failed);
+                    out.skipped.push(...res.skipped);
+                } catch (err) {
                     out.failed.push({ title: `${chunk.length} registros`, message: err instanceof Error ? err.message : 'Error' });
                 }
                 onProgress?.({ done: Math.min(ids.length, i + chunk.length), total: ids.length });

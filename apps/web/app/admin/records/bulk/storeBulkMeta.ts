@@ -28,6 +28,12 @@ export const STORE_OPS: StoreOpMeta[] = [
     { op: 'regular_price', label: 'Precio normal', group: 'Precios', column: 'precio_normal' },
     { op: 'sale_price', label: 'Precio rebajado', group: 'Precios', column: 'precio_rebajado' },
     { op: 'sale_dates', label: 'Programar la rebaja', group: 'Precios', hint: 'Desde y hasta cuándo vale el precio rebajado.' },
+    {
+        op: 'price_from_field',
+        label: 'Precio según una columna (costo × margen)',
+        group: 'Precios',
+        hint: 'Toma el valor de una columna de la lista —típicamente el costo, una columna propia— de cada producto o variación. Si no tiene valor, ese queda como está.',
+    },
     { op: 'stock', label: 'Stock (unidades)', group: 'Inventario', column: 'stock' },
     { op: 'manage_stock', label: 'Controlar stock', group: 'Inventario', column: 'controla_stock' },
     { op: 'stock_status', label: 'Estado del stock', group: 'Inventario', column: 'estado_stock', hint: 'Sólo en lo que NO controla stock (si lo controla, lo calcula WooCommerce).' },
@@ -80,6 +86,10 @@ export interface StoreDraft {
     text?: string;
     find?: string;
     metaKey?: string;
+    /** v0.1.223 — precio desde una columna de la app. */
+    sourceFieldId?: number | null;
+    price?: 'regular' | 'sale';
+    factor?: string;
 }
 
 let seq = 0;
@@ -94,6 +104,8 @@ export function storeDraftDefaults(op: StoreBulkOpKind): Partial<StoreDraft> {
             return { kind: 'percent', direction: 'up', amount: '', round: false, roundMultiple: '1000', roundMode: 'up', roundAdjust: '-100' };
         case 'sale_price':
             return { kind: 'percent_off', amount: '', round: false, roundMultiple: '1000', roundMode: 'up', roundAdjust: '-100' };
+        case 'price_from_field':
+            return { price: 'regular', sourceFieldId: null, factor: '', amount: '', round: false, roundMultiple: '1000', roundMode: 'up', roundAdjust: '-100' };
         case 'stock':
             return { kind: 'add', amount: '' };
         case 'manage_stock':
@@ -147,6 +159,15 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
             if (n === null) return { ok: false, error: __('Escribí el valor.') };
             const amount = kind === 'percent' ? (d.direction === 'down' ? -Math.abs(n) : Math.abs(n)) : n;
             raw = { op: d.op, change: { kind, amount, round: round() } };
+            break;
+        }
+        case 'price_from_field': {
+            if (!d.sourceFieldId) return { ok: false, error: __('Elegí la columna de la que sale el precio.') };
+            const factor = (d.factor ?? '').trim() === '' ? 1 : num(d.factor);
+            if (factor === null || factor <= 0) return { ok: false, error: __('El multiplicador tiene que ser un número mayor que cero.') };
+            const add = (d.amount ?? '').trim() === '' ? 0 : num(d.amount);
+            if (add === null) return { ok: false, error: __('Lo que se suma tiene que ser un número.') };
+            raw = { op: 'price_from_field', price: d.price ?? 'regular', field_id: d.sourceFieldId, factor, add, round: round() };
             break;
         }
         case 'sale_dates':
