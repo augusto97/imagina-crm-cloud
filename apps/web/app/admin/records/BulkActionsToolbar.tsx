@@ -1,4 +1,4 @@
-import { Copy, CornerDownRight, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, Layers, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ interface BulkActionsToolbarProps {
     onBulkEdit: () => void;
     /** v0.1.217 — en la lista de productos de una tienda: editar EN WooCommerce. */
     onStoreBulk?: () => void;
+    /** v0.1.223 — crear variaciones en lote (productos variables de la tienda). */
+    onStoreVariations?: () => void;
     /**
      * v0.1.220 — mover como subtareas, duplicar y borrar en lote (con vista
      * previa y deshacer). Cada acción sólo aparece si el rol puede hacerla y
@@ -42,6 +44,7 @@ export function BulkActionsToolbar({
     onClear,
     onBulkEdit,
     onStoreBulk,
+    onStoreVariations,
     onStructure,
     onAssign,
 }: BulkActionsToolbarProps): JSX.Element | null {
@@ -94,6 +97,21 @@ export function BulkActionsToolbar({
                 >
                     <Store className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('Editar en la tienda')}</span>
+                </Button>
+            )}
+
+            {onStoreVariations && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5 imcrm-text-[#7F54B3] hover:imcrm-text-[#7F54B3]"
+                    onClick={onStoreVariations}
+                    data-testid="imcrm-store-variations-open"
+                    aria-label={__('Crear variaciones')}
+                    title={__('Crear variaciones')}
+                >
+                    <Layers className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Crear variaciones')}</span>
                 </Button>
             )}
 

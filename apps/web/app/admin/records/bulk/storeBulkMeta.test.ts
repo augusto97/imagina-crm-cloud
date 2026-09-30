@@ -35,4 +35,20 @@ describe('storeDraftToOperation', () => {
         expect(storeDraftToOperation({ key: 'a', op: 'attribute', mode: 'add', attributeName: '', values: [] })).toMatchObject({ ok: false });
         expect(storeDraftToOperation({ key: 'a', op: 'meta', metaKey: '' })).toMatchObject({ ok: false });
     });
+
+    it('v0.1.223 — precio desde una columna: costo × 1,35 con punto de miles y redondeo', () => {
+        const r = storeDraftToOperation(
+            { key: 'a', op: 'price_from_field', ...storeDraftDefaults('price_from_field'), sourceFieldId: 7, factor: '1,35', amount: '1.000', round: true },
+            'dot_comma',
+        );
+        expect(r.ok && r.operation).toEqual({
+            op: 'price_from_field',
+            price: 'regular',
+            field_id: 7,
+            factor: 1.35,
+            add: 1000,
+            round: { multiple: 1000, mode: 'up', adjust: -100 },
+        });
+        expect(storeDraftToOperation({ key: 'a', op: 'price_from_field', ...storeDraftDefaults('price_from_field') }, 'comma_dot').ok).toBe(false);
+    });
 });

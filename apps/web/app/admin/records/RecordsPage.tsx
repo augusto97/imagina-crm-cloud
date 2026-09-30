@@ -47,6 +47,7 @@ import { BulkStructureDialog } from './bulk/BulkStructureDialog';
 import { BulkHistorySheet } from './bulk/BulkHistorySheet';
 import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
 import { StoreBulkDialog } from './bulk/StoreBulkDialog';
+import { StoreVariationsDialog } from './bulk/StoreVariationsDialog';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
@@ -267,6 +268,8 @@ export function RecordsPage(): JSX.Element {
     const [bulkEditOpen, setBulkEditOpen] = useState(false);
     // v0.1.217 — edición masiva EN la tienda (lista de productos de WooCommerce).
     const [storeBulkOpen, setStoreBulkOpen] = useState(false);
+    // v0.1.223 — crear variaciones en lote en la tienda.
+    const [variationsOpen, setVariationsOpen] = useState(false);
     // v0.1.218 — historial de ediciones masivas (con deshacer).
     const [bulkHistoryOpen, setBulkHistoryOpen] = useState(false);
     // v0.1.219 — actualizar registros existentes desde un archivo.
@@ -917,6 +920,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         canBulkEdit && structureActions?.delete ? () => setStructure({ action: 'delete', matching: true }) : undefined
                     }
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
+                    onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                     onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
                 />
@@ -942,6 +946,19 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onOpenChange={setStoreBulkOpen}
                     listId={list.data.id}
                     marker={storeMarker}
+                    selectedIds={selectedIds}
+                    filterTree={state.filterTree}
+                    search={debouncedSearch}
+                    matchingCount={records.data?.meta?.total ?? null}
+                    onDone={() => setSelectedIds([])}
+                />
+            )}
+
+            {storeMarker && canStoreBulk && (
+                <StoreVariationsDialog
+                    open={variationsOpen}
+                    onOpenChange={setVariationsOpen}
+                    listId={list.data.id}
                     selectedIds={selectedIds}
                     filterTree={state.filterTree}
                     search={debouncedSearch}
@@ -1179,6 +1196,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                             setBulkEditOpen(true);
                         }}
                         onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
+                        onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                         onStructure={structureActions}
                         onAssign={
                             assignField

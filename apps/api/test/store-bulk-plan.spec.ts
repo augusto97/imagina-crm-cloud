@@ -1,6 +1,6 @@
 import { storeBulkOperationSchema, type StoreBulkOperationInput } from '@imagina-base/shared';
 import { describe, expect, it } from 'vitest';
-import { planBulkUpdate, wooMoney, type BulkPlanContext } from '../src/sync/woocommerce/woo-bulk';
+import { planBulkUpdate, planVariations, wooMoney, type BulkPlanContext } from '../src/sync/woocommerce/woo-bulk';
 
 const ctx = (over: Partial<BulkPlanContext> = {}): BulkPlanContext => ({
     kind: 'product',
@@ -160,5 +160,64 @@ describe('planBulkUpdate (edición masiva de la tienda)', () => {
         expect(wooMoney(12.5, 2)).toBe('12.5');
         expect(wooMoney(12.499, 2)).toBe('12.5');
         expect(wooMoney(25900, 0)).toBe('25900');
+    });
+
+    it('v0.1.223 — precio desde una columna de la app (costo × factor, redondeado)', () => {
+        const op = ops([{ op: 'price_from_field', field_id: 7, factor: 1.35, round: { multiple: 1000, mode: 'up', adjust: -100 } }]);
+        // 18.000 × 1,35 = 24.300 → el próximo terminado en 900: 24.900.
+        const plan = planBulkUpdate(op, simple, ctx({ source: 18_000, sourceLabel: 'Costo' }));
+        expect(plan.body).toEqual({ regular_price: '24900' });
+        // Sin costo cargado: no se inventa un precio.
+        const none = planBulkUpdate(op, simple, ctx({ source: null, sourceLabel: 'Costo' }));
+        expect(none.body).toEqual({});
+        expect(none.notes[0]).toMatch(/Sin «Costo»/);
+        // Al rebajado, y respetando que quede por debajo del normal.
+        const sale = planBulkUpdate(ops([{ op: 'price_from_field', price: 'sale', field_id: 7, factor: 1.1 }]), simple, ctx({ source: 20_000 }));
+        expect(sale.body).toEqual({ sale_price: '22000' });
+        // Un producto variable no tiene precio propio; la columna bloqueada tampoco se toca.
+        expect(planBulkUpdate(op, { ...simple, type: 'variable' }, ctx({ source: 1 })).body).toEqual({});
+        expect(planBulkUpdate(op, simple, ctx({ source: 1, editable: new Set(['stock']) })).body).toEqual({});
+    });
+
+    it('v0.1.223 — variaciones: combinaciones nuevas, las existentes (y las «cualquiera») se saltean', () => {
+        const product = {
+            id: 30,
+            type: 'variable',
+            name: 'Camiseta',
+            attributes: [{ id: 1, name: 'Color', position: 0, visible: true, variation: true, options: ['Rojo'] }],
+        };
+        const existing = [{ id: 31, attributes: [{ id: 1, name: 'Color', option: 'Rojo' }, { id: 2, name: 'Talla', option: 'S' }] }];
+        const spec = {
+            attributes: [
+                { id: 1, name: 'Color', options: ['Rojo', 'Azul'] },
+                { id: 2, name: 'Talla', options: ['S', 'M'] },
+            ],
+            regular_price: 39_900,
+            stock: 5,
+            status: 'publish' as const,
+        };
+        const plan = planVariations(product, existing, spec, 0);
+        expect(plan.existing).toBe(1);
+        expect(plan.create.map((c) => c.title)).toEqual(['Camiseta — Rojo / M', 'Camiseta — Azul / S', 'Camiseta — Azul / M']);
+        expect(plan.create[0]!.body).toEqual({
+            attributes: [{ id: 1, option: 'Rojo' }, { id: 2, option: 'M' }],
+            status: 'publish',
+            regular_price: '39900',
+            manage_stock: true,
+            stock_quantity: 5,
+        });
+        // El producto recibe «Azul» y el atributo Talla, sin perder lo que tenía.
+        expect(plan.productAttributes).toEqual([
+            { id: 1, position: 0, visible: true, variation: true, options: ['Rojo', 'Azul'] },
+            { id: 2, position: 1, visible: true, variation: true, options: ['S', 'M'] },
+        ]);
+        // Una variación «cualquier Talla» cubre todas las tallas de ese color.
+        const any = planVariations(product, [{ id: 40, attributes: [{ id: 1, name: 'Color', option: 'Rojo' }] }], spec, 0);
+        expect(any.create.map((c) => c.title)).toEqual(['Camiseta — Azul / S', 'Camiseta — Azul / M']);
+        // Un producto simple no recibe variaciones; demasiadas combinaciones, tampoco.
+        expect(planVariations({ ...product, type: 'simple' }, [], spec, 0).notes[0]).toMatch(/no es un producto variable/i);
+        const many = planVariations(product, [], { ...spec, attributes: [{ id: 1, name: 'Color', options: Array.from({ length: 11 }, (_, i) => `C${i}`) }, { id: 2, name: 'Talla', options: Array.from({ length: 10 }, (_, i) => `T${i}`) }] }, 0);
+        expect(many.create).toEqual([]);
+        expect(many.notes[0]).toMatch(/110 combinaciones/);
     });
 });

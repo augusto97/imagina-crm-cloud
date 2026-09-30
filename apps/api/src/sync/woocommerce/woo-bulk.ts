@@ -1,4 +1,4 @@
-import { roundTo, type StoreBulkChange, type StoreBulkOperation } from '@imagina-base/shared';
+import { STORE_VARIATIONS_MAX_PER_PRODUCT, roundTo, variationCombos, type StoreBulkChange, type StoreBulkOperation, type StoreVariationAttribute } from '@imagina-base/shared';
 import { wooNumber, type WooJson } from './woo-map';
 
 /**
@@ -36,6 +36,12 @@ export interface BulkPlanContext {
      * habilitada; `null` = sin restricción.
      */
     editable: Set<string> | null;
+    /**
+     * v0.1.223 — El valor de la columna de la app de ESTE producto/variación
+     * (para `price_from_field`) y su nombre, para los avisos.
+     */
+    source?: number | null;
+    sourceLabel?: string;
 }
 
 export interface BulkPlan {
@@ -225,6 +231,36 @@ export function planBulkUpdate(ops: readonly StoreBulkOperation[], obj: WooJson,
                     }
                     sale = next;
                 }
+                priceTouched = true;
+                break;
+            }
+            case 'price_from_field': {
+                const col = op.price === 'sale' ? 'precio_rebajado' : 'precio_normal';
+                if (ctx.editable !== null && !ctx.editable.has(col)) {
+                    note(`«${col}» no está habilitada para editarse desde la app.`);
+                    continue;
+                }
+                if (isVariable) {
+                    note('El precio de un producto con variaciones está en cada variación.');
+                    continue;
+                }
+                if (isGrouped) {
+                    note('Un producto agrupado no tiene precio propio.');
+                    continue;
+                }
+                if (ctx.source === null || ctx.source === undefined) {
+                    note(`Sin «${ctx.sourceLabel ?? 'la columna'}» cargado: no hay de dónde calcular el precio.`);
+                    continue;
+                }
+                let v = Number((ctx.source * op.factor + op.add).toFixed(dec));
+                if (op.round) v = roundTo(v - op.round.adjust, op.round.multiple, op.round.mode) + op.round.adjust;
+                v = Number(v.toFixed(dec));
+                if (v < 0) {
+                    note('El precio quedaría negativo.');
+                    continue;
+                }
+                if (op.price === 'sale') sale = v;
+                else regular = v;
                 priceTouched = true;
                 break;
             }
@@ -621,3 +657,104 @@ export const STORE_FIELD_LABEL: Record<string, string> = {
     name: 'Nombre',
     meta_data: 'Campos de plugins',
 };
+
+// ── Crear variaciones en lote (v0.1.223) ─────────────────────────────────
+
+export interface VariationsSpec {
+    attributes: StoreVariationAttribute[];
+    regular_price: number | null;
+    stock: number | null;
+    status: 'publish' | 'private';
+}
+
+export interface VariationsPlan {
+    /** La lista COMPLETA de atributos del producto, si hay que agregar valores o marcarlos para variaciones. */
+    productAttributes: Array<Record<string, unknown>> | null;
+    create: Array<{ title: string; body: Record<string, unknown> }>;
+    existing: number;
+    notes: string[];
+}
+
+const attrMatch = (a: { id: number; name: string }, b: { id?: unknown; name?: unknown }): boolean =>
+    a.id > 0 ? Number(b.id) === a.id : Number(b.id || 0) === 0 && str(b.name).trim().toLowerCase() === a.name.trim().toLowerCase();
+
+/**
+ * Qué variaciones crear en UN producto variable (PURO): todas las
+ * combinaciones de los valores elegidos, menos las que ya existen. Una
+ * variación existente que no fija un atributo («cualquier Talla») cubre todos
+ * sus valores: no se duplica. Los valores nuevos se agregan a los atributos
+ * del producto (sin quitar nada) y se marcan «para variaciones».
+ */
+export function planVariations(product: WooJson, existing: readonly WooJson[], spec: VariationsSpec, priceDecimals: number): VariationsPlan {
+    const notes: string[] = [];
+    const out: VariationsPlan = { productAttributes: null, create: [], existing: 0, notes };
+    if (product.type !== 'variable') {
+        notes.push('No es un producto variable: cambiá su tipo a «Producto variable» en WooCommerce para darle variaciones.');
+        return out;
+    }
+    const combos = variationCombos(spec.attributes);
+    if (combos.length > STORE_VARIATIONS_MAX_PER_PRODUCT) {
+        notes.push(`Son ${combos.length} combinaciones y el tope es ${STORE_VARIATIONS_MAX_PER_PRODUCT} por producto: elegí menos valores.`);
+        return out;
+    }
+    // Atributos del producto: se suman los valores que falten, sin tocar el resto.
+    const current = attributesOf(product);
+    let changed = false;
+    const next = current.map((a) => ({ ...a, options: [...a.options] }));
+    for (const want of spec.attributes) {
+        const found = next.find((a) => attrMatch(want, a));
+        if (!found) {
+            next.push({ id: want.id, name: want.name, position: next.length, visible: true, variation: true, options: [...new Set(want.options)] });
+            changed = true;
+            continue;
+        }
+        for (const o of want.options) {
+            if (!found.options.some((x) => x.toLowerCase() === o.toLowerCase())) {
+                found.options.push(o);
+                changed = true;
+            }
+        }
+        if (!found.variation) {
+            found.variation = true;
+            changed = true;
+        }
+    }
+    if (changed) {
+        out.productAttributes = next.map((a) => ({
+            ...(a.id > 0 ? { id: a.id } : { name: a.name }),
+            position: a.position,
+            visible: a.visible,
+            variation: a.variation,
+            options: a.options,
+        }));
+    }
+    // ¿Ya existe? Por cada atributo elegido, la variación fija ese valor o vale para cualquiera.
+    const existingAttrs = existing.map((v) => (Array.isArray(v.attributes) ? (v.attributes as Array<Record<string, unknown>>) : []));
+    const covered = (combo: Array<{ id: number; name: string; option: string }>): boolean =>
+        existingAttrs.some((attrs) =>
+            combo.every((c) => {
+                const own = attrs.find((x) => attrMatch(c, x));
+                return !own || str(own.option) === '' || str(own.option).toLowerCase() === c.option.toLowerCase();
+            }),
+        );
+    for (const combo of combos) {
+        if (covered(combo)) {
+            out.existing++;
+            continue;
+        }
+        const body: Record<string, unknown> = {
+            attributes: combo.map((c) => (c.id > 0 ? { id: c.id, option: c.option } : { name: c.name, option: c.option })),
+            status: spec.status,
+        };
+        if (spec.regular_price !== null) body.regular_price = wooMoney(spec.regular_price, priceDecimals);
+        if (spec.stock !== null) {
+            body.manage_stock = true;
+            body.stock_quantity = spec.stock;
+        }
+        out.create.push({ title: `${str(product.name)} — ${combo.map((c) => c.option).join(' / ')}`, body });
+    }
+    if (out.create.length > 0 && spec.regular_price === null) {
+        notes.push('Sin precio, las variaciones nuevas no se pueden comprar hasta que les pongas uno.');
+    }
+    return out;
+}

@@ -70,6 +70,7 @@ export type AuditAction =
     | 'store_sync.delete'
     | 'store_sync.map_meta'
     | 'store_sync.bulk_edit'
+    | 'store_sync.create_variations'
     | 'bulk_edit.revert';
 
 export interface AuditEntryDto {

@@ -120,7 +120,23 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
                 };
                 if (p === '/products/batch' && method === 'POST') return batchOf((id) => store.products.find((x) => x.id === id));
                 if ((m = /^\/products\/(\d+)\/variations\/batch$/.exec(p)) && method === 'POST') {
-                    const list = store.variations[Number(m[1])] ?? [];
+                    const pid = Number(m[1]);
+                    const list = store.variations[pid] ?? (store.variations[pid] = []);
+                    // v0.1.223 — el lote también crea y borra variaciones.
+                    if (Array.isArray(input.create) || Array.isArray(input.delete)) {
+                        const created = ((input.create as Row[] | undefined) ?? []).map((item) => {
+                            const v: Row = { id: store.nextId++, parent_id: pid, sku: '', price: String(item.regular_price ?? ''), stock_status: 'instock', manage_stock: 'parent', meta_data: [], ...item };
+                            touchRow(v);
+                            list.push(v);
+                            return v;
+                        });
+                        const deleted = ((input.delete as number[] | undefined) ?? []).map((id) => {
+                            const i = list.findIndex((v) => v.id === id);
+                            if (i < 0) return { id, error: { code: 'not_found', message: 'ID no válido' } };
+                            return list.splice(i, 1)[0]!;
+                        });
+                        return ok({ create: created, delete: deleted });
+                    }
                     return batchOf((id) => list.find((v) => v.id === id));
                 }
                 if ((m = /^\/products\/(\d+)\/variations\/(\d+)$/.exec(p))) {
@@ -1219,6 +1235,68 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         // Y el espejo de la app acompaña.
         const t1 = await tree(tenantId, st.lists.products!.id);
         expect(t1.roots.find((x) => x.id === taza.id)![k('products', 'precio_normal')]).toBe(Number(before.taza));
+    });
+
+    it('precio desde el costo y crear variaciones en lote, con deshacer (v0.1.223)', async () => {
+        const products = st.lists.products!.slug;
+        const ops = (list: StoreBulkOperationInput[]) => list.map((o) => storeBulkOperationSchema.parse(o));
+        const costo = await fieldsService.create(tenantId, products, { label: 'Costo', type: 'currency', config: { precision: 0 } } as never);
+        const t0 = await tree(tenantId, st.lists.products!.id);
+        const taza = t0.roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const camiseta = t0.roots.find((x) => x[k('products', 'woo_id')] === '20')!;
+        const v21rec = t0.children.find((x) => x[k('products', 'woo_id')] === '21')!;
+        await recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [`f${costo.id}`]: 18_000 } });
+        await recordsService.update(tenantId, admin(), products, Number(v21rec.id), { data: { [`f${costo.id}`]: 20_000 } });
+
+        // ── Precio = costo × 1,35, terminado en 900 (cada variación con SU costo).
+        const priceOps = ops([{ op: 'price_from_field', field_id: costo.id, factor: 1.35, round: { multiple: 1000, mode: 'up', adjust: -100 } }]);
+        const pv = await bulk.preview(tenantId, admin(), products, { ids: [Number(taza.id), Number(camiseta.id)] }, priceOps, true);
+        expect(pv.sample.find((x) => x.title.startsWith('Taza'))!.changes).toContainEqual(expect.objectContaining({ label: 'Precio normal', after: '24900' }));
+        expect(pv.sample.some((x) => x.notes.some((n) => /Sin «Costo»/.test(n)))).toBe(true);
+        const res = await bulk.apply(tenantId, admin(), products, [Number(taza.id), Number(camiseta.id)], priceOps, true);
+        expect(res.failed).toEqual([]);
+        expect(store.products.find((p) => p.id === 10)!.regular_price).toBe('24900');
+        expect(store.variations[20]!.find((v) => v.id === 21)!.regular_price).toBe('27900');
+        expect(res.skipped.some((x) => /Sin «Costo»/.test(x.reason))).toBe(true);
+        const log0 = await bulkHistory.list(tenantId, admin(), products);
+        expect(log0[0]!.summary).toContain('= «Costo» × 1.35');
+        // Una columna que no es numérica, rechazada.
+        const nombreId = F.products!.nombre!;
+        await expect(bulk.preview(tenantId, admin(), products, { ids: [Number(taza.id)] }, ops([{ op: 'price_from_field', field_id: nombreId }]), true)).rejects.toThrow(/numérica/);
+
+        // ── Crear variaciones: Talla S/M/L → sólo falta L.
+        const spec = { attributes: [{ id: 0, name: 'Talla', options: ['S', 'M', 'L'] }], regular_price: 45_000, stock: 3, status: 'publish' as const };
+        const vp = await bulk.previewVariations(tenantId, admin(), products, { ids: [Number(taza.id), Number(camiseta.id)] }, spec);
+        expect(vp).toMatchObject({ products: 1, to_create: 1, existing: 2 });
+        expect(vp.sample[0]!.create).toEqual([`${String(store.products.find((p) => p.id === 20)!.name)} — L`]);
+        expect(vp.warnings.join(' ')).toMatch(/no es variable/);
+        const before = store.variations[20]!.length;
+        const vr = await bulk.applyVariations(tenantId, admin(), products, [Number(taza.id), Number(camiseta.id)], spec);
+        expect(vr.failed).toEqual([]);
+        expect(vr.created).toBe(1);
+        expect(vr.skipped.some((x) => x.title.startsWith('Taza'))).toBe(true);
+        const L = store.variations[20]!.find((v) => (v.attributes as Row[]).some((a) => a.option === 'L'))!;
+        expect(store.variations[20]!.length).toBe(before + 1);
+        expect(L).toMatchObject({ regular_price: '45000', manage_stock: true, stock_quantity: 3, status: 'publish' });
+        // El producto recibió la Talla como atributo para variaciones.
+        expect(store.products.find((p) => p.id === 20)!.attributes).toContainEqual(expect.objectContaining({ name: 'Talla', variation: true, options: ['S', 'M', 'L'] }));
+        // Y la variación nueva ya es una subtarea en la app.
+        const t1 = await tree(tenantId, st.lists.products!.id);
+        expect(t1.children.some((x) => x[k('products', 'woo_id')] === String(L.id))).toBe(true);
+        // Repetir no duplica.
+        const again = await bulk.previewVariations(tenantId, admin(), products, { ids: [Number(camiseta.id)] }, spec);
+        expect(again).toMatchObject({ to_create: 0, existing: 3 });
+
+        // ── Deshacer: borra la variación creada (de la tienda y de la app).
+        const log = await bulkHistory.list(tenantId, admin(), products);
+        expect(log[0]).toMatchObject({ id: vr.edit_id, kind: 'store_create', item_count: 1, can_revert: true });
+        const rp = await bulkHistory.revertPreview(tenantId, admin(), products, vr.edit_id!);
+        expect(rp.item_ids).toHaveLength(1);
+        const undo = await bulkHistory.revertApply(tenantId, admin(), products, vr.edit_id!, rp.item_ids, false);
+        expect(undo).toMatchObject({ reverted: 1, conflicts: 0, failed: [] });
+        expect(store.variations[20]!.some((v) => v.id === L.id)).toBe(false);
+        const t2 = await tree(tenantId, st.lists.products!.id);
+        expect(t2.children.some((x) => x[k('products', 'woo_id')] === String(L.id))).toBe(false);
     });
 
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {

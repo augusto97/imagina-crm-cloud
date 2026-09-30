@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, CornerDownRight, History, Loader2, Store, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Copy, CornerDownRight, History, Layers, Loader2, Store, Trash2, Undo2, Wand2 } from 'lucide-react';
 import type { BulkEditLog } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -63,7 +63,9 @@ export function BulkHistorySheet({ open, onOpenChange, listId }: BulkHistoryShee
                                                 {[
                                                     e.user_name ?? (e.user_id === null && e.summary.startsWith('Automatización «') ? __('Automatización') : __('Alguien')),
                                                     formatDateTimeStr(e.created_at),
-                                                    e.kind === 'store'
+                                                    e.kind === 'store_create'
+                                                        ? sprintf(_n('%s variación creada', '%s variaciones creadas', e.item_count), formatNumber(e.item_count))
+                                                        : e.kind === 'store'
                                                         ? sprintf(
                                                               _n('%s producto o variación en la tienda', '%s productos y variaciones en la tienda', e.item_count),
                                                               formatNumber(e.item_count),
@@ -117,6 +119,6 @@ export function BulkHistorySheet({ open, onOpenChange, listId }: BulkHistoryShee
 
 /** Icono por tipo de edición (v0.1.220 suma mover, duplicar y borrar). */
 function KindIcon({ kind }: { kind: BulkEditLog['kind'] }): JSX.Element {
-    const Icon = kind === 'store' ? Store : kind === 'move' ? CornerDownRight : kind === 'duplicate' ? Copy : kind === 'delete' ? Trash2 : Wand2;
+    const Icon = kind === 'store' ? Store : kind === 'store_create' ? Layers : kind === 'move' ? CornerDownRight : kind === 'duplicate' ? Copy : kind === 'delete' ? Trash2 : Wand2;
     return <Icon className="imcrm-h-3.5 imcrm-w-3.5" />;
 }

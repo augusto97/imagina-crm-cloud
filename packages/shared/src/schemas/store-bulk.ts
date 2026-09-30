@@ -59,6 +59,20 @@ export const storeBulkOperationSchema = z.discriminatedUnion('op', [
     z.object({ op: z.literal('regular_price'), change: numChangeSchema }),
     z.object({ op: z.literal('sale_price'), change: salePriceChangeSchema }),
     z.object({ op: z.literal('sale_dates'), from: isoDateSchema.nullable(), to: isoDateSchema.nullable() }),
+    /**
+     * v0.1.223 — Precio A PARTIR DE UNA COLUMNA de la app (típicamente el
+     * costo, una columna propia «sólo en Imagina»): `valor × factor + suma`,
+     * con redondeo opcional. En un producto con variaciones se usa la columna
+     * de CADA variación (cada talla puede costar distinto).
+     */
+    z.object({
+        op: z.literal('price_from_field'),
+        price: z.enum(['regular', 'sale']).default('regular'),
+        field_id: idSchema,
+        factor: z.number().positive().finite().default(1),
+        add: z.number().finite().default(0),
+        round: roundSchema.optional(),
+    }),
     // Inventario
     z.object({ op: z.literal('stock'), kind: z.enum(['set', 'add', 'subtract']), amount: z.number().int().min(-1_000_000).max(1_000_000) }),
     z.object({ op: z.literal('manage_stock'), value: z.boolean() }),
@@ -165,4 +179,69 @@ export interface StoreBulkCatalog {
     /** Decimales de la moneda de la tienda (para redondear precios). */
     price_decimals: number;
     currency: string;
+}
+
+// ── Crear variaciones en lote (v0.1.223) ───────────────────────────────────
+
+/** Tope de variaciones nuevas por producto (combinaciones de atributos). */
+export const STORE_VARIATIONS_MAX_PER_PRODUCT = 100;
+
+export const storeVariationAttributeSchema = z.object({
+    /** Atributo global de la tienda (Color, Talla…); `0` = propio del producto (por nombre). */
+    id: z.number().int().nonnegative().default(0),
+    name: z.string().trim().min(1).max(190),
+    /** Los valores (nombres de los términos) que se combinan. */
+    options: z.array(z.string().trim().min(1).max(190)).min(1).max(50),
+});
+export type StoreVariationAttribute = z.infer<typeof storeVariationAttributeSchema>;
+
+const variationsSpec = {
+    attributes: z.array(storeVariationAttributeSchema).min(1).max(3),
+    /** Precio normal de las variaciones nuevas (null = sin precio: quedan sin publicar en la tienda). */
+    regular_price: z.number().nonnegative().finite().nullable().default(null),
+    /** Stock inicial (activa «controlar stock» en la variación); null = no se controla. */
+    stock: z.number().int().min(0).max(1_000_000).nullable().default(null),
+    status: z.enum(['publish', 'private']).default('publish'),
+};
+
+export const storeVariationsPreviewSchema = z.object({ target: storeBulkTargetSchema, ...variationsSpec });
+export type StoreVariationsPreviewInput = z.infer<typeof storeVariationsPreviewSchema>;
+
+export const storeVariationsApplySchema = z.object({
+    ids: z.array(idSchema).min(1).max(STORE_BULK_APPLY_CHUNK),
+    ...variationsSpec,
+    edit_id: idSchema.optional(),
+});
+export type StoreVariationsApplyInput = z.infer<typeof storeVariationsApplySchema>;
+
+export interface StoreVariationsPreview {
+    record_ids: number[];
+    /** Productos variables abarcados (los únicos que reciben variaciones). */
+    products: number;
+    /** Variaciones que se van a crear en total. */
+    to_create: number;
+    /** Combinaciones que ya existían (se saltean). */
+    existing: number;
+    sample: Array<{ title: string; create: string[]; existing: number; notes: string[] }>;
+    warnings: string[];
+}
+
+export interface StoreVariationsResult {
+    created: number;
+    skipped: Array<{ title: string; reason: string }>;
+    failed: Array<{ title: string; message: string }>;
+    edit_id: number | null;
+}
+
+/**
+ * Todas las combinaciones de los valores de los atributos, en orden
+ * (Rojo/S, Rojo/M, Azul/S…). PURO: lo usan la vista previa y la creación.
+ */
+export function variationCombos(attrs: readonly StoreVariationAttribute[]): Array<Array<{ id: number; name: string; option: string }>> {
+    let out: Array<Array<{ id: number; name: string; option: string }>> = [[]];
+    for (const a of attrs) {
+        const opts = [...new Set(a.options)];
+        out = out.flatMap((combo) => opts.map((option) => [...combo, { id: a.id, name: a.name, option }]));
+    }
+    return out.filter((c) => c.length > 0);
 }

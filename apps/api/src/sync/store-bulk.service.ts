@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException, type OnModuleInit }
 import {
     STORE_BULK_APPLY_CHUNK,
     STORE_BULK_MAX_TARGET,
+    type StoreVariationsPreview,
+    type StoreVariationsResult,
     readStoreListMarker,
     defaultStoreEditable,
     summarizeStoreBulkOperations,
@@ -29,7 +31,9 @@ import {
     BULK_OP_COLUMN,
     STORE_FIELD_LABEL,
     planBulkUpdate,
+    planVariations,
     revertBody,
+    type VariationsSpec,
     snapshotBody,
     storeDrift,
     type BulkItemKind,
@@ -53,7 +57,13 @@ interface StoreCtx {
     priceDecimals: number;
     currency: string;
     editable: Set<string> | null;
+    /** v0.1.223 — etiqueta y tipo de cada campo de la lista (para `price_from_field`). */
+    fieldLabels: Map<number, string>;
+    fieldTypes: Map<number, string>;
 }
+
+/** Columnas de las que se puede calcular un precio. */
+const NUMERIC_SOURCE_TYPES = new Set(['number', 'currency', 'percent', 'computed', 'rollup', 'lookup']);
 
 interface Target {
     /** Registros de la app abarcados. */
@@ -89,6 +99,11 @@ export class StoreBulkService implements OnModuleInit {
         this.history.registerReverter('store', {
             preview: (t, a, e, i) => this.revertPreview(t, a, e, i),
             apply: (t, a, e, i, f) => this.revertApply(t, a, e, i, f),
+        });
+        // v0.1.223 — Deshacer variaciones creadas en lote = borrarlas (si nadie las tocó).
+        this.history.registerReverter('store_create', {
+            preview: (t, a, e, i) => this.revertCreatePreview(t, a, e, i),
+            apply: (t, a, e, i, f) => this.revertCreateApply(t, a, e, i, f),
         });
     }
 
@@ -175,30 +190,32 @@ export class StoreBulkService implements OnModuleInit {
         const planCtx = await this.termsContext(ctx, operations, false);
         const sampleProducts = t.products.slice(0, SAMPLE_PRODUCTS);
         const productObjs = await this.fetchProducts(ctx.creds, sampleProducts.map((p) => p.id));
-        const push = (title: string, kind: BulkItemKind, obj: WooJson) => {
-            if (out.sample.length >= SAMPLE_ROWS) return;
-            const plan = planBulkUpdate(operations, obj, { ...planCtx, kind });
-            if (plan.changes.length === 0 && plan.notes.length === 0) {
-                out.sample_unchanged++;
-                return;
-            }
-            out.sample.push({ title, kind, changes: plan.changes, notes: plan.notes });
-        };
+        const collected: Array<{ title: string; kind: BulkItemKind; obj: WooJson }> = [];
         for (const p of productObjs) {
-            push(String(p.name ?? `#${p.id}`), 'product', p);
-            if (includeVariations && p.type === 'variable' && out.sample.length < SAMPLE_ROWS) {
+            collected.push({ title: String(p.name ?? `#${p.id}`), kind: 'product', obj: p });
+            if (includeVariations && p.type === 'variable' && collected.length < SAMPLE_ROWS) {
                 const vars = await wooGetPage(ctx.creds, `/products/${Number(p.id)}/variations`, [['per_page', '5']]).catch(() => null);
-                for (const v of vars?.rows ?? []) push(variationTitle(p, v), 'variation', v);
+                for (const v of vars?.rows ?? []) collected.push({ title: variationTitle(p, v), kind: 'variation', obj: v });
             }
         }
-        if (out.sample.length < SAMPLE_ROWS && t.variations.length > 0) {
+        if (collected.length < SAMPLE_ROWS && t.variations.length > 0) {
             for (const [parentId, ids] of groupBy(t.variations.slice(0, 20), (v) => v.parentId)) {
                 const res = await wooGetPage(ctx.creds, `/products/${Number(parentId)}/variations`, [
                     ['include', ids.map((v) => v.id).join(',')],
                     ['per_page', String(WOO_PAGE_SIZE)],
                 ]).catch(() => null);
-                for (const v of res?.rows ?? []) push(variationTitle({ name: `#${parentId}` }, v), 'variation', v);
+                for (const v of res?.rows ?? []) collected.push({ title: variationTitle({ name: `#${parentId}` }, v), kind: 'variation', obj: v });
             }
+        }
+        const source = await this.sourceValues(tenantId, actor, ctx, operations, collected);
+        for (const c of collected) {
+            if (out.sample.length >= SAMPLE_ROWS) break;
+            const plan = planBulkUpdate(operations, c.obj, { ...planCtx, kind: c.kind, ...source.of(c.kind, c.obj) });
+            if (plan.changes.length === 0 && plan.notes.length === 0) {
+                out.sample_unchanged++;
+                continue;
+            }
+            out.sample.push({ title: c.title, kind: c.kind, changes: plan.changes, notes: plan.notes });
         }
         return out;
     }
@@ -225,7 +242,7 @@ export class StoreBulkService implements OnModuleInit {
             ctx.listId,
             'store',
             editId,
-            summarizeStoreBulkOperations(operations),
+            summarizeStoreBulkOperations(operations, (id) => ctx.fieldLabels.get(id) ?? `#${id}`),
             operations,
         );
         const sources = new Map<string, { obj: WooJson; body: Record<string, unknown>; title: string; parentId: string | null }>();
@@ -233,8 +250,14 @@ export class StoreBulkService implements OnModuleInit {
         const products = await this.fetchProducts(ctx.creds, t.products.map((p) => p.id));
         const productUpdates: Array<{ id: number; title: string; body: Record<string, unknown> }> = [];
         const variationUpdates = new Map<string, Array<{ id: number; title: string; body: Record<string, unknown> }>>();
+        // v0.1.223 — se juntan primero los objetos (para leer de una vez la
+        // columna de la app que usa `price_from_field`) y después se planifica.
+        const pending: Array<{ kind: BulkItemKind; obj: WooJson; title: string; parentId?: string }> = [];
         const addPlan = (kind: BulkItemKind, obj: WooJson, title: string, parentId?: string) => {
-            const plan = planBulkUpdate(operations, obj, { ...planCtx, kind });
+            pending.push({ kind, obj, title, ...(parentId ? { parentId } : {}) });
+        };
+        const planOne = (kind: BulkItemKind, obj: WooJson, title: string, parentId: string | undefined, src: Pick<BulkPlanContext, 'source' | 'sourceLabel'>) => {
+            const plan = planBulkUpdate(operations, obj, { ...planCtx, kind, ...src });
             if (Object.keys(plan.body).length === 0) {
                 if (plan.notes.length > 0) result.skipped.push({ title, reason: plan.notes.join(' ') });
                 else result.unchanged++;
@@ -262,6 +285,8 @@ export class StoreBulkService implements OnModuleInit {
             ]);
             for (const v of res.rows) addPlan('variation', v, variationTitle({ name: `#${parentId}` }, v), parentId);
         }
+        const source = await this.sourceValues(tenantId, actor, ctx, operations, pending);
+        for (const p of pending) planOne(p.kind, p.obj, p.title, p.parentId, source.of(p.kind, p.obj));
 
         // Escritura por lotes; lo que la tienda devuelve se aplica a la app.
         const writtenProducts: WooJson[] = [];
@@ -306,6 +331,171 @@ export class StoreBulkService implements OnModuleInit {
                 targetLabel: ctx.listName,
                 meta: { operations: operations.map((o) => o.op), updated: result.updated, failed: result.failed.length },
             });
+        }
+        return result;
+    }
+
+    // ── Crear variaciones en lote (v0.1.223) ──────────────────────────────
+
+    async previewVariations(tenantId: number, actor: Actor, listIdOrSlug: string, target: StoreBulkTarget, spec: VariationsSpec): Promise<StoreVariationsPreview> {
+        const ctx = await this.context(tenantId, listIdOrSlug);
+        const t = await this.resolveTarget(tenantId, actor, ctx, 'ids' in target ? { ids: target.ids } : { ...target, include_subtasks: false }, STORE_BULK_MAX_TARGET);
+        const variable = t.products.filter((p) => p.variable);
+        const out: StoreVariationsPreview = { record_ids: t.recordIds, products: variable.length, to_create: 0, existing: 0, sample: [], warnings: [] };
+        const simple = t.products.length - variable.length;
+        if (simple > 0) out.warnings.push(`${simple} ${simple === 1 ? 'producto no es variable' : 'productos no son variables'}: no reciben variaciones (cambiá su tipo en WooCommerce).`);
+        if (t.variations.length > 0) out.warnings.push('Las variaciones elegidas se ignoran: las variaciones nuevas se crean sobre sus PRODUCTOS.');
+        // La cuenta exacta necesita las variaciones de cada producto: se leen los primeros
+        // (los que entran en la muestra); el resto se estima con las combinaciones.
+        const objs = await this.fetchProducts(ctx.creds, variable.slice(0, SAMPLE_PRODUCTS).map((p) => p.id));
+        for (const p of objs) {
+            const existing = await this.allPages(ctx.creds, `/products/${Number(p.id)}/variations`, 10);
+            const plan = planVariations(p, existing, spec, ctx.priceDecimals);
+            out.to_create += plan.create.length;
+            out.existing += plan.existing;
+            out.sample.push({ title: String(p.name ?? `#${p.id}`), create: plan.create.slice(0, 10).map((c) => c.title), existing: plan.existing, notes: plan.notes });
+        }
+        const rest = variable.length - objs.length;
+        if (rest > 0) {
+            const per = variationCombosCount(spec);
+            out.to_create += rest * per;
+            out.warnings.push(`De los otros ${rest} productos se calcula al aplicar: hasta ${per} variaciones cada uno (las que ya existan se saltean).`);
+        }
+        return out;
+    }
+
+    async applyVariations(tenantId: number, actor: Actor, listIdOrSlug: string, ids: number[], spec: VariationsSpec, editId?: number): Promise<StoreVariationsResult> {
+        const ctx = await this.context(tenantId, listIdOrSlug);
+        const t = await this.resolveTarget(tenantId, actor, ctx, { ids }, STORE_BULK_APPLY_CHUNK);
+        const result: StoreVariationsResult = { created: 0, skipped: [], failed: [], edit_id: editId ?? null };
+        result.edit_id = await this.history.openEdit(tenantId, actor.userId, ctx.listId, 'store_create', editId, `Crear variaciones: ${spec.attributes.map((a) => `${a.name} (${a.options.join(', ')})`).join(' × ')}`, [spec]);
+        const items: BulkItemInput[] = [];
+        const touchedProducts: WooJson[] = [];
+        const created: Array<{ parentId: string; obj: WooJson }> = [];
+        const products = await this.fetchProducts(ctx.creds, t.products.map((p) => p.id));
+        for (const p of products) {
+            const title = String(p.name ?? `#${p.id}`);
+            const existing = p.type === 'variable' ? await this.allPages(ctx.creds, `/products/${Number(p.id)}/variations`, 50) : [];
+            const plan = planVariations(p, existing, spec, ctx.priceDecimals);
+            if (plan.create.length === 0) {
+                result.skipped.push({ title, reason: plan.notes[0] ?? `Ya tenía las ${plan.existing} combinaciones.` });
+                continue;
+            }
+            let product = p;
+            if (plan.productAttributes) {
+                try {
+                    product = (await wooSend(ctx.creds, 'PUT', `/products/${Number(p.id)}`, { attributes: plan.productAttributes })) as WooJson;
+                } catch (err) {
+                    result.failed.push({ title, message: `No se pudieron agregar los valores a los atributos: ${err instanceof Error ? err.message : String(err)}` });
+                    continue;
+                }
+            }
+            touchedProducts.push(product);
+            for (const chunk of chunks(plan.create, BATCH_SIZE)) {
+                let res: unknown;
+                try {
+                    res = await wooSend(ctx.creds, 'POST', `/products/${Number(p.id)}/variations/batch`, { create: chunk.map((c) => c.body) });
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    for (const c of chunk) result.failed.push({ title: c.title, message });
+                    continue;
+                }
+                const rows = Array.isArray((res as { create?: unknown } | null)?.create) ? ((res as { create: WooJson[] }).create) : [];
+                rows.forEach((row, i) => {
+                    const c = chunk[i];
+                    const err = row?.error as { message?: unknown } | undefined;
+                    if (err || !(Number(row?.id) > 0)) {
+                        result.failed.push({ title: c?.title ?? title, message: stripTags(String(err?.message ?? 'La tienda la rechazó.')) });
+                        return;
+                    }
+                    created.push({ parentId: String(Number(p.id)), obj: row });
+                    items.push({
+                        externalId: String(row.id),
+                        parentExternalId: String(Number(p.id)),
+                        title: c?.title ?? variationTitle(p, row),
+                        before: { __created: false },
+                        after: { __created: true, date_modified: modifiedAt(row) },
+                    });
+                });
+            }
+        }
+        result.created = created.length;
+        await this.history.addItems(tenantId, result.edit_id, items);
+        if (created.length > 0) {
+            await this.engine.applyStoreObjects(tenantId, ctx.syncId, ctx.creds, touchedProducts, created);
+            await this.audit.log({
+                tenantId,
+                userId: actor.userId,
+                action: 'store_sync.create_variations',
+                targetType: 'list',
+                targetId: ctx.listId,
+                targetLabel: ctx.listName,
+                meta: { created: created.length, products: touchedProducts.length, failed: result.failed.length },
+            });
+        }
+        return result;
+    }
+
+    private async revertCreatePreview(tenantId: number, _actor: Actor, edit: BulkEditHeader, items: BulkItemRow[]): Promise<BulkRevertPreview> {
+        const ctx = await this.context(tenantId, String(edit.listId));
+        const fresh = await this.freshObjects(ctx.creds, items);
+        const out: BulkRevertPreview = { edit_id: edit.id, total: items.length, item_ids: [], conflict_ids: [], conflicts: [], missing: 0, sample: [] };
+        for (const item of items) {
+            const obj = fresh.get(itemKey(item));
+            if (!obj) {
+                out.missing++;
+                continue;
+            }
+            if (modifiedAt(obj) !== String(item.after.date_modified ?? '')) {
+                out.conflict_ids.push(item.id);
+                if (out.conflicts.length < 50) out.conflicts.push({ item_id: item.id, title: item.title, message: 'Se modificó en la tienda después de crearla.' });
+                continue;
+            }
+            out.item_ids.push(item.id);
+            if (out.sample.length < 15) out.sample.push({ item_id: item.id, title: item.title, changes: [{ label: 'Variación', before: 'Creada', after: 'Se elimina de la tienda' }] });
+        }
+        return out;
+    }
+
+    private async revertCreateApply(tenantId: number, actor: Actor, edit: BulkEditHeader, items: BulkItemRow[], force: boolean): Promise<BulkRevertResult> {
+        const ctx = await this.context(tenantId, String(edit.listId));
+        const fresh = await this.freshObjects(ctx.creds, items);
+        const result: BulkRevertResult = { reverted: 0, conflicts: 0, failed: [] };
+        const byParent = new Map<string, BulkItemRow[]>();
+        for (const item of items) {
+            const obj = fresh.get(itemKey(item));
+            if (!obj) {
+                result.failed.push({ item_id: item.id, title: item.title, message: 'Ya no existe en la tienda.' });
+                continue;
+            }
+            if (!force && modifiedAt(obj) !== String(item.after.date_modified ?? '')) {
+                result.conflicts++;
+                continue;
+            }
+            byParent.set(item.parentExternalId!, [...(byParent.get(item.parentExternalId!) ?? []), item]);
+        }
+        const done: number[] = [];
+        for (const [parentId, list] of byParent) {
+            for (const chunk of chunks(list, BATCH_SIZE)) {
+                try {
+                    const res = await wooSend(ctx.creds, 'POST', `/products/${Number(parentId)}/variations/batch`, { delete: chunk.map((i) => Number(i.externalId)) });
+                    const rows = Array.isArray((res as { delete?: unknown } | null)?.delete) ? ((res as { delete: WooJson[] }).delete) : [];
+                    const ok = new Set(rows.filter((r) => !r?.error && Number(r?.id) > 0).map((r) => String(Number(r.id))));
+                    for (const i of chunk) {
+                        if (ok.has(String(Number(i.externalId)))) done.push(i.id);
+                        else result.failed.push({ item_id: i.id, title: i.title, message: 'La tienda no la borró.' });
+                    }
+                } catch (err) {
+                    for (const i of chunk) result.failed.push({ item_id: i.id, title: i.title, message: err instanceof Error ? err.message : String(err) });
+                }
+            }
+        }
+        result.reverted = done.length;
+        await this.history.markReverted(tenantId, actor, edit.id, done);
+        if (done.length > 0) {
+            // Releer los productos: sus variaciones borradas salen de la lista.
+            const parents = await this.fetchProducts(ctx.creds, [...byParent.keys()]);
+            await this.engine.applyStoreObjects(tenantId, ctx.syncId, ctx.creds, parents, []);
         }
         return result;
     }
@@ -445,6 +635,64 @@ export class StoreBulkService implements OnModuleInit {
             }
         }
         return ok;
+    }
+
+    /**
+     * v0.1.223 — El valor de la columna de la app que usa `price_from_field`
+     * para cada producto/variación (por su vínculo con el registro). Se lee con
+     * el alcance de la persona; una columna que no existe o no es numérica es
+     * un error, no un «sin valor» silencioso.
+     */
+    private async sourceValues(
+        tenantId: number,
+        actor: Actor,
+        ctx: StoreCtx,
+        operations: StoreBulkOperation[],
+        objs: Array<{ kind: BulkItemKind; obj: WooJson }>,
+    ): Promise<{ of: (kind: BulkItemKind, obj: WooJson) => Pick<BulkPlanContext, 'source' | 'sourceLabel'> }> {
+        const op = operations.find((o) => o.op === 'price_from_field');
+        if (!op || op.op !== 'price_from_field') return { of: () => ({}) };
+        const label = ctx.fieldLabels.get(op.field_id);
+        const type = ctx.fieldTypes.get(op.field_id);
+        if (!label || !type || !NUMERIC_SOURCE_TYPES.has(type)) {
+            throw new BadRequestException({
+                code: 'store_bulk_bad_source',
+                message: 'La columna de la que se calcula el precio no existe en la lista o no es numérica.',
+                data: { status: 400 },
+            });
+        }
+        const ids = (resource: 'products' | 'variations') => [...new Set(objs.filter((o) => (o.kind === 'product') === (resource === 'products')).map((o) => String(Number(o.obj.id))))];
+        const productIds = ids('products');
+        const variationIds = ids('variations');
+        const links = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ resource: syncLinks.resource, externalId: syncLinks.externalId, recordId: syncLinks.recordId })
+                .from(syncLinks)
+                .where(
+                    and(
+                        eq(syncLinks.syncId, ctx.syncId),
+                        inArray(syncLinks.resource, ['products', 'variations']),
+                        inArray(syncLinks.externalId, [...productIds, ...variationIds, '__none__']),
+                    ),
+                ),
+        );
+        const recordIds = [...new Set(links.map((l) => l.recordId))];
+        const values = new Map<number, number | null>();
+        if (recordIds.length > 0) {
+            const loaded = await this.records.bulkRows(tenantId, actor, String(ctx.listId), { ids: recordIds }, recordIds.length);
+            for (const r of loaded.rows) {
+                const v = r.data[`f${op.field_id}`];
+                const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+                values.set(r.id, Number.isFinite(n) ? n : null);
+            }
+        }
+        const byKey = new Map(links.map((l) => [`${l.resource}:${l.externalId}`, values.get(l.recordId) ?? null]));
+        return {
+            of: (kind, obj) => ({
+                source: byKey.get(`${kind === 'product' ? 'products' : 'variations'}:${String(Number(obj.id))}`) ?? null,
+                sourceLabel: label,
+            }),
+        };
     }
 
     private isBlocked(ctx: StoreCtx, op: StoreBulkOperation): boolean {
@@ -605,8 +853,20 @@ export class StoreBulkService implements OnModuleInit {
             priceDecimals: typeof cfg.precision === 'number' ? cfg.precision : 2,
             currency: typeof cfg.currency === 'string' ? cfg.currency : '',
             editable: new Set(editable),
+            fieldLabels: new Map(fields.map((f) => [f.id, f.label])),
+            fieldTypes: new Map(fields.map((f) => [f.id, f.type])),
         };
     }
+}
+
+/** Cuántas combinaciones da una especificación (para estimar sin leer la tienda). */
+function variationCombosCount(spec: VariationsSpec): number {
+    return spec.attributes.reduce((n, a) => n * new Set(a.options).size, 1);
+}
+
+/** Cuándo se modificó por última vez en la tienda (para detectar cambios posteriores). */
+function modifiedAt(obj: WooJson): string {
+    return String(obj.date_modified_gmt ?? obj.date_modified ?? '');
 }
 
 function itemKey(item: BulkItemRow): string {
