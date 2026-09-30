@@ -34,6 +34,18 @@ describe('TenantSmtpService (Postgres real)', () => {
         expect(await smtp.getForSend(tenantId)).toBeNull();
     });
 
+    // SEC-27 (v0.1.226) — el SMTP de una empresa no puede apuntar a la red
+    // interna del servidor: `127.0.0.1:25` relayaba por el MTA local.
+    it('rechaza un host que apunta a la red interna (loopback, privada, metadata)', async () => {
+        for (const host of ['127.0.0.1', 'localhost', '10.0.0.5', '169.254.169.254', '::1']) {
+            await expect(
+                smtp.update(tenantId, { host, port: 25, secure: false, user: 'u', pass: 'p', from: 'a@acme.com' }),
+                host,
+            ).rejects.toMatchObject({ response: { code: 'smtp_host_not_allowed' } });
+        }
+        expect((await smtp.get(tenantId)).configured).toBe(false);
+    });
+
     it('roundtrip: guarda, el GET no expone la contraseña y el envío la recupera', async () => {
         const pub = await smtp.update(tenantId, {
             host: 'smtp.acme.com',

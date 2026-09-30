@@ -6,6 +6,7 @@ import {
 } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
+import { resolvePublicHost } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
@@ -96,6 +97,17 @@ export class TenantSmtpService {
                 code: 'smtp_password_required',
                 message:
                     'No se puede leer la contraseña guardada (cambió la clave de cifrado del servidor). Escribila de nuevo para volver a habilitar el envío.',
+                data: { status: 400 },
+            });
+        }
+        // SEC-27 (v0.1.226): se valida al GUARDAR (el envío vuelve a validar y
+        // fija la IP): un host que apunta a la red interna se rechaza con el
+        // motivo, en vez de descubrirlo cuando falla el primer correo.
+        const target = await resolvePublicHost(input.host, { allowPrivate: this.env.SMTP_ALLOW_PRIVATE_HOSTS });
+        if (!target.ok && target.reason === 'blocked') {
+            throw new BadRequestException({
+                code: 'smtp_host_not_allowed',
+                message: `«${input.host}» apunta a una dirección interna. El SMTP de la empresa tiene que ser un servidor accesible desde internet (el de tu proveedor de correo).`,
                 data: { status: 400 },
             });
         }

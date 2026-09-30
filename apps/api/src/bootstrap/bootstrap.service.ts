@@ -71,7 +71,10 @@ export class BootstrapService {
                     slug: tenant.slug,
                     name: tenant.name,
                     plan: tenant.plan,
-                    settings: tenant.settings,
+                    // SEC-25 (v0.1.226): sólo lo que el front necesita. Antes
+                    // viajaban los settings CRUDOS a todo miembro — config del
+                    // SMTP de la empresa, clave de IA cifrada, conectores…
+                    settings: publicTenantSettings(tenant.settings),
                     role: ctx.role,
                 },
                 capabilities: capabilitiesMap(ctx.role),
@@ -114,4 +117,14 @@ export class BootstrapService {
             };
         });
     }
+}
+
+/** Lo de `tenants.settings` que puede ver cualquier miembro (marca y formato). */
+function publicTenantSettings(settings: unknown): Record<string, unknown> {
+    const src = (settings ?? {}) as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of ['branding', 'format'] as const) {
+        if (src[key] !== undefined) out[key] = src[key];
+    }
+    return out;
 }

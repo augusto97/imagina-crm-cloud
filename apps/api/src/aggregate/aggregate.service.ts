@@ -6,6 +6,7 @@ import {
     type Field,
     type FieldType,
     type FilterNode,
+    type Role,
     type TimeBucket,
     isThroughField,
     jsonbKeyForField,
@@ -13,6 +14,7 @@ import {
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
+import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
     compileFilterTree,
@@ -27,6 +29,17 @@ const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'pe
 const MINMAX_TYPES: readonly FieldType[] = [
     'number', 'currency', 'rating', 'percent', 'duration', 'date', 'datetime',
 ];
+
+/**
+ * Quién pide el agregado (SEC-25, v0.1.226). Con viewer se aplica el MISMO
+ * ACL por lista que el listado de registros: el scope de lectura del rol (sólo
+ * lo suyo / lo asignado / nada) y sus campos ocultos. Sin viewer (motores
+ * internos: automatizaciones, sincronización) no hay recorte.
+ */
+export interface AggregateViewer {
+    role: Role;
+    userId: number;
+}
 
 /**
  * Motor de agregaciones (CONTRACT.md §5): footer de tabla + widgets de
@@ -52,17 +65,18 @@ export class AggregateService {
          * grupo sumaba filas que no se ven. Los tableros cuentan TODO y filtran
          * por tipo cuando hace falta.
          */
-        opts: { rootsOnly?: boolean } = {},
+        opts: { rootsOnly?: boolean; viewer?: AggregateViewer } = {},
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const byId = new Map(fields.map((f) => [f.id, f]));
+        const acl = aclFor(list.settings, fields, opts.viewer);
+        const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
 
         const field = req.field_id !== undefined ? byId.get(req.field_id) : undefined;
         if (req.field_id !== undefined && !field) {
             throw badRequest('field_id no pertenece a la lista');
         }
-        const fieldsById = await this.filterableFields(tenantId, list.id, fields);
+        const fieldsById = acl.strip(await this.filterableFields(tenantId, list.id, fields));
         this.assertMetricCompat(req.metric, field, fieldsById);
 
         const filterWhere = compileFilterTree(fieldsById, req.filter_tree, new Date());
@@ -71,6 +85,7 @@ export class AggregateService {
             eq(records.listId, list.id),
             isNull(records.deletedAt),
             opts.rootsOnly ? isNull(records.parentId) : undefined,
+            acl.scope,
             filterWhere,
         );
 
@@ -144,7 +159,7 @@ export class AggregateService {
         tenantId: number,
         listIdOrSlug: string,
         req: AggregateRequest,
-        opts: { dateFieldId: number; periodDays: number },
+        opts: { dateFieldId: number; periodDays: number; viewer?: AggregateViewer },
     ): Promise<{
         value: number | string | null;
         previous: number | string | null;
@@ -153,7 +168,8 @@ export class AggregateService {
     }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const dateField = fields.find((f) => f.id === opts.dateFieldId);
+        const hidden = aclFor(list.settings, fields, opts.viewer).hidden;
+        const dateField = fields.find((f) => f.id === opts.dateFieldId && !hidden.has(f.id));
         if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime')) {
             throw badRequest('date_field_id debe ser un campo date/datetime de la lista');
         }
@@ -174,8 +190,8 @@ export class AggregateService {
         };
 
         const [cur, prev] = await Promise.all([
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }),
-            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }),
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(days - 1, 0) }, { viewer: opts.viewer }),
+            this.run(tenantId, listIdOrSlug, { ...req, group_by_field_id: undefined, filter_tree: windowTree(2 * days - 1, days) }, { viewer: opts.viewer }),
         ]);
 
         const value = cur.value ?? 0;
@@ -195,19 +211,26 @@ export class AggregateService {
     async footer(
         tenantId: number,
         listIdOrSlug: string,
-        opts: { fieldIds: number[]; filter_tree?: AggregateRequest['filter_tree']; group_by_field_id?: number },
+        opts: {
+            fieldIds: number[];
+            filter_tree?: AggregateRequest['filter_tree'];
+            group_by_field_id?: number;
+            viewer?: AggregateViewer;
+        },
     ): Promise<FooterAggregates> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const byId = new Map(fields.map((f) => [f.id, f]));
+        const acl = aclFor(list.settings, fields, opts.viewer);
+        const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
-        const fieldsById = await this.filterableFields(tenantId, list.id, fields);
+        const fieldsById = acl.strip(await this.filterableFields(tenantId, list.id, fields));
         const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, new Date());
         const baseWhere = and(
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
             isNull(records.deletedAt),
+            acl.scope,
             // v0.1.213 — el pie suma lo que la tabla MUESTRA: las filas de
             // primer nivel. Sumar también las subtareas contaba dos veces el
             // total de un pedido (el pedido + sus líneas).
@@ -432,4 +455,33 @@ function badRequest(message: string): BadRequestException {
         message,
         data: { status: 400 },
     });
+}
+
+/**
+ * SEC-25 (v0.1.226) — ACL por lista aplicado a un agregado. Antes el motor no
+ * miraba al que preguntaba: un agente con "sólo lo suyo" (o sin acceso a la
+ * lista) agrupaba por un campo oculto y los NOMBRES de los grupos eran los
+ * valores ocultos de todos los registros; una suma daba el total de toda la
+ * lista. Ahora:
+ *  - `scope`: la misma condición de lectura que el listado (`scopeWhere`);
+ *  - `hidden`: los campos ocultos para ese rol NO existen para el agregado —
+ *    ni como métrica, ni como agrupación, ni como filtro (un filtro sobre un
+ *    campo oculto sería un oráculo: "¿cuántos cobran más de X?").
+ */
+export function aclFor(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    viewer: AggregateViewer | undefined,
+): { scope: SQL | undefined; hidden: Set<number>; strip: <T>(m: Map<number, T>) => Map<number, T> } {
+    if (!viewer) return { scope: undefined, hidden: new Set(), strip: (m) => m };
+    const perms = effectivePermissions(settings, viewer.role, viewer.userId);
+    const assignmentId = resolvePermissions(settings).assignment_field_id;
+    const scope = scopeWhere(perms.view, viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+    const hiddenSlugs = new Set(perms.fields_hidden);
+    const hidden = new Set(fields.filter((f) => hiddenSlugs.has(f.slug)).map((f) => f.id));
+    return {
+        scope,
+        hidden,
+        strip: <T>(m: Map<number, T>) => new Map([...m].filter(([id]) => !hidden.has(id))),
+    };
 }

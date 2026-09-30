@@ -243,7 +243,7 @@ export class DataTools implements AiProposalApplier {
             ...(groupField ? { group_by_field_id: groupField.id } : {}),
             ...(groupField && (groupField.type === 'date' || groupField.type === 'datetime') ? { time_bucket: input.time_bucket ?? 'month' } : {}),
             ...(filterTree ? { filter_tree: filterTree } : {}),
-        });
+        }, { viewer: { role: ctx.role, userId: ctx.userId } });
         const labelOf = groupField ? optionLabeler(groupField) : (v: unknown): unknown => v;
         return {
             content: {

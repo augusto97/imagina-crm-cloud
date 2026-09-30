@@ -181,6 +181,20 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         expect(await tokens.resolve(tk.secret)).toBeNull();
     });
 
+    // SEC-25 (v0.1.226) — ADR-S09: una empresa impaga queda en solo-lectura
+    // también por el MCP (antes un token `full` seguía aplicando cambios).
+    it('empresa en solo-lectura: un token full vale como read', async () => {
+        const tk = await tokens.create(adminId, tenantId, { name: 'impago', scope: 'full', expires_in_days: null }, 'admin');
+        expect((await tokens.resolve(tk.secret))?.scope).toBe('full');
+        await pg.db.update(tenants).set({ status: 'past_due' }).where(eq(tenants.id, tenantId));
+        try {
+            expect((await tokens.resolve(tk.secret))?.scope).toBe('read');
+        } finally {
+            await pg.db.update(tenants).set({ status: 'trialing' }).where(eq(tenants.id, tenantId));
+        }
+        expect((await tokens.resolve(tk.secret))?.scope).toBe('full');
+    });
+
     it('MCP: las herramientas dependen del scope y del rol', async () => {
         const admin: AiToolContext = { tenantId, userId: adminId, role: 'admin' };
         const read = await connect(admin, 'read');

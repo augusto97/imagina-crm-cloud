@@ -150,7 +150,8 @@ poné ese email (u otro) en `PLATFORM_SUPERADMINS`.
   y completá credenciales (ver `docs/runbook-payments.md`).
 - **Email**: verificá el SMTP mandando un magic link de portal a tu correo.
 - **Monitoreo**: `GET /api/v1/health/ready` (uptime check externo) y
-  `GET /api/v1/metrics` (latencias/errores).
+  `GET /api/v1/metrics` (latencias/errores) con `Authorization: Bearer $METRICS_TOKEN`
+  — desde v0.1.226, en producción sin `METRICS_TOKEN` el endpoint responde 403.
 
 ## 9. Actualizar a una versión nueva
 

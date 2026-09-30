@@ -388,6 +388,21 @@ estable: tipear en el buscador ya no re-dibuja todas las filas.
   devuelve si la cuenta es de su empresa (recién creada o ya cliente suya): una
   cuenta que existía por su cuenta lo recibe sólo por correo. La consola de
   plataforma exige una sesión abierta con contraseña (`via: 'password'`).
+- **ACL por lista en TODA lectura** (SEC-25, v0.1.226): el scope de lectura
+  del rol y sus campos ocultos no se aplican sólo al listado — también a los
+  agregados (pie, grupos, tableros, asistente), al autocompletado de filtros, a
+  la actividad, a los archivos y al orden/filtro/búsqueda (un campo oculto no se
+  filtra ni se ordena: sería un oráculo). El export JSON completo es para
+  `manage_lists`; el resto exporta CSV, que ya respetaba el ACL. Una vista
+  pública que no se puede aplicar no muestra NADA (fail-closed).
+- **Cuentas** (SEC-26, v0.1.226): un código TOTP vale una vez, hay tope de
+  fallos de 2FA por usuario (no sólo por desafío), el reset de contraseña es de
+  un solo uso atómico y revoca también los tokens de acceso, y el índice de
+  sesiones de un usuario nunca se acorta.
+- **SMTP de las empresas** (SEC-27, v0.1.226): sólo servidores públicos
+  (`SMTP_ALLOW_PRIVATE_HOSTS` para un relay interno a propósito), validado al
+  guardar y fijado a la IP al enviar; el diagnóstico tampoco toca la red
+  interna.
 - Las decisiones del rate limit se toman sobre el PATH, nunca sobre `req.url`
   (trae la query: `?/health` salteaba el límite, SEC-28).
 - Secrets fuera del repo (env / SOPS). CSP estricta. Cookies httpOnly+secure.
@@ -1661,4 +1676,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.38.0 (seguridad: egreso anti-SSRF por IPv6, sesiones del portal acotadas y rate limit por path — §14)
+**Versión del documento:** 1.39.0 (seguridad: ACL por lista en todas las lecturas, cuentas y SMTP de las empresas — §14)

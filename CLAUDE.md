@@ -5584,6 +5584,67 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contra la API de la app responde `portal_session_scope` — 788 API en
         verde.
 
+  - [x] **Release de seguridad II: ACL por lista en todas las lecturas,
+        cuentas y SMTP de las empresas (v0.1.226, segunda tanda de la
+        auditoría)**: (a) **SEC-25 — el ACL por lista se salteaba por los
+        costados**. El listado de registros respetaba el scope del rol ("sólo
+        lo suyo") y los campos ocultos, pero casi todo lo demás leía la lista
+        ENTERA: un agente agrupaba por un campo oculto (`POST
+        /lists/:l/aggregate`) y los NOMBRES de los grupos eran los valores
+        ocultos de todos los registros; una suma daba el total de la lista; el
+        autocompletado de filtros devolvía todos los valores con su
+        frecuencia; la actividad traía el diff de TODOS los registros (el alta
+        guarda todos sus valores); el export JSON mandaba todo, `settings`
+        incluidos; y filtrar/ordenar/buscar por un campo oculto funcionaba
+        como oráculo aunque la respuesta lo quitara. Ahora el motor de
+        agregados recibe a quien pregunta (`viewer`: scope + campos ocultos
+        fuera de métrica, agrupación y filtro) desde el pie, la vista
+        agrupada, los tableros (y la tabla del widget sin columnas ocultas) y
+        el asistente; `distinctValues`, la actividad (sólo sus registros, diff
+        sin claves ocultas) y el listado/edición en lote lo aplican también; el
+        export JSON pasa a `manage_lists` (el resto exporta CSV, que ya
+        respetaba el ACL). Además: **archivos** — los ids son secuenciales y un
+        agente bajaba y BORRABA adjuntos ajenos (y el logo) recorriéndolos;
+        quien ve sólo lo suyo baja lo que subió o lo de sus registros, y borrar
+        uno ajeno exige `edit_records`; **CSV** neutraliza fórmulas (`=`, `+`,
+        `-`, `@`… sin tocar números ni teléfonos); `/bootstrap` ya no manda los
+        `settings` crudos de la empresa (config SMTP, clave de IA cifrada) a
+        todo miembro; el **MCP** respeta el solo-lectura por impago (ADR-S09:
+        el token vale como `read`); el **realtime** no acepta al rol `client`
+        ni sesiones del portal; la **vista pública** que no se puede aplicar
+        (borrada, filtro roto, condición sobre lookup/rollup) no muestra NADA
+        en vez de la lista entera; y `/metrics` en producción sin
+        `METRICS_TOKEN` responde 403. (b) **SEC-26 — cuentas**: un código TOTP
+        vale UNA vez (antes ~90 s), tope de 10 fallos de 2FA por USUARIO (el de
+        5 era por desafío y cada login con la contraseña correcta emitía otro),
+        códigos de respaldo consumidos con UPDATE condicional (dos requests en
+        paralelo usaban el mismo), reset de contraseña con `GETDEL` que además
+        revoca los TOKENS de acceso (un token del MCP creado con la sesión
+        robada sobrevivía a la recuperación), el índice de sesiones de un
+        usuario ya no se acorta (la impersonación lo bajaba a 1 h y "cerrar
+        todas"/reset/desactivar dejaban sesiones vivas) y freno por cuenta a
+        los correos de reset y de verificación. (c) **SEC-27 — SMTP de las
+        empresas**: podía apuntar a `127.0.0.1:25` (relay sin auth por el MTA
+        local → spam desde la IP de la plataforma) y el botón Diagnosticar
+        escaneaba puertos de la red interna con banner. Ahora sólo servidores
+        públicos (`resolvePublicHost`, el mismo criterio del guard SSRF),
+        validado al guardar y FIJADO a la IP al enviar (TLS contra el nombre);
+        `SMTP_ALLOW_PRIVATE_HOSTS=true` para un relay interno a propósito.
+        (d) Deploy: HSTS en nginx, `connect-src 'self'` en los dos proxies y
+        el `.env` de ejemplo con los secretos obligatorios y las variables
+        nuevas. Tests: ACL (agregados, autocompletado, filtros/orden,
+        actividad), archivos, 2FA (reuso y bloqueo por usuario), reset (tokens
+        revocados, un solo uso), SMTP (host interno rechazado, diagnóstico sin
+        red interna), CSV, MCP en solo-lectura y vista pública fail-closed —
+        804 API en verde. **Quedan para la próxima tanda**: PayPal (el plan se
+        activa al APROBAR el pago y nunca se captura), la importación de una
+        empresa (symlinks del tar y usuarios con hash elegido), la
+        verificación de propiedad de los dominios propios, integridad de
+        automatizaciones/IA (lista destino, límite del plan, doble aplicación),
+        cuota de correo por destinatario, límite por token del webhook
+        entrante, y endurecimientos de despliegue (rol de Postgres no
+        superusuario, firma de los releases, CSP sin `unsafe-inline`).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

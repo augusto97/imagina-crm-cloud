@@ -1,9 +1,9 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { CreatePersonalTokenInput, CreatedPersonalToken, PersonalToken, PersonalTokenScope, Role } from '@imagina-base/shared';
+import { isEffectivelyReadOnly, type BillingStatus, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { DRIZZLE, type Db } from '../db/client';
-import { memberships, oauthClients, personalAccessTokens, users } from '../db/schema';
+import { memberships, oauthClients, personalAccessTokens, tenants, users } from '../db/schema';
 
 /** Prefijo reconocible del secreto (como `ghp_` / `sk-ant-`): `ib_pat_`. */
 export const TOKEN_PREFIX = 'ib_pat_';
@@ -185,9 +185,13 @@ export class PersonalTokensService {
                 revokedAt: personalAccessTokens.revokedAt,
                 role: memberships.role,
                 disabledAt: users.disabledAt,
+                tenantStatus: tenants.status,
+                archivedAt: tenants.archivedAt,
+                subscriptionEndsAt: tenants.subscriptionEndsAt,
             })
             .from(personalAccessTokens)
             .innerJoin(users, eq(users.id, personalAccessTokens.userId))
+            .innerJoin(tenants, eq(tenants.id, personalAccessTokens.tenantId))
             .leftJoin(
                 memberships,
                 and(eq(memberships.userId, personalAccessTokens.userId), eq(memberships.tenantId, personalAccessTokens.tenantId)),
@@ -201,7 +205,18 @@ export class PersonalTokensService {
         if (row.role === 'client') return null;
         if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
         void this.touch(row.id);
-        return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope: row.scope as PersonalTokenScope };
+        // SEC-25 (v0.1.226) — ADR-S09: una empresa impaga/archivada queda en
+        // SOLO-LECTURA. La app lo aplica en TenantGuard, pero el MCP no pasa
+        // por ahí: con un token `full` seguía proponiendo y aplicando. En ese
+        // estado el token vale como `read` (leer y exportar siguen, como en la
+        // interfaz).
+        const readOnly = isEffectivelyReadOnly({
+            status: row.tenantStatus as BillingStatus,
+            archived_at: row.archivedAt,
+            subscription_ends_at: row.subscriptionEndsAt,
+        });
+        const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
+        return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope };
     }
 
     private async touch(id: number): Promise<void> {

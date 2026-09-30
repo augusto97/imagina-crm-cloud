@@ -66,7 +66,7 @@ describe('Cuota mensual de correos (ADR-S18)', () => {
     let smtp: TenantSmtpService;
     let tenantId: number;
 
-    const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' });
+    const env = loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea', SMTP_ALLOW_PRIVATE_HOSTS: 'true' });
 
     beforeAll(async () => {
         pg = await startPostgres();

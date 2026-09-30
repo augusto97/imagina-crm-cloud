@@ -29,6 +29,8 @@ export class AggregateController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(aggregateRequestSchema)) body: AggregateRequest,
     ): Promise<AggregateResult> {
-        return this.aggregate.run(req.tenant!.tenantId, list, body);
+        return this.aggregate.run(req.tenant!.tenantId, list, body, {
+            viewer: { role: req.tenant!.role, userId: req.authUserId! },
+        });
     }
 }

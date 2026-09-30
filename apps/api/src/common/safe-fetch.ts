@@ -237,6 +237,39 @@ function guardedLookup(hostname: string, options: unknown, callback: LookupCb): 
     });
 }
 
+/**
+ * SEC-27 (v0.1.226) — resuelve un host para una conexión NO-HTTP (SMTP) con
+ * el mismo criterio del guard: TODAS sus direcciones tienen que ser públicas.
+ * Devuelve la primera para FIJAR la conexión a esa IP (si se vuelve a
+ * resolver al conectar, un DNS que cambia entre medio —rebinding— salta el
+ * control).
+ */
+export async function resolvePublicHost(
+    host: string,
+    opts: { allowPrivate?: boolean } = {},
+): Promise<{ ok: true; address: string; addresses: string[] } | { ok: false; reason: 'dns' | 'blocked'; error: string; addresses: string[] }> {
+    const bare = bareHost(host.trim());
+    let addresses: string[];
+    if (isIP(bare)) {
+        addresses = [bare];
+    } else {
+        try {
+            const list = await new Promise<LookupAddress[]>((resolve, reject) =>
+                dnsLookup(bare, { all: true }, (err, res) => (err ? reject(err) : resolve(res))),
+            );
+            addresses = list.map((a) => a.address);
+        } catch (err) {
+            return { ok: false, reason: 'dns', error: (err as NodeJS.ErrnoException).code ?? String(err), addresses: [] };
+        }
+    }
+    if (addresses.length === 0) return { ok: false, reason: 'dns', error: 'sin direcciones', addresses };
+    const allow = opts.allowPrivate === true || devPrivateEgressAllowed();
+    if (!allow && addresses.some(isBlockedAddress)) {
+        return { ok: false, reason: 'blocked', error: 'dirección de red interna', addresses };
+    }
+    return { ok: true, address: addresses[0]!, addresses };
+}
+
 /** `[::1]` → `::1` (el hostname de un URL trae el IPv6 entre corchetes). */
 export function bareHost(hostname: string): string {
     return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;

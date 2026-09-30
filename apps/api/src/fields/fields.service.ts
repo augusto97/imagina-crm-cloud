@@ -15,6 +15,7 @@ import {
     isStoreField,
     isThroughField,
     jsonbKeyForField,
+    type Role,
     LOOKUP_TARGET_TYPES,
     parseFieldConfig,
     resolveTitleFieldId,
@@ -31,8 +32,9 @@ import {
     type StoreListMarker,
     type UpdateFieldInput,
 } from '@imagina-base/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { records } from '../db/schema';
+import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
+import { lists, records } from '../db/schema';
+import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -295,13 +297,27 @@ export class FieldsService {
         fieldIdOrSlug: string,
         search: string,
         limit: number,
+        viewer?: { role: Role; userId: number },
     ): Promise<Array<{ value: string; count: number }>> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        const row = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
-        );
+        const { row, settings } = await this.tenantDb.withTenant(tenantId, async (tx) => ({
+            row: await this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
+            settings: ((await tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1))[0]
+                ?.settings ?? {}) as Record<string, unknown>,
+        }));
         const field = toField(row);
         if (NO_AUTOCOMPLETE_TYPES.has(field.type)) return [];
+
+        // SEC-25 (v0.1.226): el autocompletado es una LECTURA de los valores de
+        // la columna. Sin el ACL, alguien que no ve el campo (o sólo ve sus
+        // registros) obtenía todos los valores distintos con su frecuencia.
+        let scope: SQL | undefined;
+        if (viewer) {
+            const perms = effectivePermissions(settings, viewer.role, viewer.userId);
+            if (perms.fields_hidden.includes(field.slug)) return [];
+            const assignmentId = resolvePermissions(settings).assignment_field_id;
+            scope = scopeWhere(perms.view, viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
+        }
 
         const key = jsonbKeyForField(field.id);
         const value = sql<string>`${records.data} ->> ${key}`;
@@ -317,6 +333,7 @@ export class FieldsService {
                         eq(records.tenantId, tenantId),
                         eq(records.listId, listId),
                         isNull(records.deletedAt),
+                        scope,
                         sql`${records.data} ->> ${key} is not null`,
                         sql`${records.data} ->> ${key} <> ''`,
                         needle === null ? undefined : sql`${records.data} ->> ${key} ilike ${needle}`,

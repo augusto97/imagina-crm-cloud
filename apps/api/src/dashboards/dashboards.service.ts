@@ -14,8 +14,9 @@ import {
 } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import { AggregateService } from '../aggregate/aggregate.service';
-import { dashboards } from '../db/schema';
+import { dashboards, lists } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
+import { hiddenFieldsFor } from '../lists/list-acl';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
@@ -199,6 +200,10 @@ export class DashboardsService {
         // v0.1.98 — los widgets de CONTENIDO (título/texto/imagen/separador/
         // espaciador) no evalúan datos: el front renderiza desde su config.
         if (CONTENT_WIDGET_TYPES.includes(widget.type)) return {};
+        // SEC-25 (v0.1.226): cada widget agrega lo que QUIEN MIRA puede ver
+        // (scope de su rol en la lista + sin campos ocultos), igual que la
+        // tabla. Antes un tablero compartido sumaba la lista entera.
+        const acl = { viewer: { role: viewer.role as Role, userId: viewer.userId } };
         const cfg = widget.config as Record<string, unknown>;
         const list = String(widget.list_id);
         const metricFieldId = numOrUndef(cfg.metric_field_id);
@@ -211,7 +216,7 @@ export class DashboardsService {
         const filterTree = withPeriod(cfg, periodOverride);
 
         if (widget.type === 'kpi' || widget.type === 'gauge') {
-            const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
+            const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree }, acl);
             // v0.1.99 — mini-tendencia del KPI: si el widget configura
             // `spark_field_id` (campo fecha), se agrega la MISMA métrica
             // agrupada por día sobre los últimos 30 días → spark[] (ordenado
@@ -233,7 +238,7 @@ export class DashboardsService {
                         group_by_field_id: sparkFieldId,
                         filter_tree: sparkTree,
                         time_bucket: 'day',
-                    });
+                    }, acl);
                     const spark = (sp.groups ?? [])
                         .filter((g) => g.group !== null)
                         .map((g) => (typeof g.value === 'number' ? g.value : 0));
@@ -252,14 +257,14 @@ export class DashboardsService {
             // consecutivas de `period_days` días sobre el campo de fecha.
             const dateFieldId = numOrUndef(cfg.date_field_id);
             if (dateFieldId === undefined) {
-                const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree });
+                const r = await this.aggregate.run(tenantId, list, { metric, field_id: metricFieldId, filter_tree: filterTree }, acl);
                 return { value: r.value ?? 0, previous: r.value ?? 0, delta_pct: null, period_days: 0, metric };
             }
             const d = await this.aggregate.runDelta(
                 tenantId,
                 list,
                 { metric, field_id: metricFieldId, filter_tree: filterTree },
-                { dateFieldId, periodDays: Number(cfg.period_days) || 30 },
+                { dateFieldId, periodDays: Number(cfg.period_days) || 30, viewer: acl.viewer },
             );
             return { ...d, metric };
         }
@@ -285,7 +290,7 @@ export class DashboardsService {
             group_by_field_id: groupBy,
             filter_tree: filterTree,
             time_bucket: timeBucket,
-        });
+        }, acl);
         const data = (r.groups ?? []).map((g) => ({
             label: g.group ?? '(sin valor)',
             value: g.value ?? 0,
@@ -301,7 +306,13 @@ export class DashboardsService {
         filterTree: AggregateRequest['filter_tree'],
     ): Promise<{ columns: Array<{ label: string; slug: string; type: string }>; rows: Array<{ id: number; fields: Record<string, unknown> }> }> {
         const cfg = widget.config as Record<string, unknown>;
-        const fields = await this.fields.list(tenantId, String(widget.list_id));
+        // SEC-25: las columnas ocultas para el rol de quien mira no se listan
+        // (antes salían con nombre y valor vacío — el nombre ya es un dato).
+        const [listRow] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, widget.list_id)).limit(1),
+        );
+        const hidden = hiddenFieldsFor((listRow?.settings ?? {}) as Record<string, unknown>, viewer.role as Role, viewer.userId);
+        const fields = (await this.fields.list(tenantId, String(widget.list_id))).filter((f) => !hidden.has(f.slug));
 
         // Columnas: las visibles configuradas (en su orden) o todas (orden de
         // la lista) capadas a 8 para que el card no explote.

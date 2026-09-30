@@ -45,6 +45,7 @@ export class RecordsGroupedService {
     /** Solo los buckets (valor + conteo) + meta del grupo. */
     async groups(
         tenantId: number,
+        actor: Actor,
         listKey: string,
         groupBy: number,
         filterTree?: FilterGroup,
@@ -52,7 +53,7 @@ export class RecordsGroupedService {
     ): Promise<{ data: GroupBucket[]; meta: GroupsMeta }> {
         const meta = await this.groupMeta(tenantId, listKey, groupBy);
         const effectiveTree = await this.withSearch(tenantId, listKey, filterTree, search);
-        const buckets = await this.buckets(tenantId, listKey, groupBy, effectiveTree);
+        const buckets = await this.buckets(tenantId, listKey, groupBy, effectiveTree, actor);
         return {
             data: buckets,
             meta: { ...meta, total_groups: buckets.length, total_records: buckets.reduce((s, b) => s + b.count, 0) },
@@ -85,7 +86,7 @@ export class RecordsGroupedService {
         // La búsqueda se COMPONE como subtree OR de `contains` sobre los
         // campos searchables → aplica igual a buckets, filas y agregados.
         const effectiveTree = await this.withSearch(tenantId, listKey, opts.filterTree, opts.search);
-        const buckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree);
+        const buckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree, actor);
         const totalRecords = buckets.reduce((s, b) => s + b.count, 0);
 
         const fields = await this.fields.list(tenantId, listKey);
@@ -165,6 +166,7 @@ export class RecordsGroupedService {
                 entry.aggregates = await this.aggregate.footer(tenantId, listKey, {
                     fieldIds: opts.aggregateFieldIds,
                     filter_tree: combined,
+                    viewer: actor,
                 });
             }
             expanded[key] = entry;
@@ -227,8 +229,12 @@ export class RecordsGroupedService {
         tenantId: number,
         listKey: string,
         groupBy: number,
-        filterTree?: FilterGroup,
+        filterTree: FilterGroup | undefined,
+        actor: Actor,
     ): Promise<GroupBucket[]> {
+        // SEC-25: los buckets cuentan lo que ESTA persona puede ver (su scope)
+        // y no se puede agrupar por un campo oculto para su rol — los nombres
+        // de los grupos serían los valores ocultos.
         // multi_select: un bucket por COMBINACIÓN exacta (clave = JSON del
         // set normalizado, la arma el motor) — cada registro cae en UN grupo,
         // como en ClickUp, así los grupos son disjuntos y la suma es el total.
@@ -237,7 +243,7 @@ export class RecordsGroupedService {
             tenantId,
             listKey,
             { metric: 'count', group_by_field_id: groupBy, filter_tree: filterTree },
-            { rootsOnly: true },
+            { rootsOnly: true, viewer: actor },
         );
         return (agg.groups ?? []).map((g) => ({ value: g.group, count: Number(g.value ?? 0) }));
     }

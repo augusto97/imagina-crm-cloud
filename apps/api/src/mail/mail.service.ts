@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { resolvePublicHost } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { guardRedis } from '../redis/redis.util';
 import { EmailQuotaExceededError, EmailQuotaService } from './email-quota.service';
@@ -32,7 +33,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
 
     private cachedSmtp: { hash: string; transport: SmtpMailTransport } | null = null;
     /** Cache de transportes por-tenant (hash de config → transporte). */
-    private readonly tenantSmtpCache = new Map<number, { hash: string; transport: SmtpMailTransport }>();
+    private readonly tenantSmtpCache = new Map<number, { hash: string; transport: SmtpMailTransport; at: number }>();
 
     constructor(
         @Inject(ENV) private readonly env: Env,
@@ -65,10 +66,25 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             if (cfg) {
                 const hash = JSON.stringify(cfg);
                 const cached = this.tenantSmtpCache.get(message.tenantId);
-                if (cached?.hash === hash) return { transport: cached.transport, own: true };
-                const transport = new SmtpMailTransport(cfg);
+                // El transporte va FIJADO a la IP validada: se re-resuelve cada
+                // 10 min para seguir al proveedor si cambia de IP.
+                if (cached?.hash === hash && Date.now() - cached.at < 10 * 60_000) {
+                    return { transport: cached.transport, own: true };
+                }
+                // SEC-27 (v0.1.226): el SMTP de una EMPRESA sólo puede ser un
+                // servidor público. Antes `127.0.0.1:25` relayaba por el MTA
+                // local sin autenticar (spam desde la IP de la plataforma).
+                const target = await resolvePublicHost(cfg.host, { allowPrivate: this.env.SMTP_ALLOW_PRIVATE_HOSTS });
+                if (!target.ok) {
+                    throw new UnrecoverableError(
+                        target.reason === 'blocked'
+                            ? `El servidor SMTP de la empresa (${cfg.host}) apunta a una dirección interna: tiene que ser un servidor accesible desde internet.`
+                            : `El servidor SMTP de la empresa (${cfg.host}) no resuelve (${target.error}).`,
+                    );
+                }
+                const transport = new SmtpMailTransport({ ...cfg, host: target.address }, { servername: cfg.host });
                 if (this.tenantSmtpCache.size > 100) this.tenantSmtpCache.clear();
-                this.tenantSmtpCache.set(message.tenantId, { hash, transport });
+                this.tenantSmtpCache.set(message.tenantId, { hash, transport, at: Date.now() });
                 return { transport, own: true };
             }
             this.tenantSmtpCache.delete(message.tenantId);

@@ -215,19 +215,26 @@ export class RecordsService {
             // v0.1.170 — los rollups filtran y ordenan por su subconsulta
             // correlacionada (el motor la arma; sin plan, se descartan).
             const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
-            const fieldsById = new Map<number, FilterableField>([
-                ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
-                ...this.fields.through.filterableFor(plans, tenantId),
-                // v0.1.188 — la vista agrupada compone su búsqueda como
-                // filter tree y necesita el pseudo-campo de la descripción.
-                descriptionSearchFilterable(),
-            ]);
+            // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
+            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+            // SEC-25 (v0.1.226): un campo oculto para este rol tampoco se
+            // FILTRA, se BUSCA ni se ORDENA — cualquiera de las tres es un
+            // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
+            // con el valor), aunque después la respuesta lo quite de `data`.
+            const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+            const fieldsById = new Map<number, FilterableField>(
+                [
+                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                    ...this.fields.through.filterableFor(plans, tenantId),
+                    // v0.1.188 — la vista agrupada compone su búsqueda como
+                    // filter tree y necesita el pseudo-campo de la descripción.
+                    descriptionSearchFilterable(),
+                ].filter(([id]) => !hiddenIds.has(id)),
+            );
             const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
             // ILIKE sobre los campos searchables, AND con filtros y scope.
-            const searchWhere = compileSearch(fields, query.search);
-            // ACL por lista (permisos por rol): scope de lectura + campos ocultos.
-            const perms = effectivePermissions(list.settings, actor.role, actor.userId);
+            const searchWhere = compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), query.search);
             const assignmentId = resolvePermissions(list.settings).assignment_field_id;
             const assignmentKey = assignmentId ? jsonbKeyForField(assignmentId) : null;
             const scopeW = scopeWhere(perms.view, actor.userId, assignmentKey);
@@ -451,12 +458,19 @@ export class RecordsService {
                 where = inArray(records.id, [...new Set(target.ids)]);
                 parent = 'any';
             } else {
-                const fieldsById = new Map<number, FilterableField>([
-                    ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
-                    ...this.fields.through.filterableFor(plans, tenantId),
-                    descriptionSearchFilterable(),
-                ]);
-                where = andWhere(compileFilterTree(fieldsById, target.filter_tree, new Date()), compileSearch(fields, target.search));
+                // SEC-25: tampoco se apunta una edición en lote por un campo oculto.
+                const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+                const fieldsById = new Map<number, FilterableField>(
+                    [
+                        ...fields.map((f): [number, FilterableField] => [f.id, { id: f.id, type: f.type }]),
+                        ...this.fields.through.filterableFor(plans, tenantId),
+                        descriptionSearchFilterable(),
+                    ].filter(([id]) => !hiddenIds.has(id)),
+                );
+                where = andWhere(
+                    compileFilterTree(fieldsById, target.filter_tree, new Date()),
+                    compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), target.search),
+                );
                 parent = target.include_subtasks ? 'any' : 'roots';
             }
             where = andWhere(where, scopeW);

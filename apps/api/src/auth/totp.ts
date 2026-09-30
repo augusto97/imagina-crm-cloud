@@ -105,6 +105,25 @@ export function verifyTotp(
 }
 
 /**
+ * SEC-26 (v0.1.226) — como `verifyTotp`, pero devuelve el CONTADOR (ventana
+ * de 30 s) que coincidió, o `null`. Sirve para rechazar la reutilización de
+ * un código: sin eso, un código visto por encima del hombro valía ~90 s más.
+ */
+export function matchTotp(secretBase32: string, code: string, atMs: number = Date.now()): number | null {
+    const clean = code.replace(/\D/g, '');
+    if (clean.length !== DIGITS) return null;
+    const secret = base32Decode(secretBase32);
+    const counter = Math.floor(atMs / 1000 / PERIOD_SECONDS);
+    const given = Buffer.from(clean, 'utf8');
+    let matched: number | null = null;
+    for (let w = -DRIFT_WINDOWS; w <= DRIFT_WINDOWS; w++) {
+        const expected = Buffer.from(hotp(secret, counter + w), 'utf8');
+        if (timingSafeEqual(expected, given)) matched = counter + w;
+    }
+    return matched;
+}
+
+/**
  * URI `otpauth://` — lo que se codifica en el QR y lo que el usuario puede
  * pegar a mano en su app si no puede escanear.
  */

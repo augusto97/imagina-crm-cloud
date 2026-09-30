@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import {
     CanActivate,
     ExecutionContext,
+    ForbiddenException,
     Inject,
     Injectable,
     UnauthorizedException,
@@ -20,7 +21,13 @@ export class MetricsGuard implements CanActivate {
 
     canActivate(context: ExecutionContext): boolean {
         const expected = this.env.METRICS_TOKEN;
-        if (!expected) return true;
+        // SEC-25 (v0.1.226): vacío = abierto SÓLO en desarrollo. En producción
+        // quedaban públicos contadores y latencias por ruta del servidor; sin
+        // token el endpoint se cierra (se configura METRICS_TOKEN para el scraper).
+        if (!expected) {
+            if (this.env.NODE_ENV !== 'production') return true;
+            throw new ForbiddenException('Métricas deshabilitadas: configurá METRICS_TOKEN');
+        }
 
         const req = context.switchToHttp().getRequest<FastifyRequest>();
         const header = req.headers['authorization'];

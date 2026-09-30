@@ -106,7 +106,7 @@
         # el detalle de por qué cada directiva es como es (inline de scripts
         # por el pre-pintado del tema, inline de estilos por Radix y el
         # page-builder, data:/blob: por los previews de imágenes).
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.figma.com https://drive.google.com https://docs.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.figma.com https://drive.google.com https://docs.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
 }
 

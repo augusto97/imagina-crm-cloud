@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, lt, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { activity, users } from '../db/schema';
 
@@ -23,7 +23,7 @@ export class ActivityRepository {
         tx: Tx,
         tenantId: number,
         listId: number,
-        opts: { recordId?: number; cursor?: number; limit: number },
+        opts: { recordId?: number; cursor?: number; limit: number; where?: SQL },
     ): Promise<ActivityRow[]> {
         return tx
             .select({
@@ -45,6 +45,7 @@ export class ActivityRepository {
                     eq(activity.listId, listId),
                     opts.recordId !== undefined ? eq(activity.recordId, opts.recordId) : undefined,
                     opts.cursor !== undefined ? lt(activity.id, opts.cursor) : undefined,
+                    opts.where,
                 ),
             )
             .orderBy(desc(activity.id))

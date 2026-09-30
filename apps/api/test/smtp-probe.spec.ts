@@ -66,7 +66,9 @@ describe('isLinkLocal', () => {
 });
 
 describe('SmtpProbeService (sockets reales)', () => {
-    const probe = new SmtpProbeService();
+    // El sink escucha en loopback: estos tests usan la habilitación explícita
+    // de relays internos (SMTP_ALLOW_PRIVATE_HOSTS).
+    const probe = new SmtpProbeService({ SMTP_ALLOW_PRIVATE_HOSTS: true });
     let server: Server;
     let port = 0;
 
@@ -105,4 +107,18 @@ describe('SmtpProbeService (sockets reales)', () => {
         expect(report.verdict).toBe('dns_failed');
         expect(report.hints.join(' ')).toContain('http://');
     });
+});
+
+// SEC-27 (v0.1.226) — sin la habilitación explícita, el diagnóstico no toca la
+// red interna: antes servía de escáner de puertos de loopback con banner.
+describe('SmtpProbeService sin relays internos (default)', () => {
+    const probe = new SmtpProbeService({ SMTP_ALLOW_PRIVATE_HOSTS: false });
+    for (const host of ['127.0.0.1', 'localhost', '10.0.0.5', '::ffff:127.0.0.1', '169.254.169.254']) {
+        it(`no conecta a ${host}`, async () => {
+            const report = await probe.diagnose({ host, port: 22, secure: false });
+            expect(report.ports).toEqual([]);
+            expect(report.dns.ok).toBe(false);
+            expect(report.hints[0]).toContain('interna');
+        });
+    }
 });

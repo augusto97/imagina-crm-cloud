@@ -13,6 +13,7 @@ import { RelationsRepository } from '../src/records/relations.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
+import { AggregateService } from '../src/aggregate/aggregate.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
@@ -239,6 +240,99 @@ describe('ACL por lista (permisos por rol)', () => {
             await expect(
                 recs.create(tenantId, socia, 'clientes', { data: { [key('nombre')]: 'X' } }),
             ).rejects.toBeInstanceOf(ForbiddenException);
+        });
+    });
+
+    // SEC-25 (v0.1.226) — las lecturas "de costado" (agregados, autocompletado,
+    // actividad, filtros/orden/búsqueda) aplican el MISMO ACL que el listado.
+    describe('SEC-25: el ACL vale también para agregados, actividad y filtros', () => {
+        const hideMonto = async () =>
+            lists_.updatePermissions(tenantId, 'clientes', {
+                permissions: {
+                    agent: { view: 'own', create: true, edit: 'own', delete: 'own', fields_hidden: ['monto'] },
+                },
+            });
+
+        it('agregados: el agente suma sólo lo suyo y no agrupa ni mide por un campo oculto', async () => {
+            await seed();
+            const agg = new AggregateService(new TenantDb(pg.db), lists_, fields_);
+            // Sin ocultar: la suma es SÓLO de su registro (300), no de la lista (600).
+            const sumAll = await agg.run(tenantId, 'clientes', { metric: 'sum', field_id: f.monto!.id }, { viewer: agent });
+            expect(sumAll.value).toBe(300);
+            const count = await agg.run(tenantId, 'clientes', { metric: 'count' }, { viewer: agent });
+            expect(count.value).toBe(1);
+            // Sin viewer (motores internos) sigue viendo todo.
+            expect((await agg.run(tenantId, 'clientes', { metric: 'count' })).value).toBe(3);
+
+            await hideMonto();
+            await expect(
+                agg.run(tenantId, 'clientes', { metric: 'count', group_by_field_id: f.monto!.id }, { viewer: agent }),
+            ).rejects.toBeInstanceOf(BadRequestException);
+            await expect(
+                agg.run(tenantId, 'clientes', { metric: 'sum', field_id: f.monto!.id }, { viewer: agent }),
+            ).rejects.toBeInstanceOf(BadRequestException);
+            // Un filtro sobre el campo oculto no es un oráculo: se descarta.
+            const probe = await agg.run(
+                tenantId,
+                'clientes',
+                {
+                    metric: 'count',
+                    filter_tree: {
+                        type: 'group',
+                        logic: 'and',
+                        children: [{ type: 'condition', field_id: f.monto!.id, op: 'gt', value: 1000 }],
+                    },
+                },
+                { viewer: agent },
+            );
+            expect(probe.value).toBe(1);
+            // El pie no calcula la columna oculta.
+            const footer = await agg.footer(tenantId, 'clientes', { fieldIds: [f.monto!.id], viewer: agent });
+            expect(footer.totals.monto).toBeUndefined();
+        });
+
+        it('autocompletado: sólo valores de lo que ve, nada de un campo oculto', async () => {
+            await seed();
+            const own = await fields_.distinctValues(tenantId, 'clientes', 'nombre', '', 50, agent);
+            expect(own.map((v) => v.value)).toEqual(['C']);
+            await hideMonto();
+            expect(await fields_.distinctValues(tenantId, 'clientes', 'monto', '', 50, agent)).toEqual([]);
+        });
+
+        it('listado: filtrar/ordenar/buscar por un campo oculto no filtra ni ordena', async () => {
+            await seed();
+            await lists_.updatePermissions(tenantId, 'clientes', {
+                permissions: { viewer: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: ['monto'] } },
+            });
+            const filtered = await recs.list(tenantId, viewer, 'clientes', {
+                limit: 50,
+                sort_dir: 'asc',
+                filter_tree: {
+                    type: 'group',
+                    logic: 'and',
+                    children: [{ type: 'condition', field_id: f.monto!.id, op: 'gte', value: 250 }],
+                },
+            });
+            // El filtro sobre `monto` se ignora: siguen las 3 (antes quedaba 1 y revelaba el valor).
+            expect(filtered.data).toHaveLength(3);
+            const sorted = await recs.list(tenantId, viewer, 'clientes', {
+                limit: 50,
+                sort_dir: 'asc',
+                sort: `field_${f.monto!.id}:desc`,
+            });
+            expect(sorted.data.map((r) => r.data[key('nombre')])).toEqual(['A', 'B', 'C']);
+        });
+
+        it('actividad: sólo la de sus registros y sin los campos ocultos en el diff', async () => {
+            await seed();
+            await hideMonto();
+            const activitySvc = new ActivityService(new TenantDb(pg.db), new ActivityRepository(), lists_);
+            const all = await activitySvc.list(tenantId, 'clientes', {});
+            expect(all.data.length).toBeGreaterThanOrEqual(3);
+            const mine = await activitySvc.list(tenantId, 'clientes', { viewer: agent });
+            expect(mine.data).toHaveLength(1);
+            expect(Object.keys(mine.data[0]!.diff)).toContain(key('nombre'));
+            expect(Object.keys(mine.data[0]!.diff)).not.toContain(key('monto'));
         });
     });
 });

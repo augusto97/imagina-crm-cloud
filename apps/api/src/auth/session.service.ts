@@ -90,8 +90,21 @@ export class SessionService {
         // set vive un poco más que la sesión; los tokens ya expirados se limpian
         // solos al revocar (del es no-op).
         await this.redis.sadd(this.userKey(userId), token);
-        await this.redis.expire(this.userKey(userId), this.env.SESSION_TTL_SECONDS * 2);
+        await this.extendIndex(userId, this.env.SESSION_TTL_SECONDS * 2);
         return token;
+    }
+
+    /**
+     * El índice inverso vive AL MENOS `ttl` segundos más: nunca se acorta (un
+     * `EXPIRE` pelado pisa el TTL aunque sea menor). NX para el índice recién
+     * creado (sin TTL), GT para no bajar uno más largo.
+     */
+    private async extendIndex(userId: number, ttl: number): Promise<void> {
+        await this.redis
+            .pipeline()
+            .expire(this.userKey(userId), ttl, 'NX')
+            .expire(this.userKey(userId), ttl, 'GT')
+            .exec();
     }
 
     /** Revoca TODAS las sesiones de un usuario (al desactivar la cuenta). */
@@ -126,6 +139,10 @@ export class SessionService {
             return null;
         }
         const data = JSON.parse(raw) as SessionData;
+        // SEC-26: el TTL de la sesión se desliza con el uso; el del índice
+        // también (si no, una sesión usada a diario sobrevivía al índice a los
+        // 60 días y quedaba fuera de toda revocación masiva).
+        void this.extendIndex(data.userId, this.env.SESSION_TTL_SECONDS * 2).catch(() => undefined);
         // Tope duro de impersonación: aunque getex renueve el TTL de Redis, una
         // sesión impersonada muere pasada su `expiresAt`.
         if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) {
@@ -159,7 +176,10 @@ export class SessionService {
         await this.redis.set(this.key(token), JSON.stringify(data), 'EX', params.ttlSeconds);
         // Bajo el índice del OBJETIVO: si lo desactivan, también cae la impersonación.
         await this.redis.sadd(this.userKey(params.targetUserId), token);
-        await this.redis.expire(this.userKey(params.targetUserId), params.ttlSeconds);
+        // SEC-26 (v0.1.226): antes esto ACORTABA el índice del objetivo a la
+        // hora de la impersonación → sus sesiones normales salían del índice y
+        // "cerrar todas" / reset / desactivar ya no las alcanzaba.
+        await this.extendIndex(params.targetUserId, params.ttlSeconds);
         return token;
     }
 

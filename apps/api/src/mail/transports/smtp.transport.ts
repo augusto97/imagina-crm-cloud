@@ -14,10 +14,15 @@ export class SmtpMailTransport implements MailTransport {
     private readonly transporter: Transporter;
     private readonly from: string;
 
-    constructor(config: SmtpConfig) {
+    /**
+     * `servername`: con `host` fijado a una IP (SEC-27), el certificado TLS se
+     * valida contra el NOMBRE del servidor, no contra la IP.
+     */
+    constructor(config: SmtpConfig, opts: { servername?: string } = {}) {
         this.from = config.from;
         this.transporter = createTransport({
             host: config.host,
+            ...(opts.servername ? { tls: { servername: opts.servername } } : {}),
             port: config.port,
             secure: config.secure,
             auth: config.user ? { user: config.user, pass: config.pass } : undefined,
