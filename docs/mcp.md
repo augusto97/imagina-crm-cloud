@@ -57,6 +57,7 @@ del rol, p. ej. `manage_lists`):
 | `propose_set_list_permissions` | **Quién ve y edita** una lista: por rol (manager / agent / viewer, con alcance `all` / `assigned` / `own` / `none`, si puede crear y qué campos no ve) y por **persona** (pisa su rol sólo en esa lista). `admin` siempre tiene acceso total. |
 | `propose_configure_public_sharing` | **Publicar la lista hacia afuera**: página de solo-lectura embebible por iframe, sin cuenta. Sólo salen los campos marcados visibles; se puede publicar una vista guardada (sus filtros acotan las filas), restringir los dominios que pueden embeberla y ponerle caducidad. Marcada como destructiva: expone datos a cualquiera con el enlace. |
 | `propose_create_records` / `propose_update_records` / `propose_delete_records` | Registros (alta, edición y borrado masivo con filtros o ids). |
+| `propose_bulk_edit` | Edición masiva con operaciones sobre el valor de cada registro (sumar, %, redondear, calcular, reemplazar, agregar/quitar opciones, correr fechas…), hasta 5.000 registros, con vista previa real y deshacer desde el historial de la lista. Una automatización con la acción `bulk_edit` la repite en un horario. |
 
 Lo que **no** está en el MCP, y por qué:
 

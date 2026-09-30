@@ -20,6 +20,6 @@ import { BulkHistoryService } from './bulk-history.service';
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule, AggregateModule, RecurrencesModule],
     controllers: [RecordsController, RecordsGroupedController, BulkHistoryController],
     providers: [RecordsService, BulkEditService, BulkStructureService, BulkHistoryService, RecordsRepository, RelationsRepository, RecordsGroupedService],
-    exports: [RecordsService, BulkHistoryService],
+    exports: [RecordsService, BulkHistoryService, BulkEditService],
 })
 export class RecordsModule {}

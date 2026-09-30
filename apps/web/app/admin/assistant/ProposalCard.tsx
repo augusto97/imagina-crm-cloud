@@ -22,6 +22,7 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     update_list: 'Cambio de lista',
     create_records: 'Registros nuevos',
     update_records: 'Edición masiva',
+    bulk_edit_records: 'Edición masiva',
     delete_records: 'Eliminar registros',
     configure_portal: 'Portal del cliente',
     configure_record_layout: 'Diseño de la ficha',

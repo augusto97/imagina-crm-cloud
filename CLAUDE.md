@@ -5426,6 +5426,35 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         «Automatización», deshacer, y el horario semanal guardado con día, hora
         y zona).
 
+  - [x] **Edición masiva desde el asistente ✨ y el MCP (v0.1.222, ADR-S25 +
+        ADR-S21, quinta entrega del pedido "hacé todo")**: herramienta nueva
+        **`propose_bulk_edit`** en el mismo registro de herramientas — sale a la
+        vez por el asistente de la app y por Claude/Cursor vía MCP. Hasta acá
+        el asistente sólo sabía poner un valor FIJO (`propose_update_records`);
+        ahora arma las mismas operaciones que la edición masiva a mano, por
+        slug y con las opciones por etiqueta: «subí 10 % los precios de las
+        tazas y redondeá a terminar en 900», «agregá la etiqueta VIP sin pisar
+        las demás», «corré 7 días los vencimientos de lo pendiente», «calculá
+        precio = costo × 1,3». La vista previa es la REAL (`BulkEditService.
+        preview`, la misma del diálogo): la tarjeta muestra el antes → después
+        de una muestra, cuántos ya estaban así y cuáles no se pueden con el
+        motivo; aplicar corre en tandas y queda en el **historial de la lista
+        con Deshacer**. Destino por filtros, búsqueda o ids; tocar TODA la
+        lista exige `all_records: true` explícito. Las automatizaciones que
+        propone el asistente aceptan la acción **`bulk_edit`** (con `filters` y
+        `operations` por slug, traducidos a ids al proponer, también dentro de
+        un `if_else`) con horario programado, así «bajá 5 % las libretas el
+        primero de cada mes» sale en una sola propuesta. Regla 15 del prompt
+        (cuándo usar cada herramienta) y `docs/mcp.md` al día. 2 tests de
+        integración (propuesta con muestra real → aplica → historial deshacible;
+        sin acotar, slug desconocido, operación incompleta y rol sin permiso
+        rebotan; traducción de la acción de automatización; automatización
+        programada con `bulk_edit` guardada con ids y horario) — 771 API, 179
+        front en verde — + E2E por el MCP REAL 11/11 (HTTP + token personal:
+        `tools/list`, proponer → aplicar con los valores exactos, historial,
+        automatización mensual propuesta y guardada con ids, «Ejecutar ahora»
+        y la libreta bajó 5 %).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -8,6 +8,7 @@ import { AggregateService } from '../src/aggregate/aggregate.service';
 import { ConversationsStore } from '../src/ai/conversations.store';
 import { ProposalsService } from '../src/ai/proposals.service';
 import { ProposalsStore } from '../src/ai/proposals.store';
+import { translateBulkEditActions } from '../src/ai/tools/bulk-ops';
 import { DataTools, displayValue, mapOptionValue } from '../src/ai/tools/data-tools';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
@@ -21,6 +22,8 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
+import { BulkEditService } from '../src/records/bulk-edit.service';
+import { BulkHistoryService } from '../src/records/bulk-history.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
@@ -47,6 +50,7 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
     let admin: AiToolContext;
     let agent: AiToolContext;
     let f: Record<string, Field>;
+    let history: BulkHistoryService;
 
     const key = (slug: string): string => jsonbKeyForField(f[slug]!.id);
     const exec = (ctx: AiToolContext, name: string, input: unknown) => registry.execute(ctx, name, input);
@@ -65,7 +69,8 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
         );
         const aggregate = new AggregateService(tenantDb, lists, fields);
         const store = new ProposalsStore(redis);
-        const data = new DataTools(lists, fields, recordsSvc, aggregate, store);
+        history = new BulkHistoryService(tenantDb, lists, recordsSvc, rt, new AuditService(tenantDb));
+        const data = new DataTools(lists, fields, recordsSvc, aggregate, store, new BulkEditService(recordsSvc, rt, history));
         // El StructureTools no se ejecuta acá; sólo para el dispatch del applier.
         const structure = new StructureTools(tenantDb, lists, fields, null as never, null as never, null as never, null as never, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps()), null as never, null as never);
         registry = new AiToolRegistry();
@@ -264,5 +269,75 @@ describe('Asistente IA — herramientas de datos (Postgres + Redis reales)', () 
         expect(applied.applied).toBe(true);
         const mine = await exec(agent, 'query_records', { list: 'facturas', limit: 50 });
         expect((content(mine).rows as unknown[]).length).toBe(3);
+    });
+    it('v0.1.222 — propose_bulk_edit: operaciones por slug, vista previa real, aplica en el historial con deshacer', async () => {
+        const list = await lists.create(tenantId, { name: 'Precios IA' });
+        const nombre = await fields.create(tenantId, String(list.id), { label: 'Nombre', slug: 'nombre', type: 'text' });
+        const precio = await fields.create(tenantId, String(list.id), { label: 'Precio', slug: 'precio', type: 'currency', config: { precision: 0 } });
+        const cat = await fields.create(tenantId, String(list.id), {
+            label: 'Categoría', slug: 'categoria', type: 'select',
+            config: { options: [{ value: 'taza', label: 'Tazas' }, { value: 'libreta', label: 'Libretas' }] },
+        });
+        const ids: number[] = [];
+        for (const [n, p, c] of [['A', 10_000, 'taza'], ['B', 12_500, 'taza'], ['C', 8_000, 'libreta']] as const) {
+            const r = await recordsSvc.create(tenantId, { userId: adminId, role: 'admin' }, String(list.id), {
+                data: { [jsonbKeyForField(nombre.id)]: n, [jsonbKeyForField(precio.id)]: p, [jsonbKeyForField(cat.id)]: c },
+            });
+            ids.push(r.id);
+        }
+        const r = await exec(admin, 'propose_bulk_edit', {
+            list: list.slug,
+            filters: [{ field: 'categoria', op: 'eq', value: 'Tazas' }],
+            operations: [
+                { field: 'precio', op: 'percent', percent: 10 },
+                { field: 'precio', op: 'round', multiple: 1000, mode: 'up', adjust: -100 },
+            ],
+        });
+        expect(r.isError).toBeFalsy();
+        const p = r.proposal!;
+        expect(p).toMatchObject({ kind: 'bulk_edit_records', destructive: false });
+        expect(p.preview.affected_count).toBe(2);
+        expect(p.preview.changes.map((c) => c.label)).toEqual(['Precio', 'Precio']);
+        // 10.000 × 1,1 = 11.000 → el próximo terminado en 900 hacia arriba: 11.900.
+        expect(p.preview.rows.find((row) => row.Registro === 'A')).toMatchObject({ Precio: '10000 → 11900' });
+        expect(p.summary).toMatch(/deshacer/i);
+
+        const applied = await proposals.apply(admin, p.id);
+        expect(applied.result?.message).toMatch(/^2 registros actualizados/);
+        const a = await recordsSvc.get(tenantId, { userId: adminId, role: 'admin' }, String(list.id), ids[0]!);
+        expect(a.data[jsonbKeyForField(precio.id)]).toBe(11_900);
+        const c = await recordsSvc.get(tenantId, { userId: adminId, role: 'admin' }, String(list.id), ids[2]!);
+        expect(c.data[jsonbKeyForField(precio.id)]).toBe(8_000);
+        // Quedó en el historial de la lista, con deshacer.
+        const log = await history.list(tenantId, { userId: adminId, role: 'admin' }, list.slug);
+        expect(log[0]).toMatchObject({ kind: 'records', item_count: 2, can_revert: true });
+
+        // Sin acotar no se toca la lista entera, salvo que se pida explícitamente.
+        const all = await exec(admin, 'propose_bulk_edit', { list: list.slug, operations: [{ field: 'precio', op: 'add', amount: 1 }] });
+        expect(all.isError).toBe(true);
+        const allOk = await exec(admin, 'propose_bulk_edit', { list: list.slug, all_records: true, operations: [{ field: 'precio', op: 'add', amount: 1 }] });
+        expect(allOk.proposal?.preview.affected_count).toBe(3);
+        // Errores corregibles: slug desconocido y operación incompleta.
+        const bad = await exec(admin, 'propose_bulk_edit', { list: list.slug, all_records: true, operations: [{ field: 'costo', op: 'add', amount: 1 }] });
+        expect(JSON.stringify(bad.content)).toMatch(/costo/);
+        const incomplete = await exec(admin, 'propose_bulk_edit', { list: list.slug, all_records: true, operations: [{ field: 'precio', op: 'percent' }] });
+        expect(JSON.stringify(incomplete.content)).toMatch(/percent/);
+        // Un agente no tiene acciones masivas.
+        const byAgent = await exec(agent, 'propose_bulk_edit', { list: list.slug, all_records: true, operations: [{ field: 'precio', op: 'add', amount: 1 }] });
+        expect(byAgent.isError).toBe(true);
+
+        // La acción de automatización que arma el asistente se traduce a ids.
+        const fs = await fields.listByListId(tenantId, list.id);
+        const actions: unknown[] = [
+            { type: 'bulk_edit', config: { filters: [{ field: 'categoria', op: 'eq', value: 'Libretas' }], operations: [{ field: 'precio', op: 'percent', percent: -5 }] } },
+        ];
+        translateBulkEditActions(actions, fs, list.name);
+        expect(actions[0]).toMatchObject({
+            config: {
+                operations: [{ op: 'percent', field_id: precio.id, percent: -5 }],
+                filter_tree: { type: 'group', children: [{ field_id: cat.id, op: 'eq', value: 'libreta' }] },
+            },
+        });
+        expect(() => translateBulkEditActions([{ type: 'bulk_edit', config: { operations: [{ field: 'precio', op: 'clear' }] } }], fs, list.name)).toThrow(/TODA la lista/);
     });
 });

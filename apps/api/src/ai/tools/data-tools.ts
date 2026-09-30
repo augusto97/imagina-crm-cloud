@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
     AGGREGATE_METRICS,
     FIELD_METRICS,
@@ -20,15 +20,21 @@ import {
     readStoreListMarker,
     STORE_EDITABLE_SLUGS,
     storeFieldSlug,
+    BULK_EDIT_APPLY_CHUNK,
+    summarizeBulkOperations,
+    type BulkEditTarget,
+    type BulkOperation,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { AggregateService } from '../../aggregate/aggregate.service';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
+import { BulkEditService } from '../../records/bulk-edit.service';
 import { RecordsService, type Actor } from '../../records/records.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
+import { bulkOpsSpec, translateBulkOps } from './bulk-ops';
 import { filterRuleSpec, rulesToFilterTree, type FilterRuleSpec } from './structure-tools';
 
 /** Tope de filas que una herramienta devuelve al modelo (contexto y costo). */
@@ -81,16 +87,28 @@ const updateRecordsSpec = z.object({ ...targetSpec, values: valuesSpec });
 type UpdateRecordsSpec = z.infer<typeof updateRecordsSpec>;
 const deleteRecordsSpec = z.object(targetSpec);
 type DeleteRecordsSpec = z.infer<typeof deleteRecordsSpec>;
+const bulkEditSpec = z.object({
+    list: z.string().max(63),
+    filters: z.array(filterRuleSpec).max(20).optional().describe('Qué registros (AND)'),
+    search: z.string().max(200).optional().describe('Texto libre (como el buscador de la lista)'),
+    ids: z.array(z.number().int().positive()).max(5000).optional().describe('O bien ids exactos (de query_records)'),
+    all_records: z.boolean().optional().describe('true SÓLO si la persona pidió cambiar TODA la lista'),
+    operations: bulkOpsSpec,
+});
+type BulkEditSpec = z.infer<typeof bulkEditSpec>;
 
 type Payload =
     | { kind: 'create_records'; listId: number; listSlug: string; rows: Array<Record<string, unknown>> }
     | { kind: 'update_records'; listId: number; listSlug: string; ids: number[]; data: Record<string, unknown> }
-    | { kind: 'delete_records'; listId: number; listSlug: string; ids: number[] };
+    | { kind: 'delete_records'; listId: number; listSlug: string; ids: number[] }
+    | { kind: 'bulk_edit_records'; listId: number; listSlug: string; ids: number[]; operations: BulkOperation[] };
 
-const CAPABILITY_BY_KIND: Record<'create_records' | 'update_records' | 'delete_records', Capability> = {
+type DataKind = 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records';
+const CAPABILITY_BY_KIND: Record<DataKind, Capability> = {
     create_records: 'create_records',
     update_records: 'bulk_actions',
     delete_records: 'bulk_actions',
+    bulk_edit_records: 'bulk_actions',
 };
 
 /** Tipos que el asistente puede escribir por valor (el resto son referencias a otras entidades o derivados). */
@@ -114,7 +132,7 @@ const WRITABLE_TYPES = new Set([
  */
 @Injectable()
 export class DataTools implements AiProposalApplier {
-    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set(['create_records', 'update_records', 'delete_records']);
+    static readonly KINDS: ReadonlySet<AiProposalKind> = new Set(['create_records', 'update_records', 'delete_records', 'bulk_edit_records']);
 
     constructor(
         private readonly lists: ListsService,
@@ -122,7 +140,14 @@ export class DataTools implements AiProposalApplier {
         private readonly records: RecordsService,
         private readonly aggregate: AggregateService,
         private readonly store: ProposalsStore,
+        // v0.1.222 — Optional + al final: los specs que arman DataTools a mano siguen andando.
+        @Optional() private readonly bulkEditService?: BulkEditService,
     ) {}
+
+    private get bulkEdit(): BulkEditService {
+        if (!this.bulkEditService) throw new AiToolError('La edición masiva no está disponible en este servidor.');
+        return this.bulkEditService;
+    }
 
     registerInto(registry: AiToolRegistry): void {
         registry.register({
@@ -158,6 +183,16 @@ export class DataTools implements AiProposalApplier {
             capability: 'bulk_actions',
             input: updateRecordsSpec,
             run: (ctx, input) => this.proposeUpdateRecords(ctx, input as UpdateRecordsSpec),
+        });
+        registry.register({
+            name: 'propose_bulk_edit',
+            label: 'Calculando la edición masiva',
+            description:
+                'Propone una edición masiva con OPERACIONES sobre el valor de cada registro: sumar/restar, multiplicar, subir o bajar un %, redondear (p. ej. terminar en 900), calcular una columna con otras, copiar, reemplazar texto, agregar/quitar opciones, correr fechas… (hasta 5.000 registros). ' +
+                'Devuelve la vista previa real (antes → después) y queda en el historial de la lista con «Deshacer». Preferila a propose_update_records cuando el cambio depende del valor actual.',
+            capability: 'bulk_actions',
+            input: bulkEditSpec,
+            run: (ctx, input) => this.proposeBulkEdit(ctx, input as BulkEditSpec),
         });
         registry.register({
             name: 'propose_delete_records',
@@ -296,6 +331,63 @@ export class DataTools implements AiProposalApplier {
         });
     }
 
+    private async proposeBulkEdit(ctx: AiToolContext, input: BulkEditSpec): Promise<AiToolResult> {
+        const { list, fields, bySlug } = await this.loadList(ctx, input.list);
+        const operations = translateBulkOps(input.operations, bySlug, list.name);
+        let target: BulkEditTarget;
+        let scope: string;
+        if (input.ids && input.ids.length > 0) {
+            target = { ids: input.ids };
+            scope = ' elegidos por id';
+        } else {
+            const filterTree = this.filterTreeOf(input.filters, bySlug, list);
+            const search = input.search?.trim() ?? '';
+            if (!filterTree && search === '' && input.all_records !== true) {
+                throw new AiToolError('Hace falta acotar: pasá filters, search o ids — o all_records: true si la persona pidió cambiar TODA la lista.');
+            }
+            target = { ...(filterTree ? { filter_tree: filterTree } : {}), ...(search !== '' ? { search } : {}), include_subtasks: false };
+            scope = filterTree || search !== '' ? ' que coinciden' : ' (toda la lista)';
+        }
+        let preview;
+        try {
+            preview = await this.bulkEdit.preview(ctx.tenantId, actorOf(ctx), String(list.id), target, operations);
+        } catch (err) {
+            throw new AiToolError(errMessage(err));
+        }
+        if (preview.ids.length === 0) {
+            const why = preview.error_count > 0 ? ` ${preview.error_count} no se pueden: ${preview.errors.slice(0, 3).map((e) => `${e.title}: ${e.message}`).join(' · ')}` : '';
+            throw new AiToolError(`No hay nada que cambiar (${preview.total} abarcados, ${preview.unchanged} ya estaban así).${why}`);
+        }
+        const byId = new Map(fields.map((f) => [f.id, f]));
+        const labelOf = (id: number) => byId.get(id)?.label ?? `#${id}`;
+        const show = (id: number, v: unknown): string => {
+            const f = byId.get(id);
+            return v === null || v === undefined || v === '' ? '—' : f ? displayValue(f, v) : String(v);
+        };
+        const n = preview.ids.length;
+        const opsSummary = summarizeBulkOperations(operations, labelOf);
+        const extra = [
+            preview.unchanged > 0 ? `${preview.unchanged} ya estaban así` : '',
+            preview.error_count > 0 ? `${preview.error_count} no se pueden (${preview.errors.slice(0, 3).map((e) => `${e.title}: ${e.message}`).join(' · ')})` : '',
+        ].filter(Boolean);
+        return this.saveProposal(ctx, {
+            kind: 'bulk_edit_records',
+            title: `Edición masiva de ${n} registro${n === 1 ? '' : 's'} de «${list.name}»`,
+            summary: `${opsSummary} — en ${n} registro${n === 1 ? '' : 's'}${scope}.${extra.length > 0 ? ` ${extra.join('; ')}.` : ''} Se puede deshacer desde el historial de ediciones masivas.`,
+            destructive: n >= DESTRUCTIVE_UPDATE_THRESHOLD,
+            listSlug: list.slug,
+            preview: emptyPreview({
+                changes: operations.map((o) => ({ label: labelOf(o.field_id), from: null, to: summarizeBulkOperations([o], labelOf).replace(/^[^:]+: /, '') })),
+                affected_count: n,
+                rows: preview.sample.slice(0, 5).map((s) => ({
+                    Registro: s.title,
+                    ...Object.fromEntries(s.changes.map((c) => [labelOf(c.field_id), `${show(c.field_id, c.before)} → ${show(c.field_id, c.after)}`])),
+                })),
+            }),
+            payload: { kind: 'bulk_edit_records', listId: list.id, listSlug: list.slug, ids: preview.ids, operations },
+        });
+    }
+
     private async proposeDeleteRecords(ctx: AiToolContext, input: DeleteRecordsSpec): Promise<AiToolResult> {
         const { list, bySlug } = await this.loadList(ctx, input.list);
         if (readStoreListMarker(list.settings)) {
@@ -344,6 +436,23 @@ export class DataTools implements AiProposalApplier {
                     message: `${res.succeeded.length} registro${res.succeeded.length === 1 ? '' : 's'} actualizado${res.succeeded.length === 1 ? '' : 's'}.`,
                     links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
                     warnings: res.failed.slice(0, 10).map((f) => `#${f.id}: ${f.message}`),
+                };
+            }
+            case 'bulk_edit_records': {
+                // Mismo camino que el diálogo: tandas, una sola edición en el historial.
+                let editId: number | undefined;
+                let changed = 0;
+                const warnings: string[] = [];
+                for (let i = 0; i < payload.ids.length; i += BULK_EDIT_APPLY_CHUNK) {
+                    const res = await this.bulkEdit.apply(ctx.tenantId, actor, String(payload.listId), payload.ids.slice(i, i + BULK_EDIT_APPLY_CHUNK), payload.operations, editId);
+                    editId = res.edit_id ?? editId;
+                    changed += res.succeeded.length;
+                    for (const f of res.failed) if (warnings.length < 10) warnings.push(`#${f.id}: ${f.message}`);
+                }
+                return {
+                    message: `${changed} registro${changed === 1 ? '' : 's'} actualizado${changed === 1 ? '' : 's'}. Se puede deshacer desde «Historial de ediciones masivas» de la lista.`,
+                    links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
+                    warnings,
                 };
             }
             case 'delete_records': {
@@ -505,7 +614,7 @@ export class DataTools implements AiProposalApplier {
 
     private async saveProposal(
         ctx: AiToolContext,
-        p: { kind: 'create_records' | 'update_records' | 'delete_records'; title: string; summary: string; destructive: boolean; listSlug: string; preview: AiProposalPreview; payload: Payload },
+        p: { kind: DataKind; title: string; summary: string; destructive: boolean; listSlug: string; preview: AiProposalPreview; payload: Payload },
     ): Promise<AiToolResult> {
         const proposal: AiProposal = {
             id: randomBytes(9).toString('base64url'),

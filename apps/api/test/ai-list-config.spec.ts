@@ -316,6 +316,37 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(await automations.list(tenantId, 'clientes')).toEqual([]);
     });
 
+    it('v0.1.222 — automatización programada con «Editar en lote» por slug: se guarda con ids y horario', async () => {
+        const created = json(await call('propose_create_automation', {
+            list: 'clientes',
+            name: 'Reactivar cada lunes',
+            trigger_type: 'scheduled',
+            trigger_config: { frequency: 'weekly', weekday: 1, hour: 8, tz: 'America/Bogota' },
+            actions: [{
+                type: 'bulk_edit',
+                config: {
+                    filters: [{ field: 'nombre', op: 'contains', value: 'Acme' }],
+                    operations: [{ field: 'estado', op: 'set', value: 'activo' }, { field: 'nombre', op: 'append', text: ' (revisado)' }],
+                },
+            }],
+        }));
+        await apply(created.proposal_id);
+        const auto = (await automations.list(tenantId, 'clientes')).find((a) => a.name === 'Reactivar cada lunes')!;
+        const cfg = (auto.actions[0] as { config: Record<string, unknown> }).config;
+        const ops = cfg.operations as Array<{ op: string; field_id: number }>;
+        expect(ops.map((o) => o.op)).toEqual(['set', 'append']);
+        expect(ops.every((o) => typeof o.field_id === 'number')).toBe(true);
+        expect(cfg.filter_tree).toMatchObject({ type: 'group' });
+        expect(auto.trigger_config).toMatchObject({ frequency: 'weekly', weekday: 1, hour: 8 });
+        // Sin filtro ni all_records: error corregible.
+        const noFilter = await call('propose_create_automation', {
+            list: 'clientes', name: 'Todo', trigger_type: 'scheduled',
+            actions: [{ type: 'bulk_edit', config: { operations: [{ field: 'nombre', op: 'trim' }] } }],
+        });
+        expect(isError(noFilter)).toBe(true);
+        expect(json(noFilter).error).toMatch(/TODA la lista/);
+    });
+
     it('vistas: renombrar, marcar por defecto, reemplazar filtros y borrar', async () => {
         const created = json(await call('propose_create_view', { list: 'clientes', view: { name: 'Activos', type: 'table', filters: [{ field: 'estado', op: 'eq', value: 'activo' }] } }));
         await apply(created.proposal_id);
