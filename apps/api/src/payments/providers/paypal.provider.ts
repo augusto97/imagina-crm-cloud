@@ -18,13 +18,23 @@ const PAYPAL_API = {
  * PayPal (Orders API v2). Crea una orden y devuelve el link `approve` para
  * redirigir. El webhook se verifica llamando a la API oficial
  * `verify-webhook-signature` (PayPal firma con cert rotativo, no con un secret
- * estático). Los eventos de captura/orden aprobada activan el plan.
+ * estático).
+ *
+ * SEC-29 (v0.1.228): una orden APROBADA todavía no es un pago — con
+ * `intent: CAPTURE` la plata sólo se mueve cuando el comercio la CAPTURA.
+ * Antes el plan se activaba con `CHECKOUT.ORDER.APPROVED` y nadie capturaba
+ * nunca: el cliente aprobaba, se llevaba el plan y no se le cobraba. Ahora la
+ * aprobación dispara la captura y el plan se activa sólo si PayPal confirma
+ * la captura como COMPLETED.
  */
 export class PayPalGateway implements PaymentGateway {
     readonly provider = 'paypal' as const;
     private readonly logger = new Logger('PayPal');
 
-    constructor(private readonly env: Env) {}
+    constructor(
+        private readonly env: Env,
+        private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+    ) {}
 
     get enabled(): boolean {
         return this.env.PAYPAL_CLIENT_ID !== '' && this.env.PAYPAL_CLIENT_SECRET !== '';
@@ -38,7 +48,7 @@ export class PayPalGateway implements PaymentGateway {
         const creds = Buffer.from(
             `${this.env.PAYPAL_CLIENT_ID}:${this.env.PAYPAL_CLIENT_SECRET}`,
         ).toString('base64');
-        const res = await fetch(`${this.base}/v1/oauth2/token`, {
+        const res = await this.fetchImpl(`${this.base}/v1/oauth2/token`, {
             method: 'POST',
             headers: {
                 authorization: `Basic ${creds}`,
@@ -53,7 +63,7 @@ export class PayPalGateway implements PaymentGateway {
     async createCheckout(req: CheckoutRequest): Promise<CheckoutSession> {
         if (!this.enabled) throw new Error('PayPal no está configurado');
         const accessToken = await this.token();
-        const res = await fetch(`${this.base}/v2/checkout/orders`, {
+        const res = await this.fetchImpl(`${this.base}/v2/checkout/orders`, {
             method: 'POST',
             headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
             body: JSON.stringify({
@@ -94,19 +104,67 @@ export class PayPalGateway implements PaymentGateway {
             return null;
         }
 
-        const status = mapPayPalEvent(event.event_type);
-        if (!status) return null;
         const customId = extractCustomId(event);
         const ref = customId ? decodeReference(customId) : null;
         if (!ref) return null;
+
+        if (event.event_type === 'CHECKOUT.ORDER.APPROVED') {
+            const orderId = event.resource?.id;
+            if (typeof orderId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(orderId)) return null;
+            const captured = await this.capture(orderId);
+            if (!captured) return null;
+            return { tenantId: ref.tenantId, plan: ref.plan, status: 'active' };
+        }
+        // Una captura "completada" que no dice COMPLETED (p. ej. PENDING por
+        // revisión de PayPal) todavía no es plata cobrada.
+        if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && event.resource?.status !== undefined && event.resource.status !== 'COMPLETED') {
+            return null;
+        }
+        const status = mapPayPalEvent(event.event_type);
+        if (!status) return null;
         return { tenantId: ref.tenantId, plan: ref.plan, status };
+    }
+
+    /**
+     * Captura la orden aprobada. Idempotente: si otra entrega del mismo aviso
+     * ya la capturó (PayPal reintenta), se consulta el estado de la orden en
+     * vez de fallar. Sólo `COMPLETED` cuenta como cobrado.
+     */
+    private async capture(orderId: string): Promise<boolean> {
+        try {
+            const accessToken = await this.token();
+            const res = await this.fetchImpl(`${this.base}/v2/checkout/orders/${orderId}/capture`, {
+                method: 'POST',
+                headers: {
+                    authorization: `Bearer ${accessToken}`,
+                    'content-type': 'application/json',
+                    // Misma clave para los reintentos: PayPal no captura dos veces.
+                    'paypal-request-id': `capture-${orderId}`,
+                },
+                body: '{}',
+            });
+            if (res.ok) {
+                return ((await res.json()) as { status?: string }).status === 'COMPLETED';
+            }
+            if (res.status === 422) {
+                const order = await this.fetchImpl(`${this.base}/v2/checkout/orders/${orderId}`, {
+                    headers: { authorization: `Bearer ${accessToken}` },
+                });
+                if (order.ok) return ((await order.json()) as { status?: string }).status === 'COMPLETED';
+            }
+            this.logger.warn(`no se pudo capturar la orden ${orderId}: ${res.status}`);
+            return false;
+        } catch (err) {
+            this.logger.error(`captura de la orden ${orderId} falló: ${String(err)}`);
+            return false;
+        }
     }
 
     /** Verificación oficial: PayPal confirma la firma del webhook por API. */
     private async verify(headers: Record<string, string | undefined>, rawBody: string): Promise<boolean> {
         try {
             const accessToken = await this.token();
-            const res = await fetch(`${this.base}/v1/notifications/verify-webhook-signature`, {
+            const res = await this.fetchImpl(`${this.base}/v1/notifications/verify-webhook-signature`, {
                 method: 'POST',
                 headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
                 body: JSON.stringify({
@@ -131,7 +189,8 @@ export class PayPalGateway implements PaymentGateway {
 /** Evento de PayPal → estado de billing (sólo los que cambian el estado). */
 export function mapPayPalEvent(eventType: string | undefined): BillingStatus | null {
     switch (eventType) {
-        case 'CHECKOUT.ORDER.APPROVED':
+        // `CHECKOUT.ORDER.APPROVED` NO está acá a propósito: aprobar no es
+        // pagar (ver `handleWebhook`, que captura antes de activar).
         case 'PAYMENT.CAPTURE.COMPLETED':
         case 'BILLING.SUBSCRIPTION.ACTIVATED':
             return 'active';
@@ -158,6 +217,8 @@ function extractCustomId(event: PayPalEvent): string | undefined {
 interface PayPalEvent {
     event_type?: string;
     resource?: {
+        id?: string;
+        status?: string;
         custom_id?: string;
         purchase_units?: Array<{ custom_id?: string }>;
     };

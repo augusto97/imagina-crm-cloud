@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -413,6 +414,12 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(res.users_linked).toBe(1);
         expect(res.users_created).toBe(1);
         expect(res.counts.records).toBe(3);
+        // SEC-30: sin marcar el archivo como de confianza, la cuenta NUEVA no
+        // hereda la contraseña ni la verificación del archivo.
+        const [carlosNuevo] = await pg.db.select().from(users).where(eq(users.email, 'carlos@acme.test'));
+        expect(carlosNuevo!.passwordHash).not.toBe('hash-carlos');
+        expect(carlosNuevo!.emailVerifiedAt).toBeNull();
+        expect(res.warnings.some((w) => w.includes('SIN contraseña'))).toBe(true);
 
         // ── Listas y campos ────────────────────────────────────────────
         const newLists = await pg.db.select().from(lists).where(eq(lists.tenantId, tenantB));
@@ -592,6 +599,30 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(conns[0]!.secrets).toEqual({});
         expect(res.warnings.some((w) => w.includes('clave de cifrado'))).toBe(true);
     }, 120_000);
+
+    it('con el archivo marcado de confianza, la cuenta nueva conserva su contraseña', async () => {
+        // Se libera el email de Carlos (la importación anterior lo creó).
+        await pg.db.update(users).set({ email: 'carlos-viejo@acme.test' }).where(eq(users.email, 'carlos@acme.test'));
+        const status = await svc.status();
+        const res = await svc.importTenant({ file: status.files[0]!.name, slug: 'acme-confianza', trust_credentials: true });
+        expect(res.users_created).toBe(1);
+        const [carlos] = await pg.db.select().from(users).where(eq(users.email, 'carlos@acme.test'));
+        expect(carlos!.passwordHash).toBe('hash-carlos');
+        expect(res.warnings.some((w) => w.includes('SIN contraseña'))).toBe(false);
+    }, 120_000);
+
+    it('rechaza un archivo con symlinks (no lee archivos del servidor)', async () => {
+        const craft = mkdtempSync(path.join(tmpdir(), 'craft-'));
+        try {
+            writeFileSync(path.join(craft, 'manifest.json'), '{}');
+            mkdirSync(path.join(craft, 'files'));
+            symlinkSync('/etc/hostname', path.join(craft, 'files', 'robado'));
+            execFileSync('tar', ['-cf', path.join(work, 'symlink.tar'), '-C', craft, '.']);
+        } finally {
+            rmSync(craft, { recursive: true, force: true });
+        }
+        await expect(svc.importTenant({ file: 'symlink.tar' })).rejects.toThrow(/no es un archivo común/);
+    });
 
     it('rechaza nombres con traversal y archivos que no son exportaciones', async () => {
         expect(() => svc.resolve('../../etc/passwd')).toThrow();

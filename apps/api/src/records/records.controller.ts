@@ -43,7 +43,6 @@ import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
-import { BillingService } from '../billing/billing.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BulkEditService } from './bulk-edit.service';
@@ -60,7 +59,6 @@ import { RecordsService, type Actor, type RecordsPage } from './records.service'
 export class RecordsController {
     constructor(
         private readonly records: RecordsService,
-        private readonly billing: BillingService,
         private readonly bulkEdit: BulkEditService,
         private readonly bulkStructure: BulkStructureService,
     ) {}
@@ -202,8 +200,8 @@ export class RecordsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createRecordSchema)) input: CreateRecordInput,
     ): Promise<RecordDto> {
-        // Límite de records por plan (STANDALONE §11).
-        await this.billing.assertCanCreateRecord(tenantId(req));
+        // Límite de records por plan (STANDALONE §11): lo aplica el service
+        // (v0.1.228), así vale también para los caminos que no pasan por acá.
         return this.records.create(tenantId(req), actor(req), list, input);
     }
 

@@ -29,6 +29,24 @@ describe('DomainsService (Postgres real)', () => {
         await pg?.stop();
     });
 
+    /** DNS falso: TXT publicados por nombre (lo que el cliente pondría en SU DNS). */
+    const txt = new Map<string, string[]>();
+    beforeAll(() => {
+        domains.resolveTxt = async (name) => {
+            const values = txt.get(name);
+            if (!values) throw Object.assign(new Error('no data'), { code: 'ENODATA' });
+            return values.map((v) => [v]);
+        };
+    });
+
+    /** Pide el dominio, publica el TXT correcto y lo verifica. */
+    async function activate(tid: number, domain: string): Promise<void> {
+        const st = await domains.set(tid, domain);
+        txt.set(st.pending!.txt_name, [st.pending!.txt_value]);
+        const r = await domains.verify(tid);
+        expect(r.verified).toBe(true);
+    }
+
     let counter = 0;
     beforeEach(async () => {
         counter += 1;
@@ -45,15 +63,34 @@ describe('DomainsService (Postgres real)', () => {
         tenantId = t!.id;
     });
 
-    it('set/get/clear: registra un dominio propio y arma las instrucciones', async () => {
+    it('set deja el dominio PENDIENTE; verify con el TXT correcto lo activa; clear lo quita', async () => {
         const st = await domains.set(tenantId, 'CRM.Acme.com');
-        expect(st.domain).toBe('crm.acme.com'); // normalizado a minúsculas
+        // SEC-32: pedir no es tener — nada activo todavía.
+        expect(st.domain).toBeNull();
+        expect(st.pending).toMatchObject({ domain: 'crm.acme.com', txt_name: '_imagina-verify.crm.acme.com' });
+        expect(st.pending!.txt_value).toMatch(/^imagina-verify=[0-9a-f]{32}$/);
         expect(st.base_domain).toBe('app.imaginabase.com');
         expect(st.subdomain).toBe(`dom-${counter}.app.imaginabase.com`);
         expect(st.target).toBe('app.imaginabase.com');
+        expect((await domains.resolveHost('crm.acme.com')).tenant).toBeNull();
+        expect(await domains.isServableDomain('crm.acme.com')).toBe(false);
+
+        // Pedir otra vez el mismo dominio conserva el código.
+        expect((await domains.set(tenantId, 'crm.acme.com')).pending!.txt_value).toBe(st.pending!.txt_value);
+
+        // Sin TXT → missing; con otro código → mismatch.
+        expect(await domains.verify(tenantId)).toMatchObject({ verified: false, status: 'missing' });
+        txt.set(st.pending!.txt_name, ['imagina-verify=otro-codigo']);
+        expect(await domains.verify(tenantId)).toMatchObject({ verified: false, status: 'mismatch' });
+
+        txt.set(st.pending!.txt_name, [st.pending!.txt_value]);
+        const ok = await domains.verify(tenantId);
+        expect(ok.verified).toBe(true);
+        expect(ok.domain).toMatchObject({ domain: 'crm.acme.com', pending: null });
 
         const cleared = await domains.clear(tenantId);
         expect(cleared.domain).toBeNull();
+        txt.clear();
     });
 
     it('rechaza dominios reservados (la base y sus subdominios) e inválidos', async () => {
@@ -62,19 +99,29 @@ describe('DomainsService (Postgres real)', () => {
         await expect(domains.set(tenantId, 'no_valido')).rejects.toThrow();
     });
 
-    it('unicidad global: el dominio de otro workspace da 409', async () => {
-        await domains.set(tenantId, 'unico.acme.com');
-        const [other] = await pg.db
+    it('SEC-32: nadie reserva el dominio de otra empresa — quien prueba ser dueño se lo lleva', async () => {
+        const [otra] = await pg.db
             .insert(tenants)
             .values({ slug: `dom-otro-${counter}`, name: 'Otro', plan: 'trial', status: 'trialing' })
             .returning();
-        await expect(domains.set(other!.id, 'unico.acme.com')).rejects.toMatchObject({ status: 409 });
-        // Re-guardar el mismo dominio en el MISMO tenant no molesta.
-        await expect(domains.set(tenantId, 'unico.acme.com')).resolves.toMatchObject({ domain: 'unico.acme.com' });
+        // "Otra" lo pide primero, pero no puede publicar el TXT: no se activa
+        // y NO bloquea al dueño real.
+        await domains.set(otra!.id, 'unico.acme.com');
+        await activate(tenantId, 'unico.acme.com');
+        expect((await domains.resolveHost('unico.acme.com')).tenant?.id).toBe(tenantId);
+
+        // Si el dueño del DNS cambia el TXT al código de "otra", el dominio
+        // pasa a ella (y deja de estar en la primera).
+        const st = await domains.getForTenant(otra!.id);
+        txt.set(st.pending!.txt_name, [st.pending!.txt_value]);
+        expect((await domains.verify(otra!.id)).verified).toBe(true);
+        expect((await domains.getForTenant(tenantId)).domain).toBeNull();
+        expect((await domains.resolveHost('unico.acme.com')).tenant?.id).toBe(otra!.id);
+        txt.clear();
     });
 
     it('resolveHost: dominio propio y subdominio slug.base → marca del tenant', async () => {
-        await domains.set(tenantId, `crm-${counter}.acme.com`);
+        await activate(tenantId, `crm-${counter}.acme.com`);
 
         const byDomain = await domains.resolveHost(`crm-${counter}.acme.com:443`);
         expect(byDomain.tenant).toMatchObject({
@@ -95,7 +142,7 @@ describe('DomainsService (Postgres real)', () => {
     });
 
     it('isServableDomain (ask de Caddy): base sí, tenant sí, desconocido no', async () => {
-        await domains.set(tenantId, `crm-${counter}.acme.com`);
+        await activate(tenantId, `crm-${counter}.acme.com`);
         expect(await domains.isServableDomain('app.imaginabase.com')).toBe(true);
         expect(await domains.isServableDomain(`crm-${counter}.acme.com`)).toBe(true);
         expect(await domains.isServableDomain(`dom-${counter}.app.imaginabase.com`)).toBe(true);
@@ -106,11 +153,14 @@ describe('DomainsService (Postgres real)', () => {
     it('baseUrlFor: con dominio propio → https://dominio; sin él → APP_BASE_URL', async () => {
         expect(await domains.baseUrlFor(tenantId)).toBe('https://app.imaginabase.com');
         await domains.set(tenantId, `crm-${counter}.acme.com`);
+        // Pendiente todavía: los enlaces siguen saliendo por la plataforma.
+        expect(await domains.baseUrlFor(tenantId)).toBe('https://app.imaginabase.com');
+        await activate(tenantId, `crm-${counter}.acme.com`);
         expect(await domains.baseUrlFor(tenantId)).toBe(`https://crm-${counter}.acme.com`);
     });
 
     it('tenant archivado no resuelve (white-label apagado al archivar)', async () => {
-        await domains.set(tenantId, `crm-${counter}.acme.com`);
+        await activate(tenantId, `crm-${counter}.acme.com`);
         await pg.db.update(tenants).set({ archivedAt: new Date() }).where(
             (await import('drizzle-orm')).eq(tenants.id, tenantId),
         );

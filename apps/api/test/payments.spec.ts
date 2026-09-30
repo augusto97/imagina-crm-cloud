@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { Currency, PlanPrice } from '@imagina-base/shared';
-import { loadEnv } from '../src/config/env';
+import { loadEnv, type Env } from '../src/config/env';
 import type { BillingService } from '../src/billing/billing.service';
 import type { PlansService } from '../src/billing/plans.service';
 import { PaymentsService } from '../src/payments/payments.service';
@@ -13,7 +13,7 @@ import {
     type PaymentGateway,
 } from '../src/payments/payment.types';
 import { mapMpStatus, verifyMpSignature } from '../src/payments/providers/mercadopago.provider';
-import { mapPayPalEvent } from '../src/payments/providers/paypal.provider';
+import { mapPayPalEvent, PayPalGateway } from '../src/payments/providers/paypal.provider';
 
 function fakeBilling(): { billing: BillingService; calls: Array<{ tenantId: number; input: unknown }> } {
     const calls: Array<{ tenantId: number; input: unknown }> = [];
@@ -77,6 +77,73 @@ describe('mapeos de estado', () => {
         expect(mapPayPalEvent('PAYMENT.CAPTURE.COMPLETED')).toBe('active');
         expect(mapPayPalEvent('BILLING.SUBSCRIPTION.CANCELLED')).toBe('canceled');
         expect(mapPayPalEvent('UNKNOWN.EVENT')).toBeNull();
+        // SEC-29: aprobar no es pagar.
+        expect(mapPayPalEvent('CHECKOUT.ORDER.APPROVED')).toBeNull();
+    });
+});
+
+// SEC-29 (v0.1.228): la orden aprobada se CAPTURA antes de activar el plan.
+describe('PayPal: captura antes de activar', () => {
+    const ppEnv = {
+        PAYPAL_CLIENT_ID: 'id',
+        PAYPAL_CLIENT_SECRET: 'secret',
+        PAYPAL_WEBHOOK_ID: 'wh',
+        PAYPAL_ENV: 'sandbox',
+    } as unknown as Env;
+    const approved = JSON.stringify({
+        event_type: 'CHECKOUT.ORDER.APPROVED',
+        resource: { id: 'ORDER-123', purchase_units: [{ custom_id: '7:pro' }] },
+    });
+
+    function fakeFetch(capture: { status: number; body?: unknown }, order?: { status?: string }) {
+        const calls: string[] = [];
+        const impl = (async (url: string | URL | Request) => {
+            const u = String(url);
+            calls.push(u);
+            const json = (body: unknown, status = 200) =>
+                new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+            if (u.endsWith('/v1/oauth2/token')) return json({ access_token: 't' });
+            if (u.endsWith('/verify-webhook-signature')) return json({ verification_status: 'SUCCESS' });
+            if (u.endsWith('/capture')) return json(capture.body ?? {}, capture.status);
+            if (u.endsWith('/v2/checkout/orders/ORDER-123')) return json(order ?? {});
+            return json({}, 404);
+        }) as typeof fetch;
+        return { impl, calls };
+    }
+
+    it('captura COMPLETED → activa el plan de la referencia', async () => {
+        const f = fakeFetch({ status: 201, body: { status: 'COMPLETED' } });
+        const ev = await new PayPalGateway(ppEnv, f.impl).handleWebhook({}, approved);
+        expect(ev).toEqual({ tenantId: 7, plan: 'pro', status: 'active' });
+        expect(f.calls.some((c) => c.endsWith('/v2/checkout/orders/ORDER-123/capture'))).toBe(true);
+    });
+
+    it('captura rechazada (fondos, orden inválida) → no activa nada', async () => {
+        const f = fakeFetch({ status: 400, body: { name: 'INSTRUMENT_DECLINED' } });
+        expect(await new PayPalGateway(ppEnv, f.impl).handleWebhook({}, approved)).toBeNull();
+    });
+
+    it('captura PENDIENTE → todavía no es plata cobrada', async () => {
+        const f = fakeFetch({ status: 201, body: { status: 'PENDING' } });
+        expect(await new PayPalGateway(ppEnv, f.impl).handleWebhook({}, approved)).toBeNull();
+    });
+
+    it('reintento del aviso con la orden ya capturada → consulta y activa', async () => {
+        const f = fakeFetch({ status: 422, body: { name: 'UNPROCESSABLE_ENTITY' } }, { status: 'COMPLETED' });
+        expect(await new PayPalGateway(ppEnv, f.impl).handleWebhook({}, approved)).toEqual({
+            tenantId: 7,
+            plan: 'pro',
+            status: 'active',
+        });
+    });
+
+    it('PAYMENT.CAPTURE.COMPLETED en estado PENDING no activa', async () => {
+        const f = fakeFetch({ status: 201 });
+        const body = JSON.stringify({
+            event_type: 'PAYMENT.CAPTURE.COMPLETED',
+            resource: { status: 'PENDING', custom_id: '7:pro' },
+        });
+        expect(await new PayPalGateway(ppEnv, f.impl).handleWebhook({}, body)).toBeNull();
     });
 });
 

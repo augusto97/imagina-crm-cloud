@@ -81,12 +81,18 @@ export const importTenantSchema = z.object({
         .regex(/^[a-z][a-z0-9_-]{1,62}$/, 'Slug inválido')
         .optional(),
     name: z.string().trim().min(1).max(120).optional(),
+    /**
+     * SEC-30 (v0.1.228): conservar contraseñas, email verificado y segundo
+     * factor de las cuentas NUEVAS. Sólo si el archivo lo exportó un servidor
+     * de confianza; sin esto nacen sin contraseña (entran por el reset).
+     */
+    trust_credentials: z.boolean().default(false),
 });
-export type ImportTenantInput = z.infer<typeof importTenantSchema>;
+export type ImportTenantInput = z.input<typeof importTenantSchema>;
 
 /** El mismo pedido sin `file`: el archivo viaja en la ruta del endpoint. */
 export const importTenantBodySchema = importTenantSchema.omit({ file: true });
-export type ImportTenantBody = z.infer<typeof importTenantBodySchema>;
+export type ImportTenantBody = z.input<typeof importTenantBodySchema>;
 
 export const importTenantResultSchema = z.object({
     tenant_id: idSchema,

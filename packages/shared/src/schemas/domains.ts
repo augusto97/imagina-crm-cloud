@@ -32,8 +32,33 @@ export const tenantDomainSchema = z.object({
     subdomain: z.string().nullable(),
     /** Host destino del CNAME que debe crear el cliente. */
     target: z.string(),
+    /**
+     * SEC-32 (v0.1.228) — dominio pedido que todavía no probó ser del cliente.
+     * No se usa para nada (ni certificado, ni marca, ni enlaces) hasta que
+     * aparezca el registro TXT con el código: así nadie "reserva" el dominio
+     * de otra empresa. `domain` es siempre el VERIFICADO.
+     */
+    pending: z
+        .object({
+            domain: z.string(),
+            /** Nombre del TXT a crear (FQDN). */
+            txt_name: z.string(),
+            /** Valor exacto del TXT. */
+            txt_value: z.string(),
+        })
+        .nullable()
+        .default(null),
 });
 export type TenantDomain = z.infer<typeof tenantDomainSchema>;
+
+/** Resultado de "Verificar" el dominio pedido (SEC-32). */
+export const domainVerifyResultSchema = z.object({
+    verified: z.boolean(),
+    /** found = TXT presente con otro valor; missing = no hay TXT; unknown = DNS no respondió. */
+    status: z.enum(['ok', 'missing', 'mismatch', 'unknown']),
+    domain: tenantDomainSchema,
+});
+export type DomainVerifyResult = z.infer<typeof domainVerifyResultSchema>;
 
 /** Verificación en vivo del apuntamiento DNS del dominio propio. */
 export const domainDnsReportSchema = z.object({

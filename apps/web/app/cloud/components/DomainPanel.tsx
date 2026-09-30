@@ -58,7 +58,7 @@ export function DomainPanel(): JSX.Element | null {
 
     // Rehidratar el input cuando llega (o cambia) el estado del dominio.
     useEffect(() => {
-        if (domainQ.data) setDomainInput(domainQ.data.domain ?? '');
+        if (domainQ.data) setDomainInput(domainQ.data.pending?.domain ?? domainQ.data.domain ?? '');
     }, [domainQ.data]);
 
     const invalidate = (): void => {
@@ -72,7 +72,7 @@ export function DomainPanel(): JSX.Element | null {
         onSuccess: () => {
             setNotice({
                 kind: 'ok',
-                text: 'Dominio guardado. Creá el registro DNS indicado abajo y verificalo.',
+                text: 'Dominio pedido. Creá los dos registros DNS de abajo y tocá «Verificar propiedad»: hasta entonces el dominio no se usa.',
             });
             invalidate();
         },
@@ -88,6 +88,31 @@ export function DomainPanel(): JSX.Element | null {
         },
         onError: (e) =>
             setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'No se pudo quitar el dominio.' }),
+    });
+
+    // SEC-32 (v0.1.228): el dominio pedido se activa recién cuando aparece el
+    // TXT con el código de esta empresa (prueba de que el dominio es suyo).
+    const verify = useMutation({
+        mutationFn: () => api.tenantDomainVerify(),
+        onSuccess: (r) => {
+            if (r.verified) {
+                setNotice({ kind: 'ok', text: `¡Listo! ${r.domain.domain} quedó verificado y activo.` });
+            } else if (r.status === 'unknown') {
+                setNotice({ kind: 'err', text: 'El DNS no respondió. Probá de nuevo en un momento.' });
+            } else if (r.status === 'mismatch') {
+                setNotice({
+                    kind: 'err',
+                    text: 'Encontramos un registro de verificación pero con otro código: revisá que el valor sea exactamente el de abajo.',
+                });
+            } else {
+                setNotice({
+                    kind: 'err',
+                    text: 'Todavía no aparece el registro TXT. Los cambios de DNS pueden tardar unos minutos (a veces horas) en propagarse.',
+                });
+            }
+            invalidate();
+        },
+        onError: (e) => setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'No se pudo verificar.' }),
     });
 
     const dnsQ = useQuery({
@@ -111,7 +136,9 @@ export function DomainPanel(): JSX.Element | null {
     if (domainQ.isError || !domainQ.data) return null;
 
     const d = domainQ.data;
-    const busy = save.isPending || clear.isPending;
+    const busy = save.isPending || clear.isPending || verify.isPending;
+    // El dominio sobre el que se trabaja: el pedido (pendiente) o el activo.
+    const shownDomain = d.pending?.domain ?? d.domain;
 
     const submit = (e: React.FormEvent): void => {
         e.preventDefault();
@@ -192,7 +219,7 @@ export function DomainPanel(): JSX.Element | null {
                             <Button type="submit" size="sm" disabled={busy || domainInput.trim().length === 0}>
                                 {save.isPending ? 'Guardando…' : 'Guardar'}
                             </Button>
-                            {d.domain && (
+                            {(d.domain || d.pending) && (
                                 <Button
                                     type="button"
                                     variant="ghost"
@@ -221,15 +248,88 @@ export function DomainPanel(): JSX.Element | null {
                     </div>
                 )}
 
-                {/* Instrucciones + verificación del apuntamiento DNS. */}
                 {d.domain && (
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        Dominio activo:{' '}
+                        <span className="imcrm-font-mono imcrm-text-foreground">{d.domain}</span>
+                        {d.pending && d.pending.domain !== d.domain && ' (sigue activo hasta que verifiques el nuevo)'}
+                    </p>
+                )}
+
+                {/* Prueba de propiedad (TXT) del dominio pedido. */}
+                {d.pending && (
                     <section className="imcrm-space-y-3 imcrm-border-t imcrm-border-border imcrm-pt-4">
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                             <div>
-                                <h4 className="imcrm-text-sm imcrm-font-medium">Registro DNS</h4>
+                                <h4 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                                    1. Verificá que el dominio es tuyo
+                                    <Badge dot variant="warning">
+                                        Pendiente
+                                    </Badge>
+                                </h4>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    Creá este registro TXT en el DNS de{' '}
+                                    <span className="imcrm-font-medium imcrm-text-foreground">{d.pending.domain}</span>.
+                                    Hasta que lo veamos, el dominio no se usa (así nadie puede tomar el dominio de otra
+                                    empresa).
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                size="sm"
+                                data-testid="domain-verify"
+                                onClick={() => verify.mutate()}
+                                disabled={busy}
+                            >
+                                {verify.isPending ? 'Verificando…' : 'Verificar propiedad'}
+                            </Button>
+                        </div>
+                        <div className="imcrm-space-y-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
+                            <Badge variant="outline">TXT</Badge>
+                            <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                                <div className="imcrm-min-w-0 imcrm-text-sm">
+                                    <div className="imcrm-text-xs imcrm-text-muted-foreground">Nombre</div>
+                                    <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
+                                        <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-font-mono imcrm-text-xs">
+                                            {d.pending.txt_name}
+                                        </code>
+                                        <CopyButton
+                                            copied={copied === 'txt-name'}
+                                            onCopy={() => void handleCopy('txt-name', d.pending!.txt_name)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="imcrm-min-w-0 imcrm-text-sm">
+                                    <div className="imcrm-text-xs imcrm-text-muted-foreground">Valor</div>
+                                    <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
+                                        <code
+                                            data-testid="domain-txt-value"
+                                            className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-xs"
+                                        >
+                                            {d.pending.txt_value}
+                                        </code>
+                                        <CopyButton
+                                            copied={copied === 'txt-value'}
+                                            onCopy={() => void handleCopy('txt-value', d.pending!.txt_value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                )}
+
+                {/* Instrucciones + verificación del apuntamiento DNS. */}
+                {shownDomain && (
+                    <section className="imcrm-space-y-3 imcrm-border-t imcrm-border-border imcrm-pt-4">
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                            <div>
+                                <h4 className="imcrm-text-sm imcrm-font-medium">
+                                    {d.pending ? '2. Apuntá el dominio a la plataforma' : 'Registro DNS'}
+                                </h4>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                     Creá este registro en el DNS de tu dominio para que{' '}
-                                    <span className="imcrm-font-medium imcrm-text-foreground">{d.domain}</span>{' '}
+                                    <span className="imcrm-font-medium imcrm-text-foreground">{shownDomain}</span>{' '}
                                     apunte a la plataforma.
                                 </p>
                             </div>
@@ -240,7 +340,7 @@ export function DomainPanel(): JSX.Element | null {
                                 onClick={() => void dnsQ.refetch()}
                                 disabled={dnsQ.isFetching}
                             >
-                                {dnsQ.isFetching ? 'Verificando…' : 'Verificar DNS'}
+                                {dnsQ.isFetching ? 'Verificando…' : 'Comprobar apuntamiento'}
                             </Button>
                         </div>
 
@@ -262,7 +362,7 @@ export function DomainPanel(): JSX.Element | null {
                             <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                                 <div className="imcrm-min-w-0 imcrm-text-sm">
                                     <div className="imcrm-text-xs imcrm-text-muted-foreground">Host</div>
-                                    <code className="imcrm-break-all imcrm-font-mono imcrm-text-xs">{d.domain}</code>
+                                    <code className="imcrm-break-all imcrm-font-mono imcrm-text-xs">{shownDomain}</code>
                                 </div>
                                 <div className="imcrm-min-w-0 imcrm-text-sm">
                                     <div className="imcrm-text-xs imcrm-text-muted-foreground">Valor</div>

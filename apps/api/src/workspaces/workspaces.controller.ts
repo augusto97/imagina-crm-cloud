@@ -10,6 +10,7 @@ import {
     type UpdateStylePresetsInput,
     type CustomDomainInput,
     type DomainDnsReport,
+    type DomainVerifyResult,
     type SmtpConfig,
     type SmtpConfigPublic,
     type SmtpDiagnoseInput,
@@ -266,6 +267,28 @@ export class WorkspacesController {
             targetLabel: '(sin dominio propio)',
         });
         return domain;
+    }
+
+    /**
+     * SEC-32 (v0.1.228): prueba de propiedad del dominio pedido (TXT). Recién
+     * con esto el dominio se activa: certificado, marca y enlaces.
+     */
+    @Post('current/domain/verify')
+    @HttpCode(200)
+    @UseGuards(TenantGuard)
+    async verifyDomain(@Req() req: FastifyRequest): Promise<DomainVerifyResult> {
+        this.assertAdmin(req);
+        const result = await this.domains.verify(req.tenant!.tenantId);
+        if (result.verified) {
+            await this.audit.log({
+                tenantId: req.tenant!.tenantId,
+                userId: req.authUserId ?? null,
+                action: 'workspace.domain_verified',
+                targetType: 'workspace',
+                targetLabel: result.domain.domain ?? '',
+            });
+        }
+        return result;
     }
 
     /** Verificación en vivo del CNAME/A del dominio propio. 404 sin dominio. */

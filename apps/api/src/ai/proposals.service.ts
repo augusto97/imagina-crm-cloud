@@ -47,13 +47,30 @@ export class ProposalsService {
         }
         const applier = DataTools.KINDS.has(stored.kind) ? this.data : this.structure;
         if (!applier) throw new NotFoundException({ code: 'ai_proposal_not_found', message: 'Tipo de propuesta no disponible', data: { status: 404 } });
-        const outcome = await applier.apply(ctx, stored);
-        const applied: AiProposal = {
-            ...stored.proposal,
-            applied: true,
-            result: { message: outcome.message, links: outcome.links, warnings: outcome.warnings },
-        };
-        await this.store.save({ ...stored, proposal: applied });
+        if (!(await this.store.claim(ctx.tenantId, id))) {
+            throw new ConflictException({ code: 'ai_proposal_applying', message: 'Esta propuesta ya se está aplicando', data: { status: 409 } });
+        }
+        let applied: AiProposal;
+        try {
+            // Releída DENTRO del candado: si otra aplicación terminó entre la
+            // lectura de arriba y el claim, acá ya figura aplicada.
+            const fresh = await this.store.get(ctx.tenantId, id);
+            if (!fresh || fresh.proposal.applied) {
+                throw new ConflictException({ code: 'ai_proposal_applied', message: 'Esta propuesta ya se aplicó', data: { status: 409 } });
+            }
+            const outcome = await applier.apply(ctx, fresh);
+            applied = {
+                ...fresh.proposal,
+                applied: true,
+                result: { message: outcome.message, links: outcome.links, warnings: outcome.warnings },
+            };
+            await this.store.save({ ...fresh, proposal: applied });
+        } catch (err) {
+            // Si falló, se puede reintentar; si salió bien, la marca `applied`
+            // ya guardada es la que frena el segundo intento.
+            await this.store.release(ctx.tenantId, id);
+            throw err;
+        }
         if (stored.conversationId) {
             await this.conversations.markProposal(ctx.tenantId, ctx.userId, stored.conversationId, applied);
         }
@@ -63,7 +80,7 @@ export class ProposalsService {
             action: 'ai.apply',
             targetType: 'ai_proposal',
             targetLabel: applied.title,
-            meta: { kind: applied.kind, proposal_id: applied.id, list_slug: applied.list_slug, warnings: outcome.warnings.length },
+            meta: { kind: applied.kind, proposal_id: applied.id, list_slug: applied.list_slug, warnings: applied.result?.warnings.length ?? 0 },
         });
         return applied;
     }

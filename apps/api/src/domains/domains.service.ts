@@ -1,13 +1,15 @@
+import { randomBytes } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
     brandingSchema,
     customDomainInputSchema,
     type DomainDnsReport,
+    type DomainVerifyResult,
     type PublicBoot,
     type TenantDomain,
 } from '@imagina-base/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
@@ -109,23 +111,44 @@ export class DomainsService {
         return resolved.tenant !== null;
     }
 
+    /**
+     * Resolución de TXT (inyectable en los tests). Servidores públicos, no
+     * los del sistema: un DNS local con caché vieja no debe decidir.
+     */
+    resolveTxt: (name: string) => Promise<string[][]> = (name) => {
+        const resolver = new Resolver({ timeout: 2000, tries: 1 });
+        resolver.setServers(['1.1.1.1', '8.8.8.8']);
+        return resolver.resolveTxt(name);
+    };
+
     /** Estado del dominio del workspace + datos para las instrucciones. */
     async getForTenant(tenantId: number): Promise<TenantDomain> {
         const [row] = await this.db
-            .select({ domain: tenants.customDomain, slug: tenants.slug })
+            .select({ domain: tenants.customDomain, slug: tenants.slug, settings: tenants.settings })
             .from(tenants)
             .where(eq(tenants.id, tenantId))
             .limit(1);
         const base = this.baseDomain();
+        const claim = readClaim(row?.settings);
         return {
             domain: row?.domain ?? null,
             base_domain: base,
             subdomain: base && row ? `${row.slug}.${base}` : null,
             target: this.targetHost(),
+            pending: claim
+                ? { domain: claim.domain, txt_name: txtName(claim.domain), txt_value: txtValue(claim.token) }
+                : null,
         };
     }
 
-    /** Registra el dominio propio del tenant (admin). */
+    /**
+     * Pide un dominio propio (admin). SEC-32 (v0.1.228): pedir NO es tener.
+     * Antes el dominio quedaba activo apenas se escribía — y como es único,
+     * cualquier empresa podía "reservar" el dominio de otra y dejarla afuera
+     * (o emitir magic links con él). Ahora queda PENDIENTE hasta que aparezca
+     * en su DNS el TXT con el código de ESTA empresa; recién ahí se activa
+     * (y si otra lo tenía, pasa a quien probó ser dueño).
+     */
     async set(tenantId: number, rawDomain: string): Promise<TenantDomain> {
         const { domain } = customDomainInputSchema.parse({ domain: rawDomain });
 
@@ -140,33 +163,82 @@ export class DomainsService {
             });
         }
 
-        const [taken] = await this.db
-            .select({ id: tenants.id })
+        const [row] = await this.db
+            .select({ domain: tenants.customDomain, settings: tenants.settings })
             .from(tenants)
-            .where(eq(tenants.customDomain, domain))
+            .where(eq(tenants.id, tenantId))
             .limit(1);
-        if (taken && taken.id !== tenantId) {
-            throw new ConflictException({
-                code: 'domain_taken',
-                message: 'Ese dominio ya está registrado por otro workspace',
-                data: { status: 409 },
-            });
-        }
+        if (row?.domain === domain) return this.getForTenant(tenantId);
+        const current = readClaim(row?.settings);
+        // Pedir el MISMO dominio otra vez conserva el código (el cliente ya
+        // pudo haber creado el TXT).
+        const token = current?.domain === domain ? current.token : randomBytes(16).toString('hex');
+        await this.writeClaim(tenantId, row?.settings, { domain, token, requested_at: new Date().toISOString() });
+        return this.getForTenant(tenantId);
+    }
 
+    /**
+     * Busca el TXT del dominio pedido. Si está, el dominio queda activo para
+     * esta empresa (y deja de estarlo para cualquier otra que lo tuviera).
+     */
+    async verify(tenantId: number): Promise<DomainVerifyResult> {
+        const [row] = await this.db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const claim = readClaim(row?.settings);
+        if (!claim) {
+            return { verified: false, status: 'missing', domain: await this.getForTenant(tenantId) };
+        }
+        let values: string[];
+        try {
+            values = (await this.resolveTxt(txtName(claim.domain))).map((chunks) => chunks.join(''));
+        } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            const status = code === 'ENOTFOUND' || code === 'ENODATA' ? 'missing' : 'unknown';
+            return { verified: false, status, domain: await this.getForTenant(tenantId) };
+        }
+        const expected = txtValue(claim.token);
+        if (!values.includes(expected)) {
+            const status = values.some((v) => v.startsWith('imagina-verify=')) ? 'mismatch' : 'missing';
+            return { verified: false, status, domain: await this.getForTenant(tenantId) };
+        }
+        await this.db.transaction(async (tx) => {
+            // Quien probó ser dueño se lo lleva: el que lo tenía lo pierde.
+            await tx
+                .update(tenants)
+                .set({ customDomain: null, updatedAt: new Date() })
+                .where(and(eq(tenants.customDomain, claim.domain), ne(tenants.id, tenantId)));
+            const settings = { ...(row?.settings ?? {}) } as Record<string, unknown>;
+            delete settings[CLAIM_KEY];
+            await tx
+                .update(tenants)
+                .set({ customDomain: claim.domain, settings, updatedAt: new Date() })
+                .where(eq(tenants.id, tenantId));
+        });
+        return { verified: true, status: 'ok', domain: await this.getForTenant(tenantId) };
+    }
+
+    /** Quita el dominio propio y el pedido pendiente (la entrada por subdominio/base sigue). */
+    async clear(tenantId: number): Promise<TenantDomain> {
+        const [row] = await this.db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const settings = { ...(row?.settings ?? {}) } as Record<string, unknown>;
+        delete settings[CLAIM_KEY];
         await this.db
             .update(tenants)
-            .set({ customDomain: domain, updatedAt: new Date() })
+            .set({ customDomain: null, settings, updatedAt: new Date() })
             .where(eq(tenants.id, tenantId));
         return this.getForTenant(tenantId);
     }
 
-    /** Quita el dominio propio (la entrada por subdominio/base sigue). */
-    async clear(tenantId: number): Promise<TenantDomain> {
-        await this.db
-            .update(tenants)
-            .set({ customDomain: null, updatedAt: new Date() })
-            .where(eq(tenants.id, tenantId));
-        return this.getForTenant(tenantId);
+    private async writeClaim(tenantId: number, current: unknown, claim: DomainClaim): Promise<void> {
+        const settings = { ...((current as Record<string, unknown> | null) ?? {}), [CLAIM_KEY]: claim };
+        await this.db.update(tenants).set({ settings, updatedAt: new Date() }).where(eq(tenants.id, tenantId));
     }
 
     /**
@@ -188,7 +260,11 @@ export class DomainsService {
      * admiten CNAME). Fallo de red = `unknown`, nunca un falso `missing`.
      */
     async dnsReport(tenantId: number): Promise<DomainDnsReport | null> {
-        const { domain, target } = await this.getForTenant(tenantId);
+        const state = await this.getForTenant(tenantId);
+        // Mientras está pendiente, el CNAME del dominio PEDIDO también se
+        // puede revisar (el cliente arma los dos registros a la vez).
+        const domain = state.pending?.domain ?? state.domain;
+        const target = state.target;
         if (!domain) return null;
 
         const resolver = new Resolver({ timeout: 2000, tries: 1 });
@@ -220,4 +296,27 @@ export class DomainsService {
             return { domain, target, type: 'A', status: failed(err) ? 'unknown' : 'missing' };
         }
     }
+}
+
+const CLAIM_KEY = 'domain_claim';
+
+interface DomainClaim {
+    domain: string;
+    token: string;
+    requested_at: string;
+}
+
+function readClaim(settings: unknown): DomainClaim | null {
+    const raw = (settings as Record<string, unknown> | null)?.[CLAIM_KEY] as Partial<DomainClaim> | undefined;
+    if (!raw || typeof raw.domain !== 'string' || typeof raw.token !== 'string') return null;
+    return { domain: raw.domain, token: raw.token, requested_at: String(raw.requested_at ?? '') };
+}
+
+/** Nombre del TXT de verificación (el cliente lo crea en SU DNS). */
+export function txtName(domain: string): string {
+    return `_imagina-verify.${domain}`;
+}
+
+export function txtValue(token: string): string {
+    return `imagina-verify=${token}`;
 }

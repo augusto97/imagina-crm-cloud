@@ -47,6 +47,21 @@ export class ProposalsStore {
         await this.redis.set(this.key(stored.tenantId, stored.proposal.id), JSON.stringify(stored), 'EX', PROPOSAL_TTL_SECONDS);
     }
 
+    /**
+     * SEC-31 (v0.1.228): candado de aplicación. Dos clicks en «Aplicar» (o el
+     * mismo `apply_proposal` desde dos pestañas del MCP) leían la propuesta
+     * como no aplicada a la vez y la ejecutaban DOS veces — el doble de
+     * registros, dos listas iguales. SET NX: gana uno solo.
+     */
+    async claim(tenantId: number, id: string): Promise<boolean> {
+        const ok = await this.redis.set(`${this.key(tenantId, id)}:applying`, '1', 'EX', 600, 'NX');
+        return ok === 'OK';
+    }
+
+    async release(tenantId: number, id: string): Promise<void> {
+        await this.redis.del(`${this.key(tenantId, id)}:applying`);
+    }
+
     async get(tenantId: number, id: string): Promise<StoredProposal | null> {
         if (!/^[a-z0-9_-]{6,64}$/i.test(id)) return null;
         const raw = await this.redis.get(this.key(tenantId, id));

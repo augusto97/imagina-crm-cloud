@@ -12,6 +12,7 @@ import { fieldsKeys } from '@/hooks/useFields';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { CAP, useCan } from '@/lib/permissions';
 
 interface ImportDialogProps {
     listId: number;
@@ -129,6 +130,9 @@ export function ImportDialog({
     onUpdateInstead,
 }: ImportDialogProps): JSX.Element {
     const qc = useQueryClient();
+    // SEC-30 (v0.1.228): crear campos (y opciones) por el import es tocar el
+    // esquema — el API lo rechaza sin `manage_fields`, así que no se ofrece.
+    const canCreateFields = useCan(CAP.MANAGE_FIELDS);
     const [step, setStep] = useState<Step>('upload');
     const [csv, setCsv] = useState<string>('');
     const [fileName, setFileName] = useState<string>('');
@@ -186,7 +190,7 @@ export function ImportDialog({
                 // como "Crear campo nuevo" con el tipo detectado, así el
                 // usuario solo revisa y dispara (antes: tenía que elegir
                 // "Crear campo nuevo" columna por columna a mano).
-                if ((res.data.fields ?? []).length === 0) {
+                if ((res.data.fields ?? []).length === 0 && canCreateFields) {
                     const suggested = res.data.suggested_mapping ?? {};
                     setNewFields(
                         Object.fromEntries(
@@ -354,6 +358,7 @@ export function ImportDialog({
                                 newFields={newFields}
                                 onMappingChange={setMapping}
                                 onNewFieldsChange={setNewFields}
+                                canCreateFields={canCreateFields}
                             />
                         )}
                         {step === 'done' && result !== null && (
@@ -446,12 +451,14 @@ function MapStep({
     newFields,
     onMappingChange,
     onNewFieldsChange,
+    canCreateFields,
 }: {
     preview: PreviewResponse;
     mapping: Record<number, string>;
     newFields: Record<number, NewFieldSpec>;
     onMappingChange: (next: Record<number, string>) => void;
     onNewFieldsChange: (next: Record<number, NewFieldSpec>) => void;
+    canCreateFields: boolean;
 }): JSX.Element {
     // Token sentinel del select cuando el usuario elige "crear campo
     // nuevo" — no es un slug real, lo interceptamos antes de
@@ -625,9 +632,11 @@ function MapStep({
                                                     {__('Subtarea de…')}
                                                 </option>
                                             </optgroup>
-                                            <option value={NEW_TOKEN}>
-                                                + {__('Crear campo nuevo')}
-                                            </option>
+                                            {canCreateFields && (
+                                                <option value={NEW_TOKEN}>
+                                                    + {__('Crear campo nuevo')}
+                                                </option>
+                                            )}
                                         </Select>
                                         {isNew && (
                                             <div className="imcrm-mt-1.5 imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-primary/30 imcrm-bg-primary/5 imcrm-p-2">

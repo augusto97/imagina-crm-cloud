@@ -102,7 +102,7 @@ describe('ImportService (Postgres real)', () => {
     });
 
     it('importa filas válidas mapeando columnas → campos', async () => {
-        const res = await importService.importRows(tenantId, admin.userId, 'clientes', {
+        const res = await importService.importRows(tenantId, admin, 'clientes', {
             mapping: { Nombre: f.nombre!.id, Importe: f.monto!.id, Estado: f.estado!.id },
             rows: [
                 { Nombre: 'ACME', Importe: '1000', Estado: 'activo' },
@@ -118,7 +118,7 @@ describe('ImportService (Postgres real)', () => {
     });
 
     it('reporta errores por fila y NO inserta las inválidas', async () => {
-        const res = await importService.importRows(tenantId, admin.userId, 'clientes', {
+        const res = await importService.importRows(tenantId, admin, 'clientes', {
             mapping: { Nombre: f.nombre!.id, Importe: f.monto!.id, Estado: f.estado!.id },
             rows: [
                 { Nombre: 'Bien', Importe: '10', Estado: 'activo' },
@@ -150,7 +150,7 @@ describe('ImportService (Postgres real)', () => {
         // "Activo" existe (label de la opción `activo`); "Vencido" no → se
         // auto-añade como opción y las filas entran igual.
         const csv = 'Nombre;Importe;Estado\nACME;1.000,50;Activo\nGlobex;500;Vencido\n';
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv,
             mapping: { '0': 'nombre', '1': 'monto', '2': 'estado' },
             new_fields: [],
@@ -168,7 +168,7 @@ describe('ImportService (Postgres real)', () => {
 
     it('run: crea campos nuevos on-the-fly y reporta columnas sin mapping con datos', async () => {
         const csv = 'Nombre,Email,Notas\nACME,a@x.com,algo importante\n';
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv,
             mapping: { '0': 'nombre' },
             new_fields: [{ csv_column_index: 1, label: 'Email', type: 'email' }],
@@ -186,7 +186,7 @@ describe('ImportService (Postgres real)', () => {
 
     it('run: celdas con comillas/saltos de línea y filas inválidas reportadas', async () => {
         const csv = 'Nombre,Importe\n"Linea1\nLinea2, S.A.",10\nMal,no-numero\n';
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv,
             mapping: { '0': 'nombre', '1': 'monto' },
             new_fields: [],
@@ -201,11 +201,60 @@ describe('ImportService (Postgres real)', () => {
 
     it('mapeo a un campo inexistente → 400', async () => {
         await expect(
-            importService.importRows(tenantId, admin.userId, 'clientes', {
+            importService.importRows(tenantId, admin, 'clientes', {
                 mapping: { X: 999999 },
                 rows: [{ X: 'y' }],
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // SEC-30 (v0.1.228): el import respeta los permisos de la lista y del esquema.
+    it('un manager no crea campos ni opciones por el import, ni escribe campos ocultos', async () => {
+        const manager: Actor = { userId: 1, role: 'manager' };
+        await expect(
+            importService.runCsv(tenantId, manager, 'clientes', {
+                csv: 'Nombre;Extra\nACME;x\n',
+                mapping: { '0': 'nombre' },
+                new_fields: [{ csv_column_index: 1, label: 'Extra', type: 'text' }],
+            }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        // Un valor que no es opción NO se agrega al catálogo: la fila falla.
+        const res = await importService.runCsv(tenantId, manager, 'clientes', {
+            csv: 'Nombre;Estado\nNuevaOpcion;Inventado\n',
+            mapping: { '0': 'nombre', '1': 'estado' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(0);
+        expect(res.expanded_options).toEqual({});
+
+        // Campo oculto al manager: la columna se ignora con aviso.
+        await listsService.updatePermissions(tenantId, 'clientes', {
+            permissions: { manager: { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: ['monto'] } },
+        });
+        const hiddenRes = await importService.runCsv(tenantId, manager, 'clientes', {
+            csv: 'Nombre;Importe\nOculto SA;999\n',
+            mapping: { '0': 'nombre', '1': 'monto' },
+            new_fields: [],
+        });
+        expect(hiddenRes.imported).toBe(1);
+        expect(hiddenRes.errors.some((e) => e.message.includes('no puede ver'))).toBe(true);
+        const rows = await recordsService.list(tenantId, admin, 'clientes', { limit: 200, sort_dir: 'asc', search: 'Oculto SA' });
+        expect(rows.data[0]!.data[`f${f.monto!.id}`]).toBeUndefined();
+
+        // Sin "puede crear" en la lista: 403.
+        await listsService.updatePermissions(tenantId, 'clientes', {
+            permissions: { manager: { view: 'all', create: false, edit: 'all', delete: 'all', fields_hidden: [] } },
+        });
+        await expect(
+            importService.importRows(tenantId, manager, 'clientes', {
+                mapping: { Nombre: f.nombre!.id },
+                rows: [{ Nombre: 'No entra' }],
+            }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        await listsService.updatePermissions(tenantId, 'clientes', {
+            permissions: { manager: { view: 'all', create: true, edit: 'all', delete: 'all', fields_hidden: [] } },
+        });
     });
 
     // SEC-09: el import valida el LOTE completo contra el tope del plan, no
@@ -229,7 +278,7 @@ describe('ImportService (Postgres real)', () => {
         );
         try {
             await expect(
-                importService.importRows(tenantId, admin.userId, 'clientes', {
+                importService.importRows(tenantId, admin, 'clientes', {
                     mapping: { Nombre: f.nombre!.id },
                     rows: [{ Nombre: 'A' }, { Nombre: 'B' }], // 499 + 2 = 501 > 500
                 }),
@@ -261,7 +310,7 @@ describe('ImportService (Postgres real)', () => {
             '12,10,Camión',
             '13,,Suelta',
         ].join('\n');
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv,
             mapping: { 0: IMPORT_ID_COLUMN, 1: IMPORT_PARENT_COLUMN, 2: 'nombre' },
             new_fields: [],
@@ -287,7 +336,7 @@ describe('ImportService (Postgres real)', () => {
         const padre = await recordsService.create(tenantId, admin, 'clientes', {
             data: { [`f${f.nombre!.id}`]: 'Existente' },
         });
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv: `Subtarea de,Nombre\n${padre.id},Nueva subtarea\n999999,Padre inexistente`,
             mapping: { 0: IMPORT_PARENT_COLUMN, 1: 'nombre' },
             new_fields: [],
@@ -309,7 +358,7 @@ describe('ImportService (Postgres real)', () => {
 
     it('run: un tercer nivel se aplana y se reporta (no hay subtareas de subtareas)', async () => {
         const csv = ['ID,Subtarea de,Nombre', '1,,Raíz', '2,1,Hija', '3,2,Nieta'].join('\n');
-        const res = await importService.runCsv(tenantId, admin.userId, 'clientes', {
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
             csv,
             mapping: { 0: IMPORT_ID_COLUMN, 1: IMPORT_PARENT_COLUMN, 2: 'nombre' },
             new_fields: [],

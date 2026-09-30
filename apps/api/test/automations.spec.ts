@@ -436,6 +436,39 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
     });
 
 
+    // SEC-31 (v0.1.228): la lista destino tiene que ser de la empresa.
+    it('create_record: una lista destino de OTRA empresa falla con el motivo y no crea nada', async () => {
+        const [other] = await pg.db.insert(tenants).values({ slug: 'otra-sec31', name: 'Otra' }).returning();
+        const [ajena] = await withTenant(pg.db, other!.id, (tx) =>
+            tx.insert(lists).values({ tenantId: other!.id, name: 'Ajena', slug: 'ajena' }).returning(),
+        );
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Crear en lista ajena',
+            trigger_type: 'record_created',
+            actions: [{ type: 'create_record', config: { target_list: ajena!.id, values: {} } }],
+        });
+        const rec = await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 10 } });
+        await engine.process({ tenantId, listId, recordId: rec.id, trigger: 'record_created', after: { [key('monto')]: 10 } });
+
+        const inAjena = await pg.db.select().from(records).where(eq(records.listId, ajena!.id));
+        expect(inAjena).toHaveLength(0);
+        const runs = await automationsService.runsById(tenantId, auto.id, {});
+        expect(JSON.stringify(runs.data[0]!.actions_log)).toContain('no existe en esta empresa');
+    });
+
+    it('una automatización sólo se lee, cambia o borra desde SU lista', async () => {
+        await listsService.create(tenantId, { name: 'Otra lista' });
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'De deals',
+            trigger_type: 'record_created',
+            actions: [],
+        });
+        await expect(automationsService.get(tenantId, 'otra-lista', auto.id)).rejects.toThrow();
+        await expect(automationsService.update(tenantId, 'otra-lista', auto.id, { name: 'X' })).rejects.toThrow();
+        await expect(automationsService.remove(tenantId, 'otra-lista', auto.id)).rejects.toThrow();
+        expect((await automationsService.get(tenantId, 'deals', auto.id)).name).toBe('De deals');
+    });
+
     /**
      * v0.1.198 (ADR-S22 fase 2) — acción con NOMBRE de un conector, por el
      * MISMO camino que ejecuta el motor: el probador compila la acción, le

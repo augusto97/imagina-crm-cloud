@@ -42,6 +42,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'billing.plan_change': { text: 'cambió el plan' },
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },
     'workspace.domain_change': { text: 'cambió el dominio' },
+    'workspace.domain_verified': { text: 'verificó el dominio' },
     'import.run': { text: 'importó datos a' },
     'store_sync.create': { text: 'activó la sincronización de la tienda' },
     'store_sync.migrate': { text: 'reorganizó las listas de la tienda (variaciones y líneas como subtareas)' },
