@@ -1,22 +1,25 @@
-import { useState } from 'react';
-import { Copy, Store, Trash2, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
-import { useBulkRecords, useCreateRecord } from '@/hooks/useRecords';
-import { api } from '@/lib/api';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-import { useStoreRules } from './storeRules';
-
 interface BulkActionsToolbarProps {
-    listId: number;
     selectedIds: number[];
     onClear: () => void;
     /** Abre la edición masiva (v0.1.216) sobre la selección. */
     onBulkEdit: () => void;
     /** v0.1.217 — en la lista de productos de una tienda: editar EN WooCommerce. */
     onStoreBulk?: () => void;
+    /**
+     * v0.1.220 — mover como subtareas, duplicar y borrar en lote (con vista
+     * previa y deshacer). Cada acción sólo aparece si el rol puede hacerla y
+     * la lista no es de la tienda.
+     */
+    onStructure?: Partial<Record<BulkStructureAction, () => void>>;
+    /** v0.1.220 — atajo: asignar un responsable (edición masiva preparada). */
+    onAssign?: () => void;
 }
 
 /**
@@ -25,55 +28,24 @@ interface BulkActionsToolbarProps {
  * viewport para que no se entierre al final del contenido.
  *
  * Acciones soportadas:
- *  - Editar en lote (v0.1.216): abre la edición masiva con operaciones
- *    (sumar, porcentajes, redondeos, cálculos, agregar/quitar opciones…),
- *    vista previa y aplicación en tandas. Reemplaza al viejo «Actualizar
- *    campo», que sólo sabía poner un valor fijo.
- *  - Duplicar: lee cada record con `useRecord` y crea uno nuevo con
- *    los mismos values.
- *  - Eliminar: soft-delete batch (ya existía).
+ *  - Editar en lote (v0.1.216): operaciones (sumar, porcentajes, redondeos,
+ *    cálculos, agregar/quitar opciones…) con vista previa y deshacer.
+ *  - Asignar (v0.1.220): la misma edición masiva, ya apuntada al campo de
+ *    persona.
+ *  - Mover, duplicar y eliminar (v0.1.220): acciones de estructura con vista
+ *    previa, tandas y deshacer — reemplazan al duplicado registro por
+ *    registro desde el navegador y al `confirm()` nativo del borrado.
  *  - Limpiar selección: desmarca todo.
  */
 export function BulkActionsToolbar({
-    listId,
     selectedIds,
     onClear,
     onBulkEdit,
     onStoreBulk,
+    onStructure,
+    onAssign,
 }: BulkActionsToolbarProps): JSX.Element | null {
-    const bulk = useBulkRecords(listId);
-    // v0.1.213 — en una lista de tienda no se duplica ni se borra (se hace
-    // en WooCommerce), y sólo se ofrecen las columnas que se pueden cambiar.
-    const storeManaged = useStoreRules() !== null;
-
     if (selectedIds.length === 0) return null;
-
-    const handleDelete = async (): Promise<void> => {
-        const ok = confirm(
-            sprintf(
-                _n(
-                    'Eliminar %d registro? Los datos se preservan (soft delete).',
-                    'Eliminar %d registros? Los datos se preservan (soft delete).',
-                    selectedIds.length,
-                ),
-                selectedIds.length,
-            ),
-        );
-        if (!ok) return;
-        const result = await bulk.mutateAsync({ action: 'delete', ids: selectedIds });
-        onClear();
-        if (result.failed.length > 0) {
-            alert(
-                sprintf(__('Se eliminaron %d registros.'), result.succeeded.length)
-                + '\n'
-                + sprintf(__('Fallaron %d:'), result.failed.length)
-                + '\n'
-                + result.failed
-                    .map((f) => sprintf(__('  #%1$d: %2$s'), f.id, f.message))
-                    .join('\n'),
-            );
-        }
-    };
 
     return (
         <div
@@ -84,13 +56,16 @@ export function BulkActionsToolbar({
             // de selección.
             className={cn(
                 'imcrm-fixed imcrm-bottom-6 imcrm-left-1/2 imcrm-z-40 imcrm--translate-x-1/2',
+                // En el teléfono las acciones quedan sólo con su icono y, si
+                // aun así no entran, la barra scrollea en horizontal.
+                'imcrm-max-w-[calc(100vw-1rem)] imcrm-overflow-x-auto',
                 'imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-xl imcrm-border imcrm-border-border',
                 'imcrm-bg-popover imcrm-px-3 imcrm-py-2 imcrm-shadow-imcrm-lg',
             )}
             role="region"
             aria-label={__('Acciones masivas')}
         >
-            <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-primary/10 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary">
+            <span className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-whitespace-nowrap imcrm-rounded-md imcrm-bg-primary/10 imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary">
                 {sprintf(
                     _n('%d seleccionado', '%d seleccionados', selectedIds.length),
                     selectedIds.length,
@@ -114,9 +89,11 @@ export function BulkActionsToolbar({
                     className="imcrm-gap-1.5 imcrm-text-[#7F54B3] hover:imcrm-text-[#7F54B3]"
                     onClick={onStoreBulk}
                     data-testid="imcrm-store-bulk-open"
+                    aria-label={__('Editar en la tienda')}
+                    title={__('Editar en la tienda')}
                 >
                     <Store className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Editar en la tienda')}
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Editar en la tienda')}</span>
                 </Button>
             )}
 
@@ -126,89 +103,72 @@ export function BulkActionsToolbar({
                 className="imcrm-gap-1.5"
                 onClick={onBulkEdit}
                 data-testid="imcrm-bulk-edit-open"
+                aria-label={__('Editar en lote')}
+                title={__('Editar en lote')}
             >
                 <Wand2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Editar en lote')}
+                <span className="imcrm-hidden sm:imcrm-inline">{__('Editar en lote')}</span>
             </Button>
 
-            {!storeManaged && (
-                <DuplicateAction
-                    listId={listId}
-                    selectedIds={selectedIds}
-                    onDone={onClear}
-                />
-            )}
-
-            {!storeManaged && (
+            {onAssign && (
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={handleDelete}
-                    disabled={bulk.isPending}
+                    className="imcrm-gap-1.5"
+                    onClick={onAssign}
+                    data-testid="imcrm-bulk-assign-open"
+                    aria-label={__('Asignar')}
+                    title={__('Asignar')}
+                >
+                    <UserPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Asignar')}</span>
+                </Button>
+            )}
+
+            {onStructure?.move && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onStructure.move}
+                    data-testid="imcrm-bulk-move-open"
+                    aria-label={__('Mover')}
+                    title={__('Mover')}
+                >
+                    <CornerDownRight className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Mover')}</span>
+                </Button>
+            )}
+
+            {onStructure?.duplicate && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onStructure.duplicate}
+                    data-testid="imcrm-bulk-duplicate-open"
+                    aria-label={__('Duplicar')}
+                    title={__('Duplicar')}
+                >
+                    <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Duplicar')}</span>
+                </Button>
+            )}
+
+            {onStructure?.delete && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onStructure.delete}
                     className="imcrm-gap-1.5 imcrm-text-destructive hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
+                    data-testid="imcrm-bulk-delete-open"
+                    aria-label={__('Eliminar')}
+                    title={__('Eliminar')}
                 >
                     <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {bulk.isPending ? __('Eliminando…') : __('Eliminar')}
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
                 </Button>
             )}
         </div>
-    );
-}
-
-/**
- * "Duplicar": para cada selectedId trae el record completo y lo
- * vuelve a crear. Hace los creates en serie (no en paralelo) para
- * no sobrecargar el server con N requests simultáneos. UX: spinner
- * inline durante la operación; al terminar limpia selección.
- */
-function DuplicateAction({
-    listId,
-    selectedIds,
-    onDone,
-}: {
-    listId: number;
-    selectedIds: number[];
-    onDone: () => void;
-}): JSX.Element {
-    const create = useCreateRecord(listId);
-    const [busy, setBusy] = useState(false);
-
-    const run = async (): Promise<void> => {
-        setBusy(true);
-        let ok = 0;
-        let fail = 0;
-        for (const id of selectedIds) {
-            try {
-                // Lee el record actual y dispara un create con sus
-                // values. Hacemos los lookups en serie para no
-                // bombardear el server con N requests paralelos.
-                const res = await api.get<{ fields: Record<string, unknown> }>(
-                    `/lists/${listId}/records/${id}`,
-                );
-                const fields = res.data.fields ?? {};
-                await create.mutateAsync(fields);
-                ok++;
-            } catch {
-                fail++;
-            }
-        }
-        setBusy(false);
-        onDone();
-        if (fail > 0) {
-            alert(sprintf(__('Duplicados: %d. Fallaron: %d.'), ok, fail));
-        }
-    };
-
-    return (
-        <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void run()}
-            disabled={busy}
-            className="imcrm-gap-1.5"
-        >
-            <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
-            {busy ? __('Duplicando…') : __('Duplicar')}
-        </Button>
     );
 }

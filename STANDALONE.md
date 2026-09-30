@@ -1540,6 +1540,32 @@ columnas mapeadas (`POST /lists/:l/import/update/preview` y `/update`,
   `storeRuleError`, compartido con la edición masiva— y viaja a WooCommerce.
   Crear lo que falta (`upsert`) queda para las listas comunes.
 
+**Estructura en lote: mover, duplicar, borrar y asignar (v0.1.220).** Las
+acciones que cambian la FORMA de la lista, no los valores, con el mismo
+contrato que la edición masiva: vista previa sobre la selección o todo lo que
+coincide con la vista, aplicación en tandas de 200 y deshacer desde el
+historial (`POST /lists/:l/records/bulk-structure/preview` y `/bulk-structure`;
+capability según la acción —crear, editar o borrar— y `bulk_actions` para
+actuar por filtro). Tres tipos nuevos en `bulk_edits.kind`, cada uno con su
+reverter:
+
+- **Mover como subtareas** (o sacarlas al primer nivel): mismas reglas que el
+  alta de una subtarea — un solo nivel, el padre de primer nivel, y un
+  registro con subtareas propias no baja. El historial guarda el padre
+  anterior; si alguien lo movió de nuevo después, es conflicto.
+- **Duplicar**, con o sin sus subtareas: se copian los campos escribibles (ni
+  calculados, ni vínculos, ni archivos — mismo criterio que «Duplicar» de la
+  fila). El límite del plan se consulta con el lote ENTERO (SEC-09). Deshacer
+  borra las copias que nadie tocó después.
+- **Borrar** (suave): el historial guarda las subtareas que se fueron con el
+  registro y sus vínculos salientes, así deshacer lo trae entero
+  (`RecordsService.restoreDeleted`, que sólo re-vincula destinos vivos).
+- Una subtarea cuyo padre también está en el lote no se toca aparte: se va (o
+  se copia) CON él — si no, se borraría o duplicaría dos veces.
+- **Asignar** no es una acción nueva: es la edición masiva ya apuntada al campo
+  de persona («poner»), con su vista previa y su deshacer.
+- Las listas de la tienda no se reestructuran desde la app (`store_managed`).
+
 ---
 
-**Versión del documento:** 1.32.0 (actualizar registros desde un archivo — nota de ADR-S25)
+**Versión del documento:** 1.33.0 (estructura en lote: mover, duplicar, borrar — nota de ADR-S25)

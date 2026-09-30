@@ -106,6 +106,8 @@ interface ViewSettingsSheetProps {
     onBulkHistory?: () => void;
     /** v0.1.219 — actualizar registros existentes desde un archivo. */
     onCsvUpdate?: () => void;
+    /** v0.1.220 — eliminar todo lo que coincide con la vista (vista previa + deshacer). */
+    onDeleteMatching?: () => void;
 }
 
 /**
@@ -157,6 +159,7 @@ export function ViewSettingsSheet({
     onStoreBulk,
     onBulkHistory,
     onCsvUpdate,
+    onDeleteMatching,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -475,6 +478,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onCsvUpdate();
+                                    }}
+                                />
+                            )}
+                            {onDeleteMatching && (
+                                <RowButton
+                                    icon={Trash2}
+                                    label={__('Eliminar lo que coincide')}
+                                    value={__('Con vista previa y deshacer')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onDeleteMatching();
                                     }}
                                 />
                             )}

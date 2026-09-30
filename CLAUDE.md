@@ -5356,6 +5356,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         tienda; el producto variable avisa que no tiene precio propio; crear
         se rechaza; deshacer devuelve los precios en WooCommerce).
 
+  - [x] **Estructura en lote: mover, duplicar, borrar y asignar (v0.1.220,
+        ADR-S25, tercera entrega del pedido "hacé todo")**: la barra de
+        selección sólo sabía editar valores; duplicar corría registro por
+        registro DESDE EL NAVEGADOR (y copiaba los calculados, así que fallaba
+        en cualquier lista con uno) y borrar usaba el `confirm()` nativo sin
+        vuelta atrás. Ahora son acciones de verdad, con el mismo contrato que
+        la edición masiva: vista previa, tandas de 200 con avance y
+        **Deshacer** desde el resultado o el historial.
+        (a) **Mover como subtareas** de otro registro (buscador del padre) o
+        **sacarlas al primer nivel**, con las reglas de siempre (un solo
+        nivel; un registro con subtareas propias no baja — se lista con el
+        motivo en la vista previa). Deshacer devuelve cada uno a su padre
+        anterior y respeta al que alguien movió después.
+        (b) **Duplicar**, con o sin sus subtareas: copia los campos que se
+        escriben a mano (no calculados, vínculos ni archivos) y consulta el
+        límite del plan con el lote ENTERO. Deshacer borra las copias que
+        nadie tocó.
+        (c) **Eliminar** la selección o **todo lo que coincide** con la vista
+        (nuevo item en Personalizar vista): las subtareas se van con su
+        registro y deshacer los trae enteros, con subtareas y vínculos
+        (`restoreDeleted`, que sólo re-vincula destinos vivos).
+        (d) **Asignar**: atajo en la barra que abre la edición masiva ya
+        apuntada al campo de persona («Asignar «Responsable»»).
+        Una subtarea cuyo padre también está en el lote no se toca aparte (se
+        iría o se copiaría dos veces). Endpoints `POST /lists/:l/records/
+        bulk-structure/preview` y `/bulk-structure`; tres tipos nuevos en el
+        historial (`move`/`duplicate`/`delete`, con su icono). La barra en el
+        teléfono deja sólo los iconos y scrollea si no entra. Las listas de la
+        tienda no se reestructuran desde la app. 4 tests de integración
+        (mover con conflicto al deshacer, borrar por filtro y recuperar con
+        vínculos, duplicar con subtareas + límite del plan + copia editada
+        respetada, permisos y tienda) — 767 API, 178 front y 94 shared en
+        verde — + E2E navegador 24/24 (asignar, mover y deshacer, duplicar con
+        subtarea, borrar por búsqueda y deshacer, historial y celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
