@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -10,12 +10,12 @@ import type {
     WebhookTestInput,
     WebhookTestResult,
 } from '@imagina-base/shared';
-import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
 import { DRIZZLE, type Db } from '../db/client';
-import { automationHooks, fields, records } from '../db/schema';
+import { automationHooks, automations, fields, records } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -111,6 +111,49 @@ export class AutomationsService {
         );
         if (!row) throw notFound(id);
         return toAutomation(row);
+    }
+
+    /**
+     * v0.1.221 — Re-registra al arrancar los horarios de TODAS las
+     * automatizaciones temporales activas (cross-tenant, por la conexión
+     * base). Idempotente. Hace falta porque hasta v0.1.220 una automatización
+     * programada guardada desde el editor nunca quedaba registrada (ver
+     * `AutomationScheduler.sync`): sin esto seguirían muertas hasta que
+     * alguien las volviera a guardar.
+     */
+    async resyncSchedules(): Promise<number> {
+        const rows = await this.db
+            .select()
+            .from(automations)
+            .where(and(eq(automations.isActive, true), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
+        for (const row of rows) await this.scheduler.sync(row.tenantId, row);
+        return rows.length;
+    }
+
+    /**
+     * v0.1.221 — Ejecutar AHORA una automatización programada (para probar,
+     * p. ej., una edición en lote semanal sin esperar al lunes). Corre por la
+     * cola igual que el horario: el resultado aparece en su historial.
+     */
+    async runNow(tenantId: number, listIdOrSlug: string, id: number): Promise<{ queued: true }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const row = await this.tenantDb.withTenant(tenantId, (tx) => this.repo.findById(tx, tenantId, id));
+        if (!row || row.listId !== list.id) throw notFound(id);
+        if (row.triggerType !== 'scheduled') {
+            throw new BadRequestException({
+                code: 'automation_not_scheduled',
+                message: 'Sólo una automatización «En un horario» se puede ejecutar a mano.',
+                data: { status: 400 },
+            });
+        }
+        if (!(await this.scheduler.runNow(tenantId, id))) {
+            throw new ServiceUnavailableException({
+                code: 'queue_unavailable',
+                message: 'La cola de tareas no está disponible: probá de nuevo en un rato.',
+                data: { status: 503 },
+            });
+        }
+        return { queued: true };
     }
 
     async create(

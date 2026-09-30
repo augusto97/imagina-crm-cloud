@@ -1566,6 +1566,32 @@ reverter:
   de persona («poner»), con su vista previa y su deshacer.
 - Las listas de la tienda no se reestructuran desde la app (`store_managed`).
 
+**Edición en lote programada (v0.1.221).** Acción de automatización
+`bulk_edit` (`{filter_tree?, operations[]}`, los MISMOS `BulkOperation` que la
+edición a mano): edita todo lo que coincide con el filtro EN EL MOMENTO en que
+corre, en la lista de la automatización. Pensada para el disparador «En un
+horario» («cada lunes, subir 5 % los precios de X»), sirve con cualquiera.
+
+- **Corre fuera de la transacción del motor**: el motor encola un job
+  `bulk-edit` y registra «en curso». Si corriera adentro, sus escrituras (por
+  `RecordsService`, otra conexión) esperarían los locks que la transacción del
+  motor tiene tomados —p. ej. un «Actualizar campo» previo sobre el mismo
+  registro— y la corrida quedaría colgada.
+- El job (`AutomationBulkRunner`) usa `BulkEditService.runForAutomation`: la
+  misma vista previa + tandas que usa una persona, como admin del sistema, así
+  queda en el **historial de ediciones masivas con deshacer** (sin autor:
+  `bulk_edits.user_id` null; sólo quien tiene `bulk_actions` la deshace) y deja
+  una corrida propia de la automatización con el resultado.
+- **No re-dispara automatizaciones** (`update(..., {noAutomations})`): una
+  regla «al actualizar → editar en lote» se re-dispararía por cada fila.
+- **Horarios de verdad**: la UI guardaba `frequency` y el scheduler sólo leía
+  `cron` → una automatización programada desde el editor nunca corría.
+  `scheduleCron` (shared) es la única traducción (frecuencia + hora + día →
+  cron, con `tz` IANA del navegador de quien la guarda; un `cron` explícito
+  manda) y al arrancar se re-registran los horarios de todas las activas.
+- **Ejecutar ahora** (`POST /lists/:l/automations/:id/run`, sólo
+  programadas): encola la misma corrida que el horario.
+
 ---
 
-**Versión del documento:** 1.33.0 (estructura en lote: mover, duplicar, borrar — nota de ADR-S25)
+**Versión del documento:** 1.34.0 (edición en lote programada + horarios reales — nota de ADR-S25)

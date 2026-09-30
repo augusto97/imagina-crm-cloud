@@ -10,6 +10,7 @@ import {
     History,
     LayoutList,
     Loader2,
+    Play,
     Plus,
     Trash2,
     Workflow,
@@ -28,7 +29,7 @@ import {
 } from '@/hooks/useAutomations';
 import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
-import { ApiError } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type {
@@ -55,6 +56,7 @@ import {
     ActionConfigEditor,
     AutomationEditorAutomationContext,
     AutomationEditorListContext,
+    browserTimeZone,
     cleanTriggerConfig,
     EMPTY_AUTOMATION_STATE,
     fromAutomation,
@@ -228,6 +230,21 @@ function EditorBody({
     );
     const [error, setError] = useState<string | null>(null);
     const [runsOpen, setRunsOpen] = useState(false);
+    // v0.1.221 — «Ejecutar ahora» de una automatización programada.
+    const [runningNow, setRunningNow] = useState(false);
+    const runNow = async (): Promise<void> => {
+        if (!editing) return;
+        setRunningNow(true);
+        try {
+            await api.post(`/lists/${list.id}/automations/${editing.id}/run`, {});
+            toast.success(__('En marcha: el resultado aparece en el historial en unos segundos.'));
+            window.setTimeout(() => setRunsOpen(true), 1500);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : __('No se pudo ejecutar.'));
+        } finally {
+            setRunningNow(false);
+        }
+    };
     const [mode, setMode] = useState<EditorMode>(initialMode);
     const switchMode = (next: EditorMode): void => {
         setMode(next);
@@ -352,7 +369,11 @@ function EditorBody({
             name: state.name.trim(),
             description: state.description.trim() === '' ? null : state.description.trim(),
             trigger_type: state.triggerType,
-            trigger_config: cleanTriggerConfig(state.triggerConfig),
+            // v0.1.221 — un horario sin zona horaria corre en la del navegador de quien lo guarda.
+            trigger_config:
+                state.triggerType === 'scheduled' && !state.triggerConfig.tz
+                    ? cleanTriggerConfig({ ...state.triggerConfig, tz: browserTimeZone() })
+                    : cleanTriggerConfig(state.triggerConfig),
             actions: state.actions,
             is_active: state.isActive,
         };
@@ -437,6 +458,20 @@ function EditorBody({
                                 active={state.isActive}
                                 onChange={(next) => setState((s) => ({ ...s, isActive: next }))}
                             />
+                            {editing && editing.trigger_type === 'scheduled' && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="imcrm-gap-1.5"
+                                    onClick={() => void runNow()}
+                                    disabled={runningNow || dirty}
+                                    title={dirty ? __('Guardá los cambios antes de ejecutar.') : __('Corre ahora, sin esperar al horario.')}
+                                    data-testid="imcrm-automation-run-now"
+                                >
+                                    {runningNow ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Play className="imcrm-h-3.5 imcrm-w-3.5" />}
+                                    {__('Ejecutar ahora')}
+                                </Button>
+                            )}
                             {editing && (
                                 <Button
                                     variant="outline"

@@ -1,5 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
+    bulkOperationSchema,
+    filterTreeSchema,
     jsonbKeyForField,
     readStoreListMarker,
     storeCellAccess,
@@ -33,7 +35,7 @@ import { RecordChangeHub } from '../records/record-change-hub';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
-import type { TriggerEvent } from './automation-dispatcher.service';
+import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
 import { applyMergeTags, labelResolverFor, type LabelFieldLike } from './merge-tags';
 
@@ -62,6 +64,8 @@ interface RunContext {
     fieldsBySlug: Map<string, LabelFieldLike>;
     /** v0.1.110 — payload crudo del webhook entrante ({{payload.x}}). */
     payload?: Record<string, unknown>;
+    /** v0.1.221 — la automatización que corre (la edición en lote la nombra). */
+    automation?: { id: number; name: string };
 }
 
 /**
@@ -83,6 +87,8 @@ export class AutomationEngine {
         private readonly connectors: ConnectorsService,
         // v0.1.207 — Optional + al final: los specs que lo arman a mano siguen andando.
         @Optional() private readonly changes?: RecordChangeHub,
+        // v0.1.221 — para encolar la acción «Editar en lote».
+        @Optional() private readonly dispatcher?: AutomationDispatcher,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -288,6 +294,7 @@ export class AutomationEngine {
     }
 
     private async runOne(tx: Tx, ctx: RunContext, auto: AutomationRow): Promise<void> {
+        ctx.automation = { id: auto.id, name: auto.name };
         const startedAt = new Date();
         const log: ActionLogEntry[] = [];
         let hadFail = false;
@@ -441,6 +448,39 @@ export class AutomationEngine {
                 ctx.data = merged; // acciones posteriores ven el valor actualizado.
                 const storeNote = storeSkipped.length > 0 ? ` Omitidos: ${storeSkipped.join('; ')}.` : '';
                 return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).${storeNote}`, { values: applied });
+            }
+            case 'bulk_edit': {
+                // v0.1.221 — Editar en lote TODO lo que coincide con el filtro de
+                // la acción, en la lista de la automatización. Se encola y corre
+                // fuera de esta transacción (ver `dispatchBulkEdit`); el
+                // resultado queda en el historial de ediciones masivas (con
+                // deshacer) y como una corrida propia de esta automatización.
+                const ops = Array.isArray(cfg.operations) ? cfg.operations : [];
+                const parsed = ops.map((o) => bulkOperationSchema.safeParse(o));
+                if (parsed.length === 0) return fail('bulk_edit', 'La acción no tiene cambios configurados.');
+                const bad = parsed.find((p) => !p.success);
+                if (bad && !bad.success) return fail('bulk_edit', `Un cambio está mal configurado: ${bad.error.issues[0]?.message ?? 'inválido'}`);
+                let filter: unknown = null;
+                if (cfg.filter_tree) {
+                    const f = filterTreeSchema.safeParse(cfg.filter_tree);
+                    if (!f.success) return fail('bulk_edit', 'El filtro de la acción está mal configurado.');
+                    filter = f.data;
+                }
+                const queued = this.dispatcher?.dispatchBulkEdit({
+                    tenantId: ctx.tenantId,
+                    automationId: ctx.automation?.id ?? 0,
+                    automationName: ctx.automation?.name ?? 'Automatización',
+                    listId: ctx.listId,
+                    filter_tree: filter,
+                    ...(typeof cfg.search === 'string' && cfg.search.trim() !== '' ? { search: cfg.search.trim() } : {}),
+                    operations: parsed.map((p) => (p.success ? p.data : null)),
+                });
+                if (!queued) return fail('bulk_edit', 'No hay cola de tareas disponible (Redis): la edición en lote no se pudo programar.');
+                return ok(
+                    'bulk_edit',
+                    `Edición en lote en curso (${parsed.length} ${parsed.length === 1 ? 'cambio' : 'cambios'}${filter ? ', con filtro' : ', sobre toda la lista'}). El resultado queda en el historial de ediciones masivas.`,
+                    {},
+                );
             }
             case 'create_record': {
                 // Los slugs de `values` se resuelven contra la lista DESTINO
@@ -699,6 +739,10 @@ function limitRecipients(raw: string): string {
 function ok(action: string, message: string, details: Record<string, unknown> = {}): ActionLogEntry {
     return { action, status: 'success', message, details };
 }
+function fail(action: string, message: string): ActionLogEntry {
+    return { action, status: 'failed', message, details: {} };
+}
+
 function skip(action: string, message: string): ActionLogEntry {
     return { action, status: 'skipped', message, details: {} };
 }

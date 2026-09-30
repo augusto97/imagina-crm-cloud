@@ -61,7 +61,7 @@ export function BulkHistorySheet({ open, onOpenChange, listId }: BulkHistoryShee
                                             <p className="imcrm-text-sm imcrm-font-medium imcrm-leading-snug">{e.summary}</p>
                                             <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
                                                 {[
-                                                    e.user_name ?? __('Alguien'),
+                                                    e.user_name ?? (e.user_id === null && e.summary.startsWith('Automatización «') ? __('Automatización') : __('Alguien')),
                                                     formatDateTimeStr(e.created_at),
                                                     e.kind === 'store'
                                                         ? sprintf(

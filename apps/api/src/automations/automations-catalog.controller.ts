@@ -27,6 +27,7 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'call_webhook', label: 'Llamar webhook externo', config_schema: {} },
     { slug: 'update_field', label: 'Actualizar un campo', config_schema: {} },
     { slug: 'create_record', label: 'Crear un registro', config_schema: {} },
+    { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
 ];
 

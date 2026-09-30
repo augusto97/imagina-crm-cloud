@@ -5391,6 +5391,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         verde — + E2E navegador 24/24 (asignar, mover y deshacer, duplicar con
         subtarea, borrar por búsqueda y deshacer, historial y celular).
 
+  - [x] **Edición en lote programada desde automatizaciones (v0.1.221,
+        ADR-S25, cuarta entrega del pedido "hacé todo")**: acción nueva
+        **«Editar en lote»** en el editor de automatizaciones — qué registros
+        (todos, o los que cumplan un filtro evaluado CUANDO corre) y qué
+        cambios, con el mismo editor de operaciones que la edición masiva a
+        mano (sumar, porcentajes, redondeos, poner valores…). El caso: «cada
+        lunes a las 7:30, subir 5 % los precios de la categoría X», «cada
+        noche, pasar a Vencida lo pendiente con fecha pasada». El motor encola
+        un job aparte (corriendo adentro de su transacción se colgaba esperando
+        sus propios locks), el resultado queda en el **historial de ediciones
+        masivas con Deshacer** —autor «Automatización»— y como una corrida más
+        de la automatización («Cambió 4 de 4 registros.»), y esos cambios **no
+        re-disparan** otras automatizaciones.
+        **Bug real encontrado en el camino**: el trigger «De forma programada»
+        del editor guardaba una FRECUENCIA (`frequency`, el shape del plugin)
+        pero el scheduler del backend sólo leía `cron` → **ninguna
+        automatización programada desde la interfaz corría nunca** (y re-guardar
+        una creada por API le borraba el cron). Ahora `scheduleCron` (shared,
+        con tests) es la única traducción; el editor gana **hora, día de la
+        semana o del mes y zona horaria** (la del navegador de quien la guarda)
+        más un cron avanzado opcional, el resumen dice «cada martes a las
+        07:30», y **al arrancar se re-registran** los horarios de todas las
+        activas (las guardadas antes de este fix empiezan a correr solas).
+        Botón **«Ejecutar ahora»** en el editor de una programada (no hay que
+        esperar al lunes para probarla). 4 tests de integración (encolar →
+        editar lo filtrado → historial deshacible sin autor → sin re-disparo;
+        config rota falla con motivo; el horario del editor se registra con su
+        zona y el resync lo re-registra; «Ejecutar ahora» sólo para
+        programadas), 2 de `scheduleCron` y el round-trip operación↔editor —
+        769 API, 179 front y 96 shared en verde — + E2E navegador 19/19 (reabrir
+        con filtro y operación, guardar dos cambios, ejecutar ahora → 4
+        registros cambiados y 2 intactos, corrida con el resultado, historial
+        «Automatización», deshacer, y el horario semanal guardado con día, hora
+        y zona).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

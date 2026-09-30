@@ -333,8 +333,13 @@ export class RecordsService {
          * usa `bulk`, que antes emitía uno POR REGISTRO: una acción masiva de
          * 500 filas mandaba 500 broadcasts al workspace entero y cada pestaña
          * abierta refetcheaba 500 veces. Ahora emite UNA sola vez al final.
+         *
+         * v0.1.221 — `noAutomations`: el cambio no dispara automatizaciones
+         * (lo usa la edición masiva que corre DESDE una automatización: si no,
+         * una regla «al actualizar → editar en lote» se re-dispararía por cada
+         * fila que toca).
          */
-        opts: { silent?: boolean } = {},
+        opts: { silent?: boolean; noAutomations?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -379,7 +384,7 @@ export class RecordsService {
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
         if (!opts.silent) this.realtime.records(tenantId, listId);
-        this.automations.dispatch({
+        if (!opts.noAutomations) this.automations.dispatch({
             tenantId,
             listId,
             recordId: row.id,

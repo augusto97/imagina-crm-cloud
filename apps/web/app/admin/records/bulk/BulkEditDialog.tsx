@@ -364,7 +364,7 @@ export function ScopeChip({ active, onClick, label, testId }: { active: boolean;
 
 // ── Una operación ─────────────────────────────────────────────────────────
 
-function OperationRow({
+export function OperationRow({
     index,
     draft,
     fields,

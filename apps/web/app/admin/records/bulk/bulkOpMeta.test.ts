@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { draftToOperation, parseNumberInput } from './bulkOpMeta';
+import { bulkOperationSchema } from '@imagina-base/shared';
+
+import { draftToOperation, operationToDraft, parseNumberInput } from './bulkOpMeta';
 
 describe('parseNumberInput', () => {
     it('respeta los separadores de la empresa', () => {
@@ -46,5 +48,25 @@ describe('draftToOperation', () => {
     it('correr fecha hacia atrás', () => {
         const r = draftToOperation({ key: 'a', field_id: 1, op: 'shift_date', amount: '3', unit: 'months', mode: 'back' }, 'comma_dot');
         expect(r.ok && r.operation).toEqual({ op: 'shift_date', field_id: 1, amount: -3, unit: 'months' });
+    });
+});
+
+describe('operationToDraft (v0.1.221)', () => {
+    it('reabre una operación guardada y vuelve a dar la MISMA operación', () => {
+        const ops = [
+            { op: 'percent', field_id: 1, percent: -12.5 },
+            { op: 'round', field_id: 1, multiple: 1000, mode: 'up', adjust: -100 },
+            { op: 'add', field_id: 2, amount: 1500 },
+            { op: 'multiply', field_id: 2, factor: 1.3 },
+            { op: 'calc', field_id: 1, left: { field_id: 3 }, right: { value: 1.3 }, operator: '*' },
+            { op: 'set', field_id: 4, value: 'activo' },
+            { op: 'add_options', field_id: 5, values: ['vip'] },
+            { op: 'shift_date', field_id: 6, amount: -7, unit: 'days' },
+            { op: 'replace', field_id: 7, find: 'a', replace: 'b', case_sensitive: false },
+        ].map((o) => bulkOperationSchema.parse(o));
+        for (const op of ops) {
+            const back = draftToOperation(operationToDraft(op), 'comma_dot');
+            expect(back).toEqual({ ok: true, operation: op });
+        }
     });
 });
