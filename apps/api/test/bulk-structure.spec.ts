@@ -229,7 +229,7 @@ describe('estructura en lote: mover, duplicar y borrar (v0.1.220)', () => {
         await expect(svc.preview(tenantId, viewer, 'tareas', 'delete', { ids: [mine.id] }, undefined, false)).rejects.toBeInstanceOf(ForbiddenException);
         // El agente no actúa por filtro.
         await expect(
-            svc.preview(tenantId, agent, 'tareas', 'duplicate', { filter_tree: null, search: '', include_subtasks: false }, undefined, false),
+            svc.preview(tenantId, agent, 'tareas', 'duplicate', { search: '', include_subtasks: false }, undefined, false),
         ).rejects.toBeInstanceOf(ForbiddenException);
         // Sólo borra lo suyo: lo ajeno ni aparece.
         const preview = await svc.preview(tenantId, agent, 'tareas', 'delete', { ids: [mine.id, theirs.id] }, undefined, false);
