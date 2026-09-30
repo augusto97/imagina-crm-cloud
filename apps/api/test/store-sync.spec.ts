@@ -253,6 +253,7 @@ import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { StoreBulkService } from '../src/sync/store-bulk.service';
+import { BulkHistoryService } from '../src/records/bulk-history.service';
 import { StoreSyncEngine } from '../src/sync/store-sync.engine';
 import { StoreSyncQueue, type StoreSyncPushJob } from '../src/sync/store-sync.queue';
 import { StoreRealtimeService } from '../src/sync/store-realtime.service';
@@ -403,6 +404,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
     let queue: CapturingQueue;
     let realtime: StoreRealtimeService;
     let bulk: StoreBulkService;
+    let bulkHistory: BulkHistoryService;
     let tenantId: number;
     let otherTenant: number;
     let adminId: number;
@@ -452,7 +454,9 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         queue = new CapturingQueue();
         realtime = new StoreRealtimeService(tenantDb, pg.db, env, engine, queue);
         svc = new StoreSyncService(tenantDb, pg.db, connectors, blueprints, listsService, new ListGroupsService(tenantDb), fieldsService, audit, engine, queue, realtime);
-        bulk = new StoreBulkService(tenantDb, listsService, fieldsService, recordsService, connectors, engine, audit);
+        bulkHistory = new BulkHistoryService(tenantDb, listsService, recordsService, rt, audit);
+        bulk = new StoreBulkService(tenantDb, listsService, fieldsService, recordsService, connectors, engine, audit, bulkHistory);
+        bulk.onModuleInit();
         realtime.setCredsResolver((t, s) => svc.credsForSync(t, s));
         hub.subscribe((c) => realtime.onRecordChange(c));
 
@@ -1166,6 +1170,55 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const r3 = await bulk.apply(tenantId, admin(), products, [Number(taza.id)], ops([{ op: 'name', kind: 'append', text: '!' }]), false);
         expect(r3.updated).toBe(1);
         expect(tazaStore.name).toMatch(/!$/);
+    });
+
+    it('deshacer una edición masiva de la tienda: vuelve a lo que había y respeta lo que cambió después (v0.1.218)', async () => {
+        const products = st.lists.products!.slug;
+        const ops = (list: StoreBulkOperationInput[]) => list.map((o) => storeBulkOperationSchema.parse(o));
+        const t0 = await tree(tenantId, st.lists.products!.id);
+        const taza = t0.roots.find((x) => x[k('products', 'woo_id')] === '10')!;
+        const camiseta = t0.roots.find((x) => x[k('products', 'woo_id')] === '20')!;
+        const tazaStore = store.products.find((p) => p.id === 10)!;
+        const v21 = store.variations[20]!.find((v) => v.id === 21)!;
+        const v22 = store.variations[20]!.find((v) => v.id === 22)!;
+        const before = { taza: tazaStore.regular_price, featured: tazaStore.featured, v21: v21.regular_price, v22: v22.regular_price };
+
+        const operations = ops([
+            { op: 'regular_price', change: { kind: 'set', amount: 50000 } },
+            { op: 'featured', value: !before.featured },
+        ]);
+        const res = await bulk.apply(tenantId, admin(), products, [Number(taza.id), Number(camiseta.id)], operations, true);
+        expect(res.failed).toEqual([]);
+        expect(res.edit_id).toBeGreaterThan(0);
+        expect(tazaStore.regular_price).toBe('50000');
+        expect(v21.regular_price).toBe('50000');
+
+        const log = await bulkHistory.list(tenantId, admin(), products);
+        expect(log[0]).toMatchObject({ id: res.edit_id, kind: 'store', can_revert: true });
+        expect(log[0]!.item_count).toBeGreaterThanOrEqual(3);
+        expect(log[0]!.summary).toContain('Precio normal: poner 50000');
+
+        // Alguien cambia una variación en WooCommerce después: conflicto.
+        v22.regular_price = '777';
+        const preview = await bulkHistory.revertPreview(tenantId, admin(), products, res.edit_id!);
+        expect(preview.conflict_ids).toHaveLength(1);
+        expect(preview.conflicts[0]!.message).toMatch(/Precio normal.*cambió después/);
+        expect(preview.sample.find((x) => x.title.startsWith('Taza'))!.changes).toContainEqual({ label: 'Precio normal', before: '50000', after: before.taza });
+
+        const calls = store.calls.length;
+        const undo = await bulkHistory.revertApply(tenantId, admin(), products, res.edit_id!, [...preview.item_ids, ...preview.conflict_ids], false);
+        expect(undo.failed).toEqual([]);
+        expect(undo.conflicts).toBe(1);
+        expect(undo.reverted).toBe(preview.item_ids.length);
+        // Por lotes, como la edición.
+        expect(store.calls.slice(calls).some((c) => c.method === 'POST' && c.url.includes('/products/batch'))).toBe(true);
+        expect(tazaStore.regular_price).toBe(before.taza);
+        expect(tazaStore.featured).toBe(before.featured);
+        expect(v21.regular_price).toBe(before.v21);
+        expect(v22.regular_price).toBe('777');
+        // Y el espejo de la app acompaña.
+        const t1 = await tree(tenantId, st.lists.products!.id);
+        expect(t1.roots.find((x) => x.id === taza.id)![k('products', 'precio_normal')]).toBe(Number(before.taza));
     });
 
     it('volver a intervalos borra los avisos de la tienda y el token deja de valer', async () => {

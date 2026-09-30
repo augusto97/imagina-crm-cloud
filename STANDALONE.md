@@ -1489,6 +1489,32 @@ masiva de una lista de tienda con los datos que la tienda tiene y la app no
 (atributos, clase de envío, peso, visibilidad…) es otra pieza: la hace la tienda
 en lote (ver la nota de ADR-S24 de v0.1.217).
 
+**Deshacer (v0.1.218).** Cada edición masiva —de la app o de la tienda— queda
+en un HISTORIAL (`bulk_edits` + `bulk_edit_items`, migración 0056, RLS) con,
+por fila, el ANTES y el DESPUÉS de lo que cambió. Decisiones:
+
+- **Una edición, aunque se aplique en tandas**: la primera tanda la abre y
+  devuelve `edit_id`; las siguientes lo repiten (sólo la misma persona, la
+  misma lista y el mismo tipo pueden colgarle filas).
+- **El DESPUÉS es lo que quedó guardado**, no lo que se pidió (en la app, lo
+  que devolvió `RecordsService.update` ya validado; en la tienda, lo que
+  devolvió WooCommerce en el lote). Así «sigue igual» se compara bien.
+- **Conflictos**: deshacer sólo vuelve atrás las filas que siguen en su
+  después. Si alguien las tocó en el medio, pisarlas le borraría ese cambio:
+  se muestran con qué cambió y sólo se revierten si la persona marca
+  «Volverlos atrás igual». Los registros borrados se cuentan aparte.
+- **Deshacer es otra edición común**: en la app pasa por `RecordsService.update`
+  (ACL, bitácora, automatizaciones, reglas y envío de la tienda); en la tienda,
+  por la misma API batch y el mismo upsert al espejo. Se aplica en tandas de
+  100 con avance.
+- **Quién**: la propia se deshace siempre; la de otra persona —y cualquiera de
+  la tienda— exige `bulk_actions`.
+- **30 días**: lo más viejo se purga al abrir una edición nueva. El historial
+  no viaja al migrar una empresa (ADR-S23): es del servidor, no del cliente.
+- La comparación es PURA (`sameBulkValue` en shared; `storeDrift` /
+  `snapshotBody` en `woo-bulk.ts`), igual que los resúmenes en criollo del
+  historial (`summarizeBulkOperations` / `summarizeStoreBulkOperations`).
+
 ---
 
-**Versión del documento:** 1.30.0 (edición masiva en la tienda WooCommerce — nota de ADR-S24)
+**Versión del documento:** 1.31.0 (deshacer ediciones masivas — nota de ADR-S25)

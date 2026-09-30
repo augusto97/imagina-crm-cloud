@@ -125,6 +125,8 @@ export const storeBulkApplySchema = z.object({
     ids: z.array(idSchema).min(1).max(STORE_BULK_APPLY_CHUNK),
     operations: opsSchema,
     include_variations: z.boolean().default(true),
+    /** v0.1.218 — La edición del historial (la primera tanda no lo manda). */
+    edit_id: idSchema.optional(),
 });
 export type StoreBulkApplyInput = z.infer<typeof storeBulkApplySchema>;
 
@@ -150,6 +152,8 @@ export interface StoreBulkResult {
     unchanged: number;
     failed: Array<{ title: string; message: string }>;
     skipped: Array<{ title: string; reason: string }>;
+    /** La edición del historial (v0.1.218), para las tandas siguientes y para deshacer. */
+    edit_id: number | null;
 }
 
 export interface StoreBulkCatalog {

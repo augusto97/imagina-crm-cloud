@@ -5,7 +5,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { activity, fields, lists, records, relations, tenants } from '../src/db/schema';
+import { activity, bulkEdits, fields, lists, records, relations, tenants, users } from '../src/db/schema';
+import { AuditService } from '../src/audit/audit.service';
+import { BulkHistoryService } from '../src/records/bulk-history.service';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -20,8 +22,8 @@ import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 
 const rt = new RealtimeService();
-const admin: Actor = { userId: 1, role: 'admin' };
-const agent: Actor = { userId: 2, role: 'agent' };
+const admin: Actor = { userId: 0, role: 'admin' };
+const agent: Actor = { userId: 0, role: 'agent' };
 
 describe('edición masiva (v0.1.216)', () => {
     let pg: TestPg;
@@ -29,6 +31,7 @@ describe('edición masiva (v0.1.216)', () => {
     let fields_: FieldsService;
     let recs: RecordsService;
     let bulk: BulkEditService;
+    let history: BulkHistoryService;
     let tenantId: number;
     let f: Record<string, Field>;
     const ops = (list: BulkOperationInput[]) => list.map((o) => bulkOperationSchema.parse(o));
@@ -48,9 +51,19 @@ describe('edición masiva (v0.1.216)', () => {
             new AutomationDispatcher(),
             new RelationsRepository(),
         );
-        bulk = new BulkEditService(recs, rt);
+        history = new BulkHistoryService(tenantDb, lists_, recs, rt, new AuditService(tenantDb));
+        bulk = new BulkEditService(recs, rt, history);
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
+        const [u1, u2] = await pg.db
+            .insert(users)
+            .values([
+                { email: 'admin@acme.co', name: 'Ana Admin', passwordHash: 'x' },
+                { email: 'agente@acme.co', name: 'Beto Agente', passwordHash: 'x' },
+            ])
+            .returning();
+        admin.userId = u1!.id;
+        agent.userId = u2!.id;
     });
 
     afterAll(async () => {
@@ -60,6 +73,7 @@ describe('edición masiva (v0.1.216)', () => {
     beforeEach(async () => {
         await withTenant(pg.db, tenantId, async (tx) => {
             await tx.delete(activity).where(eq(activity.tenantId, tenantId));
+            await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, tenantId));
             await tx.delete(relations).where(eq(relations.tenantId, tenantId));
             await tx.delete(records).where(eq(records.tenantId, tenantId));
             await tx.delete(fields).where(eq(fields.tenantId, tenantId));
@@ -198,5 +212,68 @@ describe('edición masiva (v0.1.216)', () => {
         await expect(
             bulk.preview(tenantId, admin, 'productos', { ids: [a.id] }, ops([{ op: 'percent', field_id: f.nombre!.id, percent: 5 }])),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('deshacer (v0.1.218): una edición en varias tandas vuelve atrás entera y respeta los cambios posteriores', async () => {
+        const rows = [];
+        for (let i = 0; i < 5; i++) rows.push(await create(admin, `P${i}`, 1000 + i, { [key('etiquetas')]: ['nuevo'] }));
+        const operations = ops([
+            { op: 'percent', field_id: f.precio!.id, percent: 10 },
+            { op: 'add_options', field_id: f.etiquetas!.id, values: ['oferta'] },
+        ]);
+        const ids = rows.map((r) => r.id);
+        // Dos tandas de la MISMA edición: la segunda repite el edit_id.
+        const first = await bulk.apply(tenantId, admin, 'productos', ids.slice(0, 3), operations);
+        expect(first.edit_id).toBeGreaterThan(0);
+        const second = await bulk.apply(tenantId, admin, 'productos', ids.slice(3), operations, first.edit_id!);
+        expect(second.edit_id).toBe(first.edit_id);
+
+        const log = await history.list(tenantId, admin, 'productos');
+        expect(log).toHaveLength(1);
+        expect(log[0]).toMatchObject({ id: first.edit_id, kind: 'records', item_count: 5, reverted_count: 0, can_revert: true, user_name: 'Ana Admin' });
+        expect(log[0]!.summary).toContain('Precio: subir 10 %');
+
+        // Alguien toca una fila después: esa queda como conflicto.
+        await recs.update(tenantId, admin, 'productos', ids[0]!, { data: { [key('precio')]: 5 } });
+        const preview = await history.revertPreview(tenantId, admin, 'productos', first.edit_id!);
+        expect(preview.total).toBe(5);
+        expect(preview.item_ids).toHaveLength(4);
+        expect(preview.conflict_ids).toHaveLength(1);
+        expect(preview.conflicts[0]!.message).toMatch(/Precio.*cambió después/);
+
+        const res = await history.revertApply(tenantId, admin, 'productos', first.edit_id!, [...preview.item_ids, ...preview.conflict_ids], false);
+        expect(res.reverted).toBe(4);
+        expect(res.conflicts).toBe(1);
+        for (let i = 1; i < 5; i++) {
+            const r = await recs.get(tenantId, admin, 'productos', ids[i]!);
+            expect(r.data[key('precio')]).toBe(1000 + i);
+            expect(r.data[key('etiquetas')]).toEqual(['nuevo']);
+        }
+        // El cambio posterior se respetó…
+        expect((await recs.get(tenantId, admin, 'productos', ids[0]!)).data[key('precio')]).toBe(5);
+        // …hasta que se pide pisarlo a sabiendas.
+        const forced = await history.revertApply(tenantId, admin, 'productos', first.edit_id!, preview.conflict_ids, true);
+        expect(forced.reverted).toBe(1);
+        expect((await recs.get(tenantId, admin, 'productos', ids[0]!)).data[key('precio')]).toBe(1000);
+        const after = await history.list(tenantId, admin, 'productos');
+        expect(after[0]).toMatchObject({ reverted_count: 5, can_revert: false });
+        // Lo ya revertido no vuelve a aparecer.
+        expect((await history.revertPreview(tenantId, admin, 'productos', first.edit_id!)).total).toBe(0);
+    });
+
+    it('deshacer: la edición de otra persona sólo la deshace quien tiene acciones masivas', async () => {
+        const a = await create(admin, 'A', 100);
+        const mine = await create(agent, 'Mío', 100);
+        const operations = ops([{ op: 'add', field_id: f.stock!.id, amount: 3 }]);
+        const byAdmin = await bulk.apply(tenantId, admin, 'productos', [a.id], operations);
+        const byAgent = await bulk.apply(tenantId, agent, 'productos', [mine.id], operations);
+        const seen = await history.list(tenantId, agent, 'productos');
+        expect(seen.find((e) => e.id === byAdmin.edit_id)!.can_revert).toBe(false);
+        expect(seen.find((e) => e.id === byAgent.edit_id)!.can_revert).toBe(true);
+        await expect(history.revertPreview(tenantId, agent, 'productos', byAdmin.edit_id!)).rejects.toBeInstanceOf(ForbiddenException);
+        const own = await history.revertPreview(tenantId, agent, 'productos', byAgent.edit_id!);
+        expect(own.item_ids).toHaveLength(1);
+        // Un edit_id ajeno no se puede usar para colgarle filas a la edición de otro.
+        await expect(bulk.apply(tenantId, agent, 'productos', [mine.id], operations, byAdmin.edit_id!)).rejects.toBeInstanceOf(BadRequestException);
     });
 });

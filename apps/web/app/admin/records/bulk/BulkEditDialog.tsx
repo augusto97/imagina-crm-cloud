@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, Plus, Trash2, Wand2, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, Plus, Trash2, Undo2, Wand2, X } from 'lucide-react';
 import {
     bulkOpsFor,
     type BulkEditPreview,
@@ -37,6 +37,7 @@ import {
     opLabel,
     type BulkDraft,
 } from './bulkOpMeta';
+import { BulkRevertDialog } from './BulkRevertDialog';
 import { BulkValueInput } from './BulkValueInput';
 
 interface BulkEditDialogProps {
@@ -89,6 +90,7 @@ export function BulkEditDialog({
     const [preview, setPreview] = useState<BulkEditPreview | null>(null);
     const [progress, setProgress] = useState<BulkApplyProgress | null>(null);
     const [result, setResult] = useState<BulkEditResult | null>(null);
+    const [undoOpen, setUndoOpen] = useState(false);
     const previewM = useBulkEditPreview(listId);
     const applyM = useBulkEditApply(listId);
 
@@ -102,6 +104,7 @@ export function BulkEditDialog({
         setPreview(null);
         setResult(null);
         setProgress(null);
+        setUndoOpen(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -301,6 +304,12 @@ export function BulkEditDialog({
                                 </Button>
                             </>
                         )}
+                        {phase === 'done' && result?.edit_id && result.succeeded.length > 0 && (
+                            <Button variant="outline" onClick={() => setUndoOpen(true)} data-testid="imcrm-bulk-undo-btn">
+                                <Undo2 className="imcrm-h-4 imcrm-w-4" />
+                                {__('Deshacer')}
+                            </Button>
+                        )}
                         {phase === 'done' && (
                             <Button onClick={() => onOpenChange(false)} data-testid="imcrm-bulk-close-btn">
                                 {__('Listo')}
@@ -309,6 +318,20 @@ export function BulkEditDialog({
                     </div>
                 </Dialog.Content>
             </Dialog.Portal>
+            {undoOpen && result?.edit_id && (
+                <BulkRevertDialog
+                    open
+                    onOpenChange={(o) => {
+                        if (!o) {
+                            setUndoOpen(false);
+                            onOpenChange(false);
+                        }
+                    }}
+                    listId={listId}
+                    editId={result.edit_id}
+                    summary={__('La edición que acabás de aplicar')}
+                />
+            )}
         </Dialog.Root>
     );
 }
