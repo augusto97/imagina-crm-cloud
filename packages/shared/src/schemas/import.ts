@@ -36,6 +36,11 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 
 export const importCsvPreviewSchema = z.object({
     csv: z.string().min(1),
+    /**
+     * v0.1.219 — `update`: el archivo es para ACTUALIZAR registros que ya
+     * existen (también en una lista de la tienda, donde crear no se puede).
+     */
+    mode: z.enum(['create', 'update']).default('create'),
 });
 export type ImportCsvPreviewInput = z.infer<typeof importCsvPreviewSchema>;
 
@@ -128,4 +133,73 @@ export interface ImportCsvRunResult {
     expanded_options: Record<string, Array<{ value: string; label: string }>>;
     cell_warnings: ImportCsvCellWarning[];
     unmapped_columns_with_data: ImportCsvUnmappedColumn[];
+}
+
+
+// --- Actualizar desde CSV (v0.1.219) ----------------------------------------
+// El archivo no crea registros: los EMPAREJA con los que ya existen por una
+// columna clave (el ID de la app, o un campo como el SKU o el email) y cambia
+// sólo las columnas mapeadas. Con `upsert`, lo que no empareja se crea.
+
+/** Emparejar por el id del registro en la app (la columna «ID» del export). */
+export const IMPORT_MATCH_BY_ID = '__id';
+/** Filas por pedido al aplicar (el cliente muestra el avance). */
+export const IMPORT_UPDATE_CHUNK = 200;
+/** Filas por archivo. */
+export const IMPORT_UPDATE_MAX_ROWS = 5000;
+/** Tipos que sirven de columna clave. */
+export const IMPORT_MATCH_TYPES = ['text', 'email', 'phone', 'url', 'number'] as const;
+
+export const importUpdateSchema = z.object({
+    csv: z.string().min(1),
+    /** índice de columna (string) → slug del campo que actualiza. */
+    mapping: z.record(z.string(), z.string().min(1)),
+    /** Con qué columna del archivo se empareja y contra qué (`__id` o el slug de un campo). */
+    match: z.object({
+        column_index: z.number().int().nonnegative(),
+        by: z.string().trim().min(1).max(190),
+    }),
+    /** `update`: lo que no empareja se informa; `upsert`: se crea. */
+    mode: z.enum(['update', 'upsert']).default('update'),
+    /** Una celda vacía VACÍA el campo (si no, se deja como está). */
+    clear_empty: z.boolean().default(false),
+    /** Aplicar: qué tramo del archivo procesa este pedido (0 = primera fila de datos). */
+    row_offset: z.number().int().nonnegative().default(0),
+    row_limit: z.number().int().positive().max(IMPORT_UPDATE_CHUNK).optional(),
+    /** La edición del historial (v0.1.218): la primera tanda la abre, las siguientes la repiten. */
+    edit_id: idSchema.optional(),
+});
+export type ImportUpdateInput = z.infer<typeof importUpdateSchema>;
+
+export interface ImportUpdateChange {
+    label: string;
+    before: string;
+    after: string;
+}
+
+export interface ImportUpdatePreview {
+    total_rows: number;
+    /** Filas que encontraron su registro. */
+    matched: number;
+    /** De las emparejadas: las que cambian algo / las que ya estaban así. */
+    changed: number;
+    unchanged: number;
+    /** Filas sin registro (con `upsert`, se crean). */
+    unmatched: number;
+    to_create: number;
+    error_count: number;
+    errors: Array<{ row: number; message: string }>;
+    unmatched_sample: Array<{ row: number; key: string }>;
+    sample: Array<{ row: number; title: string; changes: ImportUpdateChange[] }>;
+    /** El archivo pasa del máximo: se procesan las primeras filas. */
+    truncated: boolean;
+}
+
+export interface ImportUpdateResult {
+    updated: number;
+    created: number;
+    unchanged: number;
+    unmatched: number;
+    failed: Array<{ row: number; message: string }>;
+    edit_id: number | null;
 }

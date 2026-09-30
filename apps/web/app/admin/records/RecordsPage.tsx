@@ -43,6 +43,7 @@ import type { SavedViewEntity } from '@/types/view';
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { BulkEditDialog } from './bulk/BulkEditDialog';
 import { BulkHistorySheet } from './bulk/BulkHistorySheet';
+import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
 import { StoreBulkDialog } from './bulk/StoreBulkDialog';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -266,6 +267,8 @@ export function RecordsPage(): JSX.Element {
     const [storeBulkOpen, setStoreBulkOpen] = useState(false);
     // v0.1.218 — historial de ediciones masivas (con deshacer).
     const [bulkHistoryOpen, setBulkHistoryOpen] = useState(false);
+    // v0.1.219 — actualizar registros existentes desde un archivo.
+    const [csvUpdateOpen, setCsvUpdateOpen] = useState(false);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
@@ -298,6 +301,8 @@ export function RecordsPage(): JSX.Element {
     const canEditAny = useCan(CAP.EDIT_RECORDS);
     const canEditOwn = useCan(CAP.EDIT_OWN_RECORDS);
     const canSeeBulkHistory = canEditAny || canEditOwn;
+    // En una lista de la tienda, actualizar desde archivo exige «Editar desde la app».
+    const canCsvUpdate = useCan(CAP.IMPORT_RECORDS) && (canEditAny || canEditOwn) && (!storeMarker || storeMarker.write_back === true);
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -833,6 +838,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 listSlug={list.data.slug}
                 open={importOpen}
                 onOpenChange={setImportOpen}
+                onUpdateInstead={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
             />
 
             <ShareDialog
@@ -884,6 +890,17 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onBulkEdit={() => setBulkEditOpen(true)}
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
+                    onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
+                />
+            )}
+
+            {canCsvUpdate && list.data && (
+                <CsvUpdateDialog
+                    open={csvUpdateOpen}
+                    onOpenChange={setCsvUpdateOpen}
+                    listId={list.data.id}
+                    storeManaged={!!storeMarker}
+                    isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked'}
                 />
             )}
 

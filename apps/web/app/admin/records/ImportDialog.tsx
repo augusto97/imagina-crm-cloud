@@ -18,6 +18,8 @@ interface ImportDialogProps {
     listSlug: string;
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /** v0.1.219 — abrir «Actualizar desde un archivo» en su lugar. */
+    onUpdateInstead?: () => void;
 }
 
 interface PreviewResponse {
@@ -124,6 +126,7 @@ export function ImportDialog({
     listSlug,
     open,
     onOpenChange,
+    onUpdateInstead,
 }: ImportDialogProps): JSX.Element {
     const qc = useQueryClient();
     const [step, setStep] = useState<Step>('upload');
@@ -327,6 +330,22 @@ export function ImportDialog({
                     <div className="imcrm-mt-4">
                         {step === 'upload' && (
                             <UploadStep busy={busy} onFile={handleFile} fileName={fileName} />
+                        )}
+                        {step === 'upload' && onUpdateInstead && (
+                            <p className="imcrm-mt-3 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
+                                {__('¿El archivo es para cambiar registros que ya existen (precios, stock…)?')}{' '}
+                                <button
+                                    type="button"
+                                    className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                                    onClick={() => {
+                                        close();
+                                        onUpdateInstead();
+                                    }}
+                                    data-testid="imcrm-import-update-instead"
+                                >
+                                    {__('Actualizar desde un archivo')}
+                                </button>
+                            </p>
                         )}
                         {step === 'map' && preview !== null && (
                             <MapStep

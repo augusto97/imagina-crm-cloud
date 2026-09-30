@@ -143,9 +143,11 @@ export class ImportService {
     private static readonly MAX_ROWS_PER_RUN = 5000;
 
     /** Inspecciona el CSV sin escribir nada. */
-    async preview(tenantId: number, listIdOrSlug: string, csv: string): Promise<ImportCsvPreviewResult> {
+    async preview(tenantId: number, listIdOrSlug: string, csv: string, mode: 'create' | 'update' = 'create'): Promise<ImportCsvPreviewResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        assertNotStoreManaged(list, 'import');
+        // v0.1.219 — actualizar SÍ se puede en una lista de la tienda (cada
+        // cambio pasa por las reglas de lo que la tienda acepta); crear, no.
+        if (mode === 'create') assertNotStoreManaged(list, 'import');
         const { headers, rows } = parseCsv(csv);
         if (headers.length === 0) {
             throw new BadRequestException({
@@ -447,7 +449,7 @@ export class ImportService {
     }
 
     /** Campos importables: los que viven en `records.data` (sin relation/computed). */
-    private async importableFields(tenantId: number, listId: number): Promise<Field[]> {
+    async importableFields(tenantId: number, listId: number): Promise<Field[]> {
         const all = await this.fields.listByListId(tenantId, listId);
         return all.filter((f) => isDataField(f.type));
     }
@@ -457,7 +459,7 @@ export class ImportService {
      * campo cualquier etiqueta del CSV que no exista como opción (match
      * case-insensitive contra label Y value). Un solo write por campo.
      */
-    private async expandSelectOptions(
+    async expandSelectOptions(
         tenantId: number,
         listId: number,
         rows: string[][],
@@ -561,7 +563,7 @@ function readOptions(field: Field): SelectOption[] {
  * cada tipo. Best-effort: si no parsea, se devuelve el crudo y el validador
  * reporta el error con mensaje por campo.
  */
-function coerceCellValue(raw: string, field: Field): unknown {
+export function coerceCellValue(raw: string, field: Field): unknown {
     const trimmed = raw.trim();
     if (trimmed === '') return field.type === 'multi_select' ? [] : null;
 

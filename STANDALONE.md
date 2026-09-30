@@ -1515,6 +1515,31 @@ por fila, el ANTES y el DESPUÉS de lo que cambió. Decisiones:
   `snapshotBody` en `woo-bulk.ts`), igual que los resúmenes en criollo del
   historial (`summarizeBulkOperations` / `summarizeStoreBulkOperations`).
 
+**Actualizar desde un archivo (v0.1.219).** La edición masiva por ARCHIVO: un
+CSV no crea filas, las EMPAREJA con registros que ya existen por una columna
+clave —el ID de la app (la columna «ID» del export) o un campo de texto,
+email, teléfono, enlace o número (SKU, email, documento)— y cambia sólo las
+columnas mapeadas (`POST /lists/:l/import/update/preview` y `/update`,
+`import_records`). Reglas:
+
+- **Clave normalizada** igual en JS y en SQL: sin espacios ni mayúsculas; el
+  teléfono, sólo dígitos; el número, como número. Los candidatos se buscan por
+  la expresión normalizada y después se cargan con el alcance de EDICIÓN de la
+  persona (lo que no puede editar no empareja).
+- **Una fila, un registro**: una clave repetida en el archivo (se detecta en
+  TODO el archivo, no sólo en el tramo) o que coincide con más de un registro
+  es un error de fila, nunca una elección al azar.
+- **Sólo lo que difiere** del valor actual se escribe (celda vacía = no tocar,
+  salvo «una celda vacía vacía el campo»); opciones de select por etiqueta y,
+  en listas comunes, las nuevas se agregan como en el import.
+- **Vista previa y aplicación con la misma función**, aplicación en tramos de
+  200 filas con avance, cada cambio por `RecordsService.update` y en el
+  historial de ADR-S25 → un archivo equivocado se DESHACE.
+- **En una lista de la tienda sí se puede** (a diferencia del import, que crea):
+  cada cambio pasa por `store-rules` —la vista previa lo avisa por fila con
+  `storeRuleError`, compartido con la edición masiva— y viaja a WooCommerce.
+  Crear lo que falta (`upsert`) queda para las listas comunes.
+
 ---
 
-**Versión del documento:** 1.31.0 (deshacer ediciones masivas — nota de ADR-S25)
+**Versión del documento:** 1.32.0 (actualizar registros desde un archivo — nota de ADR-S25)
