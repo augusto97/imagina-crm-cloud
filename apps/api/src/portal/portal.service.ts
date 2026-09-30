@@ -507,7 +507,6 @@ export class PortalService {
 
     /** GET /portal/me/comments — comentarios del record del cliente. */
     async myComments(actor: PortalActor): Promise<CommentDto[]> {
-        const userId = actor.userId;
         const link = await this.requireLink(actor);
         const rows = await this.tenantDb.withTenant(link.tenantId, (tx) =>
             this.commentsRepo.listByRecord(tx, link.tenantId, link.recordId),
@@ -537,7 +536,6 @@ export class PortalService {
 
     /** GET /portal/me/activity — timeline del record del cliente. */
     async myActivity(actor: PortalActor, limit: number): Promise<ActivityDto[]> {
-        const userId = actor.userId;
         const link = await this.requireLink(actor);
         const cap = Math.min(Math.max(Math.trunc(limit) || 50, 1), 200);
         const rows = await this.tenantDb.withTenant(link.tenantId, (tx) =>
