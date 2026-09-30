@@ -60,7 +60,7 @@ export class StoreBulkController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(storeBulkApplySchema)) input: StoreBulkApplyInput,
     ): Promise<StoreBulkResult> {
-        return this.bulk.apply(req.tenant!.tenantId, actor(req), list, input.ids, input.operations, input.include_variations);
+        return this.bulk.apply(req.tenant!.tenantId, actor(req), list, input.ids, input.operations, input.include_variations, input.edit_id);
     }
 }
 

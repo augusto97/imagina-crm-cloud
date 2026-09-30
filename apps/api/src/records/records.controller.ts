@@ -102,7 +102,7 @@ export class RecordsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(bulkEditApplySchema)) input: BulkEditApplyInput,
     ): Promise<BulkEditResult> {
-        return this.bulkEdit.apply(tenantId(req), actor(req), list, input.ids, input.operations);
+        return this.bulkEdit.apply(tenantId(req), actor(req), list, input.ids, input.operations, input.edit_id);
     }
 
     @Get(':id')

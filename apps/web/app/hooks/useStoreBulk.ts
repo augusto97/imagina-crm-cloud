@@ -11,6 +11,7 @@ import {
 import { api } from '@/lib/api';
 
 import type { BulkApplyProgress } from './useBulkEdit';
+import { bulkHistoryKeys } from './useBulkHistory';
 import { invalidateForList, recordsKeys } from './useRecords';
 
 /**
@@ -50,12 +51,20 @@ export function useStoreBulkApply(listId: number) {
         { ids: number[]; operations: StoreBulkOperation[]; include_variations: boolean; onProgress?: (p: BulkApplyProgress) => void }
     >({
         mutationFn: async ({ ids, operations, include_variations, onProgress }) => {
-            const out: StoreBulkResult = { updated: 0, unchanged: 0, failed: [], skipped: [] };
+            const out: StoreBulkResult = { updated: 0, unchanged: 0, failed: [], skipped: [], edit_id: null };
             onProgress?.({ done: 0, total: ids.length });
             for (let i = 0; i < ids.length; i += STORE_BULK_APPLY_CHUNK) {
                 const chunk = ids.slice(i, i + STORE_BULK_APPLY_CHUNK);
                 try {
-                    const res = (await api.post<StoreBulkResult>(`/lists/${listId}/store-bulk/apply`, { ids: chunk, operations, include_variations })).data;
+                    const res = (
+                        await api.post<StoreBulkResult>(`/lists/${listId}/store-bulk/apply`, {
+                            ids: chunk,
+                            operations,
+                            include_variations,
+                            ...(out.edit_id ? { edit_id: out.edit_id } : {}),
+                        })
+                    ).data;
+                    out.edit_id = res.edit_id ?? out.edit_id;
                     out.updated += res.updated;
                     out.unchanged += res.unchanged;
                     out.failed.push(...res.failed);
@@ -70,6 +79,7 @@ export function useStoreBulkApply(listId: number) {
         },
         onSettled: () => {
             invalidateForList(qc, recordsKeys.all, listId);
+            void qc.invalidateQueries({ queryKey: bulkHistoryKeys.forList(listId) });
         },
     });
 }

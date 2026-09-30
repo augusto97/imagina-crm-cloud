@@ -58,6 +58,8 @@ import {
     templates,
     connectionSyncs,
     syncLinks,
+    bulkEditItems,
+    bulkEdits,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -307,6 +309,8 @@ export class PlatformService {
             // connections, templates, carpetas, menciones, recurrencias y la
             // bitácora, agregadas en releases posteriores al original.
             await tx.delete(mentions).where(eq(mentions.tenantId, id));
+            await tx.delete(bulkEditItems).where(eq(bulkEditItems.tenantId, id));
+            await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, id));
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));

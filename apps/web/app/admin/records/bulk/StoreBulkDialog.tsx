@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { AlertTriangle, CheckCircle2, Loader2, Plus, Store, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Plus, Store, Trash2, Undo2, X } from 'lucide-react';
 import {
     storeEditableSlugs,
     type StoreBulkCatalog,
@@ -26,6 +26,7 @@ import { FilterOptionPicker } from '../FilterOptionPicker';
 import { isEmptyTree } from '../filterTree';
 
 import { ScopeChip, Segmented } from './BulkEditDialog';
+import { BulkRevertDialog } from './BulkRevertDialog';
 import { STORE_OPS, newStoreDraft, storeDraftDefaults, storeDraftToOperation, storeOpMeta, type StoreDraft } from './storeBulkMeta';
 
 interface StoreBulkDialogProps {
@@ -71,6 +72,7 @@ export function StoreBulkDialog({
     const [preview, setPreview] = useState<StoreBulkPreview | null>(null);
     const [progress, setProgress] = useState<BulkApplyProgress | null>(null);
     const [result, setResult] = useState<StoreBulkResult | null>(null);
+    const [undoOpen, setUndoOpen] = useState(false);
     const catalog = useStoreBulkCatalog(listId, open);
     const previewM = useStoreBulkPreview(listId);
     const applyM = useStoreBulkApply(listId);
@@ -86,6 +88,7 @@ export function StoreBulkDialog({
         setPreview(null);
         setResult(null);
         setProgress(null);
+        setUndoOpen(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -285,6 +288,12 @@ export function StoreBulkDialog({
                                 </Button>
                             </>
                         )}
+                        {phase === 'done' && result?.edit_id && result.updated > 0 && (
+                            <Button variant="outline" onClick={() => setUndoOpen(true)} data-testid="imcrm-store-bulk-undo-btn">
+                                <Undo2 className="imcrm-h-4 imcrm-w-4" />
+                                {__('Deshacer')}
+                            </Button>
+                        )}
                         {phase === 'done' && (
                             <Button onClick={() => onOpenChange(false)} data-testid="imcrm-store-bulk-close-btn">
                                 {__('Listo')}
@@ -293,6 +302,20 @@ export function StoreBulkDialog({
                     </div>
                 </Dialog.Content>
             </Dialog.Portal>
+            {undoOpen && result?.edit_id && (
+                <BulkRevertDialog
+                    open
+                    onOpenChange={(o) => {
+                        if (!o) {
+                            setUndoOpen(false);
+                            onOpenChange(false);
+                        }
+                    }}
+                    listId={listId}
+                    editId={result.edit_id}
+                    summary={__('La edición de la tienda que acabás de aplicar')}
+                />
+            )}
         </Dialog.Root>
     );
 }

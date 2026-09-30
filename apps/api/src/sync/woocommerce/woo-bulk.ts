@@ -492,3 +492,132 @@ export function planBulkUpdate(ops: readonly StoreBulkOperation[], obj: WooJson,
     }
     return { body, changes, notes };
 }
+
+// ── Deshacer (v0.1.218) ──────────────────────────────────────────────────
+
+/**
+ * El valor ACTUAL del objeto en la misma forma en que se lo manda a la API
+ * (`body`): sirve como «antes» al registrar la edición y como «ahora» al
+ * deshacerla (para saber si alguien lo volvió a tocar).
+ */
+export function snapshotBody(obj: WooJson, keys: readonly string[], after: Record<string, unknown> = {}): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of keys) {
+        switch (key) {
+            case 'manage_stock':
+                out[key] = obj.manage_stock === 'parent' ? 'parent' : obj.manage_stock === true;
+                break;
+            case 'stock_quantity':
+                out[key] = wooNumber(obj.stock_quantity);
+                break;
+            case 'low_stock_amount':
+                out[key] = wooNumber(obj.low_stock_amount);
+                break;
+            case 'featured':
+                out[key] = obj.featured === true;
+                break;
+            case 'categories':
+            case 'tags':
+                out[key] = termIds(obj, key).map((id) => ({ id }));
+                break;
+            case 'attributes':
+                out[key] = attributesOf(obj).map((a, i) => ({
+                    ...(a.id > 0 ? { id: a.id } : { name: a.name }),
+                    position: i,
+                    visible: a.visible,
+                    variation: a.variation,
+                    options: a.options,
+                }));
+                break;
+            case 'dimensions': {
+                const cur = (obj.dimensions && typeof obj.dimensions === 'object' ? obj.dimensions : {}) as Record<string, unknown>;
+                out[key] = { length: str(cur.length), width: str(cur.width), height: str(cur.height) };
+                break;
+            }
+            case 'meta_data': {
+                const current = new Map<string, string>();
+                for (const m of Array.isArray(obj.meta_data) ? (obj.meta_data as Array<Record<string, unknown>>) : []) {
+                    current.set(str(m?.key), typeof m?.value === 'object' ? JSON.stringify(m.value) : str(m?.value));
+                }
+                const wanted = Array.isArray(after.meta_data) ? (after.meta_data as Array<{ key: string }>) : [];
+                out[key] = wanted.map((m) => ({ key: m.key, value: current.get(m.key) ?? '' }));
+                break;
+            }
+            default:
+                out[key] = str(obj[key]);
+        }
+    }
+    return out;
+}
+
+/** Una forma comparable de cada campo (ids como conjunto, atributos por nombre y valores). */
+function comparable(key: string, v: unknown): unknown {
+    if ((key === 'categories' || key === 'tags') && Array.isArray(v)) {
+        return v.map((t) => Number((t as { id?: unknown })?.id)).sort((a, b) => a - b);
+    }
+    if (key === 'attributes' && Array.isArray(v)) {
+        return v
+            .map((a) => {
+                const e = (a ?? {}) as { id?: unknown; name?: unknown; options?: unknown };
+                const opts = Array.isArray(e.options) ? e.options.map(String).sort() : [];
+                return `${Number(e.id) > 0 ? `#${Number(e.id)}` : str(e.name).toLowerCase()}:${opts.join('|')}`;
+            })
+            .sort();
+    }
+    if (key === 'regular_price' || key === 'sale_price' || key === 'weight') {
+        const n = wooNumber(v);
+        return n === null ? null : n;
+    }
+    if (key === 'date_on_sale_from' || key === 'date_on_sale_to') {
+        const s = str(v);
+        return s === '' ? null : s.slice(0, 10);
+    }
+    return v === '' || v === undefined ? null : v;
+}
+
+/** ¿El objeto sigue como lo dejó la edición? Si no, qué campo cambió. */
+export function storeDrift(obj: WooJson, after: Record<string, unknown>): string | null {
+    const now = snapshotBody(obj, Object.keys(after), after);
+    for (const key of Object.keys(after)) {
+        if (JSON.stringify(comparable(key, now[key])) !== JSON.stringify(comparable(key, after[key]))) {
+            return `«${STORE_FIELD_LABEL[key] ?? key}» cambió después en la tienda.`;
+        }
+    }
+    return null;
+}
+
+/** El cuerpo para volver atrás: el antes, sin lo que la API no acepta. */
+export function revertBody(before: Record<string, unknown>): Record<string, unknown> {
+    const body: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(before)) {
+        if (key === 'manage_stock' && value === 'parent') continue;
+        if (key === 'stock_quantity' && value === null) continue;
+        body[key] = value;
+    }
+    return body;
+}
+
+export const STORE_FIELD_LABEL: Record<string, string> = {
+    regular_price: 'Precio normal',
+    sale_price: 'Precio rebajado',
+    date_on_sale_from: 'Rebaja desde',
+    date_on_sale_to: 'Rebaja hasta',
+    manage_stock: 'Controla stock',
+    stock_quantity: 'Stock',
+    stock_status: 'Estado del stock',
+    backorders: 'Reservas',
+    low_stock_amount: 'Alerta de stock bajo',
+    status: 'Publicación',
+    catalog_visibility: 'Visibilidad',
+    featured: 'Destacado',
+    categories: 'Categorías',
+    tags: 'Etiquetas',
+    attributes: 'Atributos',
+    weight: 'Peso',
+    dimensions: 'Medidas',
+    shipping_class: 'Clase de envío',
+    tax_status: 'Impuesto',
+    tax_class: 'Clase de impuesto',
+    name: 'Nombre',
+    meta_data: 'Campos de plugins',
+};

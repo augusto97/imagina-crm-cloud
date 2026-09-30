@@ -10,6 +10,7 @@ import {
     roleHasCapability,
     storeCellAccess,
     storeValueError,
+    summarizeBulkOperations,
     type BulkEditPreview,
     type BulkEditResult,
     type BulkEditTarget,
@@ -21,6 +22,7 @@ import {
 } from '@imagina-base/shared';
 import { hiddenFieldsFor } from '../lists/list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
+import { BulkHistoryService, type BulkItemInput } from './bulk-history.service';
 import { RecordsService, type Actor } from './records.service';
 
 /** Cuántos ejemplos muestra la vista previa y cuántos errores lista. */
@@ -45,6 +47,7 @@ export class BulkEditService {
     constructor(
         private readonly records: RecordsService,
         private readonly realtime: RealtimeService,
+        private readonly history: BulkHistoryService,
     ) {}
 
     async preview(
@@ -91,14 +94,29 @@ export class BulkEditService {
         listIdOrSlug: string,
         ids: number[],
         operations: BulkOperation[],
+        editId?: number,
     ): Promise<BulkEditResult> {
         const loaded = await this.records.bulkRows(tenantId, actor, listIdOrSlug, { ids }, BULK_EDIT_APPLY_CHUNK);
         const ctx = this.context(loaded.list, loaded.fields, actor, operations);
-        const result: BulkEditResult = { succeeded: [], unchanged: [], failed: [] };
+        const result: BulkEditResult = { succeeded: [], unchanged: [], failed: [], edit_id: editId ?? null };
         const found = new Set(loaded.rows.map((r) => r.id));
         // Lo que no se encontró (borrado entre la vista previa y ahora, o fuera
         // del alcance de edición de la persona) se informa, no se calla.
         for (const id of ids) if (!found.has(id)) result.failed.push({ id, message: 'El registro ya no existe o no lo podés editar.' });
+        // v0.1.218 — El historial: la edición se abre en la primera tanda y
+        // cada fila escrita deja su antes y después (lo que sirve para deshacer).
+        const labelOf = (id: number) => ctx.bulkFields.get(id)?.label ?? `#${id}`;
+        const relFieldIds = new Set(loaded.fields.filter((f) => f.type === 'relation').map((f) => f.id));
+        result.edit_id = await this.history.openEdit(
+            tenantId,
+            actor.userId,
+            loaded.list.id,
+            'records',
+            editId,
+            summarizeBulkOperations(operations, labelOf),
+            operations,
+        );
+        const items: BulkItemInput[] = [];
         for (const row of loaded.rows) {
             const res = this.compute(ctx, row);
             if (res.errors.length > 0) {
@@ -110,12 +128,28 @@ export class BulkEditService {
                 continue;
             }
             try {
-                await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true });
+                const saved = await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true });
                 result.succeeded.push(row.id);
+                // El DESPUÉS es lo que quedó guardado (ya validado y normalizado),
+                // no el pedido: así, al deshacer, «sigue igual» se compara bien.
+                const before: Record<string, unknown> = {};
+                const after: Record<string, unknown> = {};
+                for (const key of Object.keys(res.patch)) {
+                    const fid = Number(key.slice(1));
+                    if (relFieldIds.has(fid)) {
+                        before[key] = row.relations[fid] ?? [];
+                        after[key] = saved.relations?.[key] ?? res.patch[key];
+                    } else {
+                        before[key] = row.data[key] ?? null;
+                        after[key] = (saved.data as Record<string, unknown>)[key] ?? null;
+                    }
+                }
+                items.push({ recordId: row.id, title: ctx.title(row.data, row.id), before, after });
             } catch (err) {
                 result.failed.push({ id: row.id, message: explain(err) });
             }
         }
+        await this.history.addItems(tenantId, result.edit_id, items);
         // Un solo aviso de realtime por tanda (no uno por fila).
         if (result.succeeded.length > 0) this.realtime.records(tenantId, loaded.list.id);
         return result;

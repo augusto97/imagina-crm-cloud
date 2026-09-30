@@ -5288,6 +5288,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         variaciones, atributo de variación protegido, alcance «todos los de la
         vista» que toca un producto no seleccionado, celular).
 
+  - [x] **Deshacer una edición masiva (v0.1.218, ADR-S25, primera de las
+        mejoras de edición masiva pedidas: "sí, hacé todo")**: un «subir 10 %»
+        equivocado sobre 5.000 registros sólo se arreglaba a mano. Ahora cada
+        edición masiva —de la app o de la tienda— queda en un **historial**
+        (`bulk_edits` + `bulk_edit_items`, migración 0056, RLS) con el ANTES y
+        el DESPUÉS de lo que cambió en cada fila, y se puede **deshacer**:
+        desde el resultado de la edición (botón «Deshacer») o desde
+        Personalizar vista → **Historial de ediciones masivas** (qué se hizo en
+        criollo —«Precio: subir 10 % · Stock: sumar 5»—, quién, cuándo,
+        cuántos, y si ya se deshizo del todo o en parte). Reglas: (a) una
+        edición es UNA aunque se aplique en tandas (la primera devuelve
+        `edit_id`, las siguientes lo repiten; nadie le cuelga filas a la
+        edición de otro); (b) el DESPUÉS guardado es lo que quedó de verdad
+        (validado por la app o devuelto por WooCommerce), así «sigue igual» se
+        compara bien; (c) **conflictos**: si alguien tocó una fila después, no
+        se pisa — la vista previa la lista con qué cambió («Precio cambió
+        después: ahora es 1») y sólo se revierte si se marca «Volverlos atrás
+        igual»; los borrados se cuentan aparte; (d) deshacer es una edición
+        común (ACL, bitácora, automatizaciones, reglas y envío de la tienda) en
+        tandas de 100 con avance, con bitácora `bulk_edit.revert`; (e) la
+        propia se deshace siempre, la de otro y las de la tienda exigen
+        `bulk_actions`; (f) se conserva 30 días. En la tienda el antes/después
+        va en la forma de la API (`snapshotBody`) y la comparación normaliza
+        lo que WooCommerce reescribe (ids de categorías como conjunto,
+        atributos por nombre y valores, precios como número). 3 tests unitarios
+        en shared (94) + 3 de integración (dos tandas, conflicto respetado y
+        forzado, permisos y `edit_id` ajeno rechazado; deshacer de la tienda
+        con variación tocada después) — 759 API, 178 front y 94 shared en
+        verde — + E2E navegador 21/21 (220 registros en
+        dos tandas, historial, 219 vuelven y 1 respetado, forzar, deshacer
+        desde el resultado con etiquetas de opción, celular) y **17/17 contra
+        un WooCommerce 11.1.2 real** (precio, stock, destacado, categorías y
+        atributo de vuelta; la variación cambiada después, respetada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

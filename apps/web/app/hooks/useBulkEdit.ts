@@ -9,6 +9,7 @@ import {
 
 import { api } from '@/lib/api';
 
+import { bulkHistoryKeys } from './useBulkHistory';
 import { invalidateForList, recordsKeys } from './useRecords';
 
 /**
@@ -40,12 +41,18 @@ export function useBulkEditApply(listId: number) {
         { ids: number[]; operations: BulkOperation[]; onProgress?: (p: BulkApplyProgress) => void }
     >({
         mutationFn: async ({ ids, operations, onProgress }) => {
-            const out: BulkEditResult = { succeeded: [], unchanged: [], failed: [] };
+            const out: BulkEditResult = { succeeded: [], unchanged: [], failed: [], edit_id: null };
             onProgress?.({ done: 0, total: ids.length });
             for (let i = 0; i < ids.length; i += BULK_EDIT_APPLY_CHUNK) {
                 const chunk = ids.slice(i, i + BULK_EDIT_APPLY_CHUNK);
                 try {
-                    const res = await api.post<BulkEditResult>(`/lists/${listId}/records/bulk-edit`, { ids: chunk, operations });
+                    // v0.1.218 — todas las tandas quedan en UNA edición del historial.
+                    const res = await api.post<BulkEditResult>(`/lists/${listId}/records/bulk-edit`, {
+                        ids: chunk,
+                        operations,
+                        ...(out.edit_id ? { edit_id: out.edit_id } : {}),
+                    });
+                    out.edit_id = res.data.edit_id ?? out.edit_id;
                     out.succeeded.push(...res.data.succeeded);
                     out.unchanged.push(...res.data.unchanged);
                     out.failed.push(...res.data.failed);
@@ -60,6 +67,7 @@ export function useBulkEditApply(listId: number) {
         },
         onSettled: () => {
             invalidateForList(qc, recordsKeys.all, listId);
+            void qc.invalidateQueries({ queryKey: bulkHistoryKeys.forList(listId) });
         },
     });
 }

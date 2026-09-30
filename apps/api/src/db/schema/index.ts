@@ -29,3 +29,4 @@ export * from './ai-usage';
 export * from './personal-tokens';
 export * from './oauth-clients';
 export * from './store-sync';
+export * from './bulk-edits';

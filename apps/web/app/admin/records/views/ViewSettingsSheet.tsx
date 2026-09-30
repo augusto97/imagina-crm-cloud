@@ -9,6 +9,7 @@ import {
     Filter,
     Grid3x3,
     Group,
+    History,
     Settings,
     Star,
     Store,
@@ -100,6 +101,8 @@ interface ViewSettingsSheetProps {
     onBulkEdit: () => void;
     /** v0.1.217 — lista de productos de una tienda: editar EN WooCommerce. */
     onStoreBulk?: () => void;
+    /** v0.1.218 — historial de ediciones masivas (con deshacer). */
+    onBulkHistory?: () => void;
 }
 
 /**
@@ -149,6 +152,7 @@ export function ViewSettingsSheet({
     canBulkEdit,
     onBulkEdit,
     onStoreBulk,
+    onBulkHistory,
 }: ViewSettingsSheetProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -456,6 +460,17 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onBulkEdit();
+                                    }}
+                                />
+                            )}
+                            {onBulkHistory && (
+                                <RowButton
+                                    icon={History}
+                                    label={__('Historial de ediciones masivas')}
+                                    value={__('Deshacer')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onBulkHistory();
                                     }}
                                 />
                             )}

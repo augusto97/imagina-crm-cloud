@@ -42,6 +42,7 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
 import { BulkEditDialog } from './bulk/BulkEditDialog';
+import { BulkHistorySheet } from './bulk/BulkHistorySheet';
 import { StoreBulkDialog } from './bulk/StoreBulkDialog';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
@@ -263,6 +264,8 @@ export function RecordsPage(): JSX.Element {
     const [bulkEditOpen, setBulkEditOpen] = useState(false);
     // v0.1.217 — edición masiva EN la tienda (lista de productos de WooCommerce).
     const [storeBulkOpen, setStoreBulkOpen] = useState(false);
+    // v0.1.218 — historial de ediciones masivas (con deshacer).
+    const [bulkHistoryOpen, setBulkHistoryOpen] = useState(false);
     // El dialog de export es controlado desde acá: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
@@ -292,6 +295,9 @@ export function RecordsPage(): JSX.Element {
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !storeMarker;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
+    const canEditAny = useCan(CAP.EDIT_RECORDS);
+    const canEditOwn = useCan(CAP.EDIT_OWN_RECORDS);
+    const canSeeBulkHistory = canEditAny || canEditOwn;
     const canStoreBulk = canBulkEdit && storeMarker?.role === 'products' && storeMarker.write_back === true;
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && !storeMarker;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -877,7 +883,12 @@ const applyView = (view: SavedViewEntity | null): void => {
                     canBulkEdit={canBulkEdit}
                     onBulkEdit={() => setBulkEditOpen(true)}
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
+                    onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                 />
+            )}
+
+            {canSeeBulkHistory && list.data && (
+                <BulkHistorySheet open={bulkHistoryOpen} onOpenChange={setBulkHistoryOpen} listId={list.data.id} />
             )}
 
             {storeMarker && canStoreBulk && (

@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
     STORE_BULK_APPLY_CHUNK,
     STORE_BULK_MAX_TARGET,
     readStoreListMarker,
     defaultStoreEditable,
+    summarizeStoreBulkOperations,
+    type BulkRevertPreview,
+    type BulkRevertResult,
     type StoreBulkCatalog,
     type StoreBulkOperation,
     type StoreBulkPreview,
@@ -17,11 +20,21 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import { connectionSyncs, syncLinks } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
+import { BulkHistoryService, type BulkEditHeader, type BulkItemInput, type BulkItemRow } from '../records/bulk-history.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { StoreSyncEngine } from './store-sync.engine';
 import { readSettings, type SyncSettings } from './store-sync.types';
-import { BULK_OP_COLUMN, planBulkUpdate, type BulkItemKind, type BulkPlanContext } from './woocommerce/woo-bulk';
+import {
+    BULK_OP_COLUMN,
+    STORE_FIELD_LABEL,
+    planBulkUpdate,
+    revertBody,
+    snapshotBody,
+    storeDrift,
+    type BulkItemKind,
+    type BulkPlanContext,
+} from './woocommerce/woo-bulk';
 import { WOO_PAGE_SIZE, WooApiError, wooGetPage, wooSend } from './woocommerce/woo-fetch';
 import { variationAttributes, type WooJson } from './woocommerce/woo-map';
 
@@ -59,7 +72,7 @@ interface Target {
  * puede estar atrasado por una venta que todavía no llegó.
  */
 @Injectable()
-export class StoreBulkService {
+export class StoreBulkService implements OnModuleInit {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly lists: ListsService,
@@ -68,7 +81,16 @@ export class StoreBulkService {
         private readonly connectors: ConnectorsService,
         private readonly engine: StoreSyncEngine,
         private readonly audit: AuditService,
+        private readonly history: BulkHistoryService,
     ) {}
+
+    /** v0.1.218 — Deshacer una edición de la tienda lo sabe hacer este servicio. */
+    onModuleInit(): void {
+        this.history.registerReverter('store', {
+            preview: (t, a, e, i) => this.revertPreview(t, a, e, i),
+            apply: (t, a, e, i, f) => this.revertApply(t, a, e, i, f),
+        });
+    }
 
     // ── Catálogo (lo que la pantalla ofrece para elegir) ─────────────────────
 
@@ -190,11 +212,23 @@ export class StoreBulkService {
         ids: number[],
         operations: StoreBulkOperation[],
         includeVariations: boolean,
+        editId?: number,
     ): Promise<StoreBulkResult> {
         const ctx = await this.context(tenantId, listIdOrSlug);
         const t = await this.resolveTarget(tenantId, actor, ctx, { ids }, STORE_BULK_APPLY_CHUNK);
         const planCtx = await this.termsContext(ctx, operations, true);
-        const result: StoreBulkResult = { updated: 0, unchanged: 0, failed: [], skipped: [] };
+        const result: StoreBulkResult = { updated: 0, unchanged: 0, failed: [], skipped: [], edit_id: editId ?? null };
+        // v0.1.218 — historial para poder deshacer (la primera tanda abre la edición).
+        result.edit_id = await this.history.openEdit(
+            tenantId,
+            actor.userId,
+            ctx.listId,
+            'store',
+            editId,
+            summarizeStoreBulkOperations(operations),
+            operations,
+        );
+        const sources = new Map<string, { obj: WooJson; body: Record<string, unknown>; title: string; parentId: string | null }>();
 
         const products = await this.fetchProducts(ctx.creds, t.products.map((p) => p.id));
         const productUpdates: Array<{ id: number; title: string; body: Record<string, unknown> }> = [];
@@ -207,6 +241,7 @@ export class StoreBulkService {
                 return;
             }
             const entry = { id: Number(obj.id), title, body: plan.body };
+            sources.set(`${parentId ?? ''}:${entry.id}`, { obj, body: plan.body, title, parentId: parentId ?? null });
             if (kind === 'product') productUpdates.push(entry);
             else variationUpdates.set(parentId!, [...(variationUpdates.get(parentId!) ?? []), entry]);
         };
@@ -242,6 +277,24 @@ export class StoreBulkService {
             }
         }
         result.updated = writtenProducts.length + writtenVariations.length;
+        // Antes y después de cada objeto escrito: el después es lo que devolvió
+        // la tienda (ya normalizado), así «sigue igual» se compara bien al deshacer.
+        const items: BulkItemInput[] = [];
+        const record = (parentId: string | null, row: WooJson) => {
+            const src = sources.get(`${parentId ?? ''}:${Number(row.id)}`);
+            if (!src) return;
+            const keys = Object.keys(src.body);
+            items.push({
+                externalId: String(row.id),
+                parentExternalId: parentId,
+                title: src.title,
+                before: snapshotBody(src.obj, keys, src.body),
+                after: snapshotBody(row, keys, src.body),
+            });
+        };
+        for (const row of writtenProducts) record(null, row);
+        for (const { parentId, obj } of writtenVariations) record(parentId, obj);
+        await this.history.addItems(tenantId, result.edit_id, items);
         if (result.updated > 0) {
             await this.engine.applyStoreObjects(tenantId, ctx.syncId, ctx.creds, writtenProducts, writtenVariations);
             await this.audit.log({
@@ -255,6 +308,113 @@ export class StoreBulkService {
             });
         }
         return result;
+    }
+
+    // ── Deshacer (v0.1.218) ────────────────────────────────────────────────
+
+    private async revertPreview(tenantId: number, _actor: Actor, edit: BulkEditHeader, items: BulkItemRow[]): Promise<BulkRevertPreview> {
+        const ctx = await this.context(tenantId, String(edit.listId));
+        const fresh = await this.freshObjects(ctx.creds, items);
+        const out: BulkRevertPreview = { edit_id: edit.id, total: items.length, item_ids: [], conflict_ids: [], conflicts: [], missing: 0, sample: [] };
+        for (const item of items) {
+            const obj = fresh.get(itemKey(item));
+            if (!obj) {
+                out.missing++;
+                continue;
+            }
+            const drift = storeDrift(obj, item.after);
+            if (drift) {
+                out.conflict_ids.push(item.id);
+                if (out.conflicts.length < 50) out.conflicts.push({ item_id: item.id, title: item.title, message: drift });
+                continue;
+            }
+            out.item_ids.push(item.id);
+            if (out.sample.length < 15) {
+                out.sample.push({
+                    item_id: item.id,
+                    title: item.title,
+                    changes: Object.keys(item.before).map((key) => ({
+                        label: STORE_FIELD_LABEL[key] ?? key,
+                        before: showStore(item.after[key]),
+                        after: showStore(item.before[key]),
+                    })),
+                });
+            }
+        }
+        return out;
+    }
+
+    private async revertApply(
+        tenantId: number,
+        actor: Actor,
+        edit: BulkEditHeader,
+        items: BulkItemRow[],
+        force: boolean,
+    ): Promise<BulkRevertResult> {
+        const ctx = await this.context(tenantId, String(edit.listId));
+        const fresh = await this.freshObjects(ctx.creds, items);
+        const result: BulkRevertResult = { reverted: 0, conflicts: 0, failed: [] };
+        const products: Array<{ id: number; title: string; body: Record<string, unknown>; itemId: number }> = [];
+        const variations = new Map<string, Array<{ id: number; title: string; body: Record<string, unknown>; itemId: number }>>();
+        for (const item of items) {
+            const obj = fresh.get(itemKey(item));
+            if (!obj) {
+                result.failed.push({ item_id: item.id, title: item.title, message: 'Ya no existe en la tienda.' });
+                continue;
+            }
+            if (!force && storeDrift(obj, item.after)) {
+                result.conflicts++;
+                continue;
+            }
+            const entry = { id: Number(item.externalId), title: item.title, body: revertBody(item.before), itemId: item.id };
+            if (item.parentExternalId) variations.set(item.parentExternalId, [...(variations.get(item.parentExternalId) ?? []), entry]);
+            else products.push(entry);
+        }
+        const tmp: StoreBulkResult = { updated: 0, unchanged: 0, failed: [], skipped: [], edit_id: null };
+        const done: number[] = [];
+        const writtenProducts: WooJson[] = [];
+        const writtenVariations: Array<{ parentId: string; obj: WooJson }> = [];
+        for (const chunk of chunks(products, BATCH_SIZE)) {
+            const ok = await this.batch(ctx.creds, '/products/batch', chunk, tmp);
+            const okIds = new Set(ok.map((o) => Number(o.id)));
+            for (const e of chunk) if (okIds.has(e.id)) done.push(e.itemId);
+            writtenProducts.push(...ok);
+        }
+        for (const [parentId, list] of variations) {
+            for (const chunk of chunks(list, BATCH_SIZE)) {
+                const ok = await this.batch(ctx.creds, `/products/${Number(parentId)}/variations/batch`, chunk, tmp);
+                const okIds = new Set(ok.map((o) => Number(o.id)));
+                for (const e of chunk) if (okIds.has(e.id)) done.push(e.itemId);
+                writtenVariations.push(...ok.map((obj) => ({ parentId, obj })));
+            }
+        }
+        const titleToItem = new Map(items.map((i) => [i.title, i.id]));
+        for (const f of tmp.failed) result.failed.push({ item_id: titleToItem.get(f.title) ?? 0, title: f.title, message: f.message });
+        result.reverted = done.length;
+        await this.history.markReverted(tenantId, actor, edit.id, done);
+        if (done.length > 0) await this.engine.applyStoreObjects(tenantId, ctx.syncId, ctx.creds, writtenProducts, writtenVariations);
+        return result;
+    }
+
+    /** Los productos y variaciones de las filas, leídos AHORA de la tienda. */
+    private async freshObjects(creds: IntegrationCreds, items: BulkItemRow[]): Promise<Map<string, WooJson>> {
+        const out = new Map<string, WooJson>();
+        const productIds = items.filter((i) => !i.parentExternalId && i.externalId).map((i) => i.externalId!);
+        for (const p of await this.fetchProducts(creds, [...new Set(productIds)])) out.set(`:${Number(p.id)}`, p);
+        const byParent = groupBy(
+            items.filter((i) => i.parentExternalId && i.externalId),
+            (i) => i.parentExternalId!,
+        );
+        for (const [parentId, list] of byParent) {
+            for (const chunk of chunks([...new Set(list.map((i) => i.externalId!))], WOO_PAGE_SIZE)) {
+                const res = await wooGetPage(creds, `/products/${Number(parentId)}/variations`, [
+                    ['include', chunk.join(',')],
+                    ['per_page', String(WOO_PAGE_SIZE)],
+                ]).catch(() => null);
+                for (const v of res?.rows ?? []) out.set(`${parentId}:${Number(v.id)}`, v);
+            }
+        }
+        return out;
     }
 
     // ── Detalles ────────────────────────────────────────────────────────────
@@ -447,6 +607,32 @@ export class StoreBulkService {
             editable: new Set(editable),
         };
     }
+}
+
+function itemKey(item: BulkItemRow): string {
+    return `${item.parentExternalId ?? ''}:${Number(item.externalId)}`;
+}
+
+function showStore(v: unknown): string {
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'boolean') return v ? 'Sí' : 'No';
+    if (Array.isArray(v)) {
+        if (v.length === 0) return '—';
+        return v
+            .map((x) => {
+                const e = (x ?? {}) as Record<string, unknown>;
+                if ('options' in e) return `${String(e.name ?? `#${String(e.id)}`)}: ${Array.isArray(e.options) ? e.options.join(', ') : ''}`;
+                if ('key' in e) return `${String(e.key)}=${String(e.value ?? '')}`;
+                return `#${String(e.id)}`;
+            })
+            .join(' · ');
+    }
+    if (typeof v === 'object') {
+        const d = v as Record<string, unknown>;
+        if ('length' in d) return `${String(d.length || '—')} × ${String(d.width || '—')} × ${String(d.height || '—')}`;
+        return JSON.stringify(v);
+    }
+    return String(v);
 }
 
 function variationTitle(parent: WooJson, v: WooJson): string {

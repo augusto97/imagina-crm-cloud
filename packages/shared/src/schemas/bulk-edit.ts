@@ -148,6 +148,12 @@ export type BulkEditPreviewInput = z.infer<typeof bulkEditPreviewSchema>;
 export const bulkEditApplySchema = z.object({
     ids: z.array(idSchema).min(1).max(BULK_EDIT_APPLY_CHUNK),
     operations: operationsSchema,
+    /**
+     * v0.1.218 — La edición del historial a la que pertenece esta tanda. La
+     * primera tanda no lo manda (el servidor crea la edición y devuelve su id);
+     * las siguientes lo repiten, así una edición en 25 tandas se deshace entera.
+     */
+    edit_id: idSchema.optional(),
 });
 export type BulkEditApplyInput = z.infer<typeof bulkEditApplySchema>;
 
@@ -172,6 +178,8 @@ export interface BulkEditResult {
     succeeded: number[];
     unchanged: number[];
     failed: Array<{ id: number; message: string }>;
+    /** La edición del historial (v0.1.218): se manda en las tandas siguientes y sirve para deshacer. */
+    edit_id: number | null;
 }
 
 // ── Qué operación aplica a qué tipo de campo ─────────────────────────────
