@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router';
 import { PortalApp } from '@/cloud-portal/PortalApp';
+import { blockCrossOriginFraming } from '@/lib/frameGuard';
 import '@/styles/globals.css';
 
 // Tras una auto-actualización del servidor, una pestaña abierta sigue siendo
@@ -28,7 +29,8 @@ const queryClient = new QueryClient({
 });
 
 const container = document.getElementById('root');
-if (container) {
+// v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
+if (container && !blockCrossOriginFraming(container)) {
     createRoot(container).render(
         <StrictMode>
             <QueryClientProvider client={queryClient}>

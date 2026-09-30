@@ -5645,6 +5645,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         entrante, y endurecimientos de despliegue (rol de Postgres no
         superusuario, firma de los releases, CSP sin `unsafe-inline`).
 
+  - [x] **Seguridad sin tocar el servidor (v0.1.227, pregunta del usuario:
+        "¿no lo podés ajustar vos para no tener que entrar a la consola?")**:
+        de los tres pasos manuales que dejó v0.1.226, dos eran cosas del PROXY
+        (cabeceras en nginx/Caddy) que la auto-actualización no puede tocar —
+        la config es de root— y en ServerAvatar, donde sólo se pegan los
+        `location`, nunca habían llegado. Ahora viajan en la app: (a) **HSTS
+        desde el API** (hook `onSend`, sólo en producción y sobre HTTPS —sin `includeSubDomains`: si la app vive en el dominio raíz forzaría HTTPS en todos los subdominios del operador— según
+        el `X-Forwarded-Proto` del proxy de confianza; el navegador lo guarda
+        para todo el host sin importar qué respuesta lo trajo, y la SPA pide
+        al API apenas carga); (b) **CSP en un `<meta>`** inyectado en el build
+        de los DOS SPA (plugin `cspMeta` de vite, sólo en build; `frame-src`
+        sale de `EMBED_FRAME_HOSTS` de shared; `img-src https:` porque los
+        bloques de imagen del page-builder aceptan URLs externas); (c)
+        **anti-encuadre en el cliente** (`lib/frameGuard.ts`): `frame-ancestors`
+        no se puede poner en un `<meta>`, así que encuadrada por OTRO origen la
+        app no se monta y ofrece abrirse en su pestaña (el mismo origen sí
+        puede, como `SAMEORIGIN`). El tercer paso no era de consola: la
+        re-autenticación de la consola de Plataforma ya cerraba la sesión y
+        volvía al login sola, y `METRICS_TOKEN` es opcional (sólo si hay un
+        scraper; la app no lo usa). **Encontrado en la verificación**: el
+        superadmin de desarrollo había quedado SÓLO con el acceso de portal que
+        le creó la reproducción del ataque de SEC-24, y la app abría esa
+        empresa con todo en 403 (el TenantGuard rechaza al rol client). Los
+        accesos de portal ya no se listan como workspaces de la app de equipo,
+        y una cuenta sin ninguna empresa ve una pantalla que lo explica (con
+        el enlace al portal y "Cerrar sesión") en vez de una ruedita girando
+        para siempre. Runbooks: las cabeceras del proxy pasan a recomendadas,
+        no obligatorias. 4 tests del guard de encuadre + 1 de memberships sin
+        portal + E2E navegador 12/12 contra el BUILD DE PRODUCCIÓN con el API en
+        `NODE_ENV=production` (CSP en el HTML, login, tabla de 700 filas,
+        WebSocket del realtime abierto, cero violaciones de CSP ni errores de
+        JS en app y portal, encuadre del mismo origen permitido, encuadre desde
+        otro sitio bloqueado en app y portal) y HSTS por curl (sale con
+        `X-Forwarded-Proto: https`, no sale por HTTP).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

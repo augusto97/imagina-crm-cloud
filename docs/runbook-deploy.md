@@ -152,6 +152,14 @@ poné ese email (u otro) en `PLATFORM_SUPERADMINS`.
 - **Monitoreo**: `GET /api/v1/health/ready` (uptime check externo) y
   `GET /api/v1/metrics` (latencias/errores) con `Authorization: Bearer $METRICS_TOKEN`
   — desde v0.1.226, en producción sin `METRICS_TOKEN` el endpoint responde 403.
+  Es opcional: sólo configuralo si vas a scrapear métricas.
+- **Cabeceras de seguridad**: desde v0.1.227 no dependen del proxy. El API
+  manda HSTS en producción, el HTML de los dos SPA trae su CSP en un `<meta>` y
+  la app se niega a montarse dentro de un iframe de otro sitio. Las cabeceras de
+  `deploy/nginx.conf`/`Caddyfile` siguen siendo recomendables (defensa en
+  profundidad: `frame-ancestors` real, CSP también en los recursos estáticos),
+  pero un servidor que no las tenga ya no queda desprotegido — y la
+  auto-actualización trae las mejoras sin tocar el servidor.
 
 ## 9. Actualizar a una versión nueva
 

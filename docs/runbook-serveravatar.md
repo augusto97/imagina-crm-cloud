@@ -112,6 +112,12 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
    es opcional desde v0.1.186: el deploy deja esos documentos como archivos
    estáticos en `web/.well-known/`, que Nginx sirve antes del fallback.)
 
+   Las cabeceras de seguridad (`add_header` de `deploy/nginx.conf`) son
+   opcionales desde v0.1.227: la CSP viaja en el HTML de la app, el HSTS lo
+   manda el API y el anti-encuadre lo hace el cliente. Si las pegás, mejor
+   (suman `frame-ancestors` real); si no, cada actualización ya trae lo
+   necesario sin volver a tocar esta configuración.
+
 Abrí `https://app.tu-dominio.com` → login. Registrá el primer usuario (crea el
 workspace y su admin). Si su email está en `PLATFORM_SUPERADMINS`, ve **Ajustes →
 Sistema · Actualizaciones**.

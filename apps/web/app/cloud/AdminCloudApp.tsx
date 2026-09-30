@@ -9,6 +9,7 @@ import { hydrateAdminBoot } from '@/cloud/adminBoot';
 import { useRealtime } from '@/cloud/useRealtime';
 import { useBranding } from '@/hooks/useBranding';
 import { LoginPage } from '@/cloud/pages/LoginPage';
+import { Button } from '@/components/ui/button';
 
 /**
  * Gate de sesión de Imagina Base que monta la UI REAL del admin
@@ -27,10 +28,49 @@ function LoadingScreen(): JSX.Element {
     );
 }
 
+/**
+ * v0.1.227 — Cuenta sin ninguna empresa de equipo (la sacaron, borraron su
+ * empresa, o sólo tiene acceso de PORTAL — que ya no cuenta como workspace).
+ * Antes quedaba una ruedita girando para siempre.
+ */
+function NoWorkspaceScreen({ email }: { email: string }): JSX.Element {
+    const [busy, setBusy] = useState(false);
+    return (
+        <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-canvas imcrm-p-4">
+            <div className="imcrm-w-full imcrm-max-w-sm imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-text-sm imcrm-shadow-sm">
+                <h1 className="imcrm-text-base imcrm-font-semibold">Tu cuenta no tiene ninguna empresa</h1>
+                <p className="imcrm-mt-2 imcrm-text-muted-foreground">
+                    Entraste como <strong className="imcrm-text-foreground">{email}</strong>, pero esta cuenta no es
+                    miembro del equipo de ninguna empresa. Pedile a un administrador que te invite.
+                </p>
+                <p className="imcrm-mt-2 imcrm-text-muted-foreground">
+                    Si sos cliente de una empresa, entrá por su{' '}
+                    <a className="imcrm-text-primary hover:imcrm-underline" href="/portal">
+                        portal de clientes
+                    </a>
+                    .
+                </p>
+                <Button
+                    className="imcrm-mt-4 imcrm-w-full"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => {
+                        setBusy(true);
+                        void cloudApi.logout().finally(() => window.location.reload());
+                    }}
+                >
+                    Cerrar sesión
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export function AdminCloudApp(): JSX.Element {
     const user = useSession((s) => s.user);
     const ready = useSession((s) => s.ready);
     const activeTenantId = useSession((s) => s.activeTenantId);
+    const membershipCount = useSession((s) => s.memberships.length);
     const setSession = useSession((s) => s.setSession);
     const markReady = useSession((s) => s.markReady);
     const [booted, setBooted] = useState(false);
@@ -67,6 +107,7 @@ export function AdminCloudApp(): JSX.Element {
 
     if (!ready) return <LoadingScreen />;
     if (!user) return <LoginPage />;
+    if (membershipCount === 0) return <NoWorkspaceScreen email={user.email} />;
     if (!booted) return <LoadingScreen />;
 
     return (

@@ -405,6 +405,14 @@ estable: tipear en el buscador ya no re-dibuja todas las filas.
   interna.
 - Las decisiones del rate limit se toman sobre el PATH, nunca sobre `req.url`
   (trae la query: `?/health` salteaba el límite, SEC-28).
+- **Las cabeceras de seguridad no dependen del proxy** (v0.1.227): la
+  auto-actualización no toca la config del proxy (es de root), así que lo que
+  sólo vivía ahí no llegaba a los servidores ya instalados — y en un panel tipo
+  ServerAvatar nunca estuvo. Ahora el API manda HSTS en producción sobre HTTPS,
+  el HTML de los dos SPA trae su CSP en un `<meta>` (inyectado en el build) y el
+  cliente se niega a montarse encuadrado por otro origen (`frame-ancestors` no
+  se puede declarar en un `<meta>`). Las cabeceras del proxy siguen siendo la
+  capa más fuerte y se recomiendan; la de la app es el piso garantizado.
 - Secrets fuera del repo (env / SOPS). CSP estricta. Cookies httpOnly+secure.
 - Auditoría: `activity` registra todo (ya existe el diseño en el plugin).
 - Backups cifrados; restore drill mensual.
@@ -1676,4 +1684,4 @@ operaciones de la edición masiva de la tienda (ADR-S24):
 
 ---
 
-**Versión del documento:** 1.39.0 (seguridad: ACL por lista en todas las lecturas, cuentas y SMTP de las empresas — §14)
+**Versión del documento:** 1.40.0 (seguridad: cabeceras de seguridad desde la propia app, sin depender del proxy — §14)
