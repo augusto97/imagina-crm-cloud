@@ -127,7 +127,8 @@ describe('portal v3 (v0.1.233)', () => {
         const auto = autoPortalLayout(FIELDS);
         expect(recordLayoutV3Schema.safeParse(auto).success).toBe(true);
         expect(portalEditableFieldIds(auto, FIELDS).size).toBe(0);
-        expect(layoutBlocks(auto).map((b) => b.type)).toEqual(['fields', 'files']);
+        // v0.1.237 — el automático es «Mi cuenta» de sólo lectura: cifras + datos + archivos.
+        expect(layoutBlocks(auto).map((b) => b.type)).toEqual(['field', 'fields', 'files']);
         const withAdminBlocks = {
             ...auto,
             pages: [{ id: 'p', name: 'P', sections: [{ id: 's', columns: [12], blocks: [[{ id: 'x', type: 'portal_access' as const, config: {} }, { id: 'y', type: 'heading' as const, config: {} }]] }] }],

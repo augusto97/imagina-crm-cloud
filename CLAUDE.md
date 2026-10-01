@@ -6084,6 +6084,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         21/21 y 22/22, editor 30/30 y portal 23/23; revisado en claro,
         oscuro y celular.
 
+  - [x] **Plantillas del portal del cliente (v0.1.237, pedido del usuario:
+        "hacé las plantillas para portal cliente")**: las cinco de la ficha
+        están pensadas para el equipo; el portal ahora tiene su propia
+        galería, pensada para el CLIENTE (`portal-templates.ts` en shared):
+        **Mi cuenta** (sus cifras y cuántos registros tiene en cada lista en
+        una banda, lo que tiene con la empresa como tarjetas a lo ancho, sus
+        datos de contacto —los únicos editables— y «Escribinos»), **Estado
+        de cuenta** (saldo pendiente / pagado / facturado filtrando por las
+        opciones del estado que suenan a pendiente o pagado, cuenta regresiva
+        al próximo vencimiento, dona por estado, barras por mes y la tabla de
+        facturas con su comprobante), **Seguimiento de proyecto** (etapas de
+        sólo lectura en la cabecera, avance en anillo, entrega contando los
+        días y el trabajo como tablero por estado), **Mis solicitudes**
+        (abiertas = no cerradas / resueltas / total en una franja gris y los
+        casos por estado; si el registro ES el caso, su prioridad, estado y
+        plazo) y **Mi pedido** (estado como etapas, total, entrega estimada y
+        lo que pidió con cantidades; o, si el registro es el cliente, sus
+        pedidos). Todas usan el color de la MARCA de la empresa (no fijan
+        acento) y se distinguen por composición y superficie. Reglas por
+        construcción: nada de personas, relaciones, calculados ni campos que
+        suenan internos (costo, margen, comisión, interno…), ni del registro
+        ni como columna de otra lista. **Galería** en el editor del portal
+        (botón «Plantillas», y «Elegir plantilla» en Compartir → Portal que
+        la abre sola): miniatura por plantilla, qué incluye, y **qué listas
+        vinculadas ve el cliente con una casilla por lista** y las columnas
+        que va a ver; de entrada se marca sólo la que cumple el papel de la
+        plantilla (unas facturas no son "solicitudes"; pedidos y líneas se
+        reconocen por el nombre), y si a la lista le falta algo la plantilla
+        lo dice y no se aplica. Aplicar arma el diseño en el editor (Ctrl+Z
+        lo deshace; se guarda con Guardar). **El portal automático** deja de
+        ser una tarjeta con todos los campos: es «Mi cuenta» de sólo lectura,
+        sin canal de mensajes y con las listas que el admin ya habilitó en
+        "Qué más ve el cliente" (fail-closed), resueltas en el servidor
+        (`autoLinked`). 7 tests de shared + 1 de integración del portal (113
+        shared, 207 front, 26 del portal en verde) + E2E navegador 29/29
+        (automático con y sin listas habilitadas, galería desde Compartir,
+        preselección, columnas sin el costo interno, estado de cuenta con el
+        alcance del cliente —430.000 pendiente, sin la factura ajena—,
+        deshacer, guardar, el cliente lo ve, celular sin desborde, las otras
+        cuatro en el editor) y regresión del portal 23/23.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

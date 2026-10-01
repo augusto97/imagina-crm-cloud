@@ -1889,6 +1889,22 @@ SLA, conversación protagonista, historial del cliente). Las secciones
 ganan `style.tone` (`accent` | `muted`): una banda que se mezcla con
 transparencia sobre la superficie del tema, en vez de un hex fijo.
 
+**Plantillas del portal del cliente (v0.1.237).** El portal tiene su propia
+galería (`portalTemplateLayout`, `packages/shared/src/templates/
+portal-templates.ts`): Mi cuenta, Estado de cuenta, Seguimiento de proyecto,
+Mis solicitudes y Mi pedido — pensadas para el CLIENTE, no para el equipo.
+Usan el color de la marca de la empresa (no fijan acento) y se distinguen por
+composición y superficies. Reglas que cumplen por construcción: no muestran
+personas, relaciones, calculados ni campos que suenan internos (costo,
+margen, comisión, interno…); sólo los datos de contacto de «Mi cuenta» son
+editables; las listas vinculadas son las que se ELIGEN en la galería con una
+casilla (se ve qué columnas verá el cliente) y de entrada se marca sólo la
+que cumple el papel de la plantilla. Elegir una arma el diseño en el editor
+(se puede deshacer, no se guarda hasta tocar Guardar). El portal AUTOMÁTICO
+pasa a ser «Mi cuenta» de sólo lectura, con las listas que el admin ya
+habilitó en `settings.portal.related_lists` (fail-closed: sin habilitar, no
+entra ninguna) y sin canal de mensajes.
+
 ---
 
-**Versión del documento:** 1.49.0 (cada plantilla de la ficha es una ficha propia)
+**Versión del documento:** 1.50.0 (plantillas del portal del cliente)
