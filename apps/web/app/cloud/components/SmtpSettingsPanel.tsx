@@ -110,6 +110,20 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
+            {/* v0.1.238 — qué depende de este SMTP, dicho sin vueltas. */}
+            {!c.configured && (
+                <div className="imcrm-rounded-md imcrm-border imcrm-border-rose-500/30 imcrm-bg-rose-500/10 imcrm-p-3 imcrm-text-sm imcrm-text-rose-900 dark:imcrm-text-rose-200" role="alert" data-testid="smtp-account-warning">
+                    <p className="imcrm-font-medium">Sin este SMTP, los correos de cuenta no se envían.</p>
+                    <p className="imcrm-mt-1 imcrm-text-xs">
+                        La verificación del email al registrarse, la recuperación de contraseña y las invitaciones de usuarios no son de ninguna empresa, así que no pueden salir por el SMTP que configura cada empresa en sus Ajustes: salen por éste. Mirá qué pasó con cada correo en la pestaña «Diagnóstico».
+                    </p>
+                </div>
+            )}
+            {c.password_unreadable && (
+                <div className="imcrm-rounded-md imcrm-border imcrm-border-amber-500/30 imcrm-bg-amber-500/10 imcrm-p-3 imcrm-text-sm imcrm-text-amber-900 dark:imcrm-text-amber-200" role="alert">
+                    La contraseña guardada no se puede leer con la clave actual del servidor: los correos no están saliendo. Escribila de nuevo y guardá.
+                </div>
+            )}
             <form
                 onSubmit={(e) => {
                     e.preventDefault();

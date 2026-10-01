@@ -183,7 +183,9 @@ export class AuthController {
     @HttpCode(204)
     @UseGuards(SessionGuard)
     async resendVerification(@Req() req: FastifyRequest): Promise<void> {
-        await this.auth.sendEmailVerification(req.authUserId as number);
+        // v0.1.238 — "Reenviar" sin correo de plataforma lo dice (503) en vez
+        // de responder 204 y que la persona espere un mensaje que no sale.
+        await this.auth.resendEmailVerification(req.authUserId as number);
     }
 
     /** v0.1.116 — Sesiones activas de la cuenta (panel "Dispositivos"). */

@@ -108,3 +108,57 @@ export const smtpDnsReportSchema = z.object({
     records: z.array(dnsRecordCheckSchema),
 });
 export type SmtpDnsReport = z.infer<typeof smtpDnsReportSchema>;
+
+// ── Diagnóstico de la plataforma (v0.1.238) ──────────────────────────────
+
+/**
+ * Por dónde salió (o no) un correo:
+ *  - `tenant_smtp`: el SMTP propio de la empresa;
+ *  - `platform_smtp`: el de Plataforma → Correo;
+ *  - `server_smtp`: el del `.env` del servidor;
+ *  - `none`: no hay ninguno — el correo NO salió (transporte de registro).
+ */
+export const MAIL_VIAS = ['tenant_smtp', 'platform_smtp', 'server_smtp', 'none'] as const;
+export type MailVia = (typeof MAIL_VIAS)[number];
+
+/** Un intento de envío, tal como lo vio el servidor. */
+export const mailLogEntrySchema = z.object({
+    at: z.string(),
+    to: z.string(),
+    subject: z.string(),
+    /** `account`: verificación, recuperación, invitaciones (sin empresa). */
+    scope: z.enum(['account', 'tenant']),
+    tenant_id: z.number().nullable().default(null),
+    via: z.enum(MAIL_VIAS),
+    status: z.enum(['sent', 'not_sent', 'failed']),
+    error: z.string().nullable().default(null),
+});
+export type MailLogEntry = z.infer<typeof mailLogEntrySchema>;
+
+/** Un error inesperado del servidor (lo que el usuario ve como "Error interno"). */
+export const serverErrorEntrySchema = z.object({
+    at: z.string(),
+    source: z.enum(['request', 'database', 'process']),
+    method: z.string().nullable().default(null),
+    path: z.string().nullable().default(null),
+    message: z.string(),
+    detail: z.string().nullable().default(null),
+});
+export type ServerErrorEntry = z.infer<typeof serverErrorEntrySchema>;
+
+/** Si los correos de CUENTA (sin empresa) tienen por dónde salir. */
+export const accountMailStatusSchema = z.object({
+    available: z.boolean(),
+    via: z.enum(MAIL_VIAS),
+    host: z.string().nullable().default(null),
+    /** Motivo legible cuando `available` es false. */
+    reason: z.string().nullable().default(null),
+});
+export type AccountMailStatus = z.infer<typeof accountMailStatusSchema>;
+
+export const platformDiagnosticsSchema = z.object({
+    account_mail: accountMailStatusSchema,
+    mail: z.array(mailLogEntrySchema),
+    errors: z.array(serverErrorEntrySchema),
+});
+export type PlatformDiagnostics = z.infer<typeof platformDiagnosticsSchema>;

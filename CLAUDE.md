@@ -6125,6 +6125,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         deshacer, guardar, el cliente lo ve, celular sin desborde, las otras
         cuatro en el editor) y regresión del portal 23/23.
 
+  - [x] **Correos de cuenta que llegan (o dicen por qué no) + login que no se
+        cae (v0.1.238, reporte del usuario: "la verificación nunca llega, el
+        login a veces da error interno y no sé si llegan los de
+        recuperación")**: tres causas, todas reales.
+        (a) **El API se caía**: el pool de Postgres no escuchaba `error`, y
+        cuando la base corta una conexión ociosa (reinicio, idle timeout del
+        proveedor, `pg_terminate_backend`) ese evento sin listener **mataba
+        el proceso**; mientras systemd lo levantaba, el login daba "error
+        interno" y había que reintentar. Reproducido con `pg_terminate_backend`
+        y con `docker restart` de Postgres: antes el API moría, ahora sigue
+        vivo y el login entra al toque. Pool con `keepAlive` y timeouts, y el
+        login del front reintenta UNA vez solo ante un error transitorio (5xx
+        genérico, 502 del proxy, `fetch` caído — nunca credenciales malas, el
+        freno por intentos ni un 5xx con código propio).
+        (b) **Correos de cuenta**: verificación, recuperación e invitaciones no
+        son de ninguna empresa, así que sólo salen por el SMTP de Plataforma o
+        el del `.env`; sin ninguno se iban al registro del servidor y la app
+        decía "enviado". Ahora en producción responden **503 con el motivo**
+        ("este servidor todavía no tiene un correo configurado…") y el panel
+        Plataforma → Correo avisa qué depende de ese SMTP. **Bug de paso**:
+        re-guardar el SMTP de Plataforma con la contraseña vacía (para cambiar
+        el remitente) BORRABA la contraseña y el servidor dejaba de autenticar
+        — ahora la conserva, como prometía el panel.
+        (c) **"Confirmá tu correo" en toda la app**: la cuenta sin verificar
+        sólo se avisaba en Ajustes → Seguridad, así que nadie se enteraba del
+        enlace. Ahora hay un aviso bajo la barra superior con el email, qué
+        hacer, **Reenviar** (si no se puede mandar, lo dice) y cerrar hasta la
+        próxima sesión del navegador.
+        (d) **Plataforma → Diagnóstico** (superadmin): estado del correo de
+        cuenta, los últimos correos con su resultado (enviado / no enviado /
+        fallido, por qué vía y el error del SMTP) y los últimos errores del
+        servidor agrupados (pedidos, base de datos, proceso) — lo que antes
+        exigía entrar a leer el journal. En Redis, 200 entradas, 14 días, sin
+        query strings (pueden traer tokens). 5 tests de API (contraseña
+        conservada, 503 en producción sin SMTP, SMTP del `.env` y desarrollo,
+        registro de enviados/no enviados/fallidos, errores sin query string) +
+        3 del front (reintento) + E2E navegador 9/9 (500 en el login absorbido
+        por el reintento, avisos, diagnóstico con el correo de recuperación y
+        los cortes de Postgres) y 12/12 del aviso de verificación (alta →
+        aviso → reenviar → cerrar → verificar con el enlace real → ya no
+        aparece; celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

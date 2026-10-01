@@ -78,12 +78,28 @@ export class PlatformSettingsService {
         return read.state === 'ok' ? read.config : null;
     }
 
+    /**
+     * v0.1.238 — La contraseña vacía CONSERVA la guardada. El panel siempre lo
+     * prometió ("dejá la contraseña vacía para conservar la actual") pero acá
+     * se guardaba vacía: re-guardar el formulario para cambiar el remitente
+     * borraba la contraseña, el SMTP empezaba a rechazar la autenticación y
+     * dejaban de salir los correos de verificación y de recuperación. Mismo
+     * criterio que el SMTP por empresa desde v0.1.150.
+     */
     async setSmtp(config: SmtpConfig): Promise<void> {
-        const toStore: SmtpConfig = {
-            ...config,
-            ...(config.pass ? { pass: encryptSecret(config.pass, this.env.SECRETS_KEY) } : {}),
-        };
-        await this.redis.set(SMTP_KEY, JSON.stringify(toStore));
+        let pass = config.pass ? encryptSecret(config.pass, this.env.SECRETS_KEY) : '';
+        if (!config.pass) {
+            const raw = await this.redis.get(SMTP_KEY);
+            try {
+                const prev = raw ? (JSON.parse(raw) as { pass?: unknown; user?: unknown }) : null;
+                // Sólo si sigue siendo la misma cuenta: con otro usuario, la
+                // contraseña vieja no le sirve a nadie.
+                if (prev && typeof prev.pass === 'string' && prev.pass !== '' && prev.user === config.user) pass = prev.pass;
+            } catch {
+                /* config previa corrupta: se guarda sin contraseña */
+            }
+        }
+        await this.redis.set(SMTP_KEY, JSON.stringify({ ...config, pass }));
     }
 
     async clearSmtp(): Promise<void> {

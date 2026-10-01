@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CloudApiError } from '@/lib/cloud/client';
+import { isTransientError, withTransientRetry } from '@/lib/cloud/transientRetry';
 import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +46,7 @@ export function LoginPage(): JSX.Element {
             }
             const result =
                 mode === 'login'
-                    ? await api.login({ email, password })
+                    ? await withTransientRetry(() => api.login({ email, password }))
                     : await api.register({ email, password, name, workspace_name: workspace });
             if ('mfa_required' in result) {
                 setChallenge(result.challenge);
@@ -55,7 +56,13 @@ export function LoginPage(): JSX.Element {
             setSession(result);
             await qc.invalidateQueries({ queryKey: ['me'] });
         } catch (err) {
-            setError(err instanceof CloudApiError ? err.message : 'Error inesperado');
+            setError(
+                isTransientError(err)
+                    ? 'No pudimos conectar con el servidor. Probá de nuevo en unos segundos.'
+                    : err instanceof CloudApiError
+                      ? err.message
+                      : 'Error inesperado',
+            );
         } finally {
             setBusy(false);
         }

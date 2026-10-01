@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 
 import { isPlatformTab, PLATFORM_TABS, type PlatformTabId } from './platformTabs';
 import { PlatformAiCard } from './PlatformAiCard';
+import { PlatformDiagnosticsCard } from './PlatformDiagnosticsCard';
 import { PlatformIntegrationsCard } from './PlatformIntegrationsCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
@@ -179,6 +180,7 @@ export function PlatformPage(): JSX.Element {
             {tab === 'audit' && <PlatformImpersonationsCard />}
             {/* Ajustes GLOBALES de la app (antes vivían en Ajustes del workspace). */}
             {tab === 'correo' && <SmtpSettingsPanel />}
+            {tab === 'diagnostico' && <PlatformDiagnosticsCard />}
             {tab === 'ai' && <PlatformAiCard />}
             {tab === 'integraciones' && <PlatformIntegrationsCard />}
             {tab === 'updates' && <SystemUpdatesPanel />}

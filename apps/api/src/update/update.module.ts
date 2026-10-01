@@ -6,6 +6,7 @@ import { BackupsController } from './backups.controller';
 import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
 import { ReleasesRepository } from './releases.repository';
+import { DiagnosticsController } from './diagnostics.controller';
 import { SmtpController } from './smtp.controller';
 import { SymlinkDeployer } from './symlink-deployer.service';
 import { UpdateController } from './update.controller';
@@ -20,7 +21,7 @@ import { DEPLOYER } from './update.types';
  */
 @Module({
     imports: [AuthModule],
-    controllers: [UpdateController, SmtpController, BackupsController],
+    controllers: [UpdateController, SmtpController, BackupsController, DiagnosticsController],
     providers: [
         SuperadminGuard,
         ReleasesRepository,

@@ -103,6 +103,9 @@ export function SecurityCard(): JSX.Element {
             setResent(true);
             toast.success(__('Te reenviamos el correo de verificación'));
         },
+        // v0.1.238 — sin correo de plataforma el servidor lo dice (503): se
+        // muestra en vez de quedar en silencio.
+        onError: (err) => toast.error(__('No se pudo reenviar'), err instanceof Error ? err.message : undefined),
     });
 
     return (
