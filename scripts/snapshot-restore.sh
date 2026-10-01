@@ -85,6 +85,33 @@ PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*'
 [[ -n "$PARTS" && -f "$PARTS/manifest.json" ]] || { echo "✗ el archivo no es un snapshot de Imagina Base (falta manifest.json)" >&2; exit 1; }
 ( cd "$PARTS" && sha256sum --quiet -c checksums.sha256 ) || { echo "✗ checksums NO coinciden: snapshot corrupto o alterado" >&2; exit 1; }
 
+# SEC-37 (v0.1.239): el .env del snapshot NUNCA trae variables que cambian
+# cómo arranca el proceso. Lo carga systemd para el API y este mismo script
+# para conectarse: un `NODE_OPTIONS=--require /tmp/x.js`, un `LD_PRELOAD` o un
+# `HTTPS_PROXY` metido en un snapshot ajeno (el que te pasa un proveedor al
+# migrar) ejecutaría código o desviaría todo el tráfico saliente. La app no
+# usa ninguna de éstas; se descartan avisando cuáles.
+ENV_DENY_RE='^(NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|NODE_REPL_EXTERNAL_MODULE|LD_[A-Z_]+|DYLD_[A-Z_]+|PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|GCONV_PATH|PERL5OPT|PERL5LIB|PYTHONPATH|PYTHONSTARTUP|RUBYOPT|npm_config_[A-Za-z_]+|NPM_CONFIG_[A-Z_]+|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|no_proxy|SSL_CERT_FILE|SSL_CERT_DIR|OPENSSL_CONF|SYSTEMD_[A-Z_]+)$'
+if [[ -f "$PARTS/env.production" ]]; then
+    dropped=""
+    clean="$PARTS/env.production.clean"
+    : > "$clean"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "${line%$'\r'}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*= ]]; then
+            envkey="${BASH_REMATCH[2]}"
+            if [[ "$envkey" =~ $ENV_DENY_RE ]]; then
+                dropped="$dropped $envkey"
+                continue
+            fi
+        fi
+        printf '%s\n' "$line" >> "$clean"
+    done < "$PARTS/env.production"
+    mv "$clean" "$PARTS/env.production"
+    if [[ -n "$dropped" ]]; then
+        echo "  ⚠ env del snapshot: se descartaron variables que no son de la app:$dropped" >&2
+    fi
+fi
+
 manifest() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const v=process.argv[2].split(".").reduce((o,k)=>o?.[k],m);process.stdout.write(v===undefined||v===null?"":String(v))' "$PARTS/manifest.json" "$1"; }
 SNAP_VERSION="$(manifest app_version)"
 SNAP_DATE="$(manifest created_at)"

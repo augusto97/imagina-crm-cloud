@@ -11,6 +11,8 @@ export interface MailMessage {
     /** Override del remitente (email); si falta, el transporte usa su default. */
     from?: string;
     fromName?: string;
+    /** A dónde van las respuestas (SEC-33: el `from` de una empresa por SMTP compartido). */
+    replyTo?: string;
 }
 
 /**

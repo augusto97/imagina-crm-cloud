@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, type OnApplicationShutdown } from '@nestjs/common';
 import {
     OnGatewayConnection,
     OnGatewayInit,
@@ -11,7 +11,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Server, Socket } from 'socket.io';
 import { SESSION_COOKIE } from '../auth/session.guard';
 import { SessionService } from '../auth/session.service';
-import { memberships } from '../db/schema';
+import { memberships, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { RealtimeService, tenantRoom } from './realtime.service';
 
@@ -22,6 +22,15 @@ import { RealtimeService, tenantRoom } from './realtime.service';
  * Despliegues cross-origin legítimos: `WS_ALLOWED_ORIGINS=a.com,b.com`.
  * (Antes: `origin: true` — reflejaba cualquier Origin con credenciales.)
  */
+/**
+ * SEC-35 (v0.1.239): cada cuánto se re-valida un socket abierto. Antes la
+ * sesión se miraba SÓLO al conectar: cerrar sesión, "cerrar las demás",
+ * recuperar la contraseña, desactivar la cuenta o sacar a la persona de la
+ * empresa no cortaban el socket, que seguía recibiendo los avisos del
+ * workspace hasta que cerraba la pestaña.
+ */
+const REVALIDATE_MS = 60_000;
+
 const wsAllowedOrigins = (process.env.WS_ALLOWED_ORIGINS ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -38,8 +47,9 @@ const wsAllowedOrigins = (process.env.WS_ALLOWED_ORIGINS ?? '')
         ? { cors: { origin: wsAllowedOrigins, credentials: true } }
         : {},
 )
-export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
+export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnApplicationShutdown {
     private readonly logger = new Logger(RealtimeGateway.name);
+    private sweeper: NodeJS.Timeout | null = null;
 
     @WebSocketServer()
     private server!: Server;
@@ -52,15 +62,52 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
 
     afterInit(server: Server): void {
         this.realtime.setServer(server);
+        this.sweeper = setInterval(() => void this.revalidateAll(server), REVALIDATE_MS);
+        this.sweeper.unref();
+    }
+
+    onApplicationShutdown(): void {
+        if (this.sweeper) clearInterval(this.sweeper);
     }
 
     async handleConnection(client: Socket): Promise<void> {
-        const userId = await this.authenticate(client);
-        if (!userId) {
+        const auth = await this.authenticate(client);
+        if (!auth) {
             client.disconnect(true);
             return;
         }
-        client.data.userId = userId;
+        client.data.userId = auth.userId;
+        client.data.token = auth.token;
+    }
+
+    /** Sockets de ESTE nodo (cada nodo revisa los suyos). */
+    async revalidateAll(server: Server): Promise<void> {
+        const sockets = [...server.sockets.sockets.values()];
+        for (const client of sockets) {
+            const ok = await this.stillAllowed(client).catch(() => true); // Redis/DB caídos: no se corta a ciegas
+            if (!ok) client.disconnect(true);
+        }
+    }
+
+    /** ¿La sesión sigue viva, la cuenta activa y (si se unió) sigue siendo miembro? */
+    async stillAllowed(client: Socket): Promise<boolean> {
+        const token = client.data.token as string | undefined;
+        const userId = client.data.userId as number | undefined;
+        if (!token || !userId) return false;
+        const session = await this.sessions.peek(token);
+        if (!session || session.userId !== userId || session.portalTenantId !== undefined) return false;
+        const tenantId = client.data.tenantId as number | undefined;
+        return this.tenantDb.withUser(userId, async (tx) => {
+            const [u] = await tx.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, userId)).limit(1);
+            if (!u || u.disabledAt) return false;
+            if (tenantId === undefined) return true;
+            const [m] = await tx
+                .select({ role: memberships.role })
+                .from(memberships)
+                .where(and(eq(memberships.userId, userId), eq(memberships.tenantId, tenantId)))
+                .limit(1);
+            return m !== undefined && m.role !== 'client';
+        });
     }
 
     /** El cliente pide unirse a un workspace; validamos membership. */
@@ -94,10 +141,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
             if (room.startsWith('tenant:')) await client.leave(room);
         }
         await client.join(tenantRoom(parsed.data.tenantId));
+        client.data.tenantId = parsed.data.tenantId;
         return { ok: true };
     }
 
-    private async authenticate(client: Socket): Promise<number | null> {
+    private async authenticate(client: Socket): Promise<{ userId: number; token: string } | null> {
         const raw = client.handshake.headers.cookie;
         if (!raw) return null;
         const token = readCookie(raw, SESSION_COOKIE);
@@ -105,7 +153,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
         const session = await this.sessions.get(token).catch(() => null);
         // SEC-24/25: una sesión del portal no abre el socket de la app.
         if (!session || session.portalTenantId !== undefined) return null;
-        return session.userId;
+        return { userId: session.userId, token };
     }
 }
 

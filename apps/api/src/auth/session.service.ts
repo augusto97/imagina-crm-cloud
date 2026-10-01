@@ -133,6 +133,19 @@ export class SessionService {
         return doomed.length;
     }
 
+    /**
+     * SEC-35 (v0.1.239): lee la sesión SIN deslizar su TTL. Para el re-chequeo
+     * periódico de los sockets: una pestaña abierta y olvidada no tiene que
+     * mantener viva la sesión para siempre.
+     */
+    async peek(token: string): Promise<SessionData | null> {
+        const raw = await this.redis.get(this.key(token));
+        if (!raw) return null;
+        const data = JSON.parse(raw) as SessionData;
+        if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) return null;
+        return data;
+    }
+
     async get(token: string): Promise<SessionData | null> {
         const raw = await this.redis.getex(this.key(token), 'EX', this.env.SESSION_TTL_SECONDS);
         if (!raw) {

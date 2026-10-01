@@ -16,7 +16,7 @@ import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { withComputedExprs } from '../records/computed-sql';
-import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
+import { effectivePermissions, resolvePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import {
     compileFilterTree,
@@ -56,6 +56,30 @@ export class AggregateService {
         private readonly fields: FieldsService,
     ) {}
 
+    /**
+     * `aclFor` + SEC-36 (v0.1.239): los lookup/rollup hacia una lista que el
+     * viewer no ve completa cuentan como ocultos (no se agregan, agrupan ni
+     * filtran) — si no, un rollup "suma de las facturas" agrupado o filtrado
+     * revelaba lo que la ACL de Facturas esconde.
+     */
+    private async aclWithThrough(
+        tenantId: number,
+        listId: number,
+        settings: Record<string, unknown>,
+        fields: Field[],
+        viewer: AggregateViewer | undefined,
+    ): Promise<ReturnType<typeof aclFor>> {
+        const acl = aclFor(settings, fields, viewer);
+        if (!viewer || viewer.role === 'admin' || !fields.some((f) => isThroughField(f.type))) return acl;
+        const plans = await this.fields.throughPlansFor(tenantId, listId, fields);
+        const restricted = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.fields.through.restrictedFor(tx, tenantId, plans, viewer),
+        );
+        if (restricted.size === 0) return acl;
+        const hidden = withDependentComputed(fields, new Set([...acl.hidden, ...restricted]));
+        return { ...acl, hidden, strip: <T>(m: Map<number, T>) => new Map([...m].filter(([id]) => !hidden.has(id))) };
+    }
+
     async run(
         tenantId: number,
         listIdOrSlug: string,
@@ -71,7 +95,7 @@ export class AggregateService {
     ): Promise<AggregateResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const acl = aclFor(list.settings, fields, opts.viewer);
+        const acl = await this.aclWithThrough(tenantId, list.id, list.settings, fields, opts.viewer);
         const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
 
         const field = req.field_id !== undefined ? byId.get(req.field_id) : undefined;
@@ -172,7 +196,7 @@ export class AggregateService {
     }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const hidden = aclFor(list.settings, fields, opts.viewer).hidden;
+        const hidden = (await this.aclWithThrough(tenantId, list.id, list.settings, fields, opts.viewer)).hidden;
         const dateField = fields.find((f) => f.id === opts.dateFieldId && !hidden.has(f.id));
         if (!dateField || (dateField.type !== 'date' && dateField.type !== 'datetime')) {
             throw badRequest('date_field_id debe ser un campo date/datetime de la lista');
@@ -224,7 +248,7 @@ export class AggregateService {
     ): Promise<FooterAggregates> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
-        const acl = aclFor(list.settings, fields, opts.viewer);
+        const acl = await this.aclWithThrough(tenantId, list.id, list.settings, fields, opts.viewer);
         const byId = new Map(fields.filter((f) => !acl.hidden.has(f.id)).map((f) => [f.id, f]));
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
@@ -488,7 +512,7 @@ export function aclFor(
     const assignmentId = resolvePermissions(settings).assignment_field_id;
     const scope = scopeWhere(perms.view, viewer.userId, assignmentId ? jsonbKeyForField(assignmentId) : null);
     const hiddenSlugs = new Set(perms.fields_hidden);
-    const hidden = new Set(fields.filter((f) => hiddenSlugs.has(f.slug)).map((f) => f.id));
+    const hidden = withDependentComputed(fields, new Set(fields.filter((f) => hiddenSlugs.has(f.slug)).map((f) => f.id)));
     return {
         scope,
         hidden,

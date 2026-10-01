@@ -191,7 +191,9 @@ describe('computed numéricos en agregados + widgets aislados (Postgres real)', 
         const agent = { role: 'agent' as const, userId: 2 };
         await expect(
             aggregate.run(tenantId, 'inventario', { metric: 'sum', field_id: f.valor!.id }, { viewer: agent }),
-        ).rejects.toThrow(/numéricos/);
+            // SEC-36 (v0.1.239): el computed con una entrada oculta queda OCULTO
+            // entero para ese rol (antes sólo dejaba de sumarse).
+        ).rejects.toThrow(/no pertenece a la lista/);
         // Y filtrar por él se descarta (no reduce el conteo).
         const all = await aggregate.run(tenantId, 'inventario', {
             metric: 'count',

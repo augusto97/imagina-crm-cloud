@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -191,6 +191,47 @@ describe('Copias de seguridad completas (v0.1.179) — snapshot real (Postgres +
         expect(out).toContain('dry-run: no se cambió nada');
         expect(out).toContain(`SE REEMPLAZA por la del snapshot (${pg.container.getConnectionUri()})`);
     });
+
+    it('SEC-37: el .env de un snapshot no puede traer NODE_OPTIONS, LD_PRELOAD ni proxies (se descartan)', async () => {
+        // Se arma un snapshot "ajeno" con un env envenenado y checksums válidos.
+        const [snap] = await svc.list();
+        const work = mkdtempSync(path.join(tmpdir(), 'sec37-'));
+        try {
+            execFileSync('tar', ['-xf', svc.resolve(snap!.name), '-C', work]);
+            const inner = readdirSync(work).find((d) => d.startsWith('imagina-snapshot-'))!;
+            const root = path.join(work, inner);
+            writeFileSync(path.join(root, 'env.production'), [
+                'NODE_ENV=production',
+                `DATABASE_URL=${pg.container.getConnectionUri()}`,
+                'NODE_OPTIONS=--require /tmp/pwn.js',
+                'export LD_PRELOAD=/tmp/pwn.so',
+                'HTTPS_PROXY=http://evil.test:8080',
+                'SECRETS_KEY=abc',
+                '',
+            ].join('\n'));
+            const manifest = JSON.parse(execFileSync('cat', [path.join(root, 'manifest.json')]).toString()) as { includes: Record<string, boolean> };
+            manifest.includes.env = true;
+            writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest));
+            const files = readdirSync(root).filter((f) => f !== 'checksums.sha256');
+            writeFileSync(path.join(root, 'checksums.sha256'), execFileSync('sha256sum', files, { cwd: root }));
+            const poisoned = path.join(work, `${inner}.tar`);
+            execFileSync('tar', ['-cf', poisoned, '-C', work, inner]);
+
+            const { DATABASE_URL: _drop, NODE_OPTIONS: _n, ...envClean } = process.env;
+            void _drop;
+            void _n;
+            const run = spawnSync('bash', [path.join(SCRIPTS, 'snapshot-restore.sh'), poisoned, '--dry-run'], {
+                env: { ...envClean, ENV_FILE: path.join(work, 'nuevo', '.env.production'), APP_VERSION: '9.9.9' },
+                encoding: 'utf8',
+            });
+            expect(run.status).toBe(0);
+            const res = `${run.stdout}\n${run.stderr}`;
+            expect(res).toContain('se descartaron variables que no son de la app: NODE_OPTIONS LD_PRELOAD HTTPS_PROXY');
+            expect(res).toContain('dry-run: no se cambió nada');
+        } finally {
+            rmSync(work, { recursive: true, force: true });
+        }
+    }, 120_000);
 
     it('settings: defaults, PATCH parcial persiste en Redis (platform:*), y el tick respeta la hora', async () => {
         expect(await svc.getSettings()).toEqual({ enabled: false, hour_utc: 3, keep: 14, include_env: true });

@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { ConflictException, Inject, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { type AccountExportDto } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
 import { and, count, eq, ne } from 'drizzle-orm';
+import type Redis from 'ioredis';
+import { verifyAccountPassword } from '../auth/password-check';
 import { SessionService } from '../auth/session.service';
 import { DRIZZLE, type Db } from '../db/client';
 import {
@@ -15,6 +17,7 @@ import {
     tenants,
     users,
 } from '../db/schema';
+import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 /**
@@ -48,6 +51,9 @@ export class AccountDataService {
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly tenantDb: TenantDb,
         private readonly sessions: SessionService,
+        // SEC-35: freno por cuenta a la verificación de contraseña. Opcional
+        // para que los specs que arman el service a mano sigan compilando.
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
     ) {}
 
     /**
@@ -187,7 +193,7 @@ export class AccountDataService {
     async deleteAccount(userId: number, password: string): Promise<void> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) throw new NotFoundException('Usuario no encontrado');
-        const valid = await argon2.verify(user.passwordHash, password).catch(() => false);
+        const valid = await verifyAccountPassword(this.redis, userId, user.passwordHash, password);
         if (!valid) throw new UnauthorizedException('La contraseña no coincide');
 
         const blocking = await this.soleAdminWorkspaces(userId);

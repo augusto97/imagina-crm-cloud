@@ -7,6 +7,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
+import { isBlockedCrossSite } from './common/cross-site';
 import { ApiExceptionFilter } from './common/http-exception.filter';
 import { loadEnv } from './config/env';
 import { recordServerError } from './observability/diagnostics';
@@ -104,6 +105,35 @@ async function bootstrap(): Promise<void> {
                 void reply.code(204).send();
                 return;
             }
+        }
+        done();
+    });
+    // SEC-35 (v0.1.239) — CSRF / login CSRF: ver `common/cross-site.ts`.
+    const crossSiteAllowed = (process.env.WS_ALLOWED_ORIGINS ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+    fastify.addHook('onRequest', (req, reply, done) => {
+        const header = (name: string): string | undefined => {
+            const v = req.headers[name];
+            return Array.isArray(v) ? v[0] : v;
+        };
+        if (
+            isBlockedCrossSite({
+                method: req.method,
+                path: pathOf(req.url),
+                host: req.host,
+                secFetchSite: header('sec-fetch-site'),
+                origin: header('origin'),
+                allowedOrigins: crossSiteAllowed,
+            })
+        ) {
+            void reply.code(403).send({
+                code: 'cross_site_request',
+                message: 'Pedido rechazado: viene de otro sitio.',
+                data: { status: 403 },
+            });
+            return;
         }
         done();
     });

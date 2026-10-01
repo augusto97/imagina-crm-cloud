@@ -72,25 +72,31 @@ export class EmailQuotaService {
     }
 
     /** Lanza si la empresa ya agotó su cuota del mes. */
-    async assertWithinQuota(tenantId: number, now: Date = new Date()): Promise<void> {
+    /**
+     * SEC-33 (v0.1.239): `count` = destinatarios del mensaje. Antes un correo
+     * contaba 1 aunque llevara 25 en `to` + 25 en `cc` + 25 en `bcc` — la cuota
+     * de un plan se multiplicaba por 75 con sólo llenar las copias.
+     */
+    async assertWithinQuota(tenantId: number, count = 1, now: Date = new Date()): Promise<void> {
         const limit = await this.limitFor(tenantId);
         if (limit === null) return;
         const used = await this.usedThisMonth(tenantId, now);
-        if (used >= limit) throw new EmailQuotaExceededError(used, limit);
+        if (used + Math.max(1, count) > limit) throw new EmailQuotaExceededError(used, limit);
     }
 
     /**
      * Suma un correo al mes en curso. Se llama DESPUÉS de un envío exitoso: un
      * correo que no salió no consume cuota.
      */
-    async record(tenantId: number, now: Date = new Date()): Promise<void> {
+    async record(tenantId: number, count = 1, now: Date = new Date()): Promise<void> {
         const period = periodOf(now);
+        const n = Math.max(1, Math.floor(count));
         await this.db
             .insert(emailUsage)
-            .values({ tenantId, period, sent: 1 })
+            .values({ tenantId, period, sent: n })
             .onConflictDoUpdate({
                 target: [emailUsage.tenantId, emailUsage.period],
-                set: { sent: sql`${emailUsage.sent} + 1`, updatedAt: new Date() },
+                set: { sent: sql`${emailUsage.sent} + ${n}`, updatedAt: new Date() },
             });
     }
 

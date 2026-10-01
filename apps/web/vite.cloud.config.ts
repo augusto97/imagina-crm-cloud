@@ -1,4 +1,5 @@
 /// <reference types="vitest" />
+import { createHash } from 'node:crypto';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from 'tailwindcss';
@@ -64,9 +65,15 @@ function spaFallback(): Plugin {
  * tiene sesión de miembro). Una imagen no ejecuta nada; lo que importa acá es
  * que ningún SCRIPT de otro origen pueda cargarse.
  */
-export const SPA_CSP = [
+export function spaCsp(inlineScriptHashes: readonly string[] = []): string {
+    return [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    // SEC-37 (v0.1.239): sin 'unsafe-inline' en scripts — los inline del HTML
+    // (el pre-pintado del tema) van por su hash, calculado en el build. Así una
+    // inyección de HTML no puede colar un <script> propio.
+    `script-src 'self'${inlineScriptHashes.map((h) => ` '${h}'`).join('')}`,
+    // Estilos sí: React escribe `style=""` en cientos de nodos (anchos de
+    // columna, colores de marca, el page-builder) y un estilo no ejecuta nada.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
@@ -75,7 +82,19 @@ export const SPA_CSP = [
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-].join('; ');
+    ].join('; ');
+}
+
+/** sha256 en base64 de cada `<script>` INLINE (sin `src`) del HTML final. */
+export function inlineScriptHashes(html: string): string[] {
+    const out: string[] = [];
+    for (const m of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) {
+        const body = m[1] ?? '';
+        if (body.trim() === '') continue;
+        out.push(`sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}`);
+    }
+    return out;
+}
 
 function cspMeta(): Plugin {
     return {
@@ -83,14 +102,19 @@ function cspMeta(): Plugin {
         // Sólo en el build: el dev server de vite inyecta scripts y un
         // WebSocket de HMR que esta política cortaría.
         apply: 'build',
-        transformIndexHtml(html) {
-            const meta = `<meta http-equiv="Content-Security-Policy" content="${SPA_CSP}" />`;
+        // `post`: el hash se calcula sobre el HTML FINAL (con lo que haya
+        // inyectado vite), si no un script tocado después no matchearía.
+        transformIndexHtml: {
+            order: 'post',
+            handler(html) {
+            const meta = `<meta http-equiv="Content-Security-Policy" content="${spaCsp(inlineScriptHashes(html))}" />`;
             // Después del charset (tiene que quedar en los primeros 1024 bytes)
             // y ANTES de cualquier <script>: una CSP por meta sólo rige para lo
             // que viene después de ella en el documento.
             const out = html.replace(/(<meta charset="utf-8"\s*\/?>)/i, `$1\n        ${meta}`);
             if (out === html) throw new Error('imagina-csp-meta: el index.html no tiene <meta charset>');
             return out;
+            },
         },
     };
 }

@@ -53,6 +53,18 @@ const LINE_PARAMS: Partial<Record<string, readonly string[]>> = {
 };
 
 /**
+ * SEC-33 (v0.1.239): parámetros que viajan como HTML cuando la acción lo pide
+ * (`html` = sí). Ahí los valores interpolados se ESCAPAN — si no, el texto de
+ * un registro (que puede escribir un cliente desde el portal o un formulario
+ * por webhook) metía HTML propio en un correo que sale con la cuenta de la
+ * empresa: enlaces y botones falsos con remitente legítimo.
+ */
+const HTML_PARAMS: Partial<Record<string, readonly string[]>> = {
+    'gmail.send_email': ['body'],
+    'outlook.send_email': ['body'],
+};
+
+/**
  * Resuelve los valores con las mismas reglas que las acciones con nombre de la
  * fase 2: vacío toma el default, obligatorios vacíos no salen.
  */
@@ -61,8 +73,15 @@ export function compileIntegrationValues(
     action: ConnectorAction,
     raw: Record<string, unknown>,
     merge: MergeFn,
+    /** Igual que `merge`, pero escapando los valores interpolados (HTML). */
+    mergeHtml: MergeFn,
 ): IntegrationValues & { missing: string[] } {
     const lineKeys = LINE_PARAMS[`${integration}.${action.key}`] ?? [];
+    const htmlKeys = HTML_PARAMS[`${integration}.${action.key}`] ?? [];
+    const htmlParam = action.params.find((p) => p.key === 'html');
+    const asHtml =
+        htmlKeys.length > 0 &&
+        isTrue(String(raw.html ?? htmlParam?.default ?? ''));
     const values: Record<string, string> = {};
     const lines: Record<string, string[]> = {};
     const missing: string[] = [];
@@ -79,7 +98,7 @@ export function compileIntegrationValues(
             if (param.required && rows.length === 0) missing.push(param.label);
             continue;
         }
-        const value = merge(source);
+        const value = asHtml && htmlKeys.includes(param.key) ? mergeHtml(source) : merge(source);
         values[param.key] = value;
         if (param.required && value.trim() === '') missing.push(param.label);
     }

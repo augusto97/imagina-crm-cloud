@@ -40,6 +40,7 @@ import {
     resolvePermissions,
     rowInScope,
     scopeWhere,
+    withDependentComputed,
 } from '../lists/list-acl';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -186,10 +187,16 @@ export class RecordsService {
                       fields.filter((f) => f.type === 'relation').map((f) => f.id),
                   )
                 : new Map<number, Map<number, number[]>>();
+            const restricted = await this.fields.through.restrictedFor(
+                tx,
+                tenantId,
+                await this.fields.through.plans(tx, tenantId, list.id, fields),
+                actor,
+            );
             return {
                 row: r,
                 fields,
-                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role, actor.userId),
+                hiddenKeys: hiddenKeysWithDerived(fields, list.settings, actor, restricted),
                 relMap: rels,
                 relFieldIds: fields.filter((f) => f.type === 'relation').map((f) => f.id),
             };
@@ -236,6 +243,10 @@ export class RecordsService {
             // oráculo ("¿qué registros tienen salario > X?" repetido hasta dar
             // con el valor), aunque después la respuesta lo quite de `data`.
             const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+            // SEC-36 (v0.1.239): lookup/rollup hacia una lista que esta persona
+            // no ve completa — ocultos igual que un campo oculto.
+            for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
+            for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
             const fieldsById = withComputedExprs(
                 new Map<number, FilterableField>(
                     [
@@ -307,7 +318,7 @@ export class RecordsService {
             return {
                 rows: result,
                 fields,
-                hiddenKeys: hiddenKeysFor(fields, list.settings, actor.role, actor.userId),
+                hiddenKeys: new Set([...hiddenIds].map((id) => jsonbKeyForField(id))),
                 rels,
                 relFieldIds,
                 subtaskCounts,
@@ -1101,20 +1112,19 @@ function byFieldToKeys(
     return out;
 }
 
-/** Claves JSONB (f{id}) de los campos ocultos para el rol (ACL por lista). */
-function hiddenKeysFor(
+/**
+ * Claves ocultas para el rol + SEC-36: lookup/rollup restringidos y los
+ * computed que dependen de cualquiera de ellos.
+ */
+function hiddenKeysWithDerived(
     fields: Field[],
     settings: Record<string, unknown>,
-    role: Role,
-    userId?: number,
+    actor: Actor,
+    restricted: ReadonlySet<number>,
 ): Set<string> {
-    const hiddenSlugs = hiddenFieldsFor(settings, role, userId);
-    if (hiddenSlugs.size === 0) return new Set();
-    const keys = new Set<string>();
-    for (const f of fields) {
-        if (hiddenSlugs.has(f.slug)) keys.add(jsonbKeyForField(f.id));
-    }
-    return keys;
+    const slugs = hiddenFieldsFor(settings, actor.role, actor.userId);
+    const ids = new Set([...fields.filter((f) => slugs.has(f.slug)).map((f) => f.id), ...restricted]);
+    return new Set([...withDependentComputed(fields, ids)].map((id) => jsonbKeyForField(id)));
 }
 
 /** Devuelve el record sin las claves de datos ocultas para el rol. */

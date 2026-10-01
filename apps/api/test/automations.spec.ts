@@ -613,6 +613,32 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(await automationsService.resolveHookToken(newToken!)).toMatchObject({ automationId: auto.id });
     });
 
+    it('SEC-34 — empresa en solo-lectura: el webhook entrante no corre y el token lo informa', async () => {
+        const auto = await automationsService.create(tenantId, 'deals', {
+            name: 'Alta por formulario (impaga)',
+            trigger_type: 'incoming_webhook',
+            trigger_config: {},
+            actions: [{ type: 'create_record', config: { target_list: listId, values: { monto: '{{monto}}' } } }],
+        });
+        const token = (auto.trigger_config as { webhook_token?: string }).webhook_token!;
+        expect(await automationsService.resolveHookToken(token)).toMatchObject({ readOnly: false });
+
+        await pg.db.update(tenants).set({ status: 'past_due' }).where(eq(tenants.id, tenantId));
+        try {
+            expect(await automationsService.resolveHookToken(token)).toMatchObject({ readOnly: true });
+            // Aunque el job ya estuviera en la cola, el motor no corre nada.
+            await engine.runWebhook(tenantId, auto.id, { monto: 5000 });
+            const recs = await recordsService.list(tenantId, admin, 'deals', { limit: 50, sort_dir: 'asc' });
+            expect(recs.data).toHaveLength(0);
+            expect((await automationsService.runsById(tenantId, auto.id, {})).data).toHaveLength(0);
+        } finally {
+            await pg.db.update(tenants).set({ status: 'active' }).where(eq(tenants.id, tenantId));
+        }
+        // Al volver a estar al día, vuelve a correr.
+        await engine.runWebhook(tenantId, auto.id, { monto: 5000 });
+        expect((await recordsService.list(tenantId, admin, 'deals', { limit: 50, sort_dir: 'asc' })).data).toHaveLength(1);
+    });
+
     it('condición por acción en shape {slug,op,value} (lo que emite el ConditionEditor): guarda y filtra', async () => {
         // El schema rechazaba `slug` (exigía `field`) → "Datos inválidos" al
         // guardar cualquier condición desde la UI, aunque el evaluador acepta

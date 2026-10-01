@@ -7,9 +7,11 @@ import {
     type RollupOperation,
     type ThroughInfo,
 } from '@imagina-base/shared';
-import { sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { records } from '../db/schema';
+import { lists, records } from '../db/schema';
+import { effectivePermissions } from '../lists/list-acl';
+import type { Role } from '@imagina-base/shared';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
 
 /**
@@ -158,6 +160,46 @@ export class ThroughEngine {
                   }
                 : null,
         };
+    }
+
+    /**
+     * SEC-36 (v0.1.239) — Ids de los lookup/rollup que ESTA persona no puede
+     * ver, porque en la OTRA lista no tiene acceso completo: no la ve, ve sólo
+     * lo suyo / lo asignado, o el campo de origen le está oculto. Antes el
+     * valor viajaba igual: un agente sin acceso a "Facturas" leía los montos
+     * por un lookup en "Clientes", y los sumaba con un rollup. Se tratan como
+     * campos OCULTOS — no se devuelven, ni se filtran, ni se ordenan.
+     *
+     * Con acceso parcial (lo suyo) también se ocultan: un rollup suma TODAS
+     * las vinculadas y recortarlo por fila haría que el número cambiara según
+     * quién mira, sin decirlo. Mejor no mostrarlo que mostrarlo distinto.
+     */
+    async restrictedFor(
+        tx: Tx,
+        tenantId: number,
+        plans: ThroughPlan[],
+        viewer: { role: Role; userId?: number } | undefined,
+    ): Promise<Set<number>> {
+        const out = new Set<number>();
+        if (!viewer || viewer.role === 'admin' || plans.length === 0) return out;
+        const otherIds = [...new Set(plans.map((p) => p.otherListId))];
+        const rows = await tx
+            .select({ id: lists.id, settings: lists.settings })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), inArray(lists.id, otherIds)));
+        const settingsById = new Map(rows.map((r) => [r.id, (r.settings ?? {}) as Record<string, unknown>]));
+        for (const p of plans) {
+            const settings = settingsById.get(p.otherListId);
+            if (!settings) {
+                out.add(p.field.id);
+                continue;
+            }
+            const perms = effectivePermissions(settings, viewer.role, viewer.userId);
+            if (perms.view !== 'all' || (p.targetField && perms.fields_hidden.includes(p.targetField.slug))) {
+                out.add(p.field.id);
+            }
+        }
+        return out;
     }
 
     /**

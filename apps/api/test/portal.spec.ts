@@ -416,10 +416,12 @@ describe('PortalService (Postgres + Redis reales)', () => {
 
         // Email SIN acceso: responde igual (no lanza) pero no manda nada.
         await portal.requestAccess('desconocido@nadie.test');
+        await portal.whenIdle();
         expect(mailbox.sent.length).toBe(before);
 
         // Email con acceso: le llega un enlace nuevo, usable.
         await portal.requestAccess('vuelve@acme.test');
+        await portal.whenIdle();
         expect(mailbox.sent.length).toBe(before + 1);
         const mail = mailbox.sent.at(-1)!;
         expect(mail.to).toBe('vuelve@acme.test');
@@ -434,7 +436,30 @@ describe('PortalService (Postgres + Redis reales)', () => {
         await portal.requestAccess('vuelve@acme.test');
         await portal.requestAccess('vuelve@acme.test');
         await portal.requestAccess('vuelve@acme.test');
+        await portal.whenIdle();
         expect(mailbox.sent.length).toBe(after + 2);
+    });
+
+    it('SEC-35: portal APAGADO → el cliente con sesión deja de entrar y no se reparten enlaces', async () => {
+        const link = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'apagado@acme.test' });
+        const { sessionToken } = await portal.consume(link.token!);
+        const uid = (await sessions.get(sessionToken))!.userId;
+        const actorOff = actor(uid);
+        await expect(portal.me(actorOff)).resolves.toBeDefined();
+
+        const clientes = await listsService.get(tenantId, 'clientes');
+        const portalCfg = (clientes.settings as { portal?: Record<string, unknown> }).portal ?? {};
+        await listsService.update(tenantId, 'clientes', { settings: { ...clientes.settings, portal: { ...portalCfg, enabled: false } } });
+        try {
+            await expect(portal.me(actorOff)).rejects.toMatchObject({ response: expect.objectContaining({ code: 'portal_disabled' }) });
+            const before = mailbox.sent.length;
+            await portal.requestAccess('apagado@acme.test');
+            await portal.whenIdle();
+            expect(mailbox.sent.length).toBe(before);
+        } finally {
+            await listsService.update(tenantId, 'clientes', { settings: { ...clientes.settings, portal: { ...portalCfg, enabled: true } } });
+        }
+        await expect(portal.me(actorOff)).resolves.toBeDefined();
     });
 
     it('el token es de un solo uso', async () => {

@@ -198,6 +198,62 @@ describe('lookup / rollup a través de relation (Postgres real)', () => {
         expect(after.data[`f${deuda.id}`]).toBe(250);
     });
 
+    it('SEC-36: un lookup/rollup hacia una lista que el rol no ve completa queda oculto (valor, filtro y pie)', async () => {
+        const s = await setup();
+        const agent: Actor = { userId: 1, role: 'agent' };
+        const rel = s.facturas.cliente.id;
+        const total = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Total', type: 'rollup', slug: 'total',
+            config: { relation_field_id: rel, target_field_id: s.facturas.monto.id, operation: 'sum' },
+        });
+        const nFact = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Facturas', type: 'rollup', slug: 'n_facturas', config: { relation_field_id: rel, operation: 'count' },
+        });
+        // Un computed sobre el rollup: si el rollup se oculta, éste también
+        // (si no, `abs(total)` devolvía el total).
+        const espejo = await fieldsService.create(tenantA, 'clientes', {
+            label: 'Espejo', type: 'computed', slug: 'espejo', config: { operation: 'abs', inputs: [total.id] },
+        });
+        const facturas = await listsService.get(tenantA, 'facturas');
+        const setFacturasAgent = (perm: Record<string, unknown>) =>
+            listsService.update(tenantA, 'facturas', {
+                settings: { ...facturas.settings, permissions: { permissions: { agent: perm } } },
+            });
+        const gtZero = { type: 'group' as const, logic: 'and' as const, children: [{ type: 'condition' as const, field_id: total.id, op: 'gt' as const, value: 500 }] };
+
+        // 1) El agente NO ve Facturas: ni el total ni la cantidad viajan, y el
+        //    filtro por el total no sirve de oráculo (se ignora: vuelven todos).
+        await setFacturasAgent({ view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] });
+        const page = await records_.list(tenantA, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+        for (const r of page.data) {
+            expect(r.data[`f${total.id}`]).toBeUndefined();
+            expect(r.data[`f${nFact.id}`]).toBeUndefined();
+            expect(r.data[`f${espejo.id}`]).toBeUndefined();
+        }
+        expect((await records_.get(tenantA, admin, 'clientes', s.c1)).data[`f${espejo.id}`]).toBe(400);
+        const one = await records_.get(tenantA, agent, 'clientes', s.c1);
+        expect(one.data[`f${total.id}`]).toBeUndefined();
+        expect(one.data[`f${espejo.id}`]).toBeUndefined();
+        const filtered = await records_.list(tenantA, agent, 'clientes', { limit: 50, sort_dir: 'asc', filter_tree: gtZero });
+        expect(filtered.data).toHaveLength(2);
+        const footer = await aggregate.footer(tenantA, 'clientes', { fieldIds: [total.id], viewer: agent });
+        expect(footer.totals.total).toBeUndefined();
+
+        // 2) Ve Facturas pero el MONTO le está oculto: el total sigue oculto; la
+        //    cantidad (no toca el monto) sí se ve.
+        await setFacturasAgent({ view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: ['monto'] });
+        const p2 = await records_.list(tenantA, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+        const acme = p2.data.find((r) => r.id === s.c1)!;
+        expect(acme.data[`f${total.id}`]).toBeUndefined();
+        expect(acme.data[`f${nFact.id}`]).toBe(3);
+
+        // 3) Acceso completo → lo ve igual que el admin.
+        await setFacturasAgent({ view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: [] });
+        const p3 = await records_.list(tenantA, agent, 'clientes', { limit: 50, sort_dir: 'asc', filter_tree: gtZero });
+        expect(p3.data.map((r) => r.id)).toEqual([s.c2]);
+        expect(p3.data[0]!.data[`f${total.id}`]).toBe(900);
+    });
+
     it('un computed puede usar el rollup como entrada (cobrado = total − deuda)', async () => {
         const s = await setup();
         const rel = s.facturas.cliente.id;

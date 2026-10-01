@@ -46,6 +46,7 @@ export class SmtpMailTransport implements MailTransport {
             to: message.to,
             cc: message.cc || undefined,
             bcc: message.bcc || undefined,
+            replyTo: message.replyTo || undefined,
             subject: message.subject,
             html: message.html,
             text: message.text ?? stripHtml(message.html),

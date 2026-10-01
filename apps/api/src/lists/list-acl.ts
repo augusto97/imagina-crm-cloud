@@ -121,3 +121,30 @@ export function andWhere(a: SQL | undefined, b: SQL | undefined): SQL | undefine
     if (a && b) return and(a, b);
     return a ?? b;
 }
+
+/**
+ * SEC-36 (v0.1.239) — Un `computed` que usa como entrada un campo oculto (o
+ * un lookup/rollup restringido) también se oculta: si no, `ganancia = precio −
+ * costo` devolvía el costo despejado con una resta. Encadenados (un computed
+ * sobre otro) se resuelven hasta que no cambia nada.
+ */
+export function withDependentComputed(
+    fields: ReadonlyArray<{ id: number; type: string; config?: Record<string, unknown> | null }>,
+    hiddenIds: ReadonlySet<number>,
+): Set<number> {
+    const out = new Set(hiddenIds);
+    if (out.size === 0) return out;
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const f of fields) {
+            if (f.type !== 'computed' || out.has(f.id)) continue;
+            const inputs = (f.config?.inputs ?? []) as unknown[];
+            if (inputs.some((id) => out.has(Number(id)))) {
+                out.add(f.id);
+                changed = true;
+            }
+        }
+    }
+    return out;
+}

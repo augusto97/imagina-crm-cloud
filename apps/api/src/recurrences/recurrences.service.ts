@@ -30,6 +30,7 @@ import { comparableDate, hasTimeComponent, nextOccurrence, nowUtc } from './date
 import { RecurrencesRepository, type RecurrenceRow } from './recurrences.repository';
 import { BillingService } from '../billing/billing.service';
 import { effectivePermissions, resolvePermissions, rowInScope, scopeWhere } from '../lists/list-acl';
+import { tenantIsReadOnly } from '../tenancy/read-only';
 
 /** Resultado interno de un fire (para emitir realtime/automations tras el tx). */
 interface FireOutcome {
@@ -287,8 +288,10 @@ export class RecurrencesService {
      */
     async fire(rec: RecurrenceRow): Promise<void> {
         const tenantId = rec.tenantId;
-        const outcome = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.fireInTx(tx, rec),
+        // SEC-34 (v0.1.239): una empresa en solo-lectura (ADR-S09) no rueda
+        // fechas ni clona registros por su cuenta.
+        const outcome = await this.tenantDb.withTenant(tenantId, async (tx) =>
+            (await tenantIsReadOnly(tx, tenantId)) ? null : this.fireInTx(tx, rec),
         );
         if (!outcome) return;
         this.realtime.records(tenantId, rec.listId);

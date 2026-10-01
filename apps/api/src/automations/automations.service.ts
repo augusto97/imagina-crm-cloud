@@ -10,17 +10,18 @@ import type {
     WebhookTestInput,
     WebhookTestResult,
 } from '@imagina-base/shared';
+import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
 import { DRIZZLE, type Db } from '../db/client';
-import { automationHooks, automations, fields, records } from '../db/schema';
+import { automationHooks, automations, fields, records, tenants } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationScheduler } from './automation-scheduler.service';
-import { applyMergeTags, labelResolverFor } from './merge-tags';
+import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     buildIntegrationRequest,
@@ -275,6 +276,14 @@ export class AutomationsService {
                 undefined,
                 labelResolverFor(sample.fieldsBySlug),
             );
+        const mergeHtml = (raw: unknown): string =>
+            applyMergeTags(
+                typeof raw === 'string' ? raw : '',
+                accessor,
+                sample.record?.id ?? null,
+                escapeHtml,
+                labelResolverFor(sample.fieldsBySlug),
+            );
 
         // v0.1.196 — el probador resuelve la CONEXIÓN igual que el motor: si
         // la acción usa un conector, lo que se prueba lleva su credencial.
@@ -316,7 +325,7 @@ export class AutomationsService {
             // v0.1.203 — una app de la galería: la petición la arma el código
             // de esa app, exactamente como en el motor.
             if (resolved.integration) {
-                return this.testIntegration(resolved, rawValues, merge, sample.record?.id ?? null);
+                return this.testIntegration(resolved, rawValues, merge, mergeHtml, sample.record?.id ?? null);
             }
             const call = compileConnectorCall(resolved.action, rawValues, merge);
             if (call.missing.length > 0) {
@@ -385,12 +394,13 @@ export class AutomationsService {
         resolved: ResolvedAction,
         rawValues: Record<string, unknown>,
         merge: (raw: unknown) => string,
+        mergeHtml: (raw: unknown) => string,
         sampleRecordId: number | null,
     ): Promise<WebhookTestResult> {
         const integ = resolved.integration!;
         const action = resolved.action!;
         const hide = [integ.creds.secret, integ.creds.accessToken].filter((v) => v.length >= 4);
-        const compiled = compileIntegrationValues(integ.key, action, rawValues, merge);
+        const compiled = compileIntegrationValues(integ.key, action, rawValues, merge, mergeHtml);
         if (compiled.missing.length > 0) {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
@@ -447,14 +457,34 @@ export class AutomationsService {
      * v0.1.110 — resuelve un token de webhook entrante (endpoint público).
      * Devuelve tenant/automation o null (el caller responde 404 opaco).
      */
-    async resolveHookToken(token: string): Promise<{ tenantId: number; automationId: number } | null> {
+    async resolveHookToken(
+        token: string,
+    ): Promise<{ tenantId: number; automationId: number; readOnly: boolean } | null> {
         if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
         const [row] = await this.db
-            .select({ tenantId: automationHooks.tenantId, automationId: automationHooks.automationId })
+            .select({
+                tenantId: automationHooks.tenantId,
+                automationId: automationHooks.automationId,
+                status: tenants.status,
+                archivedAt: tenants.archivedAt,
+                subscriptionEndsAt: tenants.subscriptionEndsAt,
+            })
             .from(automationHooks)
+            .innerJoin(tenants, eq(tenants.id, automationHooks.tenantId))
             .where(eq(automationHooks.token, token))
             .limit(1);
-        return row ?? null;
+        if (!row) return null;
+        // SEC-34: el estado de la empresa viaja con el token, así el endpoint
+        // público rechaza ANTES de capturar o encolar nada.
+        return {
+            tenantId: row.tenantId,
+            automationId: row.automationId,
+            readOnly: isEffectivelyReadOnly({
+                status: row.status as BillingStatus,
+                archived_at: row.archivedAt,
+                subscription_ends_at: row.subscriptionEndsAt,
+            }),
+        };
     }
 
     /**
