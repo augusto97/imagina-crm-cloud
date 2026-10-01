@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, Loader2, Paintbrush, Trash2 } from 'lucide-react';
 import type { LayoutSection, RecordLayoutV3 } from '@imagina-base/shared';
 
+import { useContainerWidth } from '@/admin/dashboards/widgets/useContainerWidth';
 import { Button } from '@/components/ui/button';
 import { WidgetDataOverrideContext } from '@/hooks/useDashboards';
 import { __ } from '@/lib/i18n';
@@ -17,6 +18,7 @@ import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, type LayoutCtx } from './LayoutContext';
 import { LayoutHeader } from './LayoutHeader';
 import { resolveTheme } from './layoutTheme';
+import { planSection } from './sectionPlan';
 import { useLayoutData } from './useLayoutData';
 import { useRecordAutosave } from './useRecordAutosave';
 import { useRecordLayout, type LayoutOrigin } from './useRecordLayout';
@@ -153,14 +155,27 @@ export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHea
 }
 
 export function SectionView({ section, gap }: { section: LayoutSection; gap: number }): JSX.Element | null {
+    const [ref, width] = useContainerWidth<HTMLDivElement>();
     if (section.blocks.every((col) => col.length === 0)) return null;
+    // v0.1.234 — el reparto se decide con el ancho que HAY (ver sectionPlan).
+    const plan = planSection(section, width, gap);
+    const gridStyle: CSSProperties =
+        plan.mode === 'stack'
+            ? { gap, gridTemplateColumns: 'minmax(0, 1fr)' }
+            : plan.mode === 'pairs'
+              ? { gap, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
+              : { gap };
     return (
         <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" style={sectionStyle(section)}>
             {section.title && <SectionTitle text={section.title} />}
-            <div className="imcrm-lay-grid" style={{ gap }}>
-                {section.columns.map((w, i) => (
-                    <div key={i} className="imcrm-lay-col imcrm-flex imcrm-min-w-0 imcrm-flex-col" style={{ gap, ['--span' as string]: String(w) }}>
-                        {(section.blocks[i] ?? []).map((b) => (
+            <div ref={ref} className="imcrm-lay-grid" style={gridStyle} data-section-mode={plan.mode}>
+                {plan.columns.map((w, i) => (
+                    <div
+                        key={i}
+                        className="imcrm-lay-col imcrm-flex imcrm-min-w-0 imcrm-flex-col"
+                        style={{ gap, ['--span' as string]: String(w), ...(plan.mode === 'grid' ? {} : { gridColumn: 'auto' }) }}
+                    >
+                        {(plan.blocks[i] ?? []).map((b) => (
                             <LayoutBlockView key={b.id} block={b} />
                         ))}
                     </div>

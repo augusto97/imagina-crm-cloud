@@ -140,21 +140,21 @@ function ChangeLine({
             {from !== null && to !== null && (
                 <>
                     {' '}
-                    {__('de')} <Value field={change.field} raw={change.from} text={from} old />
+                    {__('de')} <ActivityValue field={change.field} raw={change.from} text={from} old />
                     {' '}
-                    {__('a')} <Value field={change.field} raw={change.to} text={to} />
+                    {__('a')} <ActivityValue field={change.field} raw={change.to} text={to} />
                 </>
             )}
             {from === null && to !== null && (
                 <>
                     {' '}
-                    {__('en')} <Value field={change.field} raw={change.to} text={to} />
+                    {__('en')} <ActivityValue field={change.field} raw={change.to} text={to} />
                 </>
             )}
             {from !== null && to === null && (
                 <>
                     {' '}
-                    ({__('antes')} <Value field={change.field} raw={change.from} text={from} old />)
+                    ({__('antes')} <ActivityValue field={change.field} raw={change.from} text={from} old />)
                 </>
             )}
             {time !== null && (
@@ -176,7 +176,7 @@ function ChangeLine({
  * opción (el mismo que se ve en la tabla), el resto como texto resaltado.
  * El valor anterior se atenúa para que la lectura sea "de X a Y".
  */
-function Value({
+export function ActivityValue({
     field,
     raw,
     text,

@@ -162,10 +162,12 @@ function DateDisplay({ value, kind }: { value: unknown; kind: 'date' | 'datetime
     const rel = relativeTimeFrom(d);
 
     return (
-        <span title={absolute} className="imcrm-inline-flex imcrm-items-baseline imcrm-gap-1.5">
-            <span className="imcrm-tabular-nums">{absolute}</span>
+        // v0.1.234 — la fecha nunca se parte ("2026-07-" / "21"): si no entra,
+        // lo relativo baja de renglón entero.
+        <span title={absolute} className="imcrm-inline-flex imcrm-flex-wrap imcrm-items-baseline imcrm-gap-x-1.5">
+            <span className="imcrm-whitespace-nowrap imcrm-tabular-nums">{absolute}</span>
             {rel !== null && (
-                <span className="imcrm-text-xs imcrm-text-muted-foreground">({rel})</span>
+                <span className="imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground">({rel})</span>
             )}
         </span>
     );

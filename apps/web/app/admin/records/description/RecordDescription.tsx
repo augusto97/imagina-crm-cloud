@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { JSONContent } from '@tiptap/react';
 import type { RichDoc } from '@imagina-base/shared';
-import { Check, Loader2 } from 'lucide-react';
+import { AlignLeft, Check, Loader2 } from 'lucide-react';
 
 import { useRecordDescription, useUpdateRecordDescription } from '@/hooks/useRecordDescription';
 import { __ } from '@/lib/i18n';
@@ -21,6 +21,11 @@ interface RecordDescriptionProps {
     /** Sin permiso de edición el documento se ve, pero no se toca. */
     editable: boolean;
     className?: string;
+    /**
+     * v0.1.234 — `block`: el título con el mismo estilo que el resto de los
+     * bloques de la ficha diseñada (en vez de la etiqueta en mayúsculas).
+     */
+    heading?: 'label' | 'block';
 }
 
 const AUTOSAVE_MS = 900;
@@ -59,6 +64,7 @@ export function RecordDescription({
     recordId,
     editable,
     className,
+    heading = 'label',
 }: RecordDescriptionProps): JSX.Element {
     const { data, isLoading } = useRecordDescription(listKey, recordId);
     const save = useUpdateRecordDescription(listKey, recordId);
@@ -142,9 +148,16 @@ export function RecordDescription({
     return (
         <section className={cn('imcrm-relative', className)} data-imcrm-description>
             <div className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-2">
-                <h3 className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                    {__('Descripción')}
-                </h3>
+                {heading === 'block' ? (
+                    <h3 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-[13px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
+                        <AlignLeft className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" aria-hidden />
+                        {__('Descripción')}
+                    </h3>
+                ) : (
+                    <h3 className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                        {__('Descripción')}
+                    </h3>
+                )}
                 {status !== null && (
                     <span className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
                         <status.icon

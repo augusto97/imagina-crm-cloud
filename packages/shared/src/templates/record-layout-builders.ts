@@ -324,8 +324,11 @@ export interface AutoLayoutRelation {
 
 const STAGE_RE = /estado|status|etapa|stage|fase|pipeline|progreso/i;
 const DUE_RE = /venc|entrega|due|l[ií]mite|cierre|pr[oó]xim|deadline|fin\b|fecha/i;
+const CONTACT_RE = /contact|whats|tel[eé]f|celular|m[oó]vil|phone|direcci|address/i;
 const NUMERIC: readonly FieldType[] = ['currency', 'number', 'percent', 'rating', 'duration', 'rollup'];
 const CONTACT: readonly FieldType[] = ['email', 'phone', 'url'];
+/** Qué número "define" mejor al registro: el dinero primero, los contadores al final. */
+const KPI_RANK: Partial<Record<FieldType, number>> = { currency: 0, rollup: 1, computed: 2, percent: 3, rating: 4, number: 5, duration: 6 };
 
 function optionCount(f: LayoutFieldLite): number {
     const opts = (f.config as { options?: unknown } | undefined)?.options;
@@ -348,46 +351,87 @@ function isNumericComputed(f: LayoutFieldLite): boolean {
     return f.type === 'computed' && ['sum', 'product', 'subtract', 'divide', 'abs'].includes(String(op));
 }
 
+/**
+ * v0.1.234 — Las plantillas integradas (contacto, negocio, tarea, soporte)
+ * ya no se convierten desde su grilla vieja (3 · 6 · 3 con la actividad al
+ * medio, columnas angostas que escondían los valores): se arman con este
+ * mismo generador y cada una sólo cambia el nombre y el orden de los grupos.
+ */
+export type AutoLayoutFlavor = 'auto' | 'contact' | 'deal' | 'task' | 'support';
+
+// El nombre del grupo principal es siempre neutro ("Detalles"): la misma
+// plantilla se elige para listas muy distintas (una lista de clientes con la
+// plantilla Soporte no tiene "tickets"). Lo que cambia es el ORDEN.
+const FLAVOR: Record<AutoLayoutFlavor, { datesFirst: boolean; contactInMain: boolean }> = {
+    auto: { datesFirst: false, contactInMain: false },
+    contact: { datesFirst: false, contactInMain: true },
+    deal: { datesFirst: false, contactInMain: false },
+    task: { datesFirst: true, contactInMain: false },
+    support: { datesFirst: false, contactInMain: false },
+};
+
 export function autoRecordLayout(input: {
     fields: readonly LayoutFieldLite[];
     relations?: readonly AutoLayoutRelation[];
+    flavor?: AutoLayoutFlavor;
 }): RecordLayoutV3 {
     const fields = input.fields;
+    const flavor = FLAVOR[input.flavor ?? 'auto'] ?? FLAVOR.auto;
     const title = titleOf(fields);
     const used = new Set<number>(title ? [title.id] : []);
+    const free = (f: LayoutFieldLite): boolean => !used.has(f.id);
+    const take = (list: LayoutFieldLite[]): LayoutFieldLite[] => {
+        for (const f of list) used.add(f.id);
+        return list;
+    };
 
-    // Cabecera: etapas (el select de estado), chips (otros select, persona,
-    // la fecha que manda) y una línea de contacto.
+    // Cabecera: etapas (el select de estado), propiedades clave (los select,
+    // la persona, después las etiquetas y la fecha que manda) y una línea de
+    // contacto bajo el título.
     const stages = fields.find((f) => f.type === 'select' && optionCount(f) >= 3 && STAGE_RE.test(`${f.slug} ${f.label}`));
     if (stages) used.add(stages.id);
     const chips: number[] = [];
-    for (const f of fields) {
-        if (chips.length >= 4 || used.has(f.id)) continue;
-        if (f.type === 'select' || f.type === 'user') {
+    for (const pass of [['select', 'user'], ['multi_select']] as const) {
+        for (const f of fields) {
+            if (chips.length >= 4 || !free(f) || !(pass as readonly string[]).includes(f.type)) continue;
             chips.push(f.id);
             used.add(f.id);
         }
     }
-    const due = fields.find((f) => !used.has(f.id) && (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(`${f.slug} ${f.label}`));
-    if (due && chips.length < 5) {
+    const due = fields.find((f) => free(f) && (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(`${f.slug} ${f.label}`));
+    if (due) {
         chips.push(due.id);
         used.add(due.id);
     }
-    const subtitle = fields
-        .filter((f) => !used.has(f.id) && (f.type === 'email' || f.type === 'phone' || f.type === 'text'))
-        .slice(0, 2);
-    for (const f of subtitle) used.add(f.id);
+    const subtitle = take(fields.filter((f) => free(f) && (f.type === 'email' || f.type === 'phone' || f.type === 'text')).slice(0, 2));
 
-    // Cifras destacadas: los números que definen al registro.
-    const kpis = fields.filter((f) => !used.has(f.id) && (NUMERIC.includes(f.type) || isNumericComputed(f))).slice(0, 4);
-    for (const f of kpis) used.add(f.id);
+    // Cifras destacadas: los números que definen al registro (el dinero primero).
+    const kpis = take(
+        fields
+            .filter((f) => free(f) && (NUMERIC.includes(f.type) || isNumericComputed(f)))
+            .map((f, i) => ({ f, i }))
+            .sort((a, b) => (KPI_RANK[a.f.type] ?? 9) - (KPI_RANK[b.f.type] ?? 9) || a.i - b.i)
+            .slice(0, 4)
+            .map((x) => x.f),
+    );
 
-    const longText = fields.filter((f) => !used.has(f.id) && f.type === 'long_text');
-    const files = fields.filter((f) => !used.has(f.id) && f.type === 'file');
-    const contact = fields.filter((f) => !used.has(f.id) && CONTACT.includes(f.type));
-    for (const f of [...longText, ...files, ...contact]) used.add(f.id);
-    const details = fields.filter((f) => !used.has(f.id) && f.type !== 'relation');
-    const relationFields = fields.filter((f) => !used.has(f.id) && f.type === 'relation');
+    const longText = take(fields.filter((f) => free(f) && f.type === 'long_text'));
+    const files = take(fields.filter((f) => free(f) && f.type === 'file'));
+    const contact = take(fields.filter((f) => free(f) && (CONTACT.includes(f.type) || (f.type === 'text' && CONTACT_RE.test(`${f.slug} ${f.label}`)))));
+    const relationFields = take(fields.filter((f) => free(f) && f.type === 'relation'));
+    let dates = fields.filter((f) => free(f) && (f.type === 'date' || f.type === 'datetime'));
+    // Con pocas fechas, una tarjeta propia es una tarjeta de más (varias
+    // tarjetas de 1-2 campos fragmentan la ficha): van con el resto.
+    if (dates.length < 3) dates = [];
+    take(dates);
+    const details = take(fields.filter((f) => free(f)));
+
+    const group = (id: string, title: string, icon: string, list: LayoutFieldLite[], layout: 'grid' | 'list' | 'stacked'): LayoutBlock => ({
+        id,
+        type: 'fields',
+        title,
+        config: { field_ids: list.map((f) => f.id), layout, ...(layout === 'grid' ? { columns: 2 } : {}), icon },
+    });
 
     const sections: LayoutSection[] = [];
     if (kpis.length > 0) {
@@ -408,26 +452,16 @@ export function autoRecordLayout(input: {
         });
     }
     const main: LayoutBlock[] = [{ id: 'description', type: 'description', config: {} }];
-    if (details.length > 0) {
-        main.push({
-            id: 'details',
-            type: 'fields',
-            title: 'Detalles',
-            config: { field_ids: details.map((f) => f.id), layout: 'grid', columns: 2 },
-        });
-    }
-    if (longText.length > 0) {
-        main.push({ id: 'notes', type: 'fields', title: 'Notas', config: { field_ids: longText.map((f) => f.id), layout: 'stacked' } });
-    }
     const side: LayoutBlock[] = [];
-    if (contact.length > 0) {
-        side.push({ id: 'contact', type: 'fields', title: 'Contacto', config: { field_ids: contact.map((f) => f.id), layout: 'list' } });
-    }
-    if (relationFields.length > 0) {
-        side.push({ id: 'links', type: 'fields', title: 'Vínculos', config: { field_ids: relationFields.map((f) => f.id), layout: 'list' } });
-    }
+    const contactBlock = contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, flavor.contactInMain ? 'grid' : 'list') : null;
+    const detailsBlock = details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null;
+    const datesBlock = dates.length > 0 ? group('dates', flavor.datesFirst ? 'Programación' : 'Fechas', 'calendar', dates, 'grid') : null;
+    if (contactBlock && flavor.contactInMain) main.push(contactBlock);
+    for (const b of flavor.datesFirst ? [datesBlock, detailsBlock] : [detailsBlock, datesBlock]) if (b) main.push(b);
+    if (longText.length > 0) main.push(group('notes', 'Notas', 'sticky_note', longText, 'stacked'));
+    if (contactBlock && !flavor.contactInMain) side.push(contactBlock);
+    if (relationFields.length > 0) side.push(group('links', 'Vínculos', 'link', relationFields, 'list'));
     if (files.length > 0) side.push({ id: 'files', type: 'files', title: 'Archivos', config: { field_ids: files.map((f) => f.id) } });
-    side.push({ id: 'stats', type: 'record_stats', config: { mode: 'auto' } });
     side.push({ id: 'activity', type: 'activity', title: 'Actividad', config: { mode: 'all' } });
     sections.push({ id: 'main', columns: [8, 4], blocks: [main, side] });
 
