@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
-import { ArrowLeft, Check, Loader2, Monitor, Redo2, RotateCcw, Smartphone, Undo2 } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { ArrowLeft, Check, LayoutTemplate, Loader2, Monitor, Redo2, RotateCcw, Smartphone, Undo2 } from 'lucide-react';
 import type { RecordLayoutV3 } from '@imagina-base/shared';
 
 import { RecordSelector } from '@/admin/lists/template-editor/RecordSelector';
@@ -28,6 +28,7 @@ import { EditorCanvas } from './EditorCanvas';
 import { EditorContext, useEditorActions, useLayoutHistory, type EditorApi, type Selection } from './editorState';
 import { Inspector } from './Inspector';
 import { LibraryPane } from './LibraryPane';
+import { PORTAL_TEMPLATE_INFO, PortalTemplateGallery } from './PortalTemplateGallery';
 import { duplicateBlock, findBlock, removeBlock } from './layoutOps';
 
 interface Props {
@@ -69,6 +70,15 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
     const navigate = useNavigate();
 
     const dirty = useMemo(() => JSON.stringify(layout) !== JSON.stringify(saved), [layout, saved]);
+    // v0.1.237 — galería de plantillas del portal (`?plantillas=1` la abre al entrar).
+    const [params, setParams] = useSearchParams();
+    const [galleryOpen, setGalleryOpen] = useState(portal && params.get('plantillas') === '1');
+    useEffect(() => {
+        if (!params.has('plantillas')) return;
+        const next = new URLSearchParams(params);
+        next.delete('plantillas');
+        setParams(next, { replace: true });
+    }, [params, setParams]);
     // Si la página elegida desaparece (deshacer, borrar), vuelve a la primera.
     const activePage = layout.pages.some((p) => p.id === pageId) ? pageId : layout.pages[0]!.id;
 
@@ -276,6 +286,12 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                                 <div className="imcrm-w-[220px]" title={portal ? __('Cliente con el que se ve la vista previa (con sus datos, como los vería él)') : __('Registro con el que se ve la vista previa')}>
                                     <RecordSelector listId={list.id} fields={fields} value={record.id > 0 ? record : null} onChange={(r) => r && setRecord(r)} />
                                 </div>
+                                {portal && (
+                                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setGalleryOpen(true)} data-testid="portal-templates-open">
+                                        <LayoutTemplate className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        <span className="imcrm-hidden lg:imcrm-inline">{__('Plantillas')}</span>
+                                    </Button>
+                                )}
                                 {origin !== 'auto' && (
                                     <Button variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-text-muted-foreground" onClick={() => void resetToAuto()}>
                                         <RotateCcw className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -330,6 +346,24 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                         </div>
                     </div>
 
+                    {portal && galleryOpen && (
+                        <PortalTemplateGallery
+                            open
+                            onOpenChange={setGalleryOpen}
+                            list={list}
+                            fields={fields}
+                            onApply={(next, kind) => {
+                                commit(next);
+                                setSelection(null);
+                                setPageId(next.pages[0]!.id);
+                                setGalleryOpen(false);
+                                toast.success(
+                                    `${__('Plantilla aplicada:')} ${PORTAL_TEMPLATE_INFO[kind].name}`,
+                                    __('Revisala con un cliente de verdad y tocá Guardar. Ctrl+Z la deshace.'),
+                                );
+                            }}
+                        />
+                    )}
                 </WidgetDataOverrideContext.Provider>
             </LayoutContext.Provider>
         </EditorContext.Provider>

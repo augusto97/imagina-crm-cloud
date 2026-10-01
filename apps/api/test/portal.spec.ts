@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import Redis from 'ioredis';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { layoutBlocks } from '@imagina-base/shared';
 import { loadEnv } from '../src/config/env';
 import { memberships, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -580,11 +581,42 @@ describe('PortalService (Postgres + Redis reales)', () => {
             await fieldsService.create(tenantId, sv.slug, { label: 'Dato', type: 'text', slug: 'dato_sv' });
         });
 
+        function portalEditableFieldIdsOf(boot: { editable_field_ids: number[] }): number[] {
+            return boot.editable_field_ids;
+        }
+
         async function socioSession(email: string): Promise<number> {
             const link = await portal.issue(tenantId, 'socios', { record_id: mio, email });
             const { sessionToken } = await portal.consume(link.token!);
             return (await sessions.get(sessionToken))!.userId;
         }
+
+        it('v0.1.237 — el automático es «Mi cuenta»: sólo con las listas que el admin habilitó, acotadas al cliente', async () => {
+            const uid = await socioSession('auto237@acme.test');
+            // Sin listas habilitadas: sus datos y nada de otras listas.
+            const before = await portal.me(actor(uid));
+            expect(before.layout_origin).toBe('auto');
+            expect(layoutBlocks(before.layout!).some((b) => b.type === 'related' || b.type === 'chart')).toBe(false);
+            expect(portalEditableFieldIdsOf(before)).toEqual([]);
+
+            const cuotas = await listsService.get(tenantId, 'cuotas');
+            const socios = await listsService.get(tenantId, 'socios');
+            await listsService.update(tenantId, 'socios', {
+                settings: { ...socios.settings, portal: { enabled: true, related_lists: [cuotas.id] } },
+            });
+            const boot = await portal.me(actor(uid));
+            expect(boot.layout_origin).toBe('auto');
+            const related = layoutBlocks(boot.layout!).find((b) => b.type === 'related')!;
+            expect((related.config as { source: unknown }).source).toEqual({ kind: 'related', field_id: relId, direction: 'reverse' });
+            const data = (boot.layout_data!.data as Record<string, { rows: Array<{ data: Record<string, unknown> }>; fields: Array<{ id: number }> }>)[related.id]!;
+            // Sólo sus cuotas, y la columna que suena interna no viaja.
+            expect(data.rows).toHaveLength(2);
+            expect(data.fields.map((f) => f.id)).not.toContain(notaId);
+            expect(data.rows.every((r) => r.data[`f${notaId}`] === undefined)).toBe(true);
+            // La lista ya se ve en el diseño: no se repite al pie.
+            expect(boot.related_lists.map((r) => r.list_id)).not.toContain(cuotas.id);
+            await listsService.update(tenantId, 'socios', { settings: { ...socios.settings, portal: { enabled: true, related_lists: [] } } });
+        });
 
         it('la plantilla anterior se convierte sola: bloques, edición y datos acotados al cliente', async () => {
             await listsService.update(tenantId, 'socios', {

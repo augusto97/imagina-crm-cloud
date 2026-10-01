@@ -33,6 +33,7 @@ import {
     type PortalBoot,
     type PortalAccessList,
     type PortalCommentInput,
+    type PortalLinkedList,
     type PortalRelatedList,
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
@@ -1050,7 +1051,48 @@ export class PortalService {
             });
             if (migrated) return { layout: migrated, origin: 'legacy' };
         }
-        return { layout: autoPortalLayout(fieldsLite), origin: 'auto' };
+        return { layout: autoPortalLayout(fieldsLite, await this.autoLinked(tx, tenantId, listId, settings)), origin: 'auto' };
+    }
+
+    /**
+     * v0.1.237 — Las listas vinculadas que entran al portal AUTOMÁTICO: sólo
+     * las que el admin habilitó para el cliente (`settings.portal.related_lists`,
+     * fail-closed como el resto del portal), resueltas a su fuente — la
+     * relación que apunta a esta lista o, si no hay, la lista entera (el
+     * servidor la acota por el campo persona al calcular).
+     */
+    private async autoLinked(tx: Tx, tenantId: number, listId: number, settings: Record<string, unknown>): Promise<PortalLinkedList[]> {
+        const raw = (settings.portal ?? {}) as { related_lists?: unknown };
+        const chosen = Array.isArray(raw.related_lists)
+            ? raw.related_lists.map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0 && n !== listId).slice(0, 4)
+            : [];
+        if (chosen.length === 0) return [];
+        const others = await tx
+            .select({ id: lists.id, name: lists.name, settings: lists.settings })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), inArray(lists.id, chosen)));
+        if (others.length === 0) return [];
+        const otherFields = await tx
+            .select()
+            .from(fields)
+            .where(inArray(fields.listId, others.map((o) => o.id)))
+            .orderBy(fields.position);
+        const out: PortalLinkedList[] = [];
+        for (const id of chosen) {
+            const o = others.find((x) => x.id === id);
+            if (!o) continue;
+            const own = otherFields.filter((f) => f.listId === o.id);
+            const lite: LayoutFieldLite[] = own.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type as FieldType, config: f.config as Record<string, unknown> }));
+            const titleId = resolveTitleFieldId(own.map((f) => ({ id: f.id, type: f.type as FieldType })), (o.settings ?? {}) as Record<string, unknown>);
+            for (const f of lite) f.is_primary = f.id === titleId;
+            const rel = own.find((f) => f.type === 'relation' && Number((f.config as { target_list_id?: unknown }).target_list_id ?? 0) === listId);
+            if (rel) {
+                out.push({ key: `rel:${rel.id}:reverse`, list_id: o.id, name: o.name, source: { kind: 'related', field_id: rel.id, direction: 'reverse' }, fields: lite });
+            } else if (own.some((f) => f.type === 'user')) {
+                out.push({ key: `list:${o.id}`, list_id: o.id, name: o.name, source: { kind: 'list', list_id: o.id }, fields: lite });
+            }
+        }
+        return out;
     }
 
     private async bootWithinTenant(

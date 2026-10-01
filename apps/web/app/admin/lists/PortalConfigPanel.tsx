@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { KeyRound, LayoutGrid, UserRound } from 'lucide-react';
+import { KeyRound, LayoutGrid, LayoutTemplate, UserRound } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
           })()
         : template.blocks.length > 0
           ? __('Plantilla anterior (se convierte al abrir el editor)')
-          : __('Diseño automático: los datos del cliente, de sólo lectura');
+          : __('Diseño automático: «Mi cuenta» de sólo lectura, con las listas que habilites abajo');
 
     const [portal, setPortal] = useState<PortalSettings>(initialPortal);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -140,12 +140,20 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                                         {__('Con el mismo editor de la ficha: pestañas, columnas, sus datos con la forma que mejor los muestra, gráficos y tablas de lo suyo, y qué puede corregir él.')}
                                     </p>
                                 </div>
-                                <Button asChild size="sm" variant="outline" className="imcrm-shrink-0 imcrm-gap-1.5">
-                                    <Link to={`/lists/${list.slug}/portal-editor`}>
-                                        <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        {design || template.blocks.length > 0 ? __('Editar') : __('Diseñar')}
-                                    </Link>
-                                </Button>
+                                <div className="imcrm-flex imcrm-shrink-0 imcrm-flex-wrap imcrm-justify-end imcrm-gap-2">
+                                    <Button asChild size="sm" variant={design || template.blocks.length > 0 ? 'outline' : 'default'} className="imcrm-gap-1.5">
+                                        <Link to={`/lists/${list.slug}/portal-editor?plantillas=1`} data-testid="portal-choose-template">
+                                            <LayoutTemplate className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Elegir plantilla')}
+                                        </Link>
+                                    </Button>
+                                    <Button asChild size="sm" variant="outline" className="imcrm-gap-1.5">
+                                        <Link to={`/lists/${list.slug}/portal-editor`}>
+                                            <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {design || template.blocks.length > 0 ? __('Editar') : __('Diseñar')}
+                                        </Link>
+                                    </Button>
+                                </div>
                             </div>
                         </div>
 

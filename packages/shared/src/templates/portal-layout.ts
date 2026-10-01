@@ -8,6 +8,7 @@ import {
     type RecordLayoutV3,
 } from '../schemas/record-layout';
 import { normalizeWidths, type LayoutFieldLite } from './record-layout-builders';
+import { portalTemplateLayout, type PortalLinkedList } from './portal-templates';
 
 /**
  * v0.1.233 — El portal del cliente sobre el MISMO modelo v3 de la ficha
@@ -128,34 +129,15 @@ export function sanitizePortalLayout(layout: RecordLayoutV3): RecordLayoutV3 {
 
 // ── Portal automático ────────────────────────────────────────────────────
 
-/** El portal cuando nadie lo diseñó: el registro del cliente, de sólo lectura. */
-export function autoPortalLayout(fields: readonly LayoutFieldLite[]): RecordLayoutV3 {
-    const shown = fields.filter((f) => !['relation', 'file'].includes(f.type));
-    const files = fields.filter((f) => f.type === 'file');
-    const title = fields.find((f) => f.is_primary) ?? fields.find((f) => f.type === 'text');
-    const main: LayoutBlock[] = [
-        {
-            id: 'datos',
-            type: 'fields',
-            title: 'Tus datos',
-            config: { field_ids: shown.filter((f) => f.id !== title?.id).map((f) => f.id), layout: 'grid', columns: 2, collapsible: false },
-        },
-    ];
-    if (files.length > 0) main.push({ id: 'archivos', type: 'files', title: 'Archivos', config: { field_ids: files.map((f) => f.id) } });
-    return {
-        v: 3,
-        theme: { preset: 'default' },
-        header: {
-            title_field_id: title?.id ?? null,
-            subtitle_field_ids: [],
-            chip_field_ids: [],
-            stages_field_id: null,
-            cover: { kind: 'gradient' },
-            avatar: { kind: 'initials' },
-            show_meta: false,
-        },
-        pages: [{ id: 'inicio', name: 'Inicio', sections: [{ id: 'main', columns: [12], blocks: [main] }] }],
-    };
+/**
+ * El portal cuando nadie lo diseñó. Desde v0.1.237 es la plantilla «Mi cuenta»
+ * de sólo lectura (antes, una sola tarjeta con todos los campos): sus datos,
+ * sus cifras y —sólo si el admin las habilitó para el cliente— las listas
+ * vinculadas como tarjetas. Nada editable ni conversación: eso lo decide quien
+ * diseña el portal.
+ */
+export function autoPortalLayout(fields: readonly LayoutFieldLite[], linked: readonly PortalLinkedList[] = []): RecordLayoutV3 {
+    return portalTemplateLayout('account', { fields, linked, readOnly: true });
 }
 
 // ── Plantilla anterior → v3 ──────────────────────────────────────────────
