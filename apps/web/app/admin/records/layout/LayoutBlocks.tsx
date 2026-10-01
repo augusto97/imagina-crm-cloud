@@ -1,5 +1,32 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ExternalLink, Info, Pencil, TriangleAlert, CircleCheck, Lightbulb } from 'lucide-react';
+import {
+    Activity,
+    AlignLeft,
+    BarChart3,
+    Briefcase,
+    Building2,
+    Calendar,
+    ChevronDown,
+    CircleCheck,
+    CircleUser,
+    Database,
+    DollarSign,
+    ExternalLink,
+    Info,
+    LifeBuoy,
+    Lightbulb,
+    Link2,
+    Mail,
+    MessageSquare,
+    Paperclip,
+    Pencil,
+    StickyNote,
+    Tag,
+    Target,
+    TriangleAlert,
+    User,
+    type LucideIcon,
+} from 'lucide-react';
 import {
     CHART_KIND_WIDGET,
     layoutChartKindSchema,
@@ -11,8 +38,6 @@ import {
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
-import { RecordTimeline } from '@/admin/records/crm/RecordTimeline';
-import { StatsBlock } from '@/admin/records/crm/RightRail';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
@@ -29,15 +54,46 @@ import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
 
+import { ActivityFeed } from './ActivityFeed';
 import { FieldDisplay, optionsOf } from './FieldDisplay';
 import { fieldEditable, useLayoutCtx } from './LayoutContext';
 import { surfaceClass, tint } from './layoutTheme';
+import { RecordStatsView } from './RecordStatsView';
 import { RelatedBlockView } from './RelatedBlockView';
 
 /** Bloques que se dibujan SIN tarjeta (son parte del flujo de la página). */
-// Resumen/actividad/comentarios traen su propia tarjeta (los componentes de
-// siempre): envolverlos en otra dejaba una caja dentro de otra.
-const BARE: ReadonlySet<string> = new Set(['heading', 'divider', 'spacer', 'button', 'notice', 'stages', 'portal_access', 'record_stats', 'activity', 'comments']);
+const BARE: ReadonlySet<string> = new Set(['heading', 'divider', 'spacer', 'button', 'notice', 'stages', 'portal_access']);
+/** En el portal, comentarios y actividad traen su propia tarjeta. */
+const BARE_IN_PORTAL: ReadonlySet<string> = new Set(['activity', 'comments']);
+
+/** Icono del título de un bloque: el elegido (`config.icon`) o el de su tipo. */
+const ICONS: Record<string, LucideIcon> = {
+    mail: Mail,
+    building: Building2,
+    tag: Tag,
+    briefcase: Briefcase,
+    dollar: DollarSign,
+    calendar: Calendar,
+    user: User,
+    circle_user: CircleUser,
+    sticky_note: StickyNote,
+    target: Target,
+    lifebuoy: LifeBuoy,
+    database: Database,
+    link: Link2,
+};
+const TYPE_ICONS: Partial<Record<string, LucideIcon>> = {
+    activity: Activity,
+    comments: MessageSquare,
+    record_stats: BarChart3,
+    files: Paperclip,
+    description: AlignLeft,
+};
+
+function blockIcon(block: LayoutBlock): LucideIcon | null {
+    const key = typeof block.config.icon === 'string' ? block.config.icon : '';
+    return ICONS[key] ?? TYPE_ICONS[block.type] ?? null;
+}
 
 /**
  * v0.1.230 — Un bloque de la ficha dentro de su marco (tarjeta del tema,
@@ -48,10 +104,14 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     const dark = useTheme().resolved === 'dark';
     const style = readBlockStyle({ style: block.style });
     const styled = block.style !== undefined && Object.keys(block.style).length > 0;
-    const card = block.type === 'field' ? block.config.card === true : !BARE.has(block.type);
+    const card =
+        block.type === 'field'
+            ? block.config.card === true
+            : !BARE.has(block.type) && !(ctx.mode === 'portal' && BARE_IN_PORTAL.has(block.type));
     const title = blockTitle(block, ctx.fieldsById);
     const collapsible = block.type === 'fields' && block.config.collapsible !== false && title !== null;
     const [open, setOpen] = useState(block.config.collapsed !== true);
+    const Icon = blockIcon(block);
 
     const body = <BlockBody block={block} />;
     if (!card) {
@@ -74,22 +134,27 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
             {title !== null && (
                 <header
                     className={cn(
-                        'imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4 imcrm-pt-3',
-                        !open && 'imcrm-pb-3',
+                        'imcrm-group/head imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4 imcrm-pt-3.5',
+                        open ? 'imcrm-pb-1.5' : 'imcrm-pb-3.5',
                     )}
                 >
                     {collapsible ? (
                         <button
                             type="button"
                             onClick={() => setOpen((o) => !o)}
-                            className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-left"
+                            className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2 imcrm-text-left"
                             aria-expanded={open}
                         >
-                            <ChevronDown className={cn('imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-transform', !open && 'imcrm--rotate-90')} />
-                            <BlockTitle text={title} />
+                            <BlockTitle text={title} icon={Icon} />
+                            <ChevronDown
+                                className={cn(
+                                    'imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground imcrm-opacity-0 imcrm-transition group-hover/head:imcrm-opacity-100',
+                                    !open && 'imcrm--rotate-90 imcrm-opacity-100',
+                                )}
+                            />
                         </button>
                     ) : (
-                        <BlockTitle text={title} />
+                        <BlockTitle text={title} icon={Icon} />
                     )}
                 </header>
             )}
@@ -98,28 +163,40 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     );
 }
 
-function BlockTitle({ text }: { text: string }): JSX.Element {
-    return <h3 className="imcrm-truncate imcrm-text-[13px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">{text}</h3>;
+function BlockTitle({ text, icon: Icon }: { text: string; icon?: LucideIcon | null }): JSX.Element {
+    return (
+        <h3 className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-text-[13px] imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
+            {Icon && <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />}
+            <span className="imcrm-truncate">{text}</span>
+        </h3>
+    );
 }
 
-/** Relleno interno según el tipo (las filas de campos van al ras). */
+/** Relleno interno según el tipo (las filas de campos llevan el suyo). */
 function padFor(block: LayoutBlock): string {
-    if (block.type === 'fields' || block.type === 'files') return 'imcrm-py-1.5';
-    if (block.type === 'related') return 'imcrm-pt-2';
-    return 'imcrm-p-4';
+    if (block.type === 'fields' || block.type === 'files') return 'imcrm-px-2 imcrm-pb-2';
+    if (block.type === 'related') return 'imcrm-pt-1';
+    if (block.type === 'description') return 'imcrm-px-4 imcrm-pb-4 imcrm-pt-3.5';
+    if (block.type === 'field') return 'imcrm-p-4';
+    return 'imcrm-px-4 imcrm-pb-4 imcrm-pt-2';
 }
 
 function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): string | null {
-    // Los gráficos dibujan su propio encabezado (el de los tableros).
-    if (block.type === 'chart') return null;
+    // Los gráficos dibujan su propio encabezado (el de los tableros); el campo
+    // destacado lleva su etiqueta adentro, chica, para que mande la cifra; la
+    // descripción trae su título con el estado del guardado.
+    if (block.type === 'chart' || block.type === 'field' || block.type === 'description') return null;
     if (block.title !== undefined && block.title !== '') return block.title;
+    void fieldsById;
     switch (block.type) {
-        case 'field': {
-            const f = fieldsById.get(Number(block.config.field_id));
-            return f ? f.label : null;
-        }
         case 'files':
             return __('Archivos');
+        case 'activity':
+            return __('Actividad');
+        case 'comments':
+            return __('Comentarios');
+        case 'record_stats':
+            return __('Resumen');
         default:
             return null;
     }
@@ -148,23 +225,25 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
                     listSlug={ctx.list.slug}
                     recordId={ctx.record.id}
                     editable={ctx.canEdit && !ctx.preview}
+                    heading="block"
                 />
             );
         case 'record_stats':
             if (ctx.mode === 'portal') return null;
             return (
-                <StatsBlock
+                <RecordStatsView
                     listId={ctx.list.id}
                     record={ctx.record}
-                    mode={c.mode === 'custom' ? 'custom' : 'auto'}
-                    items={Array.isArray(c.items) ? (c.items as never) : []}
+                    items={c.mode === 'custom' && Array.isArray(c.items) ? (c.items as never) : []}
+                    fieldsById={ctx.fieldsById}
+                    values={ctx.values}
                 />
             );
         case 'activity':
         case 'comments':
             if (ctx.mode === 'portal') return <PortalConversation block={block} />;
             return (
-                <RecordTimeline
+                <ActivityFeed
                     listId={ctx.list.id}
                     recordId={ctx.record.id}
                     currentUserId={ctx.currentUserId}
@@ -221,13 +300,13 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     void locked;
     const editable = fieldEditable(ctx, field);
     const Icon = fieldTypeIcon(field.type);
-    const showLabel = c.card !== true && c.label !== 'hidden';
+    const showLabel = c.label !== 'hidden';
     return (
         <div className="imcrm-group imcrm-relative imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
             {showLabel && (
-                <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
-                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {block.title ?? field.label}
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pr-6 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">
+                    <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                    <span className="imcrm-truncate">{block.title || field.label}</span>
                 </span>
             )}
             <div className="imcrm-min-w-0">
@@ -270,44 +349,48 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     );
 }
 
-/** Propiedades editables en lista, grilla o apiladas (se guardan solas). */
+/**
+ * Propiedades editables en lista, grilla o apiladas (se guardan solas). La
+ * grilla y la posición de la etiqueta se deciden por el ancho de la TARJETA
+ * (ver `.imcrm-props` en globals.css), no de la ventana.
+ */
 export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: string; columns: number }): JSX.Element {
     const ctx = useLayoutCtx();
     const list = ids.map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined);
-    if (list.length === 0) return <p className="imcrm-px-4 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground">{__('Sin campos en este bloque.')}</p>;
+    if (list.length === 0) return <p className="imcrm-px-2 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground">{__('Sin campos en este bloque.')}</p>;
     const cols = layout === 'grid' ? Math.max(1, Math.min(3, columns)) : 1;
     return (
-        <div
-            className={cn('imcrm-grid imcrm-grid-cols-1', cols >= 2 && 'md:imcrm-grid-cols-2', cols >= 3 && 'xl:imcrm-grid-cols-3', cols >= 2 && 'md:imcrm-gap-x-2')}
-        >
-            {list.map((f) =>
-                // En el portal, lo que el cliente no puede editar se ve como dato,
-                // sin candados ni controles.
-                ctx.mode === 'portal' && !fieldEditable(ctx, f) ? (
-                    <ReadOnlyRow key={f.id} field={f} />
-                ) : (
-                    <CompactFieldRow
-                        key={f.id}
-                        field={f}
-                        listId={ctx.list.id}
-                        recordId={ctx.mode === 'portal' ? undefined : ctx.record.id}
-                        value={ctx.values[f.slug]}
-                        onChange={(v) => ctx.setValue(f.slug, v)}
-                        error={ctx.errors[f.slug]}
-                        showTypeIcon={cols === 1}
-                        allowCreateOptions={ctx.mode !== 'portal'}
-                        lockedReason={
-                            ctx.mode === 'portal'
-                                ? null
-                                : !ctx.canEdit || ctx.preview
-                                  ? ctx.preview
-                                      ? null
-                                      : __('No tenés permiso para editar este registro')
-                                  : ctx.lockedReasons[f.slug] ?? null
-                        }
-                    />
-                ),
-            )}
+        <div className={cn('imcrm-props', layout === 'stacked' && 'imcrm-props-stacked')}>
+            <div className="imcrm-props-grid" data-cols={String(cols)}>
+                {list.map((f) =>
+                    // En el portal, lo que el cliente no puede editar se ve como dato,
+                    // sin candados ni controles.
+                    ctx.mode === 'portal' && !fieldEditable(ctx, f) ? (
+                        <ReadOnlyRow key={f.id} field={f} />
+                    ) : (
+                        <CompactFieldRow
+                            key={f.id}
+                            variant="property"
+                            field={f}
+                            listId={ctx.list.id}
+                            recordId={ctx.mode === 'portal' ? undefined : ctx.record.id}
+                            value={ctx.values[f.slug]}
+                            onChange={(v) => ctx.setValue(f.slug, v)}
+                            error={ctx.errors[f.slug]}
+                            allowCreateOptions={ctx.mode !== 'portal'}
+                            lockedReason={
+                                ctx.mode === 'portal'
+                                    ? null
+                                    : !ctx.canEdit || ctx.preview
+                                      ? ctx.preview
+                                          ? null
+                                          : __('No tenés permiso para editar este registro')
+                                      : ctx.lockedReasons[f.slug] ?? null
+                            }
+                        />
+                    ),
+                )}
+            </div>
         </div>
     );
 }
@@ -317,14 +400,16 @@ function ReadOnlyRow({ field }: { field: FieldEntity }): JSX.Element {
     const ctx = useLayoutCtx();
     const Icon = fieldTypeIcon(field.type);
     return (
-        <div className="imcrm-flex imcrm-min-h-[36px] imcrm-items-start imcrm-gap-3 imcrm-px-4 imcrm-py-2" data-readonly-field={field.slug}>
-            <span className="imcrm-flex imcrm-w-[38%] imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
-                <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
-                <span className="imcrm-truncate">{field.label}</span>
-            </span>
-            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-sm imcrm-text-foreground">
-                <FieldDisplay field={field} value={ctx.values[field.slug]} accent={ctx.theme.accent} />
-            </span>
+        <div className="imcrm-prop" data-readonly-field={field.slug}>
+            <div className="imcrm-prop-row imcrm-px-2 imcrm-py-1.5">
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
+                    <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                    <span className="imcrm-truncate">{field.label}</span>
+                </span>
+                <span className="imcrm-min-w-0 imcrm-text-sm imcrm-text-foreground">
+                    <FieldDisplay field={field} value={ctx.values[field.slug]} accent={ctx.theme.accent} />
+                </span>
+            </div>
         </div>
     );
 }

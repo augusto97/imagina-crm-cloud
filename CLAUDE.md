@@ -5975,6 +5975,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto la fase C de ADR-S26 queda completa: la ficha y el portal
         del cliente comparten modelo, vista y editor.**
 
+  - [x] **Ficha: composición, columnas y bloques rehechos (v0.1.234, reporte
+        del usuario con captura: "se ve como una app a medio camino")**. La
+        captura era la plantilla integrada «Soporte» convertida de su grilla
+        v2 (3 · 6 · 3 con la actividad al medio) y además ESCONDÍA datos: en
+        las columnas de 3/12 la etiqueta fija de 200px dejaba al valor sin
+        lugar — «Vencimiento» y «Detalle» tenían dato y no se veían.
+        (a) **Composición**: las integradas (contacto, negocio, tarea,
+        soporte) ya no se convierten de la grilla vieja; son variantes
+        (`flavor`) del generador automático que sólo cambian el ORDEN de los
+        grupos (los nombres son neutros: «Ticket» no tiene sentido en una
+        lista de clientes). El generador pone el dinero primero en las
+        cifras, sube etiquetas a la cabecera, junta las fechas con el resto
+        si son pocas (varias tarjetas de 1-2 campos fragmentaban la ficha),
+        reconoce WhatsApp/teléfono como contacto y ya no agrega el
+        «Resumen» de contadores. `custom` sigue convirtiéndose igual.
+        (b) **Reparto de columnas al dibujar** (`planSection`, puro, con
+        tests): una columna vacía cede su ancho; si alguna quedaría más
+        angosta de lo que necesita su contenido, la sección pasa a "de a dos"
+        (cifras), a "principal + lateral" 8 · 4 (un 3 · 6 · 3 deja la columna
+        ancha a la izquierda y junta las demás a la derecha) o se apila. El
+        diseño guardado no se toca. (c) **Propiedades**: la fila se acomoda
+        al ancho de su TARJETA (container queries): lado a lado con lugar,
+        etiqueta arriba en una columna angosta; selects, persona y relación
+        planos (sin caja); el texto largo se lee entero; las fechas no se
+        parten en dos renglones. (d) **Cabecera**: portada más baja y suave,
+        avatar montado sobre ella, línea de contacto con iconos, y las
+        propiedades clave como "etiqueta arriba, valor abajo" (antes,
+        cajitas con borde), con «Agregar» en las vacías. (e) **Actividad**
+        reescrita (`ActivityFeed`): composer plegado en una línea que se abre
+        al escribir, hilo por día ("Hoy", "Ayer"), las ediciones seguidas de
+        una persona en UNA entrada ("cambió Status: activo → sin factura"),
+        8 entradas y «Ver más» (antes se estiraba hasta el final de la
+        página). (f) **Resumen** sin cajas dentro de la caja: una fila de
+        cifras ("Hace 3 días", "Hoy"). (g) Marco de bloque coherente: título
+        con icono, márgenes iguales, la cifra destacada con la etiqueta chica
+        adentro. **Bug real de paso**: los comentarios desde la ficha y el
+        panel lateral nunca funcionaron en la nube — el front mandaba
+        `content` y el API espera `body` (400 "body Required"), y los que
+        existían se veían SIN texto (el arreglo de v0.1.77 sólo evitaba el
+        crash). Traducción en `useComments` (un solo lugar para todas las
+        pantallas), con test. Se borraron `RecordTimeline` y `RightRail`
+        (sin uso). Tests: 5 de `planSection`, 3 del feed, 2 de comentarios,
+        1 de shared (variantes) — 207 front, 106 shared en verde — + E2E
+        navegador 21/21 sobre una réplica de la lista del usuario (valores
+        visibles, ninguna fila aplastada, edición de cabecera/etapas/
+        propiedades que se guarda sola, feed con «Ver más», comentar con
+        nombre, celular) y regresiones de ficha 22/22, editor 30/30 y portal
+        23/23.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

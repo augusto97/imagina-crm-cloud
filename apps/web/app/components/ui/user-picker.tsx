@@ -19,6 +19,8 @@ interface UserPickerProps {
     placeholder?: string;
     /** Visible variant — trigger inline más pequeño (para CompactFieldRow). */
     compact?: boolean;
+    /** v0.1.234 — sin caja (las fichas diseñadas, como el selector de opciones de la tabla). */
+    flat?: boolean;
     disabled?: boolean;
     /**
      * Si true, ofrece "Asignar a mí" en el footer del popover. Pone el
@@ -45,6 +47,7 @@ export function UserPicker({
     onChange,
     placeholder,
     compact,
+    flat = false,
     disabled,
     showAssignMe,
 }: UserPickerProps): JSX.Element {
@@ -98,9 +101,13 @@ export function UserPicker({
                     type="button"
                     disabled={disabled}
                     className={cn(
-                        'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
-                        compact ? 'imcrm-h-8 imcrm-px-2' : 'imcrm-h-9 imcrm-px-3',
-                        !disabled && 'hover:imcrm-border-primary/40',
+                        flat
+                            ? 'imcrm--mx-1 imcrm-inline-flex imcrm-min-h-[1.5rem] imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent/40'
+                            : cn(
+                                  'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
+                                  compact ? 'imcrm-h-8 imcrm-px-2' : 'imcrm-h-9 imcrm-px-3',
+                                  !disabled && 'hover:imcrm-border-primary/40',
+                              ),
                         disabled && 'imcrm-cursor-not-allowed imcrm-opacity-60',
                     )}
                 >
@@ -127,7 +134,7 @@ export function UserPicker({
                             {placeholder ?? __('Asignar usuario…')}
                         </span>
                     )}
-                    <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                    {!flat && <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />}
                 </button>
             </PopoverTrigger>
 

@@ -39,7 +39,9 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
               ? { backgroundImage: `url("${coverImage(ctx, cover)}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
               : cover.kind === 'color'
                 ? { background: accent }
-                : { background: `linear-gradient(115deg, ${accent} 0%, ${tint(accent, 70)} 45%, ${tint(accent, 25)} 100%)` };
+                : // v0.1.234 — un velo del acento, no un bloque de color: la portada
+                  // acompaña al título en vez de competir con él.
+                  { background: `linear-gradient(115deg, ${tint(accent, 55)} 0%, ${tint(accent, 26)} 50%, ${tint(accent, 8)} 100%)` };
     const avatar = header.avatar ?? { kind: 'initials' as const };
     const titleEditable = titleField !== undefined && fieldEditable(ctx, titleField);
 
@@ -49,14 +51,14 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
             style={{ borderRadius: ctx.theme.radius }}
             data-testid="imcrm-layout-header"
         >
-            {coverStyle && <div className="imcrm-h-24 sm:imcrm-h-28" style={coverStyle} aria-hidden />}
-            <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-px-5 imcrm-pb-4', coverStyle ? 'imcrm-pt-0' : 'imcrm-pt-5')}>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-end imcrm-gap-4">
+            {coverStyle && <div className={cover.kind === 'image' ? 'imcrm-h-28 sm:imcrm-h-32' : 'imcrm-h-14 sm:imcrm-h-16'} style={coverStyle} aria-hidden />}
+            <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-px-5 imcrm-pb-4', coverStyle ? 'imcrm-pt-0' : 'imcrm-pt-5')}>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-gap-x-4 imcrm-gap-y-2">
                     {avatar.kind !== 'none' && (
                         <span
                             className={cn(
-                                'imcrm-flex imcrm-h-16 imcrm-w-16 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-overflow-hidden imcrm-rounded-2xl imcrm-text-xl imcrm-font-semibold imcrm-shadow-imcrm-md imcrm-ring-4 imcrm-ring-card',
-                                coverStyle && 'imcrm--mt-8',
+                                'imcrm-flex imcrm-h-14 imcrm-w-14 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-overflow-hidden imcrm-rounded-xl imcrm-text-lg imcrm-font-semibold imcrm-shadow-imcrm-sm imcrm-ring-4 imcrm-ring-card',
+                                coverStyle && 'imcrm--mt-7',
                             )}
                             // Sobre el primario del tema, su tinta (en oscuro el primario es claro).
                             style={{ background: accent, color: cover.color || ctx.theme.accent.startsWith('#') ? '#fff' : 'hsl(var(--imcrm-primary-foreground))' }}
@@ -69,7 +71,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                             )}
                         </span>
                     )}
-                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1 imcrm-pt-3">
+                    <div className={cn('imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5', coverStyle ? 'imcrm-pt-2.5' : 'imcrm-pt-1')}>
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
                             <RecordTitleInput
                                 field={titleField}
@@ -77,41 +79,46 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                                 onChange={(next) => titleField && ctx.setValue(titleField.slug, next)}
                                 fallback={titleText}
                                 editable={titleEditable}
-                                className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
+                                className="imcrm-lay-title imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
                             />
                             {ctx.mode !== 'portal' && <span className="imcrm-lay-idbadge imcrm-shrink-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
                                 #{ctx.record.id}
                             </span>}
                         </div>
-                        {subtitle.length > 0 && (
-                            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-0.5 imcrm-text-sm imcrm-text-muted-foreground">
-                                {subtitle.map((f, i) => (
-                                    <span key={f.id} className="imcrm-inline-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2">
-                                        {i > 0 && <span aria-hidden>·</span>}
-                                        <span className="imcrm-truncate">{renderCellValue(f, ctx.values[f.slug])}</span>
-                                    </span>
-                                ))}
+                        {subtitle.some((f) => !isEmpty(ctx.values[f.slug])) && (
+                            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-4 imcrm-gap-y-0.5 imcrm-text-sm imcrm-text-muted-foreground">
+                                {subtitle
+                                    .filter((f) => !isEmpty(ctx.values[f.slug]))
+                                    .map((f) => {
+                                        const Icon = fieldTypeIcon(f.type);
+                                        return (
+                                            <span key={f.id} className="imcrm-inline-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5" title={f.label}>
+                                                <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-opacity-70" aria-hidden />
+                                                <span className="imcrm-truncate">{renderCellValue(f, ctx.values[f.slug])}</span>
+                                            </span>
+                                        );
+                                    })}
                             </div>
                         )}
                     </div>
                     {header.show_meta !== false && (
-                        <p className="imcrm-lay-meta imcrm-shrink-0 imcrm-text-right imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
+                        <p className="imcrm-lay-meta imcrm-shrink-0 imcrm-self-end imcrm-text-right imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
                             {__('Creado')} {formatDateTimeStr(ctx.record.created_at)}
                             <br />
                             {__('Actualizado')} {formatDateTimeStr(ctx.record.updated_at)}
                         </p>
                     )}
                 </div>
-                {chips.length > 0 && (
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2" data-testid="imcrm-layout-chips">
-                        {chips.map((f) => (
-                            <HeaderChip key={f.id} field={f} />
-                        ))}
-                    </div>
-                )}
                 {header.stages_field_id && (
                     <div className="imcrm-rounded-lg imcrm-bg-muted/50 imcrm-p-1" data-testid="imcrm-layout-stages">
                         <StagesBlock fieldId={header.stages_field_id} compact />
+                    </div>
+                )}
+                {chips.length > 0 && (
+                    <div className="imcrm-lay-props imcrm--mx-2 imcrm-border-t imcrm-border-border/70 imcrm-pt-3" data-testid="imcrm-layout-chips">
+                        {chips.map((f) => (
+                            <HeaderChip key={f.id} field={f} />
+                        ))}
                     </div>
                 )}
             </div>
@@ -119,31 +126,37 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
     );
 }
 
-/** Una propiedad clave junto al título; click → editarla ahí mismo. */
+/**
+ * Una propiedad clave: etiqueta chica arriba, valor abajo (como las
+ * propiedades de una tarea de ClickUp o Linear). Click → editarla ahí mismo.
+ */
 function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
     const ctx = useLayoutCtx();
     const Icon = fieldTypeIcon(field.type);
     const value = ctx.values[field.slug];
     const editable = fieldEditable(ctx, field);
-    const content = (
-        <span className="imcrm-inline-flex imcrm-max-w-[280px] imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-transition-colors hover:imcrm-bg-accent">
-            <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-            <span className="imcrm-shrink-0 imcrm-text-muted-foreground">{field.label}</span>
-            <span className="imcrm-min-w-0 imcrm-truncate imcrm-font-medium imcrm-text-foreground">
-                {value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0) ? (
-                    <span className="imcrm-text-muted-foreground/70">—</span>
-                ) : (
-                    renderCellValue(field, value)
-                )}
+    const inner = (
+        <>
+            <span className="imcrm-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-gap-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
+                <Icon className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
+                <span className="imcrm-truncate">{field.label}</span>
             </span>
-        </span>
+            <span className="imcrm-flex imcrm-min-h-[22px] imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-truncate imcrm-text-[13px] imcrm-font-medium imcrm-text-foreground">
+                {isEmpty(value) ? <span className="imcrm-font-normal imcrm-text-muted-foreground/60">{editable ? __('Agregar') : '—'}</span> : renderCellValue(field, value)}
+            </span>
+        </>
     );
-    if (!editable) return content;
+    const cls = 'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left';
+    if (!editable) return <div className={cls}>{inner}</div>;
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <button type="button" className="imcrm-rounded-lg focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring" aria-label={`${__('Editar')} ${field.label}`}>
-                    {content}
+                <button
+                    type="button"
+                    className={cn(cls, 'imcrm-transition-colors hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring')}
+                    aria-label={`${__('Editar')} ${field.label}`}
+                >
+                    {inner}
                 </button>
             </PopoverTrigger>
             <PopoverContent align="start" className="imcrm-w-[360px] imcrm-p-1">
@@ -159,6 +172,10 @@ function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
             </PopoverContent>
         </Popover>
     );
+}
+
+function isEmpty(v: unknown): boolean {
+    return v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
 }
 
 function initials(text: string): string {

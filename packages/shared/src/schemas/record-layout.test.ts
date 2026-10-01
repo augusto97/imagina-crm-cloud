@@ -84,6 +84,40 @@ describe('plantillas v3 de la ficha', () => {
         expect(layoutBlocks(v3).some((b) => (b.type as string) === 'header')).toBe(false);
     });
 
+    it('las plantillas integradas son variantes ordenadas de la automática (v0.1.234)', () => {
+        const fields = [
+            F(1, 'nombre', 'text', { is_primary: true }),
+            F(2, 'monto', 'number'),
+            F(3, 'total', 'currency'),
+            F(4, 'inicio', 'date'),
+            F(5, 'fin', 'date'),
+            F(6, 'entrega', 'date'),
+            F(7, 'email', 'email'),
+            F(8, 'ciudad', 'text'),
+            F(9, 'whatsapp', 'text'),
+            F(10, 'etiquetas', 'multi_select', { config: options(2) }),
+            F(11, 'renovacion', 'date'),
+            F(12, 'activo', 'checkbox'),
+        ];
+        const ids = (l: ReturnType<typeof autoRecordLayout>) => layoutBlocks(l).map((b) => b.id);
+        const auto = autoRecordLayout({ fields });
+        // El dinero va primero en las cifras; sin el «Resumen» de contadores.
+        expect(auto.pages[0]!.sections[0]!.blocks.flat().map((b) => b.config.field_id)).toEqual([3, 2]);
+        expect(ids(auto)).not.toContain('stats');
+        // Las etiquetas suben a la cabecera; WhatsApp es contacto.
+        expect(auto.header.chip_field_ids).toContain(10);
+        const main = auto.pages[0]!.sections[1]!;
+        expect(main.columns).toEqual([8, 4]);
+        expect(main.blocks[1]!.map((b) => b.id)).toEqual(['contact', 'activity']);
+        expect(main.blocks[1]![0]!.config.field_ids).toEqual([9]);
+        // Tarea: las fechas antes que el resto; contacto: los datos en la columna principal.
+        const task = autoRecordLayout({ fields, flavor: 'task' });
+        expect(task.pages[0]!.sections[1]!.blocks[0]!.map((b) => b.id)).toEqual(['description', 'dates', 'details']);
+        const contact = autoRecordLayout({ fields, flavor: 'contact' });
+        expect(contact.pages[0]!.sections[1]!.blocks[0]!.map((b) => b.id)).toEqual(['description', 'contact', 'details', 'dates']);
+        for (const l of [auto, task, contact]) expect(recordLayoutV3Schema.safeParse(l).success).toBe(true);
+    });
+
     it('la ficha automática arma cabecera, cifras, detalles y una pestaña por relación', () => {
         const fields = [
             F(1, 'nombre', 'text', { is_primary: true }),

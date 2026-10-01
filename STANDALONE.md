@@ -1849,6 +1849,21 @@ el editor (`GET /lists/:l/portal/layout`) y la whitelist de edición. Reglas:
   (modo `design`, el mismo vocabulario de la ficha + `editable` y `page`; el
   vocabulario anterior se convierte).
 
+**Pulido de composición y bloques (v0.1.234).** Tres reglas nuevas:
+- **Las plantillas integradas (contacto, negocio, tarea, soporte) ya no se
+  convierten desde su grilla v2** (3 · 6 · 3 con la actividad al medio): son
+  variantes (`flavor`) de `autoRecordLayout`, que sólo cambian el ORDEN de los
+  grupos. Sólo `custom` sigue pasando por `migrateCrmV2ToV3`.
+- **El reparto de columnas se decide al dibujar con el ancho que hay**
+  (`planSection`, puro): una columna sin bloques cede su ancho; si alguna
+  quedaría más angosta de lo que su contenido necesita, la sección pasa a
+  "de a dos" (piezas chicas), a "principal + lateral" 8 · 4 (tres o más
+  columnas) o se apila. El diseño guardado no se toca.
+- **Las propiedades se acomodan al ancho de su TARJETA** (container queries,
+  `.imcrm-props` / `.imcrm-prop`): etiqueta y valor lado a lado con lugar, uno
+  arriba del otro en una columna angosta. Antes la etiqueta fija de 200 px
+  escondía el valor.
+
 ---
 
-**Versión del documento:** 1.46.0 (el portal del cliente en v3 — ADR-S26 fase C completa)
+**Versión del documento:** 1.47.0 (pulido de la ficha: composición, columnas y bloques)

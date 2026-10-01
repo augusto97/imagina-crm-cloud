@@ -46,6 +46,14 @@ interface CompactFieldRowProps {
     lockedReason?: string | null;
     /** v0.1.233 — "Crear" opciones nuevas desde el selector (el portal no puede). */
     allowCreateOptions?: boolean;
+    /**
+     * v0.1.234 — `property`: la fila de las fichas diseñadas. La etiqueta y el
+     * valor se acomodan al ancho REAL de la tarjeta (container query): al lado
+     * con lugar, uno arriba del otro en una columna angosta — antes la
+     * etiqueta fija de 200px dejaba al valor sin lugar y no se veía. Los
+     * selectores van planos (sin caja), como en la tabla.
+     */
+    variant?: 'row' | 'property';
 }
 
 /**
@@ -71,8 +79,10 @@ export function CompactFieldRow({
     showTypeIcon = false,
     lockedReason = null,
     allowCreateOptions = true,
+    variant = 'row',
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
+    const property = variant === 'property';
     const TypeIcon = fieldTypeIcon(field.type);
 
     // Tipos que tienen control inline siempre visible (no necesitan
@@ -96,6 +106,76 @@ export function CompactFieldRow({
     // Tipos read-only (computed / lookup / rollup): nunca editables. Y en
     // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
     const isReadOnly = isDerivedFieldType(field.type) || lockedReason !== null;
+
+    const control = isReadOnly ? (
+        <div
+            className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-gap-1.5 imcrm-py-0.5 imcrm-text-sm"
+            title={lockedReason ?? undefined}
+            data-testid={lockedReason ? 'imcrm-field-locked' : undefined}
+        >
+            <span className="imcrm-min-w-0 imcrm-flex-1">
+                <FieldValueDisplay field={field} value={value} />
+            </span>
+            {lockedReason && <Lock className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground/60" aria-label={lockedReason} />}
+        </div>
+    ) : isInlineControl ? (
+        <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} allowCreate={allowCreateOptions} flat={property} />
+    ) : editing ? (
+        <EditingControl
+            field={field}
+            value={value}
+            onChange={onChange}
+            onBlur={() => setEditing(false)}
+        />
+    ) : (
+        <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={cn(
+                'imcrm-inline-flex imcrm-min-h-[24px] imcrm-w-full imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm',
+                'imcrm-text-foreground',
+            )}
+        >
+            <span
+                className={cn(
+                    'imcrm-min-w-0 imcrm-flex-1',
+                    // Un texto largo se lee entero en la ficha; el resto, en una línea.
+                    property && field.type === 'long_text' ? 'imcrm-whitespace-pre-wrap imcrm-break-words' : 'imcrm-truncate',
+                )}
+            >
+                <FieldValueDisplay field={field} value={value} />
+            </span>
+            <Pencil
+                className={cn(
+                    'imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground',
+                    'imcrm-opacity-0 group-hover:imcrm-opacity-60 imcrm-transition-opacity',
+                )}
+                aria-hidden
+            />
+        </button>
+    );
+
+    if (property) {
+        return (
+            <div className="imcrm-prop" data-prop={field.slug}>
+                <div className={cn('imcrm-prop-row imcrm-group imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-transition-colors hover:imcrm-bg-accent/50', editing && 'imcrm-bg-accent/40')}>
+                    <label
+                        htmlFor={`field-${field.id}`}
+                        className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-[3px] imcrm-text-xs imcrm-text-muted-foreground"
+                        title={field.label}
+                    >
+                        <TypeIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground/70" aria-hidden />
+                        <span className="imcrm-truncate">{field.label}</span>
+                        {field.is_required && <span className="imcrm-text-destructive">*</span>}
+                    </label>
+                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
+                        {control}
+                        {error !== undefined && <span className="imcrm-text-xs imcrm-text-destructive">{error}</span>}
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div
@@ -125,47 +205,7 @@ export function CompactFieldRow({
             </label>
 
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1">
-                {isReadOnly ? (
-                    <div
-                        className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-gap-1.5 imcrm-py-0.5 imcrm-text-sm"
-                        title={lockedReason ?? undefined}
-                        data-testid={lockedReason ? 'imcrm-field-locked' : undefined}
-                    >
-                        <span className="imcrm-min-w-0 imcrm-flex-1">
-                            <FieldValueDisplay field={field} value={value} />
-                        </span>
-                        {lockedReason && <Lock className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground/60" aria-label={lockedReason} />}
-                    </div>
-                ) : isInlineControl ? (
-                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} allowCreate={allowCreateOptions} />
-                ) : editing ? (
-                    <EditingControl
-                        field={field}
-                        value={value}
-                        onChange={onChange}
-                        onBlur={() => setEditing(false)}
-                    />
-                ) : (
-                    <button
-                        type="button"
-                        onClick={() => setEditing(true)}
-                        className={cn(
-                            'imcrm-inline-flex imcrm-min-h-[24px] imcrm-w-full imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded imcrm-py-0.5 imcrm-text-left imcrm-text-sm',
-                            'imcrm-text-foreground',
-                        )}
-                    >
-                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">
-                            <FieldValueDisplay field={field} value={value} />
-                        </span>
-                        <Pencil
-                            className={cn(
-                                'imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground',
-                                'imcrm-opacity-0 group-hover:imcrm-opacity-60 imcrm-transition-opacity',
-                            )}
-                            aria-hidden
-                        />
-                    </button>
-                )}
+                {control}
                 {error !== undefined && (
                     <span className="imcrm-text-xs imcrm-text-destructive">{error}</span>
                 )}
@@ -332,6 +372,7 @@ function InlineControl({
     value,
     onChange,
     allowCreate = true,
+    flat = false,
 }: {
     field: FieldEntity;
     listId: number | string;
@@ -339,6 +380,8 @@ function InlineControl({
     value: unknown;
     onChange: (v: unknown) => void;
     allowCreate?: boolean;
+    /** Sin caja de input (las fichas diseñadas). */
+    flat?: boolean;
 }): JSX.Element {
     const id = `field-${field.id}`;
 
@@ -381,7 +424,7 @@ function InlineControl({
     }
 
     if (field.type === 'relation') {
-        return <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;
+        return <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} variant={flat ? 'cell' : 'default'} wrap={flat} />;
     }
 
     if (field.type === 'user') {
@@ -391,6 +434,7 @@ function InlineControl({
                 value={userId}
                 onChange={(next) => onChange(next)}
                 compact
+                flat={flat}
                 showAssignMe
             />
         );
@@ -426,6 +470,8 @@ function InlineControl({
                 value={typeof value === 'string' ? value : null}
                 onChange={(v) => onChange(v ?? null)}
                 compact
+                variant={flat ? 'cell' : 'default'}
+                wrap={flat}
             />
         );
     }
@@ -440,6 +486,8 @@ function InlineControl({
                 value={Array.isArray(value) ? value.map(String) : []}
                 onChange={(v) => onChange(Array.isArray(v) ? v : [])}
                 compact
+                variant={flat ? 'cell' : 'default'}
+                wrap={flat}
             />
         );
     }
