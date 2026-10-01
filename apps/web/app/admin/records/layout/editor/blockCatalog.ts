@@ -62,6 +62,10 @@ export interface CatalogContext {
     fields: FieldEntity[];
     paths: RelationPath[];
     listId: number;
+    /** v0.1.233 — qué se diseña: la ficha del equipo o el portal del cliente. */
+    target?: 'record' | 'portal';
+    /** Portal: listas vinculadas al cliente por un campo persona. */
+    portalLists?: Array<{ list_id: number; name: string }>;
 }
 
 export interface CatalogEntry {
@@ -79,9 +83,10 @@ const SHORT: ReadonlySet<string> = new Set(['long_text', 'file', 'relation']);
 /** La primera relación que toca la lista (la fuente natural de un gráfico). */
 export function defaultSource(ctx: CatalogContext): LayoutDataSource {
     const p = ctx.paths[0];
-    return p
-        ? { kind: 'related', field_id: p.relation_field_id, direction: p.direction }
-        : { kind: 'list', list_id: ctx.listId };
+    if (p) return { kind: 'related', field_id: p.relation_field_id, direction: p.direction };
+    // En el portal no hay "toda la lista": lo suyo por persona, si existe.
+    const mine = ctx.target === 'portal' ? ctx.portalLists?.[0] : undefined;
+    return mine ? { kind: 'list', list_id: mine.list_id } : { kind: 'list', list_id: ctx.listId };
 }
 
 const block = (type: LayoutBlockType, config: Record<string, unknown> = {}, title?: string): LayoutBlock => ({

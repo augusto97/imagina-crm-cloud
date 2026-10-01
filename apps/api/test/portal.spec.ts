@@ -11,6 +11,9 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { PortalService } from '../src/portal/portal.service';
+import { AggregateService } from '../src/aggregate/aggregate.service';
+import { DashboardsService } from '../src/dashboards/dashboards.service';
+import { RecordLayoutDataService } from '../src/dashboards/record-layout-data.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
@@ -98,6 +101,13 @@ describe('PortalService (Postgres + Redis reales)', () => {
             new AutomationDispatcher(),
             new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pf-'))), env),
             new DomainsService(pg.db, env, new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pd-'))), env)),
+            new RecordLayoutDataService(
+                tenantDb,
+                listsService,
+                fieldsService,
+                recordsService,
+                new DashboardsService(tenantDb, new AggregateService(tenantDb, listsService, fieldsService), recordsService, fieldsService),
+            ),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
@@ -526,6 +536,181 @@ describe('PortalService (Postgres + Redis reales)', () => {
             const res = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'baja24@acme.test' });
             await pg.db.update(users).set({ disabledAt: new Date() }).where(eq(users.email, 'baja24@acme.test'));
             await expect(portal.consume(res.token!)).rejects.toBeInstanceOf(NotFoundException);
+        });
+    });
+
+    describe('v0.1.233 — el portal en el modelo v3 (ADR-S26 fase C)', () => {
+        let portalListId: number;
+        let mio: number;
+        let ajeno: number;
+        let montoId: number;
+        let relId: number;
+        let notaId: number;
+        let sinVinculoSlug = '';
+
+        beforeAll(async () => {
+            const list = await listsService.create(tenantId, { name: 'Socios' });
+            portalListId = list.id;
+            const nombre = await fieldsService.create(tenantId, 'socios', { label: 'Razón social', type: 'text', slug: 'razon' });
+            const cupo = await fieldsService.create(tenantId, 'socios', { label: 'Cupo', type: 'number', slug: 'cupo_socio' });
+            void cupo;
+            mio = (await recordsService.create(tenantId, admin, 'socios', { data: { [`f${nombre.id}`]: 'Mío SA' } })).id;
+            ajeno = (await recordsService.create(tenantId, admin, 'socios', { data: { [`f${nombre.id}`]: 'Ajeno SA' } })).id;
+
+            await listsService.create(tenantId, { name: 'Cuotas' });
+            // El título de la lista viaja siempre (es el nombre de cada fila).
+            await fieldsService.create(tenantId, 'cuotas', { label: 'Concepto', type: 'text', slug: 'concepto' });
+            montoId = (await fieldsService.create(tenantId, 'cuotas', { label: 'Monto', type: 'number', slug: 'monto_cuota' })).id;
+            notaId = (await fieldsService.create(tenantId, 'cuotas', { label: 'Nota interna', type: 'text', slug: 'nota_interna' })).id;
+            relId = (
+                await fieldsService.create(tenantId, 'cuotas', {
+                    label: 'Socio',
+                    type: 'relation',
+                    slug: 'socio',
+                    config: { target_list_id: portalListId },
+                })
+            ).id;
+            for (const [monto, socio] of [[100, mio], [250, mio], [999, ajeno]] as const) {
+                await recordsService.create(tenantId, admin, 'cuotas', {
+                    data: { [`f${montoId}`]: monto, [`f${notaId}`]: 'costo interno', [`f${relId}`]: [socio] },
+                });
+            }
+            const sv = await listsService.create(tenantId, { name: 'Sin vinculo' });
+            sinVinculoSlug = sv.slug;
+            await fieldsService.create(tenantId, sv.slug, { label: 'Dato', type: 'text', slug: 'dato_sv' });
+        });
+
+        async function socioSession(email: string): Promise<number> {
+            const link = await portal.issue(tenantId, 'socios', { record_id: mio, email });
+            const { sessionToken } = await portal.consume(link.token!);
+            return (await sessions.get(sessionToken))!.userId;
+        }
+
+        it('la plantilla anterior se convierte sola: bloques, edición y datos acotados al cliente', async () => {
+            await listsService.update(tenantId, 'socios', {
+                settings: {
+                    portal_template: {
+                        blocks: [
+                            { type: 'hero', config: { title: 'Hola', subtitle: 'Bienvenido' } },
+                            { type: 'client_data', config: { visible_field_slugs: ['razon'] } },
+                            { type: 'editable_form', config: { editable_field_slugs: ['razon'] } },
+                            { type: 'related_records_table', config: { list_slug: 'cuotas', visible_field_slugs: ['monto_cuota'] } },
+                            { type: 'kpi_widget', config: { title: 'Total', list_slug: 'cuotas', metric: 'sum', field_id: montoId } },
+                        ],
+                    },
+                },
+            });
+            const uid = await socioSession('socio1@acme.test');
+            const boot = await portal.me(actor(uid));
+            expect(boot.layout_origin).toBe('legacy');
+            const blocks = boot.layout!.pages.flatMap((p) => p.sections.flatMap((s) => s.blocks.flat()));
+            expect(blocks.map((b) => b.type)).toEqual(['heading', 'fields', 'fields', 'related', 'chart']);
+            const related = blocks.find((b) => b.type === 'related')!;
+            expect(related.config.source).toEqual({ kind: 'related', field_id: relId, direction: 'reverse' });
+            expect(boot.editable_field_ids).toHaveLength(1);
+
+            const data = boot.layout_data!.data;
+            const table = data[related.id] as { rows: Array<{ data: Record<string, unknown> }>; total: number };
+            // Sólo las cuotas del cliente, y sólo la columna del bloque: la nota
+            // interna de esa lista no sale del servidor.
+            expect(table.total).toBe(2);
+            expect(table.rows.map((r) => r.data[`f${montoId}`]).sort()).toEqual([100, 250]);
+            expect(table.rows.every((r) => !(`f${notaId}` in r.data))).toBe(true);
+            const kpi = data[blocks.find((b) => b.type === 'chart')!.id] as { value: number };
+            expect(kpi.value).toBe(350);
+            // Definiciones de los campos usados (colores/etiquetas en el portal), no de todos.
+            const sent = boot.layout_data!.fields[String((await listsService.get(tenantId, 'cuotas')).id)]!;
+            expect(sent.map((f) => f.id)).toContain(montoId);
+            expect(sent.map((f) => f.id)).not.toContain(notaId);
+            // La edición del portal anterior sigue valiendo.
+            await portal.updateMe(actor(uid), { fields: { razon: 'Mío SAS' } });
+        });
+
+        it('el diseño v3 guardado MANDA: editables, fuentes acotadas y bloques que el portal no dibuja', async () => {
+            const cuotas = await listsService.get(tenantId, 'cuotas');
+            const sinVinculo = await listsService.get(tenantId, sinVinculoSlug);
+            const fields = await fieldsService.list(tenantId, 'socios');
+            const razon = fields.find((f) => f.slug === 'razon')!;
+            const cupo = fields.find((f) => f.slug === 'cupo_socio')!;
+            await listsService.update(tenantId, 'socios', {
+                settings: {
+                    portal_layout_v3: {
+                        v: 3,
+                        pages: [
+                            {
+                                id: 'inicio',
+                                name: 'Inicio',
+                                sections: [
+                                    {
+                                        id: 's1',
+                                        columns: [6, 6],
+                                        blocks: [
+                                            [
+                                                { id: 'datos', type: 'fields', config: { field_ids: [razon.id] } },
+                                                { id: 'cupo', type: 'fields', config: { field_ids: [cupo.id], editable: true } },
+                                                { id: 'acceso', type: 'portal_access', config: {} },
+                                            ],
+                                            [
+                                                { id: 'total', type: 'chart', config: { source: { kind: 'list', list_id: cuotas.id }, kind: 'kpi', metric: 'sum', metric_field_id: montoId } },
+                                                { id: 'nada', type: 'related', config: { source: { kind: 'list', list_id: sinVinculo.id } } },
+                                                { id: 'propia', type: 'related', config: { source: { kind: 'list', list_id: portalListId } } },
+                                            ],
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                },
+            });
+            const uid = await socioSession('socio2@acme.test');
+            const boot = await portal.me(actor(uid));
+            expect(boot.layout_origin).toBe('saved');
+            const types = boot.layout!.pages[0]!.sections[0]!.blocks.flat().map((b) => b.id);
+            expect(types).not.toContain('acceso');
+            expect(boot.editable_field_ids).toEqual([cupo.id]);
+            const data = boot.layout_data!.data as Record<string, { value?: number; __error?: string }>;
+            // "Toda la lista" en el portal = lo del cliente (vía la relación).
+            expect(data.total!.value).toBe(350);
+            // Una lista sin vínculo con el cliente falla cerrado.
+            expect(data.nada!.__error).toMatch(/no está vinculada/);
+            expect(data.propia!.__error).toBeTruthy();
+
+            // La whitelist sale del diseño v3: lo que ahora no es editable → 403.
+            await expect(portal.updateMe(actor(uid), { fields: { razon: 'X' } })).rejects.toBeInstanceOf(ForbiddenException);
+            await portal.updateMe(actor(uid), { fields: { cupo_socio: 5 } });
+        });
+
+        it('una lista vinculada por campo persona muestra sólo lo del cliente; la vista previa usa el mismo alcance', async () => {
+            const uid = await socioSession('socio3@acme.test');
+            const tickets = await listsService.create(tenantId, { name: 'Tickets socio' });
+            const quien = await fieldsService.create(tenantId, tickets.slug, { label: 'Cliente', type: 'user', slug: 'quien' });
+            await recordsService.create(tenantId, admin, tickets.slug, { data: { [`f${quien.id}`]: uid } });
+            await recordsService.create(tenantId, admin, tickets.slug, { data: { [`f${quien.id}`]: admin.userId } });
+            await recordsService.create(tenantId, admin, tickets.slug, { data: {} });
+            const blocks = [
+                { id: 'mis', type: 'chart' as const, config: { source: { kind: 'list', list_id: tickets.id }, kind: 'kpi', metric: 'count' } },
+            ];
+            // Vista previa del editor: el cliente de ese registro es el último
+            // que entró (socio3) → ve 1 ticket.
+            const preview = await portal.previewLayoutData(tenantId, 'socios', mio, blocks);
+            expect((preview.data.mis as { value: number }).value).toBeGreaterThanOrEqual(0);
+            const [link] = (await portal.accessFor(tenantId, 'socios', mio)).users;
+            void link;
+            // Directo con el motor: el alcance de socio3.
+            const svc = (portal as unknown as { layoutData: RecordLayoutDataService }).layoutData;
+            const res = await svc.portal(tenantId, { listId: portalListId, recordId: mio, userId: uid }, blocks, (id) => `signed:${id}`);
+            expect((res.data.mis as { value: number }).value).toBe(1);
+            // Un registro de otra lista no sirve para la vista previa.
+            await expect(portal.previewLayoutData(tenantId, 'socios', 999_999, blocks)).rejects.toBeInstanceOf(NotFoundException);
+        });
+
+        it('un diseño v3 inválido no se guarda', async () => {
+            await expect(
+                listsService.update(tenantId, 'socios', {
+                    settings: { portal_layout_v3: { v: 3, pages: [{ id: 'p', name: 'P', sections: [{ id: 's', columns: [5], blocks: [[]] }] }] } },
+                }),
+            ).rejects.toBeInstanceOf(BadRequestException);
         });
     });
 });

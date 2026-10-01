@@ -1817,6 +1817,38 @@ las listas vinculadas en los dos sentidos (`linked_lists`), que son las fuentes
 válidas de los gráficos. Queda la segunda mitad: el portal del cliente sobre
 este mismo modelo, con sus datos acotados por `portalScope`.
 
+**Fase C, segunda mitad — el portal del cliente en v3 (v0.1.233).** El portal
+usa el MISMO modelo y la MISMA vista que la ficha. `settings.portal_layout_v3`
+manda; si no hay, la plantilla anterior (`portal_template`) se convierte al leer
+(`migratePortalTemplateToV3`, puro, en shared) y si tampoco hay, sale un diseño
+automático de sólo lectura. El servidor resuelve cuál vale (`resolveLayout`) y
+lo usan tres caminos: lo que recibe el cliente (`GET /portal/me`), lo que abre
+el editor (`GET /lists/:l/portal/layout`) y la whitelist de edición. Reglas:
+- **Edición por bloque**: el cliente sólo edita los campos de los bloques
+  `field`/`fields` marcados `editable` y de tipos escribibles
+  (`portalEditableFieldIds`, `PORTAL_EDITABLE_TYPES`). Es la whitelist del
+  `PATCH /portal/me`; sin bloques editables, nadie edita.
+- **Datos acotados al cliente, no a un rol**: los gráficos y tablas se calculan
+  con el mismo motor de la ficha (`RecordLayoutDataService.portal`), pero el
+  alcance lo pone la FUENTE: una relación lleva a lo vinculado a su registro;
+  una lista entera NO es toda la lista — es su relación hacia la lista del
+  portal o, si no hay, su campo persona = el cliente; sin vínculo, falla
+  cerrado. A una tabla sólo viajan las columnas del bloque (+ el título), sin
+  relaciones ni personas, y los archivos como URLs firmadas.
+- **Un solo request**: `GET /portal/me` trae el diseño, sus datos y las
+  definiciones de los campos que usan (el portal siembra el cache: los
+  componentes de los tableros pintan colores y etiquetas sin tocar la API del
+  equipo).
+- **Bloques que el portal no dibuja**: descripción, resumen interno y acceso al
+  portal (`sanitizePortalLayout`). Ajustes de página en `layout.page`.
+- **Editor**: el mismo de la ficha con `target: 'portal'` (biblioteca filtrada,
+  interruptor «El cliente puede editarlo», ajustes de página, vista previa con el
+  alcance del cliente del registro elegido vía `POST /lists/:l/portal/layout-data`).
+  Se borró el editor anterior del portal y su renderer.
+- **Asistente/MCP**: `propose_configure_portal` escribe `portal_layout_v3`
+  (modo `design`, el mismo vocabulario de la ficha + `editable` y `page`; el
+  vocabulario anterior se convierte).
+
 ---
 
-**Versión del documento:** 1.45.0 (el asistente/MCP diseña la ficha en v3 — ADR-S26 fase C, primera mitad)
+**Versión del documento:** 1.46.0 (el portal del cliente en v3 — ADR-S26 fase C completa)

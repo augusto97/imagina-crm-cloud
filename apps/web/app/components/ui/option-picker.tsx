@@ -42,6 +42,8 @@ interface OptionPickerProps {
      * tocaba, que es justo lo que el usuario venía marcando.
      */
     wrap?: boolean;
+    /** v0.1.233 — ofrecer "Crear" (el portal del cliente no puede crear opciones). */
+    allowCreate?: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export function OptionPicker({
     compact,
     variant = 'default',
     wrap = false,
+    allowCreate = true,
 }: OptionPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -87,7 +90,7 @@ export function OptionPicker({
     const hasExactMatch = options.some(
         (o) => norm(o.value) === q || norm(o.label ?? o.value) === q,
     );
-    const canCreate = q !== '' && ! hasExactMatch;
+    const canCreate = allowCreate && q !== '' && ! hasExactMatch;
 
     // Reset highlight cuando el search cambia.
     useEffect(() => {

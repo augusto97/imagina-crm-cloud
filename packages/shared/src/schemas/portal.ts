@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { idSchema } from './common';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
+import { recordLayoutV3Schema } from './record-layout';
 import { publicBrandingSchema, tenantFormatSchema } from './tenant';
 
 /**
@@ -27,6 +28,21 @@ export const portalRelatedListSchema = z.object({
 });
 export type PortalRelatedList = z.infer<typeof portalRelatedListSchema>;
 
+/**
+ * v0.1.233 — datos de los bloques de datos del portal + las definiciones de
+ * las listas y campos que usan (colores, etiquetas), sin pedir nada al admin.
+ */
+export const portalLayoutDataSchema = z.object({
+    data: z.record(z.unknown()),
+    lists: z.record(
+        z.object({ id: idSchema, slug: z.string(), name: z.string(), icon: z.string().nullable(), color: z.string().nullable() }),
+    ),
+    fields: z.record(z.array(fieldSchema)),
+    /** De qué lista lee cada bloque (colores y etiquetas de sus gráficos). */
+    block_lists: z.record(idSchema).default({}),
+});
+export type PortalLayoutData = z.infer<typeof portalLayoutDataSchema>;
+
 export const portalBootSchema = z.object({
     list_id: idSchema,
     list_slug: z.string(),
@@ -47,6 +63,16 @@ export const portalBootSchema = z.object({
      * portal: si el admin no eligió ninguna, viene vacío (fail-closed).
      */
     related_lists: z.array(portalRelatedListSchema).default([]),
+    /**
+     * v0.1.233 — el portal en el modelo v3 de la ficha (ADR-S26 fase C): el
+     * diseño guardado, el anterior convertido o el automático. Siempre viene.
+     */
+    layout: recordLayoutV3Schema.nullable().default(null),
+    layout_origin: z.enum(['saved', 'legacy', 'auto']).default('auto'),
+    /** Datos de los gráficos y tablas del diseño, ya acotados al cliente. */
+    layout_data: portalLayoutDataSchema.nullable().default(null),
+    /** Campos que el cliente puede editar (los de bloques marcados editables). */
+    editable_field_ids: z.array(idSchema).default([]),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 

@@ -272,14 +272,19 @@ export class ListsService {
                 // editor y el asistente escriben el mismo shape y una plantilla
                 // rota no se guarda (antes una v2 inválida se aceptaba y la
                 // ficha caía en silencio al diseño por defecto).
-                const v3 = (patch.settings as Record<string, unknown>).record_layout_v3;
-                if (v3 !== undefined && v3 !== null) {
+                // v0.1.233 — el portal del cliente usa el mismo modelo (ADR-S26).
+                for (const [key, what] of [
+                    ['record_layout_v3', 'de la ficha'],
+                    ['portal_layout_v3', 'del portal'],
+                ] as const) {
+                    const v3 = (patch.settings as Record<string, unknown>)[key];
+                    if (v3 === undefined || v3 === null) continue;
                     const parsed = recordLayoutV3Schema.safeParse(v3);
                     if (!parsed.success) {
                         const issue = parsed.error.issues[0];
                         throw new BadRequestException({
                             code: 'invalid_record_layout',
-                            message: `El diseño de la ficha no es válido: ${issue?.message ?? 'forma inesperada'} (${(issue?.path ?? []).join('.')})`,
+                            message: `El diseño ${what} no es válido: ${issue?.message ?? 'forma inesperada'} (${(issue?.path ?? []).join('.')})`,
                             data: { status: 400 },
                         });
                     }

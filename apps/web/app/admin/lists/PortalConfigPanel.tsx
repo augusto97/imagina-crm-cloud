@@ -18,7 +18,7 @@ import type { ListSummary } from '@/types/list';
 import { PORTAL_DEFAULTS, type PortalSettings, type PortalTemplate } from '@/types/portal';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { PortalRelatedList } from '@imagina-base/shared';
+import { layoutBlocks, readPortalLayoutV3, type PortalRelatedList } from '@imagina-base/shared';
 
 interface Props {
     list: ListSummary;
@@ -40,6 +40,16 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
 
     const initialPortal = useMemo<PortalSettings>(() => readPortal(list.settings), [list.settings]);
     const template = useMemo<PortalTemplate>(() => readTemplate(list.settings), [list.settings]);
+    // v0.1.233 — el diseño v3 manda; la plantilla anterior se convierte sola.
+    const design = useMemo(() => readPortalLayoutV3(list.settings as Record<string, unknown>), [list.settings]);
+    const designSummary = design
+        ? (() => {
+              const n = layoutBlocks(design).length;
+              return `${design.pages.length} ${design.pages.length === 1 ? __('pestaña') : __('pestañas')} · ${n} ${n === 1 ? __('bloque') : __('bloques')}`;
+          })()
+        : template.blocks.length > 0
+          ? __('Plantilla anterior (se convierte al abrir el editor)')
+          : __('Diseño automático: los datos del cliente, de sólo lectura');
 
     const [portal, setPortal] = useState<PortalSettings>(initialPortal);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -124,18 +134,16 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
                                     <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                                        {template.blocks.length === 0
-                                            ? __('Sin bloques configurados')
-                                            : `${template.blocks.length} ${template.blocks.length === 1 ? __('bloque') : __('bloques')} ${__('en la plantilla')}`}
+                                        {designSummary}
                                     </p>
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Armá la página del cliente arrastrando bloques: sus datos, archivos, comentarios, indicadores…')}
+                                        {__('Con el mismo editor de la ficha: pestañas, columnas, sus datos con la forma que mejor los muestra, gráficos y tablas de lo suyo, y qué puede corregir él.')}
                                     </p>
                                 </div>
                                 <Button asChild size="sm" variant="outline" className="imcrm-shrink-0 imcrm-gap-1.5">
                                     <Link to={`/lists/${list.slug}/portal-editor`}>
                                         <LayoutGrid className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        {template.blocks.length === 0 ? __('Crear') : __('Editar')}
+                                        {design || template.blocks.length > 0 ? __('Editar') : __('Diseñar')}
                                     </Link>
                                 </Button>
                             </div>

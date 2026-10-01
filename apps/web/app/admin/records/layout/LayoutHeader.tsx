@@ -10,7 +10,7 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { useLayoutCtx } from './LayoutContext';
+import { fieldEditable, useLayoutCtx } from './LayoutContext';
 import { StagesBlock } from './LayoutBlocks';
 import { tint } from './layoutTheme';
 
@@ -41,7 +41,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                 ? { background: accent }
                 : { background: `linear-gradient(115deg, ${accent} 0%, ${tint(accent, 70)} 45%, ${tint(accent, 25)} 100%)` };
     const avatar = header.avatar ?? { kind: 'initials' as const };
-    const titleEditable = ctx.canEdit && !ctx.preview && titleField !== undefined && (ctx.lockedReasons[titleField.slug] ?? null) === null;
+    const titleEditable = titleField !== undefined && fieldEditable(ctx, titleField);
 
     return (
         <header
@@ -79,9 +79,9 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                                 editable={titleEditable}
                                 className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
                             />
-                            <span className="imcrm-lay-idbadge imcrm-shrink-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {ctx.mode !== 'portal' && <span className="imcrm-lay-idbadge imcrm-shrink-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
                                 #{ctx.record.id}
-                            </span>
+                            </span>}
                         </div>
                         {subtitle.length > 0 && (
                             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-0.5 imcrm-text-sm imcrm-text-muted-foreground">
@@ -124,7 +124,7 @@ function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
     const ctx = useLayoutCtx();
     const Icon = fieldTypeIcon(field.type);
     const value = ctx.values[field.slug];
-    const editable = ctx.canEdit && !ctx.preview && (ctx.lockedReasons[field.slug] ?? null) === null && !['computed', 'lookup', 'rollup'].includes(field.type);
+    const editable = fieldEditable(ctx, field);
     const content = (
         <span className="imcrm-inline-flex imcrm-max-w-[280px] imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-transition-colors hover:imcrm-bg-accent">
             <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
@@ -150,7 +150,8 @@ function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
                 <CompactFieldRow
                     field={field}
                     listId={ctx.list.id}
-                    recordId={ctx.record.id}
+                    recordId={ctx.mode === 'portal' ? undefined : ctx.record.id}
+                    allowCreateOptions={ctx.mode !== 'portal'}
                     value={value}
                     onChange={(v) => ctx.setValue(field.slug, v)}
                     error={ctx.errors[field.slug]}

@@ -26,7 +26,7 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 // blanco que pasaba con `Failed to fetch dynamically imported module`.
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
 const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
-const PortalTemplateEditorPage = lazyWithReload(() => import('@/admin/lists/portal-template-editor/PortalTemplateEditorPage').then(m => ({ default: m.PortalTemplateEditorPage })));
+const PortalLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/PortalLayoutEditorPage').then(m => ({ default: m.PortalLayoutEditorPage })));
 const AutomationsPage = lazyWithReload(() => import('@/admin/automations/AutomationsPage').then(m => ({ default: m.AutomationsPage })));
 const AutomationEditorPage = lazyWithReload(() => import('@/admin/automations/AutomationEditorPage').then(m => ({ default: m.AutomationEditorPage })));
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
@@ -61,7 +61,7 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><RecordLayoutEditorPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/portal-editor" element={
-                    <Suspense fallback={<RouteFallback />}><PortalTemplateEditorPage /></Suspense>
+                    <Suspense fallback={<RouteFallback />}><PortalLayoutEditorPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/records" element={<RecordsPage />} />
                 <Route path="lists/:listSlug/records/:recordId" element={<RecordPage />} />

@@ -33,7 +33,14 @@ export interface RelatedBlockData {
  * (gráficos y vinculados) en UN request (regla de oro nº 8). La key incluye
  * la firma de la config de esos bloques: cambiarla (el editor) recalcula.
  */
-export function useLayoutData(listId: number, listSlug: string, recordId: number, layout: RecordLayoutV3 | null) {
+export function useLayoutData(
+    listId: number,
+    listSlug: string,
+    recordId: number,
+    layout: RecordLayoutV3 | null,
+    /** v0.1.233 — 'portal': el editor del portal calcula con el alcance del cliente. */
+    scope: 'record' | 'portal' = 'record',
+) {
     const blocks = useMemo(
         () =>
             layout
@@ -45,9 +52,17 @@ export function useLayoutData(listId: number, listSlug: string, recordId: number
     );
     const sig = useMemo(() => JSON.stringify(blocks), [blocks]);
     const query = useQuery({
-        queryKey: layoutDataKeys.forRecord(listId, recordId, sig),
-        queryFn: async () =>
-            (await api.post<Record<string, unknown>>(`/lists/${listSlug}/records/${recordId}/layout-data`, { blocks })).data,
+        queryKey: [...layoutDataKeys.forRecord(listId, recordId, sig), scope],
+        queryFn: async (): Promise<Record<string, unknown>> => {
+            if (scope === 'portal') {
+                const res = await api.post<{ data: Record<string, unknown>; block_lists: Record<string, number> }>(
+                    `/lists/${listSlug}/portal/layout-data`,
+                    { record_id: recordId, blocks },
+                );
+                return { ...res.data.data, [BLOCK_LISTS]: res.data.block_lists };
+            }
+            return (await api.post<Record<string, unknown>>(`/lists/${listSlug}/records/${recordId}/layout-data`, { blocks })).data;
+        },
         enabled: blocks.length > 0 && recordId > 0,
         staleTime: 20_000,
         placeholderData: (prev) => prev,
@@ -67,8 +82,12 @@ export function useLayoutData(listId: number, listSlug: string, recordId: number
         }),
         [query.data, query.isLoading, query.error],
     );
-    return { query, override };
+    const blockLists = scope === 'portal' ? (query.data?.[BLOCK_LISTS] as Record<string, number> | undefined) : undefined;
+    return { query, override, blockLists };
 }
+
+/** Dónde viaja, dentro del mapa de datos, la lista de cada bloque (vista previa del portal). */
+const BLOCK_LISTS = '__block_lists';
 
 export function relatedOf(data: Record<string, unknown> | undefined, blockId: string): { data?: RelatedBlockData; error?: string } {
     const raw = data?.[blockId];

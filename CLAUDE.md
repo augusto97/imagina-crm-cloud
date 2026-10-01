@@ -5918,6 +5918,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         regresiva, aviso y etapas; la pestaña Facturación suma 9.350.000, la
         dona y el tablero por estado; el editor abre el diseño propuesto).
 
+  - [x] **El portal del cliente en v3 (v0.1.233, ADR-S26 fase C, segunda
+        mitad — cierra el rediseño de la ficha y del portal)**: el portal usa el
+        MISMO modelo y la MISMA vista que la ficha del equipo — pestañas,
+        secciones con columnas, cada campo con la forma que le corresponde,
+        gráficos y tablas de lo vinculado al cliente — y se diseña con el MISMO
+        editor. (a) **Nadie pierde su portal**: `settings.portal_layout_v3`
+        manda; si no hay, la plantilla anterior se convierte al leerla
+        (`migratePortalTemplateToV3`, shared: portada→título con fondo, datos y
+        formulario editable→propiedades, tabla de otra lista→vinculados por la
+        relación que la une al cliente, cifras de un grid→columnas, preguntas/
+        contacto→texto, enlaces→botones, la página con su fondo/ancho/
+        tipografía) y si tampoco, un portal automático de sólo lectura. El
+        servidor decide cuál vale (`resolveLayout`) y lo usan los tres caminos:
+        lo que ve el cliente, lo que abre el editor (`GET /lists/:l/portal/
+        layout`) y la whitelist de edición. (b) **Qué edita el cliente**: sólo
+        los campos de los bloques marcados «El cliente puede editarlo» y de
+        tipos escribibles (`portalEditableFieldIds`) — el `PATCH /portal/me`
+        usa esa función como whitelist (sin bloques editables, nadie edita); lo
+        demás se ve como dato, sin candados; se guarda solo, como la ficha.
+        (c) **Datos acotados al cliente, no a un rol**: los gráficos y tablas
+        salen del mismo motor de la ficha (`RecordLayoutDataService.portal`),
+        pero el alcance lo pone la FUENTE — una relación lleva a lo vinculado a
+        su registro; «toda la lista» no existe: se vuelve su relación hacia la
+        lista del portal o su campo persona = él, y sin vínculo el bloque falla
+        cerrado. A una tabla sólo viajan las columnas del bloque y el título (la
+        columna interna de costos de esa lista no sale del servidor), sin
+        relaciones ni personas, y los archivos como URLs firmadas. (d) **Un
+        request**: `GET /portal/me` trae diseño + datos + las definiciones de
+        los campos que usan, y el portal siembra el cache — los componentes de
+        los tableros pintan colores y etiquetas sin tocar la API del equipo (el
+        E2E lo verifica: cero llamadas a `/api/v1/lists`). (e) **Editor**:
+        `target: 'portal'` — biblioteca sin descripción/resumen interno/acceso
+        al portal, interruptor «El cliente puede editarlo», fuentes «lo suyo en
+        otra lista (por persona)», ajustes de PÁGINA (fondo, ancho, tipografía),
+        cabecera que se puede ocultar, y vista previa con el alcance del cliente
+        del registro elegido (`POST /lists/:l/portal/layout-data`); «Automático»
+        vuelve al portal de sólo lectura. Se borró el editor anterior del
+        portal, su renderer y 16 bloques viejos (sólo quedan comentarios y
+        actividad, que el portal sigue usando). (f) **Asistente/MCP**:
+        `propose_configure_portal` gana `design` (el vocabulario de la ficha +
+        `editable` + `page`) y escribe `portal_layout_v3`; el vocabulario
+        anterior se acepta y se convierte; `get_list_schema` describe el diseño.
+        De paso: el canje del enlace del portal corría dos veces en StrictMode
+        (el segundo daba 404). Tests: 4 unitarios en shared (conversión,
+        editables, automático) + 4 de integración del portal (conversión con
+        datos acotados y columnas recortadas, v3 que manda con fuentes que
+        fallan cerrado y whitelist nueva, lista por campo persona y vista
+        previa, diseño inválido) + 1 del MCP con `design` + 2 del front —
+        shared 105, front 197 en verde — y E2E navegador 23/23 (portal
+        convertido, sólo sus cuotas, sin la columna interna, el cliente corrige
+        su email, el editor abre convertido, guarda un indicador que suma SÓLO
+        lo suyo, el cliente lo ve, celular sin desborde) + regresiones de la
+        ficha 22/22, del editor 30/30 y del MCP 12/12.
+
+        **Con esto la fase C de ADR-S26 queda completa: la ficha y el portal
+        del cliente comparten modelo, vista y editor.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

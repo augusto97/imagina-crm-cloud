@@ -276,7 +276,15 @@ function HeaderInspector(): JSX.Element {
     const avatar = h.avatar ?? { kind: 'initials' as const };
     return (
         <>
-            <Title text={__('Cabecera de la ficha')} />
+            <Title text={ctx.mode === 'portal' ? __('Cabecera del portal') : __('Cabecera de la ficha')} />
+            <Group title={__('Mostrar')}>
+                <Toggle
+                    label={__('Mostrar la cabecera')}
+                    checked={(h as { hidden?: unknown }).hidden !== true}
+                    onChange={(v) => set({ hidden: v ? undefined : true } as Partial<LayoutHeader>, 'hidden')}
+                    hint={__('Sin cabecera, la página empieza directo con las secciones.')}
+                />
+            </Group>
             <Group title={__('Datos')}>
                 <Row label={__('Título')} hint={__('Por defecto, el campo de título de la lista.')}>
                     <FieldSelect fields={ctx.fields} value={h.title_field_id ?? undefined} onChange={(id) => set({ title_field_id: id ?? null }, 'title')} allow={(f) => f.type === 'text' || f.type === 'long_text'} emptyLabel={__('El campo de título de la lista')} />
@@ -290,7 +298,7 @@ function HeaderInspector(): JSX.Element {
                 <Row label={__('Etapas')} hint={__('Un campo de selección como pasos clickeables bajo la cabecera.')}>
                     <FieldSelect fields={ctx.fields} value={h.stages_field_id ?? undefined} onChange={(id) => set({ stages_field_id: id ?? null }, 'stages')} allow={(f) => f.type === 'select'} emptyLabel={__('Sin etapas')} />
                 </Row>
-                <Toggle label={__('Mostrar creado y actualizado')} checked={h.show_meta !== false} onChange={(v) => set({ show_meta: v }, 'meta')} />
+                {ctx.mode !== 'portal' && <Toggle label={__('Mostrar creado y actualizado')} checked={h.show_meta !== false} onChange={(v) => set({ show_meta: v }, 'meta')} />}
             </Group>
             <Group title={__('Portada')}>
                 <Segmented
@@ -363,9 +371,11 @@ function ThemeInspector(): JSX.Element {
     };
     return (
         <>
-            <Title icon={<MousePointerClick />} text={__('Tema de la ficha')} />
+            <Title icon={<MousePointerClick />} text={ed.catalog.target === 'portal' ? __('Tema del portal') : __('Tema de la ficha')} />
             <p className="imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                {__('Elegí un bloque, una sección o la cabecera en la ficha para ajustarlos. Acá se define el aspecto general.')}
+                {ed.catalog.target === 'portal'
+                    ? __('Elegí un bloque, una sección o la cabecera en el portal para ajustarlos. Acá se define el aspecto general.')
+                    : __('Elegí un bloque, una sección o la cabecera en la ficha para ajustarlos. Acá se define el aspecto general.')}
             </p>
             <Group title={__('Estilo')}>
                 <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-1.5">
@@ -388,6 +398,7 @@ function ThemeInspector(): JSX.Element {
                     })}
                 </div>
             </Group>
+            {ed.catalog.target === 'portal' && <PortalPageGroup />}
             <Group title={__('Ajustes')}>
                 <Row label={__('Color de acento')}>
                     <ColorField value={theme.accent ?? null} noneLabel={__('El de la empresa')} onChange={(v) => set({ accent: v }, 'accent')} />
@@ -430,5 +441,52 @@ function ThemeInspector(): JSX.Element {
                 </Row>
             </Group>
         </>
+    );
+}
+
+/**
+ * v0.1.233 — La PÁGINA del portal (fuera de las tarjetas): fondo, ancho
+ * máximo y tipografía. Vive en `layout.page`; el portal la aplica al body.
+ */
+function PortalPageGroup(): JSX.Element {
+    const ed = useEditor();
+    const page = ((ed.layout as { page?: unknown }).page ?? {}) as { bg?: string; max_width?: number; font?: string };
+    const set = (patch: Record<string, unknown>, key: string): void => {
+        const next: Record<string, unknown> = { ...page, ...patch };
+        for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+        ed.commit({ ...ed.layout, page: next } as typeof ed.layout, `page:${key}`);
+    };
+    return (
+        <Group title={__('Página')}>
+            <Row label={__('Fondo de la página')}>
+                <ColorField value={page.bg ?? null} noneLabel={__('El del tema')} onChange={(v) => set({ bg: v ?? undefined }, 'bg')} />
+            </Row>
+            <Row label={__('Ancho máximo')}>
+                <Select
+                    value={page.max_width ? String(page.max_width) : ''}
+                    onChange={(e) => set({ max_width: e.target.value ? Number(e.target.value) : undefined }, 'width')}
+                    className="imcrm-h-8 imcrm-text-sm"
+                    aria-label={__('Ancho máximo')}
+                >
+                    <option value="">{__('Automático (1100 px)')}</option>
+                    <option value="720">{__('Angosto (720 px)')}</option>
+                    <option value="960">{__('Medio (960 px)')}</option>
+                    <option value="1280">{__('Ancho (1280 px)')}</option>
+                </Select>
+            </Row>
+            <Row label={__('Tipografía')}>
+                <Segmented
+                    value={page.font ?? 'sans'}
+                    onChange={(v) => set({ font: v === 'sans' ? undefined : v }, 'font')}
+                    options={[
+                        { value: 'sans', label: __('Moderna') },
+                        { value: 'serif', label: __('Clásica') },
+                        { value: 'rounded', label: __('Redonda') },
+                        { value: 'mono', label: __('Mono') },
+                    ]}
+                    ariaLabel={__('Tipografía')}
+                />
+            </Row>
+        </Group>
     );
 }

@@ -109,7 +109,8 @@ export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHea
     const pageId = controlled ?? params.get('tab');
     const page = layout.pages.find((p) => p.id === pageId) ?? layout.pages[0]!;
     const gap = resolveTheme(layout.theme).gap;
-    const header = <LayoutHeader header={layout.header} />;
+    // v0.1.233 — un diseño puede no llevar cabecera (el portal anterior no la tenía).
+    const header = (layout.header as { hidden?: unknown }).hidden === true ? null : <LayoutHeader header={layout.header} />;
     const goTo = (id: string): void => {
         if (onPageChange) return onPageChange(id);
         const next = new URLSearchParams(params);
