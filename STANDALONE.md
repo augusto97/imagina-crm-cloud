@@ -1781,6 +1781,32 @@ cliente por estado). El usuario lo calificó, con razón, de "mediocre".
 y leen este mismo modelo. La v2 queda como formato de ENTRADA (conversión)
 mientras exista el editor anterior.
 
+**Fase B — el editor (v0.1.231).** El editor de la ficha (`/lists/:slug/
+template-editor`) escribe v3 directamente; el editor por grid v2 de la ficha
+se retiró (el del portal sigue en el shell viejo hasta la fase C). Decisiones:
+- **El lienzo es la ficha REAL**: `LayoutBody` (cabecera + pestañas +
+  secciones) se reusa con `renderHeader`/`renderSection` para envolver cada
+  pieza con los controles del editor, y los bloques se dibujan con los mismos
+  componentes, los mismos datos (`layout-data` con la plantilla EN EDICIÓN,
+  sin guardar) y un registro de verdad elegible. Lo que se ve es lo que queda.
+- **Operaciones puras** (`editor/layoutOps.ts`, con tests): insertar, mover
+  (índice interpretado como lo ve quien arrastra), duplicar, columnas que
+  siempre suman 12 (lo que sobra se junta en la última pila), secciones y
+  pestañas. La interfaz nunca arma una plantilla inválida.
+- **Historial de fotos** (60) con agrupación por clave de lo que se tipea (un
+  título no es un paso de deshacer por letra). Atajos Ctrl+Z / Ctrl+Shift+Z /
+  Ctrl+S / Ctrl+D / Supr.
+- **Guardado explícito**, a diferencia de la ficha (que se guarda sola):
+  diseñar no es cargar datos, se publica para todo el equipo cuando está
+  listo. Salir con cambios pide confirmación.
+- **Vista de celular por container queries**: las columnas, el `#id` y las
+  fechas de la cabecera responden al ancho del CONTENEDOR (`.imcrm-lay-root`),
+  así el marco de 390 px del editor se ve exactamente como el teléfono.
+- **Catálogo en el vocabulario de quien diseña** (`blockCatalog.ts`): "Dona",
+  "Tablero por estado", "Un campo destacado" crean el mismo tipo de bloque con
+  otra configuración de arranque; los gráficos y vinculados nacen apuntando a
+  la primera relación de la lista (o a la lista entera si no hay).
+
 ---
 
-**Versión del documento:** 1.43.0 (plantillas v3 de la ficha: secciones, formas por tipo y datos vinculados — ADR-S26)
+**Versión del documento:** 1.44.0 (editor visual de la ficha sobre plantillas v3 — ADR-S26 fase B)

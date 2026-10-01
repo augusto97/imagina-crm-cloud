@@ -25,7 +25,7 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 // stale), recarga la página automáticamente. Previene la pantalla en
 // blanco que pasaba con `Failed to fetch dynamically imported module`.
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
-const TemplateEditorPage = lazyWithReload(() => import('@/admin/lists/template-editor/TemplateEditorPage').then(m => ({ default: m.TemplateEditorPage })));
+const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
 const PortalTemplateEditorPage = lazyWithReload(() => import('@/admin/lists/portal-template-editor/PortalTemplateEditorPage').then(m => ({ default: m.PortalTemplateEditorPage })));
 const AutomationsPage = lazyWithReload(() => import('@/admin/automations/AutomationsPage').then(m => ({ default: m.AutomationsPage })));
 const AutomationEditorPage = lazyWithReload(() => import('@/admin/automations/AutomationEditorPage').then(m => ({ default: m.AutomationEditorPage })));
@@ -58,7 +58,7 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><ListBuilderPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/template-editor" element={
-                    <Suspense fallback={<RouteFallback />}><TemplateEditorPage /></Suspense>
+                    <Suspense fallback={<RouteFallback />}><RecordLayoutEditorPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/portal-editor" element={
                     <Suspense fallback={<RouteFallback />}><PortalTemplateEditorPage /></Suspense>

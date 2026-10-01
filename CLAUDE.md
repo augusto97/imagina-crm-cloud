@@ -5829,6 +5829,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         regresiva/medidor/aviso/tablero/tarjetas/barras, integrada convertida,
         modo oscuro y celular sin desborde).
 
+  - [x] **Ficha del registro rediseñada — fase B: el editor nuevo (v0.1.231,
+        ADR-S26)**: el editor de la ficha (`Diseñar ficha`) se rehízo sobre el
+        modelo v3 y reemplaza al editor por grid v2 (el del portal sigue en el
+        shell viejo hasta la fase C). Tres paneles: **biblioteca** a la
+        izquierda (33 bloques en el vocabulario de quien diseña —"Dona",
+        "Tablero por estado", "Un campo destacado"— con buscador; se arrastran al lienzo o se agregan
+        con un clic debajo de lo elegido) y una pestaña **Estructura** (pestañas
+        de la ficha: crear, renombrar, ordenar, borrar; y el esquema de la
+        página para elegir cualquier pieza); en el centro **la ficha REAL** —los
+        mismos componentes, los datos de un registro de verdad elegible desde la
+        barra y los gráficos/vinculados calculados con la plantilla EN EDICIÓN,
+        sin guardar—, con los controles del editor alrededor (etiqueta y barra
+        por bloque: subir/bajar/duplicar/borrar; por sección: columnas en 7
+        repartos, subir/bajar/duplicar/borrar; zonas de soltar entre bloques;
+        "+ Bloque" por columna y "Agregar una sección" con miniaturas); a la
+        derecha el **inspector** de lo elegido: por bloque, Datos y
+        Visualización (un campo con sus formas por tipo, meta y prefijos;
+        propiedades con orden, lista/grilla y plegado; gráficos con fuente
+        —vinculados en cualquier sentido o la lista entera—, métrica, campo,
+        agrupación, fechas y período, filtro con el mismo editor de la tabla,
+        9 tipos en mosaico y extras por tipo; vinculados con 6 vistas, columnas,
+        orden, límite, filtro y el campo de tablero/fecha/imagen; títulos,
+        textos, avisos, botones, insertados, imagen, galería, espacio) + el
+        panel **Diseño** compartido con los tableros; por sección, título,
+        columnas y fondo; la **cabecera** (título, línea bajo el título, chips,
+        etapas, portada degradé/color/imagen y avatar); y sin selección, el
+        **tema** (5 estilos, acento, esquinas, aire, superficie).
+        Deshacer/rehacer con historial (lo que se tipea se agrupa), atajos
+        (Ctrl+Z/Shift+Z/S/D, Supr, Esc), **vista de celular** en un marco de
+        390 px que se ve igual que el teléfono (las columnas, el `#id` y las
+        fechas de la cabecera pasaron a container queries), editor a pantalla
+        completa, guardado explícito con aviso al salir con cambios, y
+        "Automático" para volver al diseño generado. Apariencia reconoce el
+        diseño guardado ("Editar diseño"; elegir otra plantilla pide confirmar
+        antes de descartarlo). Las operaciones son puras (`layoutOps`, con
+        tests) y cada bloque del catálogo nace válido contra el schema (test).
+        De paso: el encabezado "Actividad del registro" ya no se parte en tres
+        renglones en columnas angostas. 9 tests del editor (front 195 en verde)
+        + E2E navegador 30/30 (biblioteca por clic y por arrastre, dona con
+        datos reales y título, columnas con deshacer/rehacer, tema, celular con
+        columnas apiladas, Supr y deshacer, pestaña nueva vacía, aviso al
+        salir, guardado → la ficha real lo muestra, Apariencia) y la ficha de
+        la fase A sin regresiones (22/22); modo oscuro y teléfono revisados.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

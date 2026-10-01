@@ -79,7 +79,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                                 editable={titleEditable}
                                 className="imcrm--ml-1.5 imcrm-min-w-0 imcrm-flex-1"
                             />
-                            <span className="imcrm-shrink-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
+                            <span className="imcrm-lay-idbadge imcrm-shrink-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
                                 #{ctx.record.id}
                             </span>
                         </div>
@@ -95,7 +95,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                         )}
                     </div>
                     {header.show_meta !== false && (
-                        <p className="imcrm-hidden imcrm-shrink-0 imcrm-text-right imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground md:imcrm-block">
+                        <p className="imcrm-lay-meta imcrm-shrink-0 imcrm-text-right imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
                             {__('Creado')} {formatDateTimeStr(ctx.record.created_at)}
                             <br />
                             {__('Actualizado')} {formatDateTimeStr(ctx.record.updated_at)}
