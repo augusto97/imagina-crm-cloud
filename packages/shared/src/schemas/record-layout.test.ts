@@ -84,7 +84,7 @@ describe('plantillas v3 de la ficha', () => {
         expect(layoutBlocks(v3).some((b) => (b.type as string) === 'header')).toBe(false);
     });
 
-    it('cada plantilla integrada tiene su propia composición y su estilo (v0.1.235)', () => {
+    it('cada plantilla integrada es una ficha distinta, pensada para su caso (v0.1.236)', () => {
         const fields = [
             F(1, 'nombre', 'text', { is_primary: true }),
             F(2, 'monto', 'number'),
@@ -99,43 +99,60 @@ describe('plantillas v3 de la ficha', () => {
             F(11, 'renovacion', 'date'),
             F(12, 'activo', 'checkbox'),
             F(13, 'responsable', 'user'),
+            F(14, 'notas', 'long_text'),
         ];
-        const ids = (l: ReturnType<typeof autoRecordLayout>) => layoutBlocks(l).map((b) => b.id);
-        const main = (l: ReturnType<typeof autoRecordLayout>) => l.pages[0]!.sections.find((x) => x.id === 'main')!;
-        const all = (['auto', 'contact', 'deal', 'task', 'support'] as const).map((flavor) => autoRecordLayout({ fields, flavor }));
+        const relations = [
+            {
+                relation_field_id: 50,
+                direction: 'reverse' as const,
+                relation_label: 'Cliente',
+                other_list_name: 'Facturas',
+                other_fields: [F(51, 'numero', 'text', { is_primary: true }), F(52, 'importe', 'currency'), F(53, 'estado', 'select', { config: options(3) }), F(54, 'fecha', 'date')],
+            },
+        ];
+        const all = (['auto', 'contact', 'deal', 'task', 'support'] as const).map((flavor) => autoRecordLayout({ fields, relations, flavor }));
         const [auto, contact, deal, task, support] = all as [typeof all[0], typeof all[0], typeof all[0], typeof all[0], typeof all[0]];
         for (const l of all) expect(recordLayoutV3Schema.safeParse(l).success).toBe(true);
-        // Elegir una u otra SE NOTA: ninguna composición se repite y cada una trae su tema.
-        const signatures = all.map((l) => JSON.stringify(l.pages[0]!.sections.map((x) => [x.columns, x.blocks.map((c) => c.map((b) => b.id))])));
+        // Elegir una u otra SE NOTA: composición, tema, portada y nombre propios.
+        const signatures = all.map((l) => JSON.stringify(l.pages[0]!.sections.map((x) => [x.columns, x.style, x.blocks.map((c) => c.map((b) => `${b.type}:${String(b.config.display ?? b.config.view ?? '')}`))])));
         expect(new Set(signatures).size).toBe(5);
         expect(all.map((l) => l.theme.preset)).toEqual(['default', 'fresh', 'corporate', 'minimal', 'warm']);
+        expect(all.map((l) => l.pages[0]!.name)).toEqual(['Resumen', 'Perfil', 'Oportunidad', 'Tarea', 'Ticket']);
+        expect(all.map((l) => l.header.cover.kind)).toEqual(['gradient', 'gradient', 'color', 'none', 'gradient']);
+        const section = (l: typeof auto, id: string) => l.pages[0]!.sections.find((x) => x.id === id)!;
+        const col = (l: typeof auto, id: string, i: number) => section(l, id).blocks[i]!;
 
-        // Automática: cifras con el dinero primero, sin el «Resumen» de contadores.
-        expect(auto.pages[0]!.sections[0]!.blocks.flat().map((b) => b.config.field_id)).toEqual([3, 2]);
-        expect(ids(auto)).not.toContain('stats');
-        expect(auto.header.chip_field_ids).toContain(10);
-        expect(main(auto).columns).toEqual([8, 4]);
+        // Resumen: una banda con los números (el dinero primero) y el cierre en cuenta regresiva,
+        // y un adelanto de lo vinculado (dona por estado + los últimos).
+        expect(section(auto, 'kpis').style).toEqual({ tone: 'accent' });
+        expect(section(auto, 'kpis').blocks.flat().map((b) => [b.config.field_id, b.config.display])).toEqual([[3, 'big'], [2, 'big'], [5, 'countdown']]);
+        expect(section(auto, 'overview').blocks.flat().map((b) => `${b.type}:${String(b.config.kind ?? b.config.view)}`)).toEqual(['chart:pie', 'related:list']);
 
-        // Contacto: datos a la izquierda, la conversación al centro, sin cifras arriba.
-        expect(main(contact).columns).toEqual([4, 8]);
-        expect(main(contact).blocks[1]!.map((b) => b.id)).toEqual(['description', 'activity']);
-        expect(contact.pages[0]!.sections).toHaveLength(1);
-        expect(contact.header.subtitle_field_ids[0]).toBe(7);
+        // Perfil: botones de contacto arriba de la columna de la persona; sus registros como tarjetas.
+        expect(section(contact, 'profile').columns).toEqual([4, 8]);
+        expect(col(contact, 'profile', 0)[0]!.config).toMatchObject({ field_id: 7, display: 'button', label: 'hidden' });
+        expect(col(contact, 'profile', 1)[0]!.config).toMatchObject({ view: 'cards' });
+        expect(col(contact, 'profile', 1).map((b) => b.config.display ?? b.type)).toContain('quote');
+        expect(contact.header.show_meta).toBe(false);
 
-        // Venta: el monto a media fila y el cierre como cuenta regresiva.
-        const dealKpis = deal.pages[0]!.sections[0]!;
-        expect(dealKpis.columns[0]).toBe(6);
-        expect(dealKpis.blocks[0]![0]!.config).toMatchObject({ field_id: 3, display: 'big' });
+        // Oportunidad: el valor del negocio en grande en una banda, el cierre que cuenta los días,
+        // lo vinculado como tablero por estado y el historial a lo ancho.
+        expect(section(deal, 'hero').style).toEqual({ tone: 'accent' });
+        expect(section(deal, 'hero').blocks[0]![0]).toMatchObject({ title: 'Valor del negocio', config: { field_id: 3, display: 'big' } });
         expect(layoutBlocks(deal).find((b) => b.config.display === 'countdown')?.config.field_id).toBe(5);
+        expect(section(deal, 'deal-related').blocks[0]![0]!.config).toMatchObject({ view: 'board', group_field_id: 53 });
+        expect(deal.pages[0]!.sections.at(-1)!.id).toBe('history');
 
-        // Tarea: plana, sin portada ni avatar, la persona como primera propiedad.
-        expect(task.header.cover).toEqual({ kind: 'none' });
+        // Tarea: plana, la persona primero, la conversación debajo del trabajo y la entrega al costado.
         expect(task.header.avatar).toEqual({ kind: 'none' });
         expect(task.header.chip_field_ids[0]).toBe(13);
-        expect(main(task).blocks[1]![0]!.config.display).toBe('countdown');
+        expect(col(task, 'work', 0).map((b) => b.type)).toEqual(['description', 'fields', 'divider', 'activity']);
+        expect(col(task, 'work', 1)[0]).toMatchObject({ title: 'Entrega', config: { display: 'countdown' } });
 
-        // Soporte: la conversación primero.
-        expect(main(support).blocks[0]![0]!.type).toBe('activity');
+        // Ticket: franja de SLA gris, la conversación como protagonista y el historial del cliente.
+        expect(support.pages[0]!.sections[0]!.style).toEqual({ tone: 'muted' });
+        expect(col(support, 'case', 0).map((b) => b.type)).toContain('activity');
+        expect(col(support, 'case', 1).find((b) => b.type === 'related')).toMatchObject({ title: 'Historial del cliente', config: { view: 'list' } });
     });
 
     it('la ficha automática arma cabecera, cifras, detalles y una pestaña por relación', () => {
@@ -165,10 +182,10 @@ describe('plantillas v3 de la ficha', () => {
         });
         expect(recordLayoutV3Schema.safeParse(layout).success).toBe(true);
         expect(layout.header).toMatchObject({ title_field_id: 1, stages_field_id: 2 });
-        expect(layout.header.chip_field_ids).toEqual([3, 4]);
+        expect(layout.header.chip_field_ids).toEqual([3]);
         expect(layout.pages.map((p) => p.name)).toEqual(['Resumen', 'Facturas']);
         const summary = layout.pages[0]!;
-        expect(summary.sections[0]!.blocks.flat().map((b) => b.config.display)).toEqual(['big', 'ring']);
+        expect(summary.sections[0]!.blocks.flat().map((b) => b.config.display)).toEqual(['big', 'ring', 'countdown']);
         const rel = layoutBlocks({ pages: [layout.pages[1]!] });
         expect(rel.map((b) => `${b.type}:${String(b.config.kind ?? b.config.view)}`)).toEqual([
             'chart:kpi',
@@ -180,8 +197,13 @@ describe('plantillas v3 de la ficha', () => {
         // Toda la pestaña lee de la relación, en el sentido correcto.
         for (const b of rel) expect(b.config.source).toEqual({ kind: 'related', field_id: 50, direction: 'reverse' });
         // Ningún campo aparece dos veces en el Resumen.
+        // (los botones de acción son atajos, no el dato: no cuentan; lo vinculado es de otra lista.)
         const ids = layoutBlocks({ pages: [summary] }).flatMap((b) =>
-            b.type === 'field' ? [b.config.field_id] : ((b.config.field_ids as number[] | undefined) ?? []),
+            b.type === 'related' || b.config.display === 'button'
+                ? []
+                : b.type === 'field'
+                  ? [b.config.field_id]
+                  : ((b.config.field_ids as number[] | undefined) ?? []),
         );
         expect(new Set(ids).size).toBe(ids.length);
     });

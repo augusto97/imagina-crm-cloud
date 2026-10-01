@@ -203,66 +203,127 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
 }
 
 /**
- * v0.1.235 — Qué hace cada plantilla, en criollo (las descripciones de
- * `crmTemplates` eran de la grilla vieja).
+ * Qué hace cada plantilla, en criollo (las descripciones de `crmTemplates`
+ * eran de la grilla vieja). v0.1.236 — cada una es una ficha distinta.
  */
 const TEMPLATE_BLURB: Record<string, string> = {
-    auto: 'Cifras arriba, detalles a la izquierda y contacto y actividad al costado. Una pestaña por cada lista vinculada.',
-    contact: 'La persona primero: sus datos en una columna a la izquierda y las notas y la conversación a la derecha.',
-    deal: 'El monto en grande, la fecha de cierre en cuenta regresiva y las etapas del pipeline.',
-    task: 'Plana y sin portada: el trabajo a describir manda y la fecha de entrega cuenta los días.',
-    support: 'La conversación primero, con el cliente y el detalle del ticket al costado.',
+    auto: 'Una banda con los números clave, los detalles y un adelanto de lo vinculado (por estado y los últimos).',
+    contact: 'Perfil de la persona: botones para escribir o llamar, sus datos al costado y lo que tiene con la empresa como tarjetas.',
+    deal: 'El valor del negocio en grande, el cierre en cuenta regresiva, lo vinculado como tablero y el historial a lo ancho.',
+    task: 'Plana y sin portada, como Linear: el trabajo y la conversación al centro, entrega y propiedades en un panel al costado.',
+    support: 'Una franja de SLA (prioridad, vencimiento, estado), la conversación como protagonista y el historial del cliente.',
+};
+
+const THUMB_ACCENT: Record<string, string> = {
+    auto: 'hsl(var(--imcrm-primary))',
+    contact: '#0f9f6e',
+    deal: '#2a5bd7',
+    task: 'hsl(var(--imcrm-muted-foreground))',
+    support: '#d9622b',
 };
 
 /** Miniatura de la composición de cada plantilla (se ve la diferencia antes de elegir). */
 function TemplateThumb({ id }: { id: string }): JSX.Element {
-    const bar = 'imcrm-rounded-[2px] imcrm-bg-muted-foreground/25';
-    const accent: Record<string, string> = { auto: 'hsl(var(--imcrm-primary))', contact: '#0f9f6e', deal: '#2a5bd7', task: 'transparent', support: '#d9622b' };
-    const cover = accent[id] ?? accent.auto!;
-    const col = (cls: string, rows: number[]) => (
-        <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-[3px]', cls)}>
-            {rows.map((h, i) => (
-                <div key={i} className={bar} style={{ height: h }} />
-            ))}
+    const accent = THUMB_ACCENT[id] ?? THUMB_ACCENT.auto!;
+    const box = (style: React.CSSProperties, key?: string | number, solid = false): JSX.Element => (
+        <div
+            key={key}
+            className="imcrm-rounded-[2px]"
+            style={{ background: solid ? `color-mix(in srgb, ${accent} 55%, transparent)` : 'hsl(var(--imcrm-muted-foreground) / 0.22)', ...style }}
+        />
+    );
+    const band = (children: React.ReactNode, tone: 'accent' | 'muted' = 'accent'): JSX.Element => (
+        <div
+            className="imcrm-flex imcrm-gap-[2px] imcrm-rounded-[3px] imcrm-p-[2px]"
+            style={{ background: tone === 'accent' ? `color-mix(in srgb, ${accent} 16%, transparent)` : 'hsl(var(--imcrm-muted))' }}
+        >
+            {children}
         </div>
     );
+    const card = (h: number, key?: number): JSX.Element => (
+        <div key={key} className="imcrm-rounded-[2px] imcrm-bg-card imcrm-ring-1 imcrm-ring-border" style={{ height: h, flex: 1 }} />
+    );
+    const col = (flex: number, children: React.ReactNode): JSX.Element => (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-[2px]" style={{ flex }}>
+            {children}
+        </div>
+    );
+    let body: JSX.Element;
+    switch (id) {
+        case 'contact':
+            body = (
+                <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                    {col(1, [box({ height: 4 }, 1, true), box({ height: 4 }, 2, true), box({ height: 6 }, 3), box({ height: 8 }, 4)])}
+                    {col(2, [
+                        <div key="c" className="imcrm-flex imcrm-gap-[2px]">{[0, 1, 2].map((k) => card(9, k))}</div>,
+                        box({ height: 5 }, 5),
+                        box({ height: 7 }, 6),
+                    ])}
+                </div>
+            );
+            break;
+        case 'deal':
+            body = (
+                <>
+                    {band([box({ height: 8, flex: 2 }, 1, true), card(8, 2)])}
+                    <div className="imcrm-flex imcrm-gap-[2px]">{[0, 1, 2].map((k) => card(5, k))}</div>
+                    <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                        {col(2, [box({ height: 6 }, 1), box({ height: 5 }, 2)])}
+                        {col(1, [box({ height: 4 }, 3, true), box({ height: 7 }, 4)])}
+                    </div>
+                </>
+            );
+            break;
+        case 'task':
+            body = (
+                <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                    {col(2, [box({ height: 10 }, 1), box({ height: 1 }, 2), box({ height: 9 }, 3)])}
+                    {col(1, [
+                        <div key="d" className="imcrm-rounded-[2px]" style={{ height: 5, background: 'rgb(16 185 129 / 0.35)' }} />,
+                        box({ height: 3 }, 2),
+                        box({ height: 3 }, 3),
+                        box({ height: 3 }, 4),
+                    ])}
+                </div>
+            );
+            break;
+        case 'support':
+            body = (
+                <>
+                    {band([0, 1, 2, 3].map((k) => card(6, k)), 'muted')}
+                    <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                        {col(1.4, [box({ height: 4 }, 1, true), box({ height: 14 }, 2)])}
+                        {col(1, [box({ height: 5 }, 3), box({ height: 4 }, 4), box({ height: 6 }, 5)])}
+                    </div>
+                </>
+            );
+            break;
+        default:
+            body = (
+                <>
+                    {band([0, 1, 2, 3].map((k) => card(6, k)))}
+                    <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                        {col(2, [box({ height: 6 }, 1), box({ height: 5 }, 2)])}
+                        {col(1, [box({ height: 4 }, 3), box({ height: 8 }, 4)])}
+                    </div>
+                </>
+            );
+    }
     return (
         <div
             aria-hidden
-            className="imcrm-flex imcrm-h-[52px] imcrm-w-[72px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-[3px] imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-p-[4px]"
+            className="imcrm-flex imcrm-h-[64px] imcrm-w-[88px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-[3px] imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-p-[4px]"
             data-thumb={id}
         >
-            <div className="imcrm-h-[7px] imcrm-rounded-[2px]" style={{ background: id === 'task' ? 'hsl(var(--imcrm-muted))' : cover, opacity: id === 'task' ? 1 : 0.55 }} />
-            {(id === 'auto' || id === 'deal') && (
-                <div className="imcrm-flex imcrm-gap-[3px]">
-                    {(id === 'deal' ? [3, 1.5, 1.5] : [1, 1, 1, 1]).map((g, i) => (
-                        <div key={i} className={bar} style={{ height: 6, flexGrow: g, background: i === 0 && id === 'deal' ? '#2a5bd7' : undefined, opacity: i === 0 && id === 'deal' ? 0.5 : undefined }} />
-                    ))}
-                </div>
+            {id === 'task' ? (
+                <div className="imcrm-h-[5px] imcrm-w-1/2 imcrm-rounded-[2px] imcrm-bg-foreground/50" />
+            ) : (
+                <div
+                    className="imcrm-h-[8px] imcrm-rounded-[2px]"
+                    style={{ background: id === 'deal' ? accent : `linear-gradient(115deg, color-mix(in srgb, ${accent} 60%, transparent), color-mix(in srgb, ${accent} 12%, transparent))` }}
+                />
             )}
-            <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
-                {id === 'contact' ? (
-                    <>
-                        {col('imcrm-w-1/3', [6, 6, 6])}
-                        {col('imcrm-flex-1', [8, 10])}
-                    </>
-                ) : id === 'support' ? (
-                    <>
-                        {col('imcrm-flex-[2]', [14, 6])}
-                        {col('imcrm-flex-1', [5, 5, 5])}
-                    </>
-                ) : id === 'task' ? (
-                    <>
-                        {col('imcrm-flex-[2]', [12, 5])}
-                        {col('imcrm-flex-1', [7, 5])}
-                    </>
-                ) : (
-                    <>
-                        {col('imcrm-flex-[2]', [6, 8])}
-                        {col('imcrm-flex-1', [5, 9])}
-                    </>
-                )}
-            </div>
+            {body}
         </div>
     );
 }

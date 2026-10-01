@@ -352,24 +352,27 @@ function isNumericComputed(f: LayoutFieldLite): boolean {
 }
 
 /**
- * v0.1.234 — Las plantillas integradas (contacto, venta, tarea, soporte) ya
- * no se convierten desde su grilla vieja (3 · 6 · 3 con la actividad al
- * medio, columnas angostas que escondían los valores): se arman con este
- * mismo generador. v0.1.235 — cada una con una composición y un estilo
- * PROPIOS (en v0.1.234 sólo cambiaba el orden de dos tarjetas y elegir una
- * u otra no se notaba):
- *  - auto: cifras arriba, detalles a la izquierda, contacto y actividad al
- *    costado.
- *  - contact: la persona primero — datos en una columna lateral a la
- *    IZQUIERDA (como la ficha de contacto de un CRM) y la conversación al
- *    centro; sin cifras arriba. Tema «fresh».
- *  - deal: el monto como cifra grande a lo ancho de media fila, la fecha de
- *    cierre como cuenta regresiva y las etapas del pipeline. Tema
- *    «corporate».
- *  - task: sin portada ni avatar, plano; la descripción (el trabajo) manda,
- *    y la fecha de entrega en cuenta regresiva al costado. Tema «minimal».
- *  - support: la conversación PRIMERO (un ticket es una conversación), el
- *    cliente y el detalle al costado. Tema «warm».
+ * Las plantillas integradas. v0.1.234 las pasó a este generador (antes se
+ * convertían de una grilla vieja que escondía valores); v0.1.235 les dio un
+ * estilo propio; v0.1.236 — cada una es una FICHA DISTINTA pensada para su
+ * caso, no la misma pila de tarjetas con otro color:
+ *
+ *  - auto «Resumen»: una banda de indicadores con la forma que luce cada
+ *    número (anillo, estrellas, cifra grande, cuenta regresiva), los
+ *    detalles y un adelanto de lo vinculado (dona por estado + los últimos).
+ *  - contact «Perfil»: la persona primero. Columna de perfil a la izquierda
+ *    con BOTONES de contacto (escribir, llamar, abrir), sus datos y fechas;
+ *    a la derecha lo que tiene con la empresa (sus registros vinculados como
+ *    tarjetas), las notas como cita y la conversación.
+ *  - deal «Oportunidad»: banda con el valor del negocio en grande, la
+ *    probabilidad como medidor y la fecha de cierre en cuenta regresiva;
+ *    seguimiento en dos columnas y el historial del negocio a lo ancho.
+ *  - task «Tarea»: plana, sin portada (como Linear): el trabajo y la
+ *    conversación en la columna principal, un panel de propiedades al
+ *    costado con la entrega, el avance como barra y las fechas.
+ *  - support «Ticket»: una franja de SLA (prioridad, vencimiento, estado),
+ *    la conversación como protagonista y, al costado, el cliente con sus
+ *    botones, el detalle del caso y su historial con la empresa.
  */
 export type AutoLayoutFlavor = 'auto' | 'contact' | 'deal' | 'task' | 'support';
 
@@ -381,6 +384,17 @@ const FLAVOR_THEME: Record<AutoLayoutFlavor, RecordLayoutV3['theme']['preset']> 
     support: 'warm',
 };
 
+const FLAVOR_COVER: Record<AutoLayoutFlavor, 'none' | 'color' | 'gradient'> = {
+    auto: 'gradient',
+    contact: 'gradient',
+    deal: 'color',
+    task: 'none',
+    support: 'gradient',
+};
+
+const PRIORITY_RE = /prioridad|priority|urgenc|severidad|severity|impacto/i;
+const PROBABILITY_RE = /probab|avance|progreso|progress|complet|porcentaje|%/i;
+
 export function autoRecordLayout(input: {
     fields: readonly LayoutFieldLite[];
     relations?: readonly AutoLayoutRelation[];
@@ -388,191 +402,287 @@ export function autoRecordLayout(input: {
 }): RecordLayoutV3 {
     const fields = input.fields;
     const flavor: AutoLayoutFlavor = input.flavor && input.flavor in FLAVOR_THEME ? input.flavor : 'auto';
+    const relations = (input.relations ?? []).slice(0, 4);
+    const firstRel = relations[0];
     const title = titleOf(fields);
     const used = new Set<number>(title ? [title.id] : []);
     const free = (f: LayoutFieldLite): boolean => !used.has(f.id);
-    const take = (list: LayoutFieldLite[]): LayoutFieldLite[] => {
+    const take = <T extends LayoutFieldLite | undefined>(f: T): T => {
+        if (f) used.add(f.id);
+        return f;
+    };
+    const takeAll = (list: LayoutFieldLite[]): LayoutFieldLite[] => {
         for (const f of list) used.add(f.id);
         return list;
     };
+    const hay = (f: LayoutFieldLite): string => `${f.slug} ${f.label}`;
 
-    // Cabecera: etapas (el select de estado), propiedades clave (la persona
-    // primero en una tarea; si no, los select) y una línea de contacto.
-    const stages = fields.find((f) => f.type === 'select' && optionCount(f) >= 3 && STAGE_RE.test(`${f.slug} ${f.label}`));
-    if (stages) used.add(stages.id);
-    const due = fields.find((f) => (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(`${f.slug} ${f.label}`));
-    // En venta y tarea la fecha que manda va como cuenta regresiva, no como chip.
-    const dueAsCountdown = due !== undefined && (flavor === 'deal' || flavor === 'task');
-    if (due && dueAsCountdown) used.add(due.id);
-    const chips: number[] = [];
-    const chipPasses: ReadonlyArray<readonly FieldType[]> =
-        flavor === 'task' ? [['user'], ['select'], ['multi_select']] : [['select', 'user'], ['multi_select']];
-    for (const pass of chipPasses) {
-        for (const f of fields) {
-            if (chips.length >= 4 || !free(f) || !pass.includes(f.type)) continue;
-            chips.push(f.id);
-            used.add(f.id);
-        }
-    }
-    if (due && !dueAsCountdown && free(due)) {
-        chips.push(due.id);
-        used.add(due.id);
-    }
-    // Contacto/soporte: el email y el teléfono primero bajo el nombre.
-    const subtitlePool = fields.filter((f) => free(f) && (f.type === 'email' || f.type === 'phone' || f.type === 'text'));
-    const subtitle = take(
-        (flavor === 'contact' || flavor === 'support'
-            ? [...subtitlePool.filter((f) => f.type !== 'text'), ...subtitlePool.filter((f) => f.type === 'text')]
-            : subtitlePool
-        ).slice(0, 2),
-    );
-
-    // Cifras: los números que definen al registro (el dinero primero).
+    // ── Piezas con nombre propio ──
+    const stages = take(fields.find((f) => f.type === 'select' && optionCount(f) >= 3 && STAGE_RE.test(hay(f))));
+    const due = fields.find((f) => (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(hay(f)));
+    const priority = fields.find((f) => f.type === 'select' && PRIORITY_RE.test(hay(f)) && f.id !== stages?.id);
     const numeric = fields
-        .filter((f) => free(f) && (NUMERIC.includes(f.type) || isNumericComputed(f)))
+        .filter((f) => f.id !== title?.id && (NUMERIC.includes(f.type) || isNumericComputed(f)))
         .map((f, i) => ({ f, i }))
         .sort((a, b) => (KPI_RANK[a.f.type] ?? 9) - (KPI_RANK[b.f.type] ?? 9) || a.i - b.i)
         .map((x) => x.f);
-    // Sólo auto y venta las ponen como tarjetas arriba; en el resto van con
-    // los detalles (en un contacto o un ticket no son lo primero que se mira).
-    const kpis = take(flavor === 'auto' || flavor === 'deal' ? numeric.slice(0, flavor === 'deal' ? 3 : 4) : []);
+    const money = numeric.find((f) => f.type === 'currency') ?? numeric.find((f) => f.type === 'rollup' || isNumericComputed(f));
+    const progress = numeric.find((f) => f.type === 'percent' && PROBABILITY_RE.test(hay(f))) ?? numeric.find((f) => f.type === 'percent');
+    const rating = numeric.find((f) => f.type === 'rating');
+    const actionable = fields.filter((f) => f.type === 'email' || f.type === 'phone' || f.type === 'url');
 
-    const longText = take(fields.filter((f) => free(f) && f.type === 'long_text'));
-    const files = take(fields.filter((f) => free(f) && f.type === 'file'));
-    const contact = take(fields.filter((f) => free(f) && (CONTACT.includes(f.type) || (f.type === 'text' && CONTACT_RE.test(`${f.slug} ${f.label}`)))));
-    const relationFields = take(fields.filter((f) => free(f) && f.type === 'relation'));
-    let dates = fields.filter((f) => free(f) && (f.type === 'date' || f.type === 'datetime'));
-    // Con pocas fechas, una tarjeta propia es una tarjeta de más (varias
-    // tarjetas de 1-2 campos fragmentan la ficha): van con el resto. En una
-    // tarea las fechas SON el cuándo: tarjeta propia siempre.
-    if (dates.length < (flavor === 'task' ? 1 : 3)) dates = [];
-    take(dates);
-    const details = take(fields.filter((f) => free(f)));
-
-    const group = (id: string, title: string, icon: string, list: LayoutFieldLite[], layout: 'grid' | 'list' | 'stacked', columns = 2): LayoutBlock => ({
+    // ── Bloques ──
+    const group = (id: string, gTitle: string, icon: string, list: LayoutFieldLite[], layout: 'grid' | 'list' | 'stacked', columns = 2): LayoutBlock => ({
         id,
         type: 'fields',
-        title,
+        title: gTitle,
         config: { field_ids: list.map((f) => f.id), layout, ...(layout === 'grid' ? { columns } : {}), icon },
     });
-    const kpiBlock = (f: LayoutFieldLite): LayoutBlock => ({
-        id: `kpi-${f.id}`,
+    const card = (f: LayoutFieldLite, display: string, blockTitle?: string, extra: Record<string, unknown> = {}): LayoutBlock => ({
+        id: `card-${display}-${f.id}`,
         type: 'field',
-        config: {
-            field_id: f.id,
-            display: f.type === 'percent' ? 'ring' : f.type === 'rating' ? 'stars' : 'big',
-            card: true,
-        },
+        ...(blockTitle ? { title: blockTitle } : {}),
+        config: { field_id: f.id, display, card: true, ...extra },
     });
-    const countdown = (f: LayoutFieldLite): LayoutBlock => ({
-        id: `due-${f.id}`,
+    /** La forma que mejor luce cada número. */
+    const kpi = (f: LayoutFieldLite): LayoutBlock =>
+        card(f, f.type === 'percent' ? 'ring' : f.type === 'rating' ? 'stars' : 'big');
+    const actionButton = (f: LayoutFieldLite): LayoutBlock => ({
+        id: `btn-${f.id}`,
         type: 'field',
-        config: { field_id: f.id, display: 'countdown', card: true },
+        config: { field_id: f.id, display: 'button', label: 'hidden' },
     });
     const description: LayoutBlock = { id: 'description', type: 'description', config: {} };
-    const activity: LayoutBlock = { id: 'activity', type: 'activity', title: 'Actividad', config: { mode: 'all' } };
-    const notes = longText.length > 0 ? group('notes', 'Notas', 'sticky_note', longText, 'stacked') : null;
-    const filesBlock: LayoutBlock | null =
+    const activity = (blockTitle = 'Actividad'): LayoutBlock => ({ id: 'activity', type: 'activity', title: blockTitle, config: { mode: 'all' } });
+    const compact = <T,>(xs: (T | null | undefined | false)[]): T[] => xs.filter((x): x is T => x !== null && x !== undefined && x !== false);
+    const band = (id: string, blocks: LayoutBlock[], widths?: number[], tone: 'accent' | 'muted' = 'accent'): LayoutSection | null =>
+        blocks.length === 0
+            ? null
+            : { id, columns: widths ?? evenColumns(blocks.length), blocks: blocks.map((b) => [b]), style: { tone } };
+
+    // Lo que queda, ordenado por lo que es.
+    const rest = (): {
+        contact: LayoutFieldLite[];
+        selects: LayoutFieldLite[];
+        dates: LayoutFieldLite[];
+        longText: LayoutFieldLite[];
+        files: LayoutFieldLite[];
+        links: LayoutFieldLite[];
+        other: LayoutFieldLite[];
+    } => {
+        const contact = takeAll(fields.filter((f) => free(f) && (CONTACT.includes(f.type) || (f.type === 'text' && CONTACT_RE.test(hay(f))))));
+        const selects = takeAll(fields.filter((f) => free(f) && ['select', 'multi_select', 'user', 'checkbox'].includes(f.type)));
+        const dates = takeAll(fields.filter((f) => free(f) && (f.type === 'date' || f.type === 'datetime')));
+        const longText = takeAll(fields.filter((f) => free(f) && f.type === 'long_text'));
+        const files = takeAll(fields.filter((f) => free(f) && f.type === 'file'));
+        const links = takeAll(fields.filter((f) => free(f) && f.type === 'relation'));
+        const other = takeAll(fields.filter((f) => free(f)));
+        return { contact, selects, dates, longText, files, links, other };
+    };
+    const filesBlock = (files: LayoutFieldLite[]): LayoutBlock | null =>
         files.length > 0 ? { id: 'files', type: 'files', title: 'Archivos', config: { field_ids: files.map((f) => f.id) } } : null;
-    const links = relationFields.length > 0 ? group('links', 'Vínculos', 'link', relationFields, 'list') : null;
-    const compact = <T,>(xs: (T | null)[]): T[] => xs.filter((x): x is T => x !== null);
+    /**
+     * Textos largos: en Resumen y Tarea, editables ahí mismo (son lo que se
+     * escribe a diario); en perfil, oportunidad y ticket el primero va como
+     * CITA (lo que dijo el cliente, el próximo paso) y se edita con el lápiz.
+     */
+    const notesBlocks = (longText: LayoutFieldLite[], quoteTitle?: string): LayoutBlock[] => {
+        if (longText.length === 0) return [];
+        if (quoteTitle === undefined) return [group('notes', 'Notas', 'sticky_note', longText, 'stacked')];
+        const [first, ...others] = longText as [LayoutFieldLite, ...LayoutFieldLite[]];
+        return [card(first, 'quote', quoteTitle), ...(others.length > 0 ? [group('notes', 'Más notas', 'sticky_note', others, 'stacked')] : [])];
+    };
+
+    // Chips de la cabecera (una línea de propiedades clave editables).
+    const chipsFrom = (pool: LayoutFieldLite[], max = 4): number[] => {
+        const out: number[] = [];
+        for (const f of pool) {
+            if (out.length >= max || !free(f)) continue;
+            out.push(f.id);
+            used.add(f.id);
+        }
+        return out;
+    };
+    const ofType = (...types: FieldType[]): LayoutFieldLite[] => fields.filter((f) => types.includes(f.type));
 
     const sections: LayoutSection[] = [];
+    let chips: number[] = [];
+    let subtitle: LayoutFieldLite[] = [];
+    const subtitleFrom = (pool: LayoutFieldLite[]): LayoutFieldLite[] => takeAll(pool.filter(free).slice(0, 2));
+
     switch (flavor) {
         case 'contact': {
-            // Columna de datos a la IZQUIERDA y la conversación al centro.
-            const side = compact([
-                contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
-                details.length > 0 ? group('details', 'Datos', 'user', details, 'list') : null,
-                dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'list') : null,
-                links,
-                filesBlock,
+            subtitle = subtitleFrom([...ofType('email', 'phone'), ...ofType('text')]);
+            chips = chipsFrom([...ofType('multi_select'), ...ofType('select'), ...ofType('user')], 4);
+            const r = rest();
+            const about = [...r.selects, ...r.other];
+            const left = compact<LayoutBlock>([
+                ...actionable.map(actionButton),
+                r.contact.length > 0 ? group('contact', 'Datos de contacto', 'mail', r.contact, 'list') : null,
+                about.length > 0 ? group('about', 'Sobre la persona', 'user', about, 'list') : null,
+                r.dates.length > 0 ? group('dates', 'Fechas', 'calendar', r.dates, 'list') : null,
+                r.links.length > 0 ? group('links', 'Vínculos', 'link', r.links, 'list') : null,
+                filesBlock(r.files),
             ]);
-            sections.push({ id: 'main', columns: [4, 8], blocks: [side, compact([description, notes, activity])] });
+            const right = compact<LayoutBlock>([
+                firstRel ? relatedPreview(firstRel, 'cards', 'Lo que tiene con nosotros', 6) : null,
+                ...notesBlocks(r.longText, 'Notas'),
+                description,
+                activity('Conversación'),
+            ]);
+            sections.push({ id: 'profile', columns: [4, 8], blocks: [left, right] });
             break;
         }
         case 'deal': {
-            if (kpis.length > 0 || (due && dueAsCountdown)) {
-                // El monto a lo ancho de media fila; lo demás, más chico.
-                const row = [...kpis.map(kpiBlock), ...(due && dueAsCountdown ? [countdown(due)] : [])].slice(0, 4);
-                const widths = row.length === 1 ? [12] : row.length === 2 ? [7, 5] : row.length === 3 ? [6, 3, 3] : [6, 2, 2, 2];
-                sections.push({ id: 'kpis', columns: widths, blocks: row.map((b) => [b]) });
-            }
+            subtitle = subtitleFrom(ofType('text', 'email'));
+            chips = chipsFrom([...ofType('user'), ...ofType('select'), ...ofType('multi_select')], 3);
+            const heroMoney = take(money);
+            const heroProgress = take(progress);
+            const heroDue = take(due);
+            const hero = compact<LayoutBlock>([
+                heroMoney ? card(heroMoney, 'big', 'Valor del negocio') : null,
+                heroProgress ? card(heroProgress, 'gauge', heroProgress.label) : null,
+                heroDue ? card(heroDue, 'countdown', heroDue.label) : null,
+            ]);
+            const heroBand = band('hero', hero, hero.length === 3 ? [6, 3, 3] : hero.length === 2 ? [7, 5] : [12]);
+            if (heroBand) sections.push(heroBand);
+            const moreNumbers = takeAll(numeric.filter(free).slice(0, 3));
+            if (moreNumbers.length > 0) sections.push({ id: 'numbers', columns: evenColumns(moreNumbers.length), blocks: moreNumbers.map((f) => [kpi(f)]) });
+            const r = rest();
             sections.push({
-                id: 'main',
+                id: 'follow',
+                title: 'Seguimiento',
                 columns: [8, 4],
                 blocks: [
-                    compact([description, details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null, notes]),
-                    compact([
-                        contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
-                        dates.length > 0 ? group('dates', 'Fechas clave', 'calendar', dates, 'list') : null,
-                        links,
-                        filesBlock,
-                        activity,
+                    compact<LayoutBlock>([
+                        description,
+                        [...r.selects, ...r.other].length > 0 ? group('details', 'Detalles del negocio', 'briefcase', [...r.selects, ...r.other], 'grid') : null,
+                        ...notesBlocks(r.longText, 'Próximos pasos'),
+                    ]),
+                    compact<LayoutBlock>([
+                        ...actionable.map(actionButton),
+                        r.contact.length > 0 ? group('contact', 'Cliente', 'circle_user', r.contact, 'list') : null,
+                        ...r.dates.slice(0, 2).map((f) => card(f, 'calendar', f.label)),
+                        r.dates.length > 2 ? group('dates', 'Otras fechas', 'calendar', r.dates.slice(2), 'list') : null,
+                        r.links.length > 0 ? group('links', 'Vínculos', 'link', r.links, 'list') : null,
+                        filesBlock(r.files),
                     ]),
                 ],
             });
+            if (firstRel) sections.push({ id: 'deal-related', columns: [12], blocks: [[relatedPreview(firstRel, 'board', firstRel.direction === 'reverse' ? firstRel.other_list_name : firstRel.relation_label, 20)]] });
+            sections.push({ id: 'history', title: 'Historial del negocio', columns: [12], blocks: [[activity('Actividad')]] });
             break;
         }
         case 'task': {
+            subtitle = [];
+            chips = chipsFrom([...ofType('user'), ...(priority ? [priority] : []), ...ofType('select'), ...ofType('multi_select')], 4);
+            const taskDue = take(due);
+            const taskProgress = take(progress);
+            const r = rest();
             sections.push({
-                id: 'main',
+                id: 'work',
                 columns: [8, 4],
                 blocks: [
-                    compact([description, notes, details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null]),
-                    compact([
-                        due && dueAsCountdown ? countdown(due) : null,
-                        dates.length > 0 ? group('dates', 'Programación', 'calendar', dates, 'list') : null,
-                        contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
-                        links,
-                        filesBlock,
-                        activity,
+                    compact<LayoutBlock>([
+                        description,
+                        ...notesBlocks(r.longText),
+                        { id: 'conv-divider', type: 'divider', config: { label: 'Conversación' } },
+                        activity('Comentarios y cambios'),
+                    ]),
+                    compact<LayoutBlock>([
+                        taskDue ? card(taskDue, 'countdown', 'Entrega') : null,
+                        taskProgress ? card(taskProgress, 'bar', taskProgress.label) : null,
+                        [...r.selects, ...r.other, ...numeric.filter(free)].length > 0
+                            ? group('props', 'Propiedades', 'tag', takeAll([...r.selects, ...r.other, ...numeric.filter(free)]), 'list')
+                            : null,
+                        ...r.dates.slice(0, 2).map((f) => card(f, 'calendar', f.label)),
+                        r.dates.length > 2 ? group('dates', 'Más fechas', 'calendar', r.dates.slice(2), 'list') : null,
+                        r.contact.length > 0 ? group('contact', 'Contacto', 'mail', r.contact, 'list') : null,
+                        r.links.length > 0 ? group('links', 'Relacionado', 'link', r.links, 'list') : null,
+                        filesBlock(r.files),
                     ]),
                 ],
             });
             break;
         }
         case 'support': {
+            subtitle = subtitleFrom([...ofType('email', 'phone'), ...ofType('text')]);
+            chips = chipsFrom([...ofType('user'), ...ofType('multi_select')], 3);
+            const slaPriority = take(priority);
+            const slaDue = take(due);
+            const slaScore = take(rating);
+            const otherSelect = slaPriority ? undefined : take(fields.find((f) => free(f) && f.type === 'select'));
+            const sla = compact<LayoutBlock>([
+                slaPriority ? card(slaPriority, 'big', slaPriority.label) : null,
+                otherSelect ? card(otherSelect, 'big', otherSelect.label) : null,
+                slaDue ? card(slaDue, 'countdown', 'Vencimiento') : null,
+                slaScore ? card(slaScore, 'stars', slaScore.label) : null,
+                ...takeAll(numeric.filter(free).slice(0, sla_room(slaPriority, otherSelect, slaDue, slaScore))).map(kpi),
+            ]);
+            const slaBand = band('sla', sla.slice(0, 4), undefined, 'muted');
+            if (slaBand) sections.push(slaBand);
+            const r = rest();
             sections.push({
-                id: 'main',
-                columns: [8, 4],
+                id: 'case',
+                columns: [7, 5],
                 blocks: [
-                    compact([activity, description, notes]),
-                    compact([
-                        contact.length > 0 ? group('contact', 'Cliente', 'user', contact, 'list') : null,
-                        details.length > 0 ? group('details', 'Detalles', 'lifebuoy', details, 'list') : null,
-                        dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'list') : null,
-                        links,
-                        filesBlock,
+                    compact<LayoutBlock>([...notesBlocks(r.longText, 'Lo que reportó'), activity('Conversación'), description]),
+                    compact<LayoutBlock>([
+                        ...actionable.map(actionButton),
+                        r.contact.length > 0 ? group('contact', 'Cliente', 'circle_user', r.contact, 'list') : null,
+                        [...r.selects, ...r.other, ...numeric.filter(free)].length > 0
+                            ? group('details', 'Detalle del caso', 'lifebuoy', takeAll([...r.selects, ...r.other, ...numeric.filter(free)]), 'list')
+                            : null,
+                        r.dates.length > 0 ? group('dates', 'Fechas', 'calendar', r.dates, 'list') : null,
+                        firstRel ? relatedPreview(firstRel, 'list', 'Historial del cliente', 6) : null,
+                        r.links.length > 0 ? group('links', 'Vínculos', 'link', r.links, 'list') : null,
+                        filesBlock(r.files),
                     ]),
                 ],
             });
             break;
         }
         default: {
-            if (kpis.length > 0) {
-                sections.push({ id: 'kpis', columns: evenColumns(kpis.length), blocks: kpis.map((f) => [kpiBlock(f)]) });
-            }
+            subtitle = subtitleFrom(ofType('text', 'email', 'phone'));
+            chips = chipsFrom([...ofType('select'), ...ofType('user'), ...ofType('multi_select')], 4);
+            const autoDue = take(due);
+            const heroNumbers = takeAll(numeric.filter(free).slice(0, autoDue ? 3 : 4));
+            const hero = [...heroNumbers.map(kpi), ...(autoDue ? [card(autoDue, 'countdown', autoDue.label)] : [])];
+            const heroBand = band('kpis', hero);
+            if (heroBand) sections.push(heroBand);
+            const r = rest();
             sections.push({
                 id: 'main',
                 columns: [8, 4],
                 blocks: [
-                    compact([
+                    compact<LayoutBlock>([
                         description,
-                        details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null,
-                        dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'grid') : null,
-                        notes,
+                        [...r.selects, ...r.other].length > 0 ? group('details', 'Detalles', 'tag', [...r.selects, ...r.other], 'grid') : null,
+                        r.dates.length > 0 ? group('dates', 'Fechas', 'calendar', r.dates, 'grid') : null,
+                        ...notesBlocks(r.longText),
                     ]),
-                    compact([contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null, links, filesBlock, activity]),
+                    compact<LayoutBlock>([
+                        ...actionable.map(actionButton),
+                        r.contact.length > 0 ? group('contact', 'Contacto', 'mail', r.contact, 'list') : null,
+                        r.links.length > 0 ? group('links', 'Vínculos', 'link', r.links, 'list') : null,
+                        filesBlock(r.files),
+                        activity(),
+                    ]),
                 ],
             });
+            if (firstRel) {
+                const preview = relationOverview(firstRel);
+                if (preview) sections.push(preview);
+            }
         }
     }
 
-    const pages: LayoutPage[] = [{ id: 'summary', name: 'Resumen', icon: 'layout', sections }];
-    for (const rel of (input.relations ?? []).slice(0, 4)) {
-        pages.push(relationPage(rel));
-    }
+    // En tarea y ticket el estado no va como etapas en la cabecera (un ticket
+    // no "avanza" por un embudo): va como su primera propiedad.
+    if (stages && (flavor === 'task' || flavor === 'support') && !chips.includes(stages.id)) chips = [stages.id, ...chips].slice(0, 5);
+    const pages: LayoutPage[] = [{ id: 'summary', name: SUMMARY_NAME[flavor], icon: 'layout', sections }];
+    for (const rel of relations) pages.push(relationPage(rel));
+    const cover = FLAVOR_COVER[flavor];
     return {
         v: 3,
         theme: { preset: FLAVOR_THEME[flavor] },
@@ -580,12 +690,76 @@ export function autoRecordLayout(input: {
             title_field_id: title?.id ?? null,
             subtitle_field_ids: subtitle.map((f) => f.id),
             chip_field_ids: chips,
-            stages_field_id: stages?.id ?? null,
-            cover: { kind: flavor === 'task' ? 'none' : 'gradient' },
+            stages_field_id: flavor === 'task' || flavor === 'support' ? null : stages?.id ?? null,
+            cover: { kind: cover },
             avatar: { kind: flavor === 'task' ? 'none' : 'initials' },
-            show_meta: true,
+            show_meta: flavor !== 'contact',
         },
         pages,
+    };
+}
+
+const SUMMARY_NAME: Record<AutoLayoutFlavor, string> = {
+    auto: 'Resumen',
+    contact: 'Perfil',
+    deal: 'Oportunidad',
+    task: 'Tarea',
+    support: 'Ticket',
+};
+
+/** Lugar que queda en la franja de SLA para otros números (máximo 4 piezas). */
+function sla_room(...pieces: Array<LayoutFieldLite | undefined>): number {
+    return Math.max(0, 4 - pieces.filter(Boolean).length);
+}
+
+/** Los registros vinculados dentro del resumen (no sólo en su pestaña). */
+function relatedPreview(rel: AutoLayoutRelation, view: 'cards' | 'list' | 'board' | 'table', blockTitle: string, limit: number): LayoutBlock {
+    const other = rel.other_fields;
+    const source = { kind: 'related' as const, field_id: rel.relation_field_id, direction: rel.direction };
+    const otherTitle = titleOf(other);
+    const status = other.find((f) => f.type === 'select' && STAGE_RE.test(`${f.slug} ${f.label}`)) ?? other.find((f) => f.type === 'select');
+    const money = other.find((f) => f.type === 'currency') ?? other.find((f) => f.type === 'number');
+    const date = other.find((f) => f.type === 'date' || f.type === 'datetime');
+    const cols = [otherTitle, status, money, date].filter((f): f is LayoutFieldLite => f !== undefined);
+    return {
+        id: `preview-${rel.relation_field_id}${rel.direction === 'reverse' ? 'r' : ''}`,
+        type: 'related',
+        title: blockTitle,
+        config: {
+            source,
+            view,
+            field_ids: cols.map((f) => f.id),
+            limit,
+            ...(view === 'board' && status ? { group_field_id: status.id } : {}),
+            ...(date ? { sort_field_id: date.id, sort_dir: 'desc' } : {}),
+        },
+    };
+}
+
+/** Adelanto de lo vinculado en el resumen automático: dona por estado + los últimos. */
+function relationOverview(rel: AutoLayoutRelation): LayoutSection | null {
+    const other = rel.other_fields;
+    const source = { kind: 'related' as const, field_id: rel.relation_field_id, direction: rel.direction };
+    const name = rel.direction === 'reverse' ? rel.other_list_name : rel.relation_label;
+    const status = other.find((f) => f.type === 'select' && STAGE_RE.test(`${f.slug} ${f.label}`)) ?? other.find((f) => f.type === 'select');
+    const money = other.find((f) => f.type === 'currency') ?? other.find((f) => f.type === 'number' || isNumericComputed(f));
+    const list = relatedPreview(rel, 'list', `Últimos: ${name.toLowerCase()}`, 5);
+    if (!status) return { id: 'overview', title: name, columns: [12], blocks: [[list]] };
+    return {
+        id: 'overview',
+        title: name,
+        columns: [5, 7],
+        blocks: [
+            [
+                {
+                    id: `overview-pie-${rel.relation_field_id}`,
+                    type: 'chart',
+                    title: `Por ${status.label.toLowerCase()}`,
+                    config: { source, kind: 'pie', metric: money ? 'sum' : 'count', metric_field_id: money?.id, group_by_field_id: status.id },
+                },
+            ],
+            [list],
+        ],
     };
 }
 

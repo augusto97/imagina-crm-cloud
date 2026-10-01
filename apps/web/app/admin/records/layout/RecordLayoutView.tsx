@@ -15,9 +15,9 @@ import type { RecordEntity } from '@/types/record';
 
 import { lockedReasonsFor, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
-import { LayoutContext, type LayoutCtx } from './LayoutContext';
+import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
 import { LayoutHeader } from './LayoutHeader';
-import { resolveTheme } from './layoutTheme';
+import { resolveTheme, tint } from './layoutTheme';
 import { planSection } from './sectionPlan';
 import { useLayoutData } from './useLayoutData';
 import { useRecordAutosave } from './useRecordAutosave';
@@ -156,6 +156,7 @@ export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHea
 
 export function SectionView({ section, gap }: { section: LayoutSection; gap: number }): JSX.Element | null {
     const [ref, width] = useContainerWidth<HTMLDivElement>();
+    const accent = useLayoutCtx().theme.accent;
     if (section.blocks.every((col) => col.length === 0)) return null;
     // v0.1.234 — el reparto se decide con el ancho que HAY (ver sectionPlan).
     const plan = planSection(section, width, gap);
@@ -166,7 +167,7 @@ export function SectionView({ section, gap }: { section: LayoutSection; gap: num
               ? { gap, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
               : { gap };
     return (
-        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" style={sectionStyle(section)}>
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" style={sectionStyle(section, accent)}>
             {section.title && <SectionTitle text={section.title} />}
             <div ref={ref} className="imcrm-lay-grid" style={gridStyle} data-section-mode={plan.mode}>
                 {plan.columns.map((w, i) => (
@@ -185,9 +186,28 @@ export function SectionView({ section, gap }: { section: LayoutSection; gap: num
     );
 }
 
-export function sectionStyle(section: LayoutSection): CSSProperties | undefined {
+/**
+ * Fondo de una sección: un color elegido (`style.bg`) o, desde v0.1.236, una
+ * BANDA (`style.tone`): el acento de la plantilla o un gris suave, mezclados
+ * con transparencia — así se ve igual de bien en claro y en oscuro (un hex
+ * claro fijo encendería la ficha en modo oscuro).
+ */
+export function sectionStyle(section: LayoutSection, accent?: string): CSSProperties | undefined {
     const bg = typeof section.style?.bg === 'string' ? section.style.bg : undefined;
-    return bg ? { background: bg, padding: 16, borderRadius: 14 } : undefined;
+    if (bg) return { background: bg, padding: 16, borderRadius: 14 };
+    const tone = section.style?.tone;
+    if (tone === 'accent' && accent) {
+        return {
+            background: `linear-gradient(135deg, ${tint(accent, 11)} 0%, ${tint(accent, 4)} 100%)`,
+            boxShadow: `inset 0 0 0 1px ${tint(accent, 16)}`,
+            padding: 14,
+            borderRadius: 16,
+        };
+    }
+    if (tone === 'muted') {
+        return { background: 'hsl(var(--imcrm-muted) / 0.55)', boxShadow: 'inset 0 0 0 1px hsl(var(--imcrm-border) / 0.7)', padding: 14, borderRadius: 16 };
+    }
+    return undefined;
 }
 
 export function SectionTitle({ text }: { text: string }): JSX.Element {

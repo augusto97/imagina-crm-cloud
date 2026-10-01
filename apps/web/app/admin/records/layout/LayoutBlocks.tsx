@@ -113,6 +113,7 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
     const [open, setOpen] = useState(block.config.collapsed !== true);
     const Icon = blockIcon(block);
 
+    if (isEmptyActionButton(block, ctx)) return null;
     const body = <BlockBody block={block} />;
     if (!card) {
         return (
@@ -161,6 +162,19 @@ export function LayoutBlockView({ block }: { block: LayoutBlock }): JSX.Element 
             {open && <div className={cn('imcrm-min-w-0 imcrm-flex-1', padFor(block))}>{body}</div>}
         </section>
     );
+}
+
+/**
+ * Un botón de acción (escribir, llamar, abrir) sin dato no tiene nada que
+ * hacer: en la ficha no se dibuja ni deja su hueco (en el editor sí, para
+ * poder elegirlo).
+ */
+function isEmptyActionButton(block: LayoutBlock, ctx: ReturnType<typeof useLayoutCtx>): boolean {
+    const c = block.config;
+    if (block.type !== 'field' || c.display !== 'button' || c.label !== 'hidden' || c.card === true || ctx.preview) return false;
+    const field = ctx.fieldsById.get(Number(c.field_id));
+    const value = field ? ctx.values[field.slug] : undefined;
+    return value === null || value === undefined || value === '';
 }
 
 function BlockTitle({ text, icon: Icon }: { text: string; icon?: LucideIcon | null }): JSX.Element {
@@ -301,6 +315,9 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     const editable = fieldEditable(ctx, field);
     const Icon = fieldTypeIcon(field.type);
     const showLabel = c.label !== 'hidden';
+    // Un botón de acción (escribir, llamar, abrir) sin dato no tiene nada que
+    // hacer: en la ficha no se dibuja (en el editor sí, para poder elegirlo).
+    const actionButton = c.display === 'button' && !showLabel && c.card !== true;
     return (
         <div className="imcrm-group imcrm-relative imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
             {showLabel && (
@@ -318,6 +335,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
                     prefix={typeof c.prefix === 'string' ? c.prefix : undefined}
                     suffix={typeof c.suffix === 'string' ? c.suffix : undefined}
                     accent={ctx.theme.accent}
+                    fullWidth={actionButton}
                 />
             </div>
             {editable && (
