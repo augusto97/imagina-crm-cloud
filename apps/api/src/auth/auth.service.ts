@@ -46,6 +46,15 @@ import {
 
 /** TTL del token de reset (30 min) + prefijo en Redis. */
 const RESET_TTL_SECONDS = 30 * 60;
+/**
+ * v0.1.240 — el enlace de una INVITACIÓN usa el mismo token de un solo uso que
+ * el reset, pero dura 7 días: 30 minutos es razonable para quien pidió
+ * recuperar su contraseña y está frente a la pantalla, no para alguien que
+ * recibe una invitación y la abre al día siguiente.
+ */
+const INVITE_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** Reenvíos de una misma invitación por hora (freno por usuario, en Redis). */
+const INVITE_RESEND_MAX = 3;
 
 /**
  * v0.1.116 — Freno de fuerza bruta POR CUENTA (además del rate limit por IP).
@@ -92,6 +101,11 @@ const sha256Hex = (s: string): string => createHash('sha256').update(s, 'utf8').
 function safeEqualHex(a: string, b: string): boolean {
     if (a.length !== b.length) return false;
     return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+}
+
+/** Un nombre de empresa en un asunto: sin saltos de línea (cabecera de correo). */
+function oneLine(s: string): string {
+    return s.replace(/[\r\n]+/g, ' ').trim();
 }
 
 function escapeHtml(s: string): string {
@@ -211,7 +225,13 @@ export class AuthService implements OnModuleInit {
             });
         }
         const passwordHash = await argon2.hash(password);
-        await this.db.update(users).set({ passwordHash }).where(eq(users.id, Number(userId)));
+        // v0.1.240: el enlace llegó a la casilla de la persona, así que abrirlo
+        // prueba que el email es suyo (cuenta verificada) y cierra una
+        // invitación pendiente.
+        await this.db
+            .update(users)
+            .set({ passwordHash, invitedAt: null, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
+            .where(eq(users.id, Number(userId)));
         // SEC-22 (v0.1.113): cambiar la contraseña REVOCA todas las sesiones
         // abiertas. Sin esto, quien hubiera robado una sesión seguía dentro
         // después de que la víctima "recuperaba" la cuenta (el TTL de sesión
@@ -233,8 +253,8 @@ export class AuthService implements OnModuleInit {
     /**
      * El operador crea una cuenta (sin workspace) y le envía un email de
      * invitación con un link para DEFINIR su contraseña. Reusa el mismo token
-     * de reset (un solo uso, 30 min). El usuario se suma a workspaces por el
-     * panel de miembros del admin de cada empresa.
+     * de reset (un solo uso; 7 días para una invitación). El usuario se suma a
+     * empresas desde Miembros (admin de la empresa) o desde la consola.
      */
     async adminCreateUser(email: string, name: string): Promise<typeof users.$inferSelect> {
         const normEmail = email.trim().toLowerCase();
@@ -249,10 +269,13 @@ export class AuthService implements OnModuleInit {
         if (existing) {
             throw new ConflictException('Ya existe una cuenta con ese email');
         }
+        // Sin correo de cuenta la invitación no llega y la cuenta nacería sin
+        // que nadie pueda entrar: se corta ANTES de crearla (v0.1.240).
+        await this.mail.assertAccountMailAvailable();
         const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
         const [user] = await this.db
             .insert(users)
-            .values({ email: normEmail, passwordHash, name: name.trim() })
+            .values({ email: normEmail, passwordHash, name: name.trim(), invitedAt: new Date() })
             .returning();
         if (!user) throw new Error('Insert de usuario no devolvió fila');
         await this.issueSetupLink(user.id, user.email, user.name, 'invite');
@@ -275,6 +298,12 @@ export class AuthService implements OnModuleInit {
         if (this.env.PLATFORM_SUPERADMINS.includes(email)) {
             throw new ConflictException('Ese email está reservado');
         }
+        const [known] = await this.db
+            .select({ id: users.id })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`)
+            .limit(1);
+        if (!known) await this.mail.assertAccountMailAvailable();
         const result = await this.db.transaction(async (tx) => {
             const [existing] = await tx
                 .select({ id: users.id, email: users.email, name: users.name })
@@ -289,7 +318,10 @@ export class AuthService implements OnModuleInit {
                 name = existing.name;
             } else {
                 const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
-                const [u] = await tx.insert(users).values({ email, passwordHash, name: input.admin_name.trim() }).returning();
+                const [u] = await tx
+                    .insert(users)
+                    .values({ email, passwordHash, name: input.admin_name.trim(), invitedAt: new Date() })
+                    .returning();
                 if (!u) throw new Error('Insert de usuario no devolvió fila');
                 userId = u.id;
                 name = u.name;
@@ -310,7 +342,9 @@ export class AuthService implements OnModuleInit {
         });
 
         if (result.invited) {
-            await this.issueSetupLink(result.userId, result.email, result.name, 'invite');
+            await this.issueSetupLink(result.userId, result.email, result.name, 'invite', {
+                tenantName: input.workspace_name,
+            });
         }
         this.logger.log(
             `Empresa ${result.tenantId} creada por operador (admin ${result.email}${result.invited ? ', invitado' : ''})`,
@@ -420,22 +454,251 @@ export class AuthService implements OnModuleInit {
         email: string,
         name: string,
         kind: 'invite' | 'reset',
+        opts: { tenantName?: string; invitedBy?: string | null } = {},
     ): Promise<void> {
         const token = randomBytes(32).toString('base64url');
-        await this.redis.set(resetKey(token), String(userId), 'EX', RESET_TTL_SECONDS);
-        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}`;
         const invite = kind === 'invite';
-        const subject = invite ? 'Te crearon una cuenta en Imagina Base' : 'Restablecer tu contraseña — Imagina Base';
-        const intro = invite
-            ? 'Se creó una cuenta para vos en Imagina Base. Definí tu contraseña para entrar'
-            : 'Se solicitó restablecer tu contraseña';
+        await this.redis.set(resetKey(token), String(userId), 'EX', invite ? INVITE_TTL_SECONDS : RESET_TTL_SECONDS);
+        // `invite=1` sólo cambia los textos de la pantalla ("Definí tu
+        // contraseña" en vez de "Nueva contraseña"); el token es el mismo.
+        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}${invite ? '&invite=1' : ''}`;
+        const expires = invite ? '7 días' : '30 minutos';
+        let subject: string;
+        let intro: string;
+        if (invite && opts.tenantName) {
+            const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} te invitó` : 'Te invitaron';
+            subject = `Te invitaron a «${oneLine(opts.tenantName)}» en Imagina Base`;
+            intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en Imagina Base. Definí tu contraseña para entrar`;
+        } else if (invite) {
+            subject = 'Te crearon una cuenta en Imagina Base';
+            intro = 'Se creó una cuenta para vos en Imagina Base. Definí tu contraseña para entrar';
+        } else {
+            subject = 'Restablecer tu contraseña — Imagina Base';
+            intro = 'Se solicitó restablecer tu contraseña';
+        }
         const cta = invite ? 'Definir contraseña' : 'Restablecer contraseña';
         await this.mail.enqueue({
             to: email,
             subject,
-            html: `<p>Hola ${escapeHtml(name)},</p><p>${intro} — el enlace vence en 30 minutos:</p><p><a href="${link}">${cta}</a></p>`,
-            text: `${cta} (vence en 30 min): ${link}`,
+            html: `<p>Hola ${escapeHtml(name)},</p><p>${intro} — el enlace vence en ${expires}:</p><p><a href="${link}">${cta}</a></p>`,
+            text: `${cta} (vence en ${expires}): ${link}`,
         });
+    }
+
+    // ─────────── Invitaciones a una empresa (v0.1.240) ───────────
+
+    /**
+     * Suma a una persona a una empresa por EMAIL. Si ya tiene cuenta, la suma
+     * con el rol pedido y le avisa por correo (best-effort). Si no, crea la
+     * cuenta por INVITACIÓN: contraseña aleatoria que nadie conoce +
+     * `invited_at` + correo con el enlace para definir la suya (7 días).
+     *
+     * Así ya no hace falta que la persona se registre primero — que además le
+     * creaba una empresa propia vacía. Lo usan el panel de Miembros (admin de
+     * la empresa, con el límite de usuarios del plan chequeado antes) y la
+     * consola de plataforma. La membresía se escribe bajo el rol de app con el
+     * contexto RLS de esa empresa (mismo patrón que `adminCreateTenant`).
+     */
+    async addToTenant(
+        tenantId: number,
+        input: { email: string; name?: string; role: 'admin' | 'manager' | 'agent' | 'viewer' },
+        opts: { invitedById?: number | null } = {},
+    ): Promise<{
+        user: { id: number; name: string; email: string };
+        role: 'admin' | 'manager' | 'agent' | 'viewer';
+        invited: boolean;
+        pending: boolean;
+        notified: boolean;
+    }> {
+        const email = input.email.trim().toLowerCase();
+        if (this.env.PLATFORM_SUPERADMINS.includes(email)) {
+            throw new ConflictException({
+                code: 'email_reserved',
+                message: 'Ese email está reservado para la administración de la plataforma',
+                data: { status: 409, errors: { email: 'Reservado' } },
+            });
+        }
+        const [tenant] = await this.db
+            .select({ id: tenants.id, name: tenants.name })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        if (!tenant) {
+            throw new NotFoundException({ code: 'tenant_not_found', message: `Empresa ${tenantId} no encontrada`, data: { status: 404 } });
+        }
+        const [known] = await this.db
+            .select({ id: users.id, disabledAt: users.disabledAt })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`)
+            .limit(1);
+        if (known?.disabledAt) {
+            throw new ConflictException({
+                code: 'account_disabled',
+                message: `La cuenta de ${email} está desactivada en la plataforma`,
+                data: { status: 409, errors: { email: 'Cuenta desactivada' } },
+            });
+        }
+        // Una cuenta nueva sólo sirve si le llega el correo: sin SMTP de cuenta
+        // se corta acá, antes de crear nada.
+        if (!known) await this.mail.assertAccountMailAvailable();
+        // Quién invita, para el correo ("Ana te invitó…").
+        let invitedBy: string | null = null;
+        if (opts.invitedById) {
+            const [inviter] = await this.db.select({ name: users.name }).from(users).where(eq(users.id, opts.invitedById)).limit(1);
+            invitedBy = inviter?.name ?? null;
+        }
+
+        const result = await this.db.transaction(async (tx) => {
+            let user: { id: number; name: string; email: string; invitedAt: Date | null };
+            let invited = false;
+            const [existing] = await tx
+                .select({ id: users.id, name: users.name, email: users.email, invitedAt: users.invitedAt })
+                .from(users)
+                .where(sql`lower(${users.email}) = ${email}`)
+                .limit(1);
+            if (existing) {
+                user = existing;
+            } else {
+                const fallbackName = email.split('@')[0] ?? email;
+                const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
+                const [u] = await tx
+                    .insert(users)
+                    .values({ email, passwordHash, name: input.name?.trim() || fallbackName, invitedAt: new Date() })
+                    .returning({ id: users.id, name: users.name, email: users.email, invitedAt: users.invitedAt });
+                if (!u) throw new Error('Insert de usuario no devolvió fila');
+                user = u;
+                invited = true;
+            }
+
+            await tx.execute(sql`set local role imagina_app`);
+            await tx.execute(sql`select set_config('app.user_id', ${String(user.id)}, true)`);
+            await tx.execute(sql`select set_config('app.tenant_id', ${String(tenantId)}, true)`);
+            const [membership] = await tx
+                .select({ role: memberships.role })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, user.id)))
+                .limit(1);
+            if (membership?.role === 'client') {
+                throw new ConflictException({
+                    code: 'portal_client',
+                    message: `${email} es cliente del portal de esta empresa. Su acceso se maneja desde la ficha del registro.`,
+                    data: { status: 409, errors: { email: 'Cliente del portal' } },
+                });
+            }
+            if (membership) {
+                throw new ConflictException({
+                    code: 'already_member',
+                    message: `${email} ya es miembro de esta empresa`,
+                    data: { status: 409, errors: { email: 'Ya es miembro' } },
+                });
+            }
+            await tx.insert(memberships).values({ userId: user.id, tenantId, role: input.role });
+            return { user, invited };
+        });
+
+        const { user, invited } = result;
+        let notified = false;
+        if (invited) {
+            await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
+                tenantName: tenant.name,
+                invitedBy,
+            });
+            notified = true;
+        } else if (user.invitedAt) {
+            // Tenía una invitación sin abrir (de otra empresa o del operador):
+            // un enlace nuevo, así no queda con uno vencido.
+            await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
+                tenantName: tenant.name,
+                invitedBy,
+            }).catch(() => undefined);
+            notified = true;
+        } else {
+            notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy);
+        }
+        this.logger.log(`Usuario ${user.id} sumado a la empresa ${tenantId} (${invited ? 'invitado' : 'cuenta existente'})`);
+        return {
+            user: { id: user.id, name: user.name, email: user.email },
+            role: input.role,
+            invited,
+            pending: invited || user.invitedAt !== null,
+            notified,
+        };
+    }
+
+    /**
+     * Reenvía la invitación de alguien que todavía no definió su contraseña.
+     * Con `tenantId`, la persona tiene que ser miembro de esa empresa (el admin
+     * de una empresa no reenvía invitaciones a cuentas ajenas). Freno de 3 por
+     * hora por persona: cada reenvío es un correo a una casilla de un tercero.
+     */
+    async resendInvite(tenantId: number | null, userId: number): Promise<{ email: string }> {
+        const [user] = await this.db
+            .select({ id: users.id, name: users.name, email: users.email, invitedAt: users.invitedAt, disabledAt: users.disabledAt })
+            .from(users)
+            .where(eq(users.id, userId))
+            .limit(1);
+        let tenantName: string | undefined;
+        if (tenantId !== null) {
+            const [m] = await this.db
+                .select({ name: tenants.name })
+                .from(memberships)
+                .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), ne(memberships.role, 'client')))
+                .limit(1);
+            if (!m) {
+                throw new NotFoundException({ code: 'not_member', message: 'Esa persona no es miembro de esta empresa', data: { status: 404 } });
+            }
+            tenantName = m.name;
+        }
+        if (!user) {
+            throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no existe`, data: { status: 404 } });
+        }
+        if (user.disabledAt) {
+            throw new ConflictException({ code: 'account_disabled', message: 'La cuenta está desactivada', data: { status: 409 } });
+        }
+        if (!user.invitedAt) {
+            throw new ConflictException({
+                code: 'not_pending',
+                message: 'Esta persona ya definió su contraseña: no hay invitación pendiente',
+                data: { status: 409 },
+            });
+        }
+        await this.mail.assertAccountMailAvailable();
+        if (!(await this.withinMailBudget(`inviteresend:${userId}`, INVITE_RESEND_MAX, 60 * 60))) {
+            throw new HttpException(
+                { code: 'too_many_requests', message: 'Ya se reenvió varias veces en la última hora. Probá más tarde.', data: { status: 429 } },
+                429,
+            );
+        }
+        await this.issueSetupLink(user.id, user.email, user.name, 'invite', { tenantName });
+        return { email: user.email };
+    }
+
+    /**
+     * Aviso a una cuenta EXISTENTE de que la sumaron a una empresa. Best-effort:
+     * si el correo no sale, el alta igual vale (la persona la ve al entrar).
+     */
+    private async notifyAddedToTenant(
+        user: { email: string; name: string },
+        tenantName: string,
+        invitedBy: string | null,
+    ): Promise<boolean> {
+        try {
+            const status = await this.mail.accountMailStatus();
+            if (!status.available) return false;
+            const base = this.env.APP_BASE_URL.replace(/\/$/, '');
+            const who = invitedBy ? `${escapeHtml(invitedBy)} te sumó` : 'Te sumaron';
+            await this.mail.enqueue({
+                to: user.email,
+                subject: `Te sumaron a «${oneLine(tenantName)}» en Imagina Base`,
+                html: `<p>Hola ${escapeHtml(user.name)},</p><p>${who} a «${escapeHtml(tenantName)}» en Imagina Base. Entrá con tu cuenta de siempre y elegí la empresa en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
+                text: `${invitedBy ? `${invitedBy} te sumó` : 'Te sumaron'} a «${tenantName}» en Imagina Base. Entrá: ${base}/`,
+            });
+            return true;
+        } catch (err) {
+            this.logger.warn(`No se pudo avisar a ${user.email} del alta en «${tenantName}»: ${(err as Error).message}`);
+            return false;
+        }
     }
 
     /**

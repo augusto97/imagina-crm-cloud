@@ -13,6 +13,11 @@ export const users = pgTable(
         disabledAt: timestamp('disabled_at', { withTimezone: true }),
         /** v0.1.118 — null = el alta nunca confirmó su casilla. */
         emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+        /**
+         * v0.1.240 — cuenta creada por INVITACIÓN que todavía no definió su
+         * contraseña (la que tiene es aleatoria). Se limpia al definirla.
+         */
+        invitedAt: timestamp('invited_at', { withTimezone: true }),
         // Firma de email del usuario (/me/email-signature): NULL = sin firma.
         emailSignature: text('email_signature'),
         /** v0.1.120 — 2FA TOTP. El secreto va cifrado (secret-box). */

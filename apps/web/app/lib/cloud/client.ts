@@ -113,6 +113,7 @@ import {
     issueMagicLinkSchema,
     listSchema,
     loginInputSchema,
+    addMemberResultSchema,
     addMemberSchema,
     checkoutResultSchema,
     createCheckoutSchema,
@@ -183,6 +184,7 @@ import {
     type ListRecordsQuery,
     type LoginInput,
     type AddMemberInput,
+    type AddMemberResult,
     type CheckoutResult,
     type CreateCheckoutInput,
     type MagicLinkResult,
@@ -555,10 +557,10 @@ export class CloudClient {
             }),
         );
     }
-    addMember(input: AddMemberInput): Promise<WorkspaceMember> {
+    addMember(input: AddMemberInput): Promise<AddMemberResult> {
         return this.request('POST', '/workspaces/current/members', {
             body: addMemberSchema.parse(input),
-            schema: workspaceMemberSchema,
+            schema: addMemberResultSchema,
         });
     }
     updateMemberRole(userId: number, input: UpdateMemberRoleInput): Promise<WorkspaceMember> {
@@ -566,6 +568,9 @@ export class CloudClient {
             body: updateMemberRoleSchema.parse(input),
             schema: workspaceMemberSchema,
         });
+    }
+    resendMemberInvite(userId: number): Promise<void> {
+        return this.request('POST', `/workspaces/current/members/${userId}/resend-invite`, {}).then(() => undefined);
     }
     removeMember(userId: number): Promise<void> {
         return this.request('DELETE', `/workspaces/current/members/${userId}`, {});

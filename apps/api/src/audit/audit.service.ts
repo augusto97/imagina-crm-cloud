@@ -31,6 +31,8 @@ export type AuditAction =
     | 'field.type_change'
     | 'member.add'
     | 'member.role_change'
+    // v0.1.240 — reenviar la invitación a quien no definió su contraseña.
+    | 'member.invite_resend'
     | 'member.remove'
     | 'billing.plan_change'
     | 'workspace.smtp_change'

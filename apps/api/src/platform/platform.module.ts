@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { FilesModule } from '../files/files.module';
+import { MembersModule } from '../members/members.module';
 import { PlatformController } from './platform.controller';
 import { PlatformService } from './platform.service';
 import { TenantTransferController } from './tenant-transfer.controller';
@@ -13,7 +14,7 @@ import { TenantTransferService } from './tenant-transfer.service';
  * DbModule @Global.
  */
 @Module({
-    imports: [AuthModule, FilesModule],
+    imports: [AuthModule, FilesModule, MembersModule],
     controllers: [PlatformController, TenantTransferController],
     providers: [PlatformService, TenantTransferService, SuperadminGuard],
 })

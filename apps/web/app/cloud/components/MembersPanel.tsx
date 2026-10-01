@@ -1,52 +1,30 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { StaffRole, WorkspaceMember } from '@imagina-base/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Users } from 'lucide-react';
-import { CloudApiError } from '@/lib/cloud/client';
 import { api, useSession } from '@/cloud/session';
-import { Avatar } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-
-const STAFF_ROLES: StaffRole[] = ['admin', 'manager', 'agent', 'viewer'];
-const ROLE_LABELS: Record<StaffRole, string> = {
-    admin: 'Admin',
-    manager: 'Manager',
-    agent: 'Agente',
-    viewer: 'Lector',
-};
+import { MemberInviteForm, MemberRow } from './MemberControls';
 
 /**
  * Panel admin de miembros del workspace. Sólo se monta para el rol `admin`
- * (el backend igualmente lo exige, regla de oro: el front sólo oculta). Alta
- * por email (usuario ya registrado), cambio de rol y baja, con guard rails
- * server-side (último admin, auto-baja).
+ * (el backend igualmente lo exige, regla de oro: el front sólo oculta).
+ *
+ * v0.1.240: se INVITA por email — si la persona no tiene cuenta, se le crea y
+ * le llega un correo para definir su contraseña (antes había que pedirle que
+ * se registrara primero, y el registro le armaba una empresa propia vacía).
+ * Las invitaciones sin abrir se ven como pendientes, con Reenviar. Guard rails
+ * server-side: último admin, auto-baja, límite de usuarios del plan.
  */
 export function MembersPanel(): JSX.Element {
     const qc = useQueryClient();
     const tenantId = useSession((s) => s.activeTenantId);
     const meId = useSession((s) => s.user?.id ?? null);
-    const invalidate = () => qc.invalidateQueries({ queryKey: ['members', tenantId] });
+    const invalidate = (): Promise<void> => qc.invalidateQueries({ queryKey: ['members', tenantId] });
 
     const membersQ = useQuery({
         queryKey: ['members', tenantId],
         queryFn: () => api.listMembers(),
     });
-
-    const [email, setEmail] = useState('');
-    const [role, setRole] = useState<StaffRole>('agent');
-    const [error, setError] = useState<string | null>(null);
-
-    const add = useMutation({
-        mutationFn: () => api.addMember({ email: email.trim(), role }),
-        onSuccess: () => {
-            setEmail('');
-            setError(null);
-            void invalidate();
-        },
-        onError: (e) => setError(e instanceof CloudApiError ? e.message : 'No se pudo agregar'),
-    });
+    const pending = membersQ.data?.filter((m) => m.pending).length ?? 0;
 
     return (
         <Card>
@@ -57,140 +35,50 @@ export function MembersPanel(): JSX.Element {
                     </span>
                     <div>
                         <CardTitle>Miembros del workspace</CardTitle>
-                        <CardDescription>Agregá compañeros ya registrados y asigná su rol.</CardDescription>
+                        <CardDescription>
+                            Invitá a tu equipo por email y elegí su rol. Si la persona no tiene cuenta, le llega un correo
+                            para definir su contraseña; si ya tiene, queda sumada al instante. Los clientes del portal se
+                            manejan desde la ficha de cada registro.
+                        </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
-            <ul className="imcrm-space-y-1">
-                {membersQ.data?.map((m) => (
-                    <MemberRow
-                        key={m.user_id}
-                        member={m}
-                        isSelf={m.user_id === meId}
-                        onChanged={invalidate}
-                    />
-                ))}
-                {membersQ.data?.length === 0 && (
-                    <li className="imcrm-text-sm imcrm-text-muted-foreground">Sin miembros.</li>
-                )}
-            </ul>
+                <MemberInviteForm
+                    idPrefix="member"
+                    onSubmit={async (input) => {
+                        const r = await api.addMember(input);
+                        await invalidate();
+                        return r;
+                    }}
+                />
 
-            <form
-                className="imcrm-flex imcrm-items-end imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-4"
-                onSubmit={(e) => {
-                    e.preventDefault();
-                    if (email.trim()) add.mutate();
-                }}
-            >
-                <div className="imcrm-flex-1 imcrm-space-y-1">
-                    <label htmlFor="member-email" className="imcrm-text-xs imcrm-text-muted-foreground">
-                        Email
-                    </label>
-                    <Input
-                        id="member-email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="colega@empresa.com"
-                    />
+                <div className="imcrm-border-t imcrm-border-border imcrm-pt-3">
+                    <p className="imcrm-mb-1 imcrm-text-xs imcrm-text-muted-foreground">
+                        {membersQ.data
+                            ? `${membersQ.data.length} ${membersQ.data.length === 1 ? 'persona' : 'personas'}${pending > 0 ? ` · ${pending} con invitación pendiente` : ''}`
+                            : 'Cargando…'}
+                    </p>
+                    <ul className="imcrm-space-y-1">
+                        {membersQ.data?.map((m) => (
+                            <MemberRow
+                                key={m.user_id}
+                                member={m}
+                                isSelf={m.user_id === meId}
+                                onRole={async (role) => {
+                                    await api.updateMemberRole(m.user_id, { role });
+                                    await invalidate();
+                                }}
+                                onResend={() => api.resendMemberInvite(m.user_id)}
+                                onRemove={async () => {
+                                    await api.removeMember(m.user_id);
+                                    await invalidate();
+                                }}
+                            />
+                        ))}
+                    </ul>
                 </div>
-                <select
-                    aria-label="Rol"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as StaffRole)}
-                    className="imcrm-h-9 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-text-sm"
-                >
-                    {STAFF_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                            {ROLE_LABELS[r]}
-                        </option>
-                    ))}
-                </select>
-                <Button type="submit" size="sm" disabled={!email.trim() || add.isPending}>
-                    Agregar
-                </Button>
-            </form>
-            {error && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
             </CardContent>
         </Card>
-    );
-}
-
-function MemberRow({
-    member,
-    isSelf,
-    onChanged,
-}: {
-    member: WorkspaceMember;
-    isSelf: boolean;
-    onChanged: () => void;
-}): JSX.Element {
-    const [error, setError] = useState<string | null>(null);
-
-    const changeRole = useMutation({
-        mutationFn: (role: StaffRole) => api.updateMemberRole(member.user_id, { role }),
-        onSuccess: () => {
-            setError(null);
-            onChanged();
-        },
-        onError: (e) => setError(e instanceof CloudApiError ? e.message : 'Error'),
-    });
-    const remove = useMutation({
-        mutationFn: () => api.removeMember(member.user_id),
-        onSuccess: () => {
-            setError(null);
-            onChanged();
-        },
-        onError: (e) => setError(e instanceof CloudApiError ? e.message : 'Error'),
-    });
-
-    // `client` no se administra desde acá (se gestiona vía portal); si aparece
-    // lo mostramos read-only por robustez.
-    const editable = member.role !== 'client';
-
-    return (
-        <li className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded-lg imcrm-px-2 imcrm-py-2 imcrm-transition-colors hover:imcrm-bg-muted/40">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2.5">
-                <Avatar name={member.name} />
-                <div className="imcrm-min-w-0">
-                    <div className="imcrm-truncate imcrm-text-sm imcrm-font-medium">
-                        {member.name}
-                        {isSelf && <span className="imcrm-ml-1 imcrm-text-xs imcrm-text-muted-foreground">(vos)</span>}
-                    </div>
-                    <div className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{member.email}</div>
-                    {error && <div className="imcrm-text-xs imcrm-text-destructive">{error}</div>}
-                </div>
-            </div>
-            <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
-                {editable ? (
-                    <select
-                        aria-label={`Rol de ${member.name}`}
-                        value={member.role}
-                        onChange={(e) => changeRole.mutate(e.target.value as StaffRole)}
-                        disabled={changeRole.isPending}
-                        className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-text-sm"
-                    >
-                        {STAFF_ROLES.map((r) => (
-                            <option key={r} value={r}>
-                                {ROLE_LABELS[r]}
-                            </option>
-                        ))}
-                    </select>
-                ) : (
-                    <span className="imcrm-text-xs imcrm-text-muted-foreground">portal</span>
-                )}
-                {!isSelf && (
-                    <button
-                        onClick={() => remove.mutate()}
-                        disabled={remove.isPending}
-                        aria-label={`Quitar a ${member.name}`}
-                        className="imcrm-px-1 imcrm-text-muted-foreground hover:imcrm-text-destructive"
-                    >
-                        ✕
-                    </button>
-                )}
-            </div>
-        </li>
     );
 }

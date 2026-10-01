@@ -1,23 +1,29 @@
-import {
-    ConflictException,
-    ForbiddenException,
-    Injectable,
-    UnprocessableEntityException,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import type {
     AddMemberInput,
+    AddMemberResult,
     UpdateMemberRoleInput,
     WorkspaceMember,
 } from '@imagina-base/shared';
+import { AuthService } from '../auth/auth.service';
+import { BillingService } from '../billing/billing.service';
 import type { Tx } from '../db/client';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MembersRepository, type MemberRow } from './members.repository';
 
+/**
+ * Miembros del EQUIPO de una empresa (los clientes del portal se gestionan
+ * desde la ficha de su registro). Lo usan el panel de Miembros (admin de la
+ * empresa) y la consola de plataforma; los guard rails —no quedarse sin admin,
+ * no quitarse a uno mismo— valen para los dos.
+ */
 @Injectable()
 export class MembersService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly repo: MembersRepository,
+        private readonly auth: AuthService,
+        private readonly billing: BillingService,
     ) {}
 
     async list(tenantId: number): Promise<WorkspaceMember[]> {
@@ -27,28 +33,33 @@ export class MembersService {
         return rows.map(toMember);
     }
 
-    /** Suma un usuario YA registrado (por email) al workspace con un rol. */
-    async add(tenantId: number, input: AddMemberInput): Promise<WorkspaceMember> {
-        return this.tenantDb.withTenant(tenantId, async (tx) => {
-            const user = await this.repo.findUserByEmail(tx, input.email);
-            if (!user) {
-                throw new UnprocessableEntityException({
-                    code: 'user_not_registered',
-                    message: `No hay un usuario registrado con ${input.email}. Pedile que cree su cuenta primero.`,
-                    data: { status: 422, errors: { email: 'Sin cuenta' } },
-                });
-            }
-            const existing = await this.repo.findMembership(tx, tenantId, user.id);
-            if (existing) {
-                throw new ConflictException({
-                    code: 'already_member',
-                    message: `${input.email} ya es miembro de este workspace`,
-                    data: { status: 409, errors: { email: 'Ya es miembro' } },
-                });
-            }
-            await this.repo.insert(tx, tenantId, user.id, input.role);
-            return { user_id: user.id, name: user.name, email: user.email, role: input.role };
-        });
+    /**
+     * Suma a alguien por email. v0.1.240: si no tiene cuenta, se crea por
+     * INVITACIÓN (correo para definir su contraseña) en vez de pedirle que se
+     * registre primero. `enforcePlan` = el límite de usuarios del plan; la
+     * consola de plataforma lo saltea (el operador decide).
+     */
+    async add(
+        tenantId: number,
+        input: AddMemberInput,
+        opts: { invitedById?: number | null; enforcePlan?: boolean } = {},
+    ): Promise<AddMemberResult> {
+        if (opts.enforcePlan !== false) await this.billing.assertCanAddMember(tenantId);
+        const r = await this.auth.addToTenant(tenantId, input, { invitedById: opts.invitedById ?? null });
+        return {
+            user_id: r.user.id,
+            name: r.user.name,
+            email: r.user.email,
+            role: r.role,
+            pending: r.pending,
+            invited: r.invited,
+            notified: r.notified,
+        };
+    }
+
+    /** Reenvía la invitación de un miembro que todavía no definió su contraseña. */
+    resendInvite(tenantId: number, userId: number): Promise<{ email: string }> {
+        return this.auth.resendInvite(tenantId, userId);
     }
 
     async updateRole(
@@ -59,6 +70,7 @@ export class MembersService {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const member = await this.repo.findMembership(tx, tenantId, targetUserId);
             if (!member) throw notMember(targetUserId);
+            if (member.role === 'client') throw portalClient();
             // No dejar el workspace sin ningún admin.
             if (member.role === 'admin' && input.role !== 'admin') {
                 await this.assertNotLastAdmin(tx, tenantId);
@@ -68,10 +80,11 @@ export class MembersService {
         });
     }
 
-    async remove(tenantId: number, actingUserId: number, targetUserId: number): Promise<void> {
-        await this.tenantDb.withTenant(tenantId, async (tx) => {
+    async remove(tenantId: number, actingUserId: number, targetUserId: number): Promise<WorkspaceMember> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
             const member = await this.repo.findMembership(tx, tenantId, targetUserId);
             if (!member) throw notMember(targetUserId);
+            if (member.role === 'client') throw portalClient();
             if (targetUserId === actingUserId) {
                 throw new ForbiddenException({
                     code: 'cannot_remove_self',
@@ -81,6 +94,7 @@ export class MembersService {
             }
             if (member.role === 'admin') await this.assertNotLastAdmin(tx, tenantId);
             await this.repo.remove(tx, tenantId, targetUserId);
+            return toMember(member);
         });
     }
 
@@ -97,13 +111,27 @@ export class MembersService {
 }
 
 function toMember(row: MemberRow): WorkspaceMember {
-    return { user_id: row.userId, name: row.name, email: row.email, role: row.role };
+    return {
+        user_id: row.userId,
+        name: row.name,
+        email: row.email,
+        role: row.role,
+        pending: row.invitedAt !== null,
+    };
 }
 
 function notMember(userId: number) {
     return new ConflictException({
         code: 'not_member',
         message: `El usuario ${userId} no es miembro de este workspace`,
+        data: { status: 409 },
+    });
+}
+
+function portalClient() {
+    return new ConflictException({
+        code: 'portal_client',
+        message: 'Es un cliente del portal: su acceso se maneja desde la ficha de su registro',
         data: { status: 409 },
     });
 }

@@ -22,8 +22,10 @@ import {
     type BillingStatus,
     type Plan,
     type PlatformTenant,
+    type PlatformTenantDetail,
 } from '@imagina-base/shared';
 
+import { MemberInviteForm, MemberRow } from '@/cloud/components/MemberControls';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,9 +55,13 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import {
+    useAddTenantMember,
     useCreateTenant,
     useDeleteTenant,
     useImpersonate,
+    useRemoveTenantMember,
+    useResendTenantInvite,
+    useUpdateTenantMember,
     usePlatformPlans,
     usePlatformTenants,
     useTenantDetail,
@@ -684,42 +690,13 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 )}
                             </section>
 
-                            {/* Miembros */}
-                            <section className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                                <h3 className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                                    <Users className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Miembros')} ({detail.data.members.length})
-                                </h3>
-                                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                                    {detail.data.members.map((m) => (
-                                        <li key={m.user_id} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-px-1.5 imcrm-py-1.5 imcrm-text-sm imcrm-transition-colors hover:imcrm-bg-muted/40">
-                                            <Avatar name={m.name} size="sm" />
-                                            <div className="imcrm-min-w-0 imcrm-flex-1">
-                                                <div className="imcrm-truncate imcrm-font-medium">{m.name}</div>
-                                                <div className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{m.email}</div>
-                                            </div>
-                                            <Badge variant="outline" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">{m.role}</Badge>
-                                            {m.disabled ? (
-                                                <Badge variant="destructive" dot className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">{__('desactivada')}</Badge>
-                                            ) : (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
-                                                    disabled={impersonate.isPending}
-                                                    onClick={() => doImpersonate(m.user_id, m.name)}
-                                                    title={__('Entrar como este usuario (soporte)')}
-                                                >
-                                                    <LogIn className="imcrm-h-3 imcrm-w-3" />
-                                                    {__('Impersonar')}
-                                                </Button>
-                                            )}
-                                        </li>
-                                    ))}
-                                    {detail.data.members.length === 0 && (
-                                        <li className="imcrm-text-sm imcrm-text-muted-foreground">{__('Sin miembros')}</li>
-                                    )}
-                                </ul>
-                            </section>
+                            {/* Miembros (v0.1.240: se gestionan desde acá — invitar, rol, quitar) */}
+                            <TenantMembersSection
+                                tenantId={t.id}
+                                members={detail.data.members}
+                                impersonating={impersonate.isPending}
+                                onImpersonate={doImpersonate}
+                            />
 
                             {error !== null && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
                         </>
@@ -744,5 +721,76 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                 )}
             </SheetContent>
         </Sheet>
+    );
+}
+
+/**
+ * v0.1.240 — Miembros de una empresa desde la consola: invitar por email (si
+ * no tiene cuenta se le crea y le llega el correo), cambiar el rol, reenviar
+ * invitaciones y quitar, con los mismos guard rails que el panel del admin de
+ * la empresa. El límite de usuarios del plan NO aplica acá: decide el operador.
+ * Los clientes del portal sólo se cuentan (su acceso vive en la ficha).
+ */
+function TenantMembersSection({
+    tenantId,
+    members,
+    impersonating,
+    onImpersonate,
+}: {
+    tenantId: number;
+    members: PlatformTenantDetail['members'];
+    impersonating: boolean;
+    onImpersonate: (userId: number, name: string) => void;
+}): JSX.Element {
+    const add = useAddTenantMember();
+    const update = useUpdateTenantMember();
+    const remove = useRemoveTenantMember();
+    const resend = useResendTenantInvite();
+    const staff = members.filter((m) => m.role !== 'client');
+    const clients = members.length - staff.length;
+
+    return (
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="tenant-members">
+            <h3 className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                <Users className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Miembros')} ({staff.length})
+            </h3>
+            <MemberInviteForm
+                idPrefix={`tenant-${tenantId}-member`}
+                stacked
+                onSubmit={(input) => add.mutateAsync({ tenantId, input })}
+            />
+            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                {staff.map((m) => (
+                    <MemberRow
+                        key={m.user_id}
+                        member={m}
+                        onRole={(role) => update.mutateAsync({ tenantId, userId: m.user_id, input: { role } })}
+                        onResend={() => resend.mutateAsync({ tenantId, userId: m.user_id })}
+                        onRemove={() => remove.mutateAsync({ tenantId, userId: m.user_id })}
+                        extra={
+                            !m.disabled && !m.pending ? (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="imcrm-h-8 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
+                                    disabled={impersonating}
+                                    onClick={() => onImpersonate(m.user_id, m.name)}
+                                    title={__('Entrar como este usuario (soporte)')}
+                                >
+                                    <LogIn className="imcrm-h-3 imcrm-w-3" />
+                                    {__('Impersonar')}
+                                </Button>
+                            ) : null
+                        }
+                    />
+                ))}
+                {staff.length === 0 && <li className="imcrm-text-sm imcrm-text-muted-foreground">{__('Sin miembros')}</li>}
+            </ul>
+            {clients > 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {clients} {clients === 1 ? __('cliente del portal') : __('clientes del portal')} {__('(su acceso se maneja desde la ficha de cada registro)')}
+                </p>
+            )}
+        </section>
     );
 }

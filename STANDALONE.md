@@ -1972,6 +1972,28 @@ base (requiere `BYPASSRLS` + migrar instalaciones existentes por consola) y
 quitar `'unsafe-inline'` de `style-src` (React escribe `style=""`; un estilo
 no ejecuta código).
 
+**Invitaciones al equipo (v0.1.240).** Sumar a alguien a una empresa ya no
+exige que tenga cuenta: `AuthService.addToTenant(tenantId, {email, name?,
+role})` suma la cuenta existente (con aviso por correo, best-effort) o la crea
+por INVITACIÓN — contraseña aleatoria que nadie conoce + `users.invited_at`
+(migración 0057) + el mismo token de un solo uso del reset pero con TTL de 7
+días y textos de invitación (`/reset?token=…&invite=1`). Definir la contraseña
+limpia `invited_at` y marca el email como verificado (el enlace llegó a su
+casilla). Sin correo de cuenta disponible se corta ANTES de crear la cuenta
+(una cuenta que no recibe el enlace no puede entrar). Reglas: el email de un
+superadmin está reservado, una cuenta desactivada no se suma, un cliente del
+portal de esa empresa tampoco (su acceso vive en la ficha), y reenviar una
+invitación pendiente tiene tope de 3 por hora por persona. El panel de
+Miembros (admin) lo aplica con el **límite de usuarios del plan**
+(`max_users`, que existía desde F4 sin aplicarse en ningún lado; cuentan sólo
+las personas del equipo, no los clientes del portal — también en el uso que
+muestran Ajustes y la consola). La consola de plataforma reusa el MISMO
+`MembersService` (guard rails de último admin y auto-baja) sin el límite del
+plan: `POST/PATCH/DELETE /platform/tenants/:id/members[/:userId]`,
+`…/resend-invite`, `GET /platform/users/:id/workspaces` y
+`POST /platform/users/:id/resend-invite`; cada acción queda en la bitácora de
+esa empresa con el operador como autor.
+
 ---
 
-**Versión del documento:** 1.52.0 (cuarta tanda de seguridad)
+**Versión del documento:** 1.53.0 (invitaciones al equipo)

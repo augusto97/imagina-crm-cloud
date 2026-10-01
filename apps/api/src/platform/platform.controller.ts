@@ -15,6 +15,13 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    addMemberSchema,
+    updateMemberRoleSchema,
+    type AddMemberInput,
+    type AddMemberResult,
+    type PlatformUserWorkspace,
+    type UpdateMemberRoleInput,
+    type WorkspaceMember,
     createPlanSchema,
     createPlatformUserSchema,
     createTenantSchema,
@@ -120,6 +127,50 @@ export class PlatformController {
         await this.platform.deleteTenant(id);
     }
 
+    // ─────────── Miembros de una empresa (v0.1.240) ───────────
+
+    /** Suma a alguien por email (si no tiene cuenta, se la crea por invitación). */
+    @Post('tenants/:id/members')
+    @HttpCode(201)
+    addTenantMember(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(addMemberSchema)) input: AddMemberInput,
+    ): Promise<AddMemberResult> {
+        return this.platform.addTenantMember(id, input, req.authUserId!);
+    }
+
+    @Patch('tenants/:id/members/:userId')
+    updateTenantMember(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('userId', ParseIntPipe) userId: number,
+        @Body(new ZodValidationPipe(updateMemberRoleSchema)) input: UpdateMemberRoleInput,
+    ): Promise<WorkspaceMember> {
+        return this.platform.updateTenantMemberRole(id, userId, input, req.authUserId!);
+    }
+
+    @Delete('tenants/:id/members/:userId')
+    @HttpCode(204)
+    async removeTenantMember(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('userId', ParseIntPipe) userId: number,
+    ): Promise<void> {
+        await this.platform.removeTenantMember(id, userId, req.authUserId!);
+    }
+
+    @Post('tenants/:id/members/:userId/resend-invite')
+    @HttpCode(202)
+    async resendTenantInvite(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('userId', ParseIntPipe) userId: number,
+    ): Promise<{ ok: true }> {
+        await this.platform.resendTenantInvite(id, userId, req.authUserId!);
+        return { ok: true };
+    }
+
     // ─────────────────────────── Usuarios (F2) ───────────────────────────
 
     /** Todos los usuarios de la plataforma con nº de workspaces + flags. */
@@ -151,6 +202,20 @@ export class PlatformController {
     @HttpCode(204)
     async deleteUser(@Param('id', ParseIntPipe) id: number): Promise<void> {
         await this.platform.deleteUser(id);
+    }
+
+    /** v0.1.240 — Empresas a las que pertenece una persona, con su rol. */
+    @Get('users/:id/workspaces')
+    userWorkspaces(@Param('id', ParseIntPipe) id: number): Promise<{ data: PlatformUserWorkspace[] }> {
+        return this.platform.userWorkspaces(id).then((data) => ({ data }));
+    }
+
+    /** v0.1.240 — Reenvía la invitación de una cuenta que no definió su contraseña. */
+    @Post('users/:id/resend-invite')
+    @HttpCode(202)
+    async resendUserInvite(@Param('id', ParseIntPipe) id: number): Promise<{ ok: true }> {
+        await this.platform.resendUserInvite(id);
+        return { ok: true };
     }
 
     /** Dispara el email de reset de contraseña de un usuario. */
