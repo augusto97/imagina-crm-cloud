@@ -1932,6 +1932,46 @@ servidor agrupados (pedidos 5xx, base de datos, proceso). Vive en Redis
 (lo usan el filtro global y el pool, que viven fuera de la DI), best-effort, y
 nunca guarda la query string (puede traer tokens).
 
+**Cuarta tanda de seguridad (v0.1.239).** SEC-33 a SEC-37, cada uno
+verificado contra el código antes de tocarlo.
+(SEC-33) **Correo**: la cuota mensual cuenta DESTINATARIOS distintos (to + cc
++ bcc), no mensajes; por el SMTP COMPARTIDO (plataforma o `.env`) una empresa
+no elige la dirección remitente — conserva el nombre visible y su dirección
+pasa a `Reply-To` (con SMTP propio manda la empresa); y el cuerpo HTML de
+Gmail/Outlook escapa los valores interpolados igual que `send_email`
+(`HTML_PARAMS` + `mergeHtml` obligatorio en `compileIntegrationValues`).
+(SEC-34) **Solo-lectura fuera del HTTP**: `tenantIsReadOnly(tx, tenantId)`
+corta las automatizaciones (eventos, programadas, por fecha, por webhook) y
+las recurrencias de una empresa impaga/archivada — antes sólo el `TenantGuard`
+lo aplicaba. El webhook entrante responde 403 `workspace_read_only` y tiene
+tope POR TOKEN en Redis (60/min, 2.000/h; el rate limit general es por IP).
+(SEC-35) **Sesiones y cuentas**: los sockets del realtime se re-validan cada
+60 s (sesión viva sin deslizar su TTL — `SessionService.peek` —, cuenta
+activa, sigue siendo miembro); freno de **login CSRF** por Fetch Metadata /
+`Origin` para todo pedido que cambia algo (`common/cross-site.ts`; quedan
+abiertas las superficies públicas pensadas para otros sitios: `/public/*`,
+OAuth/MCP, webhooks de pagos); freno POR CUENTA (10 fallos / 15 min) a la
+contraseña que piden cambiar contraseña, desactivar 2FA y borrar la cuenta;
+`portal/request-access` responde sin esperar al SMTP (el tiempo de respuesta
+revelaba quién es cliente de quién); y apagar el portal de una lista
+(`portal.enabled: false`) corta al instante a los clientes con sesión.
+(SEC-36) **ACL a través de relaciones**: un lookup/rollup hacia una lista que
+el viewer no ve COMPLETA (sin acceso, sólo lo suyo/asignado, o el campo de
+origen oculto) cuenta como campo oculto — no viaja, no filtra, no ordena, no
+se agrega (`ThroughEngine.restrictedFor`); y un `computed` que usa como
+entrada un campo oculto se oculta también (`withDependentComputed`).
+(SEC-37) **Despliegue**: el `.env` de un snapshot restaurado descarta
+variables que cambian cómo arranca el proceso (`NODE_OPTIONS`, `LD_*`,
+`*_PROXY`, `PATH`…); el workflow de release firma el bundle con ed25519 si
+existe el secreto `RELEASE_SIGNING_KEY` (el verificador del servidor existía
+desde SEC-12 pero nada producía la firma) y `UPDATER_PUBLIC_KEY` acepta la
+clave en una línea; y la CSP por `<meta>` deja de permitir scripts inline:
+el build calcula el `sha256` de cada `<script>` inline y lo pone en
+`script-src`. **Pendiente**: rol de Postgres no superusuario para la conexión
+base (requiere `BYPASSRLS` + migrar instalaciones existentes por consola) y
+quitar `'unsafe-inline'` de `style-src` (React escribe `style=""`; un estilo
+no ejecuta código).
+
 ---
 
-**Versión del documento:** 1.51.0 (correo de cuenta honesto + diagnóstico)
+**Versión del documento:** 1.52.0 (cuarta tanda de seguridad)

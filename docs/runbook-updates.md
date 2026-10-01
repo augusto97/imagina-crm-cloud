@@ -39,6 +39,29 @@ Requisitos del SO:
   (`/etc/sudoers.d/imagina`: `deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api`).
 - `curl`, `unzip`, `sha256sum` disponibles (estándar en Ubuntu).
 
+## Firma de los releases (opcional, recomendado — SEC-37)
+
+El `.sha256` sólo detecta un archivo corrupto: quien pudiera alterar un release
+también publicaría un checksum que coincide. Con firma, el servidor instala
+SOLO bundles firmados con tu clave privada.
+
+1. Generá el par de claves (una vez, en tu computadora — la privada no va al servidor):
+   ```bash
+   openssl genpkey -algorithm ed25519 -out release-signing.pem
+   openssl pkey -in release-signing.pem -pubout -out release-signing.pub
+   ```
+2. En GitHub → Settings → Secrets → Actions, creá `RELEASE_SIGNING_KEY` con el
+   contenido de `release-signing.pem`. Desde el próximo release, el workflow
+   publica también `imagina-base-<versión>.zip.sig`.
+3. En el servidor, agregá al `.env.production` la clave PÚBLICA en una sola
+   línea — alcanza con el cuerpo, sin las líneas BEGIN/END:
+   `UPDATER_PUBLIC_KEY=MCowBQYDK2VwAyEA…` (lo que queda de `release-signing.pub`
+   al sacarle la primera y la última línea), y reiniciá el servicio.
+
+Desde ese momento un release sin `.sig` o con una firma que no valida se
+RECHAZA (fail-closed) y queda el motivo en el panel de Actualizaciones. Activá
+el paso 3 recién cuando ya hay al menos un release firmado publicado.
+
 ## Repo privado (a futuro)
 
 Cuando el repo pase a privado: creá un token de solo-lectura (fine-grained,

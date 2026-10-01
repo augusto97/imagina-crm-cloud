@@ -169,9 +169,20 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             throw err;
         }
         const metered = !own && message.tenantId !== undefined && this.quota !== undefined;
+        const recipients = countRecipients(message);
+        // SEC-33 (v0.1.239): por el SMTP COMPARTIDO (plataforma o `.env`) una
+        // empresa no elige el remitente. Antes `from` pasaba tal cual: cualquier
+        // automatización mandaba "de" `soporte@banco.com` por el servidor y la
+        // reputación del operador — phishing con nuestra IP. El nombre visible
+        // se conserva y la dirección elegida pasa a Reply-To (las respuestas le
+        // siguen llegando a la empresa). Con SMTP propio, manda la empresa.
+        const outgoing: MailMessage =
+            !own && message.tenantId !== undefined && message.from
+                ? { ...message, from: undefined, replyTo: message.replyTo ?? message.from }
+                : message;
         try {
-            if (metered) await this.quota!.assertWithinQuota(message.tenantId!);
-            await transport.send(message);
+            if (metered) await this.quota!.assertWithinQuota(message.tenantId!, recipients);
+            await transport.send(outgoing);
         } catch (err) {
             recordMail({ ...base, via, status: 'failed', error: errorText(err) });
             throw err;
@@ -187,7 +198,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         if (metered) {
             // Best-effort: si falla el contador, el correo YA salió — no tiene
             // sentido reintentarlo ni romperle la operación al cliente.
-            await this.quota!.record(message.tenantId!).catch((err: unknown) =>
+            await this.quota!.record(message.tenantId!, recipients).catch((err: unknown) =>
                 this.logger.warn(`No se pudo contabilizar el correo del tenant ${message.tenantId}: ${String(err)}`),
             );
         }
@@ -253,6 +264,19 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         await this.queue?.close();
         await Promise.all(this.connections.map((c) => c.quit().catch(() => undefined)));
     }
+}
+
+/**
+ * Destinatarios distintos del mensaje (to + cc + bcc, sin repetir). La cuota
+ * se mide por persona que recibe, como cualquier proveedor de correo.
+ */
+export function countRecipients(message: Pick<MailMessage, 'to' | 'cc' | 'bcc'>): number {
+    const all = [message.to, message.cc, message.bcc]
+        .filter((v): v is string => typeof v === 'string' && v !== '')
+        .flatMap((v) => v.split(/[,;]/))
+        .map((v) => v.trim().toLowerCase())
+        .filter((v) => v !== '');
+    return Math.max(1, new Set(all).size);
 }
 
 function errorText(err: unknown): string {

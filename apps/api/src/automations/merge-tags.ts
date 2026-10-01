@@ -143,3 +143,10 @@ function applyDateModifiers(value: string, mods: string): string {
     const pad = (x: number): string => String(x).padStart(2, '0');
     return `${y}-${pad(mo)}-${pad(d)}${tail}`;
 }
+
+/** Escapa un valor para inyectarlo seguro en HTML (SEC-08 / SEC-33). */
+export function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+    );
+}

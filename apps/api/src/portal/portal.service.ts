@@ -84,6 +84,7 @@ export interface PortalActor {
 
 @Injectable()
 export class PortalService {
+    private readonly inFlight = new Set<Promise<void>>();
     private readonly logger = new Logger(PortalService.name);
 
     constructor(
@@ -266,6 +267,24 @@ export class PortalService {
             this.logger.warn(`Pedidos de acceso al portal frenados para ${email}`);
             return;
         }
+        // SEC-35 (v0.1.239): la búsqueda y el envío corren DESPUÉS de responder.
+        // Antes la respuesta esperaba al SMTP sólo cuando el email era cliente
+        // de alguien: medir cuánto tardaba alcanzaba para saber quién es
+        // cliente de quién (el texto de la respuesta ya era siempre igual).
+        const job = this.deliverAccess(email)
+            .catch((err: unknown) =>
+                this.logger.warn(`No se pudo reenviar el acceso al portal: ${err instanceof Error ? err.message : String(err)}`),
+            )
+            .finally(() => this.inFlight.delete(job));
+        this.inFlight.add(job);
+    }
+
+    /** Espera los envíos de acceso que quedaron corriendo (tests y apagado ordenado). */
+    async whenIdle(): Promise<void> {
+        await Promise.all([...this.inFlight]);
+    }
+
+    private async deliverAccess(email: string): Promise<void> {
 
         const [user] = await this.db
             .select({ id: users.id, disabledAt: users.disabledAt })
@@ -287,6 +306,8 @@ export class PortalService {
                 .from(lists)
                 .where(eq(lists.id, link.listId))
                 .limit(1);
+            // Un portal que la empresa apagó no reparte enlaces nuevos.
+            if (await this.portalSwitchedOff(link.tenantId, link.listId)) continue;
             await this.sendMagicLink(link.tenantId, user.id, email, list?.name ?? 'tu portal');
         }
     }
@@ -418,7 +439,27 @@ export class PortalService {
                 data: { status: 404 },
             });
         }
+        // SEC-35 (v0.1.239): si la empresa APAGÓ el portal de esa lista, el
+        // cliente con una sesión abierta deja de ver su ficha al instante
+        // (antes seguía entrando hasta que vencía la sesión, 30 días).
+        if (await this.portalSwitchedOff(link.tenantId, link.listId)) {
+            throw new NotFoundException({
+                code: 'portal_disabled',
+                message: 'El portal de esta empresa no está disponible',
+                data: { status: 404 },
+            });
+        }
         return link;
+    }
+
+    /** El portal de la lista fue DESACTIVADO explícitamente (`portal.enabled: false`). */
+    private async portalSwitchedOff(tenantId: number, listId: number): Promise<boolean> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1),
+        );
+        if (!row) return true;
+        const portal = (row.settings as Record<string, unknown> | null)?.portal;
+        return portal !== null && typeof portal === 'object' && (portal as { enabled?: unknown }).enabled === false;
     }
 
     /**

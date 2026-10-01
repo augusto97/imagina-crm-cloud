@@ -112,9 +112,29 @@ jobs:
           sha256sum "$ZIP" | awk '{print $1}' > "${ZIP}.sha256"
           ls -lh dist-release
 
+      # SEC-37 (v0.1.239): firma DETACHED ed25519 del bundle (opt-in). El
+      # `.sha256` sólo detecta corrupción: quien pueda alterar el release
+      # también trae un checksum que coincide. Con el secreto
+      # RELEASE_SIGNING_KEY (clave privada PEM ed25519) se publica `.zip.sig`,
+      # y un servidor con UPDATER_PUBLIC_KEY se niega a instalar un bundle sin
+      # firma válida (verify-signature.ts). Sin el secreto, el paso no hace nada.
+      - name: Firmar el bundle (si hay clave)
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "${RELEASE_SIGNING_KEY}" ]; then echo "sin RELEASE_SIGNING_KEY: release sin firma"; exit 0; fi
+          umask 077
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > /tmp/release-signing.pem
+          for ZIP in dist-release/*.zip; do
+            openssl pkeyutl -sign -inkey /tmp/release-signing.pem -rawin -in "$ZIP" -out "${ZIP}.sig"
+          done
+          rm -f /tmp/release-signing.pem
+          ls -l dist-release/*.sig
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.gate.outputs.ref }}
           files: |
             dist-release/*.zip
             dist-release/*.zip.sha256
+            dist-release/*.zip.sig

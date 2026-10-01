@@ -6167,6 +6167,72 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         aviso → reenviar → cerrar → verificar con el enlace real → ya no
         aparece; celular).
 
+  - [x] **Cuarta tanda de seguridad (v0.1.239)** — los pendientes que dejó
+        v0.1.228, cada uno verificado en el código antes de tocarlo:
+        (a) **SEC-33 — correo**: la cuota mensual de correos contaba UN correo
+        aunque llevara 25 en `to` + 25 en `cc` + 25 en `bcc` (la cuota del
+        plan se multiplicaba por 75); ahora cuenta destinatarios distintos.
+        Por el SMTP COMPARTIDO (el de la plataforma o el del `.env`) una
+        empresa ya no elige la dirección remitente — una automatización
+        mandaba "de" `soporte@banco.com` con la IP y la reputación del
+        operador —: se conserva el nombre visible y su dirección pasa a
+        `Reply-To` (las respuestas le siguen llegando); con SMTP propio manda
+        la empresa. Y el cuerpo HTML de Gmail/Outlook (integraciones) metía
+        los valores del registro SIN escapar — texto que puede escribir un
+        cliente desde el portal o un formulario por webhook terminaba como
+        enlaces/botones dentro de un correo legítimo de la empresa —: ahora se
+        escapan igual que en `send_email`.
+        (b) **SEC-34 — solo-lectura fuera del HTTP**: una empresa impaga o
+        archivada seguía corriendo automatizaciones programadas, por fecha y
+        por webhook entrante, y recurrencias (creando registros y mandando
+        correos), porque el solo-lectura de ADR-S09 sólo lo aplicaba el guard
+        de las peticiones de personas. Ahora el motor y las recurrencias lo
+        chequean, y el webhook entrante responde 403. Además tiene **tope por
+        token** (60 por minuto, 2.000 por hora, en Redis): el token vive en el
+        HTML de un formulario público y el rate limit general es por IP.
+        (c) **SEC-35 — sesiones y cuentas**: el realtime sólo miraba la sesión
+        al CONECTAR — cerrar sesión, recuperar la contraseña, desactivar la
+        cuenta o sacar a alguien de la empresa no cortaba su socket. Ahora se
+        re-valida cada minuto (sin estirar la vida de la sesión). **Login
+        CSRF**: un formulario oculto en otro sitio podía loguear a la víctima
+        en la cuenta del ATACANTE (la cookie `SameSite=Lax` no lo impide);
+        ahora todo pedido que cambia algo y viene de otro sitio se rechaza
+        (Fetch Metadata / `Origin`), salvo lo público pensado para eso
+        (webhooks entrantes, listas públicas, OAuth/MCP, pagos). **Freno por
+        cuenta** a la contraseña que piden cambiar contraseña, desactivar 2FA
+        y borrar la cuenta (con una sesión robada se podían probar sin
+        límite). **Portal**: "pedir un enlace nuevo" respondía más lento sólo
+        si el email era cliente de alguien (esperaba al SMTP) — ahora contesta
+        al toque y envía después; y apagar el portal de una lista corta al
+        instante a los clientes con sesión abierta (antes seguían 30 días).
+        (d) **SEC-36 — permisos a través de relaciones**: un agente sin acceso
+        a "Facturas" leía los montos por un lookup en "Clientes" y los sumaba
+        con un rollup (y filtraba por ellos). Ahora un lookup/rollup hacia una
+        lista que la persona no ve completa —o cuyo campo de origen le está
+        oculto— cuenta como campo oculto: no viaja, no filtra, no ordena, no se
+        agrega. Y un `computed` que usa un campo oculto se oculta también
+        (`ganancia = precio − costo` despejaba el costo).
+        (e) **SEC-37 — despliegue**: restaurar un snapshot ajeno ya no puede
+        meter `NODE_OPTIONS`, `LD_PRELOAD`, proxies, etc. en el `.env` (se
+        descartan avisando); el workflow de release **firma** el bundle con
+        ed25519 cuando existe el secreto `RELEASE_SIGNING_KEY` (el servidor
+        sabía verificar firmas desde SEC-12, pero nada las producía — pasos en
+        `docs/runbook-updates.md`); y la CSP del SPA deja de permitir scripts
+        inline: el build calcula el hash de cada uno (el pre-pintado del tema)
+        y sólo esos corren.
+        **Queda pendiente, a propósito**: rol de Postgres no superusuario para
+        la conexión base (necesita `BYPASSRLS` y migrar cada instalación por
+        consola) y `'unsafe-inline'` en `style-src` (React escribe `style=""`
+        en cientos de nodos; un estilo no ejecuta código).
+        Tests: 27 nuevos o extendidos (destinatarios y remitente, escape
+        Gmail/Outlook, webhook en solo-lectura, sockets re-validados, CSRF,
+        freno por cuenta, portal apagado y respuesta sin esperar al SMTP,
+        lookup/rollup/computed ocultos, `.env` envenenado en un snapshot real,
+        firma openssl ↔ verificador) + verificación en vivo en modo producción
+        contra el build: CSRF por curl (form cross-site 403, Origin ajeno 403,
+        mismo origen 200, sin Origin 200, webhook público 404 por token) y CSP
+        con hash: login, listas, tabla, WebSocket y portal con cero violaciones.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

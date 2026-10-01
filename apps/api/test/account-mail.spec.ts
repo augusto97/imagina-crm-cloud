@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type Redis from 'ioredis';
 import { loadEnv, type Env } from '../src/config/env';
-import { MailService } from '../src/mail/mail.service';
+import { countRecipients, MailService } from '../src/mail/mail.service';
 import type { MailMessage, MailTransport } from '../src/mail/mail.types';
 import { PlatformSettingsService } from '../src/mail/platform-settings.service';
 import { LogMailTransport } from '../src/mail/transports/log.transport';
@@ -163,5 +163,24 @@ describe('correo de cuenta (v0.1.238)', () => {
         expect(errors[1]).toMatchObject({ source: 'request', method: 'POST', path: '/api/v1/auth/reset', message: 'boom' });
         expect(JSON.stringify(errors)).not.toContain('SECRETO');
         expect(errors[0]!.source).toBe('database');
+    });
+});
+
+describe('SEC-33 — correo por el SMTP compartido', () => {
+    it('cuenta destinatarios distintos (to + cc + bcc), no mensajes', () => {
+        expect(countRecipients({ to: 'a@x.test' })).toBe(1);
+        expect(countRecipients({ to: 'a@x.test, b@x.test', cc: 'C@x.test;a@x.test', bcc: 'd@x.test' })).toBe(4);
+    });
+
+    it('la empresa no elige la dirección remitente por el SMTP compartido: pasa a Reply-To', async () => {
+        const { env, platform } = setup();
+        const cap = new CaptureTransport();
+        await new MailService(env, cap, platform).sendNow({
+            tenantId: 9, to: 'cliente@x.test', subject: 'Factura', from: 'soporte@banco.test', fromName: 'Acme',
+        });
+        expect(cap.sent[0]).toMatchObject({ from: undefined, fromName: 'Acme', replyTo: 'soporte@banco.test' });
+        // Un correo de CUENTA (sin empresa) no se toca.
+        await new MailService(env, cap, platform).sendNow({ to: 'p@x.test', subject: 'Reset', from: 'no-reply@plataforma.test' });
+        expect(cap.sent[1]).toMatchObject({ from: 'no-reply@plataforma.test' });
     });
 });

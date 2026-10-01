@@ -63,15 +63,35 @@ describe('compileIntegrationValues', () => {
             actionOf('google_sheets', 'append_row'),
             { spreadsheet: 'x', values: '{{nombre}}\n\n{{nota}}\n\n' },
             merge,
+            merge,
         );
         // El renglón vacío del medio es una columna vacía; los del final, no.
         // Y un valor con saltos de línea NO se parte en dos celdas.
         expect(sheet.lines.values).toEqual(['Ana', '', 'línea 1\nlínea 2']);
         expect(sheet.missing).toEqual([]);
 
-        const tg = compileIntegrationValues('telegram', actionOf('telegram', 'send_message'), {}, merge);
+        const tg = compileIntegrationValues('telegram', actionOf('telegram', 'send_message'), {}, merge, merge);
         expect(tg.missing).toEqual(['Chat, grupo o canal', 'Mensaje']);
         expect(tg.values.silent).toBe('false');
+    });
+
+    it('SEC-33: en el cuerpo HTML de Gmail/Outlook los valores interpolados se escapan', () => {
+        const nota = '<a href="https://evil.test">Pagá acá</a>';
+        const fill = (esc: (s: string) => string) => (raw: unknown): string =>
+            String(raw ?? '').replace(/\{\{(\w+)\}\}/g, (_m, k: string) => esc(({ nota } as Record<string, string>)[k] ?? ''));
+        const merge = fill((s) => s);
+        const mergeHtml = fill((s) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+        for (const app of ['gmail', 'outlook'] as const) {
+            const tpl = '<p>Hola</p><p>{{nota}}</p>';
+            const html = compileIntegrationValues(app, actionOf(app, 'send_email'), { to: 'a@b.test', subject: '{{nota}}', body: tpl, html: 'true' }, merge, mergeHtml);
+            // La plantilla del autor queda como HTML; el valor del registro, como texto.
+            expect(html.values.body).toBe('<p>Hola</p><p>&lt;a href=&quot;https://evil.test&quot;&gt;Pagá acá&lt;/a&gt;</p>');
+            // El asunto no es HTML: no se escapa.
+            expect(html.values.subject).toBe(nota);
+            // En texto plano no hay nada que escapar.
+            const plain = compileIntegrationValues(app, actionOf(app, 'send_email'), { to: 'a@b.test', subject: 's', body: tpl, html: 'false' }, merge, mergeHtml);
+            expect(plain.values.body).toBe(`<p>Hola</p><p>${nota}</p>`);
+        }
     });
 });
 

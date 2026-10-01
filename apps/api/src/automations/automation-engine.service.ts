@@ -28,6 +28,7 @@ import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { automationRuns, lists, records } from '../db/schema';
+import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
@@ -38,7 +39,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
-import { applyMergeTags, labelResolverFor, type LabelFieldLike } from './merge-tags';
+import { applyMergeTags, escapeHtml, labelResolverFor, type LabelFieldLike } from './merge-tags';
 
 const SYSTEM_USER = 0;
 const MAX_IF_ELSE_DEPTH = 5;
@@ -107,6 +108,8 @@ export class AutomationEngine {
     /** Trigger de record (record_created / record_updated). */
     async process(event: TriggerEvent): Promise<void> {
         await this.tenantDb.withTenant(event.tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if (await tenantIsReadOnly(tx, event.tenantId)) return;
             const triggerTypes = TRIGGERS_FOR_EVENT[event.trigger];
             const autos = await this.automations.activeByTriggers(
                 tx,
@@ -134,6 +137,8 @@ export class AutomationEngine {
     /** Trigger `scheduled` (cron): corre una automatización sin record. */
     async runScheduled(tenantId: number, automationId: number): Promise<void> {
         await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if (await tenantIsReadOnly(tx, tenantId)) return;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive) return;
             const maps = await this.fieldMaps(tx, tenantId, auto.listId);
@@ -154,6 +159,8 @@ export class AutomationEngine {
         payload: Record<string, unknown>,
     ): Promise<void> {
         await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if (await tenantIsReadOnly(tx, tenantId)) return;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return;
             const maps = await this.fieldMaps(tx, tenantId, auto.listId);
@@ -176,6 +183,8 @@ export class AutomationEngine {
      */
     async runDueDate(tenantId: number, automationId: number): Promise<void> {
         await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if (await tenantIsReadOnly(tx, tenantId)) return;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'due_date_reached') return;
 
@@ -651,7 +660,9 @@ export class AutomationEngine {
                 // un mensaje que no salió no queda como «exitoso» en el historial.
                 if (resolved.integration) {
                     const integ = resolved.integration;
-                    const compiled = compileIntegrationValues(integ.key, resolved.action, values, merge);
+                    // SEC-33: en el cuerpo HTML de Gmail/Outlook los valores se escapan, igual
+                    // que en `send_email` — un registro no inyecta HTML en el correo.
+                    const compiled = compileIntegrationValues(integ.key, resolved.action, values, merge, mergeHtml);
                     if (compiled.missing.length > 0) {
                         return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
                     }
@@ -735,13 +746,6 @@ export class AutomationEngine {
                 return skip(spec.type, 'Acción no reconocida.');
         }
     }
-}
-
-/** Escapa un valor para inyectarlo seguro en HTML (SEC-08). */
-function escapeHtml(s: string): string {
-    return s.replace(/[&<>"']/g, (c) =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
-    );
 }
 
 /**

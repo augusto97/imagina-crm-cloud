@@ -33,6 +33,7 @@ import { impersonationLog, memberships, personalAccessTokens, tenants, users } f
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
+import { verifyAccountPassword } from './password-check';
 import { SessionService, type ActiveSession } from './session.service';
 import {
     generateBackupCodes,
@@ -769,7 +770,7 @@ export class AuthService implements OnModuleInit {
     async disableTwoFactor(userId: number, password: string): Promise<void> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) throw new NotFoundException('Usuario no encontrado');
-        const valid = await argon2.verify(user.passwordHash, password).catch(() => false);
+        const valid = await verifyAccountPassword(this.redis, userId, user.passwordHash, password);
         if (!valid) throw new UnauthorizedException('La contraseña no coincide');
         await this.db
             .update(users)
@@ -804,7 +805,7 @@ export class AuthService implements OnModuleInit {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) throw new UnauthorizedException('Usuario inexistente');
 
-        const valid = await argon2.verify(user.passwordHash, input.current_password).catch(() => false);
+        const valid = await verifyAccountPassword(this.redis, userId, user.passwordHash, input.current_password);
         if (!valid) {
             throw new BadRequestException({
                 code: 'invalid_password',

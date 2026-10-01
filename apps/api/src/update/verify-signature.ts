@@ -19,7 +19,7 @@ export async function verifyDetachedSignature(
     const [data, sigRaw] = await Promise.all([readFile(dataPath), readFile(signaturePath)]);
     let key;
     try {
-        key = createPublicKey(publicKeyPem);
+        key = createPublicKey(normalizePublicKey(publicKeyPem));
     } catch {
         return false; // clave pública inválida → fail-closed
     }
@@ -40,4 +40,16 @@ export async function verifyDetachedSignature(
         }
     }
     return false;
+}
+
+/**
+ * SEC-37 (v0.1.239): un `.env` no admite cómodamente un PEM de varias líneas.
+ * Se acepta el PEM con `\n` literales (una sola línea) o sólo el cuerpo base64
+ * (sin las líneas BEGIN/END), además del PEM normal.
+ */
+export function normalizePublicKey(raw: string): string {
+    const text = raw.trim().replace(/\\n/g, '\n');
+    if (text.includes('-----BEGIN')) return text;
+    const body = text.replace(/\s+/g, '');
+    return `-----BEGIN PUBLIC KEY-----\n${body.match(/.{1,64}/g)?.join('\n') ?? body}\n-----END PUBLIC KEY-----\n`;
 }

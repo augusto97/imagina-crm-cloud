@@ -29,7 +29,7 @@ const creds = (fields: Record<string, string> = {}): IntegrationCreds => ({
 const action = (key: string): ConnectorAction => integrationDef('woocommerce')!.actions.find((a) => a.key === key)!;
 const id = (raw: unknown): string => String(raw ?? '');
 const req = (key: string, raw: Record<string, unknown>, c = creds()) =>
-    buildIntegrationRequest('woocommerce', key, compileIntegrationValues('woocommerce', action(key), raw, id), c);
+    buildIntegrationRequest('woocommerce', key, compileIntegrationValues('woocommerce', action(key), raw, id, id), c);
 
 afterEach(() => {
     delete process.env.DEV_ALLOW_PRIVATE_EGRESS;
