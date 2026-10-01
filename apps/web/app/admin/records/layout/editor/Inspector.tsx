@@ -248,14 +248,48 @@ function SectionInspector({ sectionId }: { sectionId: string }): JSX.Element | n
                         })}
                     </div>
                 </Row>
+                <Row label={__('Banda')} hint={__('Un fondo que se adapta solo al tema claro y oscuro.')}>
+                    <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1.5" role="radiogroup">
+                        {([
+                            ['none', __('Ninguna')],
+                            ['accent', __('Color')],
+                            ['muted', __('Gris')],
+                        ] as const).map(([key, label]) => {
+                            const current = s.style?.tone === 'accent' || s.style?.tone === 'muted' ? s.style.tone : 'none';
+                            const active = current === key;
+                            return (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={active}
+                                    onClick={() => {
+                                        const style = { ...(s.style ?? {}) };
+                                        if (key === 'none') delete style.tone;
+                                        else {
+                                            style.tone = key;
+                                            delete style.bg;
+                                        }
+                                        ed.commit(updateSection(ed.layout, sectionId, { style: Object.keys(style).length > 0 ? style : undefined }), `sec:${sectionId}:tone`);
+                                    }}
+                                    className={cn('imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1.5 imcrm-text-xs', active ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-font-medium' : 'imcrm-border-border hover:imcrm-bg-accent')}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </Row>
                 <Row label={__('Fondo')}>
                     <ColorField
                         value={bg}
                         noneLabel={__('Sin fondo')}
                         onChange={(v) => {
                             const style = { ...(s.style ?? {}) };
-                            if (v) style.bg = v;
-                            else delete style.bg;
+                            if (v) {
+                                style.bg = v;
+                                delete style.tone;
+                            } else delete style.bg;
                             ed.commit(updateSection(ed.layout, sectionId, { style: Object.keys(style).length > 0 ? style : undefined }), `sec:${sectionId}:bg`);
                         }}
                     />

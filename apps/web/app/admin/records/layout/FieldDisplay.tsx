@@ -31,6 +31,8 @@ export interface FieldDisplayProps {
     /** Acento de la plantilla (CSS color). */
     accent?: string;
     size?: 'sm' | 'md' | 'lg';
+    /** Botón de acción a lo ancho de su columna (la columna de perfil). */
+    fullWidth?: boolean;
 }
 
 export function FieldDisplay(props: FieldDisplayProps): JSX.Element {
@@ -74,7 +76,7 @@ export function FieldDisplay(props: FieldDisplayProps): JSX.Element {
         case 'clamp':
             return <ClampText text={String(value)} />;
         case 'button':
-            return <LinkButton field={field} value={String(value)} />;
+            return <LinkButton field={field} value={String(value)} fullWidth={props.fullWidth} />;
         case 'image':
             return (
                 <img
@@ -353,7 +355,7 @@ function ClampText({ text }: { text: string }): JSX.Element {
     );
 }
 
-function LinkButton({ field, value }: { field: FieldEntity; value: string }): JSX.Element {
+function LinkButton({ field, value, fullWidth = false }: { field: FieldEntity; value: string; fullWidth?: boolean }): JSX.Element {
     const href = field.type === 'email' ? `mailto:${value}` : field.type === 'phone' ? `tel:${value}` : value;
     const Icon = field.type === 'email' ? Mail : field.type === 'phone' ? Phone : ExternalLink;
     const label = field.type === 'email' ? __('Enviar correo') : field.type === 'phone' ? __('Llamar') : __('Abrir enlace');
@@ -362,7 +364,10 @@ function LinkButton({ field, value }: { field: FieldEntity; value: string }): JS
             href={href}
             target={field.type === 'url' ? '_blank' : undefined}
             rel="noreferrer"
-            className="imcrm-inline-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-1.5 imcrm-text-sm imcrm-font-medium imcrm-text-foreground hover:imcrm-bg-accent"
+            className={cn(
+                'imcrm-inline-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3 imcrm-py-1.5 imcrm-text-sm imcrm-font-medium imcrm-text-foreground imcrm-shadow-imcrm-sm hover:imcrm-bg-accent',
+                fullWidth && 'imcrm-w-full imcrm-justify-center imcrm-py-2',
+            )}
             onClick={(e) => e.stopPropagation()}
             title={value}
         >

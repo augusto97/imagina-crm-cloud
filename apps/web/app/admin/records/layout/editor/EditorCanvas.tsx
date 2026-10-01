@@ -7,6 +7,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { LayoutBlockView } from '../LayoutBlocks';
+import { useLayoutCtx } from '../LayoutContext';
 import { LayoutBody, SectionTitle, sectionStyle } from '../RecordLayoutView';
 import { BLOCK_CATALOG, CATEGORY_LABEL, blockIcon, blockLabel, type CatalogCategory } from './blockCatalog';
 import { isLayoutDrag, readDrag, useEditor, writeDrag } from './editorState';
@@ -89,13 +90,14 @@ function SectionChrome({ section, gap }: { section: LayoutSection; gap: number }
     const ed = useEditor();
     const selected = ed.selection?.kind === 'section' && ed.selection.id === section.id;
     const empty = section.blocks.every((c) => c.length === 0);
+    const accent = useLayoutCtx().theme.accent;
     return (
         <section
             className={cn(
                 'imcrm-group/s imcrm-relative imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-[14px] imcrm-outline imcrm-outline-2 imcrm-outline-offset-4 imcrm-transition-[outline-color]',
                 selected ? 'imcrm-outline-primary' : 'imcrm-outline-dashed imcrm-outline-transparent hover:imcrm-outline-border',
             )}
-            style={sectionStyle(section)}
+            style={sectionStyle(section, accent)}
             data-testid="editor-section"
             onClick={(e) => {
                 if (e.target === e.currentTarget) ed.select({ kind: 'section', id: section.id });

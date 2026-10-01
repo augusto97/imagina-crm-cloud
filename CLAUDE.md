@@ -6050,6 +6050,40 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         errores) y regresiones de la ficha 21/21 y 22/22, editor 30/30 y
         portal 23/23.
 
+  - [x] **Cada plantilla de la ficha es una ficha distinta, pensada para
+        su caso (v0.1.236, feedback del usuario: "se ven muy básicas, casi
+        iguales; lo único llamativo es el bloque principal")**: la v0.1.235
+        cambió el orden y el color pero las cinco seguían siendo la misma
+        pila de tarjetas blancas con propiedades. Ahora cada una usa los
+        bloques y las formas por tipo que ya existían y nadie aprovechaba:
+        **Resumen** (banda de indicadores con la forma que luce cada número
+        —cifra grande, anillo, estrellas, cuenta regresiva— y un adelanto de
+        lo vinculado: dona por estado + los últimos), **Perfil** (contacto:
+        botones de escribir/llamar/abrir a lo ancho de la columna de la
+        persona, sus datos y fechas, y lo que tiene con la empresa como
+        TARJETAS, notas como cita y la conversación), **Oportunidad** (banda
+        con el valor del negocio en grande y el cierre que cuenta los días,
+        portada sólida, seguimiento en dos columnas, fechas como hoja de
+        calendario, lo vinculado como TABLERO por estado y el historial a lo
+        ancho), **Tarea** (plana como Linear: la conversación debajo del
+        trabajo, la entrega y el avance como barra en el panel lateral) y
+        **Ticket** (franja de SLA gris con prioridad/vencimiento/estado, lo
+        que reportó como cita, la conversación protagonista y el historial
+        del cliente). Cada una con su nombre de pestaña. Renderer: secciones
+        con **banda** (`style.tone`: color de la ficha o gris, mezclados con
+        transparencia → se ven bien en claro y en oscuro; un hex claro fijo
+        encendería la ficha en oscuro), elegible en el editor junto al
+        fondo; los botones de acción sin dato no se dibujan ni dejan hueco.
+        Apariencia: miniaturas nuevas que dibujan la composición real (banda,
+        tarjetas, tablero, panel) y una línea por plantilla. Los textos
+        largos siguen editables en el lugar en Resumen y Tarea (la primera
+        versión los había pasado a cita y lo atrapó la regresión de la
+        ficha). 1 test de shared reescrito (cinco fichas distintas con lo
+        propio de cada una) — 106 shared y 207 front en verde — + E2E
+        navegador 5/5 cambiando desde Apariencia y regresiones de la ficha
+        21/21 y 22/22, editor 30/30 y portal 23/23; revisado en claro,
+        oscuro y celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

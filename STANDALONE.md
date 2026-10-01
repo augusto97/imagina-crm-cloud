@@ -1878,6 +1878,17 @@ primer chip, cuenta regresiva arriba del lateral; `minimal`) y **Soporte**
 generándose solas con los campos y relaciones de la lista y el editor
 arranca desde la elegida.
 
+**Cada plantilla es una ficha propia (v0.1.236).** Las cinco integradas
+dejan de ser variaciones de la misma pila de tarjetas: cada una arma su
+composición con los bloques y formas que lucen su caso — Resumen (banda de
+indicadores + adelanto de lo vinculado), Perfil (botones de contacto,
+datos de la persona, sus registros como tarjetas), Oportunidad (valor y
+cierre en una banda, vinculados como tablero, historial a lo ancho), Tarea
+(plana, conversación bajo el trabajo, panel lateral) y Ticket (franja de
+SLA, conversación protagonista, historial del cliente). Las secciones
+ganan `style.tone` (`accent` | `muted`): una banda que se mezcla con
+transparencia sobre la superficie del tema, en vez de un hex fijo.
+
 ---
 
-**Versión del documento:** 1.48.0 (las plantillas integradas de la ficha vuelven a ser distintas)
+**Versión del documento:** 1.49.0 (cada plantilla de la ficha es una ficha propia)
