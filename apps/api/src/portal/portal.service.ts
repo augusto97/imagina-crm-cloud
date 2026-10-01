@@ -8,7 +8,14 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import {
+    autoPortalLayout,
     brandingSchema,
+    DATA_BLOCK_TYPES,
+    layoutBlocks,
+    migratePortalTemplateToV3,
+    portalEditableFieldIds,
+    readPortalLayoutV3,
+    sanitizePortalLayout,
     tenantFormatSchema,
     isDataField,
     jsonbKeyForField,
@@ -19,6 +26,9 @@ import {
     type Field,
     type FieldType,
     type IssueMagicLinkInput,
+    type LayoutBlock,
+    type LayoutFieldLite,
+    type RecordLayoutV3,
     type MagicLinkResult,
     type PortalBoot,
     type PortalAccessList,
@@ -27,7 +37,7 @@ import {
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ActivityRepository } from '../activity/activity.repository';
 import { ActivityService, computeDiff } from '../activity/activity.service';
@@ -35,8 +45,9 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { SessionService } from '../auth/session.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
-import { DRIZZLE, type Db } from '../db/client';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { DomainsService } from '../domains/domains.service';
+import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
 import { fields, lists, memberships, portalLinks, records, relations, users, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -90,6 +101,7 @@ export class PortalService {
         private readonly automations: AutomationDispatcher,
         private readonly files: FilesService,
         private readonly domains: DomainsService,
+        private readonly layoutData: RecordLayoutDataService,
     ) {}
 
     /**
@@ -429,7 +441,8 @@ export class PortalService {
                     .where(eq(lists.id, link.listId))
                     .limit(1);
                 if (!list) throw portalGone();
-                const allowed = editableSlugsFromTemplate(list.settings.portal_template);
+                const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+                const allowed = await this.editableSlugs(tx, tenantId, list.id, list.settings as Record<string, unknown>, listFields);
                 if (allowed.size === 0) {
                     throw new ForbiddenException({
                         code: 'portal_not_editable',
@@ -438,7 +451,6 @@ export class PortalService {
                     });
                 }
 
-                const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
                 const bySlug = new Map(listFields.map((f) => [f.slug, f]));
 
                 const patch: Record<string, unknown> = {};
@@ -901,9 +913,150 @@ export class PortalService {
     }
 
     async me(actor: PortalActor): Promise<PortalBoot> {
-        const userId = actor.userId;
         const link = await this.requireLink(actor);
+        const boot = await this.bootWithinTenant(actor.userId, link);
+        if (!boot.layout) return boot;
+        // v0.1.233 — los gráficos y tablas del diseño viajan en el MISMO
+        // request (regla de oro nº 8), ya acotados al cliente.
+        const blocks = layoutBlocks(boot.layout)
+            .filter((b) => DATA_BLOCK_TYPES.includes(b.type))
+            .slice(0, 40)
+            .map((b) => ({ id: b.id, type: b.type as 'chart' | 'related', title: b.title, config: b.config }));
+        const layoutData = blocks.length === 0
+            ? { data: {}, lists: {}, fields: {}, block_lists: {} }
+            : await this.layoutData.portal(
+                  link.tenantId,
+                  { listId: link.listId, recordId: link.recordId, userId: actor.userId },
+                  blocks,
+                  (fileId) => this.files.signedUrl(link.tenantId, fileId, 3600),
+              );
+        // Una lista que el diseño ya muestra no se repite al pie.
+        const shown = new Set(
+            Object.values(layoutData.data)
+                .map((d) => (d && typeof d === 'object' ? (d as { list?: { id?: unknown } }).list?.id : undefined))
+                .filter((id): id is number => typeof id === 'number'),
+        );
+        return {
+            ...boot,
+            layout_data: layoutData,
+            related_lists: boot.related_lists.filter((r) => !shown.has(r.list_id)),
+        };
+    }
 
+    /**
+     * v0.1.233 — vista previa del editor del portal (`manage_lists`): calcula
+     * los bloques que manda el editor (todavía sin guardar) para un registro
+     * de muestra, con EXACTAMENTE el alcance que tendría su cliente.
+     */
+    async previewLayoutData(
+        tenantId: number,
+        listIdOrSlug: string,
+        recordId: number,
+        blocks: Array<{ id: string; type: 'chart' | 'related'; title?: string; config: Record<string, unknown> }>,
+    ) {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const [rec] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: records.id })
+                .from(records)
+                .where(and(eq(records.id, recordId), eq(records.listId, list.id), sql`${records.deletedAt} IS NULL`))
+                .limit(1),
+        );
+        if (!rec) throw portalGone();
+        // El cliente de ese registro (si ya tiene acceso): su campo persona
+        // acota las listas vinculadas por usuario. Sin cliente, esas quedan vacías.
+        const [owner] = await this.db
+            .select({ userId: portalLinks.userId })
+            .from(portalLinks)
+            .where(and(eq(portalLinks.tenantId, tenantId), eq(portalLinks.listId, list.id), eq(portalLinks.recordId, recordId)))
+            .limit(1);
+        return this.layoutData.portal(
+            tenantId,
+            { listId: list.id, recordId, userId: owner?.userId ?? 0 },
+            blocks,
+            (fileId) => this.files.signedUrl(tenantId, fileId, 3600),
+        );
+    }
+
+    /**
+     * v0.1.233 — el diseño del portal tal como lo vería el cliente (guardado,
+     * convertido de la plantilla anterior o automático): de acá arranca el
+     * editor, así lo que se diseña y lo que se ve salen de la misma función.
+     */
+    async layoutFor(tenantId: number, listIdOrSlug: string): Promise<{ layout: RecordLayoutV3; origin: 'saved' | 'legacy' | 'auto' }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const listFields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const titleId = resolveTitleFieldId(listFields.map((f) => ({ id: f.id, type: f.type })), list.settings as Record<string, unknown>);
+            return this.resolveLayout(
+                tx,
+                tenantId,
+                list.id,
+                list.settings as Record<string, unknown>,
+                listFields.map((f) => ({ ...liteField(f), is_primary: f.id === titleId })),
+            );
+        });
+    }
+
+    /** Slugs que el cliente puede editar, según el diseño vigente del portal. */
+    private async editableSlugs(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        settings: Record<string, unknown>,
+        listFields: Field[],
+    ): Promise<Set<string>> {
+        const { layout, origin } = await this.resolveLayout(tx, tenantId, listId, settings, listFields.map(liteField));
+        if (origin === 'legacy') return editableSlugsFromTemplate(settings.portal_template);
+        if (origin !== 'saved' || !layout) return new Set();
+        const ids = portalEditableFieldIds(layout, listFields.map(liteField));
+        return new Set(listFields.filter((f) => ids.has(f.id)).map((f) => f.slug));
+    }
+
+    /**
+     * El diseño del portal: el v3 guardado (`portal_layout_v3`, manda), la
+     * plantilla anterior convertida, o el automático.
+     */
+    private async resolveLayout(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        settings: Record<string, unknown>,
+        fieldsLite: LayoutFieldLite[],
+    ): Promise<{ layout: RecordLayoutV3; origin: 'saved' | 'legacy' | 'auto' }> {
+        const saved = readPortalLayoutV3(settings);
+        if (saved) return { layout: sanitizePortalLayout(saved), origin: 'saved' };
+        if (settings.portal_template !== undefined && settings.portal_template !== null) {
+            const slugs = [...listSlugsIn(settings.portal_template)];
+            const others = slugs.length === 0
+                ? []
+                : await tx
+                      .select({ id: lists.id, slug: lists.slug })
+                      .from(lists)
+                      .where(and(eq(lists.tenantId, tenantId), inArray(lists.slug, slugs)));
+            const otherFields = others.length === 0
+                ? []
+                : await tx.select().from(fields).where(inArray(fields.listId, others.map((o) => o.id)));
+            const migrated = migratePortalTemplateToV3(settings.portal_template, {
+                listId,
+                fields: fieldsLite,
+                otherLists: others.map((o) => ({
+                    id: o.id,
+                    slug: o.slug,
+                    fields: otherFields
+                        .filter((f) => f.listId === o.id)
+                        .map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type as FieldType, config: f.config as Record<string, unknown> })),
+                })),
+            });
+            if (migrated) return { layout: migrated, origin: 'legacy' };
+        }
+        return { layout: autoPortalLayout(fieldsLite), origin: 'auto' };
+    }
+
+    private async bootWithinTenant(
+        userId: number,
+        link: { tenantId: number; listId: number; recordId: number },
+    ): Promise<PortalBoot> {
         return this.tenantDb.withTenant(link.tenantId, async (tx) => {
             const [list] = await tx
                 .select({ id: lists.id, slug: lists.slug, name: lists.name, settings: lists.settings })
@@ -976,6 +1129,23 @@ export class PortalService {
                 list.id,
                 list.settings as Record<string, unknown>,
             );
+            const fieldsLite: LayoutFieldLite[] = fieldRows.map((f) => ({
+                id: f.id,
+                slug: f.slug,
+                label: f.label,
+                type: f.type as FieldType,
+                config: f.config as Record<string, unknown>,
+                is_primary: f.id === titleFieldId,
+            }));
+            const resolved = await this.resolveLayout(tx, link.tenantId, list.id, list.settings as Record<string, unknown>, fieldsLite);
+            const editableIds = resolved.origin === 'saved'
+                ? [...portalEditableFieldIds(resolved.layout, fieldsLite)]
+                : resolved.origin === 'legacy'
+                  ? (() => {
+                        const slugs = editableSlugsFromTemplate(list.settings.portal_template);
+                        return fieldRows.filter((f) => slugs.has(f.slug)).map((f) => f.id);
+                    })()
+                  : [];
 
             return {
                 branding,
@@ -1018,8 +1188,47 @@ export class PortalService {
                 })),
                 template,
                 template_page: templatePage,
+                layout: this.signLayoutImages(link.tenantId, resolved.layout),
+                layout_origin: resolved.origin,
+                layout_data: null,
+                editable_field_ids: editableIds,
             };
         });
+    }
+
+    /**
+     * Imágenes y galerías del diseño v3 con archivo subido → URL FIRMADA (el
+     * rol client no tiene la descarga con sesión). Copia: no muta settings.
+     */
+    private signLayoutImages(tenantId: number, layout: RecordLayoutV3): RecordLayoutV3 {
+        const sign = (id: unknown): string | undefined =>
+            typeof id === 'number' && id > 0 ? this.files.signedUrl(tenantId, id, 86_400) : undefined;
+        const signBlock = (b: LayoutBlock): LayoutBlock => {
+            if (b.type === 'image') {
+                const url = sign(b.config.file_id ?? b.config.image_file_id);
+                return url ? { ...b, config: { ...b.config, url } } : b;
+            }
+            if (b.type === 'gallery' && Array.isArray(b.config.images)) {
+                return {
+                    ...b,
+                    config: {
+                        ...b.config,
+                        images: (b.config.images as Array<Record<string, unknown>>).map((img) => {
+                            const url = img && typeof img === 'object' ? sign(img.image_file_id) : undefined;
+                            return url ? { ...img, url } : img;
+                        }),
+                    },
+                };
+            }
+            return b;
+        };
+        return {
+            ...layout,
+            pages: layout.pages.map((p) => ({
+                ...p,
+                sections: p.sections.map((sec) => ({ ...sec, blocks: sec.blocks.map((col) => col.map(signBlock)) })),
+            })),
+        };
     }
 
     /**
@@ -1190,4 +1399,23 @@ function editableSlugsFromTemplate(raw: unknown): Set<string> {
     };
     walk(raw);
     return out;
+}
+
+/** Slugs de listas que nombra la plantilla anterior (para convertirla). */
+function listSlugsIn(raw: unknown): Set<string> {
+    const out = new Set<string>();
+    const walk = (node: unknown): void => {
+        if (Array.isArray(node)) return node.forEach(walk);
+        if (!node || typeof node !== 'object') return;
+        for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+            if (k === 'list_slug' && typeof v === 'string' && v !== '') out.add(v);
+            else if (v && typeof v === 'object') walk(v);
+        }
+    };
+    walk(raw);
+    return out;
+}
+
+function liteField(f: Field): LayoutFieldLite {
+    return { id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown>, is_primary: f.is_primary };
 }

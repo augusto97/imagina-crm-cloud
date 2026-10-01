@@ -163,7 +163,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect((schema.list as { folder: unknown }).folder).toBeNull();
     });
 
-    it('propose_configure_portal: valida contra el esquema real y al aplicar escribe settings.portal + portal_template sin pisar el resto', async () => {
+    it('propose_configure_portal: valida contra el esquema real y al aplicar escribe settings.portal + el diseño v3 sin pisar el resto', async () => {
         // Antes: otra configuración en settings que NO debe perderse.
         const before = await lists.get(tenantId, 'clientes');
         await lists.update(tenantId, 'clientes', { settings: { ...before.settings, custom_flag: 'keep-me' } });
@@ -175,6 +175,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(isError(badField)).toBe(true);
         expect(json(badField).error).toContain('«dni» no existe');
 
+        // El vocabulario anterior sigue valiendo: se convierte al diseño v3.
         const proposed = json(await call('propose_configure_portal', {
             list: 'clientes',
             related_lists: ['tickets'],
@@ -182,47 +183,106 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
                 { type: 'hero', title: 'Hola, {{nombre}}' },
                 { type: 'client_data', title: 'Tus datos', fields: ['nombre', 'email'] },
                 { type: 'editable_form', fields: ['telefono'] },
-                // Facturas NO está en related_lists: la tabla la suma sola.
                 { type: 'related_records_table', list: 'facturas', fields: ['numero', 'monto'] },
                 { type: 'download_files', field: 'contrato' },
             ],
         }));
         expect(proposed.ok).toBe(true);
-        const p = proposed.proposal as { kind: string; preview: { changes: Array<{ label: string; to: string }>; blocks: unknown[] } };
+        const p = proposed.proposal as { kind: string; destructive: boolean; preview: { changes: Array<{ label: string; to: string }>; blocks: unknown[] } };
         expect(p.kind).toBe('configure_portal');
+        expect(p.destructive).toBe(false);
         expect(p.preview.blocks).toHaveLength(5);
         expect(p.preview.changes.find((c) => c.label === 'Portal')?.to).toBe('habilitado');
-        expect(p.preview.changes.find((c) => c.label === 'Listas que ve el cliente')?.to).toBe('Tickets, Facturas');
-        // Nada cambió todavía.
+        expect(p.preview.changes.find((c) => c.label === 'Listas que ve el cliente')?.to).toBe('Tickets');
         expect((await lists.get(tenantId, 'clientes')).settings.portal).toBeUndefined();
 
         const applied = await apply(proposed.proposal_id);
         expect(applied.applied).toBe(true);
         const after = await lists.get(tenantId, 'clientes');
-        const s = after.settings as { portal: { enabled: boolean; related_lists: number[] }; portal_template: { blocks: Array<{ type: string; config: Record<string, unknown> }> }; custom_flag: string };
+        type Blk = { type: string; config: Record<string, unknown> };
+        const s = after.settings as { portal: { enabled: boolean; related_lists: number[] }; portal_template?: unknown; portal_layout_v3: { pages: Array<{ sections: Array<{ blocks: Blk[][] }> }> }; custom_flag: string };
         expect(s.custom_flag).toBe('keep-me');
         expect(s.portal.enabled).toBe(true);
         const tickets = await lists.get(tenantId, 'tickets');
-        const facturas = await lists.get(tenantId, 'facturas');
-        expect(s.portal.related_lists).toEqual([tickets.id, facturas.id]);
-        expect(s.portal_template.blocks.map((b) => b.type)).toEqual(['hero', 'client_data', 'editable_form', 'related_records_table', 'download_files']);
-        expect(s.portal_template.blocks[2]!.config).toMatchObject({ editable_field_slugs: ['telefono'] });
+        expect(s.portal.related_lists).toEqual([tickets.id]);
+        expect(s.portal_template).toBeUndefined();
+        const blocks = s.portal_layout_v3.pages.flatMap((pg) => pg.sections.flatMap((sec) => sec.blocks.flat()));
+        expect(blocks.map((b) => b.type)).toEqual(['heading', 'fields', 'fields', 'related', 'files']);
+        expect(blocks[2]!.config.editable).toBe(true);
+        expect((blocks[3]!.config.source as { kind: string }).kind).toBe('related');
 
-        // La lectura ahora lo muestra.
+        // La lectura ahora lo muestra (el diseño, no la plantilla anterior).
         const schema = json(await call('get_list_schema', { list: 'clientes' }));
-        expect((schema.portal as { enabled: boolean; related_lists: string[] }).enabled).toBe(true);
-        expect((schema.portal as { related_lists: string[] }).related_lists).toEqual(['tickets', 'facturas']);
-        expect((schema.portal as { template_blocks: Array<{ type: string }> }).template_blocks.map((b) => b.type)).toContain('editable_form');
+        const portalSchema = schema.portal as { enabled: boolean; related_lists: string[]; design: Array<{ blocks: string[] }> };
+        expect(portalSchema.enabled).toBe(true);
+        expect(portalSchema.related_lists).toEqual(['tickets']);
+        expect(portalSchema.design[0]!.blocks.join(' ')).toContain('editables por el cliente');
 
-        // Deshabilitar sin tocar la plantilla: sólo `portal` cambia.
+        // Deshabilitar sin tocar el diseño: sólo `portal` cambia.
         const off = json(await call('propose_configure_portal', { list: 'clientes', enabled: false }));
         await apply(off.proposal_id);
         const s2 = (await lists.get(tenantId, 'clientes')).settings as typeof s;
         expect(s2.portal.enabled).toBe(false);
-        expect(s2.portal_template.blocks).toHaveLength(5);
+        expect(s2.portal_layout_v3.pages).toHaveLength(1);
         // Sin cambios → error corregible.
         const noop = await call('propose_configure_portal', { list: 'clientes', enabled: false });
         expect(isError(noop)).toBe(true);
+    });
+
+    it('propose_configure_portal con `design`: el portal en v3, editables, listas por persona y bloques que no existen en el portal (v0.1.233)', async () => {
+        const notInPortal = await call('propose_configure_portal', {
+            list: 'clientes',
+            design: { pages: [{ name: 'Inicio', sections: [{ columns: [{ blocks: [{ type: 'portal_access' }] }] }] }] },
+        });
+        expect(isError(notInPortal)).toBe(true);
+        expect(json(notInPortal).error).toContain('no existe en el portal');
+        const all = await call('propose_configure_portal', {
+            list: 'clientes',
+            design: { pages: [{ name: 'Inicio', sections: [{ columns: [{ blocks: [{ type: 'chart', from: 'all', kind: 'kpi' }] }] }] }] },
+        });
+        expect(isError(all)).toBe(true);
+        expect(json(all).error).toContain('sólo ve lo suyo');
+
+        const proposed = json(await call('propose_configure_portal', {
+            list: 'clientes',
+            design: {
+                header: { title_field: 'nombre' },
+                page: { bg: '#f8fafc', max_width: 960 },
+                pages: [
+                    {
+                        name: 'Inicio',
+                        sections: [
+                            {
+                                columns: [
+                                    { blocks: [{ type: 'fields', title: 'Tus datos', fields: ['email', 'telefono'], editable: true }] },
+                                    { blocks: [{ type: 'chart', title: 'Facturado', from: 'facturas', kind: 'kpi', metric: 'sum', metric_field: 'monto' }] },
+                                ],
+                            },
+                        ],
+                    },
+                    // Tickets se vincula al cliente por un campo persona (fuente `list`).
+                    { name: 'Soporte', sections: [{ columns: [{ blocks: [{ type: 'related', from: 'tickets' }] }] }] },
+                ],
+            },
+        }));
+        expect(proposed.ok).toBe(true);
+        const p = proposed.proposal as { destructive: boolean };
+        // Ya había un diseño (el del test anterior): pisarlo se marca.
+        expect(p.destructive).toBe(true);
+        await apply(proposed.proposal_id);
+        type Blk = { type: string; config: Record<string, unknown> };
+        const v3 = (await lists.get(tenantId, 'clientes')).settings.portal_layout_v3 as {
+            page: Record<string, unknown>;
+            header: Record<string, unknown>;
+            pages: Array<{ name: string; sections: Array<{ columns: number[]; blocks: Blk[][] }> }>;
+        };
+        expect(v3.page).toEqual({ bg: '#f8fafc', max_width: 960 });
+        expect(v3.header.show_meta).toBe(false);
+        expect(v3.pages.map((pg) => pg.name)).toEqual(['Inicio', 'Soporte']);
+        expect(v3.pages[0]!.sections[0]!.columns).toEqual([6, 6]);
+        expect(v3.pages[0]!.sections[0]!.blocks[0]![0]!.config.editable).toBe(true);
+        const tickets = await lists.get(tenantId, 'tickets');
+        expect(v3.pages[1]!.sections[0]!.blocks[0]![0]!.config.source).toEqual({ kind: 'list', list_id: tickets.id });
     });
 
     it('propose_configure_record_layout: integrada, personalizada y vuelta al clásico', async () => {

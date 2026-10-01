@@ -20,6 +20,6 @@ import { ListsModule } from '../lists/lists.module';
     // v0.1.230 — datos de los bloques de la ficha (plantillas v3).
     providers: [DashboardsService, RecordLayoutDataService],
     // v0.1.167 — las plantillas (TemplatesModule) crean dashboards.
-    exports: [DashboardsService],
+    exports: [DashboardsService, RecordLayoutDataService],
 })
 export class DashboardsModule {}

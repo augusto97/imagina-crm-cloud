@@ -12,6 +12,7 @@ import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { useUpdateList } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
+import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -33,8 +34,15 @@ interface Props {
     list: ListSummary;
     fields: FieldEntity[];
     initial: RecordLayoutV3;
-    origin: LayoutOrigin;
+    origin: LayoutOrigin | 'legacy';
     initialRecord: RecordEntity;
+    /**
+     * v0.1.233 — qué se diseña: la ficha del equipo (`record_layout_v3`) o el
+     * portal del cliente (`portal_layout_v3`, ADR-S26 fase C). Mismo editor.
+     */
+    target?: 'record' | 'portal';
+    /** Portal: listas vinculadas al cliente por un campo persona. */
+    portalLists?: Array<{ list_id: number; name: string }>;
 }
 
 /**
@@ -44,7 +52,8 @@ interface Props {
  * vista de celular y guardado explícito (diseñar no es editar datos: se
  * guarda cuando el diseño está listo, no a cada clic).
  */
-export function LayoutEditor({ list, fields, initial, origin, initialRecord }: Props): JSX.Element {
+export function LayoutEditor({ list, fields, initial, origin, initialRecord, target = 'record', portalLists }: Props): JSX.Element {
+    const portal = target === 'portal';
     const history = useLayoutHistory(initial);
     const { layout, commit, undo, redo } = history;
     const [saved, setSaved] = useState<RecordLayoutV3>(initial);
@@ -63,7 +72,10 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
     // Si la página elegida desaparece (deshacer, borrar), vuelve a la primera.
     const activePage = layout.pages.some((p) => p.id === pageId) ? pageId : layout.pages[0]!.id;
 
-    const catalog = useMemo<CatalogContext>(() => ({ fields, paths: paths.data ?? [], listId: list.id }), [fields, paths.data, list.id]);
+    const catalog = useMemo<CatalogContext>(
+        () => ({ fields, paths: paths.data ?? [], listId: list.id, target, portalLists }),
+        [fields, paths.data, list.id, target, portalLists],
+    );
     const actions = useEditorActions(layout, commit, setSelection, catalog, activePage, selection);
     const api = useMemo<EditorApi>(
         () => ({ layout, commit, selection, select: setSelection, pageId: activePage, catalog, ...actions }),
@@ -71,7 +83,8 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
     );
 
     // Datos de gráficos y vinculados de la plantilla EN EDICIÓN (sin guardar).
-    const { query, override } = useLayoutData(list.id, list.slug, record.id, layout);
+    // En el portal, con el alcance del cliente de ese registro.
+    const { query, override, blockLists } = useLayoutData(list.id, list.slug, record.id, layout, portal ? 'portal' : 'record');
     const values = useMemo(() => ({ ...record.fields, ...record.relations }), [record]);
     const ctx: LayoutCtx = {
         list,
@@ -89,32 +102,53 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
         data: query.data,
         dataLoading: query.isLoading,
         preview: true,
+        mode: portal ? 'portal' : 'record',
+        blockLists,
     };
 
     const save = useCallback(() => {
+        const settings = { ...(list.settings ?? {}) } as Record<string, unknown>;
+        if (portal) {
+            settings.portal_layout_v3 = layout;
+            // La plantilla anterior ya quedó convertida en este diseño.
+            delete settings.portal_template;
+        } else {
+            settings.record_layout = 'crm';
+            settings.record_layout_v3 = layout;
+        }
         update.mutate(
-            { settings: { ...(list.settings ?? {}), record_layout: 'crm', record_layout_v3: layout } },
+            { settings },
             {
                 onSuccess: () => {
                     setSaved(layout);
-                    toast.success(__('Diseño guardado'), __('La ficha ya se ve así para todo el equipo.'));
+                    toast.success(
+                        __('Diseño guardado'),
+                        portal ? __('Tus clientes ya ven su portal así.') : __('La ficha ya se ve así para todo el equipo.'),
+                    );
                 },
                 onError: (err) => toast.error(__('No se pudo guardar'), err instanceof ApiError || err instanceof Error ? err.message : undefined),
             },
         );
-    }, [update, list.settings, layout, toast]);
+    }, [update, list.settings, layout, toast, portal]);
 
     const resetToAuto = async (): Promise<void> => {
         const ok = await confirm({
             title: __('¿Volver al diseño automático?'),
-            description: __('Se borra el diseño guardado de esta ficha y se usa el que arma la app con los campos y las relaciones de la lista.'),
+            description: portal
+                ? __('Se borra el diseño del portal y tus clientes ven sus datos en una página simple, de sólo lectura.')
+                : __('Se borra el diseño guardado de esta ficha y se usa el que arma la app con los campos y las relaciones de la lista.'),
             confirmLabel: __('Volver al automático'),
             destructive: true,
         });
         if (!ok) return;
         const settings = { ...(list.settings ?? {}) } as Record<string, unknown>;
-        delete settings.record_layout_v3;
-        settings.crm_template_id = 'auto';
+        if (portal) {
+            delete settings.portal_layout_v3;
+            delete settings.portal_template;
+        } else {
+            delete settings.record_layout_v3;
+            settings.crm_template_id = 'auto';
+        }
         update.mutate(
             { settings },
             {
@@ -172,7 +206,9 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
         window.addEventListener('beforeunload', onBefore);
         return () => window.removeEventListener('beforeunload', onBefore);
     }, [dirty]);
-    const backHref = `/lists/${list.slug}/records${record.id > 0 ? `/${record.id}` : ''}`;
+    const backHref = portal ? `/lists/${list.slug}/edit?s=compartir` : `/lists/${list.slug}/records${record.id > 0 ? `/${record.id}` : ''}`;
+    // Ajustes de página del portal (fondo, ancho, tipografía) en la vista previa.
+    const page = portal ? readPageSettings((layout as { page?: unknown }).page) : {};
     const leave = async (e: React.MouseEvent): Promise<void> => {
         if (!dirty) return;
         e.preventDefault();
@@ -211,9 +247,13 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
                                 </Link>
                             </Button>
                             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
-                                <span className="imcrm-text-sm imcrm-font-semibold imcrm-leading-tight">{__('Diseño de la ficha')}</span>
+                                <span className="imcrm-text-sm imcrm-font-semibold imcrm-leading-tight">{portal ? __('Portal del cliente') : __('Diseño de la ficha')}</span>
                                 <span className="imcrm-text-[11px] imcrm-leading-tight imcrm-text-muted-foreground">
-                                    {origin === 'saved' || saved !== initial ? __('Diseño guardado') : origin === 'converted' ? __('Convertido de la plantilla anterior') : __('Diseño automático: personalizalo y guardá')}
+                                    {origin === 'saved' || saved !== initial
+                                        ? __('Diseño guardado')
+                                        : origin === 'converted' || origin === 'legacy'
+                                          ? __('Convertido de la plantilla anterior')
+                                          : __('Diseño automático: personalizalo y guardá')}
                                 </span>
                             </div>
                             <div className="imcrm-ml-2 imcrm-flex imcrm-items-center imcrm-gap-0.5">
@@ -233,7 +273,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
                                         <Smartphone />
                                     </DeviceButton>
                                 </div>
-                                <div className="imcrm-w-[220px]" title={__('Registro con el que se ve la vista previa')}>
+                                <div className="imcrm-w-[220px]" title={portal ? __('Cliente con el que se ve la vista previa (con sus datos, como los vería él)') : __('Registro con el que se ve la vista previa')}>
                                     <RecordSelector listId={list.id} fields={fields} value={record.id > 0 ? record : null} onChange={(r) => r && setRecord(r)} />
                                 </div>
                                 {origin !== 'auto' && (
@@ -271,6 +311,15 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord }: P
                                             : 'imcrm-max-w-[1180px]',
                                     )}
                                     data-device={device}
+                                    style={
+                                        portal
+                                            ? {
+                                                  ...(page.bg ? { background: page.bg, padding: 16, borderRadius: 14 } : {}),
+                                                  ...(page.font ? { fontFamily: PAGE_FONT_STACKS[page.font] } : {}),
+                                                  ...(device === 'desktop' ? { maxWidth: page.max_width ?? 1100 } : {}),
+                                              }
+                                            : undefined
+                                    }
                                 >
                                     <EditorCanvas onPageChange={setPageId} />
                                 </div>

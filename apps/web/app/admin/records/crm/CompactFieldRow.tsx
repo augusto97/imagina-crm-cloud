@@ -44,6 +44,8 @@ interface CompactFieldRowProps {
      * cambiar acá (se muestra de sólo lectura, con el motivo). null = libre.
      */
     lockedReason?: string | null;
+    /** v0.1.233 — "Crear" opciones nuevas desde el selector (el portal no puede). */
+    allowCreateOptions?: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export function CompactFieldRow({
     error,
     showTypeIcon = false,
     lockedReason = null,
+    allowCreateOptions = true,
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
     const TypeIcon = fieldTypeIcon(field.type);
@@ -134,7 +137,7 @@ export function CompactFieldRow({
                         {lockedReason && <Lock className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground/60" aria-label={lockedReason} />}
                     </div>
                 ) : isInlineControl ? (
-                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} />
+                    <InlineControl field={field} listId={listId} recordId={recordId} value={value} onChange={onChange} allowCreate={allowCreateOptions} />
                 ) : editing ? (
                     <EditingControl
                         field={field}
@@ -328,12 +331,14 @@ function InlineControl({
     recordId,
     value,
     onChange,
+    allowCreate = true,
 }: {
     field: FieldEntity;
     listId: number | string;
     recordId?: number;
     value: unknown;
     onChange: (v: unknown) => void;
+    allowCreate?: boolean;
 }): JSX.Element {
     const id = `field-${field.id}`;
 
@@ -416,6 +421,7 @@ function InlineControl({
             <OptionPicker
                 field={field}
                 listId={listId}
+                allowCreate={allowCreate}
                 mode="single"
                 value={typeof value === 'string' ? value : null}
                 onChange={(v) => onChange(v ?? null)}
@@ -429,6 +435,7 @@ function InlineControl({
             <OptionPicker
                 field={field}
                 listId={listId}
+                allowCreate={allowCreate}
                 mode="multi"
                 value={Array.isArray(value) ? value.map(String) : []}
                 onChange={(v) => onChange(Array.isArray(v) ? v : [])}

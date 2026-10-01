@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery as useRQ } from '@tanstack/react-query';
 import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
-import { hexLuminance, PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
+import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
 import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
-import { PortalRenderer, type PortalRendererData } from '@/portal/PortalRenderer';
+import { PortalLayout } from '@/cloud-portal/PortalLayout';
 import { setTenantFormat } from '@/lib/tenantFormat';
-import type { PortalBlock, PortalBootData } from '@/portal/types';
 
 /**
  * SPA del portal del cliente (ADR-S: F3 / CONTRACT §9). Dos rutas:
@@ -40,8 +39,13 @@ function AccessPage(): JSX.Element {
         onSuccess: () => navigate('/portal', { replace: true }),
     });
 
+    // El enlace es de un solo uso: StrictMode monta el efecto dos veces y el
+    // segundo canje daba 404 (mismo guard que la verificación de email).
+    const consumed = useRef<string | null>(null);
     useEffect(() => {
-        if (token) consume.mutate();
+        if (!token || consumed.current === token) return;
+        consumed.current = token;
+        consume.mutate();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
 
@@ -111,49 +115,19 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
             applyDocumentTitle(null, 'Portal');
         };
     }, [branding.logo_url, branding.app_name, boot.list_name]);
-    // Los bloques del portal leen el record por SLUG (herencia del plugin);
-    // el backend keyea por f{id} → traducimos acá una sola vez.
-    const rendererData = useMemo<PortalRendererData>(() => {
-        const fields: Record<string, unknown> = {};
-        const relations: Record<string, unknown> = {};
-        for (const f of boot.fields) {
-            const key = jsonbKeyForField(f.id);
-            if (key in boot.record.data) fields[f.slug] = boot.record.data[key];
-            const rel = boot.record.relations?.[key];
-            if (rel !== undefined) relations[f.slug] = rel;
-        }
-        return {
-            record: { id: boot.record.id, fields, relations },
-            fields: boot.fields.map((f) => ({
-                slug: f.slug,
-                label: f.label,
-                type: f.type,
-                config: f.config,
-            })),
-            template: { blocks: boot.template as unknown as PortalBlock[] },
-        };
-    }, [boot]);
-
-    const portalBoot = useMemo<PortalBootData>(
-        () => ({
-            rest_root: '/api/v1',
-            list_slug: boot.list_slug,
-            user_id: boot.user_id,
-            record_id: boot.record.id,
-        }),
-        [boot],
-    );
-
-    const hasTemplate = rendererData.template.blocks.length > 0;
+    // v0.1.233 — el diseño v3 (guardado, convertido o automático) manda;
+    // el servidor lo resuelve siempre. Sin diseño (respuesta de una versión
+    // anterior durante un deploy) se cae a la lista simple de datos.
+    const layout = boot.layout ?? null;
 
     // v0.1.94 — ajustes de página del portal diseñados en el editor:
     // fondo de página, ancho máximo del contenido y tipografía global.
-    const page = readPageSettings(boot.template_page ?? undefined);
+    const page = readPageSettings(layout ? (layout as { page?: unknown }).page : undefined);
     const pageStyle: React.CSSProperties = {};
     if (page.bg !== undefined) pageStyle.backgroundColor = page.bg;
     if (page.font !== undefined) pageStyle.fontFamily = PAGE_FONT_STACKS[page.font];
     const contentStyle: React.CSSProperties =
-        page.max_width !== undefined ? { maxWidth: `${page.max_width}px` } : {};
+        page.max_width !== undefined ? { maxWidth: `${page.max_width}px` } : layout ? { maxWidth: '1100px' } : {};
 
     return (
         <div className="imcrm-min-h-screen imcrm-bg-background imcrm-text-foreground" style={pageStyle}>
@@ -176,14 +150,8 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
             </header>
 
             <main className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6" style={contentStyle}>
-                {hasTemplate ? (
-                    // Template diseñado en el editor: TODOS los tipos de bloque
-                    // (estáticos + interactivos contra /portal/*).
-                    <PortalRenderer
-                        boot={portalBoot}
-                        data={rendererData}
-                        surfaceDark={page.bg !== undefined ? hexLuminance(page.bg) <= 0.5 : false}
-                    />
+                {layout ? (
+                    <PortalLayout boot={boot} layout={layout} />
                 ) : (
                     // Sin template: fallback con los datos del record.
                     <section className="imcrm-space-y-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldEntity } from '@/types/field';
 
 import { daysFromToday, pctOf, relativeLabel } from './FieldDisplay';
+import { fieldEditable, type LayoutCtx } from './LayoutContext';
 import { resolveTheme } from './layoutTheme';
 
 const field = (type: FieldEntity['type'], config: Record<string, unknown> = {}): FieldEntity =>
@@ -45,5 +46,23 @@ describe('ficha v3 — formas de mostrar y tema', () => {
             gap: 24,
             surface: 'outlined',
         });
+    });
+});
+
+describe('v0.1.233 — quién edita qué (ficha y portal)', () => {
+    const base = { canEdit: true, lockedReasons: {} as Record<string, string | null>, preview: false } as unknown as LayoutCtx;
+    it('en la ficha manda el permiso, la tienda y que no sea un derivado', () => {
+        expect(fieldEditable(base, field('text'))).toBe(true);
+        expect(fieldEditable({ ...base, canEdit: false }, field('text'))).toBe(false);
+        expect(fieldEditable({ ...base, lockedReasons: { x: 'La tienda manda' } }, field('text'))).toBe(false);
+        expect(fieldEditable(base, field('rollup'))).toBe(false);
+        expect(fieldEditable({ ...base, preview: true }, field('text'))).toBe(false);
+    });
+    it('en el portal sólo lo que el diseño marca como editable', () => {
+        const portal = { ...base, mode: 'portal' as const, canEditField: (f: FieldEntity) => f.id === 1 };
+        expect(fieldEditable(portal, field('text'))).toBe(true);
+        expect(fieldEditable(portal, { ...field('text'), id: 2 } as FieldEntity)).toBe(false);
+        // La vista previa del editor nunca edita.
+        expect(fieldEditable({ ...portal, preview: true }, field('text'))).toBe(false);
     });
 });

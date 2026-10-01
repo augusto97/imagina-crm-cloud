@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, FileStack, Plus, Search, Trash2 } from 'lucide-react';
+import { PORTAL_LAYOUT_BLOCK_TYPES } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { __, sprintf } from '@/lib/i18n';
@@ -53,15 +54,21 @@ function BlockLibrary(): JSX.Element {
     const categories = Object.keys(CATEGORY_LABEL) as CatalogCategory[];
     const matches = useMemo(() => {
         const n = normalize(q.trim());
-        return n === '' ? BLOCK_CATALOG : BLOCK_CATALOG.filter((e) => normalize(`${e.label} ${e.description}`).includes(n));
-    }, [q]);
+        // El portal no ofrece lo que no tiene sentido para un cliente.
+        const pool = ed.catalog.target === 'portal' ? BLOCK_CATALOG.filter((e) => PORTAL_LAYOUT_BLOCK_TYPES.includes(e.type)) : BLOCK_CATALOG;
+        return n === '' ? pool : pool.filter((e) => normalize(`${e.label} ${e.description}`).includes(n));
+    }, [q, ed.catalog.target]);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-2.5">
             <div className="imcrm-relative">
                 <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-1/2 imcrm-h-3.5 imcrm-w-3.5 imcrm--translate-y-1/2 imcrm-text-muted-foreground" />
                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={__('Buscar bloque…')} className="imcrm-h-8 imcrm-pl-8 imcrm-text-sm" aria-label={__('Buscar bloque')} />
             </div>
-            <p className="imcrm-px-0.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Arrastrá un bloque a la ficha o hacé clic para agregarlo debajo de lo elegido.')}</p>
+            <p className="imcrm-px-0.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {ed.catalog.target === 'portal'
+                    ? __('Arrastrá un bloque al portal o hacé clic para agregarlo debajo de lo elegido.')
+                    : __('Arrastrá un bloque a la ficha o hacé clic para agregarlo debajo de lo elegido.')}
+            </p>
             {categories.map((cat) => {
                 const entries = matches.filter((e) => e.category === cat);
                 if (entries.length === 0) return null;

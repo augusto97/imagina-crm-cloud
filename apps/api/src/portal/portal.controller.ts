@@ -15,6 +15,8 @@ import {
 } from '@nestjs/common';
 import {
     consumeMagicLinkSchema,
+    idSchema,
+    layoutDataRequestSchema,
     issueMagicLinkSchema,
     portalCommentSchema,
     portalRequestAccessSchema,
@@ -23,6 +25,7 @@ import {
     type CommentDto,
     type ConsumeMagicLinkInput,
     type IssueMagicLinkInput,
+    type PortalLayoutData,
     type MagicLinkResult,
     type PortalBoot,
     type PortalAccessList,
@@ -32,6 +35,7 @@ import {
     type PortalUpdateMeInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
@@ -39,6 +43,8 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PortalService, type PortalActor } from './portal.service';
+
+const portalPreviewSchema = layoutDataRequestSchema.extend({ record_id: idSchema });
 
 @Controller()
 export class PortalController {
@@ -106,6 +112,30 @@ export class PortalController {
         @Param('list') list: string,
     ): Promise<PortalRelatedOptions> {
         return { options: await this.portal.relatedOptions(req.tenant!.tenantId, list) };
+    }
+
+    /** v0.1.233 — el diseño vigente del portal (de acá arranca el editor). */
+    @Get('lists/:list/portal/layout')
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    async portalLayout(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: { layout: unknown; origin: string } }> {
+        return { data: await this.portal.layoutFor(req.tenant!.tenantId, list) };
+    }
+
+    /**
+     * v0.1.233 — vista previa del editor del portal: los gráficos y tablas del
+     * diseño (sin guardar) para un registro, con el alcance de su cliente.
+     */
+    @Post('lists/:list/portal/layout-data')
+    @HttpCode(200)
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    async layoutData(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(portalPreviewSchema)) body: z.infer<typeof portalPreviewSchema>,
+    ): Promise<{ data: PortalLayoutData }> {
+        return { data: await this.portal.previewLayoutData(req.tenant!.tenantId, list, body.record_id, body.blocks) };
     }
 
     /**

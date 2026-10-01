@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { BarChart3, ChartArea, ChartLine, ChartPie, CircleGauge, Filter, Gauge, Table2, TrendingUp } from 'lucide-react';
-import { FIELD_DISPLAYS, RELATED_VIEWS, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
+import { FIELD_DISPLAYS, PORTAL_EDITABLE_TYPES, RELATED_VIEWS, type LayoutBlock, type LayoutDataSource } from '@imagina-base/shared';
 
 import { KPI_ICON_OPTIONS } from '@/admin/dashboards/widgets/KpiWidget';
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
@@ -87,7 +87,31 @@ export function FieldForm({ block, set }: FormProps): JSX.Element {
                     {c.card !== true && <Toggle label={__('Ocultar la etiqueta')} checked={c.label === 'hidden'} onChange={(v) => set({ label: v ? 'hidden' : undefined })} />}
                 </Group>
             )}
+            {field && ctx.mode === 'portal' && <ClientEditToggle block={block} set={set} fields={[field]} />}
         </>
+    );
+}
+
+/**
+ * v0.1.233 — En el portal: ¿el cliente puede corregir estos datos? Es la
+ * whitelist del servidor (sin bloques editables, el cliente no edita nada).
+ */
+function ClientEditToggle({ block, set, fields }: FormProps & { fields: FieldEntity[] }): JSX.Element {
+    const blocked = fields.filter((f) => !PORTAL_EDITABLE_TYPES.includes(f.type));
+    return (
+        <Group title={__('Cliente')}>
+            <Toggle
+                label={__('El cliente puede editarlo')}
+                checked={block.config.editable === true}
+                onChange={(v) => set({ editable: v || undefined })}
+                hint={__('Lo corrige desde su portal y se guarda solo en el registro.')}
+            />
+            {block.config.editable === true && blocked.length > 0 && (
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Se ven pero no se editan:')} {blocked.map((f) => f.label).join(', ')}
+                </p>
+            )}
+        </Group>
     );
 }
 
@@ -98,7 +122,7 @@ export function FieldsForm({ block, set }: FormProps): JSX.Element {
     return (
         <>
             <Group title={__('Datos')}>
-                <Row label={__('Campos')} hint={__('Se editan en la ficha y se guardan solos.')}>
+                <Row label={__('Campos')} hint={ctx.mode === 'portal' ? __('El cliente los ve; si lo permitís, los corrige.') : __('Se editan en la ficha y se guardan solos.')}>
                     <FieldChecklist fields={ctx.fields} value={ids(c.field_ids)} onChange={(v) => set({ field_ids: v })} max={40} />
                 </Row>
             </Group>
@@ -127,6 +151,9 @@ export function FieldsForm({ block, set }: FormProps): JSX.Element {
                 <Toggle label={__('Plegable')} checked={c.collapsible !== false} onChange={(v) => set({ collapsible: v })} hint={__('Con título, se puede plegar desde la ficha.')} />
                 {c.collapsible !== false && <Toggle label={__('Empieza plegado')} checked={c.collapsed === true} onChange={(v) => set({ collapsed: v })} />}
             </Group>
+            {ctx.mode === 'portal' && (
+                <ClientEditToggle block={block} set={set} fields={ids(c.field_ids).map((id) => ctx.fieldsById.get(id)).filter((f): f is FieldEntity => f !== undefined)} />
+            )}
         </>
     );
 }
@@ -189,11 +216,23 @@ function SourcePicker({ value, onChange, allowList }: { value: LayoutDataSource 
                     ))}
                 </optgroup>
             )}
-            {allowList && (
-                <optgroup label={__('Comparar con el total')}>
-                    <option value={`list:${ctx.list.id}`}>{`${__('Toda la lista')} «${ctx.list.name}»`}</option>
-                </optgroup>
-            )}
+            {/* En el portal no hay "toda la lista": el cliente sólo ve lo suyo. Las
+                listas vinculadas a él por un campo persona se ofrecen aparte. */}
+            {ctx.mode === 'portal'
+                ? (ed.catalog.portalLists ?? []).length > 0 && (
+                      <optgroup label={__('Lo suyo en otra lista (por persona)')}>
+                          {(ed.catalog.portalLists ?? []).map((l) => (
+                              <option key={l.list_id} value={`list:${l.list_id}`}>
+                                  {l.name}
+                              </option>
+                          ))}
+                      </optgroup>
+                  )
+                : allowList && (
+                      <optgroup label={__('Comparar con el total')}>
+                          <option value={`list:${ctx.list.id}`}>{`${__('Toda la lista')} «${ctx.list.name}»`}</option>
+                      </optgroup>
+                  )}
         </Select>
     );
 }

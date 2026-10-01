@@ -15,6 +15,9 @@ import { RecordTimeline } from '@/admin/records/crm/RecordTimeline';
 import { StatsBlock } from '@/admin/records/crm/RightRail';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
+import { ActivityTimelineBlock } from '@/portal/blocks/ActivityTimelineBlock';
+import { CommentsThreadBlock } from '@/portal/blocks/CommentsThreadBlock';
+import { PortalPreviewContext } from '@/portal/PreviewContext';
 import { adminGallerySrc, adminImageSrc, GalleryBlockView, ImageBlockView } from '@/admin/template-editor-core/ImageBlockForm';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
@@ -27,7 +30,7 @@ import type { WidgetSpec } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
 
 import { FieldDisplay, optionsOf } from './FieldDisplay';
-import { useLayoutCtx } from './LayoutContext';
+import { fieldEditable, useLayoutCtx } from './LayoutContext';
 import { surfaceClass, tint } from './layoutTheme';
 import { RelatedBlockView } from './RelatedBlockView';
 
@@ -138,6 +141,7 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
         case 'stages':
             return <StagesBlock fieldId={Number(c.field_id)} />;
         case 'description':
+            if (ctx.mode === 'portal') return null;
             return (
                 <RecordDescription
                     listKey={ctx.list.slug}
@@ -147,6 +151,7 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
                 />
             );
         case 'record_stats':
+            if (ctx.mode === 'portal') return null;
             return (
                 <StatsBlock
                     listId={ctx.list.id}
@@ -157,6 +162,7 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
             );
         case 'activity':
         case 'comments':
+            if (ctx.mode === 'portal') return <PortalConversation block={block} />;
             return (
                 <RecordTimeline
                     listId={ctx.list.id}
@@ -191,6 +197,7 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
         case 'embed':
             return <EmbedBlock block={block} />;
         case 'portal_access':
+            if (ctx.mode === 'portal') return null;
             return <PortalAccessButton list={ctx.list} record={ctx.record} />;
         default:
             return null;
@@ -211,7 +218,8 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     const c = block.config;
     const value = ctx.values[field.slug];
     const locked = ctx.lockedReasons[field.slug] ?? null;
-    const editable = ctx.canEdit && !ctx.preview && locked === null && !['computed', 'lookup', 'rollup'].includes(field.type);
+    void locked;
+    const editable = fieldEditable(ctx, field);
     const Icon = fieldTypeIcon(field.type);
     const showLabel = c.card !== true && c.label !== 'hidden';
     return (
@@ -248,10 +256,11 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
                         <CompactFieldRow
                             field={field}
                             listId={ctx.list.id}
-                            recordId={ctx.record.id}
+                            recordId={ctx.mode === 'portal' ? undefined : ctx.record.id}
                             value={value}
                             onChange={(v) => ctx.setValue(field.slug, v)}
                             error={ctx.errors[field.slug]}
+                            allowCreateOptions={ctx.mode !== 'portal'}
                         />
                     </PopoverContent>
                 </Popover>
@@ -271,21 +280,69 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
         <div
             className={cn('imcrm-grid imcrm-grid-cols-1', cols >= 2 && 'md:imcrm-grid-cols-2', cols >= 3 && 'xl:imcrm-grid-cols-3', cols >= 2 && 'md:imcrm-gap-x-2')}
         >
-            {list.map((f) => (
-                <CompactFieldRow
-                    key={f.id}
-                    field={f}
-                    listId={ctx.list.id}
-                    recordId={ctx.record.id}
-                    value={ctx.values[f.slug]}
-                    onChange={(v) => ctx.setValue(f.slug, v)}
-                    error={ctx.errors[f.slug]}
-                    showTypeIcon={cols === 1}
-                    lockedReason={!ctx.canEdit || ctx.preview ? (ctx.preview ? null : __('No tenés permiso para editar este registro')) : ctx.lockedReasons[f.slug] ?? null}
-                />
-            ))}
+            {list.map((f) =>
+                // En el portal, lo que el cliente no puede editar se ve como dato,
+                // sin candados ni controles.
+                ctx.mode === 'portal' && !fieldEditable(ctx, f) ? (
+                    <ReadOnlyRow key={f.id} field={f} />
+                ) : (
+                    <CompactFieldRow
+                        key={f.id}
+                        field={f}
+                        listId={ctx.list.id}
+                        recordId={ctx.mode === 'portal' ? undefined : ctx.record.id}
+                        value={ctx.values[f.slug]}
+                        onChange={(v) => ctx.setValue(f.slug, v)}
+                        error={ctx.errors[f.slug]}
+                        showTypeIcon={cols === 1}
+                        allowCreateOptions={ctx.mode !== 'portal'}
+                        lockedReason={
+                            ctx.mode === 'portal'
+                                ? null
+                                : !ctx.canEdit || ctx.preview
+                                  ? ctx.preview
+                                      ? null
+                                      : __('No tenés permiso para editar este registro')
+                                  : ctx.lockedReasons[f.slug] ?? null
+                        }
+                    />
+                ),
+            )}
         </div>
     );
+}
+
+/** Un dato del registro, de sólo lectura (el portal muestra así lo no editable). */
+function ReadOnlyRow({ field }: { field: FieldEntity }): JSX.Element {
+    const ctx = useLayoutCtx();
+    const Icon = fieldTypeIcon(field.type);
+    return (
+        <div className="imcrm-flex imcrm-min-h-[36px] imcrm-items-start imcrm-gap-3 imcrm-px-4 imcrm-py-2" data-readonly-field={field.slug}>
+            <span className="imcrm-flex imcrm-w-[38%] imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-0.5 imcrm-text-xs imcrm-text-muted-foreground">
+                <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                <span className="imcrm-truncate">{field.label}</span>
+            </span>
+            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-sm imcrm-text-foreground">
+                <FieldDisplay field={field} value={ctx.values[field.slug]} accent={ctx.theme.accent} />
+            </span>
+        </div>
+    );
+}
+
+/**
+ * Comentarios y actividad del PORTAL: hablan con /portal/me/* (el cliente no
+ * tiene la API del equipo). En el editor muestran datos de ejemplo.
+ */
+function PortalConversation({ block }: { block: LayoutBlock }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const boot = ctx.portalBoot ?? { rest_root: '/api/v1', list_slug: ctx.list.slug, user_id: 0, record_id: ctx.record.id };
+    const inner =
+        block.type === 'comments' ? (
+            <CommentsThreadBlock config={{ title: block.title, readonly: block.config.readonly === true }} boot={boot} />
+        ) : (
+            <ActivityTimelineBlock config={{ title: block.title, limit: Number(block.config.limit ?? 20) }} boot={boot} />
+        );
+    return <PortalPreviewContext.Provider value={ctx.preview === true}>{inner}</PortalPreviewContext.Provider>;
 }
 
 function MissingField(): JSX.Element {
@@ -300,7 +357,7 @@ export function StagesBlock({ fieldId, compact = false }: { fieldId: number; com
     const opts = optionsOf(field);
     const current = ctx.values[field.slug];
     const idx = opts.findIndex((o) => o.value === current);
-    const editable = ctx.canEdit && !ctx.preview && (ctx.lockedReasons[field.slug] ?? null) === null;
+    const editable = fieldEditable(ctx, field);
     return (
         <nav aria-label={field.label} className="imcrm-flex imcrm-w-full imcrm-min-w-0 imcrm-overflow-x-auto imcrm-rounded-lg">
             <ol className="imcrm-flex imcrm-w-full imcrm-min-w-max imcrm-gap-1">
@@ -346,10 +403,14 @@ export function StagesBlock({ fieldId, compact = false }: { fieldId: number; com
 // ── Gráficos ─────────────────────────────────────────────────────────────
 
 /** Lista de la que leen los datos de una fuente (la necesitan los gráficos para colores y etiquetas). */
-export function useSourceListId(source: LayoutDataSource | undefined): number {
+export function useSourceListId(source: LayoutDataSource | undefined, blockId?: string): number {
     const ctx = useLayoutCtx();
-    const paths = useRelationPaths(source?.kind === 'related' ? ctx.list.id : undefined);
+    // El portal no puede consultar el admin: el servidor ya dijo de qué lista lee cada bloque.
+    const known = blockId !== undefined ? ctx.blockLists?.[blockId] : undefined;
+    // (el editor del portal sí puede: corre con la sesión del equipo).
+    const paths = useRelationPaths(source?.kind === 'related' && (ctx.mode !== 'portal' || ctx.preview) ? ctx.list.id : undefined);
     return useMemo(() => {
+        if (known !== undefined) return known;
         if (!source) return 0;
         if (source.kind === 'list') return source.list_id;
         if (source.kind === 'record') return ctx.list.id;
@@ -358,14 +419,14 @@ export function useSourceListId(source: LayoutDataSource | undefined): number {
         if (own) return ctx.list.id;
         const p = (paths.data ?? []).find((x) => x.relation_field_id === source.field_id);
         return p ? p.list_id : 0;
-    }, [source, ctx.fieldsById, ctx.list.id, paths.data]);
+    }, [known, source, ctx.fieldsById, ctx.list.id, paths.data]);
 }
 
 const CHART_HEIGHT: Record<string, number> = { kpi: 118, gauge: 190, stat_delta: 118, table: 300, bar: 280, pie: 280, line: 260, area: 260, funnel: 260 };
 
 function ChartBlock({ block }: { block: LayoutBlock }): JSX.Element {
     const source = block.config.source as LayoutDataSource | undefined;
-    const listId = useSourceListId(source);
+    const listId = useSourceListId(source, block.id);
     const kind = layoutChartKindSchema.catch('kpi').parse(block.config.kind);
     const spec: WidgetSpec = {
         id: block.id,

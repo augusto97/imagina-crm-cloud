@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUpRight, Loader2, Plus } from 'lucide-react';
@@ -73,7 +73,12 @@ export function RelatedBlockView({ block }: { block: LayoutBlock }): JSX.Element
             ) : (
                 <TableView {...props} />
             )}
-            {data.total > data.rows.length && (
+            {data.total > data.rows.length && ctx.mode === 'portal' && (
+                <p className="imcrm-border-t imcrm-border-border imcrm-px-4 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    {sprintf(__('Mostrando %1$s de %2$s'), formatNumber(data.rows.length), formatNumber(data.total))}
+                </p>
+            )}
+            {data.total > data.rows.length && ctx.mode !== 'portal' && (
                 <Link
                     to={`/lists/${data.list.slug}/records`}
                     className="imcrm-border-t imcrm-border-border imcrm-px-4 imcrm-py-2 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-text-foreground"
@@ -105,10 +110,11 @@ function RelatedToolbar({ block, data }: { block: LayoutBlock; data: RelatedBloc
     const qc = useQueryClient();
     const [adding, setAdding] = useState(false);
     const source = block.config.source as LayoutDataSource | undefined;
-    const otherList = useList(data.list.id);
+    // En el portal no se consulta el admin ni se dan de alta registros.
+    const otherList = useList(ctx.mode === 'portal' ? undefined : data.list.id);
     const relField = source?.kind === 'related' ? data.fields.find((f) => f.id === source.field_id) : undefined;
     // Sólo hacia adentro: el nuevo registro de la otra lista nace apuntando a éste.
-    const canAdd = relField !== undefined && !ctx.preview && readStoreListMarker(otherList.data?.settings) === null;
+    const canAdd = ctx.mode !== 'portal' && relField !== undefined && !ctx.preview && readStoreListMarker(otherList.data?.settings) === null;
     const initialValues = useMemo(() => (relField ? { [relField.slug]: [ctx.record.id] } : undefined), [relField, ctx.record.id]);
     return (
         <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4 imcrm-pb-2">
@@ -159,10 +165,10 @@ function TableView({ rows, columns, titleField, titleOf, href }: ViewProps): JSX
                     {rows.map((r) => (
                         <tr key={r.id} className="imcrm-group imcrm-border-t imcrm-border-border/70 hover:imcrm-bg-accent/40">
                             <td className="imcrm-max-w-[260px] imcrm-px-4 imcrm-py-2">
-                                <Link to={href(r)} className="imcrm-inline-flex imcrm-max-w-full imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-foreground hover:imcrm-underline">
+                                <RowLink to={href(r)} className="imcrm-inline-flex imcrm-max-w-full imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-foreground hover:imcrm-underline">
                                     <span className="imcrm-truncate">{titleOf(r)}</span>
                                     <ArrowUpRight className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-opacity-0 group-hover:imcrm-opacity-60" />
-                                </Link>
+                                </RowLink>
                             </td>
                             {columns.map((c) => (
                                 <td key={c.id} className="imcrm-max-w-[220px] imcrm-truncate imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2">
@@ -183,14 +189,14 @@ function ListView({ rows, columns, titleOf, href }: ViewProps): JSX.Element {
         <ul className="imcrm-flex imcrm-flex-col imcrm-border-t imcrm-border-border">
             {rows.map((r) => (
                 <li key={r.id} className="imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0">
-                    <Link to={href(r)} className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-2.5 hover:imcrm-bg-accent/40">
+                    <RowLink to={href(r)} className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-2.5 hover:imcrm-bg-accent/40">
                         <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-sm imcrm-font-medium imcrm-text-foreground">{titleOf(r)}</span>
                         <span className="imcrm-hidden imcrm-min-w-0 imcrm-items-center imcrm-gap-3 imcrm-text-xs imcrm-text-muted-foreground sm:imcrm-flex">
                             {meta.map((c) => (
                                 <span key={c.id} className="imcrm-max-w-[160px] imcrm-truncate">{renderCellValue(c, valueOf(r, c))}</span>
                             ))}
                         </span>
-                    </Link>
+                    </RowLink>
                 </li>
             ))}
         </ul>
@@ -203,7 +209,7 @@ function CardsView({ rows, columns, titleOf, href }: ViewProps): JSX.Element {
     return (
         <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 imcrm-px-4 imcrm-pb-4 sm:imcrm-grid-cols-2 xl:imcrm-grid-cols-3">
             {rows.map((r) => (
-                <Link
+                <RowLink
                     key={r.id}
                     to={href(r)}
                     className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3 imcrm-transition-shadow hover:imcrm-shadow-imcrm-md"
@@ -218,7 +224,7 @@ function CardsView({ rows, columns, titleOf, href }: ViewProps): JSX.Element {
                             </div>
                         ))}
                     </dl>
-                </Link>
+                </RowLink>
             ))}
         </div>
     );
@@ -244,12 +250,12 @@ function BoardView({ data, rows, columns, titleOf, href, block }: ViewProps): JS
                             <span className="imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground">{items.length}</span>
                         </div>
                         {items.map((r) => (
-                            <Link key={r.id} to={href(r)} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2 imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md">
+                            <RowLink key={r.id} to={href(r)} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2 imcrm-shadow-imcrm-sm hover:imcrm-shadow-imcrm-md">
                                 <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-medium">{titleOf(r)}</span>
                                 {meta.map((c) => (
                                     <span key={c.id} className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{renderCellValue(c, valueOf(r, c))}</span>
                                 ))}
-                            </Link>
+                            </RowLink>
                         ))}
                     </div>
                 );
@@ -278,9 +284,9 @@ function TimelineView({ data, rows, columns, titleOf, href, block }: ViewProps):
                     <span className="imcrm-text-[11px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                         {dateOf(r) ? formatDateStr(dateOf(r).slice(0, 10)) : '—'}
                     </span>
-                    <Link to={href(r)} className="imcrm-block imcrm-truncate imcrm-text-sm imcrm-font-medium imcrm-text-foreground hover:imcrm-underline">
+                    <RowLink to={href(r)} className="imcrm-block imcrm-truncate imcrm-text-sm imcrm-font-medium imcrm-text-foreground hover:imcrm-underline">
                         {titleOf(r)}
-                    </Link>
+                    </RowLink>
                     {meta.length > 0 && (
                         <span className="imcrm-mt-0.5 imcrm-flex imcrm-flex-wrap imcrm-gap-x-3 imcrm-text-xs imcrm-text-muted-foreground">
                             {meta.map((c) => (
@@ -304,7 +310,7 @@ function GalleryView({ data, rows, titleOf, href, block }: ViewProps): JSX.Eleme
             {rows.map((r) => {
                 const src = image ? r.data[`f${image.id}`] : undefined;
                 return (
-                    <Link key={r.id} to={href(r)} className="imcrm-group imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                    <RowLink key={r.id} to={href(r)} className="imcrm-group imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                         <span
                             className={cn('imcrm-aspect-[4/3] imcrm-w-full imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border')}
                             style={{ background: tint(ctx.theme.accent, 10) }}
@@ -314,9 +320,20 @@ function GalleryView({ data, rows, titleOf, href, block }: ViewProps): JSX.Eleme
                             )}
                         </span>
                         <span className="imcrm-truncate imcrm-text-xs imcrm-font-medium">{titleOf(r)}</span>
-                    </Link>
+                    </RowLink>
                 );
             })}
         </div>
+    );
+}
+
+/** El enlace a la ficha de un vinculado; en el portal no hay a dónde ir. */
+function RowLink({ to, className, style, children }: { to: string; className?: string; style?: CSSProperties; children: ReactNode }): JSX.Element {
+    const ctx = useLayoutCtx();
+    if (ctx.mode === 'portal' || ctx.preview) return <div className={className} style={style}>{children}</div>;
+    return (
+        <Link to={to} className={className} style={style}>
+            {children}
+        </Link>
     );
 }

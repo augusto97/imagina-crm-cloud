@@ -17,8 +17,11 @@ import {
     publicListSettingsSchema,
     readPortalConfig,
     migrateCrmV2ToV3,
+    migratePortalTemplateToV3,
     readRecordLayout,
+    readPortalLayoutV3,
     readRecordLayoutV3,
+    type LayoutFieldLite,
     type RecordLayoutV3,
     recordLayoutSchema,
     timeBucketSchema,
@@ -41,7 +44,6 @@ import {
     type FilterGroup,
     type List,
     type ListBlueprint,
-    type PortalTemplate,
     type UpdateAutomationInput,
     type UpdateFieldInput,
     type UpdateListInput,
@@ -286,7 +288,7 @@ type Payload =
     // v0.1.195 — configuración de la lista: se mezcla en `settings` AL
     // APLICAR (se relee la lista), así una propuesta vieja no pisa lo
     // que otra persona cambió entre proponer y aplicar.
-    | { kind: 'configure_portal'; listId: number; listSlug: string; portal: Record<string, unknown> | null; template: PortalTemplate | null }
+    | { kind: 'configure_portal'; listId: number; listSlug: string; portal: Record<string, unknown> | null; v3: RecordLayoutV3 | null }
     | { kind: 'configure_record_layout'; listId: number; listSlug: string; layout: 'classic' | 'crm'; templateId: string | null; custom: CrmCustomConfig | null; v3?: RecordLayoutV3 | null }
     | { kind: 'update_automation'; listId: number; listSlug: string; automationId: number; patch: UpdateAutomationInput }
     | { kind: 'delete_automation'; listId: number; listSlug: string; automationId: number }
@@ -334,7 +336,7 @@ const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
 };
 
 /** Claves de `settings` que cada propuesta de configuración PISA; el resto se conserva. */
-const PORTAL_SETTING_KEYS = ['portal', 'portal_template'] as const;
+const PORTAL_SETTING_KEYS = ['portal', 'portal_template', 'portal_layout_v3'] as const;
 const LAYOUT_SETTING_KEYS = ['record_layout', 'crm_template_id', 'crm_template_custom', 'record_layout_v3'] as const;
 
 /**
@@ -474,13 +476,14 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_configure_portal',
             label: 'Armando el portal del cliente',
             description:
-                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente (sus facturas, sus tickets…) y la plantilla de bloques que se le muestra (portada, datos, formulario editable, tabla de registros relacionados, avisos, descargas, contacto, preguntas frecuentes). Leé antes get_list_schema: ahí están los campos y las listas vinculadas disponibles. Un portal necesita al menos client_data o editable_form para tener sentido.',
+                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente al pie (sus facturas, sus tickets…) y el DISEÑO de su página. Lo más potente es `design` — el mismo modelo de la ficha: pestañas → secciones con columnas → bloques (sus datos con la forma que mejor los muestra, propiedades que él puede corregir con `editable: true`, gráficos y tablas/tableros de SUS registros vinculados con `from` = slug de la lista, avisos, botones, comentarios, actividad) más `page` (fondo, ancho, tipografía). Todo lo vinculado se acota solo a lo del cliente. `blocks` (vocabulario anterior: portada, formulario editable, preguntas frecuentes…) también se acepta y se convierte. Leé antes get_list_schema: ahí están los campos y las listas vinculadas.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63).describe('Slug de la lista cuyos registros son los clientes'),
                 enabled: z.boolean().optional().describe('Habilitar/deshabilitar el portal (default: habilitar si se manda plantilla)'),
                 related_lists: z.array(z.string().max(63)).max(20).optional().describe('Slugs de listas VINCULADAS que el cliente ve además de su ficha (reemplaza la selección actual). Vacío = ninguna.'),
-                blocks: z.array(portalBlockSpec).max(40).optional().describe('Plantilla completa, en orden de arriba hacia abajo (reemplaza la actual). Omitir para conservar la que hay.'),
+                design: recordDesignSpec.optional().describe('Diseño completo del portal (reemplaza el actual). Preferí esto sobre `blocks`.'),
+                blocks: z.array(portalBlockSpec).max(40).optional().describe('Plantilla en el vocabulario anterior, de arriba hacia abajo (se convierte al diseño nuevo). No combinar con `design`.'),
             }),
             run: (ctx, input) => this.proposeConfigurePortal(ctx, input as ConfigurePortalSpec),
         });
@@ -705,7 +708,13 @@ export class StructureTools implements AiProposalApplier {
                     enabled: portal.enabled,
                     related_lists: portal.related_lists.map((id) => listById.get(id)?.slug ?? id),
                     linkable_lists: related.map((r) => ({ slug: r.slug, name: r.name, via: r.via })),
-                    template_blocks: describePortalTemplate(template),
+                    // v0.1.233 — el diseño v3 manda; si no hay, la plantilla anterior.
+                    ...(() => {
+                        const pv3 = readPortalLayoutV3(settings);
+                        return pv3
+                            ? { design: describeRecordLayoutV3(pv3, fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type }))) }
+                            : { template_blocks: describePortalTemplate(template) };
+                    })(),
                 },
                 record_layout: (() => {
                     const v3 = layout.layout === 'crm' ? readRecordLayoutV3(settings) : null;
@@ -1333,28 +1342,36 @@ export class StructureTools implements AiProposalApplier {
             });
         }
 
-        let template: PortalTemplate | null = null;
+        if (input.design && input.blocks) throw new AiToolError('Mandá `design` o `blocks`, no los dos.');
+        let v3: RecordLayoutV3 | null = null;
         let blocksPreview: AiProposalPreview['blocks'] = [];
-        if (input.blocks) {
+        const warnings: string[] = [];
+        const hadDesign = readPortalLayoutV3(settings) !== null || current.template !== null;
+        if (input.design) {
+            const dctx = await this.designContext(ctx, list.id, fields);
+            const userLists = related
+                .filter((r) => r.via === 'user')
+                .map((r) => ({ list_id: r.id, slug: r.slug, name: r.name, fields: r.fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type })) }));
+            const built = buildRecordLayoutV3(input.design, { ...dctx, portal: { userLists } });
+            v3 = built.layout;
+            warnings.push(...built.warnings);
+            blocksPreview = built.preview.map((b) => ({ type: b.type, label: b.label, detail: b.detail }));
+        } else if (input.blocks) {
             const relatedCtx: PortalBuildContext['related'] = new Map();
             for (const r of related) relatedCtx.set(r.slug, { id: r.id, name: r.name, fields: new Map(r.fields.map((f) => [f.slug, f])) });
             const built = buildPortalTemplate(input.blocks, { fields: new Map(fields.map((f) => [f.slug, f])), related: relatedCtx, listSlug: list.slug }, list.name);
-            template = built.template;
             blocksPreview = built.preview;
-            // Una tabla de registros vinculados exige que esa lista esté
-            // habilitada para el cliente: se suma sola en vez de dejar un
-            // bloque que el portal no podría llenar (fail-closed del scope).
-            const usedLists = template.blocks
-                .filter((b) => b.type === 'related_records_table')
-                .map((b) => relatedBySlug.get(String((b.config as { list_slug?: unknown }).list_slug ?? ''))?.id)
-                .filter((id): id is number => typeof id === 'number');
-            if (usedLists.length) {
-                const base = nextRelated ?? current.portal.related_lists;
-                const merged = [...new Set([...base, ...usedLists])];
-                if (merged.length !== base.length) nextRelated = merged;
-            }
-            const before = current.template?.blocks.length ?? 0;
-            changes.push({ label: 'Plantilla', from: before ? `${before} bloque${before === 1 ? '' : 's'}` : null, to: `${template.blocks.length} bloque${template.blocks.length === 1 ? '' : 's'}` });
+            // El vocabulario anterior se convierte al diseño v3 (el que manda).
+            v3 = migratePortalTemplateToV3(built.template, {
+                listId: list.id,
+                fields: fields.map(liteOf),
+                otherLists: related.map((r) => ({ id: r.id, slug: r.slug, fields: r.fields.map(liteOf) })),
+            });
+            if (!v3) throw new AiToolError('La plantilla quedó vacía.');
+        }
+        if (v3) {
+            const n = v3.pages.reduce((a, pg) => a + pg.sections.reduce((b, sec) => b + sec.blocks.flat().length, 0), 0);
+            changes.push({ label: 'Diseño del portal', from: hadDesign ? 'el actual' : null, to: `${v3.pages.length} pestaña${v3.pages.length === 1 ? '' : 's'} · ${n} bloque${n === 1 ? '' : 's'}` });
         }
 
         let portal: Record<string, unknown> | null = null;
@@ -1366,20 +1383,21 @@ export class StructureTools implements AiProposalApplier {
             const names = (ids: number[]): string => ids.map((id) => relatedById.get(id)?.name ?? `#${id}`).join(', ') || '(ninguna)';
             changes.push({ label: 'Listas que ve el cliente', from: names(current.portal.related_lists), to: names(nextRelated) });
         }
-        if (!portal && !template) throw new AiToolError('No hay ningún cambio respecto al portal actual (mismo estado, mismas listas y sin plantilla nueva).');
+        if (!portal && !v3) throw new AiToolError('No hay ningún cambio respecto al portal actual (mismo estado, mismas listas y sin diseño nuevo).');
 
         const summaryBits: string[] = [];
         if (nextEnabled !== current.portal.enabled) summaryBits.push(`el portal queda ${onOff(nextEnabled)}`);
-        if (template) summaryBits.push(`plantilla de ${template.blocks.length} bloques`);
+        if (v3) summaryBits.push(`diseño nuevo de ${v3.pages.length} pestaña${v3.pages.length === 1 ? '' : 's'}`);
         if (nextRelated !== undefined) summaryBits.push(`el cliente ve ${nextRelated.length ? nextRelated.map((id) => `«${relatedById.get(id)?.name ?? id}»`).join(', ') : 'sólo su ficha'}`);
         return this.saveProposal(ctx, {
             kind: 'configure_portal',
             title: `Configurar el portal del cliente de «${list.name}»`,
             summary: `${summaryBits.join('; ')}.`,
-            destructive: false,
+            // Pisar un portal ya diseñado no se deshace: se marca.
+            destructive: v3 !== null && hadDesign,
             listSlug: list.slug,
-            preview: { changes, blocks: blocksPreview },
-            payload: { kind: 'configure_portal', listId: list.id, listSlug: list.slug, portal, template },
+            preview: { changes, blocks: blocksPreview, ...(warnings.length ? { warnings } : {}) },
+            payload: { kind: 'configure_portal', listId: list.id, listSlug: list.slug, portal, v3 },
         });
     }
 
@@ -1784,14 +1802,18 @@ export class StructureTools implements AiProposalApplier {
             case 'configure_portal': {
                 const values: Record<string, unknown> = {};
                 if (payload.portal) values.portal = payload.portal;
-                if (payload.template) values.portal_template = payload.template;
+                // El diseño v3 manda; la plantilla anterior se retira (ya está convertida).
+                if (payload.v3) {
+                    values.portal_layout_v3 = payload.v3;
+                    values.portal_template = undefined;
+                }
                 const list = await this.mergeSettings(ctx.tenantId, payload.listId, PORTAL_SETTING_KEYS, values);
                 const enabled = readPortalConfig((list.settings ?? {}) as Record<string, unknown>).portal.enabled;
                 return {
                     message: `Portal del cliente de «${list.name}» configurado${enabled ? '' : ' (deshabilitado)'}.`,
                     links: [
                         { label: 'Ajustes del portal', href: `/lists/${list.slug}/edit?s=compartir` },
-                        ...(payload.template ? [{ label: 'Abrir el editor de la plantilla', href: `/lists/${list.slug}/portal-editor` }] : []),
+                        ...(payload.v3 ? [{ label: 'Abrir el editor del portal', href: `/lists/${list.slug}/portal-editor` }] : []),
                     ],
                     warnings: enabled ? ['Para que un cliente entre hay que emitirle el acceso desde su registro (botón Portal del cliente).'] : [],
                 };
@@ -2462,6 +2484,7 @@ interface ConfigurePortalSpec {
     list: string;
     enabled?: boolean;
     related_lists?: string[];
+    design?: RecordDesignSpec;
     blocks?: PortalBlockSpec[];
 }
 
@@ -2730,4 +2753,8 @@ function describePublic(v: unknown): string {
     if (Array.isArray(v)) return v.length ? v.join(', ') : '(cualquiera)';
     if (typeof v === 'boolean') return v ? 'sí' : 'no';
     return String(v);
+}
+
+function liteOf(f: Field): LayoutFieldLite {
+    return { id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown> };
 }

@@ -60,7 +60,12 @@ function HeaderChrome({ children }: { children: ReactNode }): JSX.Element {
             )}
             data-testid="editor-header"
         >
-            {children}
+            {children ?? (
+                // Cabecera oculta: queda un asa para volver a mostrarla.
+                <div className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-rounded-[14px] imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Cabecera oculta — elegila para mostrarla')}
+                </div>
+            )}
             <button
                 type="button"
                 className="imcrm-absolute imcrm-inset-0 imcrm-z-10 imcrm-cursor-pointer imcrm-rounded-[14px]"

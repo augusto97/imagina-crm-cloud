@@ -1125,6 +1125,10 @@ export class CloudClient {
     portalMe(): Promise<PortalBoot> {
         return this.request('GET', '/portal/me', { schema: portalBootSchema });
     }
+    /** v0.1.233 — el cliente corrige SUS datos (sólo los campos editables del diseño). */
+    portalUpdateMe(fields: Record<string, unknown>): Promise<unknown> {
+        return this.request('PATCH', '/portal/me', { body: { fields } });
+    }
     /** Registros de OTRA lista que le pertenecen al cliente (scope del portal). */
     portalRelatedRecords(
         listSlug: string,
