@@ -1235,10 +1235,36 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 
 /*
  * v0.1.230 — Secciones de la ficha diseñada (plantillas v3): cada columna
- * ocupa su ancho sobre 12 en pantallas anchas y se apila en el celular.
+ * ocupa su ancho sobre 12 cuando HAY lugar y se apilan cuando no. Se decide
+ * por el ancho del CONTENEDOR (container query), no de la ventana: así la
+ * vista previa de celular del editor se ve exactamente como en el teléfono.
  * El ancho viaja como variable (`--span`) porque sale de la plantilla.
  */
-@media (min-width: 1024px) {
+.imcrm-lay-root {
+    container: imcrm-lay / inline-size;
+}
+.imcrm-lay-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+/* Cabecera: fechas sólo con lugar; el #id se va en pantallas de teléfono. */
+.imcrm-lay-meta {
+    display: none;
+}
+@container imcrm-lay (min-width: 640px) {
+    .imcrm-lay-meta {
+        display: block;
+    }
+}
+@container imcrm-lay (max-width: 479px) {
+    .imcrm-lay-idbadge {
+        display: none;
+    }
+}
+@container imcrm-lay (min-width: 760px) {
+    .imcrm-lay-grid {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
     .imcrm-lay-col {
         grid-column: span var(--span) / span var(--span);
     }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, Loader2, Paintbrush, Trash2 } from 'lucide-react';
 import type { LayoutSection, RecordLayoutV3 } from '@imagina-base/shared';
@@ -69,7 +69,7 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
     return (
         <LayoutContext.Provider value={ctx}>
             <WidgetDataOverrideContext.Provider value={override}>
-                <div className="imcrm-flex imcrm-flex-col" style={{ gap: theme.gap }} data-testid="imcrm-record-layout">
+                <div className="imcrm-lay-root imcrm-flex imcrm-flex-col" style={{ gap: theme.gap }} data-testid="imcrm-record-layout">
                     <Toolbar
                         list={list}
                         saving={save.saving}
@@ -91,15 +91,35 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
     );
 }
 
-/** Cabecera + pestañas + secciones de una plantilla (también la usa la vista previa del editor). */
-export function LayoutBody({ layout }: { layout: RecordLayoutV3 }): JSX.Element {
+export interface LayoutBodyProps {
+    layout: RecordLayoutV3;
+    /** Pestaña controlada desde afuera (el editor); sin esto, `?tab=` de la URL. */
+    pageId?: string;
+    onPageChange?: (pageId: string) => void;
+    /** El editor envuelve cabecera y secciones con sus controles. */
+    renderHeader?: (header: ReactNode) => ReactNode;
+    renderSection?: (section: LayoutSection, gap: number) => ReactNode;
+    /** Algo al final de la página (el "+ Sección" del editor). */
+    footer?: ReactNode;
+}
+
+/** Cabecera + pestañas + secciones de una plantilla (también la usa el editor). */
+export function LayoutBody({ layout, pageId: controlled, onPageChange, renderHeader, renderSection, footer }: LayoutBodyProps): JSX.Element {
     const [params, setParams] = useSearchParams();
-    const pageId = params.get('tab');
+    const pageId = controlled ?? params.get('tab');
     const page = layout.pages.find((p) => p.id === pageId) ?? layout.pages[0]!;
     const gap = resolveTheme(layout.theme).gap;
+    const header = <LayoutHeader header={layout.header} />;
+    const goTo = (id: string): void => {
+        if (onPageChange) return onPageChange(id);
+        const next = new URLSearchParams(params);
+        if (id === layout.pages[0]!.id) next.delete('tab');
+        else next.set('tab', id);
+        setParams(next, { replace: true });
+    };
     return (
         <>
-            <LayoutHeader header={layout.header} />
+            {renderHeader ? renderHeader(header) : header}
             {layout.pages.length > 1 && (
                 <nav className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border" style={{ overflowY: 'hidden' }} aria-label={__('Secciones de la ficha')}>
                     {layout.pages.map((p) => {
@@ -108,12 +128,7 @@ export function LayoutBody({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
                             <button
                                 key={p.id}
                                 type="button"
-                                onClick={() => {
-                                    const next = new URLSearchParams(params);
-                                    if (p.id === layout.pages[0]!.id) next.delete('tab');
-                                    else next.set('tab', p.id);
-                                    setParams(next, { replace: true });
-                                }}
+                                onClick={() => goTo(p.id)}
                                 className={cn(
                                     'imcrm--mb-px imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-transition-colors',
                                     active
@@ -129,25 +144,21 @@ export function LayoutBody({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
                 </nav>
             )}
             {page.sections.map((s) => (
-                <SectionView key={`${page.id}:${s.id}`} section={s} gap={gap} />
+                <Fragment key={`${page.id}:${s.id}`}>{renderSection ? renderSection(s, gap) : <SectionView section={s} gap={gap} />}</Fragment>
             ))}
+            {footer}
         </>
     );
 }
 
-function SectionView({ section, gap }: { section: LayoutSection; gap: number }): JSX.Element | null {
+export function SectionView({ section, gap }: { section: LayoutSection; gap: number }): JSX.Element | null {
     if (section.blocks.every((col) => col.length === 0)) return null;
-    const bg = typeof section.style?.bg === 'string' ? section.style.bg : undefined;
     return (
-        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" style={bg ? { background: bg, padding: 16, borderRadius: 14 } : undefined}>
-            {section.title && <h2 className="imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">{section.title}</h2>}
-            <div className="imcrm-grid imcrm-grid-cols-1 lg:imcrm-grid-cols-12" style={{ gap }}>
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" style={sectionStyle(section)}>
+            {section.title && <SectionTitle text={section.title} />}
+            <div className="imcrm-lay-grid" style={{ gap }}>
                 {section.columns.map((w, i) => (
-                    <div
-                        key={i}
-                        className="imcrm-lay-col imcrm-flex imcrm-min-w-0 imcrm-flex-col"
-                        style={{ gap, ['--span' as string]: String(w) }}
-                    >
+                    <div key={i} className="imcrm-lay-col imcrm-flex imcrm-min-w-0 imcrm-flex-col" style={{ gap, ['--span' as string]: String(w) }}>
                         {(section.blocks[i] ?? []).map((b) => (
                             <LayoutBlockView key={b.id} block={b} />
                         ))}
@@ -156,6 +167,15 @@ function SectionView({ section, gap }: { section: LayoutSection; gap: number }):
             </div>
         </section>
     );
+}
+
+export function sectionStyle(section: LayoutSection): CSSProperties | undefined {
+    const bg = typeof section.style?.bg === 'string' ? section.style.bg : undefined;
+    return bg ? { background: bg, padding: 16, borderRadius: 14 } : undefined;
+}
+
+export function SectionTitle({ text }: { text: string }): JSX.Element {
+    return <h2 className="imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">{text}</h2>;
 }
 
 function Toolbar({

@@ -1,8 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { readRecordLayoutV3 } from '@imagina-base/shared';
 import { Link } from 'react-router';
 import { Check, LayoutDashboard, Loader2, SlidersHorizontal, Sparkles, UserSquare2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { useUpdateList } from '@/hooks/useLists';
 import { recordsKeys } from '@/hooks/useRecords';
@@ -37,7 +39,10 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
 
     const settings = list.settings as { record_layout?: RecordLayout; crm_template_id?: string };
     const currentLayout = settings.record_layout ?? 'classic';
-    const currentTemplateId = settings.crm_template_id ?? DEFAULT_TEMPLATE_ID;
+    // v0.1.231 — Con un diseño del editor guardado, ése manda (es la "Personalizada").
+    const hasDesign = readRecordLayoutV3(list.settings) !== null;
+    const currentTemplateId = hasDesign ? CUSTOM_TEMPLATE_ID : settings.crm_template_id ?? DEFAULT_TEMPLATE_ID;
+    const confirm = useConfirm();
 
     const setLayout = async (next: RecordLayout): Promise<void> => {
         if (next === currentLayout) return;
@@ -61,15 +66,24 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
 
     const setTemplate = async (id: string): Promise<void> => {
         if (id === currentTemplateId) return;
+        if (hasDesign) {
+            const ok = await confirm({
+                title: __('¿Reemplazar tu diseño?'),
+                description: __('La ficha pasa a usar esta plantilla y se descarta el diseño hecho en el editor.'),
+                confirmLabel: __('Usar la plantilla'),
+                destructive: true,
+            });
+            if (!ok) return;
+        }
         try {
+            const next = { ...list.settings, crm_template_id: id } as Record<string, unknown>;
+            delete next.record_layout_v3;
             // Mantenemos `crm_template_custom` aunque elijas un
             // built-in (no destruimos el trabajo del editor visual
             // si el user picó otra plantilla por error). El resolver
             // (`getResolvedLayout`) ya ignora el custom cuando
             // `crm_template_id !== 'custom'`.
-            await update.mutateAsync({
-                settings: { ...list.settings, crm_template_id: id },
-            });
+            await update.mutateAsync({ settings: next });
             // Forzamos refetch del records cache. Sin esto, una
             // RecordPage abierta en otra tab podía seguir mostrando
             // el layout anterior hasta que la query expirase su
@@ -155,7 +169,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                                             {__('Personalizada')}
                                         </span>
                                         <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                            {__('Diseñá vos mismo la ficha, campo por campo, con el editor visual.')}
+                                            {__('Diseñá la ficha con el editor visual: pestañas, secciones, gráficos de los vinculados y cada campo con la forma que mejor lo muestra.')}
                                         </span>
                                     </div>
                                     <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
@@ -166,8 +180,8 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                                             <Link to={`/lists/${list.slug}/template-editor`}>
                                                 <SlidersHorizontal className="imcrm-h-3 imcrm-w-3" />
                                                 {currentTemplateId === CUSTOM_TEMPLATE_ID
-                                                    ? __('Editar')
-                                                    : __('Crear')}
+                                                    ? __('Editar diseño')
+                                                    : __('Abrir el editor')}
                                             </Link>
                                         </Button>
                                     </div>

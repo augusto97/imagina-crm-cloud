@@ -206,8 +206,8 @@ export function RecordTimeline({
 
     return (
         <section className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5">
-            <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-3">
-                <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-x-3 imcrm-gap-y-2">
+                <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-whitespace-nowrap imcrm-text-sm imcrm-font-semibold">
                     <ActivityIcon className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" />
                     {__('Actividad del registro')}
                 </h2>
@@ -219,7 +219,7 @@ export function RecordTimeline({
             </header>
 
             <form onSubmit={handleSubmit} className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-                <div role="tablist" aria-label={__('Tipo de entrada')} className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border">
+                <div role="tablist" aria-label={__('Tipo de entrada')} className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border" style={{ overflowY: 'hidden' }}>
                     {MODES.map((m) => {
                         const Icon = m.icon;
                         const active = mode === m.kind;

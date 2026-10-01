@@ -48,7 +48,7 @@ export function useLayoutData(listId: number, listSlug: string, recordId: number
         queryKey: layoutDataKeys.forRecord(listId, recordId, sig),
         queryFn: async () =>
             (await api.post<Record<string, unknown>>(`/lists/${listSlug}/records/${recordId}/layout-data`, { blocks })).data,
-        enabled: blocks.length > 0,
+        enabled: blocks.length > 0 && recordId > 0,
         staleTime: 20_000,
         placeholderData: (prev) => prev,
     });
