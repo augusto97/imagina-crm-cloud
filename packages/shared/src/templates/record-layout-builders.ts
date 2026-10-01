@@ -352,22 +352,33 @@ function isNumericComputed(f: LayoutFieldLite): boolean {
 }
 
 /**
- * v0.1.234 — Las plantillas integradas (contacto, negocio, tarea, soporte)
- * ya no se convierten desde su grilla vieja (3 · 6 · 3 con la actividad al
+ * v0.1.234 — Las plantillas integradas (contacto, venta, tarea, soporte) ya
+ * no se convierten desde su grilla vieja (3 · 6 · 3 con la actividad al
  * medio, columnas angostas que escondían los valores): se arman con este
- * mismo generador y cada una sólo cambia el nombre y el orden de los grupos.
+ * mismo generador. v0.1.235 — cada una con una composición y un estilo
+ * PROPIOS (en v0.1.234 sólo cambiaba el orden de dos tarjetas y elegir una
+ * u otra no se notaba):
+ *  - auto: cifras arriba, detalles a la izquierda, contacto y actividad al
+ *    costado.
+ *  - contact: la persona primero — datos en una columna lateral a la
+ *    IZQUIERDA (como la ficha de contacto de un CRM) y la conversación al
+ *    centro; sin cifras arriba. Tema «fresh».
+ *  - deal: el monto como cifra grande a lo ancho de media fila, la fecha de
+ *    cierre como cuenta regresiva y las etapas del pipeline. Tema
+ *    «corporate».
+ *  - task: sin portada ni avatar, plano; la descripción (el trabajo) manda,
+ *    y la fecha de entrega en cuenta regresiva al costado. Tema «minimal».
+ *  - support: la conversación PRIMERO (un ticket es una conversación), el
+ *    cliente y el detalle al costado. Tema «warm».
  */
 export type AutoLayoutFlavor = 'auto' | 'contact' | 'deal' | 'task' | 'support';
 
-// El nombre del grupo principal es siempre neutro ("Detalles"): la misma
-// plantilla se elige para listas muy distintas (una lista de clientes con la
-// plantilla Soporte no tiene "tickets"). Lo que cambia es el ORDEN.
-const FLAVOR: Record<AutoLayoutFlavor, { datesFirst: boolean; contactInMain: boolean }> = {
-    auto: { datesFirst: false, contactInMain: false },
-    contact: { datesFirst: false, contactInMain: true },
-    deal: { datesFirst: false, contactInMain: false },
-    task: { datesFirst: true, contactInMain: false },
-    support: { datesFirst: false, contactInMain: false },
+const FLAVOR_THEME: Record<AutoLayoutFlavor, RecordLayoutV3['theme']['preset']> = {
+    auto: 'default',
+    contact: 'fresh',
+    deal: 'corporate',
+    task: 'minimal',
+    support: 'warm',
 };
 
 export function autoRecordLayout(input: {
@@ -376,7 +387,7 @@ export function autoRecordLayout(input: {
     flavor?: AutoLayoutFlavor;
 }): RecordLayoutV3 {
     const fields = input.fields;
-    const flavor = FLAVOR[input.flavor ?? 'auto'] ?? FLAVOR.auto;
+    const flavor: AutoLayoutFlavor = input.flavor && input.flavor in FLAVOR_THEME ? input.flavor : 'auto';
     const title = titleOf(fields);
     const used = new Set<number>(title ? [title.id] : []);
     const free = (f: LayoutFieldLite): boolean => !used.has(f.id);
@@ -385,35 +396,46 @@ export function autoRecordLayout(input: {
         return list;
     };
 
-    // Cabecera: etapas (el select de estado), propiedades clave (los select,
-    // la persona, después las etiquetas y la fecha que manda) y una línea de
-    // contacto bajo el título.
+    // Cabecera: etapas (el select de estado), propiedades clave (la persona
+    // primero en una tarea; si no, los select) y una línea de contacto.
     const stages = fields.find((f) => f.type === 'select' && optionCount(f) >= 3 && STAGE_RE.test(`${f.slug} ${f.label}`));
     if (stages) used.add(stages.id);
+    const due = fields.find((f) => (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(`${f.slug} ${f.label}`));
+    // En venta y tarea la fecha que manda va como cuenta regresiva, no como chip.
+    const dueAsCountdown = due !== undefined && (flavor === 'deal' || flavor === 'task');
+    if (due && dueAsCountdown) used.add(due.id);
     const chips: number[] = [];
-    for (const pass of [['select', 'user'], ['multi_select']] as const) {
+    const chipPasses: ReadonlyArray<readonly FieldType[]> =
+        flavor === 'task' ? [['user'], ['select'], ['multi_select']] : [['select', 'user'], ['multi_select']];
+    for (const pass of chipPasses) {
         for (const f of fields) {
-            if (chips.length >= 4 || !free(f) || !(pass as readonly string[]).includes(f.type)) continue;
+            if (chips.length >= 4 || !free(f) || !pass.includes(f.type)) continue;
             chips.push(f.id);
             used.add(f.id);
         }
     }
-    const due = fields.find((f) => free(f) && (f.type === 'date' || f.type === 'datetime') && DUE_RE.test(`${f.slug} ${f.label}`));
-    if (due) {
+    if (due && !dueAsCountdown && free(due)) {
         chips.push(due.id);
         used.add(due.id);
     }
-    const subtitle = take(fields.filter((f) => free(f) && (f.type === 'email' || f.type === 'phone' || f.type === 'text')).slice(0, 2));
-
-    // Cifras destacadas: los números que definen al registro (el dinero primero).
-    const kpis = take(
-        fields
-            .filter((f) => free(f) && (NUMERIC.includes(f.type) || isNumericComputed(f)))
-            .map((f, i) => ({ f, i }))
-            .sort((a, b) => (KPI_RANK[a.f.type] ?? 9) - (KPI_RANK[b.f.type] ?? 9) || a.i - b.i)
-            .slice(0, 4)
-            .map((x) => x.f),
+    // Contacto/soporte: el email y el teléfono primero bajo el nombre.
+    const subtitlePool = fields.filter((f) => free(f) && (f.type === 'email' || f.type === 'phone' || f.type === 'text'));
+    const subtitle = take(
+        (flavor === 'contact' || flavor === 'support'
+            ? [...subtitlePool.filter((f) => f.type !== 'text'), ...subtitlePool.filter((f) => f.type === 'text')]
+            : subtitlePool
+        ).slice(0, 2),
     );
+
+    // Cifras: los números que definen al registro (el dinero primero).
+    const numeric = fields
+        .filter((f) => free(f) && (NUMERIC.includes(f.type) || isNumericComputed(f)))
+        .map((f, i) => ({ f, i }))
+        .sort((a, b) => (KPI_RANK[a.f.type] ?? 9) - (KPI_RANK[b.f.type] ?? 9) || a.i - b.i)
+        .map((x) => x.f);
+    // Sólo auto y venta las ponen como tarjetas arriba; en el resto van con
+    // los detalles (en un contacto o un ticket no son lo primero que se mira).
+    const kpis = take(flavor === 'auto' || flavor === 'deal' ? numeric.slice(0, flavor === 'deal' ? 3 : 4) : []);
 
     const longText = take(fields.filter((f) => free(f) && f.type === 'long_text'));
     const files = take(fields.filter((f) => free(f) && f.type === 'file'));
@@ -421,49 +443,131 @@ export function autoRecordLayout(input: {
     const relationFields = take(fields.filter((f) => free(f) && f.type === 'relation'));
     let dates = fields.filter((f) => free(f) && (f.type === 'date' || f.type === 'datetime'));
     // Con pocas fechas, una tarjeta propia es una tarjeta de más (varias
-    // tarjetas de 1-2 campos fragmentan la ficha): van con el resto.
-    if (dates.length < 3) dates = [];
+    // tarjetas de 1-2 campos fragmentan la ficha): van con el resto. En una
+    // tarea las fechas SON el cuándo: tarjeta propia siempre.
+    if (dates.length < (flavor === 'task' ? 1 : 3)) dates = [];
     take(dates);
     const details = take(fields.filter((f) => free(f)));
 
-    const group = (id: string, title: string, icon: string, list: LayoutFieldLite[], layout: 'grid' | 'list' | 'stacked'): LayoutBlock => ({
+    const group = (id: string, title: string, icon: string, list: LayoutFieldLite[], layout: 'grid' | 'list' | 'stacked', columns = 2): LayoutBlock => ({
         id,
         type: 'fields',
         title,
-        config: { field_ids: list.map((f) => f.id), layout, ...(layout === 'grid' ? { columns: 2 } : {}), icon },
+        config: { field_ids: list.map((f) => f.id), layout, ...(layout === 'grid' ? { columns } : {}), icon },
     });
+    const kpiBlock = (f: LayoutFieldLite): LayoutBlock => ({
+        id: `kpi-${f.id}`,
+        type: 'field',
+        config: {
+            field_id: f.id,
+            display: f.type === 'percent' ? 'ring' : f.type === 'rating' ? 'stars' : 'big',
+            card: true,
+        },
+    });
+    const countdown = (f: LayoutFieldLite): LayoutBlock => ({
+        id: `due-${f.id}`,
+        type: 'field',
+        config: { field_id: f.id, display: 'countdown', card: true },
+    });
+    const description: LayoutBlock = { id: 'description', type: 'description', config: {} };
+    const activity: LayoutBlock = { id: 'activity', type: 'activity', title: 'Actividad', config: { mode: 'all' } };
+    const notes = longText.length > 0 ? group('notes', 'Notas', 'sticky_note', longText, 'stacked') : null;
+    const filesBlock: LayoutBlock | null =
+        files.length > 0 ? { id: 'files', type: 'files', title: 'Archivos', config: { field_ids: files.map((f) => f.id) } } : null;
+    const links = relationFields.length > 0 ? group('links', 'Vínculos', 'link', relationFields, 'list') : null;
+    const compact = <T,>(xs: (T | null)[]): T[] => xs.filter((x): x is T => x !== null);
 
     const sections: LayoutSection[] = [];
-    if (kpis.length > 0) {
-        sections.push({
-            id: 'kpis',
-            columns: evenColumns(kpis.length),
-            blocks: kpis.map((f) => [
-                {
-                    id: `kpi-${f.id}`,
-                    type: 'field',
-                    config: {
-                        field_id: f.id,
-                        display: f.type === 'percent' ? 'ring' : f.type === 'rating' ? 'stars' : 'big',
-                        card: true,
-                    },
-                },
-            ]),
-        });
+    switch (flavor) {
+        case 'contact': {
+            // Columna de datos a la IZQUIERDA y la conversación al centro.
+            const side = compact([
+                contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
+                details.length > 0 ? group('details', 'Datos', 'user', details, 'list') : null,
+                dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'list') : null,
+                links,
+                filesBlock,
+            ]);
+            sections.push({ id: 'main', columns: [4, 8], blocks: [side, compact([description, notes, activity])] });
+            break;
+        }
+        case 'deal': {
+            if (kpis.length > 0 || (due && dueAsCountdown)) {
+                // El monto a lo ancho de media fila; lo demás, más chico.
+                const row = [...kpis.map(kpiBlock), ...(due && dueAsCountdown ? [countdown(due)] : [])].slice(0, 4);
+                const widths = row.length === 1 ? [12] : row.length === 2 ? [7, 5] : row.length === 3 ? [6, 3, 3] : [6, 2, 2, 2];
+                sections.push({ id: 'kpis', columns: widths, blocks: row.map((b) => [b]) });
+            }
+            sections.push({
+                id: 'main',
+                columns: [8, 4],
+                blocks: [
+                    compact([description, details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null, notes]),
+                    compact([
+                        contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
+                        dates.length > 0 ? group('dates', 'Fechas clave', 'calendar', dates, 'list') : null,
+                        links,
+                        filesBlock,
+                        activity,
+                    ]),
+                ],
+            });
+            break;
+        }
+        case 'task': {
+            sections.push({
+                id: 'main',
+                columns: [8, 4],
+                blocks: [
+                    compact([description, notes, details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null]),
+                    compact([
+                        due && dueAsCountdown ? countdown(due) : null,
+                        dates.length > 0 ? group('dates', 'Programación', 'calendar', dates, 'list') : null,
+                        contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null,
+                        links,
+                        filesBlock,
+                        activity,
+                    ]),
+                ],
+            });
+            break;
+        }
+        case 'support': {
+            sections.push({
+                id: 'main',
+                columns: [8, 4],
+                blocks: [
+                    compact([activity, description, notes]),
+                    compact([
+                        contact.length > 0 ? group('contact', 'Cliente', 'user', contact, 'list') : null,
+                        details.length > 0 ? group('details', 'Detalles', 'lifebuoy', details, 'list') : null,
+                        dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'list') : null,
+                        links,
+                        filesBlock,
+                    ]),
+                ],
+            });
+            break;
+        }
+        default: {
+            if (kpis.length > 0) {
+                sections.push({ id: 'kpis', columns: evenColumns(kpis.length), blocks: kpis.map((f) => [kpiBlock(f)]) });
+            }
+            sections.push({
+                id: 'main',
+                columns: [8, 4],
+                blocks: [
+                    compact([
+                        description,
+                        details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null,
+                        dates.length > 0 ? group('dates', 'Fechas', 'calendar', dates, 'grid') : null,
+                        notes,
+                    ]),
+                    compact([contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, 'list') : null, links, filesBlock, activity]),
+                ],
+            });
+        }
     }
-    const main: LayoutBlock[] = [{ id: 'description', type: 'description', config: {} }];
-    const side: LayoutBlock[] = [];
-    const contactBlock = contact.length > 0 ? group('contact', 'Contacto', 'mail', contact, flavor.contactInMain ? 'grid' : 'list') : null;
-    const detailsBlock = details.length > 0 ? group('details', 'Detalles', 'tag', details, 'grid') : null;
-    const datesBlock = dates.length > 0 ? group('dates', flavor.datesFirst ? 'Programación' : 'Fechas', 'calendar', dates, 'grid') : null;
-    if (contactBlock && flavor.contactInMain) main.push(contactBlock);
-    for (const b of flavor.datesFirst ? [datesBlock, detailsBlock] : [detailsBlock, datesBlock]) if (b) main.push(b);
-    if (longText.length > 0) main.push(group('notes', 'Notas', 'sticky_note', longText, 'stacked'));
-    if (contactBlock && !flavor.contactInMain) side.push(contactBlock);
-    if (relationFields.length > 0) side.push(group('links', 'Vínculos', 'link', relationFields, 'list'));
-    if (files.length > 0) side.push({ id: 'files', type: 'files', title: 'Archivos', config: { field_ids: files.map((f) => f.id) } });
-    side.push({ id: 'activity', type: 'activity', title: 'Actividad', config: { mode: 'all' } });
-    sections.push({ id: 'main', columns: [8, 4], blocks: [main, side] });
 
     const pages: LayoutPage[] = [{ id: 'summary', name: 'Resumen', icon: 'layout', sections }];
     for (const rel of (input.relations ?? []).slice(0, 4)) {
@@ -471,14 +575,14 @@ export function autoRecordLayout(input: {
     }
     return {
         v: 3,
-        theme: { preset: 'default' },
+        theme: { preset: FLAVOR_THEME[flavor] },
         header: {
             title_field_id: title?.id ?? null,
             subtitle_field_ids: subtitle.map((f) => f.id),
             chip_field_ids: chips,
             stages_field_id: stages?.id ?? null,
-            cover: { kind: 'gradient' },
-            avatar: { kind: 'initials' },
+            cover: { kind: flavor === 'task' ? 'none' : 'gradient' },
+            avatar: { kind: flavor === 'task' ? 'none' : 'initials' },
             show_meta: true,
         },
         pages,

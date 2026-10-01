@@ -84,7 +84,7 @@ describe('plantillas v3 de la ficha', () => {
         expect(layoutBlocks(v3).some((b) => (b.type as string) === 'header')).toBe(false);
     });
 
-    it('las plantillas integradas son variantes ordenadas de la automática (v0.1.234)', () => {
+    it('cada plantilla integrada tiene su propia composición y su estilo (v0.1.235)', () => {
         const fields = [
             F(1, 'nombre', 'text', { is_primary: true }),
             F(2, 'monto', 'number'),
@@ -98,24 +98,44 @@ describe('plantillas v3 de la ficha', () => {
             F(10, 'etiquetas', 'multi_select', { config: options(2) }),
             F(11, 'renovacion', 'date'),
             F(12, 'activo', 'checkbox'),
+            F(13, 'responsable', 'user'),
         ];
         const ids = (l: ReturnType<typeof autoRecordLayout>) => layoutBlocks(l).map((b) => b.id);
-        const auto = autoRecordLayout({ fields });
-        // El dinero va primero en las cifras; sin el «Resumen» de contadores.
+        const main = (l: ReturnType<typeof autoRecordLayout>) => l.pages[0]!.sections.find((x) => x.id === 'main')!;
+        const all = (['auto', 'contact', 'deal', 'task', 'support'] as const).map((flavor) => autoRecordLayout({ fields, flavor }));
+        const [auto, contact, deal, task, support] = all as [typeof all[0], typeof all[0], typeof all[0], typeof all[0], typeof all[0]];
+        for (const l of all) expect(recordLayoutV3Schema.safeParse(l).success).toBe(true);
+        // Elegir una u otra SE NOTA: ninguna composición se repite y cada una trae su tema.
+        const signatures = all.map((l) => JSON.stringify(l.pages[0]!.sections.map((x) => [x.columns, x.blocks.map((c) => c.map((b) => b.id))])));
+        expect(new Set(signatures).size).toBe(5);
+        expect(all.map((l) => l.theme.preset)).toEqual(['default', 'fresh', 'corporate', 'minimal', 'warm']);
+
+        // Automática: cifras con el dinero primero, sin el «Resumen» de contadores.
         expect(auto.pages[0]!.sections[0]!.blocks.flat().map((b) => b.config.field_id)).toEqual([3, 2]);
         expect(ids(auto)).not.toContain('stats');
-        // Las etiquetas suben a la cabecera; WhatsApp es contacto.
         expect(auto.header.chip_field_ids).toContain(10);
-        const main = auto.pages[0]!.sections[1]!;
-        expect(main.columns).toEqual([8, 4]);
-        expect(main.blocks[1]!.map((b) => b.id)).toEqual(['contact', 'activity']);
-        expect(main.blocks[1]![0]!.config.field_ids).toEqual([9]);
-        // Tarea: las fechas antes que el resto; contacto: los datos en la columna principal.
-        const task = autoRecordLayout({ fields, flavor: 'task' });
-        expect(task.pages[0]!.sections[1]!.blocks[0]!.map((b) => b.id)).toEqual(['description', 'dates', 'details']);
-        const contact = autoRecordLayout({ fields, flavor: 'contact' });
-        expect(contact.pages[0]!.sections[1]!.blocks[0]!.map((b) => b.id)).toEqual(['description', 'contact', 'details', 'dates']);
-        for (const l of [auto, task, contact]) expect(recordLayoutV3Schema.safeParse(l).success).toBe(true);
+        expect(main(auto).columns).toEqual([8, 4]);
+
+        // Contacto: datos a la izquierda, la conversación al centro, sin cifras arriba.
+        expect(main(contact).columns).toEqual([4, 8]);
+        expect(main(contact).blocks[1]!.map((b) => b.id)).toEqual(['description', 'activity']);
+        expect(contact.pages[0]!.sections).toHaveLength(1);
+        expect(contact.header.subtitle_field_ids[0]).toBe(7);
+
+        // Venta: el monto a media fila y el cierre como cuenta regresiva.
+        const dealKpis = deal.pages[0]!.sections[0]!;
+        expect(dealKpis.columns[0]).toBe(6);
+        expect(dealKpis.blocks[0]![0]!.config).toMatchObject({ field_id: 3, display: 'big' });
+        expect(layoutBlocks(deal).find((b) => b.config.display === 'countdown')?.config.field_id).toBe(5);
+
+        // Tarea: plana, sin portada ni avatar, la persona como primera propiedad.
+        expect(task.header.cover).toEqual({ kind: 'none' });
+        expect(task.header.avatar).toEqual({ kind: 'none' });
+        expect(task.header.chip_field_ids[0]).toBe(13);
+        expect(main(task).blocks[1]![0]!.config.display).toBe('countdown');
+
+        // Soporte: la conversación primero.
+        expect(main(support).blocks[0]![0]!.type).toBe('activity');
     });
 
     it('la ficha automática arma cabecera, cifras, detalles y una pestaña por relación', () => {

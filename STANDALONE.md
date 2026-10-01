@@ -1864,6 +1864,20 @@ el editor (`GET /lists/:l/portal/layout`) y la whitelist de edición. Reglas:
   arriba del otro en una columna angosta. Antes la etiqueta fija de 200 px
   escondía el valor.
 
+**Las plantillas integradas son composiciones distintas (v0.1.235).** El
+"sólo cambia el ORDEN de los grupos" de v0.1.234 dejó a las cinco plantillas
+casi idénticas: elegir otra en Apariencia no cambiaba nada visible. Ahora
+cada `flavor` de `autoRecordLayout` es una composición propia con su tema:
+**Automática** (cifras arriba, detalles 8 · lateral 4; tema `default`),
+**Contacto** (sin cifras: datos a la izquierda 4 · notas y conversación a la
+derecha 8; `fresh`, el email primero bajo el título), **Venta** (el monto en
+grande, el vencimiento como cuenta regresiva y fechas clave al costado;
+`corporate`), **Tarea** (plana y sin portada ni avatar, responsable como
+primer chip, cuenta regresiva arriba del lateral; `minimal`) y **Soporte**
+(la actividad primero, cliente y detalle al costado; `warm`). Siguen
+generándose solas con los campos y relaciones de la lista y el editor
+arranca desde la elegida.
+
 ---
 
-**Versión del documento:** 1.47.0 (pulido de la ficha: composición, columnas y bloques)
+**Versión del documento:** 1.48.0 (las plantillas integradas de la ficha vuelven a ser distintas)

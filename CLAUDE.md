@@ -6024,6 +6024,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         nombre, celular) y regresiones de ficha 22/22, editor 30/30 y portal
         23/23.
 
+  - [x] **Las plantillas de la ficha vuelven a ser distintas (v0.1.235,
+        reporte del usuario: "le doy de una a otra y sigue saliendo la
+        misma")**: regresión de v0.1.234 — al pasar las integradas a
+        variantes del generador automático que sólo cambiaban el ORDEN de
+        los grupos, las cinco quedaron casi iguales y elegir otra en
+        Apariencia no cambiaba nada visible (el guardado sí funcionaba).
+        Ahora cada una es una composición propia con su estilo:
+        **Automática** (cifras arriba, detalles + lateral), **Contacto**
+        (sin cifras: datos de la persona en una columna a la izquierda y
+        notas + conversación a la derecha; verde, el email primero bajo el
+        título), **Venta / Oportunidad** (el monto en grande, el vencimiento
+        como cuenta regresiva y «Fechas clave» al costado; azul corporativo
+        con bordes), **Tarea** (plana, sin portada ni avatar, el responsable
+        como primer chip y la entrega contando los días arriba del lateral)
+        y **Soporte** (la conversación primero y el cliente y el detalle al
+        costado; naranja). Siguen armándose solas con los campos y
+        relaciones de cada lista, y el editor arranca desde la elegida.
+        Apariencia muestra una **miniatura** de cada composición en su
+        color y una línea que dice en qué se diferencia. 1 test de shared
+        reescrito (cinco firmas de secciones y cinco temas distintos, lo
+        propio de cada una) — 106 shared y 207 front en verde — + E2E
+        navegador 5/5 cambiando de plantilla DESDE Apariencia (cinco fichas
+        distintas, tarea sin portada, soporte con la actividad primero, cero
+        errores) y regresiones de la ficha 21/21 y 22/22, editor 30/30 y
+        portal 23/23.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

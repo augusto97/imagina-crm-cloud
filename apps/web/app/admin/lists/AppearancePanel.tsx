@@ -123,7 +123,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                             <h4 className="imcrm-text-sm imcrm-font-semibold">{__('Plantilla')}</h4>
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    '«Automática» arma la ficha sola con tus campos y relaciones: cifras destacadas, etapas y una pestaña con gráficos por cada lista vinculada. Las demás son puntos de partida por tipo de registro.',
+                                    'Todas se arman solas con tus campos y relaciones; cambia la composición y el estilo. Si querés retocarla, abrí el editor: arranca desde la que elegiste.',
                                 )}
                             </p>
                         </div>
@@ -142,10 +142,11 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                                             update.isPending && 'imcrm-opacity-50 imcrm-cursor-not-allowed',
                                         )}
                                     >
-                                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
+                                        <TemplateThumb id={tpl.id} />
+                                        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
                                             <span className="imcrm-text-sm imcrm-font-medium">{tpl.name}</span>
                                             <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                                {tpl.description}
+                                                {TEMPLATE_BLURB[tpl.id] ?? tpl.description}
                                             </span>
                                         </div>
                                         {currentTemplateId === tpl.id && (
@@ -197,6 +198,71 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                         {__('Guardando…')}
                     </p>
                 )}
+        </div>
+    );
+}
+
+/**
+ * v0.1.235 — Qué hace cada plantilla, en criollo (las descripciones de
+ * `crmTemplates` eran de la grilla vieja).
+ */
+const TEMPLATE_BLURB: Record<string, string> = {
+    auto: 'Cifras arriba, detalles a la izquierda y contacto y actividad al costado. Una pestaña por cada lista vinculada.',
+    contact: 'La persona primero: sus datos en una columna a la izquierda y las notas y la conversación a la derecha.',
+    deal: 'El monto en grande, la fecha de cierre en cuenta regresiva y las etapas del pipeline.',
+    task: 'Plana y sin portada: el trabajo a describir manda y la fecha de entrega cuenta los días.',
+    support: 'La conversación primero, con el cliente y el detalle del ticket al costado.',
+};
+
+/** Miniatura de la composición de cada plantilla (se ve la diferencia antes de elegir). */
+function TemplateThumb({ id }: { id: string }): JSX.Element {
+    const bar = 'imcrm-rounded-[2px] imcrm-bg-muted-foreground/25';
+    const accent: Record<string, string> = { auto: 'hsl(var(--imcrm-primary))', contact: '#0f9f6e', deal: '#2a5bd7', task: 'transparent', support: '#d9622b' };
+    const cover = accent[id] ?? accent.auto!;
+    const col = (cls: string, rows: number[]) => (
+        <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-[3px]', cls)}>
+            {rows.map((h, i) => (
+                <div key={i} className={bar} style={{ height: h }} />
+            ))}
+        </div>
+    );
+    return (
+        <div
+            aria-hidden
+            className="imcrm-flex imcrm-h-[52px] imcrm-w-[72px] imcrm-shrink-0 imcrm-flex-col imcrm-gap-[3px] imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-p-[4px]"
+            data-thumb={id}
+        >
+            <div className="imcrm-h-[7px] imcrm-rounded-[2px]" style={{ background: id === 'task' ? 'hsl(var(--imcrm-muted))' : cover, opacity: id === 'task' ? 1 : 0.55 }} />
+            {(id === 'auto' || id === 'deal') && (
+                <div className="imcrm-flex imcrm-gap-[3px]">
+                    {(id === 'deal' ? [3, 1.5, 1.5] : [1, 1, 1, 1]).map((g, i) => (
+                        <div key={i} className={bar} style={{ height: 6, flexGrow: g, background: i === 0 && id === 'deal' ? '#2a5bd7' : undefined, opacity: i === 0 && id === 'deal' ? 0.5 : undefined }} />
+                    ))}
+                </div>
+            )}
+            <div className="imcrm-flex imcrm-flex-1 imcrm-gap-[3px]">
+                {id === 'contact' ? (
+                    <>
+                        {col('imcrm-w-1/3', [6, 6, 6])}
+                        {col('imcrm-flex-1', [8, 10])}
+                    </>
+                ) : id === 'support' ? (
+                    <>
+                        {col('imcrm-flex-[2]', [14, 6])}
+                        {col('imcrm-flex-1', [5, 5, 5])}
+                    </>
+                ) : id === 'task' ? (
+                    <>
+                        {col('imcrm-flex-[2]', [12, 5])}
+                        {col('imcrm-flex-1', [7, 5])}
+                    </>
+                ) : (
+                    <>
+                        {col('imcrm-flex-[2]', [6, 8])}
+                        {col('imcrm-flex-1', [5, 9])}
+                    </>
+                )}
+            </div>
         </div>
     );
 }
