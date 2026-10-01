@@ -16,7 +16,10 @@ import {
     parseViewConfig,
     publicListSettingsSchema,
     readPortalConfig,
+    migrateCrmV2ToV3,
     readRecordLayout,
+    readRecordLayoutV3,
+    type RecordLayoutV3,
     recordLayoutSchema,
     timeBucketSchema,
     updateAutomationSchema,
@@ -78,6 +81,7 @@ import {
     type PortalBuildContext,
 } from './list-config';
 import { translateBulkEditActions } from './bulk-ops';
+import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
 // ── Vocabulario que habla el modelo (slugs, nunca ids) ──────────────────
@@ -283,7 +287,7 @@ type Payload =
     // APLICAR (se relee la lista), así una propuesta vieja no pisa lo
     // que otra persona cambió entre proponer y aplicar.
     | { kind: 'configure_portal'; listId: number; listSlug: string; portal: Record<string, unknown> | null; template: PortalTemplate | null }
-    | { kind: 'configure_record_layout'; listId: number; listSlug: string; layout: 'classic' | 'crm'; templateId: string | null; custom: CrmCustomConfig | null }
+    | { kind: 'configure_record_layout'; listId: number; listSlug: string; layout: 'classic' | 'crm'; templateId: string | null; custom: CrmCustomConfig | null; v3?: RecordLayoutV3 | null }
     | { kind: 'update_automation'; listId: number; listSlug: string; automationId: number; patch: UpdateAutomationInput }
     | { kind: 'delete_automation'; listId: number; listSlug: string; automationId: number }
     | { kind: 'update_view'; listId: number; listSlug: string; viewId: number; patch: UpdateViewInput }
@@ -331,7 +335,7 @@ const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
 
 /** Claves de `settings` que cada propuesta de configuración PISA; el resto se conserva. */
 const PORTAL_SETTING_KEYS = ['portal', 'portal_template'] as const;
-const LAYOUT_SETTING_KEYS = ['record_layout', 'crm_template_id', 'crm_template_custom'] as const;
+const LAYOUT_SETTING_KEYS = ['record_layout', 'crm_template_id', 'crm_template_custom', 'record_layout_v3'] as const;
 
 /**
  * Herramientas de ESTRUCTURA del asistente (fase 1, ADR-S21): leer el
@@ -484,13 +488,14 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_configure_record_layout',
             label: 'Armando el diseño de la ficha',
             description:
-                'Propone cómo se ve la FICHA de cada registro de una lista: `classic` (formulario lineal) o `crm` (cabecera con título/estado + columna de grupos de campos + lateral con cifras, comentarios y actividad). Con `crm` se elige una plantilla integrada (auto, contact, deal, task, support) o `custom` con grupos de campos propios.',
+                'Propone cómo se ve la FICHA de cada registro de una lista: `classic` (formulario lineal) o `crm` (ficha diseñada). Con `crm`, lo más potente es `design`: pestañas → secciones con columnas → bloques (un campo con la forma que mejor lo muestra —cifra grande, anillo, medidor, cuenta regresiva, etapas—, propiedades editables, gráficos y tablas/tableros de los registros VINCULADOS de otra lista, avisos, botones, actividad). También se puede elegir una plantilla integrada (auto, contact, deal, task, support) o `custom` con grupos de campos (formato anterior). Se sigue retocando en el editor visual.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
                 layout: recordLayoutSchema.describe('classic | crm'),
                 template: crmTemplateIdSchema.optional().describe('Sólo con crm: auto (por tipo de campo) | contact | deal | task | support | custom'),
-                custom: crmLayoutSpec.optional().describe('Sólo con template custom: grupos de campos, cabecera y lateral'),
+                custom: crmLayoutSpec.optional().describe('Sólo con template custom: grupos de campos, cabecera y lateral (formato anterior; preferí `design`)'),
+                design: recordDesignSpec.optional().describe('Diseño completo de la ficha (con layout crm; no combinar con template/custom). Los gráficos y vinculados usan `from` = slug de una lista vinculada (ver linkable_lists / relaciones del esquema)'),
             }),
             run: (ctx, input) => this.proposeConfigureRecordLayout(ctx, input as ConfigureLayoutSpec),
         });
@@ -681,23 +686,37 @@ export class StructureTools implements AiProposalApplier {
         const layout = readRecordLayout(settings);
         const pub = publicListSettingsSchema.safeParse(settings.public ?? {});
         const related = await this.detectRelatedLists(ctx.tenantId, list);
+        // v0.1.232 — listas vinculadas en los DOS sentidos (para `design`:
+        // gráficos y tablas de vinculados en la ficha).
+        const paths = await this.fields.relationPaths(ctx.tenantId, String(list.id)).catch(() => []);
         const folder = list.group_id ? (await this.listFolders(ctx.tenantId)).find((g) => g.id === list.group_id)?.name ?? null : null;
         return {
             content: {
                 list: { slug: list.slug, name: list.name, icon: list.icon, color: list.color, records_count: count, folder },
                 fields: fields.map((f) => describeFieldForModel(f, listById, fieldById)),
                 views: views.map((v) => ({ id: v.id, name: v.name, type: v.type, is_default: v.is_default })),
+                linked_lists: paths.map((p) => ({
+                    slug: listById.get(p.other_list_id)?.slug ?? null,
+                    name: p.other_list_name,
+                    via: p.relation_label,
+                    direction: p.direction === 'forward' ? 'esta lista apunta a esa' : 'esa lista apunta a ésta',
+                })),
                 portal: {
                     enabled: portal.enabled,
                     related_lists: portal.related_lists.map((id) => listById.get(id)?.slug ?? id),
                     linkable_lists: related.map((r) => ({ slug: r.slug, name: r.name, via: r.via })),
                     template_blocks: describePortalTemplate(template),
                 },
-                record_layout: {
-                    layout: layout.layout,
-                    template: layout.layout === 'crm' ? layout.template : null,
-                    custom_blocks: layout.layout === 'crm' && layout.template === 'custom' ? describeCrmConfig(layout.custom) : [],
-                },
+                record_layout: (() => {
+                    const v3 = layout.layout === 'crm' ? readRecordLayoutV3(settings) : null;
+                    return v3
+                        ? { layout: layout.layout, template: 'design', design: describeRecordLayoutV3(v3, fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type }))) }
+                        : {
+                              layout: layout.layout,
+                              template: layout.layout === 'crm' ? layout.template : null,
+                              custom_blocks: layout.layout === 'crm' && layout.template === 'custom' ? describeCrmConfig(layout.custom) : [],
+                          };
+                })(),
                 public_sharing: pub.success ? { enabled: pub.data.enabled, expires_at: pub.data.expires_at ?? null, visible_fields: pub.data.visible_field_slugs } : { enabled: false, expires_at: null, visible_fields: [] },
                 // v0.1.193 — la CONFIGURACIÓN completa (disparador + acciones),
                 // no sólo el nombre: sin esto el asistente/MCP no podía
@@ -1367,44 +1386,90 @@ export class StructureTools implements AiProposalApplier {
     private async proposeConfigureRecordLayout(ctx: AiToolContext, input: ConfigureLayoutSpec): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         const fields = await this.fields.listByListId(ctx.tenantId, list.id);
-        const current = readRecordLayout((list.settings ?? {}) as Record<string, unknown>);
+        const settings = (list.settings ?? {}) as Record<string, unknown>;
+        const current = readRecordLayout(settings);
+        const hasDesign = readRecordLayoutV3(settings) !== null;
         const changes: AiProposalPreview['changes'] = [];
-        const layoutLabel = (l: 'classic' | 'crm'): string => (l === 'crm' ? 'Layout CRM' : 'Formulario clásico');
+        const layoutLabel = (l: 'classic' | 'crm'): string => (l === 'crm' ? 'Ficha diseñada' : 'Formulario clásico');
         const warnings: string[] = [];
         let blocks: AiProposalPreview['blocks'] = [];
         let templateId: string | null = null;
         let custom: CrmCustomConfig | null = null;
+        let v3: RecordLayoutV3 | null = null;
+        const lite = fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type, config: f.config as Record<string, unknown>, is_primary: (f as { is_primary?: boolean }).is_primary }));
 
         if (input.layout === 'classic') {
+            if (input.design || input.custom) throw new AiToolError('`design` y `custom` sólo aplican con layout crm.');
             if (current.layout === 'classic') throw new AiToolError('La ficha ya usa el formulario clásico.');
             changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('classic') });
+        } else if (input.design) {
+            if (input.custom || (input.template && input.template !== 'custom')) throw new AiToolError('`design` no se combina con `template` ni `custom`: describe la ficha completa.');
+            const built = buildRecordLayoutV3(input.design, await this.designContext(ctx, list.id, fields));
+            v3 = built.layout;
+            templateId = 'custom';
+            blocks = built.preview;
+            warnings.push(...built.warnings);
+            if (current.layout !== 'crm') changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('crm') });
+            changes.push({ label: 'Diseño', from: hasDesign ? 'Diseño propio' : current.layout === 'crm' ? crmTemplateLabel(current.template) : null, to: `${v3.pages.length} pestaña(s): ${v3.pages.map((p) => p.name).join(', ')}` });
         } else {
-            templateId = input.template ?? (current.layout === 'crm' ? current.template : 'auto');
+            templateId = input.template ?? (current.layout === 'crm' && !hasDesign ? current.template : 'auto');
             if (templateId === 'custom') {
-                if (!input.custom) throw new AiToolError('Con template custom hay que mandar `custom` (grupos de campos y, opcionalmente, header/sidebar).');
+                if (!input.custom) throw new AiToolError('Con template custom hay que mandar `custom` (grupos de campos) o, mejor, `design` (ficha completa).');
                 const titleSlug = fields.find((f) => (f as { is_primary?: boolean }).is_primary)?.slug ?? fields.find((f) => f.type === 'text')?.slug ?? null;
                 const built = buildCrmCustomConfig(input.custom, fields, titleSlug);
                 custom = built.config;
+                // La ficha lee el diseño v3: el formato anterior se convierte al guardar.
+                v3 = migrateCrmV2ToV3(custom as never, lite as never);
                 blocks = built.preview;
                 warnings.push(...built.warnings);
             } else if (input.custom) {
                 throw new AiToolError('`custom` sólo aplica con template custom. Elegí custom o quitá los grupos.');
             }
             if (current.layout !== 'crm') changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('crm') });
-            if (current.layout !== 'crm' || current.template !== templateId || templateId === 'custom') {
-                changes.push({ label: 'Plantilla', from: current.layout === 'crm' ? crmTemplateLabel(current.template) : null, to: crmTemplateLabel(templateId) });
+            if (current.layout !== 'crm' || hasDesign || current.template !== templateId || templateId === 'custom') {
+                changes.push({ label: 'Plantilla', from: hasDesign ? 'Diseño propio' : current.layout === 'crm' ? crmTemplateLabel(current.template) : null, to: crmTemplateLabel(templateId) });
             }
-            if (changes.length === 0) throw new AiToolError(`La ficha ya usa el layout CRM con la plantilla ${crmTemplateLabel(templateId)}.`);
+            if (hasDesign && templateId !== 'custom') warnings.push('El diseño hecho en el editor se reemplaza por la plantilla integrada.');
+            if (changes.length === 0) throw new AiToolError(`La ficha ya usa la plantilla ${crmTemplateLabel(templateId)}.`);
         }
         return this.saveProposal(ctx, {
             kind: 'configure_record_layout',
             title: `Cambiar el diseño de la ficha de «${list.name}»`,
             summary: `${changes.map((c) => `${c.label.toLowerCase()}: ${c.to}`).join('; ')}.${warnings.length ? ` ${warnings.join(' ')}` : ''}`,
-            destructive: false,
+            // Pisar un diseño hecho a mano en el editor es irreversible desde acá.
+            destructive: hasDesign && input.layout === 'crm',
             listSlug: list.slug,
             preview: { changes, blocks },
-            payload: { kind: 'configure_record_layout', listId: list.id, listSlug: list.slug, layout: input.layout, templateId, custom },
+            payload: { kind: 'configure_record_layout', listId: list.id, listSlug: list.slug, layout: input.layout, templateId, custom, v3 },
         });
+    }
+
+    /** Campos propios, relaciones y campos de las listas del otro lado (para `design`). */
+    private async designContext(ctx: AiToolContext, listId: number, own: Field[]): Promise<{ listId: number; fields: DesignField[]; relations: DesignRelation[]; otherFields: Map<number, DesignField[]> }> {
+        const [paths, allLists] = await Promise.all([this.fields.relationPaths(ctx.tenantId, String(listId)), this.lists.list(ctx.tenantId)]);
+        const slugOf = new Map(allLists.map((l) => [l.id, l.slug]));
+        const toDesign = (f: Field): DesignField => ({ id: f.id, slug: f.slug, label: f.label, type: f.type });
+        const otherFields = new Map<number, DesignField[]>();
+        for (const otherId of new Set(paths.map((p) => p.other_list_id))) {
+            otherFields.set(otherId, otherId === listId ? own.map(toDesign) : (await this.fields.listByListId(ctx.tenantId, otherId)).map(toDesign));
+        }
+        const fieldSlug = (p: (typeof paths)[number]): string => {
+            const pool = p.list_id === listId ? own.map(toDesign) : otherFields.get(p.list_id) ?? [];
+            return pool.find((f) => f.id === p.relation_field_id)?.slug ?? String(p.relation_field_id);
+        };
+        return {
+            listId,
+            fields: own.map(toDesign),
+            relations: paths.map((p) => ({
+                relation_field_id: p.relation_field_id,
+                relation_slug: fieldSlug(p),
+                direction: p.direction,
+                other_list_id: p.other_list_id,
+                other_list_slug: slugOf.get(p.other_list_id) ?? String(p.other_list_id),
+                other_list_name: p.other_list_name,
+            })),
+            otherFields,
+        };
     }
 
     // ── v0.1.195 — editar y borrar automatizaciones, vistas y listas ─────
@@ -1736,13 +1801,17 @@ export class StructureTools implements AiProposalApplier {
                 if (payload.layout === 'crm') {
                     values.crm_template_id = payload.templateId ?? 'auto';
                     if (payload.custom) values.crm_template_custom = payload.custom;
+                    // v0.1.232 — el diseño v3 guardado MANDA sobre la plantilla
+                    // (ADR-S26): una integrada elegida lo saca; un diseño o un
+                    // custom lo escriben ya en v3.
+                    values.record_layout_v3 = payload.v3 ?? undefined;
                 }
                 const list = await this.mergeSettings(ctx.tenantId, payload.listId, LAYOUT_SETTING_KEYS, values);
                 return {
-                    message: `Diseño de la ficha de «${list.name}» actualizado (${payload.layout === 'crm' ? `CRM · ${crmTemplateLabel(payload.templateId ?? 'auto')}` : 'formulario clásico'}).`,
+                    message: `Diseño de la ficha de «${list.name}» actualizado (${payload.layout === 'crm' ? (payload.v3 ? `ficha diseñada · ${payload.v3.pages.length} pestaña(s)` : crmTemplateLabel(payload.templateId ?? 'auto')) : 'formulario clásico'}).`,
                     links: [
                         { label: 'Ver la lista', href: `/lists/${list.slug}/records` },
-                        ...(payload.custom ? [{ label: 'Abrir el editor de la ficha', href: `/lists/${list.slug}/template-editor` }] : [{ label: 'Apariencia de la lista', href: `/lists/${list.slug}/edit?s=apariencia` }]),
+                        ...(payload.v3 ? [{ label: 'Abrir el editor de la ficha', href: `/lists/${list.slug}/template-editor` }] : [{ label: 'Apariencia de la lista', href: `/lists/${list.slug}/edit?s=apariencia` }]),
                     ],
                     warnings: [],
                 };
@@ -2397,6 +2466,7 @@ interface ConfigurePortalSpec {
 }
 
 interface ConfigureLayoutSpec {
+    design?: RecordDesignSpec;
     list: string;
     layout: 'classic' | 'crm';
     template?: 'auto' | 'contact' | 'deal' | 'task' | 'support' | 'custom';

@@ -1807,6 +1807,16 @@ se retiró (el del portal sigue en el shell viejo hasta la fase C). Decisiones:
   otra configuración de arranque; los gráficos y vinculados nacen apuntando a
   la primera relación de la lista (o a la lista entera si no hay).
 
+**Fase C, primera mitad — el asistente/MCP diseña en v3 (v0.1.232).**
+`propose_configure_record_layout` escribe `record_layout_v3`: el modo
+`design` describe la ficha completa por slug y por nombre de lista
+(`buildRecordLayoutV3`, puro), el `custom` anterior se convierte con
+`migrateCrmV2ToV3`, y elegir una plantilla integrada BORRA el v3 — la regla es
+una sola: si hay v3 guardado, manda. `get_list_schema` expone el diseño v3 y
+las listas vinculadas en los dos sentidos (`linked_lists`), que son las fuentes
+válidas de los gráficos. Queda la segunda mitad: el portal del cliente sobre
+este mismo modelo, con sus datos acotados por `portalScope`.
+
 ---
 
-**Versión del documento:** 1.44.0 (editor visual de la ficha sobre plantillas v3 — ADR-S26 fase B)
+**Versión del documento:** 1.45.0 (el asistente/MCP diseña la ficha en v3 — ADR-S26 fase C, primera mitad)
