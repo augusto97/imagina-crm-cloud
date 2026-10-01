@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router';
 
 import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
+import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
 import { Sidebar } from '@/admin/layout/Sidebar';
@@ -75,6 +76,7 @@ export function AdminShell(): JSX.Element {
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                 <ImpersonationBanner />
                 <Topbar onMenuClick={() => setMobileNavOpen(true)} />
+                <EmailVerifyBanner />
                 <main
                     id="imcrm-main"
                     aria-label={__('Contenido principal')}

@@ -7,7 +7,8 @@ import {
     Logger,
 } from '@nestjs/common';
 import type { ApiError } from '@imagina-base/shared';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { recordServerError } from '../observability/diagnostics';
 
 /**
  * Normaliza TODO error al shape del contrato (CONTRACT.md §1):
@@ -46,6 +47,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
             }
         } else {
             this.logger.error(exception instanceof Error ? exception.stack : String(exception));
+            // v0.1.238 — queda a la vista en Plataforma → Diagnóstico.
+            const req = host.switchToHttp().getRequest<FastifyRequest | undefined>();
+            recordServerError({
+                source: 'request',
+                method: req?.method ?? null,
+                path: req?.url ?? null,
+                message: exception instanceof Error ? exception.message : String(exception),
+                detail: exception instanceof Error ? (exception.stack ?? '').split('\n').slice(1, 5).join('\n') : null,
+            });
         }
 
         void reply.status(status).send(body);

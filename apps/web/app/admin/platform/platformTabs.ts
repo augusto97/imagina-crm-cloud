@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Building2, CreditCard, DatabaseBackup, History, Mail, Plug, RefreshCw, Sparkles, Users } from 'lucide-react';
+import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, History, Mail, Plug, RefreshCw, Sparkles, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -14,6 +14,7 @@ export type PlatformTabId =
     | 'plans'
     | 'audit'
     | 'correo'
+    | 'diagnostico'
     | 'ai'
     | 'integraciones'
     | 'updates'
@@ -26,6 +27,8 @@ export const PLATFORM_TABS: ReadonlyArray<{ id: PlatformTabId; label: string; ic
     { id: 'plans', label: 'Planes', icon: CreditCard },
     { id: 'audit', label: 'Auditoría', icon: History },
     { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
+    // v0.1.238 — correos recientes y errores del servidor, sin entrar al servidor.
+    { id: 'diagnostico', label: 'Diagnóstico', icon: Activity },
     // v0.1.181 — clave del proveedor IA + políticas (ADR-S21).
     { id: 'ai', label: 'Asistente IA', icon: Sparkles },
     // v0.1.203 — apps OAuth registradas por el operador (Google, Microsoft, Slack).

@@ -156,6 +156,11 @@ export class AuthService implements OnModuleInit {
      * el usuario (no filtra qué emails están registrados).
      */
     async requestPasswordReset(email: string): Promise<void> {
+        // v0.1.238 — sin un correo de plataforma configurado el enlace no
+        // tiene por dónde salir: se dice ANTES de buscar la cuenta (así no
+        // revela si el email existe) en vez de responder "listo" y no mandar
+        // nada. Es un dato del servidor, no de la persona.
+        await this.mail.assertAccountMailAvailable();
         const [user] = await this.db
             .select({ id: users.id, email: users.email, name: users.name })
             .from(users)
@@ -320,6 +325,7 @@ export class AuthService implements OnModuleInit {
             .where(eq(users.id, userId))
             .limit(1);
         if (!user) throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no existe`, data: { status: 404 } });
+        await this.mail.assertAccountMailAvailable();
         await this.issueSetupLink(user.id, user.email, user.name, 'reset');
     }
 
@@ -812,6 +818,12 @@ export class AuthService implements OnModuleInit {
         const revoked = await this.sessions.destroyOthersForUser(userId, currentToken);
         this.logger.log(`Contraseña cambiada por el usuario ${userId} (${revoked} sesiones cerradas)`);
         return { revoked_sessions: revoked };
+    }
+
+    /** v0.1.238 — "Reenviar": igual que el alta, pero dice si no hay correo. */
+    async resendEmailVerification(userId: number): Promise<void> {
+        await this.mail.assertAccountMailAvailable();
+        await this.sendEmailVerification(userId);
     }
 
     /**

@@ -1905,6 +1905,33 @@ pasa a ser «Mi cuenta» de sólo lectura, con las listas que el admin ya
 habilitó en `settings.portal.related_lists` (fail-closed: sin habilitar, no
 entra ninguna) y sin canal de mensajes.
 
+**Correo de cuenta honesto + diagnóstico de plataforma (v0.1.238).** Los
+correos de CUENTA (verificación del alta, recuperación de contraseña,
+invitaciones) no tienen empresa, así que sólo pueden salir por el SMTP de
+Plataforma (`platform:smtp`) o el del `.env`. Sin ninguno caían al transporte
+`log`: la app respondía "enviado" y nada llegaba. Ahora
+`MailService.accountMailStatus()` lo sabe y, en producción, "olvidé mi
+contraseña", reenviar la verificación y el reset del operador responden **503
+`mail_unavailable`** con un mensaje accionable (sin mirar si el email existe:
+no filtra cuentas). Re-guardar el SMTP de Plataforma con la contraseña vacía
+la CONSERVA (antes la borraba y el SMTP dejaba de autenticar). La cuenta sin
+verificar se avisa en TODA la app (banner bajo la barra superior, con
+Reenviar), no sólo en Ajustes → Seguridad.
+**El pool de Postgres** ahora escucha `error`: un cliente ocioso que la base
+corta (reinicio, `pg_terminate_backend`, idle timeout del proveedor) emitía un
+`error` sin listener y **tumbaba el proceso del API** — eso era el "error
+interno" intermitente del login mientras systemd lo levantaba otra vez. Se
+suman `keepAlive`, `idleTimeoutMillis` y `connectionTimeoutMillis`, y el login
+del front reintenta UNA vez ante un error transitorio (5xx genérico, 502 del
+proxy o `fetch` caído; nunca credenciales, freno ni un 5xx con código propio).
+**Plataforma → Diagnóstico** (superadmin, `GET/DELETE
+/system/diagnostics`): estado del correo de cuenta, últimos correos (enviado /
+no enviado / fallido, por qué vía y con el motivo) y últimos errores del
+servidor agrupados (pedidos 5xx, base de datos, proceso). Vive en Redis
+(`diag:mail`, `diag:errors`, 200 entradas, 14 días); el registro es de módulo
+(lo usan el filtro global y el pool, que viven fuera de la DI), best-effort, y
+nunca guarda la query string (puede traer tokens).
+
 ---
 
-**Versión del documento:** 1.50.0 (plantillas del portal del cliente)
+**Versión del documento:** 1.51.0 (correo de cuenta honesto + diagnóstico)

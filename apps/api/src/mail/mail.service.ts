@@ -4,11 +4,14 @@ import {
     Logger,
     type OnApplicationShutdown,
     type OnModuleInit,
+    ServiceUnavailableException,
 } from '@nestjs/common';
 import { Queue, UnrecoverableError, Worker } from 'bullmq';
+import type { AccountMailStatus, MailVia } from '@imagina-base/shared';
 import IORedis from 'ioredis';
 import { resolvePublicHost } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
+import { recordMail } from '../observability/diagnostics';
 import { guardRedis } from '../redis/redis.util';
 import { EmailQuotaExceededError, EmailQuotaService } from './email-quota.service';
 import { MAIL_TRANSPORT, type MailMessage, type MailTransport } from './mail.types';
@@ -53,7 +56,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
      * dato manda: los correos que salen por el servidor del cliente no cuestan
      * nada al operador, así que no consumen cuota (ADR-S18).
      */
-    private async resolve(message?: MailMessage): Promise<{ transport: MailTransport; own: boolean }> {
+    private async resolve(message?: MailMessage): Promise<{ transport: MailTransport; own: boolean; via: MailVia }> {
         // 1) SMTP PROPIO del tenant emisor (white-label de correo): si la
         //    empresa configuró el suyo, sus correos salen por él.
         //
@@ -69,7 +72,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 // El transporte va FIJADO a la IP validada: se re-resuelve cada
                 // 10 min para seguir al proveedor si cambia de IP.
                 if (cached?.hash === hash && Date.now() - cached.at < 10 * 60_000) {
-                    return { transport: cached.transport, own: true };
+                    return { transport: cached.transport, own: true, via: 'tenant_smtp' };
                 }
                 // SEC-27 (v0.1.226): el SMTP de una EMPRESA sólo puede ser un
                 // servidor público. Antes `127.0.0.1:25` relayaba por el MTA
@@ -85,7 +88,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 const transport = new SmtpMailTransport({ ...cfg, host: target.address }, { servername: cfg.host });
                 if (this.tenantSmtpCache.size > 100) this.tenantSmtpCache.clear();
                 this.tenantSmtpCache.set(message.tenantId, { hash, transport, at: Date.now() });
-                return { transport, own: true };
+                return { transport, own: true, via: 'tenant_smtp' };
             }
             this.tenantSmtpCache.delete(message.tenantId);
         }
@@ -97,10 +100,53 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             if (this.cachedSmtp?.hash !== hash) {
                 this.cachedSmtp = { hash, transport: new SmtpMailTransport(cfg) };
             }
-            return { transport: this.cachedSmtp.transport, own: false };
+            return { transport: this.cachedSmtp.transport, own: false, via: 'platform_smtp' };
         }
         this.cachedSmtp = null;
-        return { transport: this.transport, own: false };
+        return { transport: this.transport, own: false, via: this.transport.name === 'log' ? 'none' : 'server_smtp' };
+    }
+
+    /**
+     * v0.1.238 — ¿Los correos de CUENTA (verificación, recuperación de
+     * contraseña, invitaciones) tienen por dónde salir? No tienen empresa, así
+     * que el SMTP de una empresa no cuenta: sólo el de Plataforma o el del
+     * `.env`. Antes, sin ninguno de los dos, se "enviaban" al registro del
+     * servidor y la persona esperaba un correo que nunca iba a llegar.
+     */
+    async accountMailStatus(): Promise<AccountMailStatus> {
+        const read = this.platform ? await this.platform.readSmtp() : { state: 'none' as const };
+        if (read.state === 'ok') return { available: true, via: 'platform_smtp', host: read.config.host, reason: null };
+        if (read.state === 'unreadable') {
+            return {
+                available: false,
+                via: 'platform_smtp',
+                host: read.config.host || null,
+                reason: `El SMTP de Plataforma está configurado pero no se puede usar: ${read.reason}. Volvé a escribir la contraseña en Plataforma → Correo.`,
+            };
+        }
+        if (this.transport.name !== 'log') return { available: true, via: 'server_smtp', host: null, reason: null };
+        // En desarrollo el transporte de registro ES el envío (se lee en la consola).
+        if (this.env.NODE_ENV !== 'production') return { available: true, via: 'none', host: null, reason: null };
+        return {
+            available: false,
+            via: 'none',
+            host: null,
+            reason: 'No hay un SMTP de plataforma configurado: los correos de verificación, recuperación de contraseña e invitaciones no se envían. Configuralo en Plataforma → Correo (SMTP).',
+        };
+    }
+
+    /** Corta con un 503 legible cuando un correo de cuenta no tendría por dónde salir. */
+    async assertAccountMailAvailable(): Promise<void> {
+        const status = await this.accountMailStatus();
+        if (status.available) return;
+        throw new ServiceUnavailableException({
+            code: 'mail_unavailable',
+            message:
+                status.via === 'platform_smtp'
+                    ? 'Este servidor no puede enviar correos ahora: el correo de la plataforma está mal configurado. Avisale al administrador.'
+                    : 'Este servidor todavía no tiene un correo configurado para enviar este mensaje. Avisale al administrador de la plataforma.',
+            data: { status: 503 },
+        });
     }
 
     /**
@@ -110,10 +156,34 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
      * plataforma: con SMTP propio no hay límite.
      */
     private async deliver(message: MailMessage): Promise<void> {
-        const { transport, own } = await this.resolve(message);
+        const scope = message.tenantId === undefined ? 'account' : 'tenant';
+        const base = { to: message.to, subject: message.subject, scope, tenant_id: message.tenantId ?? null } as const;
+        let via: MailVia = 'none';
+        let transport: MailTransport;
+        let own: boolean;
+        try {
+            ({ transport, own, via } = await this.resolve(message));
+        } catch (err) {
+            // Un SMTP configurado pero roto: queda registrado con el motivo.
+            recordMail({ ...base, via: message.tenantId === undefined ? 'platform_smtp' : 'tenant_smtp', status: 'failed', error: errorText(err) });
+            throw err;
+        }
         const metered = !own && message.tenantId !== undefined && this.quota !== undefined;
-        if (metered) await this.quota!.assertWithinQuota(message.tenantId!);
-        await transport.send(message);
+        try {
+            if (metered) await this.quota!.assertWithinQuota(message.tenantId!);
+            await transport.send(message);
+        } catch (err) {
+            recordMail({ ...base, via, status: 'failed', error: errorText(err) });
+            throw err;
+        }
+        // v0.1.238 — el transporte de registro NO envía: se anota como "no
+        // enviado" para que el operador lo vea en Plataforma → Diagnóstico.
+        recordMail({
+            ...base,
+            via,
+            status: via === 'none' ? 'not_sent' : 'sent',
+            error: via === 'none' ? 'No hay SMTP configurado: el correo quedó sólo en el registro del servidor.' : null,
+        });
         if (metered) {
             // Best-effort: si falla el contador, el correo YA salió — no tiene
             // sentido reintentarlo ni romperle la operación al cliente.
@@ -183,4 +253,8 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         await this.queue?.close();
         await Promise.all(this.connections.map((c) => c.quit().catch(() => undefined)));
     }
+}
+
+function errorText(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
 }

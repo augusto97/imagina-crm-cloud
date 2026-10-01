@@ -9,6 +9,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/http-exception.filter';
 import { loadEnv } from './config/env';
+import { recordServerError } from './observability/diagnostics';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
 // Red de seguridad: una promesa rechazada sin `catch` (p.ej. un comando Redis
@@ -16,6 +17,7 @@ import { RedisIoAdapter } from './realtime/redis-io.adapter';
 // el proceso sigue; el estado real de las dependencias lo reporta /health/ready.
 process.on('unhandledRejection', (reason) => {
     Logger.error(`Unhandled promise rejection: ${String(reason)}`, 'Process');
+    recordServerError({ source: 'process', message: `Promesa rechazada sin manejar: ${String(reason)}` });
 });
 
 async function bootstrap(): Promise<void> {

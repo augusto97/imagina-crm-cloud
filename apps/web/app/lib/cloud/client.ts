@@ -139,6 +139,7 @@ import {
     slugCheckResultSchema,
     smtpConfigSchema,
     smtpConfigPublicSchema,
+    platformDiagnosticsSchema,
     smtpDiagnoseInputSchema,
     smtpDiagnosticSchema,
     smtpDnsReportSchema,
@@ -208,6 +209,7 @@ import {
     type SlugCheckResult,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type PlatformDiagnostics,
     type SmtpDiagnoseInput,
     type SmtpDiagnostic,
     type SmtpDnsReport,
@@ -1075,6 +1077,14 @@ export class CloudClient {
     }
     smtpTest(to: string): Promise<void> {
         return this.request('POST', '/system/smtp/test', { body: { to } });
+    }
+
+    // --- diagnóstico de la plataforma (v0.1.238, sólo superadmin) ---
+    diagnosticsGet(): Promise<PlatformDiagnostics> {
+        return this.request('GET', '/system/diagnostics', { schema: platformDiagnosticsSchema });
+    }
+    diagnosticsClear(): Promise<void> {
+        return this.request('DELETE', '/system/diagnostics', {});
     }
 
     // --- payments (ADR-S12) ---
