@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+    AddMemberInput,
+    AddMemberResult,
     CreatePlanInput,
     CreatePlatformUserInput,
     CreateTenantInput,
@@ -10,6 +12,8 @@ import type {
     PlatformTenant,
     PlatformTenantDetail,
     PlatformUser,
+    PlatformUserWorkspace,
+    UpdateMemberRoleInput,
     UpdatePlanInput,
     UpdatePlatformUserInput,
     UpdateTenantInput,
@@ -135,6 +139,69 @@ export function useTenantDetail(id: number | null) {
         queryKey: [...platformKeys.all, 'tenant-detail', id],
         queryFn: async () => (await api.get<PlatformTenantDetail>(`/platform/tenants/${id}`)).data,
         enabled: id !== null,
+    });
+}
+
+// ─────────── Miembros de una empresa (v0.1.240) ───────────
+
+/** Tras tocar los miembros: detalle de empresas, grilla (nº de usuarios) y Usuarios. */
+function invalidateMembership(qc: ReturnType<typeof useQueryClient>): void {
+    void qc.invalidateQueries({ queryKey: [...platformKeys.all, 'tenant-detail'] });
+    void qc.invalidateQueries({ queryKey: platformKeys.tenants() });
+    void qc.invalidateQueries({ queryKey: platformKeys.users() });
+    void qc.invalidateQueries({ queryKey: [...platformKeys.all, 'user-workspaces'] });
+    void qc.invalidateQueries({ queryKey: platformKeys.stats() });
+}
+
+export function useAddTenantMember() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ tenantId, input }: { tenantId: number; input: AddMemberInput }): Promise<AddMemberResult> =>
+            (await api.post<AddMemberResult>(`/platform/tenants/${tenantId}/members`, input)).data,
+        onSuccess: () => invalidateMembership(qc),
+    });
+}
+
+export function useUpdateTenantMember() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ tenantId, userId, input }: { tenantId: number; userId: number; input: UpdateMemberRoleInput }) =>
+            (await api.patch(`/platform/tenants/${tenantId}/members/${userId}`, input)).data,
+        onSuccess: () => invalidateMembership(qc),
+    });
+}
+
+export function useRemoveTenantMember() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ tenantId, userId }: { tenantId: number; userId: number }): Promise<void> => {
+            await api.delete(`/platform/tenants/${tenantId}/members/${userId}`);
+        },
+        onSuccess: () => invalidateMembership(qc),
+    });
+}
+
+export function useResendTenantInvite() {
+    return useMutation({
+        mutationFn: async ({ tenantId, userId }: { tenantId: number; userId: number }): Promise<void> => {
+            await api.post(`/platform/tenants/${tenantId}/members/${userId}/resend-invite`, {});
+        },
+    });
+}
+
+export function useUserWorkspaces(userId: number | null) {
+    return useQuery({
+        queryKey: [...platformKeys.all, 'user-workspaces', userId],
+        queryFn: async () => (await api.get<PlatformUserWorkspace[]>(`/platform/users/${userId}/workspaces`)).data,
+        enabled: userId !== null,
+    });
+}
+
+export function useResendUserInvite() {
+    return useMutation({
+        mutationFn: async (userId: number): Promise<void> => {
+            await api.post(`/platform/users/${userId}/resend-invite`, {});
+        },
     });
 }
 

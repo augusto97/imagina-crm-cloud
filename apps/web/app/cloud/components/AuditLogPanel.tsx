@@ -37,6 +37,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'field.delete': { text: 'borró el campo', danger: true },
     'field.type_change': { text: 'cambió el tipo del campo', danger: true },
     'member.add': { text: 'agregó al workspace a' },
+    'member.invite_resend': { text: 'reenvió la invitación a' },
     'member.role_change': { text: 'cambió el rol de' },
     'member.remove': { text: 'quitó del workspace a', danger: true },
     'billing.plan_change': { text: 'cambió el plan' },

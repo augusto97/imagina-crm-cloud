@@ -7,7 +7,7 @@ import {
     type SetBillingInput,
     type Usage,
 } from '@imagina-base/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { AiQuotaService } from '../ai/ai-quota.service';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import type { Tx } from '../db/client';
@@ -98,6 +98,34 @@ export class BillingService {
         }
     }
 
+    /**
+     * v0.1.240 — Límite de USUARIOS del plan (`max_users`), al sumar a alguien
+     * al equipo. Existía en la tabla de planes desde F4 pero nada lo aplicaba.
+     * Cuentan las personas del EQUIPO: los clientes del portal (rol `client`)
+     * no ocupan lugar — un CRM puede tener cientos sin que eso sea su equipo.
+     */
+    async assertCanAddMember(tenantId: number): Promise<void> {
+        const { plan } = await this.planStatus(tenantId);
+        const limit = (await this.plans.limits(plan)).max_users;
+        if (limit === null) return;
+        const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countStaff(tx, tenantId));
+        if (count >= limit) {
+            throw new ForbiddenException({
+                code: 'plan_limit_reached',
+                message: `Alcanzaste el límite de ${limit} usuarios del plan ${plan}. Quitá a alguien o pasá a un plan mayor.`,
+                data: { status: 403, errors: { plan: 'límite de usuarios' } },
+            });
+        }
+    }
+
+    private async countStaff(tx: Tx, tenantId: number): Promise<number> {
+        const [u] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(memberships)
+            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client')));
+        return u?.n ?? 0;
+    }
+
     /** Stand-in del webhook de Stripe: setea plan/estado del workspace. */
     async setBilling(tenantId: number, input: SetBillingInput): Promise<BillingSummary> {
         await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -139,10 +167,7 @@ export class BillingService {
 
     private async usage(tx: Tx, tenantId: number): Promise<Usage> {
         const recordCount = await this.countRecords(tx, tenantId);
-        const [u] = await tx
-            .select({ n: sql<number>`count(*)::int` })
-            .from(memberships)
-            .where(eq(memberships.tenantId, tenantId));
+        const staff = await this.countStaff(tx, tenantId);
         const [a] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(automations)
@@ -153,7 +178,7 @@ export class BillingService {
             .where(eq(attachments.tenantId, tenantId));
         return {
             records: recordCount,
-            users: u?.n ?? 0,
+            users: staff,
             automations: a?.n ?? 0,
             storage_bytes: Number(st?.n ?? 0),
             // Lo completa `summary` (vive fuera del scope del tenant: el

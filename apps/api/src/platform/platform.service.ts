@@ -1,4 +1,6 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { AuditService, type AuditAction } from '../audit/audit.service';
+import { MembersService } from '../members/members.service';
 import { AiQuotaService } from '../ai/ai-quota.service';
 import { AiSettingsService } from '../ai/ai-settings.service';
 import { BadRequestException } from '@nestjs/common';
@@ -7,6 +9,8 @@ import {
     isEffectivelyReadOnly,
     isReadOnly,
     type BillingStatus,
+    type AddMemberInput,
+    type AddMemberResult,
     type CreatePlanInput,
     type CreateTenantInput,
     type ImpersonationLogEntry,
@@ -17,11 +21,14 @@ import {
     type PlatformTenant,
     type PlatformTenantDetail,
     type PlatformUser,
+    type PlatformUserWorkspace,
+    type UpdateMemberRoleInput,
     type UpdatePlanInput,
+    type WorkspaceMember,
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
 } from '@imagina-base/shared';
-import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { ENV, type Env } from '../config/env';
@@ -90,6 +97,9 @@ export class PlatformService {
         // v0.1.197 — borrar una empresa también borra sus bytes. Opcional por
         // el mismo motivo que los anteriores.
         @Optional() @Inject(FILE_STORAGE) private readonly storage?: FileStorage,
+        // v0.1.240 — gestión de miembros de cualquier empresa desde la consola.
+        @Optional() private readonly members?: MembersService,
+        @Optional() private readonly audit?: AuditService,
     ) {}
 
     /**
@@ -135,7 +145,7 @@ export class PlatformService {
 
         const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
-            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(inArray(memberships.tenantId, ids)).groupBy(memberships.tenantId)),
+            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'))).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(inArray(automations.tenantId, ids)).groupBy(automations.tenantId)),
             this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(inArray(attachments.tenantId, ids)).groupBy(attachments.tenantId)),
             // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
@@ -217,7 +227,7 @@ export class PlatformService {
     async tenantDetail(id: number): Promise<PlatformTenantDetail> {
         const tenant = await this.getTenant(id);
         const rows = await this.db
-            .select({ user_id: users.id, name: users.name, email: users.email, role: memberships.role, disabledAt: users.disabledAt })
+            .select({ user_id: users.id, name: users.name, email: users.email, role: memberships.role, disabledAt: users.disabledAt, invitedAt: users.invitedAt })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(eq(memberships.tenantId, id))
@@ -234,7 +244,14 @@ export class PlatformService {
         ]);
         return {
             tenant,
-            members: rows.map((m) => ({ user_id: m.user_id, name: m.name, email: m.email, role: m.role, disabled: m.disabledAt != null })),
+            members: rows.map((m) => ({
+                user_id: m.user_id,
+                name: m.name,
+                email: m.email,
+                role: m.role,
+                disabled: m.disabledAt != null,
+                pending: m.invitedAt != null,
+            })),
             limits,
             emails_month: emails,
             own_smtp: smtp.configured,
@@ -348,6 +365,98 @@ export class PlatformService {
         }
     }
 
+    // ─────────── Miembros de una empresa (v0.1.240) ───────────
+    //
+    // Mismo servicio y mismos guard rails que el panel de Miembros del admin de
+    // la empresa (no quedarse sin admin, clientes del portal fuera), salvo el
+    // límite de usuarios del plan: acá decide el operador. Cada cambio queda en
+    // la bitácora de ESA empresa, con el operador como autor.
+
+    async addTenantMember(tenantId: number, input: AddMemberInput, operatorId: number): Promise<AddMemberResult> {
+        await this.getTenant(tenantId); // 404 si no existe.
+        const member = await this.requireMembers().add(tenantId, input, { invitedById: null, enforcePlan: false });
+        await this.logMember(tenantId, operatorId, 'member.add', member, { role: member.role, invited: member.invited });
+        return member;
+    }
+
+    async updateTenantMemberRole(
+        tenantId: number,
+        userId: number,
+        input: UpdateMemberRoleInput,
+        operatorId: number,
+    ): Promise<WorkspaceMember> {
+        await this.getTenant(tenantId);
+        const member = await this.requireMembers().updateRole(tenantId, userId, input);
+        await this.logMember(tenantId, operatorId, 'member.role_change', member, { role: member.role });
+        return member;
+    }
+
+    async removeTenantMember(tenantId: number, userId: number, operatorId: number): Promise<void> {
+        await this.getTenant(tenantId);
+        const gone = await this.requireMembers().remove(tenantId, operatorId, userId);
+        await this.logMember(tenantId, operatorId, 'member.remove', gone, { role: gone.role });
+    }
+
+    async resendTenantInvite(tenantId: number, userId: number, operatorId: number): Promise<void> {
+        await this.getTenant(tenantId);
+        const { email } = await this.auth.resendInvite(tenantId, userId);
+        await this.audit?.log({
+            tenantId,
+            userId: operatorId,
+            action: 'member.invite_resend',
+            targetType: 'user',
+            targetId: userId,
+            targetLabel: email,
+            meta: { via: 'platform' },
+        });
+    }
+
+    /** Invitación de una cuenta creada desde la consola, sin empresa. */
+    async resendUserInvite(userId: number): Promise<void> {
+        await this.auth.resendInvite(null, userId);
+    }
+
+    /** Empresas a las que pertenece una persona (rol incluido; portal también). */
+    async userWorkspaces(userId: number): Promise<PlatformUserWorkspace[]> {
+        await this.userDto(userId); // 404 si no existe.
+        const rows = await this.db
+            .select({
+                tenant_id: tenants.id,
+                name: tenants.name,
+                slug: tenants.slug,
+                role: memberships.role,
+                archivedAt: tenants.archivedAt,
+            })
+            .from(memberships)
+            .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+            .where(eq(memberships.userId, userId))
+            .orderBy(asc(tenants.name));
+        return rows.map((r) => ({ tenant_id: r.tenant_id, name: r.name, slug: r.slug, role: r.role, archived: r.archivedAt != null }));
+    }
+
+    private requireMembers(): MembersService {
+        if (!this.members) throw new Error('MembersService no disponible');
+        return this.members;
+    }
+
+    private async logMember(
+        tenantId: number,
+        operatorId: number,
+        action: AuditAction,
+        member: { user_id: number; email: string },
+        meta: Record<string, unknown>,
+    ): Promise<void> {
+        await this.audit?.log({
+            tenantId,
+            userId: operatorId,
+            action,
+            targetType: 'user',
+            targetId: member.user_id,
+            targetLabel: member.email,
+            meta: { ...meta, via: 'platform' },
+        });
+    }
+
     // ─────────────── Impersonación de soporte (F5) ───────────────
 
     /** Abre una sesión de impersonación como `targetUserId`. Devuelve token+target. */
@@ -450,6 +559,7 @@ export class PlatformService {
                 name: users.name,
                 createdAt: users.createdAt,
                 disabledAt: users.disabledAt,
+                invitedAt: users.invitedAt,
             })
             .from(users)
             .orderBy(desc(users.createdAt));
@@ -471,7 +581,7 @@ export class PlatformService {
     async setUserDisabled(userId: number, disabled: boolean): Promise<PlatformUser> {
         await this.auth.setUserDisabled(userId, disabled);
         const [u] = await this.db
-            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt })
+            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt, invitedAt: users.invitedAt })
             .from(users)
             .where(eq(users.id, userId))
             .limit(1);
@@ -537,7 +647,7 @@ export class PlatformService {
     /** DTO de un usuario por id (con nº de workspaces + flag superadmin). */
     private async userDto(userId: number): Promise<PlatformUser> {
         const [u] = await this.db
-            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt })
+            .select({ id: users.id, email: users.email, name: users.name, createdAt: users.createdAt, disabledAt: users.disabledAt, invitedAt: users.invitedAt })
             .from(users)
             .where(eq(users.id, userId))
             .limit(1);
@@ -550,7 +660,7 @@ export class PlatformService {
     }
 
     private toUser(
-        u: { id: number; email: string; name: string; createdAt: Date; disabledAt: Date | null },
+        u: { id: number; email: string; name: string; createdAt: Date; disabledAt: Date | null; invitedAt?: Date | null },
         workspaces: number,
         superset: Set<string>,
     ): PlatformUser {
@@ -562,6 +672,7 @@ export class PlatformService {
             disabled: u.disabledAt != null,
             is_superadmin: superset.has(u.email.toLowerCase()),
             workspaces,
+            pending: u.invitedAt != null,
         };
     }
 

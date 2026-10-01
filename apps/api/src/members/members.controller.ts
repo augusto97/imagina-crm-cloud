@@ -16,6 +16,7 @@ import {
     addMemberSchema,
     updateMemberRoleSchema,
     type AddMemberInput,
+    type AddMemberResult,
     type UpdateMemberRoleInput,
     type WorkspaceMember,
 } from '@imagina-base/shared';
@@ -51,9 +52,9 @@ export class MembersController {
     async add(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(addMemberSchema)) input: AddMemberInput,
-    ): Promise<WorkspaceMember> {
+    ): Promise<AddMemberResult> {
         assertAdmin(req);
-        const member = await this.members.add(tenantId(req), input);
+        const member = await this.members.add(tenantId(req), input, { invitedById: req.authUserId ?? null });
         await this.audit.log({
             tenantId: tenantId(req),
             userId: req.authUserId ?? null,
@@ -61,9 +62,29 @@ export class MembersController {
             targetType: 'user',
             targetId: member.user_id,
             targetLabel: member.email,
-            meta: { role: member.role },
+            meta: { role: member.role, invited: member.invited },
         });
         return member;
+    }
+
+    /** v0.1.240 — Reenvía la invitación a quien todavía no definió su contraseña. */
+    @Post(':userId/resend-invite')
+    @HttpCode(202)
+    async resendInvite(
+        @Req() req: FastifyRequest,
+        @Param('userId', ParseIntPipe) userId: number,
+    ): Promise<{ ok: true }> {
+        assertAdmin(req);
+        const { email } = await this.members.resendInvite(tenantId(req), userId);
+        await this.audit.log({
+            tenantId: tenantId(req),
+            userId: req.authUserId ?? null,
+            action: 'member.invite_resend',
+            targetType: 'user',
+            targetId: userId,
+            targetLabel: email,
+        });
+        return { ok: true };
     }
 
     @Patch(':userId')
@@ -93,17 +114,15 @@ export class MembersController {
         @Param('userId', ParseIntPipe) userId: number,
     ): Promise<void> {
         assertAdmin(req);
-        const all = await this.members.list(tenantId(req)).catch(() => []);
-        const gone = all.find((m) => m.user_id === userId);
-        await this.members.remove(tenantId(req), req.authUserId!, userId);
+        const gone = await this.members.remove(tenantId(req), req.authUserId!, userId);
         await this.audit.log({
             tenantId: tenantId(req),
             userId: req.authUserId ?? null,
             action: 'member.remove',
             targetType: 'user',
             targetId: userId,
-            targetLabel: gone?.email ?? String(userId),
-            meta: { role: gone?.role },
+            targetLabel: gone.email,
+            meta: { role: gone.role },
         });
     }
 }

@@ -59,7 +59,19 @@ export interface PlatformTenantMember {
     email: string;
     role: string;
     disabled: boolean;
+    /** v0.1.240 — invitación pendiente (todavía no definió su contraseña). */
+    pending?: boolean;
 }
+
+/** v0.1.240 — Una empresa a la que pertenece un usuario (consola → Usuarios). */
+export const platformUserWorkspaceSchema = z.object({
+    tenant_id: z.number().int(),
+    name: z.string(),
+    slug: z.string(),
+    role: z.string(),
+    archived: z.boolean(),
+});
+export type PlatformUserWorkspace = z.infer<typeof platformUserWorkspaceSchema>;
 
 /** Detalle de una empresa: sus datos + miembros + límites del plan. */
 export interface PlatformTenantDetail {
@@ -122,6 +134,8 @@ export const platformUserSchema = z.object({
     is_superadmin: z.boolean(),
     /** Cantidad de workspaces (memberships) a los que pertenece. */
     workspaces: z.number().int(),
+    /** v0.1.240 — invitación pendiente (todavía no definió su contraseña). */
+    pending: z.boolean().optional(),
 });
 export type PlatformUser = z.infer<typeof platformUserSchema>;
 

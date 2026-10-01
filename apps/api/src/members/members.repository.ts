@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, ne } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { memberships, users } from '../db/schema';
 
@@ -8,6 +8,8 @@ export interface MemberRow {
     name: string;
     email: string;
     role: (typeof memberships.$inferSelect)['role'];
+    /** v0.1.240 — invitación pendiente (todavía no definió su contraseña). */
+    invitedAt: Date | null;
 }
 
 /**
@@ -25,10 +27,14 @@ export class MembersRepository {
                 name: users.name,
                 email: users.email,
                 role: memberships.role,
+                invitedAt: users.invitedAt,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
-            .where(eq(memberships.tenantId, tenantId))
+            // El EQUIPO: los clientes del portal se administran desde la ficha
+            // de su registro, no desde acá (v0.1.240; antes podían ser cientos
+            // de filas mezcladas con las personas del equipo).
+            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client')))
             .orderBy(asc(users.name), asc(memberships.userId));
     }
 
@@ -43,34 +49,13 @@ export class MembersRepository {
                 name: users.name,
                 email: users.email,
                 role: memberships.role,
+                invitedAt: users.invitedAt,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
             .limit(1);
         return row ?? null;
-    }
-
-    /** Busca un usuario por email (case-insensitive). `users` no tiene RLS. */
-    async findUserByEmail(
-        tx: Tx,
-        email: string,
-    ): Promise<{ id: number; name: string; email: string } | null> {
-        const [row] = await tx
-            .select({ id: users.id, name: users.name, email: users.email })
-            .from(users)
-            .where(sql`lower(${users.email}) = lower(${email})`)
-            .limit(1);
-        return row ?? null;
-    }
-
-    async insert(
-        tx: Tx,
-        tenantId: number,
-        userId: number,
-        role: MemberRow['role'],
-    ): Promise<void> {
-        await tx.insert(memberships).values({ tenantId, userId, role });
     }
 
     async updateRole(

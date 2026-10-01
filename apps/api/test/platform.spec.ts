@@ -32,6 +32,9 @@ import { MailService } from '../src/mail/mail.service';
 import { PlansService } from '../src/billing/plans.service';
 import { EmailQuotaService } from '../src/mail/email-quota.service';
 import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
+import { AuditService } from '../src/audit/audit.service';
+import { MembersRepository } from '../src/members/members.repository';
+import { MembersService } from '../src/members/members.service';
 import { PlatformService } from '../src/platform/platform.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
@@ -84,7 +87,11 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         const emailQuota = new EmailQuotaService(pg.db, plansSvc);
         const tenantSmtp = new TenantSmtpService(pg.db, env);
         billing = new BillingService(tenantDb, plansSvc, emailQuota, tenantSmtp);
-        platform = new PlatformService(pg.db, env, billing, auth, plansSvc, emailQuota, tenantSmtp);
+        const membersSvc = new MembersService(tenantDb, new MembersRepository(), auth, billing);
+        platform = new PlatformService(
+            pg.db, env, billing, auth, plansSvc, emailQuota, tenantSmtp,
+            undefined, undefined, undefined, membersSvc, new AuditService(tenantDb),
+        );
     });
 
     afterAll(async () => {
@@ -96,6 +103,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     beforeEach(async () => {
         // Limpieza total entre tests (el operador ve TODO; los tests miden totales).
         // Orden FK-safe: hijos → lists → tenants → impersonation_log → users.
+        await pg.db.delete(auditLog);
         await pg.db.delete(automations);
         await pg.db.delete(records);
         await pg.db.delete(fields);
@@ -588,5 +596,58 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
     it('stopImpersonation sobre una sesión normal → error', async () => {
         const sess = await auth.register({ email: 'normal@imp.test', password: 'password123', name: 'Normal', workspace_name: 'NormalWS' });
         await expect(auth.stopImpersonation(sess.token as string)).rejects.toThrow();
+    });
+
+    // ─────────── v0.1.240 — miembros de una empresa desde la consola ───────────
+
+    it('consola: suma por invitación (sin límite del plan), cambia rol, quita y lo deja en la bitácora de la empresa', async () => {
+        const tid = await seedTenant({ name: 'Llena', plan: 'trial', ownerEmail: 'owner@llena.test' });
+        const [operator] = await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' }).returning();
+        // trial = 3 usuarios: el operador puede pasarse (decide él).
+        for (const e of ['a@llena.test', 'b@llena.test', 'c@llena.test']) {
+            await platform.addTenantMember(tid, { email: e, role: 'agent' }, operator!.id);
+        }
+        const detail = await platform.tenantDetail(tid);
+        expect(detail.members).toHaveLength(4);
+        const invitee = detail.members.find((m) => m.email === 'a@llena.test')!;
+        expect(invitee).toMatchObject({ role: 'agent', pending: true });
+        await waitForMail((m) => m.to === 'a@llena.test' && /Te invitaron a «Llena»/.test(m.subject));
+
+        await platform.updateTenantMemberRole(tid, invitee.user_id, { role: 'manager' }, operator!.id);
+        await platform.resendTenantInvite(tid, invitee.user_id, operator!.id);
+        await platform.removeTenantMember(tid, invitee.user_id, operator!.id);
+        expect((await platform.tenantDetail(tid)).members).toHaveLength(3);
+
+        // El último admin no se puede quitar ni degradar tampoco desde la consola.
+        const owner = (await platform.tenantDetail(tid)).members.find((m) => m.role === 'admin')!;
+        await expect(platform.removeTenantMember(tid, owner.user_id, operator!.id)).rejects.toMatchObject({
+            response: expect.objectContaining({ code: 'last_admin' }),
+        });
+
+        const log = await withTenant(pg.db, tid, (tx) => tx.select().from(auditLog));
+        expect(log.map((l) => l.action).sort()).toEqual(
+            ['member.add', 'member.add', 'member.add', 'member.invite_resend', 'member.remove', 'member.role_change'].sort(),
+        );
+        expect(log.every((l) => l.userId === operator!.id && (l.meta as { via?: string }).via === 'platform')).toBe(true);
+
+        await expect(platform.addTenantMember(999999, { email: 'x@y.test', role: 'agent' }, operator!.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('consola: las empresas de una persona, con su rol, y el estado de invitación en Usuarios', async () => {
+        const t1 = await seedTenant({ name: 'Uno', ownerEmail: 'owner1@x.test' });
+        const t2 = await seedTenant({ name: 'Dos', ownerEmail: 'owner2@x.test' });
+        const [operator] = await pg.db.insert(users).values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' }).returning();
+        const added = await platform.addTenantMember(t1, { email: 'multi@x.test', role: 'viewer', name: 'Multi' }, operator!.id);
+        await platform.addTenantMember(t2, { email: 'multi@x.test', role: 'admin' }, operator!.id);
+
+        const ws = await platform.userWorkspaces(added.user_id);
+        expect(ws.map((w) => [w.name, w.role])).toEqual([
+            ['Dos', 'admin'],
+            ['Uno', 'viewer'],
+        ]);
+        const listed = (await platform.listUsers()).find((u) => u.id === added.user_id)!;
+        expect(listed).toMatchObject({ workspaces: 2, pending: true });
+        await platform.resendUserInvite(added.user_id);
+        await expect(platform.userWorkspaces(999999)).rejects.toBeInstanceOf(NotFoundException);
     });
 });

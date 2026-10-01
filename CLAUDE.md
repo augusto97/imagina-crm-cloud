@@ -6233,6 +6233,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         mismo origen 200, sin Origin 200, webhook público 404 por token) y CSP
         con hash: login, listas, tabla, WebSocket y portal con cero violaciones.
 
+  - [x] **Invitar al equipo por email + miembros desde la consola (v0.1.240,
+        pregunta del usuario: "¿ya funciona asociar a alguien a una empresa?
+        no veo dónde se añaden usuarios")**: funcionaba a medias. El admin de
+        una empresa sólo podía sumar a quien YA tenía cuenta ("pedile que cree
+        su cuenta primero") y si esa persona se registraba sola, el registro
+        le armaba una empresa propia vacía; y en la consola los miembros de una
+        empresa eran de sólo lectura. Ahora: (a) **invitar por email** — si la
+        persona no tiene cuenta se crea (contraseña aleatoria + `users.
+        invited_at`, migración 0057), queda ya dentro de la empresa con su rol
+        y le llega un correo «Te invitaron a «Acme»» para definir su
+        contraseña; el enlace dura **7 días** (no los 30 minutos del reset) y
+        la pantalla dice «Definí tu contraseña». Definirla cierra la invitación
+        y verifica el email (el enlace llegó a su casilla: sin el aviso de
+        «Confirmá tu correo»). Si ya tenía cuenta, se suma al toque y se le
+        avisa. Sin correo de cuenta en el servidor, se corta ANTES de crear la
+        cuenta. (b) **Ajustes → Miembros**: formulario de invitación (email,
+        nombre opcional, rol), «Invitación pendiente» con **Reenviar** (tope 3
+        por hora), cambiar rol y quitar con confirmación; los clientes del
+        portal salen de esta lista (se manejan desde la ficha). (c) **Límite de
+        usuarios del plan** aplicado por primera vez (`max_users` existía desde
+        F4 y nada lo usaba): el 4º en un trial rebota con el motivo; los
+        clientes del portal no ocupan lugar, tampoco en el uso que muestran
+        Ajustes y la consola. (d) **Consola → detalle de empresa**: invitar,
+        cambiar rol, reenviar, quitar e impersonar desde la misma fila, con los
+        mismos guard rails (no dejar a la empresa sin admin) y SIN el límite
+        del plan (decide el operador); cada acción queda en la bitácora de la
+        empresa con el operador como autor. (e) **Consola → Usuarios →
+        Editar**: las empresas de esa persona con su rol (editable), quitarla
+        de una y **«Agregar a una empresa»** con buscador; estado «Invitación
+        pendiente» en la grilla y «Reenviar invitación» en su menú. Las piezas
+        de la interfaz (`MemberControls`) son las mismas en Ajustes y en la
+        consola. 14 tests de miembros (invitación, cuenta existente, reservados/
+        desactivados/clientes, producción sin correo, límite del plan, reenvío
+        con freno, rol y bajas) + 2 de la consola — 40 en esos dos specs — y
+        E2E navegador 28/28 (invitar → pendiente → reenviar → la invitada
+        define su contraseña y entra SÓLO a esa empresa, sin empresa propia;
+        límite del plan; consola: invitar por encima del límite, rol, último
+        admin protegido, sumar a otra empresa desde Usuarios, bitácora).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
