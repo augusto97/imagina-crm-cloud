@@ -261,15 +261,83 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect(cfg.header.status_field_slugs).toEqual(['estado']);
         expect(cfg.blocks[0]!.type).toBe('header');
         expect(cfg.blocks[1]!.config).toMatchObject({ label: 'Contacto', field_slugs: ['email', 'telefono'] });
+        // v0.1.232 — la ficha lee el diseño v3: el custom se guarda ya convertido.
+        expect((s.record_layout_v3 as { v: number }).v).toBe(3);
         const schema = json(await call('get_list_schema', { list: 'clientes' }));
-        expect(schema.record_layout).toMatchObject({ layout: 'crm', template: 'custom' });
-        expect((schema.record_layout as { custom_blocks: Array<{ type: string; summary: string }> }).custom_blocks[1]).toEqual({ type: 'properties_group', summary: 'Contacto: email, telefono' });
+        expect(schema.record_layout).toMatchObject({ layout: 'crm', template: 'design' });
+        expect(JSON.stringify((schema.record_layout as { design: unknown }).design)).toContain('propiedades «Contacto»');
 
         const classic = json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'classic' }));
         await apply(classic.proposal_id);
         s = (await lists.get(tenantId, 'clientes')).settings as Record<string, unknown>;
         expect(s.record_layout).toBe('classic');
         expect(s.crm_template_custom).toBeDefined(); // se conserva para volver
+    });
+
+    it('propose_configure_record_layout con `design`: ficha v3 con pestañas, formas por tipo y gráficos de vinculados (v0.1.232)', async () => {
+        const schema = json(await call('get_list_schema', { list: 'clientes' }));
+        expect(schema.linked_lists).toEqual([{ slug: 'facturas', name: 'Facturas', via: 'Cliente', direction: 'esa lista apunta a ésta' }]);
+
+        const design = {
+            theme: { preset: 'fresh' },
+            header: { chip_fields: ['email'], stages_field: 'estado' },
+            pages: [
+                {
+                    name: 'Resumen',
+                    sections: [
+                        { columns: [{ blocks: [{ type: 'fields', title: 'Contacto', fields: ['email', 'telefono'] }] }, { blocks: [{ type: 'field', field: 'estado', display: 'stages' }, { type: 'activity' }] }] },
+                    ],
+                },
+                {
+                    name: 'Facturas',
+                    sections: [
+                        {
+                            columns: [
+                                { blocks: [{ type: 'chart', title: 'Facturas', from: 'facturas', kind: 'kpi' }] },
+                                { blocks: [{ type: 'chart', title: 'Facturado', from: 'facturas', kind: 'kpi', metric: 'sum', metric_field: 'monto', prefix: '$' }] },
+                            ],
+                        },
+                        { columns: [{ blocks: [{ type: 'related', from: 'facturas', columns: ['numero', 'monto'], sort: 'monto', sort_dir: 'desc' }] }] },
+                    ],
+                },
+            ],
+        };
+        const res = json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', design }));
+        const prop = res.proposal as { destructive: boolean; preview: { blocks: Array<{ type: string }> } };
+        expect(prop.destructive).toBe(true); // pisa el diseño que dejó el custom anterior
+        expect(prop.preview.blocks.map((b) => b.type)).toEqual(['fields', 'field', 'activity', 'chart', 'chart', 'related']);
+        await apply(res.proposal_id);
+
+        const s = (await lists.get(tenantId, 'clientes')).settings as Record<string, unknown>;
+        expect(s.record_layout).toBe('crm');
+        const v3 = s.record_layout_v3 as { theme: { preset: string }; pages: Array<{ name: string; sections: Array<{ columns: number[]; blocks: Array<Array<{ type: string; config: Record<string, unknown> }>> }> }> };
+        expect(v3.theme.preset).toBe('fresh');
+        expect(v3.pages.map((p) => p.name)).toEqual(['Resumen', 'Facturas']);
+        expect(v3.pages[0]!.sections[0]!.columns).toEqual([6, 6]);
+        const facturas = await lists.get(tenantId, 'facturas');
+        const fx = await fields.listByListId(tenantId, facturas.id);
+        const rel = fx.find((f) => f.slug === 'cliente')!;
+        const monto = fx.find((f) => f.slug === 'monto')!;
+        const sum = v3.pages[1]!.sections[0]!.blocks[1]![0]!;
+        expect(sum.config).toMatchObject({ source: { kind: 'related', field_id: rel.id, direction: 'reverse' }, kind: 'kpi', metric: 'sum', metric_field_id: monto.id, prefix: '$' });
+        const table = v3.pages[1]!.sections[1]!.blocks[0]![0]!;
+        expect(table.config).toMatchObject({ view: 'table', sort_field_id: monto.id, sort_dir: 'desc' });
+
+        // Errores corregibles: lista no vinculada, gráfico agrupado sin campo, campo inexistente.
+        const notLinked = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', design: { pages: [{ name: 'X', sections: [{ columns: [{ blocks: [{ type: 'chart', from: 'gastos', kind: 'kpi' }] }] }] }] } });
+        expect(isError(notLinked)).toBe(true);
+        expect(json(notLinked).error).toContain('Vinculables: facturas');
+        const noGroup = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', design: { pages: [{ name: 'X', sections: [{ columns: [{ blocks: [{ type: 'chart', from: 'facturas', kind: 'pie' }] }] }] }] } });
+        expect(json(noGroup).error).toContain('group_by');
+        const badField = await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', design: { pages: [{ name: 'X', sections: [{ columns: [{ blocks: [{ type: 'field', field: 'nope' }] }] }] }] } });
+        expect(json(badField).error).toContain('«nope» no existe');
+
+        // Elegir una integrada saca el diseño (si no, el v3 guardado seguiría mandando).
+        const back = json(await call('propose_configure_record_layout', { list: 'clientes', layout: 'crm', template: 'contact' }));
+        await apply(back.proposal_id);
+        const s2 = (await lists.get(tenantId, 'clientes')).settings as Record<string, unknown>;
+        expect(s2.crm_template_id).toBe('contact');
+        expect(s2.record_layout_v3).toBeUndefined();
     });
 
     it('automatizaciones: pausar por nombre, reemplazar acciones con validación de slugs, borrar; y leer ejecuciones', async () => {

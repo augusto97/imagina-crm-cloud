@@ -152,3 +152,46 @@ describe('buildCrmCustomConfig', () => {
         expect(() => buildCrmCustomConfig({ groups: [{ label: 'x', fields: ['email'] }], sidebar: { related_fields: ['email'] } }, clientes, null)).toThrow(/se esperaba relation/);
     });
 });
+
+describe('buildRecordLayoutV3 (v0.1.232)', () => {
+    const ctx = {
+        listId: 10,
+        fields: [
+            { id: 1, slug: 'nombre', label: 'Nombre', type: 'text' },
+            { id: 2, slug: 'avance', label: 'Avance', type: 'percent' },
+            { id: 3, slug: 'web', label: 'Web', type: 'url' },
+        ],
+        relations: [
+            { relation_field_id: 50, relation_slug: 'cliente', direction: 'reverse' as const, other_list_id: 20, other_list_slug: 'pedidos', other_list_name: 'Pedidos' },
+            { relation_field_id: 51, relation_slug: 'referido', direction: 'reverse' as const, other_list_id: 20, other_list_slug: 'pedidos', other_list_name: 'Pedidos' },
+        ],
+        otherFields: new Map([[20, [{ id: 60, slug: 'total', label: 'Total', type: 'currency' }]]]),
+    };
+    const page = (blocks: unknown[], widths?: number[]) => ({
+        pages: [{ name: 'P', sections: [{ columns: blocks.map((b, i) => ({ ...(widths ? { width: widths[i] } : {}), blocks: [b] })) }] }],
+    });
+
+    it('reparte columnas por defecto o normaliza las indicadas', async () => {
+        const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
+        const three = buildRecordLayoutV3(page([{ type: 'divider' }, { type: 'divider' }, { type: 'divider' }]) as never, ctx);
+        expect(three.layout.pages[0]!.sections[0]!.columns).toEqual([4, 4, 4]);
+        const odd = buildRecordLayoutV3(page([{ type: 'divider' }, { type: 'divider' }], [9, 9]) as never, ctx);
+        expect(odd.layout.pages[0]!.sections[0]!.columns.reduce((a, b) => a + b, 0)).toBe(12);
+    });
+
+    it('avisa una forma que el tipo no admite y exige `via` con dos relaciones a la misma lista', async () => {
+        const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
+        const r = buildRecordLayoutV3(page([{ type: 'field', field: 'avance', display: 'countdown' }]) as never, ctx);
+        expect(r.warnings[0]).toContain('no admite la forma «countdown»');
+        expect(() => buildRecordLayoutV3(page([{ type: 'chart', from: 'pedidos', kind: 'kpi' }]) as never, ctx)).toThrow(/indicá `via`/);
+        const ok = buildRecordLayoutV3(page([{ type: 'chart', from: 'pedidos', via: 'referido', kind: 'kpi', metric: 'sum', metric_field: 'total' }]) as never, ctx);
+        expect(ok.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toMatchObject({ source: { kind: 'related', field_id: 51 }, metric_field_id: 60 });
+    });
+
+    it('botones: destino fijo seguro o el campo del registro', async () => {
+        const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
+        expect(() => buildRecordLayoutV3(page([{ type: 'button', label: 'Ir', url: 'javascript:alert(1)' }]) as never, ctx)).toThrow(AiToolError);
+        const r = buildRecordLayoutV3(page([{ type: 'button', label: 'Sitio', field: 'web' }]) as never, ctx);
+        expect(r.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toEqual({ label: 'Sitio', action: 'url', target_source: 'field', target_field_id: 3 });
+    });
+});

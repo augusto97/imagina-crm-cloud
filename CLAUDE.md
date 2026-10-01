@@ -5873,6 +5873,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         salir, guardado → la ficha real lo muestra, Apariencia) y la ficha de
         la fase A sin regresiones (22/22); modo oscuro y teléfono revisados.
 
+  - [x] **El asistente y el MCP diseñan la ficha v3 (v0.1.232, ADR-S26 fase
+        C, primera mitad)**: con el editor nuevo, el diseño v3 guardado MANDA
+        sobre la plantilla — y `propose_configure_record_layout` seguía
+        escribiendo SÓLO el formato anterior (`crm_template_id` /
+        `crm_template_custom`), así que en una lista con diseño propio lo que
+        aplicaba el asistente no cambiaba nada. Ahora la herramienta habla v3:
+        (a) **modo `design`** — la ficha completa en el vocabulario del modelo
+        (pestañas → secciones con columnas → bloques por SLUG): un campo con la
+        forma que mejor lo muestra (cifra grande, anillo, medidor, cuenta
+        regresiva, etapas…; una forma que el tipo no admite se avisa),
+        propiedades editables, etapas, archivos, actividad, títulos, textos,
+        avisos, botones (destino `https:`/`mailto:`/`tel:` o un campo del
+        registro), y **gráficos y tablas/tableros/tarjetas de los registros
+        VINCULADOS** con `from` = slug de la lista vinculada (en cualquiera de
+        los dos sentidos; `via` sólo si hay dos relaciones con la misma lista;
+        `"all"` compara con toda la lista). `buildRecordLayoutV3`
+        (`ai/tools/record-layout-design.ts`, PURO) valida cada slug contra los
+        campos de la lista correcta, exige lo que cada gráfico necesita
+        (`group_by` en barras/dona/embudo, `metric_field` en sumas), reparte
+        las columnas en partes iguales si no se indica el ancho y devuelve
+        EXACTAMENTE lo que guarda el editor visual — se sigue retocando ahí;
+        (b) el `custom` del formato anterior se convierte a v3 al guardar
+        (`migrateCrmV2ToV3`), y elegir una plantilla integrada **saca** el
+        diseño v3 (si no, seguiría mandando); pisar un diseño hecho a mano se
+        marca como destructivo en la tarjeta; (c) `get_list_schema` devuelve
+        el diseño v3 resumido por pestaña y **`linked_lists`** — las listas
+        vinculadas en los DOS sentidos, que es lo que el modelo necesita para
+        `from` (antes sólo veía las relaciones propias); (d) la regla 12 del
+        asistente explica cómo armar una buena ficha (lo más mirado arriba con
+        una forma que lo luzca, una pestaña por lista vinculada con
+        indicadores, un gráfico por estado y la tabla). De paso se descartó un
+        supuesto hueco del relevamiento: `portal.me` NO filtra campos ocultos
+        porque el rol `client` no tiene campos ocultos configurables — el
+        portal muestra lo que diseña la empresa. 1 test de integración nuevo
+        por el `Client` del SDK MCP (ficha de dos pestañas con KPI de suma
+        sobre la relación inversa, tabla ordenada, errores corregibles: lista
+        no vinculada, dona sin `group_by`, campo inexistente; volver a una
+        integrada borra el v3) + 3 unitarios del constructor (columnas,
+        forma no admitida, `via` obligatorio con dos relaciones, botón
+        `javascript:` rechazado) + el test del `custom` actualizado — 833 API
+        en verde — + E2E por el MCP REAL 12/12 (HTTP + token: esquema con las
+        vinculadas, proponer → aplicar, la ficha muestra cifra grande, cuenta
+        regresiva, aviso y etapas; la pestaña Facturación suma 9.350.000, la
+        dona y el tablero por estado; el editor abre el diseño propuesto).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
