@@ -3,11 +3,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     INTEGRATIONS,
     INTEGRATION_PROVIDER_DEFS,
+    PROVIDER_GUIDES,
+    appDescriptionText,
     integrationScopes,
+    registrableDomain,
+    scopeJustificationText,
+    videoScriptText,
     type IntegrationProvider,
     type PlatformIntegrationApp,
+    type PlatformLegalView,
 } from '@imagina-base/shared';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { Check, Copy, KeyRound } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { api } from '@/cloud/session';
@@ -19,6 +25,9 @@ import { Label } from '@/components/ui/label';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
+
+import { LEGAL_QUERY_KEY, PlatformLegalCard } from './PlatformLegalCard';
+import { ProviderGuideView, type GuideValues } from './ProviderGuideView';
 
 /**
  * Consola de plataforma → Integraciones (v0.1.203, ADR-S22 fase 4).
@@ -33,6 +42,11 @@ export function PlatformIntegrationsCard(): JSX.Element {
     const q = useQuery({
         queryKey: ['platform-integrations'],
         queryFn: () => api.platformIntegrationsGet(),
+        retry: false,
+    });
+    const legal = useQuery({
+        queryKey: LEGAL_QUERY_KEY,
+        queryFn: () => api.platformLegalGet(),
         retry: false,
     });
 
@@ -59,14 +73,23 @@ export function PlatformIntegrationsCard(): JSX.Element {
                     </CardContent>
                 )}
             </Card>
+            <PlatformLegalCard q={legal} />
             {(data?.apps ?? []).map((app) => (
-                <ProviderCard key={app.provider} app={app} redirectUri={data!.redirect_uri} />
+                <ProviderCard key={app.provider} app={app} redirectUri={data!.redirect_uri} legal={legal.data ?? null} />
             ))}
         </div>
     );
 }
 
-function ProviderCard({ app, redirectUri }: { app: PlatformIntegrationApp; redirectUri: string }): JSX.Element {
+function ProviderCard({
+    app,
+    redirectUri,
+    legal,
+}: {
+    app: PlatformIntegrationApp;
+    redirectUri: string;
+    legal: PlatformLegalView | null;
+}): JSX.Element {
     const qc = useQueryClient();
     const confirm = useConfirm();
     const def = INTEGRATION_PROVIDER_DEFS[app.provider];
@@ -79,6 +102,7 @@ function ProviderCard({ app, redirectUri }: { app: PlatformIntegrationApp; redir
             unlocks.flatMap((i) => integrationScopes(i).split(def.scope_separator === ',' ? ',' : ' ')),
         ),
     ].filter(Boolean);
+    const values = guideValues(redirectUri, scopes, legal);
 
     const save = useMutation({
         mutationFn: (input: { client_id?: string; client_secret?: string; clear?: boolean }) =>
@@ -121,36 +145,14 @@ function ProviderCard({ app, redirectUri }: { app: PlatformIntegrationApp; redir
                 </CardDescription>
             </CardHeader>
             <CardContent className="imcrm-space-y-4">
-                <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
-                    {def.steps.map((step) => (
-                        <li key={step}>{step}</li>
-                    ))}
-                </ol>
-                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
-                    <Button size="sm" variant="outline" asChild>
-                        <a href={def.console_url} target="_blank" rel="noreferrer">
-                            <ExternalLink className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Abrir la consola de')} {def.label}
-                        </a>
-                    </Button>
+                <ProviderGuideView provider={app.provider} guide={PROVIDER_GUIDES[app.provider]} values={values} />
+                <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-4">
+                    <KeyRound className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                    <span className="imcrm-text-sm imcrm-font-medium">{__('Credenciales de la app')}</span>
+                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('— lo que te da')} {def.label} {__('al crear el cliente')}
+                    </span>
                 </div>
-                <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
-                    <div className="imcrm-space-y-1">
-                        <Label>{__('URI de redirección')}</Label>
-                        <CopyField value={redirectUri} />
-                    </div>
-                    <div className="imcrm-space-y-1">
-                        <Label>{__('Permisos a habilitar')}</Label>
-                        <p className="imcrm-break-all imcrm-rounded-md imcrm-bg-muted imcrm-px-2 imcrm-py-1.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {scopes.join(' ')}
-                        </p>
-                    </div>
-                </div>
-                {def.review_note && (
-                    <p className="imcrm-rounded-md imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-warning">
-                        {def.review_note}
-                    </p>
-                )}
                 <form
                     className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2"
                     onSubmit={(e) => {
@@ -264,6 +266,41 @@ function CopyField({ value, testId }: { value: string; testId?: string }): JSX.E
             </Button>
         </div>
     );
+}
+
+/** Valores de la guía resueltos con los datos de ESTA instalación. */
+function guideValues(redirectUri: string, scopes: string[], legal: PlatformLegalView | null): GuideValues {
+    let origin = '';
+    let host = '';
+    try {
+        const u = new URL(redirectUri);
+        origin = u.origin;
+        host = u.hostname;
+    } catch {
+        /* URI inválida: los valores derivados quedan vacíos */
+    }
+    const appName = legal?.settings.app_name || 'Imagina Base';
+    const email = legal?.settings.contact_email ?? '';
+    const missingLegal = legal ? undefined : __('Cargando…');
+    return {
+        redirect_uri: { label: __('URI de redirección'), value: redirectUri },
+        origin: { label: __('Origen'), value: origin },
+        domain: { label: __('Dominio'), value: registrableDomain(host) },
+        scopes: { label: __('Permisos'), value: scopes.join(' ') },
+        scopes_lines: { label: __('Permisos'), value: scopes.join('\n') },
+        home_url: { label: __('Página principal'), value: legal?.urls.home ?? '', missing: missingLegal },
+        privacy_url: { label: __('Privacidad'), value: legal?.urls.privacy ?? '', missing: missingLegal },
+        terms_url: { label: __('Condiciones'), value: legal?.urls.terms ?? '', missing: missingLegal },
+        app_name: { label: __('Nombre de la app'), value: appName },
+        support_email: {
+            label: __('Correo de asistencia'),
+            value: email,
+            missing: email === '' ? __('completalo en «Páginas públicas» (arriba)') : undefined,
+        },
+        scope_justification: { label: __('Justificación de permisos'), value: scopeJustificationText(scopes) },
+        video_script: { label: __('Guion del video'), value: videoScriptText(appName, origin) },
+        app_description: { label: __('Descripción de la app'), value: appDescriptionText(appName) },
+    };
 }
 
 function errText(err: unknown): string {

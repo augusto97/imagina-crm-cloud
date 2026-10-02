@@ -57,10 +57,6 @@ export interface IntegrationProviderDef {
     scope_separator: ' ' | ',';
     /** Dónde se registra la app. */
     console_url: string;
-    /** Pasos para el operador, en criollo. */
-    steps: string[];
-    /** Aviso de verificación/revisión del proveedor, si aplica. */
-    review_note: string | null;
 }
 
 export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationProviderDef> = {
@@ -80,15 +76,6 @@ export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationP
         scope_on_token: false,
         scope_separator: ' ',
         console_url: 'https://console.cloud.google.com/apis/credentials',
-        steps: [
-            'Creá (o elegí) un proyecto en Google Cloud Console.',
-            'En «APIs y servicios → Biblioteca» habilitá Google Sheets API, Google Calendar API y Gmail API.',
-            'En «Pantalla de consentimiento de OAuth» configurá la app como Externa, con el nombre y el logo de tu plataforma.',
-            'En «Credenciales → Crear credenciales → ID de cliente de OAuth» elegí «Aplicación web» y pegá la URI de redirección de abajo.',
-            'Copiá el ID de cliente y el secreto acá.',
-        ],
-        review_note:
-            'Google pide verificar la app para los permisos de Calendar, Sheets y Gmail. Mientras no esté verificada sólo pueden conectarse los «usuarios de prueba» que agregues en la pantalla de consentimiento (hasta 100) y verán un aviso de «app no verificada». La verificación puede tardar varias semanas.',
     },
     microsoft: {
         key: 'microsoft',
@@ -102,14 +89,6 @@ export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationP
         scope_on_token: true,
         scope_separator: ' ',
         console_url: 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
-        steps: [
-            'En Microsoft Entra → «Registros de aplicaciones» → «Nuevo registro».',
-            'Tipos de cuenta: «Cuentas de cualquier directorio organizativo y cuentas personales de Microsoft».',
-            'URI de redirección: plataforma «Web», pegá la de abajo.',
-            'En «Certificados y secretos» creá un secreto de cliente y copiá su VALOR (no el id).',
-            'Copiá el «Id. de aplicación (cliente)» y el secreto acá.',
-        ],
-        review_note: null,
     },
     slack: {
         key: 'slack',
@@ -122,14 +101,6 @@ export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationP
         // Slack separa los scopes de bot con comas.
         scope_separator: ',',
         console_url: 'https://api.slack.com/apps',
-        steps: [
-            'En api.slack.com/apps → «Create New App» → «From scratch».',
-            'En «OAuth & Permissions» agregá la URI de redirección de abajo.',
-            'En «Bot Token Scopes» agregá chat:write y chat:write.public.',
-            'En «Manage Distribution» activá la distribución pública para que otras empresas puedan instalarla.',
-            'Copiá el Client ID y el Client Secret («Basic Information») acá.',
-        ],
-        review_note: null,
     },
 };
 

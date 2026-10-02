@@ -1156,6 +1156,29 @@ agreguen en la pantalla de consentimiento (hasta 100), con un aviso de «app no
 verificada». La verificación puede tardar semanas; Slack y Microsoft son más
 rápidos, y las apps por clave no necesitan ningún registro.
 
+**Addendum v0.1.247 — guías completas y páginas públicas.** La guía de cinco
+pasos sólo dejaba la app «En prueba». En ese modo Google VENCE cada conexión a
+los 7 días, y sin publicar ni verificar ninguna empresa real puede usarla bien.
+Ahora cada proveedor tiene una guía por fases (`PROVIDER_GUIDES` en shared):
+- **Google**: proyecto + APIs → pantalla de consentimiento (marca, dominios
+  autorizados, permisos sensibles —ninguno restringido: sin auditoría CASA—)
+  → cliente y prueba → **publicar** → **verificación** (Search Console, video,
+  justificación por permiso).
+- **Microsoft**: el secreto VENCE, el dominio y la verificación del publicador.
+- **Slack**: la distribución pública.
+
+Cada paso trae el enlace a la pantalla exacta y los valores ya resueltos para
+copiar (redirect, dominio registrable, permisos, URLs legales, justificación
+de cada permiso, guion del video).
+
+Como Google exige una página principal PÚBLICA y una política de privacidad que
+explique el uso de sus datos (con la cláusula de «uso limitado»), la plataforma
+las sirve en `/api/v1/public/legal[/privacidad|/terminos]`:
+- HTML servido por el API, no por el SPA: los revisores no ejecutan JavaScript.
+- CSP cerrada.
+- Texto sugerido editable, con marcadores que se completan solos.
+- Ajustes en `platform:legal`, así viajan en el snapshot.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -2158,4 +2181,4 @@ justifique. Para que el paso manual no dependa de la memoria del operador:
 
 ---
 
-**Versión del documento:** 1.58.0 (dominios por ServerAvatar: consola + avisos)
+**Versión del documento:** 1.59.0 (guías completas de integraciones + páginas públicas)
