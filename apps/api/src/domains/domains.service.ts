@@ -8,16 +8,21 @@ import {
     type DomainDnsReport,
     type DomainKind,
     type DomainVerifyResult,
+    type PlatformDomain,
+    type PlatformDomains,
     type PublicBoot,
+    type RetiredDomain,
     type TenantDomain,
 } from '@imagina-base/shared';
-import { and, eq, ne, or } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { tenants } from '../db/schema';
 import { FilesService } from '../files/files.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { REDIS } from '../redis/redis.module';
+import { MailService } from '../mail/mail.service';
+import { domainOperatorNotice, type DomainOperatorEvent } from './domain-notice';
 
 /**
  * Dominio personalizado por tenant (ADR-S17, white-label completo).
@@ -39,6 +44,7 @@ export class DomainsService {
         @Inject(ENV) private readonly env: Env,
         private readonly files: FilesService,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
+        @Optional() private readonly mail?: MailService,
     ) {}
 
     /** Base de subdominios (o null si el operador no la configuró). */
@@ -275,13 +281,16 @@ export class DomainsService {
                 })
                 .where(eq(tenants.id, tenantId));
         });
+        // Vuelve a estar en uso: deja de figurar como "para sacar del servidor".
+        await this.redis?.hdel(RETIRED_KEY, claim.domain).catch(() => undefined);
+        await this.notifyOperators({ type: 'verified', tenantId, kind, domain: claim.domain });
         return { verified: true, status: 'ok', domain: await this.getForTenant(tenantId, kind) };
     }
 
     /** Quita el dominio propio y el pedido pendiente (la entrada por subdominio/base sigue). */
     async clear(tenantId: number, kind: DomainKind = 'app'): Promise<TenantDomain> {
         const [row] = await this.db
-            .select({ settings: tenants.settings })
+            .select({ settings: tenants.settings, name: tenants.name, domain: this.column(kind) })
             .from(tenants)
             .where(eq(tenants.id, tenantId))
             .limit(1);
@@ -291,6 +300,14 @@ export class DomainsService {
             .update(tenants)
             .set({ ...(kind === 'portal' ? { portalDomain: null } : { customDomain: null }), settings, updatedAt: new Date() })
             .where(eq(tenants.id, tenantId));
+        if (row?.domain) {
+            // v0.1.246 — un dominio que ya estaba activo queda como alias en el
+            // servidor web (ServerAvatar): hay que sacarlo, o la renovación del
+            // certificado compartido falla cuando el cliente lo deje de apuntar.
+            await this.forgetServing(tenantId, row.domain);
+            await this.retire(row.domain, row.name);
+            await this.notifyOperators({ type: 'removed', tenantId, kind, domain: row.domain });
+        }
         return this.getForTenant(tenantId, kind);
     }
 
@@ -382,8 +399,13 @@ export class DomainsService {
         // Mientras está pendiente, el CNAME del dominio PEDIDO también se
         // puede revisar (el cliente arma los dos registros a la vez).
         const domain = state.pending?.domain ?? state.domain;
-        const target = state.target;
         if (!domain) return null;
+        return this.pointing(domain);
+    }
+
+    /** CNAME → target, o A coincidente para un apex. Inyectable en los tests. */
+    pointing: (domain: string) => Promise<DomainDnsReport> = async (domain) => {
+        const target = this.targetHost();
 
         const resolver = new Resolver({ timeout: 2000, tries: 1 });
         resolver.setServers(['1.1.1.1', '8.8.8.8']);
@@ -413,7 +435,156 @@ export class DomainsService {
         } catch (err) {
             return { domain, target, type: 'A', status: failed(err) ? 'unknown' : 'missing' };
         }
+    };
+
+    // ── v0.1.246: consola del operador (Plataforma → Dominios) ──────────────
+
+    /**
+     * Todos los dominios de las empresas, pedidos o verificados, con su estado
+     * en vivo. Con ServerAvatar cada uno se agrega a mano como alias: esta es
+     * la lista de trabajo del operador. Corre sobre la conexión base (es la
+     * consola de plataforma: lee todas las empresas).
+     */
+    async listForPlatform(): Promise<PlatformDomains> {
+        const rows = await this.db
+            .select({
+                id: tenants.id,
+                name: tenants.name,
+                slug: tenants.slug,
+                app: tenants.customDomain,
+                portal: tenants.portalDomain,
+                settings: tenants.settings,
+            })
+            .from(tenants)
+            .where(
+                and(
+                    isNull(tenants.archivedAt),
+                    or(
+                        sql`${tenants.customDomain} IS NOT NULL`,
+                        sql`${tenants.portalDomain} IS NOT NULL`,
+                        sql`${tenants.settings} ? 'domain_claim'`,
+                        sql`${tenants.settings} ? 'portal_domain_claim'`,
+                    ),
+                ),
+            )
+            .orderBy(tenants.name);
+
+        const pending: Array<Omit<PlatformDomain, 'dns' | 'serving'>> = [];
+        for (const row of rows) {
+            for (const kind of ['app', 'portal'] as const) {
+                const verified = kind === 'portal' ? row.portal : row.app;
+                const claim = readClaim(row.settings, kind);
+                const base = { tenant_id: row.id, tenant_name: row.name, tenant_slug: row.slug, kind };
+                if (verified) pending.push({ ...base, domain: verified, state: 'verified', requested_at: null });
+                // Un pedido de cambio convive con el verificado (la empresa quiere
+                // pasarse a otro dominio): se listan los dos.
+                if (claim && claim.domain !== verified) {
+                    pending.push({ ...base, domain: claim.domain, state: 'pending', requested_at: claim.requested_at || null });
+                }
+            }
+        }
+        const domains = await mapLimit(pending, 5, (entry) => this.withLiveState(entry, false));
+        return { target: this.targetHost(), domains, retired: await this.listRetired() };
     }
+
+    /** Re-comprueba UN dominio sin caché (botón "Comprobar" de la consola). */
+    async checkForPlatform(tenantId: number, kind: DomainKind): Promise<PlatformDomain | null> {
+        const list = await this.listForPlatformTenant(tenantId, kind);
+        if (!list) return null;
+        return this.withLiveState(list, true);
+    }
+
+    private async listForPlatformTenant(
+        tenantId: number,
+        kind: DomainKind,
+    ): Promise<Omit<PlatformDomain, 'dns' | 'serving'> | null> {
+        const [row] = await this.db
+            .select({ name: tenants.name, slug: tenants.slug, domain: this.column(kind), settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        if (!row) return null;
+        const base = { tenant_id: tenantId, tenant_name: row.name, tenant_slug: row.slug, kind };
+        if (row.domain) return { ...base, domain: row.domain, state: 'verified', requested_at: null };
+        const claim = readClaim(row.settings, kind);
+        return claim ? { ...base, domain: claim.domain, state: 'pending', requested_at: claim.requested_at || null } : null;
+    }
+
+    private async withLiveState(entry: Omit<PlatformDomain, 'dns' | 'serving'>, fresh: boolean): Promise<PlatformDomain> {
+        if (fresh) await this.forgetServing(entry.tenant_id, entry.domain);
+        const [dns, serving] = await Promise.all([
+            this.pointing(entry.domain).catch(() => null),
+            entry.state === 'verified' ? this.isServing(entry.tenant_id, entry.domain) : Promise.resolve(null),
+        ]);
+        return { ...entry, dns, serving: serving === null ? null : serving ? 'ok' : 'no' };
+    }
+
+    private async retire(domain: string, tenantName: string): Promise<void> {
+        const value: RetiredDomain = { domain, tenant_name: tenantName, removed_at: new Date().toISOString() };
+        await this.redis?.hset(RETIRED_KEY, domain, JSON.stringify(value)).catch(() => undefined);
+    }
+
+    async listRetired(): Promise<RetiredDomain[]> {
+        const raw = (await this.redis?.hgetall(RETIRED_KEY).catch(() => null)) ?? {};
+        const out: RetiredDomain[] = [];
+        for (const value of Object.values(raw)) {
+            try {
+                const parsed = JSON.parse(value) as RetiredDomain;
+                if (typeof parsed.domain === 'string') out.push(parsed);
+            } catch {
+                /* entrada rota: se ignora */
+            }
+        }
+        return out.sort((a, b) => b.removed_at.localeCompare(a.removed_at));
+    }
+
+    /** "Ya lo saqué del servidor". */
+    async dismissRetired(domain: string): Promise<void> {
+        await this.redis?.hdel(RETIRED_KEY, domain.toLowerCase()).catch(() => undefined);
+    }
+
+    /**
+     * Aviso por correo a los superadmins: con ServerAvatar el dominio no
+     * funciona hasta que alguien lo agrega a mano, y el operador no tenía forma
+     * de enterarse. Best-effort: nunca rompe la verificación de la empresa.
+     */
+    private async notifyOperators(event: Omit<DomainOperatorEvent, 'tenantName' | 'target' | 'consoleUrl'>): Promise<void> {
+        const to = this.env.PLATFORM_SUPERADMINS;
+        if (!this.mail || to.length === 0) return;
+        try {
+            const [row] = await this.db
+                .select({ name: tenants.name })
+                .from(tenants)
+                .where(eq(tenants.id, event.tenantId))
+                .limit(1);
+            const notice = domainOperatorNotice({
+                ...event,
+                tenantName: row?.name ?? `#${event.tenantId}`,
+                target: this.targetHost(),
+                consoleUrl: `${this.env.APP_BASE_URL.replace(/\/$/, '')}/platform?tab=dominios`,
+            });
+            for (const address of to) await this.mail.enqueue({ to: address, ...notice });
+        } catch {
+            /* sin correo de plataforma: la consola igual lo muestra */
+        }
+    }
+}
+
+/** Dominios que dejaron de usarse y siguen como alias en el servidor. */
+const RETIRED_KEY = 'platform:domains:retired';
+
+/** `map` con a lo sumo `limit` promesas en vuelo (DNS + sondeo HTTP por dominio). */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const out = new Array<R>(items.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length) {
+            const i = next++;
+            out[i] = await fn(items[i]!);
+        }
+    });
+    await Promise.all(workers);
+    return out;
 }
 
 /** Pedido pendiente: `domain_claim` (equipo) o `portal_domain_claim` (portal). */

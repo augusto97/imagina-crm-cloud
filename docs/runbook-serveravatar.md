@@ -128,6 +128,36 @@ Taggeás `vX.Y.Z` en GitHub → el workflow publica el bundle → en el panel
 (superadmin) *Buscar* + *Actualizar*: descarga+verifica+flip atómico+health+
 rollback. Detalle en `docs/runbook-updates.md`.
 
+## 8. Dominios propios de las empresas (alias)
+
+Cada empresa puede usar su propio dominio para el equipo (`crm.acme.com`) y otro
+para el portal de sus clientes (`clientes.acme.com`). En este servidor se
+habilitan **a mano, uno por uno**, como alias de la aplicación — el detalle y la
+alternativa con Caddy están en `docs/runbook-custom-domains.md`.
+
+Cómo te enterás: cuando una empresa verifica un dominio te llega un correo
+(a los emails de `PLATFORM_SUPERADMINS`, por el SMTP de Plataforma) y aparece en
+**Plataforma → Dominios → «Para habilitar»**. Ahí ves si el DNS ya apunta y si
+el servidor ya lo atiende. Por cada uno:
+
+1. Esperá a que diga **«Apunta acá»** (el CNAME de la empresa hacia
+   `app.tu-dominio.com`). Sin eso, Let's Encrypt rechaza el certificado.
+2. ServerAvatar → Applications → la app de Imagina Base → agregá el dominio
+   como **alias** (dominio adicional). Usa la misma config de Nginx, con los
+   `location` que pegaste en el paso 6.
+3. **SSL** → volvé a emitir el certificado de Let's Encrypt para que incluya
+   el alias.
+4. En la consola, **«Comprobar»** → cuando diga **«Responde»**, los enlaces de
+   esa empresa ya salen por su dominio.
+
+Cuando una empresa **deja** de usar su dominio te llega otro correo y aparece en
+**«Para quitar del servidor»**: sacá el alias, volvé a emitir el SSL y tocá
+**«Ya lo saqué»**. Importa: todos los alias comparten UN certificado, y si queda
+uno que ya no apunta acá, la renovación automática falla para todos.
+
+Con muchas empresas usando dominio propio conviene pasar a Caddy (cero pasos por
+empresa, un certificado por dominio).
+
 ## Alternativas / notas
 
 - **Instalar compilando en el server (en vez del bundle):** necesitás
