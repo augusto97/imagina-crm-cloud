@@ -6446,6 +6446,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         autoguardado, cero errores de JS, y el `sanitizeHtml` del bundle
         quitando `onerror`/`javascript:`/`<script>` sin tocar el formato).
 
+  - [x] **Portal del cliente white-label + dominio del portal aparte
+        (v0.1.245, ADR-S28, pedido del usuario: "que en el portal no salgan
+        textos de mi aplicación, que cada empresa ponga su logo… y un dominio
+        o subdominio para completar el white label")**. Lo que el cliente
+        veía ANTES de entrar —pantalla de entrar, enlace vencido, "cerraste
+        sesión", la pestaña— y el correo con el enlace mostraban la
+        plataforma ("Portal — Imagina Base", su ícono y color) o el nombre de
+        la LISTA. (a) **Nada de la plataforma**: el HTML del portal es neutro
+        («Portal de clientes», ícono genérico) y la raíz del SPA pinta UNA
+        marca vigente (`portalBrand.ts`): la de la cuenta con sesión o, sin
+        sesión, la del dominio (`GET /public/boot`); en el dominio de la
+        plataforma, neutro. Las pantallas sin sesión muestran logo y «Entrar
+        al portal de Acme»; el encabezado usa el nombre de la empresa cuando
+        no hay nombre de app (antes, el de la lista). (b) **Correo de acceso
+        con su marca** (`portal-email.ts`, puro): asunto «Tu acceso al portal
+        de Acme», remitente con su nombre (por el SMTP compartido la dirección
+        sigue siendo la de la plataforma, SEC-33 — `smtp.transport` ahora
+        manda `{name, address}`; con SMTP PROPIO el nombre es sólo una
+        sugerencia —`fromNameSoft`— y manda el remitente que la empresa
+        configuró), logo por URL absoluta firmada de 30 días,
+        botón con su color y tinta legible, todo escapado. (c) **Dominio del
+        portal aparte** (`tenants.portal_domain`, migración 0060): card nueva
+        en Ajustes → Marca con el mismo ciclo que el del equipo (pedido → TXT
+        → activo), nunca igual al dominio del equipo, transferible a quien
+        prueba ser dueño aunque otra empresa lo use en cualquiera de las dos
+        columnas. Su raíz lleva directo al portal (`surface: 'portal'` en el
+        boot → la app del equipo redirige) y el cliente nunca ve el login del
+        equipo. (d) **Los enlaces salen por un dominio sólo si RESPONDE**:
+        verificado no alcanza (en nginx cada dominio se agrega a mano), así
+        que `baseUrlFor` pide `https://dominio/api/v1/public/boot` y exige
+        que conteste esa empresa (caché en Redis), y cae al siguiente: portal
+        → equipo → plataforma; «Comprobar apuntamiento» dice si ya responde.
+        El «copiar enlace» de la ficha usa el enlace que arma el servidor (no
+        el dominio desde donde mira el admin). (e) **Pedir un enlace desde el
+        dominio de una empresa** sólo manda el de ESA empresa. (f) Guía del
+        servidor con los dos caminos (`docs/runbook-custom-domains.md`): Caddy
+        con certificados automáticos gateados por el `ask` (una vez por
+        consola) o alias por panel en ServerAvatar (sin consola, uno por
+        empresa) — el usuario decide cuando tenga el primer cliente con
+        dominio. Migrar una empresa avisa que el dominio del portal no viaja.
+        Tests: 6 unitarios del correo + 4 de dominios (ciclo del portal,
+        surface, enlaces que exigen respuesta, transferencia entre columnas) +
+        4 del portal (correo con marca y sin «Imagina», nombre de la empresa
+        sin app_name, enlace por el dominio del portal sólo si responde,
+        pedido acotado al dominio) + 1 del remitente sugerido + 4 del front
+        (marca neutra/empresa/salir) —
+        E2E 30/30 contra el build de producción con el dominio simulado en el
+        navegador (card y TXT, correo real por SMTP con asunto/remitente/logo/
+        color, portal neutro en la plataforma, raíz → portal con la marca
+        antes de entrar, sesión y salir con la marca, celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

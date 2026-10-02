@@ -142,8 +142,9 @@ export function BrandingPanel(): JSX.Element {
                     <div>
                         <CardTitle>Marca</CardTitle>
                         <CardDescription>
-                            Personalizá el nombre, el color primario, el color de la barra lateral y el logo que ve
-                            tu equipo en este workspace.
+                            Personalizá el nombre, el color primario, el color de la barra lateral y el logo. Tu
+                            equipo los ve en la app, y tus clientes en su portal y en los correos de acceso: ahí no
+                            aparece nada de la plataforma.
                         </CardDescription>
                     </div>
                 </div>
@@ -155,7 +156,7 @@ export function BrandingPanel(): JSX.Element {
                         <Input
                             value={appName}
                             onChange={(e) => setAppName(e.target.value)}
-                            placeholder="Imagina Base"
+                            placeholder="El nombre de tu empresa"
                             maxLength={60}
                         />
                     </label>

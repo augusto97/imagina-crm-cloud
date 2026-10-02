@@ -17,6 +17,12 @@ export function initDomainBoot(): void {
     void api
         .publicBoot()
         .then((boot) => {
+            // v0.1.245 — el dominio del PORTAL de una empresa (el de sus
+            // clientes) nunca muestra la app del equipo: va directo al portal.
+            if (boot.tenant?.surface === 'portal' && !window.location.pathname.startsWith('/portal')) {
+                window.location.replace('/portal');
+                return;
+            }
             useSession.getState().setDomainTenant(boot.tenant);
         })
         .catch(() => {

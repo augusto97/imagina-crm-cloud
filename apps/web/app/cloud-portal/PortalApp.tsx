@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useQuery as useRQ } from '@tanstack/react-query';
-import { hexToHslTriplet } from '@/hooks/useBranding';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
 import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
-import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
@@ -13,6 +11,13 @@ import { PortalAccountMenu } from '@/cloud-portal/PortalAccountMenu';
 import { PortalLayout } from '@/cloud-portal/PortalLayout';
 import { setPortalAccount } from '@/portal/portalAccount';
 import { setTenantFormat } from '@/lib/tenantFormat';
+import {
+    HostBrandContext,
+    PortalBrandSetterContext,
+    applyPortalBrand,
+    useHostBrand,
+    type PortalBrand,
+} from '@/cloud-portal/portalBrand';
 
 /**
  * SPA del portal del cliente (ADR-S: F3 / CONTRACT §9). Dos rutas:
@@ -22,12 +27,42 @@ import { setTenantFormat } from '@/lib/tenantFormat';
  * BrowserRouter + fallback SPA en el server (Caddy en prod).
  */
 export function PortalApp(): JSX.Element {
+    // v0.1.245 — la marca del DOMINIO por el que se entró (sin sesión). En el
+    // dominio de una empresa, las pantallas de entrar ya salen con su logo; en
+    // el de la plataforma, un portal neutro (nunca la marca de la plataforma).
+    const host = useQuery({
+        queryKey: ['portal-host-boot'],
+        queryFn: () => portalApi.publicBoot(),
+        retry: 1,
+        staleTime: Infinity,
+    });
+    const hostTenant = host.data?.tenant ?? null;
+    const hostBrand: PortalBrand | null = hostTenant
+        ? {
+              name: hostTenant.app_name ?? (hostTenant.name || null),
+              logoUrl: hostTenant.logo_url,
+              primaryColor: hostTenant.primary_color,
+          }
+        : null;
+    // La sesión, si hay una en pantalla, avisa SU marca (la de la cuenta).
+    const [sessionBrand, setSessionBrand] = useState<PortalBrand | null>(null);
+    const brand = sessionBrand ?? hostBrand;
+    const brandKey = JSON.stringify(brand);
+    useEffect(() => {
+        applyPortalBrand(brand);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [brandKey]);
+
     return (
-        <Routes>
-            <Route path="/portal/acceso" element={<AccessPage />} />
-            <Route path="/portal" element={<PortalPage />} />
-            <Route path="*" element={<Navigate to="/portal" replace />} />
-        </Routes>
+        <HostBrandContext.Provider value={hostBrand}>
+            <PortalBrandSetterContext.Provider value={setSessionBrand}>
+                <Routes>
+                    <Route path="/portal/acceso" element={<AccessPage />} />
+                    <Route path="/portal" element={<PortalPage />} />
+                    <Route path="*" element={<Navigate to="/portal" replace />} />
+                </Routes>
+            </PortalBrandSetterContext.Provider>
+        </HostBrandContext.Provider>
     );
 }
 
@@ -132,31 +167,16 @@ function PortalContent({
     useEffect(() => {
         setTenantFormat(boot.format ?? null);
     }, [boot.format]);
+    // White-label (v0.1.245): la marca de la cuenta que se mira (color, logo,
+    // título y favicon) la pinta la raíz del portal — acá sólo se avisa. El
+    // nombre que se muestra es el que eligió la empresa o, si no eligió, el de
+    // la empresa (antes caía al nombre de la LISTA, que es interno).
+    const displayName = branding.app_name ?? (boot.tenant_name || null);
+    const setBrand = useContext(PortalBrandSetterContext);
     useEffect(() => {
-        const root = document.documentElement;
-        const hsl = branding.primary_color ? hexToHslTriplet(branding.primary_color) : null;
-        if (hsl) {
-            root.style.setProperty('--imcrm-primary', hsl);
-            root.style.setProperty('--imcrm-ring', hsl);
-        } else {
-            root.style.removeProperty('--imcrm-primary');
-            root.style.removeProperty('--imcrm-ring');
-        }
-        return () => {
-            root.style.removeProperty('--imcrm-primary');
-            root.style.removeProperty('--imcrm-ring');
-        };
-    }, [branding.primary_color]);
-    // v0.1.177 — favicon y título de la pestaña con la marca de la empresa
-    // (el logo ya viene por URL firmada: un <link rel=icon> no manda sesión).
-    useEffect(() => {
-        applyFavicon(branding.logo_url ?? null);
-        applyDocumentTitle(branding.app_name ?? boot.list_name ?? null, 'Portal');
-        return () => {
-            applyFavicon(null);
-            applyDocumentTitle(null, 'Portal');
-        };
-    }, [branding.logo_url, branding.app_name, boot.list_name]);
+        setBrand({ name: displayName, logoUrl: branding.logo_url ?? null, primaryColor: branding.primary_color ?? null });
+        return () => setBrand(null);
+    }, [setBrand, displayName, branding.logo_url, branding.primary_color]);
     // v0.1.233 — el diseño v3 (guardado, convertido o automático) manda;
     // el servidor lo resuelve siempre. Sin diseño (respuesta de una versión
     // anterior durante un deploy) se cae a la lista simple de datos.
@@ -183,9 +203,11 @@ function PortalContent({
                         />
                     )}
                     <div>
-                        <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                            {branding.app_name ?? boot.list_name}
-                        </p>
+                        {displayName && (
+                            <p className="imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                {displayName}
+                            </p>
+                        )}
                         <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Tu portal</h1>
                     </div>
                     <PortalAccountMenu accountId={boot.account_id ?? null} onSelect={onSelectAccount} onLogout={onLogout} />
@@ -311,12 +333,16 @@ function FieldRow({ field, value }: { field: Field; value: unknown }): JSX.Eleme
 function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
     const [email, setEmail] = useState('');
     const ask = useMutation({ mutationFn: () => portalApi.portalRequestAccess(email.trim()) });
+    const brand = useHostBrand();
 
     return (
         <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-background imcrm-p-6">
             <div className="imcrm-w-full imcrm-max-w-sm imcrm-space-y-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6">
+                <BrandMark />
                 <div className="imcrm-space-y-1">
-                    <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Entrar a tu portal</h1>
+                    <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">
+                        {brand?.name ? `Entrar al portal de ${brand.name}` : 'Entrar a tu portal'}
+                    </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {note ?? 'Tu enlace de acceso venció o cerraste sesión.'} Escribí tu correo y te
                         mandamos uno nuevo.
@@ -359,8 +385,28 @@ function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
 
 function Centered({ children }: { children: React.ReactNode }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-min-h-screen imcrm-items-center imcrm-justify-center imcrm-bg-background imcrm-p-6 imcrm-text-center imcrm-text-muted-foreground">
+        <div className="imcrm-flex imcrm-min-h-screen imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-4 imcrm-bg-background imcrm-p-6 imcrm-text-center imcrm-text-muted-foreground">
+            <BrandMark />
             {children}
+        </div>
+    );
+}
+
+/**
+ * Logo + nombre de la empresa del dominio (v0.1.245). En el dominio de la
+ * plataforma no hay empresa y no se dibuja nada: el portal queda neutro.
+ */
+function BrandMark(): JSX.Element | null {
+    const brand = useHostBrand();
+    if (!brand || (!brand.logoUrl && !brand.name)) return null;
+    return (
+        <div className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-gap-2.5" data-testid="imcrm-portal-brand">
+            {brand.logoUrl && (
+                <img src={brand.logoUrl} alt="" className="imcrm-h-10 imcrm-max-w-[160px] imcrm-object-contain" />
+            )}
+            {brand.name && !brand.logoUrl && (
+                <span className="imcrm-text-base imcrm-font-semibold imcrm-text-foreground">{brand.name}</span>
+            )}
         </div>
     );
 }

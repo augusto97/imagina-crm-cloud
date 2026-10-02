@@ -183,4 +183,14 @@ describe('SEC-33 — correo por el SMTP compartido', () => {
         await new MailService(env, cap, platform).sendNow({ to: 'p@x.test', subject: 'Reset', from: 'no-reply@plataforma.test' });
         expect(cap.sent[1]).toMatchObject({ from: 'no-reply@plataforma.test' });
     });
+
+    it('v0.1.245: por el SMTP compartido el nombre SUGERIDO (la marca del portal) da nombre al remitente', async () => {
+        const { env, platform } = setup();
+        const cap = new CaptureTransport();
+        await new MailService(env, cap, platform).sendNow({
+            tenantId: 9, to: 'cliente@x.test', subject: 'Tu acceso', fromName: 'Acme Portal', fromNameSoft: true,
+        });
+        expect(cap.sent[0]?.fromName).toBe('Acme Portal');
+        expect(cap.sent[0]?.from).toBeUndefined();
+    });
 });

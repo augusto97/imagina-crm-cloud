@@ -1114,6 +1114,11 @@ export class TenantTransferService {
                 `El dominio propio «${String(tenantRow.customDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo acá.`,
             );
         }
+        if (tenantRow.portalDomain) {
+            warnings.push(
+                `El dominio del portal de clientes «${String(tenantRow.portalDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo acá.`,
+            );
+        }
 
         return {
             tenant_id: tenantId,

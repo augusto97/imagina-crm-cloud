@@ -65,6 +65,7 @@ import { MailService } from '../mail/mail.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { portalAccessEmail, senderName, type PortalEmailBrand } from './portal-email';
 
 const MAGIC_TTL_SECONDS = 60 * 60 * 24; // 24h
 /** v0.1.241 — el enlace que acuña "cambiar a otra empresa" se usa al instante. */
@@ -287,11 +288,11 @@ export class PortalService {
         // v0.1.241 — un enlace que llega SÓLO al correo prueba que quien lo abre
         // es la dueña del email: esa sesión puede ver sus cuentas de otras
         // empresas. El que se le devuelve a la empresa queda en esta empresa.
-        const result = await this.sendMagicLink(tenantId, userId, input.email, list.name, {
+        const result = await this.sendMagicLink(tenantId, userId, input.email, {
             linkId,
             account: !handOver,
         });
-        return handOver ? result : { ...result, token: null, path: null };
+        return handOver ? result : { ...result, token: null, path: null, url: null };
     }
 
     /**
@@ -304,7 +305,7 @@ export class PortalService {
      * por usuario+tenant): se manda un enlace por cada una, con el nombre de
      * la empresa en el asunto.
      */
-    async requestAccess(email: string): Promise<void> {
+    async requestAccess(email: string, host?: string): Promise<void> {
         // Freno de abuso por email (compartido entre nodos): 3 pedidos cada
         // 15 min. El rate limit por IP de `main.ts` es la otra mitad.
         const rlKey = `portalreq:${email}`;
@@ -318,7 +319,14 @@ export class PortalService {
         // Antes la respuesta esperaba al SMTP sólo cuando el email era cliente
         // de alguien: medir cuánto tardaba alcanzaba para saber quién es
         // cliente de quién (el texto de la respuesta ya era siempre igual).
-        const job = this.deliverAccess(email)
+        // v0.1.245 — pedido desde el dominio de UNA empresa (su portal
+        // white-label): sólo esa empresa reparte enlaces. Un cliente que entra
+        // por el portal de Acme no tiene por qué recibir correos de otras
+        // empresas (ni enterarse de cuáles usan la misma herramienta).
+        const job = (async () => {
+            const scoped = await this.domains.resolveHost(host);
+            await this.deliverAccess(email, scoped.tenant?.id ?? null);
+        })()
             .catch((err: unknown) =>
                 this.logger.warn(`No se pudo reenviar el acceso al portal: ${err instanceof Error ? err.message : String(err)}`),
             )
@@ -331,7 +339,7 @@ export class PortalService {
         await Promise.all([...this.inFlight]);
     }
 
-    private async deliverAccess(email: string): Promise<void> {
+    private async deliverAccess(email: string, onlyTenantId: number | null = null): Promise<void> {
         const [user] = await this.db
             .select({ id: users.id, disabledAt: users.disabledAt })
             .from(users)
@@ -343,7 +351,11 @@ export class PortalService {
         const links = await this.db
             .select({ id: portalLinks.id, tenantId: portalLinks.tenantId, listId: portalLinks.listId })
             .from(portalLinks)
-            .where(eq(portalLinks.userId, user.id))
+            .where(
+                onlyTenantId === null
+                    ? eq(portalLinks.userId, user.id)
+                    : and(eq(portalLinks.userId, user.id), eq(portalLinks.tenantId, onlyTenantId)),
+            )
             .orderBy(portalLinks.tenantId, portalLinks.id)
             .limit(200);
         if (links.length === 0) return;
@@ -358,12 +370,7 @@ export class PortalService {
             // Un portal que la empresa apagó no reparte enlaces nuevos.
             if (await this.portalSwitchedOff(link.tenantId, link.listId)) continue;
             seen.add(link.tenantId);
-            const [list] = await this.db
-                .select({ name: lists.name })
-                .from(lists)
-                .where(eq(lists.id, link.listId))
-                .limit(1);
-            await this.sendMagicLink(link.tenantId, user.id, email, list?.name ?? 'tu portal', {
+            await this.sendMagicLink(link.tenantId, user.id, email, {
                 linkId: link.id,
                 account: true,
             });
@@ -385,7 +392,6 @@ export class PortalService {
         tenantId: number,
         userId: number,
         email: string,
-        listName: string,
         opts: { linkId?: number; account?: boolean; baseUrl?: string; allAccounts?: boolean } = {},
     ): Promise<MagicLinkResult> {
         const token = await this.mintToken({
@@ -395,27 +401,55 @@ export class PortalService {
             ...(opts.account === true ? { account: true } : {}),
         });
         const path = `/portal/acceso?token=${token}`;
-        const url = `${opts.baseUrl ?? (await this.domains.baseUrlFor(tenantId))}${path}`;
-        const subject = opts.allAccounts ? 'Tu acceso a todas tus cuentas del portal' : `Tu acceso al portal de ${listName}`;
-        const intro = opts.allAccounts
-            ? 'Con este enlace ves en un solo lugar todas las cuentas que tenés en portales de clientes (válido por 24 h):'
-            : 'Accedé a tu portal con este enlace (válido por 24 h):';
+        // v0.1.245 — el enlace sale por el dominio del PORTAL de la empresa (o
+        // el del equipo, o el de la plataforma) y el correo lleva SU marca.
+        const base = opts.baseUrl ?? (await this.domains.baseUrlFor(tenantId, 'portal'));
+        const url = `${base}${path}`;
+        const brand = await this.emailBrand(tenantId, base);
+        const message = portalAccessEmail(brand, url, { allAccounts: opts.allAccounts });
         let emailSent = true;
         let emailError: string | null = null;
         try {
             await this.mail.sendNow({
                 tenantId,
                 to: email,
-                subject,
-                text: `Hola,\n\n${intro}\n${url}\n\nSi no esperabas este correo, ignoralo.`,
-                html: `<p>Hola,</p><p>${intro}</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+                // El nombre visible del remitente es el de la empresa (con el
+                // SMTP compartido la DIRECCIÓN sigue siendo la de la plataforma).
+                ...(opts.allAccounts || brand.name.trim() === '' ? {} : { fromName: senderName(brand.name), fromNameSoft: true }),
             });
         } catch (err) {
             emailSent = false;
             emailError = err instanceof Error ? err.message : String(err);
             this.logger.error(`Magic link: el correo a ${email} no salió: ${emailError}`);
         }
-        return { token, path, email_sent: emailSent, email_error: emailError };
+        return { token, path, url, email_sent: emailSent, email_error: emailError };
+    }
+
+    /**
+     * v0.1.245 — la marca de la empresa para el correo: el nombre de app que
+     * eligió (o el de la empresa), su color y su logo como URL ABSOLUTA firmada
+     * (el cliente de correo no tiene sesión; 30 días para que un correo viejo
+     * no quede con la imagen rota en seguida).
+     */
+    private async emailBrand(tenantId: number, baseUrl: string): Promise<PortalEmailBrand> {
+        const [row] = await this.db
+            .select({ name: tenants.name, settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const parsed = brandingSchema.safeParse((row?.settings as Record<string, unknown> | undefined)?.branding ?? {});
+        const b = parsed.success ? parsed.data : brandingSchema.parse({});
+        return {
+            name: b.app_name ?? row?.name ?? '',
+            color: b.primary_color,
+            logoUrl:
+                b.logo_file_id !== null
+                    ? `${baseUrl}${this.files.signedUrl(tenantId, b.logo_file_id, 30 * 24 * 3600)}`
+                    : null,
+        };
     }
 
     /**
@@ -631,8 +665,7 @@ export class PortalService {
                 HttpStatus.TOO_MANY_REQUESTS,
             );
         }
-        const [list] = await this.db.select({ name: lists.name }).from(lists).where(eq(lists.id, link.listId)).limit(1);
-        const res = await this.sendMagicLink(link.tenantId, actor.userId, user.email, list?.name ?? 'tu portal', {
+        const res = await this.sendMagicLink(link.tenantId, actor.userId, user.email, {
             linkId: link.id,
             account: true,
             baseUrl: this.env.APP_BASE_URL,

@@ -307,6 +307,83 @@ export class WorkspacesController {
         return report;
     }
 
+    /**
+     * v0.1.245 — dominio del PORTAL DEL CLIENTE: un dominio aparte
+     * (`clientes.acme.com`) que abre directo el portal con la marca de la
+     * empresa. Mismo ciclo que el del equipo (pedido → TXT → activo).
+     */
+    @Get('current/portal-domain')
+    @UseGuards(TenantGuard)
+    getPortalDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
+        return this.domains.getForTenant(req.tenant!.tenantId, 'portal');
+    }
+
+    @Patch('current/portal-domain')
+    @UseGuards(TenantGuard)
+    async setPortalDomain(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(customDomainInputSchema)) input: CustomDomainInput,
+    ): Promise<TenantDomain> {
+        this.assertAdmin(req);
+        const domain = await this.domains.set(req.tenant!.tenantId, input.domain, 'portal');
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.portal_domain_change',
+            targetType: 'workspace',
+            targetLabel: input.domain,
+        });
+        return domain;
+    }
+
+    @Delete('current/portal-domain')
+    @UseGuards(TenantGuard)
+    async clearPortalDomain(@Req() req: FastifyRequest): Promise<TenantDomain> {
+        this.assertAdmin(req);
+        const domain = await this.domains.clear(req.tenant!.tenantId, 'portal');
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.portal_domain_change',
+            targetType: 'workspace',
+            targetLabel: '(sin dominio del portal)',
+        });
+        return domain;
+    }
+
+    @Post('current/portal-domain/verify')
+    @HttpCode(200)
+    @UseGuards(TenantGuard)
+    async verifyPortalDomain(@Req() req: FastifyRequest): Promise<DomainVerifyResult> {
+        this.assertAdmin(req);
+        const result = await this.domains.verify(req.tenant!.tenantId, 'portal');
+        if (result.verified) {
+            await this.audit.log({
+                tenantId: req.tenant!.tenantId,
+                userId: req.authUserId ?? null,
+                action: 'workspace.portal_domain_verified',
+                targetType: 'workspace',
+                targetLabel: result.domain.domain ?? '',
+            });
+        }
+        return result;
+    }
+
+    @Get('current/portal-domain/dns')
+    @UseGuards(TenantGuard)
+    async portalDomainDnsReport(@Req() req: FastifyRequest): Promise<DomainDnsReport> {
+        this.assertAdmin(req);
+        const report = await this.domains.dnsReport(req.tenant!.tenantId, 'portal');
+        if (!report) {
+            throw new NotFoundException({
+                code: 'domain_not_configured',
+                message: 'Configurá primero el dominio del portal',
+                data: { status: 404 },
+            });
+        }
+        return report;
+    }
+
     /** Correo de prueba por el transporte del tenant (sin cola: error visible). */
     @Post('current/smtp/test')
     @HttpCode(200)

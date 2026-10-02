@@ -111,6 +111,7 @@ import {
     createViewSchema,
     customDomainInputSchema,
     domainDnsReportSchema,
+    type DomainKind,
     domainVerifyResultSchema,
     exportBundleSchema,
     fieldSchema,
@@ -669,28 +670,35 @@ export class CloudClient {
     publicBoot(): Promise<PublicBoot> {
         return this.request('GET', '/public/boot', { schema: publicBootSchema });
     }
+    /**
+     * Dominio del workspace: `app` = el del equipo (ADR-S17); `portal`
+     * (v0.1.245) = el dominio aparte del portal de sus clientes.
+     */
+    private domainPath(kind: DomainKind): string {
+        return kind === 'portal' ? '/workspaces/current/portal-domain' : '/workspaces/current/domain';
+    }
     /** Estado del dominio del workspace (cualquier miembro). */
-    tenantDomainGet(): Promise<TenantDomain> {
-        return this.request('GET', '/workspaces/current/domain', { schema: tenantDomainSchema });
+    tenantDomainGet(kind: DomainKind = 'app'): Promise<TenantDomain> {
+        return this.request('GET', this.domainPath(kind), { schema: tenantDomainSchema });
     }
     /** Configura el dominio propio (sólo admin; 400 `domain_reserved` / 409 `domain_taken`). */
-    tenantDomainSet(input: CustomDomainInput): Promise<TenantDomain> {
-        return this.request('PATCH', '/workspaces/current/domain', {
+    tenantDomainSet(input: CustomDomainInput, kind: DomainKind = 'app'): Promise<TenantDomain> {
+        return this.request('PATCH', this.domainPath(kind), {
             body: customDomainInputSchema.parse(input),
             schema: tenantDomainSchema,
         });
     }
     /** Quita el dominio propio (sólo admin). */
-    tenantDomainClear(): Promise<TenantDomain> {
-        return this.request('DELETE', '/workspaces/current/domain', { schema: tenantDomainSchema });
+    tenantDomainClear(kind: DomainKind = 'app'): Promise<TenantDomain> {
+        return this.request('DELETE', this.domainPath(kind), { schema: tenantDomainSchema });
     }
     /** SEC-32 — comprueba el TXT del dominio pedido y, si está, lo activa (admin). */
-    tenantDomainVerify(): Promise<DomainVerifyResult> {
-        return this.request('POST', '/workspaces/current/domain/verify', { body: {}, schema: domainVerifyResultSchema });
+    tenantDomainVerify(kind: DomainKind = 'app'): Promise<DomainVerifyResult> {
+        return this.request('POST', `${this.domainPath(kind)}/verify`, { body: {}, schema: domainVerifyResultSchema });
     }
     /** Verificación en vivo del apuntamiento DNS del dominio propio (admin). */
-    tenantDomainDns(): Promise<DomainDnsReport> {
-        return this.request('GET', '/workspaces/current/domain/dns', {
+    tenantDomainDns(kind: DomainKind = 'app'): Promise<DomainDnsReport> {
+        return this.request('GET', `${this.domainPath(kind)}/dns`, {
             schema: domainDnsReportSchema,
         });
     }

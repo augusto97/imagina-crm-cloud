@@ -80,6 +80,9 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
 
     const [email, setEmail] = useState('');
     const [lastPath, setLastPath] = useState<string | null>(null);
+    // v0.1.245 — el enlace COMPLETO que arma el servidor: sale por el dominio
+    // del portal de la empresa, no por el dominio desde donde mira el admin.
+    const [lastUrl, setLastUrl] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
     const [checking, setChecking] = useState(false);
     const value = email || (adding ? '' : detectedEmail);
@@ -87,12 +90,13 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
     const issue = useMutation({
         mutationFn: async (
             to: string,
-        ): Promise<{ token: string | null; path: string | null; email_sent?: boolean; email_error?: string | null }> => {
+        ): Promise<{ token: string | null; path: string | null; email_sent?: boolean; email_error?: string | null; url?: string | null }> => {
             const res = await api.post<{
                 token: string | null;
                 path: string | null;
                 email_sent?: boolean;
                 email_error?: string | null;
+                url?: string | null;
             }>(
                 `/lists/${encodeURIComponent(list.slug)}/portal/magic-link`,
                 { record_id: record.id, email: to },
@@ -101,6 +105,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
         },
         onSuccess: (data, to) => {
             setLastPath(data.path);
+            setLastUrl(data.url ?? null);
             setEmail('');
             setAdding(false);
             void qc.invalidateQueries({ queryKey: accessKey });
@@ -147,7 +152,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
 
     const copyLink = async (): Promise<void> => {
         if (!lastPath) return;
-        const url = `${window.location.origin}${lastPath}`;
+        const url = lastUrl ?? `${window.location.origin}${lastPath}`;
         try {
             await navigator.clipboard.writeText(url);
             toast.success(__('Enlace copiado al portapapeles.'));
