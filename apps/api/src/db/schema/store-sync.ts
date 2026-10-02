@@ -69,3 +69,29 @@ export const storeHooks = pgTable(
     },
     (t) => [uniqueIndex('store_hooks_sync_ux').on(t.syncId)],
 );
+
+/**
+ * Sincronización desde SQL Server / Azure SQL (v0.1.243): una consulta o un
+ * procedimiento cuyo resultado se carga en una lista emparejando por una
+ * columna clave. Varias por conexión.
+ */
+export const sqlSyncs = pgTable('sql_syncs', {
+    id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+    tenantId: bigint('tenant_id', { mode: 'number' })
+        .notNull()
+        .references(() => tenants.id),
+    connectionId: bigint('connection_id', { mode: 'number' })
+        .notNull()
+        .references(() => connections.id, { onDelete: 'cascade' }),
+    listId: bigint('list_id', { mode: 'number' }).notNull(),
+    name: text('name').notNull(),
+    settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
+    state: jsonb('state').$type<Record<string, unknown>>().notNull().default({}),
+    enabled: boolean('enabled').notNull().default(true),
+    nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+    createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type SqlSyncRow = typeof sqlSyncs.$inferSelect;

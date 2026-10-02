@@ -46,6 +46,7 @@ import {
     comments,
     connections,
     connectionSyncs,
+    sqlSyncs,
     dashboards,
     emailUsage,
     fields,
@@ -279,6 +280,8 @@ export class TenantTransferService {
             // ellos, reactivarla en el destino DUPLICARÍA todo lo traído.
             await dump('connection_syncs', await this.byTenant(connectionSyncs, tenantId));
             await dump('sync_links', await this.byTenant(syncLinks, tenantId));
+            // v0.1.243 — sincronizaciones desde SQL Server.
+            await dump('sql_syncs', await this.byTenant(sqlSyncs, tenantId));
 
             // Tablas grandes: por páginas keyset, escribiendo a medida (las de
             // una empresa con cientos de miles de filas no entran en memoria).
@@ -1028,6 +1031,62 @@ export class TenantTransferService {
             await this.insertValues(tx, syncLinks, values);
             return values.length;
         });
+        // v0.1.243 — sincronizaciones desde SQL Server. `remapJson` traduce los
+        // campos de la configuración (`key_field_id`, `columns[].field_id`…);
+        // la marca de la lista lleva ids de sincronización, que se rearma acá.
+        const sqlByList = new Map<number, Array<Record<string, unknown>>>();
+        let sqlCount = 0;
+        for (const q of await this.readAll(rows('sql_syncs'))) {
+            const connectionId = mapId(maps.connection, q.connectionId);
+            const listId = mapId(maps.list, q.listId);
+            if (connectionId === null || listId === null) continue;
+            const settings = remapJson((q.settings as Row | null) ?? {}, maps) as Row;
+            const [ins] = await tx
+                .insert(sqlSyncs)
+                .values({
+                    tenantId,
+                    connectionId,
+                    listId,
+                    name: String(q.name ?? 'SQL'),
+                    settings,
+                    state: { ...((q.state as Row | null) ?? {}), running: false, queued: false },
+                    enabled: Boolean(q.enabled),
+                    nextRunAt: q.enabled ? new Date() : null,
+                    createdBy: mapId(maps.user, q.createdBy),
+                })
+                .returning({ id: sqlSyncs.id });
+            sqlCount++;
+            const columns = Array.isArray(settings.columns) ? (settings.columns as Row[]) : [];
+            const flag = settings.on_missing === 'flag' && settings.flag_field_id ? [Number(settings.flag_field_id)] : [];
+            sqlByList.set(listId, [
+                ...(sqlByList.get(listId) ?? []),
+                {
+                    sync_id: ins!.id,
+                    connection_id: connectionId,
+                    name: String(q.name ?? ''),
+                    key_field_id: Number(settings.key_field_id) || 0,
+                    field_ids: [Number(settings.key_field_id) || 0, ...columns.map((c) => Number(c.field_id) || 0), ...flag].filter((n) => n > 0),
+                },
+            ]);
+        }
+        counts.sql_syncs = sqlCount;
+        for (const l of listRows) {
+            const newId = maps.list.get(Number(l.id));
+            if (newId === undefined) continue;
+            const syncs = sqlByList.get(newId);
+            await tx
+                .update(lists)
+                .set({
+                    settings: syncs
+                        ? sql`${lists.settings} || ${JSON.stringify({ sql_sync: { syncs } })}::jsonb`
+                        : sql`${lists.settings} - 'sql_sync'`,
+                })
+                .where(eq(lists.id, newId));
+        }
+        if (sqlCount > 0 && !sameKey) {
+            warnings.push('La contraseña de la base de datos SQL no viajó (otra clave de cifrado): volvé a cargarla en Integraciones → SQL Server.');
+        }
+
         if (syncMap.size > 0 && !sameKey) {
             warnings.push(
                 'La clave de la tienda no viajó (otra clave de cifrado): volvé a cargarla en Integraciones → WooCommerce. La sincronización sigue donde estaba, sin duplicar nada.',

@@ -6346,6 +6346,75 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         ellos mismos, cambiar de acción de conector conserva la conexión y se
         guarda, el lienzo titula con la acción real).
 
+  - [x] **Conector SQL Server / Azure SQL (v0.1.243, ADR-S27, pedido de un
+        cliente: "guardar la conexión, ejecutar una consulta o procedimiento
+        programado y cargar el resultado en una lista actualizando por NIT o
+        número de factura en vez de duplicar")**. (a) **Integración por clave**
+        en la galería (categoría «Bases de datos»): servidor (acepta
+        `tcp:host,1433`, `host:puerto` y `host\INSTANCIA`), base, usuario,
+        contraseña cifrada, puerto, cifrado y certificado. Conectar EJECUTA una
+        verificación —si no conecta no se guarda, con el motivo traducido
+        (usuario/contraseña, firewall de Azure, base inexistente, permiso,
+        timeout, TLS)— y avisa si el usuario puede ESCRIBIR (se recomienda uno
+        de sólo lectura). (b) **Sólo lectura por construcción**: toda consulta
+        corre en una transacción que se deshace SIEMPRE; sólo servidores
+        públicos (`SQL_ALLOW_PRIVATE_HOSTS` para la red interna). (c) **Varias
+        sincronizaciones por conexión** (`sql_syncs`, migración 0059, RLS) desde
+        el botón «Sincronizaciones» de la conexión: consulta o procedimiento con
+        parámetros, «Probar» con vista previa (columnas, tipo SQL, 50 filas),
+        lista destino, columna clave → campo (sugerida por nombre y SÓLO entre
+        las que no se repiten en la muestra: en una tabla de facturas el NIT se
+        repite por cliente y usarlo de clave fusionaría facturas), columna →
+        campo existente o **campo nuevo con el tipo sugerido** (money→moneda,
+        bit→sí/no, date→fecha…), y horario (cada 15 min a cada día, o diaria a
+        una hora en una zona). (d) **Motor**: empareja por la clave normalizada
+        (la misma de "actualizar desde un archivo"), actualiza SÓLO lo que
+        cambió, crea lo nuevo (opcional), NULL vacía el campo (opcional), cada
+        celda pasa por el mismo validador que el import, las fechas sin zona se
+        leen en la zona elegida, `@ultima_sincronizacion` para traer sólo lo
+        que cambió, 50.000 filas y 60 s (máx 300) por corrida. Lo que deja de
+        aparecer no se toca, u opcionalmente se marca en «Está en SQL» (sólo con
+        un resultado completo). La primera carga NO dispara automatizaciones;
+        las siguientes sí, con antes y después, y dejan actividad. Respeta el
+        límite de registros del plan y el solo-lectura por impago. Cola BullMQ
+        propia con tick por minuto y candado por sincronización. Tarjeta con
+        estado en vivo, resultado (leídas/creadas/actualizadas/sin cambios/ya
+        no están), errores por fila, **Vista previa** de la próxima corrida sin
+        escribir nada, Sincronizar ahora, Pausar y Borrar. Desconectar borra
+        sus sincronizaciones (los registros quedan); migrar una empresa las
+        lleva re-mapeadas. (e) De paso: los campos de las integraciones por
+        clave ganan tipo sí/no y número. **Bug atrapado en el E2E**: tocar
+        «Probar» y DESPUÉS elegir la lista vaciaba el mapeo y no se creaba
+        ningún campo; ahora las sugerencias se recalculan al elegir la lista o
+        cambiar la columna clave. Tests: 14 de integración del motor (Postgres
+        + Redis reales y un runner SQL falso: crear/actualizar sin duplicar,
+        sólo lo que cambió, NULL, «ya no está», primera carga sin
+        automatizaciones, límite del plan, candado, tick, permisos, borrado de
+        la conexión), 9 de valores/errores, 7 de shared y 6 del editor — E2E
+        navegador 19/19 contra un driver simulado (conectar con contraseña mala
+        y buena, error de sintaxis, vista previa, clave sugerida, campos
+        creados con su tipo, segunda corrida con 1 nuevo/1 cambiado/1 marcado,
+        vista previa sin escribir, celular). **Prueba contra un SQL Server 2022
+        REAL** (driver `mssql` 12.7 + tedious, contenedor con una base de
+        facturas, un usuario de sólo lectura y uno con escritura): 24/24 del
+        runner (verificación y aviso de escritura, contraseña/base/certificado,
+        money/bit/date/datetime2/NULL/ñ, procedimiento con `@desde` incremental,
+        el INSERT dentro de la consulta deshecho, permiso denegado, tope de
+        filas, timeout a los 2 s, varios resultados) y E2E navegador 23/23
+        de punta a punta. Encontró tres cosas que el driver simulado no podía
+        mostrar: (1) **una consulta con error COLGABA la sincronización** — el
+        driver emite «error» y DESPUÉS «done», y deshacer la transacción en el
+        medio deja al rollback esperando para siempre; ahora el error se
+        informa en «done» y rollback/cierre llevan tope de tiempo (test de
+        regresión que falla con el código anterior); (2) un certificado
+        autofirmado se explicaba como «no se pudo conectar, revisá el
+        firewall» — llega como ESOCKET y el caso TLS se evaluaba después;
+        (3) **consulta incremental + «marcar lo que falta» marcaría como
+        borrado todo lo que no cambió**: la combinación se rechaza con el
+        motivo y el editor deshabilita la opción (`sqlSourceIsIncremental`
+        en shared, que ignora comentarios — la consulta de ejemplo menciona
+        el parámetro en uno).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

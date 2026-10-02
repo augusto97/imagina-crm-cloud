@@ -128,7 +128,18 @@ export function IntegrationKeyDialog({
                     {f.label}
                     {f.required && <span className="imcrm-text-destructive"> *</span>}
                 </Label>
-                {f.lookup && options.length > 0 ? (
+                {f.type === 'boolean' ? (
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                        <input
+                            id={`int-${f.key}`}
+                            type="checkbox"
+                            checked={value === 'true'}
+                            onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.checked ? 'true' : 'false' }))}
+                            data-testid={`imcrm-integration-field-${f.key}`}
+                        />
+                        {value === 'true' ? __('Sí') : __('No')}
+                    </label>
+                ) : f.lookup && options.length > 0 ? (
                     <Select
                         id={`int-${f.key}`}
                         value={value}
@@ -146,6 +157,7 @@ export function IntegrationKeyDialog({
                     <Input
                         id={`int-${f.key}`}
                         type={f.secret ? 'password' : 'text'}
+                        inputMode={f.type === 'number' ? 'numeric' : undefined}
                         autoComplete="off"
                         value={value}
                         placeholder={

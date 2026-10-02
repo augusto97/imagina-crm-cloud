@@ -28,6 +28,12 @@ const envSchema = z.object({
      * configura el operador y no pasa por este control.)
      */
     SMTP_ALLOW_PRIVATE_HOSTS: boolFromString,
+    /**
+     * v0.1.243 — mismo criterio para las bases de datos de las empresas
+     * (SQL Server / Azure SQL): sólo direcciones públicas, salvo que una
+     * instalación propia necesite llegar a una base de su red interna.
+     */
+    SQL_ALLOW_PRIVATE_HOSTS: boolFromString,
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),

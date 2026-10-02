@@ -6,6 +6,9 @@ import { ConnectorsService } from './connectors.service';
 import { IntegrationAppsService } from './integration-apps.service';
 import { IntegrationsController } from './integrations.controller';
 import { PlatformIntegrationsController } from './platform-integrations.controller';
+import { ENV, type Env } from '../config/env';
+import { MssqlRunner } from './sqlserver/mssql-runner';
+import { SQL_RUNNER } from './sqlserver/sql-runner';
 
 /**
  * Conectores (v0.1.196, ADR-S22).
@@ -25,7 +28,16 @@ import { PlatformIntegrationsController } from './platform-integrations.controll
         IntegrationsController,
         PlatformIntegrationsController,
     ],
-    providers: [ConnectorsService, IntegrationAppsService],
-    exports: [ConnectorsService, IntegrationAppsService],
+    providers: [
+        ConnectorsService,
+        IntegrationAppsService,
+        // v0.1.243 — SQL Server / Azure SQL. Los tests lo reemplazan por uno falso.
+        {
+            provide: SQL_RUNNER,
+            useFactory: (env: Env) => new MssqlRunner({ allowPrivate: env.SQL_ALLOW_PRIVATE_HOSTS }),
+            inject: [ENV],
+        },
+    ],
+    exports: [ConnectorsService, IntegrationAppsService, SQL_RUNNER],
 })
 export class ConnectorsModule {}

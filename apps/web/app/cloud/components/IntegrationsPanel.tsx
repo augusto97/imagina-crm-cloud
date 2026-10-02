@@ -127,7 +127,9 @@ export function IntegrationsPanel(): JSX.Element | null {
             description:
                 c.integration_key === 'woocommerce'
                     ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu workspace.')}`
-                    : usage,
+                    : c.integration_key === 'sqlserver'
+                      ? `${usage} ${__('Sus sincronizaciones se borran y dejan de traer datos; lo que ya se cargó en tus listas queda.')}`
+                      : usage,
             confirmLabel: __('Desconectar'),
             destructive: true,
         });
@@ -139,7 +141,7 @@ export function IntegrationsPanel(): JSX.Element | null {
             {/* El título de la sección lo pone la página de Ajustes. */}
             <p className="imcrm-text-sm imcrm-text-muted-foreground">
                 {__(
-                    'Conectá las apps que usa tu empresa y usalas en tus automatizaciones: mandá un WhatsApp, avisá en Slack, agendá en tu calendario o sumá filas a una planilla.',
+                    'Conectá las apps que usa tu empresa y usalas en tus automatizaciones: mandá un WhatsApp, avisá en Slack, agendá en tu calendario, sumá filas a una planilla o traé datos de tu base SQL Server.',
                 )}
             </p>
 
@@ -387,6 +389,14 @@ function ConnectedRow({
                     <Link to={`/settings/stores/${c.id}`} data-testid="imcrm-store-sync-open">
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Sincronizar tienda')}
+                    </Link>
+                </Button>
+            )}
+            {c.integration_key === 'sqlserver' && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/sql/${c.id}`} data-testid="imcrm-sql-sync-open">
+                        <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Sincronizaciones')}
                     </Link>
                 </Button>
             )}

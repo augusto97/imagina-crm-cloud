@@ -144,6 +144,7 @@ export const INTEGRATION_KEYS = [
     'google_sheets',
     'outlook',
     'woocommerce',
+    'sqlserver',
 ] as const;
 export const integrationKeySchema = z.enum(INTEGRATION_KEYS);
 export type IntegrationKey = z.infer<typeof integrationKeySchema>;
@@ -158,6 +159,7 @@ export const INTEGRATION_CATEGORY_LABEL = {
     calendario: 'Calendario',
     datos: 'Hojas de cálculo',
     comercio: 'Tiendas online',
+    bases_datos: 'Bases de datos',
 } as const;
 export type IntegrationCategory = keyof typeof INTEGRATION_CATEGORY_LABEL;
 
@@ -183,6 +185,12 @@ export interface IntegrationFieldDef {
      * exactamente la jerga que la galería vino a sacar.
      */
     hidden: boolean;
+    /**
+     * Cómo se pide (v0.1.243): texto o una casilla (`'true'`/`'false'`). Las
+     * conexiones a una base de datos tienen opciones de sí/no —cifrar,
+     * confiar en el certificado— que como texto libre serían una trampa.
+     */
+    type: 'text' | 'boolean' | 'number';
 }
 
 export type IntegrationAuth =
@@ -218,6 +226,7 @@ function field(def: Partial<IntegrationFieldDef> & { key: string; label: string 
         default: '',
         lookup: false,
         hidden: false,
+        type: 'text',
         ...def,
     };
 }
@@ -756,6 +765,59 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 ],
             }),
         ],
+    },    {
+        key: 'sqlserver',
+        name: 'SQL Server / Azure SQL',
+        tagline: 'Traé datos de tu base de datos a una lista, cada hora o cada día.',
+        description:
+            'Conectá una base de SQL Server o Azure SQL con un usuario de solo lectura y cargá el resultado de una consulta o de un procedimiento almacenado en una lista, actualizando por una columna clave (NIT, número de factura) en vez de duplicar.',
+        category: 'bases_datos',
+        color: '#CC2927',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'server',
+                    label: 'Servidor',
+                    required: true,
+                    placeholder: 'miservidor.database.windows.net',
+                    help: 'El nombre o la IP del servidor, sin «https://». Tiene que ser accesible desde internet.',
+                }),
+                field({ key: 'database', label: 'Base de datos', required: true, placeholder: 'Ventas' }),
+                field({
+                    key: 'user',
+                    label: 'Usuario',
+                    required: true,
+                    placeholder: 'imagina_lectura',
+                    help: 'Te recomendamos un usuario de SOLO LECTURA (db_datareader).',
+                }),
+                field({ key: 'password', label: 'Contraseña', secret: true, required: true, help: 'Se guarda cifrada.' }),
+                field({ key: 'port', label: 'Puerto', advanced: true, default: '1433', type: 'number' }),
+                field({
+                    key: 'encrypt',
+                    label: 'Conexión cifrada (TLS)',
+                    advanced: true,
+                    default: 'true',
+                    type: 'boolean',
+                    help: 'Azure SQL la exige. Apagala sólo si tu servidor no tiene TLS configurado.',
+                }),
+                field({
+                    key: 'trust_server_certificate',
+                    label: 'Confiar en el certificado del servidor',
+                    advanced: true,
+                    default: 'false',
+                    type: 'boolean',
+                    help: 'Sólo para servidores propios con un certificado autofirmado. En Azure dejalo apagado.',
+                }),
+            ],
+            how_to: [
+                'Pedile a quien administra la base un usuario de solo lectura (rol db_datareader y, si vas a usar un procedimiento, permiso EXECUTE sobre él).',
+                'Si es Azure SQL: en el portal de Azure → tu servidor SQL → Redes, agregá la IP de este servidor a las reglas del firewall.',
+                'Si es un servidor propio: tiene que aceptar conexiones en el puerto 1433 desde la IP de este servidor (o por una VPN).',
+                'Después de conectar, armá la sincronización con «Sincronizaciones».',
+            ],
+        },
+        actions: [],
     },
 ];
 

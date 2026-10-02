@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import {
     INTEGRATION_PROVIDER_DEFS,
@@ -57,6 +57,7 @@ import {
     wooStoreUrl,
     wooVerifyPlan,
 } from './woocommerce/wc-api';
+import { SQL_RUNNER, sqlConnParams, type SqlRunner } from './sqlserver/sql-runner';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -269,6 +270,8 @@ export class ConnectorsService {
         @Inject(REDIS) private readonly redis: OAuthStateStore,
         private readonly audit: AuditService,
         private readonly apps: IntegrationAppsService,
+        // v0.1.243 — SQL Server: opcional para no obligar a los specs viejos.
+        @Optional() @Inject(SQL_RUNNER) private readonly sqlRunner?: SqlRunner,
     ) {}
 
     // ── Ajustes del workspace ────────────────────────────────────────────
@@ -1298,6 +1301,7 @@ export class ConnectorsService {
 
     private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
         if (key === 'woocommerce') return this.runWooVerify(creds);
+        if (key === 'sqlserver') return this.runSqlVerify(creds);
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
         try {
@@ -1400,6 +1404,41 @@ export class ConnectorsService {
                 ? `No pudimos usar la API de la tienda: ${lastProblem}`
                 : 'No encontramos la API de WooCommerce en esa dirección. Revisá que sea la del sitio de WordPress donde está instalado WooCommerce.',
         );
+    }
+
+    /**
+     * SQL Server (v0.1.243): se conecta de verdad y se pregunta quién es y si
+     * puede escribir. Como con WooCommerce, una base que no responde NO se
+     * guarda: casi siempre es el servidor, el usuario o el firewall, y la
+     * sincronización no sirve sin llegar. Un usuario que PUEDE escribir se
+     * acepta con un aviso: cada consulta corre igual en una transacción que se
+     * deshace, pero lo correcto es uno de solo lectura.
+     */
+    private async runSqlVerify(creds: IntegrationCreds): Promise<VerifyOutcome> {
+        const out: VerifyOutcome = { ok: true, label: null, error: null, warning: null, options: {} };
+        const conn = sqlConnParams(creds.fields, creds.secret);
+        if (!conn.server || !conn.database || !conn.user) {
+            return { ...out, ok: false, error: 'Completá el servidor, la base de datos y el usuario.' };
+        }
+        if (!conn.password) return { ...out, ok: false, error: 'Falta la contraseña.' };
+        if (!this.sqlRunner) return { ...out, ok: false, error: 'El servidor no tiene habilitado SQL Server.' };
+        try {
+            const who = await this.sqlRunner.verify(conn);
+            return {
+                ...out,
+                label: `${who.database} · ${conn.server}`,
+                warning: who.canWrite
+                    ? `El usuario «${who.login}» puede ESCRIBIR en la base. Funciona igual (cada consulta corre en una transacción que se deshace), pero te recomendamos uno de solo lectura (db_datareader).`
+                    : null,
+                fields: {
+                    server: conn.instanceName ? `${conn.server}\\${conn.instanceName}` : conn.server,
+                    port: String(conn.port),
+                },
+            };
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { ...out, ok: false, error: redactValues(message, [creds.secret]) };
+        }
     }
 
     private async userEmail(userId: number): Promise<string | null> {
