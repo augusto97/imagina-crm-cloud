@@ -2098,6 +2098,46 @@ programado.
   **no se bloquean**: la base es la fuente, así que un valor editado a mano
   vuelve al de SQL en la próxima corrida.
 
+### ADR-S28 — Portal del cliente white-label + dominio del portal aparte (v0.1.245)
+
+**Contexto.** El portal del cliente es de CADA empresa: su cliente final no
+tiene por qué saber qué herramienta usa. La marca ya llegaba al portal con
+sesión (v0.1.58), pero lo que el cliente ve ANTES —la pantalla de entrar, el
+enlace vencido, "cerraste sesión", la pestaña del navegador— y el correo con
+el enlace mostraban la plataforma o el nombre de la LISTA. Y la empresa sólo
+tenía un dominio (ADR-S17), cuya raíz abre el login del equipo.
+
+**Decisión.**
+- **Nada de la plataforma en lo que ve el cliente.** El HTML del portal es
+  neutro ("Portal de clientes", ícono genérico) y al arrancar se pinta UNA
+  marca vigente desde la raíz del SPA: la de la cuenta con sesión o, sin
+  sesión, la del DOMINIO (`GET /public/boot` resuelve Host → empresa). En el
+  dominio de la plataforma no hay empresa: portal neutro, sin marca de nadie.
+  El nombre visible es `app_name` o, si no hay, el de la empresa (nunca el de
+  la lista, que es interno).
+- **Correo de acceso con la marca de la empresa**: asunto y nombre del
+  remitente con su nombre, logo (URL absoluta firmada, 30 días) y color.
+  Plantilla pura y testeada (`portal-email.ts`), todo escapado. Por el SMTP
+  compartido la DIRECCIÓN sigue siendo la de la plataforma (SEC-33) y sólo el
+  nombre visible es de la empresa (nodemailer `{name, address}`).
+- **Dominio del portal APARTE** (`tenants.portal_domain`, único global): mismo
+  ciclo que el del equipo (pedido → TXT → activo, SEC-32), nunca igual al
+  dominio del equipo, y quien prueba ser dueño del DNS se lo lleva aunque otra
+  empresa lo use en cualquiera de las dos columnas. `resolveHost` devuelve
+  `surface: 'portal'` y la app del equipo redirige su raíz a `/portal` — así
+  funciona igual detrás de Caddy o nginx sin reglas por dominio.
+- **Los enlaces salen por un dominio sólo si RESPONDE**: verificado no
+  alcanza (en nginx cada dominio se agrega a mano). `baseUrlFor` prueba
+  `https://dominio/api/v1/public/boot` y exige que conteste esa misma empresa
+  (caché en Redis 10 min / 2 min); si no, cae al siguiente: portal → equipo →
+  plataforma. Un enlace a un host muerto deja al cliente afuera.
+- **Pedir un enlace desde el dominio de una empresa** sólo reparte el de esa
+  empresa (antes, uno por cada empresa donde el email tuviera acceso).
+
+**Servidor.** Dos caminos documentados en `docs/runbook-custom-domains.md`:
+Caddy con `on_demand_tls` gateado por el `ask` (cero pasos por empresa) o
+alias por panel en ServerAvatar. La auto-actualización no toca el proxy.
+
 ---
 
-**Versión del documento:** 1.56.0 (sincronización desde SQL Server)
+**Versión del documento:** 1.57.0 (portal white-label + dominio del portal)

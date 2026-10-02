@@ -143,11 +143,13 @@ export function SettingsPage(): JSX.Element {
                 )}
                 {active === 'miembros' && isAdmin && <MembersPanel />}
                 {/* Branding white-label del workspace (nombre, color, logo) +
-                    dominio personalizado (ADR-S17). */}
+                    dominio personalizado (ADR-S17) + dominio del portal de
+                    clientes (v0.1.245). */}
                 {active === 'marca' && isAdmin && (
                     <>
                         <BrandingPanel />
                         <DomainPanel />
+                        <DomainPanel kind="portal" />
                     </>
                 )}
                 {/* SMTP propio del workspace (white-label de correo). */}

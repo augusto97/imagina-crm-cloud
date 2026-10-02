@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { customDomainInputSchema, type DomainDnsReport } from '@imagina-base/shared';
-import { Check, Copy, Globe } from 'lucide-react';
+import { customDomainInputSchema, type DomainDnsReport, type DomainKind } from '@imagina-base/shared';
+import { Check, Copy, Globe, UsersRound } from 'lucide-react';
 
 import { api, useSession } from '@/cloud/session';
 import { CloudApiError } from '@/lib/cloud/client';
@@ -43,12 +43,19 @@ function saveErrorText(e: unknown): string {
  * "Verificar DNS" resuelve el apuntamiento en vivo, mismo patrón que los
  * registros SPF/DKIM/DMARC del panel SMTP.
  */
-export function DomainPanel(): JSX.Element | null {
+/**
+ * v0.1.245 — `kind="portal"`: el dominio APARTE del portal de clientes
+ * (`clientes.tuempresa.com`). Abre directo el portal con la marca de la
+ * empresa —el cliente nunca ve el login del equipo— y los enlaces de acceso
+ * salen por él. Mismo ciclo que el del equipo: pedido → TXT → CNAME.
+ */
+export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.Element | null {
     const qc = useQueryClient();
     const tenantId = useSession((s) => s.activeTenantId);
+    const isPortal = kind === 'portal';
     const domainQ = useQuery({
-        queryKey: ['tenant-domain', tenantId],
-        queryFn: () => api.tenantDomainGet(),
+        queryKey: ['tenant-domain', kind, tenantId],
+        queryFn: () => api.tenantDomainGet(kind),
         retry: false,
     });
 
@@ -62,13 +69,13 @@ export function DomainPanel(): JSX.Element | null {
     }, [domainQ.data]);
 
     const invalidate = (): void => {
-        void qc.invalidateQueries({ queryKey: ['tenant-domain', tenantId] });
+        void qc.invalidateQueries({ queryKey: ['tenant-domain', kind, tenantId] });
         // El reporte DNS quedó atado al dominio anterior: se descarta.
-        qc.removeQueries({ queryKey: ['tenant-domain-dns', tenantId] });
+        qc.removeQueries({ queryKey: ['tenant-domain-dns', kind, tenantId] });
     };
 
     const save = useMutation({
-        mutationFn: (domain: string) => api.tenantDomainSet({ domain }),
+        mutationFn: (domain: string) => api.tenantDomainSet({ domain }, kind),
         onSuccess: () => {
             setNotice({
                 kind: 'ok',
@@ -80,10 +87,15 @@ export function DomainPanel(): JSX.Element | null {
     });
 
     const clear = useMutation({
-        mutationFn: () => api.tenantDomainClear(),
+        mutationFn: () => api.tenantDomainClear(kind),
         onSuccess: () => {
             setDomainInput('');
-            setNotice({ kind: 'ok', text: 'Dominio quitado: la app vuelve a las URLs de la plataforma.' });
+            setNotice({
+                kind: 'ok',
+                text: isPortal
+                    ? 'Dominio quitado: los enlaces del portal vuelven a salir por el dominio del equipo o el de la plataforma.'
+                    : 'Dominio quitado: la app vuelve a las URLs de la plataforma.',
+            });
             invalidate();
         },
         onError: (e) =>
@@ -93,7 +105,7 @@ export function DomainPanel(): JSX.Element | null {
     // SEC-32 (v0.1.228): el dominio pedido se activa recién cuando aparece el
     // TXT con el código de esta empresa (prueba de que el dominio es suyo).
     const verify = useMutation({
-        mutationFn: () => api.tenantDomainVerify(),
+        mutationFn: () => api.tenantDomainVerify(kind),
         onSuccess: (r) => {
             if (r.verified) {
                 setNotice({ kind: 'ok', text: `¡Listo! ${r.domain.domain} quedó verificado y activo.` });
@@ -116,8 +128,8 @@ export function DomainPanel(): JSX.Element | null {
     });
 
     const dnsQ = useQuery({
-        queryKey: ['tenant-domain-dns', tenantId],
-        queryFn: () => api.tenantDomainDns(),
+        queryKey: ['tenant-domain-dns', kind, tenantId],
+        queryFn: () => api.tenantDomainDns(kind),
         enabled: false,
         retry: false,
     });
@@ -167,19 +179,25 @@ export function DomainPanel(): JSX.Element | null {
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
                     <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
-                        <Globe className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        {isPortal ? (
+                            <UsersRound className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        ) : (
+                            <Globe className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        )}
                     </span>
                     <div>
-                        <CardTitle>Dominio personalizado</CardTitle>
+                        <CardTitle>{isPortal ? 'Dominio del portal de clientes' : 'Dominio personalizado'}</CardTitle>
                         <CardDescription>
-                            Accedé a la app por tu propio dominio: tu equipo entra por tu URL y ve tu marca desde el login.
+                            {isPortal
+                                ? 'Un dominio aparte para tus clientes (por ejemplo clientes.tuempresa.com). Abre directo su portal con tu logo, tus colores y tu nombre, y los enlaces de acceso que reciben salen por ahí. Nunca ven la pantalla de tu equipo.'
+                                : 'Accedé a la app por tu propio dominio: tu equipo entra por tu URL y ve tu marca desde el login.'}
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
                 {/* Subdominio automático de la plataforma (si el operador lo habilitó). */}
-                {d.base_domain && d.subdomain && (
+                {!isPortal && d.base_domain && d.subdomain && (
                     <div className="imcrm-space-y-1 imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-3">
                         <div className="imcrm-text-sm imcrm-font-medium">Subdominio incluido</div>
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -206,12 +224,14 @@ export function DomainPanel(): JSX.Element | null {
                 {/* Dominio propio de la empresa. */}
                 <form onSubmit={submit} className="imcrm-space-y-2">
                     <label className="imcrm-block imcrm-space-y-1">
-                        <span className="imcrm-text-xs imcrm-text-muted-foreground">Dominio propio</span>
+                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {isPortal ? 'Dominio para tus clientes' : 'Dominio propio'}
+                        </span>
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                             <Input
                                 value={domainInput}
                                 onChange={(e) => setDomainInput(e.target.value)}
-                                placeholder="crm.tuempresa.com"
+                                placeholder={isPortal ? 'clientes.tuempresa.com' : 'crm.tuempresa.com'}
                                 spellCheck={false}
                                 autoComplete="off"
                                 className="imcrm-max-w-xs imcrm-font-mono"
@@ -277,7 +297,7 @@ export function DomainPanel(): JSX.Element | null {
                             <Button
                                 type="button"
                                 size="sm"
-                                data-testid="domain-verify"
+                                data-testid={isPortal ? 'portal-domain-verify' : 'domain-verify'}
                                 onClick={() => verify.mutate()}
                                 disabled={busy}
                             >
@@ -303,7 +323,7 @@ export function DomainPanel(): JSX.Element | null {
                                     <div className="imcrm-text-xs imcrm-text-muted-foreground">Valor</div>
                                     <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
                                         <code
-                                            data-testid="domain-txt-value"
+                                            data-testid={isPortal ? 'portal-domain-txt-value' : 'domain-txt-value'}
                                             className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-xs"
                                         >
                                             {d.pending.txt_value}
@@ -377,6 +397,21 @@ export function DomainPanel(): JSX.Element | null {
                                     </div>
                                 </div>
                             </div>
+                            {report?.serving === 'ok' && (
+                                <p className="imcrm-text-xs imcrm-text-emerald-700 dark:imcrm-text-emerald-400">
+                                    {isPortal
+                                        ? 'El dominio responde: tus clientes ya entran por acá y los enlaces de acceso salen por este dominio.'
+                                        : 'El dominio responde: tu equipo ya puede entrar por acá.'}
+                                </p>
+                            )}
+                            {report?.serving === 'no' && (
+                                <p className="imcrm-rounded-md imcrm-bg-amber-50 imcrm-p-2 imcrm-text-xs imcrm-text-amber-900 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-200">
+                                    El dominio todavía no responde con un certificado válido. Si el registro de arriba ya
+                                    está bien, falta que el administrador de la plataforma lo habilite en el servidor.
+                                    Mientras tanto los enlaces siguen saliendo por la dirección de siempre, así nadie
+                                    queda afuera.
+                                </p>
+                            )}
                             {report && (report.status === 'partial' || report.status === 'ok') && report.current && (
                                 <p className="imcrm-break-all imcrm-text-xs imcrm-text-muted-foreground">
                                     Encontrado: <code className="imcrm-font-mono">{report.current}</code>

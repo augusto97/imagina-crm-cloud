@@ -36,11 +36,16 @@ export class SmtpMailTransport implements MailTransport {
     }
 
     async send(message: MailMessage): Promise<void> {
+        // v0.1.245 — sin dirección propia pero con nombre (el SMTP compartido
+        // manda con la dirección de la plataforma y el nombre de la empresa):
+        // `{ name, address }` deja que nodemailer codifique el nombre.
         const from = message.from
             ? message.fromName
-                ? `${message.fromName} <${message.from}>`
+                ? { name: message.fromName, address: message.from }
                 : message.from
-            : this.from;
+            : message.fromName
+              ? { name: message.fromName, address: addressOf(this.from) }
+              : this.from;
         await this.transporter.sendMail({
             from,
             to: message.to,
@@ -53,6 +58,12 @@ export class SmtpMailTransport implements MailTransport {
         });
         this.logger.log(`[mail:smtp] enviado → ${message.to}`);
     }
+}
+
+/** La dirección de un remitente `Nombre <dir@x>` (o la cadena entera si no tiene nombre). */
+export function addressOf(from: string): string {
+    const m = /<([^>]+)>\s*$/.exec(from);
+    return (m ? m[1]! : from).trim();
 }
 
 /** Fallback de texto plano cuando sólo hay HTML (nodemailer lo prefiere). */

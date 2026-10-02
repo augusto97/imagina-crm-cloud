@@ -421,6 +421,13 @@
       "when": 1784200000028,
       "tag": "0059_sql_syncs",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784200000029,
+      "tag": "0060_portal_domain",
+      "breakpoints": true
     }
   ]
 }

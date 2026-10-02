@@ -38,6 +38,8 @@ export type AuditAction =
     | 'workspace.smtp_change'
     | 'workspace.domain_change'
     | 'workspace.domain_verified'
+    | 'workspace.portal_domain_change'
+    | 'workspace.portal_domain_verified'
     | 'import.run'
     | 'list.duplicate'
     | 'template.create'

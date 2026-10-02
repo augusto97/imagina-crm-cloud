@@ -22,6 +22,14 @@ export const customDomainInputSchema = z.object({
 });
 export type CustomDomainInput = z.infer<typeof customDomainInputSchema>;
 
+/**
+ * v0.1.245 — qué dominio se configura: el del EQUIPO (`app`, ADR-S17) o el
+ * del PORTAL DEL CLIENTE (`portal`): un dominio aparte para que los clientes
+ * de la empresa vean sólo su marca y nunca el login del equipo.
+ */
+export const domainKindSchema = z.enum(['app', 'portal']);
+export type DomainKind = z.infer<typeof domainKindSchema>;
+
 /** Estado del dominio del workspace + datos para armar las instrucciones. */
 export const tenantDomainSchema = z.object({
     /** Dominio propio configurado (null = sin dominio propio). */
@@ -69,6 +77,11 @@ export const domainDnsReportSchema = z.object({
     status: z.enum(['ok', 'missing', 'partial', 'unknown']),
     /** Valor actual encontrado (para diagnóstico cuando no matchea). */
     current: z.string().optional(),
+    /**
+     * v0.1.245 — con el dominio verificado: ¿el servidor ya lo atiende (con
+     * certificado)? Los enlaces sólo salen por un dominio que responde.
+     */
+    serving: z.enum(['ok', 'no']).optional(),
 });
 export type DomainDnsReport = z.infer<typeof domainDnsReportSchema>;
 
@@ -81,9 +94,17 @@ export const publicBootSchema = z.object({
         .object({
             id: z.number().int().positive(),
             slug: z.string(),
+            /** Nombre de la empresa (respaldo cuando no eligió un nombre de app). */
+            name: z.string().default(''),
             app_name: z.string().nullable(),
             primary_color: z.string().nullable(),
             logo_url: z.string().nullable(),
+            /**
+             * v0.1.245 — por qué dominio se entró: `app` (el del equipo o el
+             * subdominio automático) o `portal` (el dominio de sus clientes,
+             * que abre el portal directo y nunca la app del equipo).
+             */
+            surface: z.enum(['app', 'portal']).default('app'),
         })
         .nullable(),
 });

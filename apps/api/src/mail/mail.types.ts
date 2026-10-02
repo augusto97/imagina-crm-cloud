@@ -11,6 +11,13 @@ export interface MailMessage {
     /** Override del remitente (email); si falta, el transporte usa su default. */
     from?: string;
     fromName?: string;
+    /**
+     * v0.1.245 — `fromName` es sólo una SUGERENCIA (la marca de la empresa en
+     * los correos del portal): por el SMTP compartido da nombre al remitente
+     * de la plataforma, pero con SMTP propio manda el remitente que la empresa
+     * configuró ahí.
+     */
+    fromNameSoft?: boolean;
     /** A dónde van las respuestas (SEC-33: el `from` de una empresa por SMTP compartido). */
     replyTo?: string;
 }

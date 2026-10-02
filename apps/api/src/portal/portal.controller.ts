@@ -180,9 +180,10 @@ export class PortalController {
     @Post('portal/request-access')
     @HttpCode(200)
     async requestAccess(
+        @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(portalRequestAccessSchema)) input: PortalRequestAccessInput,
     ): Promise<{ ok: true }> {
-        await this.portal.requestAccess(input.email);
+        await this.portal.requestAccess(input.email, req.host);
         return { ok: true };
     }
 

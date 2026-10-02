@@ -31,7 +31,10 @@ describe('DomainsService (Postgres real)', () => {
 
     /** DNS falso: TXT publicados por nombre (lo que el cliente pondría en SU DNS). */
     const txt = new Map<string, string[]>();
+    /** Dominios que el servidor web "atiende" (v0.1.245: sin red en los tests). */
+    const serving = new Set<string>();
     beforeAll(() => {
+        domains.probeServing = async (_tid, domain) => serving.has(domain);
         domains.resolveTxt = async (name) => {
             const values = txt.get(name);
             if (!values) throw Object.assign(new Error('no data'), { code: 'ENODATA' });
@@ -151,12 +154,85 @@ describe('DomainsService (Postgres real)', () => {
     });
 
     it('baseUrlFor: con dominio propio → https://dominio; sin él → APP_BASE_URL', async () => {
+        const domain = `crm-${counter}.acme.com`;
+        serving.add(domain);
         expect(await domains.baseUrlFor(tenantId)).toBe('https://app.imaginabase.com');
-        await domains.set(tenantId, `crm-${counter}.acme.com`);
+        await domains.set(tenantId, domain);
         // Pendiente todavía: los enlaces siguen saliendo por la plataforma.
         expect(await domains.baseUrlFor(tenantId)).toBe('https://app.imaginabase.com');
-        await activate(tenantId, `crm-${counter}.acme.com`);
-        expect(await domains.baseUrlFor(tenantId)).toBe(`https://crm-${counter}.acme.com`);
+        await activate(tenantId, domain);
+        expect(await domains.baseUrlFor(tenantId)).toBe(`https://${domain}`);
+    });
+
+    it('v0.1.245: un dominio verificado que el servidor todavía no atiende NO se usa en los enlaces', async () => {
+        const domain = `noresponde-${counter}.acme.com`;
+        await activate(tenantId, domain);
+        // Verificado (TXT) pero sin alias/certificado en el servidor web: el
+        // cliente quedaría afuera si el enlace saliera por ahí.
+        expect(await domains.baseUrlFor(tenantId)).toBe('https://app.imaginabase.com');
+        serving.add(domain);
+        expect(await domains.baseUrlFor(tenantId)).toBe(`https://${domain}`);
+    });
+
+    it('v0.1.245: dominio del PORTAL — ciclo propio, marca con surface=portal y enlaces del portal', async () => {
+        const app = `crm-p${counter}.acme.com`;
+        const portal = `clientes-${counter}.acme.com`;
+        await activate(tenantId, app);
+
+        // El mismo dominio no puede ser del equipo y del portal.
+        await expect(domains.set(tenantId, app, 'portal')).rejects.toMatchObject({ status: 400 });
+
+        const st = await domains.set(tenantId, portal, 'portal');
+        expect(st.domain).toBeNull();
+        expect(st.pending?.domain).toBe(portal);
+        // Pedirlo no toca el dominio del equipo.
+        expect((await domains.getForTenant(tenantId)).domain).toBe(app);
+        // Pendiente: no resuelve ni recibe certificado.
+        expect((await domains.resolveHost(portal)).tenant).toBeNull();
+        expect(await domains.isServableDomain(portal)).toBe(false);
+
+        txt.set(st.pending!.txt_name, [st.pending!.txt_value]);
+        expect((await domains.verify(tenantId, 'portal')).verified).toBe(true);
+        expect((await domains.getForTenant(tenantId, 'portal')).domain).toBe(portal);
+        expect((await domains.getForTenant(tenantId)).domain).toBe(app);
+
+        const boot = await domains.resolveHost(portal);
+        expect(boot.tenant).toMatchObject({ id: tenantId, name: 'ACME', app_name: 'Acme CRM', surface: 'portal' });
+        expect((await domains.resolveHost(app)).tenant?.surface).toBe('app');
+        expect(await domains.isServableDomain(portal)).toBe(true);
+        expect(await domains.isCustomDomainHost(portal)).toBe(true);
+
+        // Enlaces del portal: portal → equipo → plataforma, sólo si responde.
+        expect(await domains.baseUrlFor(tenantId, 'portal')).toBe('https://app.imaginabase.com');
+        serving.add(app);
+        expect(await domains.baseUrlFor(tenantId, 'portal')).toBe(`https://${app}`);
+        serving.add(portal);
+        expect(await domains.baseUrlFor(tenantId, 'portal')).toBe(`https://${portal}`);
+        // Los enlaces del EQUIPO no usan el dominio del portal.
+        expect(await domains.baseUrlFor(tenantId)).toBe(`https://${app}`);
+
+        // Quitar el del portal no toca el del equipo.
+        expect((await domains.clear(tenantId, 'portal')).domain).toBeNull();
+        expect((await domains.getForTenant(tenantId)).domain).toBe(app);
+        expect((await domains.resolveHost(portal)).tenant).toBeNull();
+        txt.clear();
+    });
+
+    it('v0.1.245: quien prueba ser dueño se lleva el dominio aunque otra empresa lo use como dominio del portal', async () => {
+        const [otra] = await pg.db
+            .insert(tenants)
+            .values({ slug: `dom-px-${counter}`, name: 'Otra', plan: 'trial', status: 'trialing' })
+            .returning();
+        const domain = `compartido-${counter}.acme.com`;
+        // "Otra" lo tiene como dominio de su portal…
+        const a = await domains.set(otra!.id, domain, 'portal');
+        txt.set(a.pending!.txt_name, [a.pending!.txt_value]);
+        expect((await domains.verify(otra!.id, 'portal')).verified).toBe(true);
+        // …y el dueño real del DNS lo verifica como dominio de su equipo.
+        await activate(tenantId, domain);
+        expect((await domains.getForTenant(otra!.id, 'portal')).domain).toBeNull();
+        expect((await domains.resolveHost(domain)).tenant?.id).toBe(tenantId);
+        txt.clear();
     });
 
     it('tenant archivado no resuelve (white-label apagado al archivar)', async () => {

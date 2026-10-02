@@ -119,6 +119,12 @@ export const magicLinkResultSchema = z.object({
     /** Ruta pública del SPA para consumir el token (`/portal/acceso?token=…`). */
     path: z.string().nullable(),
     /**
+     * v0.1.245 — el enlace COMPLETO, por el dominio del portal de la empresa
+     * (el mismo que llega por correo). Antes la UI armaba el link con el
+     * dominio desde donde miraba el admin. Null cuando no se devuelve el token.
+     */
+    url: z.string().nullable().default(null),
+    /**
      * v0.1.150 — ¿el correo salió DE VERDAD? Antes el fallo se tragaba con un
      * `.catch()` y la UI decía "Acceso enviado por email" igual: el admin creía
      * que el cliente lo había recibido. El enlace se devuelve siempre para

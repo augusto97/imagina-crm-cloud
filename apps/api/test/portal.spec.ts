@@ -58,6 +58,8 @@ describe('PortalService (Postgres + Redis reales)', () => {
     let sessions: SessionService;
     let portal: PortalService;
     let mailbox: CapturingMailTransport;
+    let domainsService: DomainsService;
+    const servingDomains = new Set<string>();
     let tenantId: number;
     /** SEC-24 — quién llama al portal: el cliente, atado a la empresa de su enlace. */
     const actor = (userId: number) => ({ userId, tenantId });
@@ -84,6 +86,13 @@ describe('PortalService (Postgres + Redis reales)', () => {
         );
         sessions = new SessionService(redis, env);
         mailbox = new CapturingMailTransport();
+        domainsService = new DomainsService(
+            pg.db,
+            env,
+            new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pd-'))), env),
+        );
+        // v0.1.245 — sin red en los tests: un dominio "responde" sólo si está acá.
+        domainsService.probeServing = async (_tid, domain) => servingDomains.has(domain);
         // MailService sin onModuleInit → enqueue cae a sendNow → transporte captura.
         const mail = new MailService(env, mailbox);
         const activityService = new ActivityService(tenantDb, new ActivityRepository(), listsService);
@@ -102,7 +111,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             rt,
             new AutomationDispatcher(),
             new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pf-'))), env),
-            new DomainsService(pg.db, env, new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pd-'))), env)),
+            domainsService,
             new RecordLayoutDataService(
                 tenantDb,
                 listsService,
@@ -409,6 +418,78 @@ describe('PortalService (Postgres + Redis reales)', () => {
         });
         const boot = await portal.me(actor(uid));
         expect(boot.related_lists.map((r) => r.slug)).toEqual(['pedidos']);
+    });
+
+    describe('v0.1.245: white-label del portal', () => {
+        it('el correo de acceso lleva la marca de la EMPRESA (asunto, remitente, logo, color) y nada de la plataforma', async () => {
+            await pg.db
+                .update(tenants)
+                .set({ settings: { branding: { app_name: 'Acme Portal', primary_color: '#16a34a', logo_file_id: 77 } } })
+                .where(eq(tenants.id, tenantId));
+            const res = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'marca245@acme.test' });
+            const mail = mailbox.sent.at(-1)!;
+            expect(mail.to).toBe('marca245@acme.test');
+            expect(mail.subject).toBe('Tu acceso al portal de Acme Portal');
+            expect(mail.fromName).toBe('Acme Portal');
+            expect(mail.html).toContain('#16a34a');
+            // Logo con URL ABSOLUTA firmada (el cliente de correo no tiene sesión).
+            expect(mail.html).toMatch(/src="https?:\/\/[^"]+\/api\/v1\/files\/77\/signed\?tenant=/);
+            expect(`${mail.subject} ${mail.text} ${mail.html}`).not.toMatch(/imagina/i);
+            // El enlace completo vuelve a la UI (para copiarlo) y es el del correo.
+            expect(res.url).toBeTruthy();
+            expect(mail.text).toContain(res.url!);
+            expect(res.url!.endsWith(res.path!)).toBe(true);
+        });
+
+        it('sin nombre de app, el correo usa el nombre de la empresa (no el de la lista)', async () => {
+            await pg.db.update(tenants).set({ settings: {} }).where(eq(tenants.id, tenantId));
+            await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'sinmarca245@acme.test' });
+            const mail = mailbox.sent.at(-1)!;
+            expect(mail.subject).toBe('Tu acceso al portal de ACME');
+            expect(mail.subject).not.toContain('Clientes');
+        });
+
+        it('el enlace sale por el dominio del PORTAL sólo cuando responde', async () => {
+            await pg.db.update(tenants).set({ portalDomain: 'clientes.acme245.test' }).where(eq(tenants.id, tenantId));
+            const before = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'dom245@acme.test' });
+            expect(before.url!.startsWith('https://clientes.acme245.test/')).toBe(false);
+            servingDomains.add('clientes.acme245.test');
+            const after = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'dom245@acme.test' });
+            expect(after.url!.startsWith('https://clientes.acme245.test/portal/acceso?token=')).toBe(true);
+            expect(mailbox.sent.at(-1)!.text).toContain('https://clientes.acme245.test/portal/acceso?token=');
+            servingDomains.delete('clientes.acme245.test');
+            await pg.db.update(tenants).set({ portalDomain: null }).where(eq(tenants.id, tenantId));
+        });
+
+        it('pedir un enlace desde el dominio de UNA empresa manda sólo el de esa empresa', async () => {
+            const [tb] = await pg.db.insert(tenants).values({ slug: 'gamma245', name: 'Gamma', portalDomain: 'clientes.gamma245.test' }).returning();
+            const tenantG = tb!.id;
+            const listG = await listsService.create(tenantG, { name: 'Socios' });
+            const fg = await fieldsService.create(tenantG, listG.slug, { label: 'Nombre', type: 'text', slug: 'nombre' });
+            const recG = await recordsService.create(tenantG, { userId: admin.userId, role: 'admin' }, listG.slug, {
+                data: { [`f${fg.id}`]: 'Socio de Gamma' },
+            });
+            await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'dos245@empresas.test' });
+            await portal.issue(tenantG, listG.slug, { record_id: recG.id, email: 'dos245@empresas.test' });
+
+            // Desde el dominio de la plataforma: un correo por empresa.
+            let before = mailbox.sent.length;
+            await portal.requestAccess('dos245@empresas.test');
+            await portal.whenIdle();
+            expect(mailbox.sent.length).toBe(before + 2);
+
+            // Desde el portal de Gamma: sólo Gamma.
+            before = mailbox.sent.length;
+            await portal.requestAccess('dos245@empresas.test', 'Clientes.Gamma245.test:443');
+            await portal.whenIdle();
+            expect(mailbox.sent.length).toBe(before + 1);
+            const token = /token=([A-Za-z0-9_-]+)/.exec(mailbox.sent.at(-1)!.text ?? '')![1]!;
+            const { sessionToken } = await portal.consume(token, { host: 'clientes.gamma245.test' });
+            const session = await sessions.get(sessionToken);
+            expect(session?.portalTenantId).toBe(tenantG);
+            // En el dominio de una empresa la sesión nunca ve las otras empresas.
+            expect(session?.portalAccount).toBeUndefined();
+        });
     });
 
     it('el cliente puede pedirse un enlace nuevo, sin revelar si el email existe (v0.1.154)', async () => {

@@ -176,10 +176,13 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         // reputación del operador — phishing con nuestra IP. El nombre visible
         // se conserva y la dirección elegida pasa a Reply-To (las respuestas le
         // siguen llegando a la empresa). Con SMTP propio, manda la empresa.
-        const outgoing: MailMessage =
+        let outgoing: MailMessage =
             !own && message.tenantId !== undefined && message.from
                 ? { ...message, from: undefined, replyTo: message.replyTo ?? message.from }
                 : message;
+        // v0.1.245 — con SMTP propio, el remitente que la empresa configuró ahí
+        // gana sobre el nombre sugerido (la marca en los correos del portal).
+        if (own && outgoing.fromNameSoft) outgoing = { ...outgoing, fromName: undefined };
         try {
             if (metered) await this.quota!.assertWithinQuota(message.tenantId!, recipients);
             await transport.send(outgoing);
