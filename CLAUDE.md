@@ -6537,6 +6537,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         retirado, Comprobar, Copiar todos, Ya lo saqué borra en Redis, 401 sin
         sesión, celular sin desborde).
 
+  - [x] **Guías completas para registrar Google/Microsoft/Slack + páginas
+        públicas (v0.1.247, ADR-S22 addendum, reporte del usuario con captura:
+        "las instrucciones están incompletas, no dicen nada de publicar la app
+        ni de que la pantalla aparezca como segura")**: la guía de v0.1.203
+        eran cinco pasos técnicos que dejaban la app de Google «En prueba» —
+        sólo 100 usuarios de prueba, aviso de «app no verificada» y, lo peor,
+        **cada conexión vencida a los 7 días** — y no decía nada de publicar ni
+        verificar. Ahora: (a) **guías por fases** (`PROVIDER_GUIDES` en shared,
+        reemplaza `steps`/`review_note`): Google en 5 (proyecto y APIs con
+        enlace directo a cada una → pantalla de consentimiento en Google Auth
+        Platform: marca, dominios autorizados y permisos —los tres son
+        «sensibles», ninguno «restringido», así que no hace falta la auditoría
+        CASA— → cliente OAuth y prueba con el aviso de los 7 días → **Publicar
+        app** → **verificación**: dominio en Search Console con la misma cuenta,
+        página principal y privacidad, video en YouTube no listado con el
+        client_id visible, formulario del Centro de verificación); Microsoft en
+        4 (multiinquilino + personales, permisos delegados, **el secreto
+        VENCE** —máx. 24 meses— y cómo renovarlo, dominio y **verificación del
+        publicador** con Partner Center, por qué sin ella las empresas con
+        Microsoft 365 piden aprobación del administrador); Slack en 3 (Token
+        Rotation apagado, **Activate Public Distribution**, Marketplace
+        opcional). Cada paso con el enlace a la pantalla EXACTA y los valores ya
+        resueltos para copiar: URI de redirección, dominio registrable
+        (`registrableDomain`, con com.co/co.uk), permisos uno por línea, URLs
+        legales, correo de asistencia, **justificación de cada permiso** y
+        **guion del video** escritos para lo que hace la app. Cada fase se
+        pliega, tiene «Hecho» recordado en el navegador y abre sola la primera
+        pendiente. (b) **Páginas públicas** que pide la verificación: inicio,
+        política de privacidad y condiciones servidas por el API en
+        `/api/v1/public/legal[/privacidad|/terminos]`. Son HTML del servidor y
+        no del SPA, porque los revisores no ejecutan JS. CSP cerrada, todo
+        escapado y enlaces sólo https/mailto. La política sugerida explica qué
+        se hace con los datos de Google/Microsoft/Slack e incluye la cláusula de
+        **uso limitado** de Google (en español y la frase exacta en inglés), y la
+        página principal SIEMPRE enlaza a ella. Card «Páginas públicas» en
+        Plataforma → Integraciones: empresa responsable, correo, sitio,
+        descripción y textos editables con marcadores (`{{company}}`…);
+        guardar el sugerido tal cual vuelve a «sugerido» para recibir sus
+        mejoras. Vive en `platform:legal` y viaja en el snapshot.
+        Tests: 9 en shared (fases, enlaces https, justificación por cada
+        permiso de Google, dominio registrable, plantillas) y 4 de la API
+        (escape y enlaces, URLs, render con la empresa y sin marcadores, texto
+        propio, valor corrupto). E2E navegador 29/29: guía por fases,
+        7 días, publicar, verificación con justificación y guion, valores
+        copiados, progreso recordado al recargar, páginas públicas sin sesión y
+        sin errores de CSP, condiciones propias publicadas, celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

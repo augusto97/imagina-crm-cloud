@@ -5,6 +5,7 @@ import { AiModule } from './ai/ai.module';
 import { AutomationsModule } from './automations/automations.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardsModule } from './dashboards/dashboards.module';
+import { LegalModule } from './legal/legal.module';
 import { DomainsModule } from './domains/domains.module';
 import { BillingModule } from './billing/billing.module';
 import { ExportModule } from './export/export.module';
@@ -75,6 +76,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AutomationsModule,
         DashboardsModule,
         DomainsModule,
+        LegalModule,
         PortalModule,
         PublicListsModule,
         PlatformModule,

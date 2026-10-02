@@ -6,6 +6,7 @@ import {
     integrationsOverviewSchema,
     platformIntegrationAppSchema,
     platformIntegrationsSchema,
+    platformLegalViewSchema,
     verifyIntegrationResultSchema,
     storeSyncStatusSchema,
     type StoreSyncStatus,
@@ -26,6 +27,8 @@ import {
     type IntegrationsOverview,
     type PlatformIntegrationApp,
     type PlatformIntegrations,
+    type PlatformLegalView,
+    type UpdatePlatformLegalInput,
     type UpdatePlatformIntegrationAppInput,
     type VerifyIntegrationInput,
     type VerifyIntegrationResult,
@@ -926,6 +929,12 @@ export class CloudClient {
     }
     platformIntegrationsGet(): Promise<PlatformIntegrations> {
         return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });
+    }
+    platformLegalGet(): Promise<PlatformLegalView> {
+        return this.request('GET', '/platform/legal', { schema: platformLegalViewSchema });
+    }
+    platformLegalSet(input: UpdatePlatformLegalInput): Promise<PlatformLegalView> {
+        return this.request('PATCH', '/platform/legal', { body: input, schema: platformLegalViewSchema });
     }
     platformIntegrationSet(
         provider: IntegrationProvider,
