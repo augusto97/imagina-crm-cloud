@@ -3,7 +3,11 @@ import { loadEnv } from '../src/config/env';
 import { tenants } from '../src/db/schema';
 import { DomainsService } from '../src/domains/domains.service';
 import type { FilesService } from '../src/files/files.service';
-import { startPostgres, type TestPg } from './helpers/containers';
+import IORedis from 'ioredis';
+import type { MailService } from '../src/mail/mail.service';
+import type { MailMessage } from '../src/mail/mail.types';
+import { domainOperatorNotice } from '../src/domains/domain-notice';
+import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 
 /** Stub: el service solo usa signedUrl (logo del boot público). */
 const filesStub = {
@@ -242,5 +246,134 @@ describe('DomainsService (Postgres real)', () => {
         );
         expect((await domains.resolveHost(`crm-${counter}.acme.com`)).tenant).toBeNull();
         expect(await domains.isServableDomain(`crm-${counter}.acme.com`)).toBe(false);
+    });
+    describe('v0.1.246 — Plataforma → Dominios (camino ServerAvatar)', () => {
+        let redis: TestRedis;
+        let client: IORedis;
+        let ops: DomainsService;
+        const sent: MailMessage[] = [];
+        const opEnv = loadEnv({
+            PUBLIC_BASE_DOMAIN: 'app.imaginabase.com',
+            APP_BASE_URL: 'https://app.imaginabase.com',
+            PLATFORM_SUPERADMINS: 'ops@imaginabase.com',
+        });
+        const mailStub = { enqueue: async (m: MailMessage) => void sent.push(m) } as unknown as MailService;
+
+        beforeAll(async () => {
+            redis = await startRedis();
+            client = new IORedis(redis.url);
+            ops = new DomainsService(pg.db, opEnv, filesStub, client, mailStub);
+            ops.probeServing = async (_tid, domain) => serving.has(domain);
+            ops.resolveTxt = domains.resolveTxt;
+            // DNS falso: sólo apunta lo que esté en `pointed`.
+            ops.pointing = async (domain) => ({
+                domain,
+                target: 'app.imaginabase.com',
+                type: 'CNAME',
+                status: pointed.has(domain) ? 'ok' : 'missing',
+            });
+        });
+        afterAll(async () => {
+            client?.disconnect();
+            await redis?.stop();
+        });
+        const pointed = new Set<string>();
+
+        it('lista pedidos y verificados con DNS y si responde; avisa al operador al verificar y al quitar', async () => {
+            const app = `crm-ops-${counter}.acme.com`;
+            const portal = `clientes-ops-${counter}.acme.com`;
+            sent.length = 0;
+
+            // Pedido (sin verificar) del portal + verificado del equipo.
+            const st = await ops.set(tenantId, app);
+            txt.set(st.pending!.txt_name, [st.pending!.txt_value]);
+            expect((await ops.verify(tenantId)).verified).toBe(true);
+            await ops.set(tenantId, portal, 'portal');
+
+            // Aviso al verificar, a los superadmins y con los pasos de ServerAvatar.
+            expect(sent).toHaveLength(1);
+            expect(sent[0]).toMatchObject({ to: 'ops@imaginabase.com' });
+            expect(sent[0]!.subject).toBe(`Dominio para habilitar: ${app} (ACME)`);
+            expect(sent[0]!.text).toContain('alias');
+            expect(sent[0]!.text).toContain('https://app.imaginabase.com/platform?tab=dominios');
+            expect(sent[0]!.tenantId).toBeUndefined();
+
+            let list = await ops.listForPlatform();
+            const mine = list.domains.filter((d) => d.tenant_id === tenantId);
+            expect(mine).toEqual([
+                expect.objectContaining({ kind: 'app', domain: app, state: 'verified', serving: 'no', dns: expect.objectContaining({ status: 'missing' }) }),
+                expect.objectContaining({ kind: 'portal', domain: portal, state: 'pending', serving: null }),
+            ]);
+            expect(list.target).toBe('app.imaginabase.com');
+
+            // El operador apunta y agrega el alias → "Comprobar" lo ve al toque
+            // (sin esperar el caché de 2 min del "no responde").
+            pointed.add(app);
+            serving.add(app);
+            const checked = await ops.checkForPlatform(tenantId, 'app');
+            expect(checked).toMatchObject({ serving: 'ok', dns: { status: 'ok' } });
+            expect(await ops.checkForPlatform(tenantId, 'portal')).toMatchObject({ state: 'pending', serving: null });
+
+            // La empresa quita su dominio → aviso + queda en "para sacar del servidor".
+            await ops.clear(tenantId);
+            expect(sent).toHaveLength(2);
+            expect(sent[1]!.subject).toBe(`Dominio para quitar del servidor: ${app} (ACME)`);
+            list = await ops.listForPlatform();
+            expect(list.domains.some((d) => d.domain === app)).toBe(false);
+            expect(list.retired).toEqual([expect.objectContaining({ domain: app, tenant_name: 'ACME' })]);
+
+            // Volver a verificarlo lo saca de la lista de retirados…
+            const again = await ops.set(tenantId, app);
+            txt.set(again.pending!.txt_name, [again.pending!.txt_value]);
+            await ops.verify(tenantId);
+            expect((await ops.listForPlatform()).retired).toEqual([]);
+            // …y "Ya lo saqué" también.
+            await ops.clear(tenantId);
+            expect((await ops.listForPlatform()).retired).toHaveLength(1);
+            await ops.dismissRetired(app);
+            expect((await ops.listForPlatform()).retired).toEqual([]);
+
+            // Quitar un PEDIDO que nunca se activó no avisa ni deja retirado.
+            const before = sent.length;
+            await ops.clear(tenantId, 'portal');
+            expect(sent).toHaveLength(before);
+            expect((await ops.listForPlatform()).retired).toEqual([]);
+            txt.clear();
+        });
+
+        it('un tenant archivado no figura en la lista', async () => {
+            const st = await ops.set(tenantId, `arch-${counter}.acme.com`);
+            expect((await ops.listForPlatform()).domains.some((d) => d.tenant_id === tenantId)).toBe(true);
+            void st;
+            await pg.db.update(tenants).set({ archivedAt: new Date() }).where(
+                (await import('drizzle-orm')).eq(tenants.id, tenantId),
+            );
+            expect((await ops.listForPlatform()).domains.some((d) => d.tenant_id === tenantId)).toBe(false);
+        });
+    });
+
+    it('domainOperatorNotice: texto del portal y del retiro', () => {
+        const n = domainOperatorNotice({
+            type: 'verified',
+            tenantId: 1,
+            tenantName: 'Acme',
+            kind: 'portal',
+            domain: 'clientes.acme.com',
+            target: 'app.x.com',
+            consoleUrl: 'https://app.x.com/platform?tab=dominios',
+        });
+        expect(n.text).toContain('el portal de sus clientes');
+        expect(n.text).toContain('app.x.com (CNAME)');
+        const r = domainOperatorNotice({
+            type: 'removed',
+            tenantId: 1,
+            tenantName: 'Acme',
+            kind: 'app',
+            domain: 'crm.acme.com',
+            target: 'app.x.com',
+            consoleUrl: 'https://app.x.com/platform?tab=dominios',
+        });
+        expect(r.subject).toContain('quitar');
+        expect(r.text).toContain('su equipo');
     });
 });

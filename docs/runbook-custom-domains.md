@@ -13,6 +13,13 @@ el **TXT** de verificación (prueba que el dominio es suyo) y el **CNAME** hacia
 servidor web lo atienda con certificado HTTPS**. Eso depende de cómo está
 armado el servidor, y hay dos caminos.
 
+> **Camino elegido hoy: ServerAvatar (Camino B).** Con pocas empresas usando
+> dominio propio, agregar cada alias a mano es manejable y no hace falta entrar
+> por consola. La app avisa por correo al operador cuando una empresa verifica o
+> quita un dominio, y **Plataforma → Dominios** es la lista de trabajo (qué
+> habilitar, qué ya funciona, qué sacar del servidor). Cuando haya muchas
+> empresas con dominio propio, conviene pasar a Caddy (Camino A).
+
 > **Nada se rompe mientras tanto.** Los enlaces de acceso que reciben los
 > clientes salen por el dominio de la empresa **sólo si responde de verdad**
 > (la app lo prueba: pide `/api/v1/public/boot` por ese dominio y exige que
@@ -64,8 +71,10 @@ no toca la config del proxy).
 
 ---
 
-## Camino B — ServerAvatar por panel (sin consola)
+## Camino B — ServerAvatar por panel (sin consola) — el que se usa hoy
 
+Te enterás por el correo de aviso o en **Plataforma → Dominios → «Para
+habilitar»** (ahí ves si el DNS ya apunta y si el servidor ya lo atiende).
 Por **cada** empresa que configure un dominio, después de que ella lo verifique:
 
 1. ServerAvatar → tu servidor → **Applications** → la app de Imagina Base.
@@ -74,9 +83,9 @@ Por **cada** empresa que configure un dominio, después de que ella lo verifique
    configuración de nginx que el dominio principal, incluidos los `location`
    que pegaste para el API y el portal.
 3. En **SSL**, volvé a emitir el certificado Let's Encrypt incluyendo el alias.
-4. Abrí `https://clientes.acme.com/portal` y comprobá que carga con la marca
-   de la empresa. En la app, el botón **«Comprobar apuntamiento»** del panel
-   de la empresa pasa a decir "El dominio responde".
+4. En **Plataforma → Dominios**, tocá **«Comprobar»** en ese dominio: cuando
+   diga **«Responde»**, los enlaces de esa empresa ya salen por su dominio.
+   (También podés abrir `https://clientes.acme.com/portal` y ver la marca.)
 
 Cuidados:
 - El DNS del dominio (el CNAME) tiene que apuntar a tu servidor **antes** de
@@ -84,7 +93,9 @@ Cuidados:
 - ServerAvatar suele emitir **un solo certificado para todos los dominios de
   la app**. Si más adelante una empresa deja de apuntar su dominio a tu
   servidor, la **renovación de todo el certificado** puede fallar. Cuando una
-  empresa quite su dominio en la app, sacá también el alias en ServerAvatar.
+  empresa quite su dominio en la app te llega un correo y aparece en
+  **Plataforma → Dominios → «Para quitar del servidor»**: sacá el alias,
+  volvé a emitir el SSL y tocá **«Ya lo saqué»**.
 - Los nombres exactos de los menús de ServerAvatar pueden variar según la
   versión del panel.
 

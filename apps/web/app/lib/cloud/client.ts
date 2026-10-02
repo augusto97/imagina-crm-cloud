@@ -152,6 +152,8 @@ import {
     smtpConfigSchema,
     smtpConfigPublicSchema,
     platformDiagnosticsSchema,
+    platformDomainSchema,
+    platformDomainsSchema,
     smtpDiagnoseInputSchema,
     smtpDiagnosticSchema,
     smtpDnsReportSchema,
@@ -227,6 +229,8 @@ import {
     type SmtpConfig,
     type SmtpConfigPublic,
     type PlatformDiagnostics,
+    type PlatformDomain,
+    type PlatformDomains,
     type SmtpDiagnoseInput,
     type SmtpDiagnostic,
     type SmtpDnsReport,
@@ -1144,6 +1148,20 @@ export class CloudClient {
     }
     diagnosticsClear(): Promise<void> {
         return this.request('DELETE', '/system/diagnostics', {});
+    }
+
+    // --- dominios de las empresas (v0.1.246, sólo superadmin) ---
+    platformDomainsGet(): Promise<PlatformDomains> {
+        return this.request('GET', '/platform/domains', { schema: platformDomainsSchema });
+    }
+    platformDomainCheck(tenantId: number, kind: DomainKind): Promise<PlatformDomain> {
+        return this.request('POST', '/platform/domains/check', {
+            body: { tenant_id: tenantId, kind },
+            schema: platformDomainSchema,
+        });
+    }
+    platformDomainDismissRetired(domain: string): Promise<void> {
+        return this.request('DELETE', `/platform/domains/retired/${encodeURIComponent(domain)}`, {});
     }
 
     // --- payments (ADR-S12) ---

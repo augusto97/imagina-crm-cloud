@@ -86,6 +86,48 @@ export const domainDnsReportSchema = z.object({
 export type DomainDnsReport = z.infer<typeof domainDnsReportSchema>;
 
 /**
+ * v0.1.246 — Plataforma → Dominios. Con el camino de ServerAvatar (alias por
+ * panel) cada dominio se habilita A MANO en el servidor: el operador necesita
+ * ver qué empresas pidieron o verificaron uno, si ya apunta y si ya responde.
+ */
+export const platformDomainSchema = z.object({
+    tenant_id: z.number().int(),
+    tenant_name: z.string(),
+    tenant_slug: z.string(),
+    kind: domainKindSchema,
+    domain: z.string(),
+    /** pending = esperando el TXT de verificación; verified = es de la empresa. */
+    state: z.enum(['pending', 'verified']),
+    requested_at: z.string().nullable(),
+    /** Apuntamiento DNS en vivo (null si el DNS no se pudo consultar). */
+    dns: domainDnsReportSchema.nullable(),
+    /** Sólo verificados: ¿el servidor ya lo atiende con certificado? */
+    serving: z.enum(['ok', 'no']).nullable(),
+});
+export type PlatformDomain = z.infer<typeof platformDomainSchema>;
+
+/** Dominio que una empresa dejó de usar: hay que sacar el alias del servidor. */
+export const retiredDomainSchema = z.object({
+    domain: z.string(),
+    tenant_name: z.string(),
+    removed_at: z.string(),
+});
+export type RetiredDomain = z.infer<typeof retiredDomainSchema>;
+
+export const platformDomainsSchema = z.object({
+    /** Host al que las empresas apuntan su CNAME (el de la app). */
+    target: z.string(),
+    domains: z.array(platformDomainSchema),
+    retired: z.array(retiredDomainSchema),
+});
+export type PlatformDomains = z.infer<typeof platformDomainsSchema>;
+
+export const platformDomainCheckSchema = z.object({
+    tenant_id: z.number().int().positive(),
+    kind: domainKindSchema,
+});
+
+/**
  * Boot público SIN sesión: el front lo llama con el Host de la URL para
  * saber si está en un dominio white-label y pintar la marca ANTES del login.
  */

@@ -6497,6 +6497,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         color, portal neutro en la plataforma, raíz → portal con la marca
         antes de entrar, sesión y salir con la marca, celular).
 
+  - [x] **Dominios propios por ServerAvatar: consola + avisos al operador
+        (v0.1.246, ADR-S28 addendum, decisión del usuario: "por el momento el
+        camino de ServerAvatar; con 10 clientes Caddy no hace falta")**: en
+        ServerAvatar cada dominio verificado se agrega A MANO como alias de la
+        app y se re-emite el certificado — y hasta acá el operador no tenía
+        cómo enterarse de que una empresa verificó uno, ni de cuáles faltaban.
+        (a) **Aviso por correo** a cada superadmin cuando una empresa verifica
+        un dominio (equipo o portal) — «Dominio para habilitar: X (Empresa)»
+        con los pasos de ServerAvatar, el CNAME esperado y el enlace a la
+        consola — y cuando quita uno que ya estaba activo («Dominio para quitar
+        del servidor»). Plantilla pura (`domain-notice.ts`); correo de cuenta,
+        sin cuota; best-effort (si falla, la verificación sigue). Quitar un
+        pedido sin verificar no avisa nada.
+        (b) **Plataforma → Dominios** (`GET /platform/domains`,
+        `POST /platform/domains/check`, `DELETE /platform/domains/retired/:d`;
+        superadmin con contraseña): la guía de 4 pasos con el destino del
+        CNAME, **Para habilitar** (verificados que todavía no responden, con
+        «Copiar todos» para pegarlos de una en el panel), **Para quitar del
+        servidor**, **Funcionando** y **Esperando verificación**; cada fila con
+        empresa, tipo (Equipo / Portal de clientes), estado del DNS («Apunta
+        acá» / a otro lado / sin apuntar), si responde, copiar y «Comprobar»
+        (re-prueba en vivo saltando la caché de `baseUrlFor`). Las consultas de
+        DNS y la prueba corren de a 5 en paralelo; las empresas archivadas no
+        aparecen.
+        (c) **Retirados** (`platform:domains:retired` en Redis): los alias
+        comparten UN certificado de Let's Encrypt, y uno que queda en el
+        servidor sin DNS hace fallar la renovación para TODOS — por eso el
+        dominio que una empresa deja se recuerda hasta que el operador toca
+        «Ya lo saqué»; si la empresa lo vuelve a verificar sale solo. Viaja en
+        el snapshot de ADR-S20 (prefijo `platform:`).
+        (d) Docs: `runbook-serveravatar.md` §8 (el flujo completo) y
+        `runbook-custom-domains.md` marca ServerAvatar como el camino de hoy.
+        Tests: 2 de integración con Redis real (aviso al verificar, listado por
+        estado, comprobar tras apuntar, quitar → aviso + retirado, re-verificar
+        lo saca, descartar, pedido sin verificar sin aviso, archivadas fuera) +
+        1 de la plantilla — 13/13 en el spec de dominios — + E2E navegador 17/17
+        (pestaña, guía, para habilitar con «No responde», pendiente del portal,
+        retirado, Comprobar, Copiar todos, Ya lo saqué borra en Redis, 401 sin
+        sesión, celular sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

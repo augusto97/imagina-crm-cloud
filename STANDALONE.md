@@ -2138,6 +2138,24 @@ tenía un dominio (ADR-S17), cuya raíz abre el login del equipo.
 Caddy con `on_demand_tls` gateado por el `ask` (cero pasos por empresa) o
 alias por panel en ServerAvatar. La auto-actualización no toca el proxy.
 
+**Addendum v0.1.246 — se elige ServerAvatar (alias a mano) mientras haya pocas
+empresas con dominio.** Con ~10 clientes, un paso manual por dominio es más
+barato que mantener Caddy por consola; Caddy queda para cuando la cantidad lo
+justifique. Para que el paso manual no dependa de la memoria del operador:
+- **Aviso por correo** a cada `PLATFORM_SUPERADMINS` cuando una empresa
+  VERIFICA un dominio («Dominio para habilitar») y cuando quita uno ya activo
+  («Dominio para quitar del servidor»), con los pasos de ServerAvatar y el
+  enlace a la consola. Correo de cuenta (sin tenant, sin cuota), best-effort:
+  si falla no rompe la verificación.
+- **Plataforma → Dominios** (`GET /platform/domains`, superadmin con
+  contraseña): para habilitar (verificados que todavía no responden), para
+  quitar del servidor, funcionando y esperando verificación, cada uno con el
+  estado del DNS y si responde; «Comprobar» re-prueba en vivo sin la caché.
+- **Lista de retirados** (`platform:domains:retired` en Redis): un alias que
+  queda en el servidor sin DNS hace fallar la renovación del certificado
+  COMPARTIDO para todos, así que se recuerda hasta que el operador marca «Ya
+  lo saqué». Si la empresa lo vuelve a verificar, sale solo de la lista.
+
 ---
 
-**Versión del documento:** 1.57.0 (portal white-label + dominio del portal)
+**Versión del documento:** 1.58.0 (dominios por ServerAvatar: consola + avisos)
