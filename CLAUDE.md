@@ -6415,6 +6415,37 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         en shared, que ignora comentarios — la consulta de ejemplo menciona
         el parámetro en uno).
 
+  - [x] **Avisos de dependencias de producción a cero, otra vez (v0.1.244)**:
+        `pnpm audit --prod` volvió a dar 8 avisos (4 high) publicados después
+        de v0.1.202, todos en código que corre en el servidor o en el
+        navegador. (a) **`nodemailer` 9.1.1 → 10.0.13** (major): el más
+        relevante para nosotros es el de la **caché DNS global que reusaba el
+        `servername` TLS entre transportes** — o sea, entre los SMTP propios
+        de distintas EMPRESAS (fijamos el host a la IP y pasamos el
+        `servername` por empresa desde SEC-27); más dos DoS por backtracking
+        del parser de direcciones, uno por arrays anidados de destinatarios y
+        un sobre mal formado con local-part entre comillas. El único cambio
+        que rompe de la v10 es exigir Node ≥20 (usamos 22); trae sus propios
+        tipos, compatibles con `@types/nodemailer`. (b) **`engine.io`
+        6.6.9 → 6.6.11** (DoS por versión de protocolo del realtime): llega
+        por `@nestjs/platform-socket.io`, que fija `socket.io` exacto, así que
+        va por override. (c) **`@nestjs/*` 11.1.27 → 11.2.7** (el aviso es de
+        `platform-fastify`: un request-target ABSOLUTO —`GET http://otro/…`—
+        salteaba el middleware con path; se subieron los cinco paquetes juntos
+        para no mezclar versiones). La 11.2 agregó un `logger` protegido a
+        `IoAdapter`, que chocaba con el privado de nuestro `RedisIoAdapter`
+        → renombrado a `redisLogger`. (d) **`dompurify` 3.4.15 → 3.4.16**
+        (XSS con hooks `IN_PLACE`; no lo usamos así, pero el override sube el
+        piso). Verificación: tipos y lint en 0, toda la suite de la API y 220
+        tests del front en verde, y en vivo contra el API real 12/12 — correo
+        de prueba del SMTP de la empresa entregado a un servidor SMTP local
+        con AUTH (asunto y remitente correctos), socket por websocket que se
+        une a la empresa y recibe el aviso al crear un registro, y un
+        request-target absoluto sin sesión que responde 401 — más el front en
+        el navegador 11/11 (login, tabla, editor de descripción con
+        autoguardado, cero errores de JS, y el `sanitizeHtml` del bundle
+        quitando `onerror`/`javascript:`/`<script>` sin tocar el formato).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -12,16 +12,17 @@ import { guardRedis } from '../redis/redis.util';
  * re-arquitectura. Si Redis no está disponible, cae a modo single-node.
  */
 export class RedisIoAdapter extends IoAdapter {
-    private readonly logger = new Logger(RedisIoAdapter.name);
+    // `logger` ya existe (protegido) en IoAdapter desde @nestjs 11.2.
+    private readonly redisLogger = new Logger(RedisIoAdapter.name);
     private adapterFactory: ReturnType<typeof createAdapter> | null = null;
 
     async connect(redisUrl: string): Promise<void> {
         const pubClient = guardRedis(
             new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 2 }),
-            this.logger,
+            this.redisLogger,
             'socket.io/pub',
         );
-        const subClient = guardRedis(pubClient.duplicate(), this.logger, 'socket.io/sub');
+        const subClient = guardRedis(pubClient.duplicate(), this.redisLogger, 'socket.io/sub');
         try {
             await Promise.all([pubClient.connect(), subClient.connect()]);
             this.adapterFactory = createAdapter(pubClient, subClient);
