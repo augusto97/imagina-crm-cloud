@@ -120,8 +120,12 @@ import {
     magicLinkResultSchema,
     paginated,
     paymentConfigSchema,
+    portalAccessCheckSchema,
     portalAccessListSchema,
+    portalAccountsSchema,
     portalBootSchema,
+    portalEmailLinkResultSchema,
+    portalSwitchResultSchema,
     portalRequestAccessSchema,
     portalRelatedOptionsSchema,
     publicBootSchema,
@@ -189,8 +193,12 @@ import {
     type CreateCheckoutInput,
     type MagicLinkResult,
     type PaymentConfig,
+    type PortalAccessCheck,
     type PortalAccessList,
+    type PortalAccounts,
     type PortalBoot,
+    type PortalEmailLinkResult,
+    type PortalSwitchResult,
     type PortalRelatedOptions,
     type PublicBoot,
     type RecordDto,
@@ -254,6 +262,8 @@ export interface CloudClientOptions {
     baseUrl?: string;
     /** Tenant activo (workspace). Se envía como header `X-Tenant-Id`. */
     getTenantId?: () => number | string | null;
+    /** v0.1.241 — headers extra por request (el portal manda la cuenta elegida). */
+    getExtraHeaders?: () => Record<string, string>;
 }
 
 function readEnvBaseUrl(): string {
@@ -264,10 +274,12 @@ function readEnvBaseUrl(): string {
 export class CloudClient {
     private readonly baseUrl: string;
     private readonly getTenantId: () => number | string | null;
+    private readonly getExtraHeaders: () => Record<string, string>;
 
     constructor(options: CloudClientOptions = {}) {
         this.baseUrl = (options.baseUrl ?? readEnvBaseUrl()).replace(/\/$/, '');
         this.getTenantId = options.getTenantId ?? (() => null);
+        this.getExtraHeaders = options.getExtraHeaders ?? (() => ({}));
     }
 
     // --- auth ---
@@ -1184,8 +1196,31 @@ export class CloudClient {
             schema: portalAccessListSchema,
         });
     }
-    portalRevokeAccess(list: string | number, userId: number): Promise<void> {
-        return this.request('DELETE', `/lists/${list}/portal/access/${userId}`, {});
+    /** v0.1.241 — con `recordId` quita sólo el acceso a ese registro. */
+    portalRevokeAccess(list: string | number, userId: number, recordId?: number): Promise<void> {
+        return this.request('DELETE', `/lists/${list}/portal/access/${userId}`, {
+            query: recordId !== undefined ? { record_id: recordId } : undefined,
+        });
+    }
+    /** v0.1.241 — qué pasa con ese email en ESTA empresa, antes de dar acceso. */
+    portalAccessCheck(list: string | number, email: string, recordId: number): Promise<PortalAccessCheck> {
+        return this.request('GET', `/lists/${list}/portal/access/check`, {
+            query: { email, record_id: recordId },
+            schema: portalAccessCheckSchema,
+        });
+    }
+    // --- cuentas del portal (v0.1.241) ---
+    portalAccounts(): Promise<PortalAccounts> {
+        return this.request('GET', '/portal/accounts', { schema: portalAccountsSchema });
+    }
+    portalSwitchAccount(id: number): Promise<PortalSwitchResult> {
+        return this.request('POST', `/portal/accounts/${id}/switch`, { schema: portalSwitchResultSchema });
+    }
+    portalEmailAllAccounts(): Promise<PortalEmailLinkResult> {
+        return this.request('POST', '/portal/accounts/email-link', { schema: portalEmailLinkResultSchema });
+    }
+    portalLogout(): Promise<void> {
+        return this.request('POST', '/portal/logout', {});
     }
     portalRelatedOptions(list: string | number): Promise<PortalRelatedOptions> {
         return this.request('GET', `/lists/${list}/portal/related-options`, {
@@ -1212,7 +1247,7 @@ export class CloudClient {
         path: string,
         opts: { query?: Record<string, unknown>; body?: unknown; schema?: z.ZodTypeAny },
     ): Promise<unknown> {
-        const headers: Record<string, string> = { Accept: 'application/json' };
+        const headers: Record<string, string> = { Accept: 'application/json', ...this.getExtraHeaders() };
         const tenantId = this.getTenantId();
         if (tenantId !== null && tenantId !== undefined) headers['X-Tenant-Id'] = String(tenantId);
         if (opts.body !== undefined) headers['Content-Type'] = 'application/json';

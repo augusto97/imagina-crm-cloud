@@ -99,6 +99,22 @@ export class DomainsService {
     }
 
     /**
+     * v0.1.241 — ¿el host es el dominio PROPIO de alguna empresa? Ese dominio lo
+     * controla ella (puede apuntarlo a otro servidor), así que nada de lo que
+     * se abra ahí puede ver datos de otras empresas.
+     */
+    async isCustomDomainHost(rawHost: string | undefined): Promise<boolean> {
+        const host = this.normalizeHost(rawHost);
+        if (!host) return false;
+        const [row] = await this.db
+            .select({ id: tenants.id })
+            .from(tenants)
+            .where(eq(tenants.customDomain, host))
+            .limit(1);
+        return row !== undefined;
+    }
+
+    /**
      * ¿Emitimos certificado para este dominio? (endpoint `ask` del
      * `on_demand_tls` de Caddy). Acepta la base, subdominios `slug.base` de
      * tenants vivos y dominios propios registrados. Todo lo demás → no.

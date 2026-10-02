@@ -26,6 +26,18 @@ export interface SessionData {
      */
     portalTenantId?: number;
     /**
+     * v0.1.241 — el acceso (vínculo) con el que se abrió: el portal arranca
+     * mostrando ESE registro si la persona tiene varios en la empresa.
+     */
+    portalLinkId?: number;
+    /**
+     * v0.1.241 — la sesión puede LISTAR y abrir las cuentas de la persona en
+     * otras empresas. Sólo la tienen las sesiones abiertas con un enlace que
+     * llegó a su correo (nunca uno que la empresa pudo copiar) y en un host de
+     * la plataforma (un dominio propio lo controla una empresa).
+     */
+    portalAccount?: boolean;
+    /**
      * SEC-24 — cómo se abrió la sesión. `password` = login con contraseña (y
      * 2FA si la cuenta lo tiene). La consola de plataforma exige `password`:
      * así las sesiones abiertas ANTES de v0.1.225 (sin marca, entre ellas las
@@ -74,7 +86,14 @@ export class SessionService {
 
     async create(
         userId: number,
-        meta: { userAgent?: string; ip?: string; portalTenantId?: number; via?: 'password' | 'portal' } = {},
+        meta: {
+            userAgent?: string;
+            ip?: string;
+            portalTenantId?: number;
+            portalLinkId?: number;
+            portalAccount?: boolean;
+            via?: 'password' | 'portal';
+        } = {},
     ): Promise<string> {
         const token = randomBytes(32).toString('base64url');
         const data: SessionData = {
@@ -82,7 +101,14 @@ export class SessionService {
             createdAt: new Date().toISOString(),
             userAgent: (meta.userAgent ?? '').slice(0, 200),
             ip: (meta.ip ?? '').slice(0, 60),
-            ...(meta.portalTenantId !== undefined ? { portalTenantId: meta.portalTenantId, via: 'portal' as const } : {}),
+            ...(meta.portalTenantId !== undefined
+                ? {
+                      portalTenantId: meta.portalTenantId,
+                      via: 'portal' as const,
+                      ...(meta.portalLinkId !== undefined ? { portalLinkId: meta.portalLinkId } : {}),
+                      ...(meta.portalAccount === true ? { portalAccount: true } : {}),
+                  }
+                : {}),
             ...(meta.via === 'password' ? { via: 'password' as const } : {}),
         };
         await this.redis.set(this.key(token), JSON.stringify(data), 'EX', this.env.SESSION_TTL_SECONDS);

@@ -13,6 +13,10 @@ declare module 'fastify' {
          * sólo vale para `/portal/*`.
          */
         portalTenantId?: number;
+        /** v0.1.241 — acceso con el que se abrió la sesión del portal. */
+        portalLinkId?: number;
+        /** v0.1.241 — la sesión del portal ve las cuentas de todas sus empresas. */
+        portalAccount?: boolean;
         /** SEC-24 — cómo se abrió la sesión (ver SessionData.via). */
         sessionVia?: 'password' | 'portal';
         /** Seteado por TenantGuard. */

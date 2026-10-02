@@ -1994,6 +1994,35 @@ plan: `POST/PATCH/DELETE /platform/tenants/:id/members[/:userId]`,
 `POST /platform/users/:id/resend-invite`; cada acción queda en la bitácora de
 esa empresa con el operador como autor.
 
+**Portal: varios accesos por persona y cuentas de varias empresas
+(v0.1.241).** `portal_links` deja de ser único por (persona, empresa) y pasa a
+único por (persona, **registro**) (migración 0058): dar acceso a otro registro
+SUMA en vez de reemplazar (antes el cliente perdía su primera ficha en
+silencio). Antes de dar un acceso nuevo, `GET /lists/:l/portal/access/check`
+dice qué pasa con ese email EN ESA EMPRESA (`new`/`this_record`/
+`other_records` con los títulos/`staff`) y la ficha avisa. Quitar un acceso
+puede ser por registro (`?record_id=`); la membresía `client` y las sesiones
+de esa empresa caen sólo cuando no le queda ninguno. **Sesión del portal**:
+cookie PROPIA (`imbase_portal`, la de la app es `imbase_session`) — abrir un
+portal ya no cierra la sesión de trabajo del mismo navegador, y `/portal/*`
+sólo acepta sesiones del portal (las de contraseña o impersonación no). La
+sesión guarda el acceso con el que entró (`portalLinkId`) y el portal elige
+otro con `X-Portal-Account` (validado contra los vínculos de la persona EN LA
+EMPRESA de la sesión: todo lo que el portal lee sigue acotado a ella).
+**Cuentas de otras empresas**: la sesión trae `portalAccount` sólo si el
+enlace llegó ÚNICAMENTE al correo (uno devuelto a la empresa jamás) y se abrió
+en un host de la plataforma (un dominio propio lo controla una empresa);
+con eso `GET /portal/accounts` lista también las de otras empresas y `POST
+/portal/accounts/:id/switch` acuña un enlace de un solo uso (2 min) que abre
+la sesión de esa empresa. Una sesión sin ese permiso puede pedirse por correo
+el enlace de "todas mis cuentas" (`POST /portal/accounts/email-link`, a
+`APP_BASE_URL`, tope 3/15 min). `request-access` manda un correo por empresa.
+**Equipo de otra empresa**: alguien del equipo de A ya puede ser cliente del
+portal de B (antes `portal_email_not_client`): la sesión del portal está
+limitada a `/portal/*`, a B y a su cookie, y el enlace nunca se le devuelve a
+B. Ser del equipo de LA MISMA empresa sigue rechazado (409
+`portal_email_is_staff`).
+
 ---
 
-**Versión del documento:** 1.53.0 (invitaciones al equipo)
+**Versión del documento:** 1.54.0 (portal con varios accesos por persona)

@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
+    HttpException,
+    HttpStatus,
     Inject,
     Injectable,
     Logger,
@@ -31,7 +34,11 @@ import {
     type RecordLayoutV3,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalAccessCheck,
     type PortalAccessList,
+    type PortalAccounts,
+    type PortalEmailLinkResult,
+    type PortalSwitchResult,
     type PortalCommentInput,
     type PortalLinkedList,
     type PortalRelatedList,
@@ -60,11 +67,27 @@ import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
 const MAGIC_TTL_SECONDS = 60 * 60 * 24; // 24h
+/** v0.1.241 — el enlace que acuña "cambiar a otra empresa" se usa al instante. */
+const SWITCH_TTL_SECONDS = 120;
 const magicKey = (token: string) => `magic:${token}`;
 
 interface MagicPayload {
     userId: number;
     tenantId: number;
+    /** v0.1.241 — el acceso (registro) que abre el enlace. */
+    linkId?: number;
+    /**
+     * v0.1.241 — el enlace llegó SÓLO al correo de la persona (la empresa no
+     * pudo copiarlo): la sesión que abra puede ver sus cuentas de otras
+     * empresas. Un enlace que se le devolvió a la empresa jamás lo lleva.
+     */
+    account?: boolean;
+}
+
+/** `ana@gmail.com` → `an***@gmail.com` (para decir a dónde salió un correo). */
+function maskEmail(email: string): string {
+    const [local = '', domain = ''] = email.split('@');
+    return `${local.slice(0, Math.min(2, local.length))}***@${domain}`;
 }
 
 /**
@@ -80,6 +103,12 @@ interface MagicPayload {
 export interface PortalActor {
     userId: number;
     tenantId: number | null;
+    /** v0.1.241 — acceso con el que se abrió la sesión (el que se muestra por defecto). */
+    linkId?: number;
+    /** v0.1.241 — acceso elegido en el portal (`X-Portal-Account`). */
+    requestedLinkId?: number;
+    /** v0.1.241 — la sesión ve las cuentas de todas sus empresas. */
+    account?: boolean;
 }
 
 @Injectable()
@@ -150,7 +179,7 @@ export class PortalService {
             });
         }
 
-        const { userId, handOver } = await this.db.transaction(async (tx) => {
+        const { userId, linkId, handOver } = await this.db.transaction(async (tx) => {
             await tx.execute(sql`set local role imagina_app`);
             await tx.execute(sql`select set_config('app.tenant_id', ${String(tenantId)}, true)`);
 
@@ -194,56 +223,74 @@ export class PortalService {
             // set app.user_id para las policies self de memberships/portal_links.
             await tx.execute(sql`select set_config('app.user_id', ${String(uid)}, true)`);
 
-            // Defensa en profundidad (SEC-01): un magic link acuña una SESIÓN
-            // para `uid`. Nunca hay que emitirlo para un usuario del equipo:
-            // quien lo canjea obtendría la sesión de esa cuenta staff (incluso
-            // de OTRO tenant). El self-policy de memberships deja ver todas las
-            // membresías del propio uid, sin filtro de tenant → si alguna no es
-            // `client`, es una cuenta de equipo y rechazamos.
-            const staffMemberships = await tx
-                .select({ role: memberships.role })
+            // ¿Es del EQUIPO de esta empresa? El portal es para sus clientes: a
+            // su gente se le comparte la lista, no se le da un portal (y la
+            // membresía de equipo no puede convivir con una de cliente).
+            //
+            // v0.1.241 — ser del equipo de OTRA empresa ya no impide nada: la
+            // sesión que abre el enlace es sólo del portal (SEC-24: limitada a
+            // `/portal/*`, a esta empresa y con su propia cookie), así que no
+            // da acceso a la cuenta de trabajo de esa persona. Antes se
+            // rechazaba (SEC-01, cuando una sesión del portal valía como una
+            // sesión de la cuenta entera).
+            const rolesAnywhere = await tx
+                .select({ tenantId: memberships.tenantId, role: memberships.role })
                 .from(memberships)
-                .where(and(eq(memberships.userId, uid), sql`${memberships.role} <> 'client'`))
-                .limit(1);
-            if (staffMemberships.length > 0) {
-                throw new ForbiddenException({
-                    code: 'portal_email_not_client',
-                    message: 'Ese email pertenece a un usuario del equipo; el portal es solo para clientes',
-                    data: { status: 403 },
+                .where(eq(memberships.userId, uid));
+            const here = rolesAnywhere.find((m) => m.tenantId === tenantId);
+            if (here && here.role !== 'client') {
+                throw new ConflictException({
+                    code: 'portal_email_is_staff',
+                    message: 'Esa persona es del equipo de esta empresa; el portal es para clientes',
+                    data: { status: 409 },
                 });
             }
-
-            // ¿Ya era cliente de ESTA empresa? Se mira antes de insertar.
-            const [clientHere] = await tx
-                .select({ userId: memberships.userId })
-                .from(memberships)
-                .where(and(eq(memberships.userId, uid), eq(memberships.tenantId, tenantId)))
-                .limit(1);
+            const staffElsewhere = rolesAnywhere.some((m) => m.role !== 'client');
 
             await tx
                 .insert(memberships)
                 .values({ userId: uid, tenantId, role: 'client' })
                 .onConflictDoNothing();
-            await tx
+            // v0.1.241 — un acceso por REGISTRO. Antes el vínculo era único por
+            // (persona, empresa) y dar acceso a otro registro REEMPLAZABA el
+            // anterior en silencio: el cliente dejaba de ver su primera ficha.
+            const [created] = await tx
                 .insert(portalLinks)
                 .values({ tenantId, userId: uid, listId: list.id, recordId: input.record_id })
-                .onConflictDoUpdate({
-                    target: [portalLinks.userId, portalLinks.tenantId],
-                    set: { listId: list.id, recordId: input.record_id },
-                });
+                .onConflictDoNothing()
+                .returning({ id: portalLinks.id });
+            const [link] = created
+                ? [created]
+                : await tx
+                      .select({ id: portalLinks.id })
+                      .from(portalLinks)
+                      .where(and(eq(portalLinks.userId, uid), eq(portalLinks.recordId, input.record_id)))
+                      .limit(1);
             // SEC-24: el enlace se le puede DEVOLVER a quien lo pide (para
             // compartirlo a mano) sólo si la cuenta es de esta empresa: la creó
             // esta misma llamada o ya era su cliente. Una cuenta que existía por
             // su cuenta (cliente de otra empresa, un usuario sin workspace…) no
             // es de quien pide el enlace: a ella le llega por CORREO y nada más.
-            return { userId: uid, handOver: existingUser === undefined || clientHere !== undefined };
+            // v0.1.241 — tampoco se devuelve el de alguien que trabaja en otra
+            // empresa: su cuenta no es de esta.
+            return {
+                userId: uid,
+                linkId: link!.id,
+                handOver: existingUser === undefined || (here !== undefined && !staffElsewhere),
+            };
         });
 
         // Email transaccional con el acceso. Con dominio propio (ADR-S17) el
         // link sale por el dominio del tenant. v0.1.150 — se envía EN EL ACTO
         // y el resultado VUELVE: antes un fallo del SMTP se tragaba y la UI
         // decía "enviado" igual.
-        const result = await this.sendMagicLink(tenantId, userId, input.email, list.name);
+        // v0.1.241 — un enlace que llega SÓLO al correo prueba que quien lo abre
+        // es la dueña del email: esa sesión puede ver sus cuentas de otras
+        // empresas. El que se le devuelve a la empresa queda en esta empresa.
+        const result = await this.sendMagicLink(tenantId, userId, input.email, list.name, {
+            linkId,
+            account: !handOver,
+        });
         return handOver ? result : { ...result, token: null, path: null };
     }
 
@@ -285,30 +332,41 @@ export class PortalService {
     }
 
     private async deliverAccess(email: string): Promise<void> {
-
         const [user] = await this.db
             .select({ id: users.id, disabledAt: users.disabledAt })
             .from(users)
             .where(sql`lower(${users.email}) = ${email}`)
             .limit(1);
         if (!user || user.disabledAt !== null) return;
+        if (this.env.PLATFORM_SUPERADMINS.includes(email)) return;
 
         const links = await this.db
-            .select({ tenantId: portalLinks.tenantId, listId: portalLinks.listId })
+            .select({ id: portalLinks.id, tenantId: portalLinks.tenantId, listId: portalLinks.listId })
             .from(portalLinks)
             .where(eq(portalLinks.userId, user.id))
-            .limit(3);
+            .orderBy(portalLinks.tenantId, portalLinks.id)
+            .limit(200);
         if (links.length === 0) return;
 
+        // v0.1.241 — UN correo por empresa (antes, uno por vínculo: con varios
+        // accesos en la misma empresa llegaban varios correos iguales). El
+        // enlace llega sólo a la persona → abre una sesión que ve todas sus
+        // cuentas. Tope de 5 empresas por pedido.
+        const seen = new Set<number>();
         for (const link of links) {
+            if (seen.has(link.tenantId) || seen.size >= 5) continue;
+            // Un portal que la empresa apagó no reparte enlaces nuevos.
+            if (await this.portalSwitchedOff(link.tenantId, link.listId)) continue;
+            seen.add(link.tenantId);
             const [list] = await this.db
                 .select({ name: lists.name })
                 .from(lists)
                 .where(eq(lists.id, link.listId))
                 .limit(1);
-            // Un portal que la empresa apagó no reparte enlaces nuevos.
-            if (await this.portalSwitchedOff(link.tenantId, link.listId)) continue;
-            await this.sendMagicLink(link.tenantId, user.id, email, list?.name ?? 'tu portal');
+            await this.sendMagicLink(link.tenantId, user.id, email, list?.name ?? 'tu portal', {
+                linkId: link.id,
+                account: true,
+            });
         }
     }
 
@@ -317,26 +375,40 @@ export class PortalService {
      * resultado del envío para que el admin sepa si SALIÓ (v0.1.150) — el
      * enlace se devuelve igual para poder compartirlo a mano.
      */
+    private async mintToken(payload: MagicPayload, ttl: number = MAGIC_TTL_SECONDS): Promise<string> {
+        const token = randomBytes(24).toString('base64url');
+        await this.redis.set(magicKey(token), JSON.stringify(payload), 'EX', ttl);
+        return token;
+    }
+
     private async sendMagicLink(
         tenantId: number,
         userId: number,
         email: string,
         listName: string,
+        opts: { linkId?: number; account?: boolean; baseUrl?: string; allAccounts?: boolean } = {},
     ): Promise<MagicLinkResult> {
-        const token = randomBytes(24).toString('base64url');
-        const payload: MagicPayload = { userId, tenantId };
-        await this.redis.set(magicKey(token), JSON.stringify(payload), 'EX', MAGIC_TTL_SECONDS);
+        const token = await this.mintToken({
+            userId,
+            tenantId,
+            ...(opts.linkId !== undefined ? { linkId: opts.linkId } : {}),
+            ...(opts.account === true ? { account: true } : {}),
+        });
         const path = `/portal/acceso?token=${token}`;
-        const url = `${await this.domains.baseUrlFor(tenantId)}${path}`;
+        const url = `${opts.baseUrl ?? (await this.domains.baseUrlFor(tenantId))}${path}`;
+        const subject = opts.allAccounts ? 'Tu acceso a todas tus cuentas del portal' : `Tu acceso al portal de ${listName}`;
+        const intro = opts.allAccounts
+            ? 'Con este enlace ves en un solo lugar todas las cuentas que tenés en portales de clientes (válido por 24 h):'
+            : 'Accedé a tu portal con este enlace (válido por 24 h):';
         let emailSent = true;
         let emailError: string | null = null;
         try {
             await this.mail.sendNow({
                 tenantId,
                 to: email,
-                subject: `Tu acceso al portal de ${listName}`,
-                text: `Hola,\n\nAccedé a tu portal con este enlace (válido por 24 h):\n${url}\n\nSi no esperabas este correo, ignoralo.`,
-                html: `<p>Hola,</p><p>Accedé a tu portal con este enlace (válido por 24 h):</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
+                subject,
+                text: `Hola,\n\n${intro}\n${url}\n\nSi no esperabas este correo, ignoralo.`,
+                html: `<p>Hola,</p><p>${intro}</p><p><a href="${url}">Entrar al portal</a></p><p>Si no esperabas este correo, ignoralo.</p>`,
             });
         } catch (err) {
             emailSent = false;
@@ -346,10 +418,14 @@ export class PortalService {
         return { token, path, email_sent: emailSent, email_error: emailError };
     }
 
-    /** Consume el token (un solo uso) y abre una sesión. Devuelve el token de sesión. */
+    /**
+     * Consume el token (un solo uso) y abre una sesión del portal. `host` es el
+     * host por el que se abrió: en el dominio PROPIO de una empresa la sesión
+     * nunca ve las cuentas de otras empresas (ese dominio lo controla ella).
+     */
     async consume(
         token: string,
-        meta: { userAgent?: string; ip?: string } = {},
+        meta: { userAgent?: string; ip?: string; host?: string } = {},
     ): Promise<{ sessionToken: string }> {
         // SEC-15: consumo atómico. `GETDEL` lee y borra en una sola operación,
         // así dos requests concurrentes con el mismo token no pueden abrir dos
@@ -370,15 +446,19 @@ export class PortalService {
             .from(users)
             .where(eq(users.id, payload.userId))
             .limit(1);
-        const [stillLinked] = await this.db
+        const linkRows = await this.db
             .select({ id: portalLinks.id })
             .from(portalLinks)
             .where(and(eq(portalLinks.userId, payload.userId), eq(portalLinks.tenantId, payload.tenantId)))
-            .limit(1);
+            .orderBy(portalLinks.id);
+        // v0.1.241 — el acceso puntual del enlace, si sigue en pie; si lo
+        // quitaron pero quedan otros en la empresa, el enlace igual abre (el
+        // portal muestra el primero).
+        const linkId = linkRows.find((l) => l.id === payload.linkId)?.id ?? linkRows[0]?.id;
         if (
             !user ||
             user.disabledAt !== null ||
-            !stillLinked ||
+            linkId === undefined ||
             this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase())
         ) {
             throw new NotFoundException({
@@ -387,22 +467,179 @@ export class PortalService {
                 data: { status: 404 },
             });
         }
+        const account = payload.account === true && !(await this.domains.isCustomDomainHost(meta.host));
         const sessionToken = await this.sessions.create(payload.userId, {
-            ...meta,
+            userAgent: meta.userAgent,
+            ip: meta.ip,
             portalTenantId: payload.tenantId,
+            portalLinkId: linkId,
+            portalAccount: account,
         });
         // v0.1.153 — queda registrado que el cliente ENTRÓ. El admin necesita
         // saber si el enlace se usó o si el correo se perdió en el camino.
-        await this.db
-            .update(portalLinks)
-            .set({ lastAccessAt: new Date() })
-            .where(and(eq(portalLinks.userId, payload.userId), eq(portalLinks.tenantId, payload.tenantId)))
-            .catch((err: unknown) => {
-                this.logger.warn(`No se pudo registrar el acceso al portal: ${String(err)}`);
-            });
+        await this.touchAccess(linkId);
         return { sessionToken };
     }
 
+    private async touchAccess(linkId: number): Promise<void> {
+        await this.db
+            .update(portalLinks)
+            .set({ lastAccessAt: new Date() })
+            .where(eq(portalLinks.id, linkId))
+            .catch((err: unknown) => {
+                this.logger.warn(`No se pudo registrar el acceso al portal: ${String(err)}`);
+            });
+    }
+
+    /**
+     * v0.1.241 — las CUENTAS de la persona: cada registro al que tiene acceso.
+     * Una sesión común ve sólo las de su empresa; la que abrió un enlace de su
+     * correo (`account`) ve también las de otras empresas. Nunca revela nada
+     * que la persona no tenga.
+     */
+    async accounts(actor: PortalActor): Promise<PortalAccounts> {
+        if (actor.tenantId === null) return { accounts: [], all_companies: false };
+        const current = await this.requireLink(actor);
+        const all = actor.account === true;
+        const rows = await this.db
+            .select({ id: portalLinks.id, tenantId: portalLinks.tenantId, listId: portalLinks.listId, recordId: portalLinks.recordId })
+            .from(portalLinks)
+            .where(
+                all
+                    ? eq(portalLinks.userId, actor.userId)
+                    : and(eq(portalLinks.userId, actor.userId), eq(portalLinks.tenantId, actor.tenantId)),
+            )
+            .orderBy(portalLinks.tenantId, portalLinks.id)
+            .limit(100);
+
+        const byTenant = new Map<number, typeof rows>();
+        for (const r of rows) byTenant.set(r.tenantId, [...(byTenant.get(r.tenantId) ?? []), r]);
+
+        const out: PortalAccounts['accounts'] = [];
+        for (const [tid, links] of byTenant) {
+            const resolved = await this.tenantDb.withTenant(tid, async (tx) => {
+                const [tenantRow] = await tx
+                    .select({ name: tenants.name, archivedAt: tenants.archivedAt })
+                    .from(tenants)
+                    .where(eq(tenants.id, tid))
+                    .limit(1);
+                const listIds = [...new Set(links.map((l) => l.listId))];
+                const listRows = await tx
+                    .select({ id: lists.id, name: lists.name, settings: lists.settings })
+                    .from(lists)
+                    .where(inArray(lists.id, listIds));
+                const fieldRows = await tx
+                    .select({ id: fields.id, listId: fields.listId, type: fields.type })
+                    .from(fields)
+                    .where(inArray(fields.listId, listIds))
+                    .orderBy(fields.position);
+                const recordRows = await tx
+                    .select({ id: records.id, data: records.data })
+                    .from(records)
+                    .where(inArray(records.id, links.map((l) => l.recordId)));
+                return { tenantRow, listRows, fieldRows, recordRows };
+            });
+            const tenantName = resolved.tenantRow?.name ?? '';
+            for (const link of links) {
+                const list = resolved.listRows.find((l) => l.id === link.listId);
+                const record = resolved.recordRows.find((r) => r.id === link.recordId);
+                if (!list || !record) continue;
+                const titleId = resolveTitleFieldId(
+                    resolved.fieldRows
+                        .filter((f) => f.listId === list.id)
+                        .map((f) => ({ id: f.id, type: f.type as FieldType })),
+                    list.settings,
+                );
+                const rawTitle = titleId !== null ? (record.data as Record<string, unknown>)[`f${titleId}`] : null;
+                const portalCfg = (list.settings as Record<string, unknown> | null)?.portal;
+                const switchedOff =
+                    portalCfg !== null && typeof portalCfg === 'object' && (portalCfg as { enabled?: unknown }).enabled === false;
+                out.push({
+                    id: link.id,
+                    tenant_id: tid,
+                    tenant_name: tenantName,
+                    list_name: list.name,
+                    record_id: record.id,
+                    record_title:
+                        typeof rawTitle === 'string' && rawTitle.trim() !== ''
+                            ? rawTitle.trim().slice(0, 120)
+                            : typeof rawTitle === 'number'
+                              ? String(rawTitle)
+                              : `${list.name} #${record.id}`,
+                    current: link.id === current.id,
+                    same_company: tid === actor.tenantId,
+                    available: !switchedOff && resolved.tenantRow?.archivedAt == null,
+                });
+            }
+        }
+        return { accounts: out, all_companies: all };
+    }
+
+    /**
+     * v0.1.241 — abrir una cuenta de OTRA empresa. La sesión es de una empresa
+     * (todo lo que el portal lee se acota a ella), así que cambiar de empresa es
+     * abrir otra: el servidor acuña un enlace de un solo uso (2 min) y el portal
+     * navega a él. Sólo para sesiones que ven todas las cuentas. Una cuenta de
+     * la misma empresa no necesita esto (`path: null`): se elige y listo.
+     */
+    async switchAccount(actor: PortalActor, linkId: number): Promise<PortalSwitchResult> {
+        const notFound = () =>
+            new NotFoundException({ code: 'portal_account_not_found', message: 'Esa cuenta no está disponible', data: { status: 404 } });
+        if (actor.tenantId === null) throw notFound();
+        const [link] = await this.db
+            .select({ id: portalLinks.id, tenantId: portalLinks.tenantId, listId: portalLinks.listId })
+            .from(portalLinks)
+            .where(and(eq(portalLinks.id, linkId), eq(portalLinks.userId, actor.userId)))
+            .limit(1);
+        if (!link) throw notFound();
+        if (link.tenantId === actor.tenantId) return { path: null };
+        if (actor.account !== true || (await this.portalSwitchedOff(link.tenantId, link.listId))) throw notFound();
+        const token = await this.mintToken(
+            { userId: actor.userId, tenantId: link.tenantId, linkId: link.id, account: true },
+            SWITCH_TTL_SECONDS,
+        );
+        // Ruta RELATIVA: se queda en el host actual (el de la plataforma — una
+        // sesión que ve todas las empresas sólo existe ahí).
+        return { path: `/portal/acceso?token=${token}&cuenta=${link.id}` };
+    }
+
+    /**
+     * v0.1.241 — "¿Sos cliente de otra empresa?": manda al correo de la persona
+     * un enlace que abre una sesión con TODAS sus cuentas, en el dominio de la
+     * plataforma. Pedirlo con la sesión no alcanza: la sesión pudo abrirla un
+     * enlace que la empresa copió, y las cuentas de otras empresas son sólo de
+     * quien lee ese correo. Freno de 3 cada 15 minutos.
+     */
+    async emailAllAccounts(actor: PortalActor): Promise<PortalEmailLinkResult> {
+        const link = await this.requireLink(actor);
+        const [user] = await this.db
+            .select({ email: users.email })
+            .from(users)
+            .where(eq(users.id, actor.userId))
+            .limit(1);
+        if (!user) throw new NotFoundException({ code: 'portal_not_linked', message: 'Sesión inválida', data: { status: 404 } });
+        const rlKey = `portalacct:${actor.userId}`;
+        const attempts = await this.redis.incr(rlKey);
+        if (attempts === 1) await this.redis.expire(rlKey, 900);
+        if (attempts > 3) {
+            throw new HttpException(
+                {
+                    code: 'portal_email_rate_limited',
+                    message: 'Ya te mandamos varios enlaces. Revisá tu correo o probá en unos minutos.',
+                    data: { status: 429 },
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        const [list] = await this.db.select({ name: lists.name }).from(lists).where(eq(lists.id, link.listId)).limit(1);
+        const res = await this.sendMagicLink(link.tenantId, actor.userId, user.email, list?.name ?? 'tu portal', {
+            linkId: link.id,
+            account: true,
+            baseUrl: this.env.APP_BASE_URL,
+            allAccounts: true,
+        });
+        return { email_sent: res.email_sent, email_hint: maskEmail(user.email) };
+    }
 
     // --- Endpoints del portal autenticado (paridad con el plugin) ----------
     // Todos resuelven el cliente desde `portal_links` (fail-closed: sin
@@ -420,36 +657,61 @@ export class PortalService {
      * usuario tiene UN vínculo: con dos es ambiguo y tiene que volver a entrar.
      */
     private async requireLink(actor: PortalActor) {
-        const rows = await this.tenantDb.withUser(actor.userId, (tx) =>
-            tx
-                .select()
-                .from(portalLinks)
-                .where(
-                    actor.tenantId !== null
-                        ? and(eq(portalLinks.userId, actor.userId), eq(portalLinks.tenantId, actor.tenantId))
-                        : eq(portalLinks.userId, actor.userId),
-                )
-                .limit(2),
-        );
-        const link = rows.length === 1 ? rows[0]! : null;
-        if (!link) {
-            throw new NotFoundException({
+        const notLinked = () =>
+            new NotFoundException({
                 code: 'portal_not_linked',
                 message: 'Este usuario no tiene un portal vinculado',
                 data: { status: 404 },
             });
-        }
-        // SEC-35 (v0.1.239): si la empresa APAGÓ el portal de esa lista, el
-        // cliente con una sesión abierta deja de ver su ficha al instante
-        // (antes seguía entrando hasta que vencía la sesión, 30 días).
-        if (await this.portalSwitchedOff(link.tenantId, link.listId)) {
-            throw new NotFoundException({
+        const disabled = () =>
+            new NotFoundException({
                 code: 'portal_disabled',
                 message: 'El portal de esta empresa no está disponible',
                 data: { status: 404 },
             });
+        if (actor.tenantId === null) {
+            // Sesión vieja (anterior a SEC-24, sin empresa): sólo con UN vínculo.
+            const rows = await this.tenantDb.withUser(actor.userId, (tx) =>
+                tx.select().from(portalLinks).where(eq(portalLinks.userId, actor.userId)).limit(2),
+            );
+            const only = rows.length === 1 ? rows[0]! : null;
+            if (!only) throw notLinked();
+            if (await this.portalSwitchedOff(only.tenantId, only.listId)) throw disabled();
+            return only;
         }
-        return link;
+        const tenantId = actor.tenantId;
+        const rows = await this.tenantDb.withUser(actor.userId, (tx) =>
+            tx
+                .select()
+                .from(portalLinks)
+                .where(and(eq(portalLinks.userId, actor.userId), eq(portalLinks.tenantId, tenantId)))
+                .orderBy(portalLinks.id)
+                .limit(100),
+        );
+        if (rows.length === 0) throw notLinked();
+        // v0.1.241 — la persona eligió una cuenta: tiene que ser SUYA y de la
+        // empresa de la sesión (una de otra empresa se abre con su enlace).
+        if (actor.requestedLinkId !== undefined) {
+            const chosen = rows.find((r) => r.id === actor.requestedLinkId);
+            if (!chosen) {
+                throw new NotFoundException({
+                    code: 'portal_account_not_found',
+                    message: 'Esa cuenta no está disponible',
+                    data: { status: 404 },
+                });
+            }
+            // SEC-35 (v0.1.239): si la empresa APAGÓ el portal de esa lista, el
+            // cliente con una sesión abierta deja de verla al instante.
+            if (await this.portalSwitchedOff(chosen.tenantId, chosen.listId)) throw disabled();
+            return chosen;
+        }
+        // Sin elección: la del enlace con el que entró, y si ya no está (o su
+        // portal se apagó), la primera disponible.
+        const ordered = [...rows.filter((r) => r.id === actor.linkId), ...rows.filter((r) => r.id !== actor.linkId)];
+        for (const link of ordered) {
+            if (!(await this.portalSwitchedOff(link.tenantId, link.listId))) return link;
+        }
+        throw disabled();
     }
 
     /** El portal de la lista fue DESACTIVADO explícitamente (`portal.enabled: false`). */
@@ -846,9 +1108,11 @@ export class PortalService {
      * REVOCA sus sesiones al instante (si no, seguiría dentro hasta que expire
      * la cookie — mismo criterio que desactivar un usuario, v0.1.116).
      */
-    async revokeAccess(tenantId: number, listIdOrSlug: string, userId: number): Promise<void> {
+    async revokeAccess(tenantId: number, listIdOrSlug: string, userId: number, recordId?: number): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const [link] = await this.db
+        // v0.1.241 — una persona puede tener acceso a VARIOS registros: se quita
+        // el de ese registro (o, sin registro, todos los de esta lista).
+        const doomed = await this.db
             .select({ id: portalLinks.id })
             .from(portalLinks)
             .where(
@@ -856,20 +1120,28 @@ export class PortalService {
                     eq(portalLinks.tenantId, tenantId),
                     eq(portalLinks.listId, list.id),
                     eq(portalLinks.userId, userId),
+                    ...(recordId !== undefined ? [eq(portalLinks.recordId, recordId)] : []),
                 ),
-            )
-            .limit(1);
-        if (!link) {
+            );
+        if (doomed.length === 0) {
             throw new NotFoundException({
                 code: 'portal_access_not_found',
                 message: 'Ese cliente no tiene acceso al portal de esta lista',
                 data: { status: 404 },
             });
         }
+        await this.db.delete(portalLinks).where(inArray(portalLinks.id, doomed.map((d) => d.id)));
+        // ¿Le queda algún otro acceso en esta empresa? Entonces sigue siendo su
+        // cliente y su sesión sigue viva (el portal le muestra los que quedan).
+        const [left] = await this.db
+            .select({ id: portalLinks.id })
+            .from(portalLinks)
+            .where(and(eq(portalLinks.tenantId, tenantId), eq(portalLinks.userId, userId)))
+            .limit(1);
+        if (left) return;
         // Guard rail: sólo se revoca a usuarios `client` (una cuenta de equipo
         // jamás llega acá — `issue` lo impide — pero el borrado de membresía
         // no puede depender de eso).
-        await this.db.delete(portalLinks).where(eq(portalLinks.id, link.id));
         await this.db
             .delete(memberships)
             .where(
@@ -882,6 +1154,64 @@ export class PortalService {
         // Sólo las sesiones del portal de ESTA empresa: la misma persona puede
         // ser cliente de otra y ahí sigue adentro.
         await this.sessions.destroyPortalSessions(userId, tenantId);
+    }
+
+    /**
+     * v0.1.241 — ANTES de dar acceso: qué pasa con ese email EN ESTA EMPRESA.
+     * Sólo mira esta empresa (no revela si es cliente de otras).
+     */
+    async checkAccess(tenantId: number, listIdOrSlug: string, rawEmail: string, recordId: number): Promise<PortalAccessCheck> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const email = rawEmail.trim().toLowerCase();
+        const [user] = await this.db
+            .select({ id: users.id })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`)
+            .limit(1);
+        if (!user) return { status: 'new', records: [] };
+        const [member] = await this.db
+            .select({ role: memberships.role })
+            .from(memberships)
+            .where(and(eq(memberships.userId, user.id), eq(memberships.tenantId, tenantId)))
+            .limit(1);
+        if (member && member.role !== 'client') return { status: 'staff', records: [] };
+        const links = await this.db
+            .select({ listId: portalLinks.listId, recordId: portalLinks.recordId })
+            .from(portalLinks)
+            .where(and(eq(portalLinks.userId, user.id), eq(portalLinks.tenantId, tenantId)))
+            .orderBy(portalLinks.id)
+            .limit(50);
+        if (links.some((l) => l.listId === list.id && l.recordId === recordId)) return { status: 'this_record', records: [] };
+        if (links.length === 0) return { status: 'new', records: [] };
+        const records_ = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const listIds = [...new Set(links.map((l) => l.listId))];
+            const listRows = await tx.select({ id: lists.id, name: lists.name, settings: lists.settings }).from(lists).where(inArray(lists.id, listIds));
+            const fieldRows = await tx
+                .select({ id: fields.id, listId: fields.listId, type: fields.type })
+                .from(fields)
+                .where(inArray(fields.listId, listIds))
+                .orderBy(fields.position);
+            const recordRows = await tx
+                .select({ id: records.id, data: records.data })
+                .from(records)
+                .where(inArray(records.id, links.map((l) => l.recordId)));
+            return links.flatMap((l) => {
+                const lst = listRows.find((x) => x.id === l.listId);
+                const rec = recordRows.find((x) => x.id === l.recordId);
+                if (!lst || !rec) return [];
+                const titleId = resolveTitleFieldId(
+                    fieldRows.filter((f) => f.listId === lst.id).map((f) => ({ id: f.id, type: f.type as FieldType })),
+                    lst.settings,
+                );
+                const raw = titleId !== null ? (rec.data as Record<string, unknown>)[`f${titleId}`] : null;
+                return [{
+                    list_name: lst.name,
+                    record_id: rec.id,
+                    record_title: typeof raw === 'string' && raw.trim() !== '' ? raw.trim().slice(0, 120) : `${lst.name} #${rec.id}`,
+                }];
+            });
+        });
+        return { status: records_.length > 0 ? 'other_records' : 'new', records: records_ };
     }
 
     /**
@@ -956,7 +1286,7 @@ export class PortalService {
 
     async me(actor: PortalActor): Promise<PortalBoot> {
         const link = await this.requireLink(actor);
-        const boot = await this.bootWithinTenant(actor.userId, link);
+        const boot = { ...(await this.bootWithinTenant(actor.userId, link)), account_id: link.id };
         if (!boot.layout) return boot;
         // v0.1.233 — los gráficos y tablas del diseño viajan en el MISMO
         // request (regla de oro nº 8), ya acotados al cliente.
@@ -1180,7 +1510,7 @@ export class PortalService {
             // de la empresa. El logo va por URL FIRMADA (el rol client no
             // tiene la descarga con sesión, mismo criterio que los campos file).
             const [tenantRow] = await tx
-                .select({ settings: tenants.settings })
+                .select({ settings: tenants.settings, name: tenants.name })
                 .from(tenants)
                 .where(eq(tenants.id, link.tenantId))
                 .limit(1);
@@ -1233,6 +1563,7 @@ export class PortalService {
             return {
                 branding,
                 format,
+                tenant_name: tenantRow?.name ?? '',
                 related_lists: relatedLists,
                 list_id: list.id,
                 list_slug: list.slug,
@@ -1275,6 +1606,7 @@ export class PortalService {
                 layout_origin: resolved.origin,
                 layout_data: null,
                 editable_field_ids: editableIds,
+                account_id: null,
             };
         });
     }

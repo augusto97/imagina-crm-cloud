@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -7,6 +7,7 @@ import { loadEnv } from '../src/config/env';
 import { memberships, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { SessionService } from '../src/auth/session.service';
+import { PORTAL_SESSION_COOKIE, SESSION_COOKIE, SessionGuard } from '../src/auth/session.guard';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
@@ -488,10 +489,10 @@ describe('PortalService (Postgres + Redis reales)', () => {
     // SEC-01: emitir un magic link acuña una sesión para el usuario del email.
     // Si el email pertenece a un usuario del equipo (staff), quien lo canjea
     // obtendría la sesión de esa cuenta → apropiación. Debe rechazarse.
-    it('rechaza emitir un magic link para el email de un usuario del equipo', async () => {
+    it('rechaza emitir un magic link para el email de un usuario del equipo DE ESTA empresa', async () => {
         await expect(
             portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'admin@acme.test' }),
-        ).rejects.toBeInstanceOf(ForbiddenException);
+        ).rejects.toBeInstanceOf(ConflictException);
     });
 
     // SEC-24 (v0.1.225) — el enlace del portal era una forma de loguearse como
@@ -562,6 +563,190 @@ describe('PortalService (Postgres + Redis reales)', () => {
             const res = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'baja24@acme.test' });
             await pg.db.update(users).set({ disabledAt: new Date() }).where(eq(users.email, 'baja24@acme.test'));
             await expect(portal.consume(res.token!)).rejects.toBeInstanceOf(NotFoundException);
+        });
+    });
+
+    describe('v0.1.241 — varios accesos por persona, cuentas y empresas', () => {
+        let rec2: number;
+        let rec3: number;
+        const tokenFromMail = () => /token=([A-Za-z0-9_-]+)/.exec(mailbox.sent.at(-1)!.text ?? '')![1]!;
+        const sessionOf = async (token: string) => (await sessions.get(token))!;
+
+        beforeAll(async () => {
+            rec2 = (await recordsService.create(tenantId, admin, 'clientes', { data: { [`f${fieldId}`]: 'Sucursal Norte' } })).id;
+            rec3 = (await recordsService.create(tenantId, admin, 'clientes', { data: { [`f${fieldId}`]: 'Sucursal Sur' } })).id;
+        });
+
+        it('dar acceso a otro registro SUMA (no reemplaza) y el portal deja elegir cuál ver', async () => {
+            const a = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'multi@acme.test' });
+            // Antes de dar el segundo: el admin se entera de que ya tiene otro.
+            const check = await portal.checkAccess(tenantId, 'clientes', 'Multi@Acme.test', rec2);
+            expect(check.status).toBe('other_records');
+            expect(check.records.map((r) => r.record_id)).toEqual([recordId]);
+            expect(check.records[0]!.record_title).toBe('ACME Renovada');
+            const b = await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'multi@acme.test' });
+            expect((await portal.checkAccess(tenantId, 'clientes', 'multi@acme.test', rec2)).status).toBe('this_record');
+            // Los dos accesos quedan registrados.
+            expect((await portal.accessFor(tenantId, 'clientes', recordId)).users.map((u) => u.email)).toContain('multi@acme.test');
+            expect((await portal.accessFor(tenantId, 'clientes', rec2)).users.map((u) => u.email)).toContain('multi@acme.test');
+
+            // El enlace del segundo abre ESE registro; el del primero, el primero.
+            const sB = await sessionOf((await portal.consume(b.token!)).sessionToken);
+            const actorB = { userId: sB.userId, tenantId, linkId: sB.portalLinkId };
+            expect((await portal.me(actorB)).record.id).toBe(rec2);
+            const sA = await sessionOf((await portal.consume(a.token!)).sessionToken);
+            expect((await portal.me({ userId: sA.userId, tenantId, linkId: sA.portalLinkId })).record.id).toBe(recordId);
+
+            // Cuentas: las dos de esta empresa, la actual marcada.
+            const acc = await portal.accounts(actorB);
+            expect(acc.all_companies).toBe(false); // el token se le devolvió a la empresa
+            expect(acc.accounts.map((x) => x.record_id).sort()).toEqual([recordId, rec2].sort());
+            expect(acc.accounts.find((x) => x.current)!.record_id).toBe(rec2);
+            expect(acc.accounts.every((x) => x.same_company && x.tenant_name === 'ACME')).toBe(true);
+            // Elegir la otra (X-Portal-Account) cambia lo que ve todo el portal.
+            const other = acc.accounts.find((x) => !x.current)!;
+            const chosen = { ...actorB, requestedLinkId: other.id };
+            const boot = await portal.me(chosen);
+            expect(boot.record.id).toBe(recordId);
+            expect(boot.account_id).toBe(other.id);
+            await portal.createMyComment(chosen, { content: 'desde la cuenta elegida' });
+            expect((await portal.myComments(chosen)).some((c) => (c as { content?: string }).content === 'desde la cuenta elegida')).toBe(true);
+            expect((await portal.myComments(actorB)).some((c) => (c as { content?: string }).content === 'desde la cuenta elegida')).toBe(false);
+            // Un id que no es suyo → 404, nunca el registro de otro.
+            const ajeno = await portal.issue(tenantId, 'clientes', { record_id: rec3, email: 'ajeno41@acme.test' });
+            const sAjeno = await sessionOf((await portal.consume(ajeno.token!)).sessionToken);
+            await expect(portal.me({ ...actorB, requestedLinkId: sAjeno.portalLinkId })).rejects.toMatchObject({
+                response: expect.objectContaining({ code: 'portal_account_not_found' }),
+            });
+
+            // Quitar UN acceso deja el otro: la sesión sigue viva y cae al que queda.
+            const tokB = (await portal.consume((await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'multi@acme.test' })).token!)).sessionToken;
+            await portal.revokeAccess(tenantId, 'clientes', sB.userId, rec2);
+            expect(await sessions.get(tokB)).not.toBeNull();
+            expect((await portal.me({ userId: sB.userId, tenantId, linkId: sB.portalLinkId })).record.id).toBe(recordId);
+            // Quitar el último → fuera de la empresa y sesiones muertas.
+            await portal.revokeAccess(tenantId, 'clientes', sB.userId, recordId);
+            expect(await sessions.get(tokB)).toBeNull();
+        });
+
+        it('el chequeo previo distingue equipo, nuevo y ya-con-acceso (sólo de ESTA empresa)', async () => {
+            expect((await portal.checkAccess(tenantId, 'clientes', 'admin@acme.test', recordId)).status).toBe('staff');
+            expect((await portal.checkAccess(tenantId, 'clientes', 'nadie41@acme.test', recordId)).status).toBe('new');
+        });
+
+        it('alguien del EQUIPO de otra empresa puede ser cliente acá; el enlace sólo le llega por correo', async () => {
+            const [tc] = await pg.db.insert(tenants).values({ slug: 'gamma41', name: 'Gamma' }).returning();
+            const [staff] = await pg.db.insert(users).values({ email: 'staff@gamma.test', passwordHash: 'x', name: 'Staff Gamma' }).returning();
+            await withTenant(pg.db, tc!.id, (tx) => tx.insert(memberships).values({ userId: staff!.id, tenantId: tc!.id, role: 'admin' }));
+            const res = await portal.issue(tenantId, 'clientes', { record_id: rec3, email: 'staff@gamma.test' });
+            expect(res.token).toBeNull(); // su cuenta no es de esta empresa
+            expect(mailbox.sent.at(-1)!.to).toBe('staff@gamma.test');
+            const s = await sessionOf((await portal.consume(tokenFromMail())).sessionToken);
+            expect(s.portalTenantId).toBe(tenantId);
+            expect((await portal.me({ userId: s.userId, tenantId, linkId: s.portalLinkId })).record.id).toBe(rec3);
+            // Su rol en Gamma no cambió.
+            const roles = await pg.db.select().from(memberships).where(eq(memberships.userId, staff!.id));
+            expect(roles.find((m) => m.tenantId === tc!.id)!.role).toBe('admin');
+            expect(roles.find((m) => m.tenantId === tenantId)!.role).toBe('client');
+        });
+
+        it('una sesión abierta desde el correo ve sus cuentas de otras empresas y cambia de una a otra', async () => {
+            const [td] = await pg.db.insert(tenants).values({ slug: 'delta41', name: 'Delta' }).returning();
+            const tenantD = td!.id;
+            const listD = await listsService.create(tenantD, { name: 'Obras' });
+            const fd = await fieldsService.create(tenantD, listD.slug, { label: 'Nombre', type: 'text', slug: 'nombre' });
+            const recD = await recordsService.create(tenantD, { userId: admin.userId, role: 'admin' }, listD.slug, {
+                data: { [`f${fd.id}`]: 'Obra Delta' },
+            });
+            // Acceso en ACME (cuenta nueva → token devuelto) y en Delta (sólo correo).
+            const inA = await portal.issue(tenantId, 'clientes', { record_id: recordId, email: 'viajero@empresas.test' });
+            await portal.issue(tenantD, listD.slug, { record_id: recD.id, email: 'viajero@empresas.test' });
+            const fromMail = tokenFromMail();
+
+            // El token devuelto a ACME: sesión sólo de ACME, sin ver Delta.
+            const sCopied = await sessionOf((await portal.consume(inA.token!)).sessionToken);
+            expect(sCopied.portalAccount).toBeUndefined();
+            const copiedActor = { userId: sCopied.userId, tenantId, linkId: sCopied.portalLinkId, account: false };
+            const copied = await portal.accounts(copiedActor);
+            expect(copied.all_companies).toBe(false);
+            expect(copied.accounts.map((a) => a.tenant_name)).toEqual(['ACME']);
+            expect((await portal.checkAccess(tenantD, listD.slug, 'viajero@empresas.test', recD.id)).status).toBe('this_record');
+
+            // El enlace que llegó al correo: ve las dos empresas.
+            const sMail = await sessionOf((await portal.consume(fromMail, { host: 'app.imagina.test' })).sessionToken);
+            expect(sMail.portalTenantId).toBe(tenantD);
+            expect(sMail.portalAccount).toBe(true);
+            const mailActor = { userId: sMail.userId, tenantId: tenantD, linkId: sMail.portalLinkId, account: true };
+            const all = await portal.accounts(mailActor);
+            expect(all.all_companies).toBe(true);
+            expect(all.accounts.map((a) => a.tenant_name).sort()).toEqual(['ACME', 'Delta']);
+            const acmeAcc = all.accounts.find((a) => a.tenant_name === 'ACME')!;
+            expect(acmeAcc.same_company).toBe(false);
+            expect(acmeAcc.record_title).toBe('ACME Renovada');
+
+            // Cambiar a ACME: ruta de un solo uso que abre una sesión de ACME.
+            const sw = await portal.switchAccount(mailActor, acmeAcc.id);
+            expect(sw.path).toMatch(/^\/portal\/acceso\?token=/);
+            const swToken = /token=([A-Za-z0-9_-]+)/.exec(sw.path!)![1]!;
+            const sSwitched = await sessionOf((await portal.consume(swToken)).sessionToken);
+            expect(sSwitched.portalTenantId).toBe(tenantId);
+            expect(sSwitched.portalLinkId).toBe(acmeAcc.id);
+            await expect(portal.consume(swToken)).rejects.toBeInstanceOf(NotFoundException);
+            // La sesión copiada por la empresa NO puede cambiar de empresa.
+            const deltaAcc = all.accounts.find((a) => a.tenant_name === 'Delta')!;
+            await expect(portal.switchAccount(copiedActor, deltaAcc.id)).rejects.toBeInstanceOf(NotFoundException);
+            // …pero puede pedirse por correo el enlace de todas sus cuentas.
+            const sent = await portal.emailAllAccounts(copiedActor);
+            expect(sent).toEqual({ email_sent: true, email_hint: 'vi***@empresas.test' });
+            expect(mailbox.sent.at(-1)!.to).toBe('viajero@empresas.test');
+            expect(mailbox.sent.at(-1)!.subject).toContain('todas tus cuentas');
+            const sAll = await sessionOf((await portal.consume(tokenFromMail())).sessionToken);
+            expect(sAll.portalAccount).toBe(true);
+
+            // En el dominio PROPIO de una empresa la sesión nunca ve otras empresas.
+            await pg.db.update(tenants).set({ customDomain: 'portal.delta41.test' }).where(eq(tenants.id, tenantD));
+            await portal.requestAccess('viajero@empresas.test');
+            await portal.whenIdle();
+            const viaCustom = await sessionOf((await portal.consume(tokenFromMail(), { host: 'Portal.Delta41.test:443' })).sessionToken);
+            expect(viaCustom.portalAccount).toBeUndefined();
+        });
+
+        it('pedir un enlace manda UNO por empresa aunque tenga varios accesos en ella', async () => {
+            await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'dosfichas@acme.test' });
+            await portal.issue(tenantId, 'clientes', { record_id: rec3, email: 'dosfichas@acme.test' });
+            const before = mailbox.sent.length;
+            await portal.requestAccess('dosfichas@acme.test');
+            await portal.whenIdle();
+            expect(mailbox.sent.length).toBe(before + 1);
+        });
+
+        it('/portal/* sólo acepta una sesión DEL PORTAL (cookie propia o la vieja en la general)', async () => {
+            const guard = new SessionGuard(sessions);
+            const ctx = (url: string, cookies: Record<string, string>) => {
+                const req = { url, cookies, headers: {} } as unknown as Record<string, unknown>;
+                return { req, ctx: { switchToHttp: () => ({ getRequest: () => req }) } as unknown as ExecutionContext };
+            };
+            const res = await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'cookie41@acme.test' });
+            const portalTok = (await portal.consume(res.token!)).sessionToken;
+            const work = await sessions.create(admin.userId, { via: 'password' });
+
+            // Cookie del portal + cookie de trabajo: el portal usa la suya.
+            const a = ctx('/api/v1/portal/me', { [PORTAL_SESSION_COOKIE]: portalTok, [SESSION_COOKIE]: work });
+            await expect(guard.canActivate(a.ctx)).resolves.toBe(true);
+            expect(a.req.portalTenantId).toBe(tenantId);
+            // Sesión vieja del portal en la cookie general: sigue sirviendo.
+            const b = ctx('/api/v1/portal/me', { [SESSION_COOKIE]: portalTok });
+            await expect(guard.canActivate(b.ctx)).resolves.toBe(true);
+            // Una sesión de trabajo no abre un portal.
+            const c = ctx('/api/v1/portal/me', { [SESSION_COOKIE]: work });
+            await expect(guard.canActivate(c.ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+            // Y la del portal sigue sin servir para la app (SEC-24).
+            const d = ctx('/api/v1/lists', { [SESSION_COOKIE]: portalTok });
+            await expect(guard.canActivate(d.ctx)).rejects.toBeInstanceOf(ForbiddenException);
+            // La cookie de trabajo sigue funcionando en la app aunque haya portal.
+            const e = ctx('/api/v1/lists', { [SESSION_COOKIE]: work, [PORTAL_SESSION_COOKIE]: portalTok });
+            await expect(guard.canActivate(e.ctx)).resolves.toBe(true);
+            expect(e.req.authUserId).toBe(admin.userId);
         });
     });
 
