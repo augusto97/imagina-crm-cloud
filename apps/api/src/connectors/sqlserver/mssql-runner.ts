@@ -48,7 +48,7 @@ interface MssqlPool {
     connect(): Promise<unknown>;
     close(): Promise<unknown>;
 }
-interface MssqlLike {
+export interface MssqlLike {
     ConnectionPool: new (config: Record<string, unknown>) => MssqlPool;
     Transaction: new (pool: MssqlPool) => MssqlTransaction;
     Request: new (parent: MssqlTransaction | MssqlPool) => MssqlRequest;
@@ -56,6 +56,18 @@ interface MssqlLike {
 }
 
 let loaded: Promise<MssqlLike> | null = null;
+
+/** Espera una limpieza sin dejar que un error o una espera eterna la frenen. */
+async function withDeadline(p: Promise<unknown>, ms: number): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+        p.catch(() => undefined),
+        new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, ms);
+        }),
+    ]);
+    if (timer) clearTimeout(timer);
+}
 
 async function loadMssql(): Promise<MssqlLike> {
     if (!loaded) {
@@ -75,7 +87,8 @@ async function loadMssql(): Promise<MssqlLike> {
 }
 
 export class MssqlRunner implements SqlRunner {
-    constructor(private readonly opts: { allowPrivate: boolean }) {}
+    /** `load` sólo lo cambian los tests (un driver de mentira con el orden de eventos real). */
+    constructor(private readonly opts: { allowPrivate: boolean; load?: () => Promise<MssqlLike> }) {}
 
     async verify(conn: SqlConnParams): Promise<SqlVerifyResult> {
         const res = await this.run(conn, { kind: 'query', sql: SQL_VERIFY_QUERY }, { maxRows: 1, timeoutMs: 15_000, lastSync: null });
@@ -100,7 +113,7 @@ export class MssqlRunner implements SqlRunner {
                 target.reason === 'dns' ? 'dns' : 'blocked',
             );
         }
-        const sql = await loadMssql();
+        const sql = await (this.opts.load ?? loadMssql)();
         const started = Date.now();
         const pool = new sql.ConnectionPool({
             server: conn.server,
@@ -134,12 +147,14 @@ export class MssqlRunner implements SqlRunner {
                 return await this.stream(sql, tx, source, opts, started);
             } finally {
                 // SIEMPRE se deshace: lo que haya intentado escribir no queda.
-                await tx.rollback().catch(() => undefined);
+                // Con tope: un rollback que no vuelve no puede trabar la cola
+                // (cerrar la conexión deshace igual lo que quedó abierto).
+                await withDeadline(tx.rollback(), 10_000);
             }
         } catch (err) {
             throw explainSqlError(err, conn);
         } finally {
-            await pool.close().catch(() => undefined);
+            await withDeadline(pool.close(), 10_000);
         }
     }
 
@@ -153,10 +168,16 @@ export class MssqlRunner implements SqlRunner {
             let truncated = false;
             let cancelled = false;
             let settled = false;
+            let failure: unknown = null;
+            // El pedido termina con «done» TAMBIÉN cuando falla («error» llega
+            // antes). Se informa recién ahí: deshacer la transacción con el
+            // pedido todavía en curso deja al rollback esperando para siempre
+            // (lo atrapó la prueba contra un SQL Server real).
             const finish = (): void => {
                 if (settled) return;
                 settled = true;
-                resolve({ columns, rows, truncated, elapsedMs: Date.now() - started });
+                if (failure) reject(failure);
+                else resolve({ columns, rows, truncated, elapsedMs: Date.now() - started });
             };
             req.on('recordset', (cols) => {
                 sets++;
@@ -180,10 +201,8 @@ export class MssqlRunner implements SqlRunner {
             });
             req.on('error', (err) => {
                 // Cortar a propósito (tope de filas) no es un error.
-                if (cancelled && (err as { code?: string }).code === 'ECANCEL') return finish();
-                if (settled) return;
-                settled = true;
-                reject(err);
+                if (cancelled && (err as { code?: string }).code === 'ECANCEL') return;
+                if (!failure) failure = err;
             });
             req.on('done', finish);
 

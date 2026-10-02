@@ -6394,11 +6394,26 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 19/19 contra un driver simulado (conectar con contraseña mala
         y buena, error de sintaxis, vista previa, clave sugerida, campos
         creados con su tipo, segunda corrida con 1 nuevo/1 cambiado/1 marcado,
-        vista previa sin escribir, celular). **Pendiente**: el paquete `mssql`
-        no se pudo instalar en la sesión (el registro de npm estaba bloqueado
-        por la política de red) — sin él, conectar responde «el servidor no
-        tiene instalado el driver de SQL Server»; falta `pnpm add mssql` en
-        `apps/api` y la prueba contra una base real.
+        vista previa sin escribir, celular). **Prueba contra un SQL Server 2022
+        REAL** (driver `mssql` 12.7 + tedious, contenedor con una base de
+        facturas, un usuario de sólo lectura y uno con escritura): 24/24 del
+        runner (verificación y aviso de escritura, contraseña/base/certificado,
+        money/bit/date/datetime2/NULL/ñ, procedimiento con `@desde` incremental,
+        el INSERT dentro de la consulta deshecho, permiso denegado, tope de
+        filas, timeout a los 2 s, varios resultados) y E2E navegador 23/23
+        de punta a punta. Encontró tres cosas que el driver simulado no podía
+        mostrar: (1) **una consulta con error COLGABA la sincronización** — el
+        driver emite «error» y DESPUÉS «done», y deshacer la transacción en el
+        medio deja al rollback esperando para siempre; ahora el error se
+        informa en «done» y rollback/cierre llevan tope de tiempo (test de
+        regresión que falla con el código anterior); (2) un certificado
+        autofirmado se explicaba como «no se pudo conectar, revisá el
+        firewall» — llega como ESOCKET y el caso TLS se evaluaba después;
+        (3) **consulta incremental + «marcar lo que falta» marcaría como
+        borrado todo lo que no cambió**: la combinación se rechaza con el
+        motivo y el editor deshabilita la opción (`sqlSourceIsIncremental`
+        en shared, que ignora comentarios — la consulta de ejemplo menciona
+        el parámetro en uno).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

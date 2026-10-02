@@ -132,16 +132,18 @@ export function explainSqlError(err: unknown, conn?: Pick<SqlConnParams, 'server
             'timeout',
         );
     }
-    if (code === 'ETIMEOUT' || code === 'ESOCKET' || /ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|Failed to connect/i.test(raw)) {
-        return new SqlRunError(
-            `No se pudo conectar a ${server}. Revisá el nombre del servidor y el puerto, y que acepte conexiones desde la IP de este servidor (firewall de Azure, o el puerto 1433 abierto si es un servidor propio).${tail}`,
-            'connect',
-        );
-    }
+    // Antes que el genérico de conexión: el driver informa un certificado
+    // rechazado como ESOCKET/«Failed to connect» y el consejo correcto es otro.
     if (/certificate|self[- ]signed|SSL|TLS/i.test(raw)) {
         return new SqlRunError(
             `Falló la conexión cifrada con ${server}. Si es un servidor propio con un certificado autofirmado, activá «Confiar en el certificado del servidor» en la conexión.${tail}`,
             'tls',
+        );
+    }
+    if (code === 'ETIMEOUT' || code === 'ESOCKET' || /ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|Failed to connect/i.test(raw)) {
+        return new SqlRunError(
+            `No se pudo conectar a ${server}. Revisá el nombre del servidor y el puerto, y que acepte conexiones desde la IP de este servidor (firewall de Azure, o el puerto 1433 abierto si es un servidor propio).${tail}`,
+            'connect',
         );
     }
     return new SqlRunError(`SQL Server devolvió un error: ${raw.slice(0, 400)}`, 'other');

@@ -2087,9 +2087,13 @@ programado.
   `@ultima_sincronizacion` (UTC, NULL la primera vez) para consultas
   incrementales. Empresa en solo-lectura (ADR-S09/SEC-34): no corre.
 - **Driver**: `mssql` (tedious), cargado con `import()` la primera vez que se
-  usa, detrás de la interfaz `SqlRunner` (los tests usan un runner falso). Sin
-  el paquete instalado, conectar devuelve el motivo («el servidor no tiene
-  instalado el driver de SQL Server»).
+  usa, detrás de la interfaz `SqlRunner` (los tests usan un runner falso).
+  Ojo con el orden de eventos del streaming: ante un error llegan «error» y
+  después «done», y el rollback sólo puede ir tras «done» (antes queda
+  esperando para siempre); rollback y cierre llevan tope de tiempo igual.
+- **Incremental excluye «marcar lo que falta»**: una fuente con
+  `@ultima_sincronizacion` (fuera de comentarios) sólo trae lo que cambió, así
+  que lo ausente no significa borrado; la combinación se rechaza al guardar.
 - Las columnas sincronizadas se marcan en la lista (`settings.sql_sync`) pero
   **no se bloquean**: la base es la fuente, así que un valor editado a mano
   vuelve al de SQL en la próxima corrida.

@@ -6,6 +6,7 @@ import {
     SQL_LAST_SYNC_TOKEN,
     SQL_SYNC_INTERVALS,
     describeSqlSchedule,
+    sqlSourceIsIncremental,
     type CreateSqlSyncInput,
     type SqlPreviewResult,
     type SqlProcedureParam,
@@ -465,6 +466,13 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
         onError: (err) => setError(errText(err)),
     });
 
+    const incremental = sqlSourceIsIncremental(source());
+    // Con una fuente incremental marcar lo que falta es imposible (lo que no
+    // cambió tampoco aparece): si el usuario la vuelve incremental, se apaga.
+    useEffect(() => {
+        if (incremental && onMissing === 'flag') setOnMissing('ignore');
+    }, [incremental, onMissing]);
+
     const usableKey = keyFields(fieldList);
     const usableValue = valueFields(fieldList);
     const checkboxes = fieldList.filter((f) => f.type === 'checkbox');
@@ -671,8 +679,15 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
                         <Label>{__('Lo que deja de aparecer en el resultado')}</Label>
                         <Select value={onMissing} onChange={(e) => setOnMissing(e.target.value as 'ignore' | 'flag')} data-testid="imcrm-sql-on-missing">
                             <option value="ignore">{__('No tocarlo')}</option>
-                            <option value="flag">{__('Marcarlo en una casilla')}</option>
+                            <option value="flag" disabled={incremental}>
+                                {__('Marcarlo en una casilla')}
+                            </option>
                         </Select>
+                        {incremental && (
+                            <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-sql-incremental-note">
+                                {__('La consulta usa @ultima_sincronizacion y sólo trae lo que cambió, así que no se puede saber qué dejó de existir.')}
+                            </p>
+                        )}
                     </div>
                     {onMissing === 'flag' && (
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">

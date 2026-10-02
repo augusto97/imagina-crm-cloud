@@ -219,6 +219,15 @@ describe('Sincronización desde SQL Server (v0.1.243)', () => {
         await expect(svc.create(tenantId, adminId, 'admin', connId, { ...base, on_missing: 'flag', flag_field_id: F.cliente! })).rejects.toMatchObject({
             response: { code: 'sql_sync_invalid' },
         });
+        // Con una consulta incremental no se puede saber qué dejó de existir.
+        await expect(
+            svc.create(tenantId, adminId, 'admin', connId, {
+                ...base,
+                source: { kind: 'query', sql: 'SELECT * FROM f WHERE Modificado >= @ultima_sincronizacion' },
+                on_missing: 'flag',
+                flag_field_id: F.en_sql!,
+            }),
+        ).rejects.toMatchObject({ response: { code: 'sql_sync_invalid' } });
 
         const created = await svc.create(tenantId, adminId, 'admin', connId, base);
         syncId = created.id;

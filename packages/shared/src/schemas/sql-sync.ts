@@ -67,6 +67,21 @@ export const SQL_SYNC_MAX_TIMEOUT = 300;
 export const SQL_LAST_SYNC_PARAM = 'ultima_sincronizacion';
 export const SQL_LAST_SYNC_TOKEN = `{{${SQL_LAST_SYNC_PARAM}}}`;
 
+/**
+ * ¿La fuente trae sólo lo que cambió desde la última corrida? (usa
+ * `@ultima_sincronizacion`, fuera de comentarios, o lo pasa a un parámetro del
+ * procedimiento). Con una fuente así «marcar lo que deja de aparecer» es
+ * imposible: lo que no cambió tampoco aparece y quedaría marcado como borrado.
+ */
+export function sqlSourceIsIncremental(source: { kind: 'query'; sql: string } | { kind: 'procedure'; params: Array<{ value: string }> }): boolean {
+    if (source.kind === 'procedure') return source.params.some((p) => p.value.trim() === SQL_LAST_SYNC_TOKEN);
+    const code = source.sql
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/--[^\n]*/g, ' ')
+        .replace(/'(?:[^']|'')*'/g, "''");
+    return new RegExp(`@${SQL_LAST_SYNC_PARAM}\\b`, 'i').test(code);
+}
+
 export const sqlSyncScheduleSchema = z.discriminatedUnion('kind', [
     z.object({
         kind: z.literal('interval'),

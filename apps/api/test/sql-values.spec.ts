@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { explainSqlError, resolveProcedureParams } from '../src/connectors/sqlserver/sql-runner';
+import { explainSqlError, resolveProcedureParams, sqlConnParams } from '../src/connectors/sqlserver/sql-runner';
+import { MssqlRunner } from '../src/connectors/sqlserver/mssql-runner';
 import { findColumn, sqlCellToText, suggestFieldType } from '../src/connectors/sqlserver/sql-values';
 
 /** Un `datetime` sin zona como lo entrega el driver con useUTC: la hora de pared en los campos UTC. */
@@ -79,6 +80,8 @@ describe('SQL Server — valores (v0.1.243)', () => {
         expect(fw.code).toBe('firewall');
         expect(fw.message).toContain('203.0.113.9');
         expect(explainSqlError({ number: 4060, message: 'Cannot open database "Ventas"' }, conn).code).toBe('database');
+        // Mensaje REAL del driver ante un certificado autofirmado: llega como ESOCKET.
+        expect(explainSqlError({ code: 'ESOCKET', message: 'Failed to connect to 127.0.0.1:14330 - self-signed certificate' }, conn).code).toBe('tls');
         expect(explainSqlError({ number: 208, message: "Invalid object name 'Facturas'." }, conn).code).toBe('not_found');
         expect(explainSqlError({ number: 102, message: "Incorrect syntax near 'FORM'." }, conn).code).toBe('syntax');
         expect(explainSqlError({ code: 'ETIMEOUT', message: 'Timeout: Request failed to complete in 60000ms' }, conn).code).toBe('timeout');
@@ -106,5 +109,43 @@ describe('SQL Server — datos de la conexión (v0.1.243)', () => {
             encrypt: false,
             trustServerCertificate: true,
         });
+    });
+
+    it('un error del servidor se informa al terminar el pedido: el rollback nunca se queda colgado (prueba real contra SQL Server)', async () => {
+        // El driver real emite «error» y DESPUÉS «done»; deshacer la transacción
+        // en el medio deja al rollback esperando para siempre. Este falso imita
+        // ese orden y cuelga el rollback si llega antes del «done».
+        let done = false;
+        let rolledBackEarly = false;
+        class FakeRequest {
+            stream = false;
+            private h: Record<string, (x?: unknown) => void> = {};
+            input(): this { return this; }
+            on(ev: string, cb: (x?: unknown) => void): this { this.h[ev] = cb; return this; }
+            cancel(): void {}
+            query(): void {
+                setTimeout(() => this.h.error?.(Object.assign(new Error("Incorrect syntax near 'WHERE'."), { number: 102 })), 5);
+                setTimeout(() => { done = true; this.h.done?.(); }, 30);
+            }
+            execute(): void {}
+        }
+        const fake = {
+            ConnectionPool: class { async connect() {} async close() {} },
+            Transaction: class {
+                async begin() {}
+                rollback(): Promise<void> {
+                    if (!done) { rolledBackEarly = true; return new Promise(() => undefined); }
+                    return Promise.resolve();
+                }
+            },
+            Request: FakeRequest,
+            DateTime2: 'DateTime2',
+        };
+        const runner = new MssqlRunner({ allowPrivate: true, load: async () => fake as never });
+        const conn = sqlConnParams({ server: '127.0.0.1', database: 'db', user: 'u' }, 'p');
+        const started = Date.now();
+        await expect(runner.run(conn, { kind: 'query', sql: 'SELECT * FROM t WHERE' }, { maxRows: 10, timeoutMs: 1000, lastSync: null })).rejects.toThrow(/sintaxis/);
+        expect(rolledBackEarly).toBe(false);
+        expect(Date.now() - started).toBeLessThan(2000);
     });
 });

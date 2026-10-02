@@ -7,6 +7,7 @@ import {
     nextSqlSyncRun,
     readSqlSyncSettings,
     readStoreListMarker,
+    sqlSourceIsIncremental,
     validTimeZone,
     type CreateSqlSyncInput,
     type Field,
@@ -307,6 +308,11 @@ export class SqlSyncService {
             const flag = s.flag_field_id ? byId.get(s.flag_field_id) : undefined;
             if (!flag || flag.type !== 'checkbox') throw bad('Para marcar lo que ya no está en SQL elegí un campo de tipo casilla.');
             if (seen.has(flag.id)) throw bad(`«${flag.label}» ya recibe una columna: elegí otra casilla para marcar lo que falta.`);
+            if (sqlSourceIsIncremental(s.source)) {
+                throw bad(
+                    'La consulta usa @ultima_sincronizacion, así que sólo trae lo que cambió: lo que no cambió tampoco aparece y quedaría marcado como «ya no está». Marcá lo que falta sólo con una consulta que traiga todo.',
+                );
+            }
         }
         if (!validTimeZone(s.date_timezone)) throw bad('La zona horaria de las fechas no es válida.');
         if (s.schedule.kind === 'daily' && !validTimeZone(s.schedule.timezone)) throw bad('La zona horaria del horario no es válida.');

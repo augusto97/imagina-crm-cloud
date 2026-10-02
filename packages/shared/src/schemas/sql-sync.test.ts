@@ -4,6 +4,7 @@ import {
     describeSqlSchedule,
     nextSqlSyncRun,
     readSqlListMarker,
+    sqlSourceIsIncremental,
     sqlSourceSchema,
     zonedToUtc,
 } from './sql-sync';
@@ -83,5 +84,16 @@ describe('sincronización SQL (v0.1.243)', () => {
         expect(
             readSqlListMarker({ sql_sync: { syncs: [{ sync_id: 3, connection_id: 9, name: 'F', key_field_id: 4, field_ids: [4, '5', 'x'] }, { sync_id: 'no' }] } }),
         ).toEqual({ syncs: [{ sync_id: 3, connection_id: 9, name: 'F', key_field_id: 4, field_ids: [4, 5] }] });
+    });
+
+    it('detecta una fuente incremental fuera de comentarios y textos', () => {
+        expect(sqlSourceIsIncremental({ kind: 'query', sql: 'SELECT * FROM f WHERE M >= @ultima_sincronizacion' })).toBe(true);
+        expect(sqlSourceIsIncremental({ kind: 'query', sql: 'SELECT * FROM f WHERE M >= @Ultima_Sincronizacion OR 1=1' })).toBe(true);
+        // La consulta de ejemplo del editor la menciona sólo en un comentario.
+        expect(sqlSourceIsIncremental({ kind: 'query', sql: 'SELECT *\nFROM dbo.Facturas\n-- WHERE F >= @ultima_sincronizacion' })).toBe(false);
+        expect(sqlSourceIsIncremental({ kind: 'query', sql: "SELECT '@ultima_sincronizacion' AS x /* @ultima_sincronizacion */" })).toBe(false);
+        expect(sqlSourceIsIncremental({ kind: 'query', sql: 'SELECT @ultima_sincronizacionX' })).toBe(false);
+        expect(sqlSourceIsIncremental({ kind: 'procedure', params: [{ value: '{{ultima_sincronizacion}}' }] })).toBe(true);
+        expect(sqlSourceIsIncremental({ kind: 'procedure', params: [{ value: '2026-01-01' }] })).toBe(false);
     });
 });
