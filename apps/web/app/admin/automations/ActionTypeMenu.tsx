@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { Link } from 'react-router';
 
 import {
@@ -15,6 +15,7 @@ import type { LucideIcon } from 'lucide-react';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import type { ActionMeta } from '@/types/automation';
 
+import { connectorOptionValue } from './actionTypeOptions';
 import { actionMetaFor } from './automationMeta';
 
 function Row({
@@ -22,14 +23,20 @@ function Row({
     title,
     description,
     onSelect,
+    selected,
 }: {
     icon: LucideIcon;
     title: string;
     description: string;
     onSelect: () => void;
+    selected?: boolean;
 }): JSX.Element {
     return (
-        <DropdownMenuItem onSelect={onSelect} className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2">
+        <DropdownMenuItem
+            onSelect={onSelect}
+            className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2"
+            data-selected={selected ? 'true' : undefined}
+        >
             <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-muted imcrm-ring-1 imcrm-ring-border">
                 <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-foreground/70" />
             </span>
@@ -41,6 +48,7 @@ function Row({
                     </span>
                 )}
             </span>
+            {selected && <Check className="imcrm-ml-auto imcrm-mt-1 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />}
         </DropdownMenuItem>
     );
 }
@@ -61,6 +69,9 @@ export function ActionTypeMenu({
     onPick,
     children,
     exclude,
+    selectedValue,
+    align = 'center',
+    contentClassName,
 }: {
     actionsCatalog: ActionMeta[];
     /** `config` inicial: vacío en los tipos fijos, apuntado en un conector. */
@@ -68,6 +79,10 @@ export function ActionTypeMenu({
     children: React.ReactNode;
     /** Slugs a ocultar (ej. if_else cuando se alcanzó el anidado máximo). */
     exclude?: string[];
+    /** Valor de la acción actual (ver `actionOptionValue`): se marca con un check. */
+    selectedValue?: string;
+    align?: 'start' | 'center' | 'end';
+    contentClassName?: string;
 }): JSX.Element {
     const hidden = exclude ?? [];
     const builtins = actionsCatalog.filter((a) => !a.connector && !hidden.includes(a.slug));
@@ -76,7 +91,10 @@ export function ActionTypeMenu({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="imcrm-max-h-[70vh] imcrm-w-[300px] imcrm-overflow-y-auto">
+            <DropdownMenuContent
+                align={align}
+                className={contentClassName ?? 'imcrm-max-h-[70vh] imcrm-w-[300px] imcrm-overflow-y-auto'}
+            >
                 {builtins.map((a) => {
                     const meta = actionMetaFor(a.slug);
                     return (
@@ -86,6 +104,7 @@ export function ActionTypeMenu({
                             title={a.label}
                             description={meta.description !== '' ? __(meta.description) : ''}
                             onSelect={() => onPick(a.slug)}
+                            selected={selectedValue === a.slug}
                         />
                     );
                 })}
@@ -105,6 +124,11 @@ export function ActionTypeMenu({
                         }
                         className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2"
                         data-testid="imcrm-action-connector"
+                        data-selected={
+                            selectedValue === connectorOptionValue(a.connector!.connection_id, a.connector!.action_key)
+                                ? 'true'
+                                : undefined
+                        }
                     >
                         <IntegrationLogo
                             integrationKey={a.connector!.integration_key ?? null}
@@ -117,6 +141,9 @@ export function ActionTypeMenu({
                                 {a.connector!.connection_name}
                             </span>
                         </span>
+                        {selectedValue === connectorOptionValue(a.connector!.connection_id, a.connector!.action_key) && (
+                            <Check className="imcrm-ml-auto imcrm-mt-1 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" />
+                        )}
                     </DropdownMenuItem>
                 ))}
                 {/* v0.1.203 — el camino a conectar más apps, desde donde se las
