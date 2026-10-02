@@ -64,6 +64,7 @@ import {
     TriggerConfigEditor,
     type AutomationFormState,
 } from './config-editors';
+import { ActionTypeSelect } from './ActionTypeSelect';
 
 // El lienzo visual (vista n8n/Make) se carga bajo demanda — la mayoría
 // de automatizaciones simples se editan en el flujo vertical.
@@ -648,21 +649,15 @@ function EditorBody({
                                     }
                                 >
                                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                                        <Select
-                                            value={spec.type}
-                                            onChange={(e) => {
+                                        <ActionTypeSelect
+                                            spec={spec}
+                                            actionsCatalog={actionsCatalog}
+                                            onChange={(picked) => {
                                                 const next = [...state.actions];
-                                                next[i] = { type: e.target.value, config: {} };
+                                                next[i] = picked;
                                                 setActions(next);
                                             }}
-                                            aria-label={__('Tipo de acción')}
-                                        >
-                                            {actionsCatalog.map((a) => (
-                                                <option key={a.slug} value={a.slug}>
-                                                    {a.label}
-                                                </option>
-                                            ))}
-                                        </Select>
+                                        />
                                         <ActionConfigEditor
                                             spec={spec}
                                             onChange={(next) => {

@@ -80,6 +80,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
     let fields: FieldsService;
     let views: ViewsService;
     let automations: AutomationsService;
+    let connectors: ConnectorsService;
     let dashboards: DashboardsService;
     let tenantId: number;
     let adminId: number;
@@ -108,7 +109,8 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const store = new ProposalsStore(redis);
         const comments = new CommentsService(tenantDb, new CommentsRepository(), lists, records, rt);
         publicLists = new PublicListsService(pg.db, tenantDb, lists, null as never);
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps()), comments, publicLists);
+        connectors = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps());
+        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, connectors, comments, publicLists);
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);
@@ -442,6 +444,83 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         expect((del.proposal as { destructive: boolean }).destructive).toBe(true);
         await apply(del.proposal_id);
         expect(await automations.list(tenantId, 'clientes')).toEqual([]);
+    });
+
+    it('v0.1.242 — una acción que no existe o un conector mal armado no se propone; la tarjeta dice el nombre real', async () => {
+        const conn = await connectors.create(admin.tenantId, admin.userId, 'admin', {
+            provider: 'http',
+            name: 'WhatsApp',
+            base_url: 'https://was.example.com',
+            auth_type: 'bearer',
+            auth_key: '',
+            token: 'tok-1234',
+            headers: [],
+            query_params: [],
+            visibility: 'workspace',
+            actions: [{
+                key: 'send_text',
+                label: 'Enviar mensaje de WhatsApp',
+                method: 'POST',
+                path: '/send',
+                content_type: 'form',
+                params: [
+                    { key: 'recipient', label: 'Número', required: true },
+                    { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
+                ],
+            }],
+        } as never);
+
+        // Un tipo inventado: antes se guardaba y el editor lo mostraba como otra acción.
+        const invented = await call('propose_create_automation', {
+            list: 'clientes', name: 'X', trigger_type: 'record_created',
+            actions: [{ type: 'set_field', config: { values: { estado: 'activo' } } }],
+        });
+        expect(isError(invented)).toBe(true);
+        expect(json(invented).error).toMatch(/tipo desconocido «set_field».*update_field/);
+
+        // Conector inexistente, acción inexistente, datos de más y de menos.
+        const noConn = await call('propose_create_automation', {
+            list: 'clientes', name: 'X', trigger_type: 'record_created',
+            actions: [{ type: 'connector_action', config: { connection_id: 999999, action_key: 'send_text', values: {} } }],
+        });
+        expect(json(noConn).error).toContain(`${conn.id} «WhatsApp»: send_text`);
+        const noAction = await call('propose_create_automation', {
+            list: 'clientes', name: 'X', trigger_type: 'record_created',
+            actions: [{ type: 'connector_action', config: { connection_id: conn.id, action_key: 'update_field', values: {} } }],
+        });
+        expect(json(noAction).error).toMatch(/no tiene la acción «update_field»/);
+        const extra = await call('propose_create_automation', {
+            list: 'clientes', name: 'X', trigger_type: 'record_created',
+            actions: [{ type: 'connector_action', config: { connection_id: conn.id, action_key: 'send_text', values: { recipient: '1', message: 'm', estado: 'x' } } }],
+        });
+        expect(json(extra).error).toMatch(/no tiene los datos estado/);
+        // También dentro de una rama si/sino.
+        const nested = await call('propose_create_automation', {
+            list: 'clientes', name: 'X', trigger_type: 'record_created',
+            actions: [{ type: 'if_else', config: { condition: [], then_actions: [{ type: 'connector_action', config: { connection_id: conn.id, action_key: 'send_text', values: { recipient: '{{nombre}}' } } }], else_actions: [] } }],
+        });
+        expect(json(nested).error).toMatch(/le faltan datos obligatorios: message/);
+
+        // Bien armada: la tarjeta nombra la acción y la conexión de verdad.
+        const ok = json(await call('propose_create_automation', {
+            list: 'clientes', name: 'Avisar', trigger_type: 'record_created',
+            actions: [
+                { type: 'update_field', config: { values: { estado: 'activo' } } },
+                { type: 'connector_action', config: { connection_id: conn.id, action_key: 'send_text', values: { recipient: '+57300', message: 'Hola {{nombre}}' } } },
+            ],
+        }));
+        const preview = (ok.proposal as { preview: { automation: { actions: string[] } } }).preview.automation;
+        expect(preview.actions).toEqual(['Actualizar estado', 'Enviar mensaje de WhatsApp (WhatsApp)']);
+        await apply(ok.proposal_id);
+        const saved = (await automations.list(tenantId, 'clientes')).find((a) => a.name === 'Avisar')!;
+        expect((saved.actions as Array<{ type: string }>).map((a) => a.type)).toEqual(['update_field', 'connector_action']);
+
+        // Renombrar una automatización cuya conexión ya no existe no falla por eso.
+        await connectors.remove(admin.tenantId, admin.userId, 'admin', conn.id, true);
+        const rename = await call('propose_update_automation', { list: 'clientes', automation: saved.id, name: 'Avisar v2' });
+        expect(isError(rename)).toBe(false);
+        await apply(json(rename).proposal_id);
+        await automations.remove(tenantId, 'clientes', saved.id);
     });
 
     it('v0.1.222 — automatización programada con «Editar en lote» por slug: se guarda con ids y horario', async () => {

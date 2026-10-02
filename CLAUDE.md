@@ -6314,6 +6314,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         agrupadas y cambio entre ellas, la dueña de B como cliente de A con su
         app intacta, quitar un acceso conserva el otro, salir, celular).
 
+  - [x] **Automatizaciones: cada acción de conector se ve como ella misma
+        (v0.1.242, reporte del usuario: "con el MCP a veces crea mal las
+        automatizaciones: iba a cambiar un campo y aparece el conector de
+        WhatsApp")**. Dos causas. (a) **Editor**: todas las acciones de un
+        conector tienen el mismo tipo (`connector_action`) y el selector "Tipo
+        de acción" usaba el TIPO como valor de cada opción (con claves de React
+        repetidas), así que cualquier acción de conector —«Cambiar el estado de
+        un pedido» de WooCommerce, por ejemplo— se mostraba como la primera del
+        catálogo, «Enviar mensaje de WhatsApp»; el panel del lienzo hacía lo
+        mismo con su título, y elegir otra acción de conector desde ese
+        selector la dejaba SIN conexión. Ahora `ActionTypeSelect` (compartido
+        por el flujo, el lienzo y las ramas si/sino) da una opción por acción
+        de conector (`connector:<id>:<clave>`, agrupadas en «Apps
+        conectadas»), elegirla conserva la conexión y la clave, y un tipo que
+        el catálogo no conoce se muestra tal cual en vez de caer en la primera
+        opción. (b) **Asistente/MCP**: la propuesta no validaba las acciones —un
+        tipo inventado o un conector mal armado se guardaban y la tarjeta decía
+        apenas «Conector: send_text». Ahora valida el tipo de cada acción
+        (también dentro de un si/sino), que la conexión y la acción existan,
+        los datos obligatorios y que no sobren; el error le dice al modelo
+        cuáles hay y que cambiar un campo es `update_field`. La tarjeta muestra
+        el nombre real («Enviar mensaje de WhatsApp (WhatsApp)»), y la
+        descripción de la herramienta aclara que `connector_action` es sólo
+        para un servicio externo pedido explícitamente. Renombrar o pausar una
+        automatización cuya conexión ya no existe sigue funcionando. 1 test de
+        integración (tipo inventado, conexión/acción inexistentes, datos de
+        más y de menos, rama si/sino, tarjeta con el nombre real, renombrar sin
+        conexión) + 4 unitarios del selector — 214 front en verde — + E2E
+        navegador 10/10 (update_field, WooCommerce y WhatsApp se ven como
+        ellos mismos, cambiar de acción de conector conserva la conexión y se
+        guarda, el lienzo titula con la acción real).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
