@@ -36,6 +36,7 @@ export type AuditAction =
     | 'member.remove'
     | 'billing.plan_change'
     | 'workspace.smtp_change'
+    | 'workspace.mail_account_change'
     | 'workspace.domain_change'
     | 'workspace.domain_verified'
     | 'workspace.portal_domain_change'

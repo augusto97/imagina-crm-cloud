@@ -42,6 +42,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'member.remove': { text: 'quitó del workspace a', danger: true },
     'billing.plan_change': { text: 'cambió el plan' },
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },
+    'workspace.mail_account_change': { text: 'cambió la cuenta de envío del correo' },
     'workspace.domain_change': { text: 'cambió el dominio' },
     'workspace.domain_verified': { text: 'verificó el dominio' },
     'workspace.portal_domain_change': { text: 'cambió el dominio del portal' },

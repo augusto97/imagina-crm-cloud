@@ -35,7 +35,7 @@ const EMPTY: Form = { host: '', port: '587', secure: false, user: '', pass: '', 
  * prueba al email del propio admin; "Volver al correo de la plataforma"
  * borra la config propia (DELETE).
  */
-export function TenantSmtpPanel(): JSX.Element | null {
+export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'account' } = {}): JSX.Element | null {
     const qc = useQueryClient();
     const tenantId = useSession((s) => s.activeTenantId);
     const myEmail = useSession((s) => s.user?.email ?? '');
@@ -61,8 +61,16 @@ export function TenantSmtpPanel(): JSX.Element | null {
         });
     }, [smtpQ.data]);
 
-    const invalidate = (): Promise<void> =>
-        qc.invalidateQueries({ queryKey: ['tenant-smtp', tenantId] });
+    // v0.1.249 — guardar o borrar el SMTP cambia la forma de envío activa
+    // (guardar uno reemplaza la cuenta de Google/Microsoft): se refresca también
+    // el selector de Ajustes → Correo y el uso del plan.
+    const invalidate = async (): Promise<void> => {
+        await Promise.all([
+            qc.invalidateQueries({ queryKey: ['tenant-smtp', tenantId] }),
+            qc.invalidateQueries({ queryKey: ['tenant-mail', tenantId] }),
+            qc.invalidateQueries({ queryKey: ['billing'] }),
+        ]);
+    };
 
     const save = useMutation({
         mutationFn: () =>
@@ -153,24 +161,32 @@ export function TenantSmtpPanel(): JSX.Element | null {
                             <Mail className="imcrm-h-4 imcrm-w-4" aria-hidden />
                         </span>
                         <div>
-                            <CardTitle>Correo (SMTP) del workspace</CardTitle>
+                            <CardTitle>Tu servidor SMTP</CardTitle>
                             <CardDescription>
-                                Servidor de envío propio de tu empresa para automatizaciones y magic links del
+                                Servidor de envío propio de tu empresa para automatizaciones y enlaces del
                                 portal. Configurándolo, tus correos dejan de consumir la cuota mensual del plan:
-                                salen por tu servidor, sin límite.
+                                salen por tu servidor.
                             </CardDescription>
                         </div>
                     </div>
                     <Badge
                         dot
-                        variant={c.password_unreadable ? 'destructive' : c.configured ? 'success' : 'secondary'}
+                        variant={
+                            c.password_unreadable
+                                ? 'destructive'
+                                : c.configured && mode !== 'account'
+                                  ? 'success'
+                                  : 'secondary'
+                        }
                         className="imcrm-shrink-0"
                     >
                         {c.password_unreadable
                             ? 'Revisar contraseña'
                             : c.configured
-                              ? 'SMTP propio'
-                              : 'Correo de la plataforma'}
+                              ? mode === 'account'
+                                  ? 'Guardado · sin usar'
+                                  : 'En uso'
+                              : 'Sin configurar'}
                     </Badge>
                 </div>
             </CardHeader>
@@ -187,7 +203,7 @@ export function TenantSmtpPanel(): JSX.Element | null {
                 </div>
             )}
 
-            {!c.configured && (
+            {!c.configured && mode !== 'account' && (
                 <div className="imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                     <span className="imcrm-font-medium imcrm-text-foreground">
                         Usando el correo de la plataforma.
@@ -330,7 +346,7 @@ export function TenantSmtpPanel(): JSX.Element | null {
                         onClick={() => clear.mutate()}
                         disabled={busy}
                     >
-                        {clear.isPending ? 'Desactivando…' : 'Volver al correo de la plataforma'}
+                        {clear.isPending ? 'Desactivando…' : mode === 'account' ? 'Borrar este servidor' : 'Volver al correo de la plataforma'}
                     </Button>
                 )}
             </div>

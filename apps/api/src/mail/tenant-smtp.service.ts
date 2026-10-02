@@ -123,6 +123,24 @@ export class TenantSmtpService {
         return this.get(tenantId);
     }
 
+    /**
+     * ¿La empresa manda su correo por su cuenta (SMTP propio o, desde
+     * v0.1.249, su cuenta de Google/Microsoft)? En los dos casos no consume la
+     * cuota de correo de la plataforma (ADR-S18).
+     */
+    async ownMail(tenantId: number): Promise<boolean> {
+        const [row] = await this.db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const settings = (row?.settings ?? {}) as Record<string, unknown>;
+        return (
+            (typeof settings.smtp === 'object' && settings.smtp !== null) ||
+            (typeof settings.mail_account === 'object' && settings.mail_account !== null)
+        );
+    }
+
     /** Borra la config del tenant → sus correos vuelven al SMTP de plataforma. */
     async clear(tenantId: number): Promise<void> {
         await this.writeSettings(tenantId, null);
@@ -194,6 +212,9 @@ export class TenantSmtpService {
             delete settings.smtp;
         } else {
             settings.smtp = smtp;
+            // v0.1.249 — una sola forma de envío activa: guardar un SMTP es
+            // elegirlo, así que deja de usarse la cuenta de Google/Microsoft.
+            delete settings.mail_account;
         }
         await this.db
             .update(tenants)

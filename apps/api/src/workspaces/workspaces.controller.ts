@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
     customDomainInputSchema,
+    setMailAccountSchema,
     smtpConfigSchema,
     smtpDiagnoseInputSchema,
     updateBrandingSchema,
@@ -11,8 +12,10 @@ import {
     type CustomDomainInput,
     type DomainDnsReport,
     type DomainVerifyResult,
+    type SetMailAccountInput,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type TenantMailStatus,
     type SmtpDiagnoseInput,
     type SmtpDiagnostic,
     type BrandingResponse,
@@ -33,6 +36,7 @@ import { SmtpDnsService, type SmtpDnsReport } from '../mail/smtp-dns.service';
 import { SmtpProbeService } from '../mail/smtp-probe.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { AuditService, type AuditEntryDto } from '../audit/audit.service';
+import { MailAccountService } from '../connectors/mail-account.service';
 import { BrandingService } from './branding.service';
 
 @Controller('workspaces')
@@ -47,6 +51,7 @@ export class WorkspacesController {
         private readonly smtpProbe: SmtpProbeService,
         private readonly domains: DomainsService,
         private readonly audit: AuditService,
+        private readonly mailAccount: MailAccountService,
     ) {}
 
     /** Gate compartido: mutaciones de configuración = solo admin del workspace. */
@@ -203,6 +208,57 @@ export class WorkspacesController {
             targetType: 'workspace',
             targetLabel: '(vuelve al correo de la plataforma)',
         });
+    }
+
+    /**
+     * v0.1.249 (ADR-S29) — cómo salen los correos de la empresa: plataforma,
+     * SMTP propio o su cuenta de Google/Microsoft. Incluye las conexiones que
+     * pueden elegirse, los límites del proveedor y cuánto se mandó hoy.
+     */
+    @Get('current/mail')
+    @UseGuards(TenantGuard)
+    getMailStatus(@Req() req: FastifyRequest): Promise<TenantMailStatus> {
+        this.assertAdmin(req);
+        return this.mailAccount.status(req.tenant!.tenantId);
+    }
+
+    /** Elegir la cuenta de Google/Microsoft como forma de envío. */
+    @Put('current/mail/account')
+    @UseGuards(TenantGuard)
+    async setMailAccount(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(setMailAccountSchema)) input: SetMailAccountInput,
+    ): Promise<TenantMailStatus> {
+        this.assertAdmin(req);
+        const tenantId = req.tenant!.tenantId;
+        const chosen = await this.mailAccount.set(tenantId, input.connection_id);
+        await this.audit.log({
+            tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.mail_account_change',
+            targetType: 'connection',
+            targetId: input.connection_id,
+            targetLabel: chosen.address ?? chosen.name,
+            meta: { connection: chosen.name },
+        });
+        return this.mailAccount.status(tenantId);
+    }
+
+    /** Dejar de usar la cuenta: vuelve al SMTP propio (si hay) o a la plataforma. */
+    @Delete('current/mail/account')
+    @UseGuards(TenantGuard)
+    async clearMailAccount(@Req() req: FastifyRequest): Promise<TenantMailStatus> {
+        this.assertAdmin(req);
+        const tenantId = req.tenant!.tenantId;
+        await this.mailAccount.clear(tenantId);
+        await this.audit.log({
+            tenantId,
+            userId: req.authUserId ?? null,
+            action: 'workspace.mail_account_change',
+            targetType: 'workspace',
+            targetLabel: '(deja de usar la cuenta de Google/Microsoft)',
+        });
+        return this.mailAccount.status(tenantId);
     }
 
     /**
@@ -396,8 +452,8 @@ export class WorkspacesController {
             await this.mail.sendNow({
                 tenantId: req.tenant!.tenantId,
                 to,
-                subject: 'Correo de prueba — SMTP del workspace',
-                text: 'Si recibiste este correo, el SMTP de tu empresa está funcionando.',
+                subject: 'Correo de prueba de tu empresa',
+                text: 'Si recibiste este correo, la forma de envío que configuró tu empresa está funcionando.',
             });
             return { ok: true };
         } catch (err) {

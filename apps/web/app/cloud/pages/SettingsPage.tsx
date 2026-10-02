@@ -21,7 +21,7 @@ import { RegionalFormatPanel } from '@/cloud/components/RegionalFormatPanel';
 import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
 import { IntegrationsPanel } from '@/cloud/components/IntegrationsPanel';
-import { TenantSmtpPanel } from '@/cloud/components/TenantSmtpPanel';
+import { TenantMailPanel } from '@/cloud/components/TenantMailPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
@@ -155,7 +155,7 @@ export function SettingsPage(): JSX.Element {
                 {/* SMTP propio del workspace (white-label de correo). */}
                 {active === 'formato' && isAdmin && <RegionalFormatPanel />}
 
-                {active === 'correo' && isAdmin && <TenantSmtpPanel />}
+                {active === 'correo' && isAdmin && <TenantMailPanel />}
 
                 {active === 'asistente' && isAdmin && <AiSettingsPanel />}
 
@@ -222,10 +222,10 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     limit={summary.own_smtp ? null : summary.limits.max_emails_month}
                     note={
                         summary.own_smtp
-                            ? 'Sin límite: tus correos salen por tu propio servidor SMTP.'
+                            ? 'Sin límite de la plataforma: tus correos salen por tu propio servidor o tu cuenta de Google/Microsoft (con los límites de ese proveedor).'
                             : summary.limits.max_emails_month === null
                               ? undefined
-                              : 'Incluye automatizaciones y accesos al portal. ¿Necesitás más? Configurá tu propio SMTP en Ajustes → Correo (SMTP) y no hay límite.'
+                              : 'Incluye automatizaciones y accesos al portal. ¿Necesitás más? En Ajustes → Correo podés mandar con tu cuenta de Google o Microsoft, o con tu propio SMTP.'
                     }
                 />
                 {/* Cuota del asistente IA (ADR-S21): sólo cuentan los pedidos

@@ -6601,6 +6601,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         conector, guardado con la conexión correcta, título del lienzo); 224
         tests del front en verde.
 
+  - [x] **El correo de la empresa por su cuenta de Google o Microsoft
+        (v0.1.249, ADR-S29, pedido del usuario: "¿la conexión de Google sirve
+        para el SMTP de la empresa?" → "implementalo y mostrá los límites")**:
+        tercera forma de envío junto al correo de la plataforma y el SMTP
+        propio. La empresa elige una conexión de **Gmail u Outlook** de
+        Integraciones (`tenants.settings.mail_account`) y sus correos
+        —automatizaciones, enlaces del portal, avisos— salen por la **API de
+        Gmail o de Microsoft Graph**, sin host, puerto ni contraseña de
+        aplicación (en Microsoft 365 el SMTP con contraseña ya no existe). Por
+        la API y no por SMTP+OAuth a propósito: eso pediría
+        `https://mail.google.com/`, permiso RESTRINGIDO con auditoría CASA;
+        `gmail.send`/`Mail.Send` ya los tiene la conexión. (a) **Motor**: el
+        `MailService` la mira PRIMERO (vía la interfaz `MAIL_ACCOUNT_SENDER`,
+        que provee el módulo de conectores sin acoplar el correo a ellos);
+        `mail-account-request.ts` (puro) arma el RFC 2822 de Gmail
+        (`multipart/alternative` con texto de respaldo, sin inyección de
+        cabeceras) y el mensaje de Graph (guardado en Enviados); el remitente es
+        SIEMPRE la cuenta y un `from` distinto pasa a Reply-To. Una conexión
+        borrada/sin autorizar/revocada hace FALLAR el envío con el motivo —nunca
+        cae a otra vía en silencio— y el límite del proveedor es irrecuperable
+        para la cola. Los errores de Google/Microsoft se traducen (límite
+        diario, autorización vencida, permiso faltante, buzón sin correo).
+        (b) **Reglas**: sólo una conexión del EQUIPO y autorizada; guardar un
+        SMTP la reemplaza (una forma activa); la conexión en uso no se borra ni
+        se desconecta (409 con el motivo); no consume la cuota de correos del
+        plan (ADR-S18) y `own_smtp` pasa a significar "correo propio". Los
+        correos de cuenta (verificación, recuperación, invitaciones) siguen por
+        la plataforma. (c) **Los límites, a la vista y ANTES de elegir**
+        (`MAIL_ACCOUNT_LIMITS` en shared, por tipo de cuenta deducido de la
+        dirección): Gmail personal ~500/día, Google Workspace 2.000/día,
+        Outlook.com hasta 5.000 (menos en cuentas nuevas), Microsoft 365 10.000
+        destinatarios/día y 30/minuto; por correo, qué pasa si se pasa (bloqueo
+        hasta 24 h) y las condiciones (remitente fijo, quedan en Enviados, no es
+        para campañas, conviene una casilla compartida). Contador de
+        destinatarios del día en Redis → barra «Enviados hoy: 1.520 de ~2.000»
+        (aclarado como aproximado: el proveedor suma lo que la persona manda a
+        mano). (d) **Ajustes → Correo** rehecho: tres tarjetas (plataforma /
+        cuenta de Google o Microsoft —recomendada— / servidor SMTP) con la que
+        está **En uso**; elegir cuenta con radio y el motivo de las que no se
+        pueden (privada, sin autorizar), «Probar envío», «Cambiar de cuenta» y
+        «Dejar de usarla»; sin conexiones, botones a Integraciones. Endpoints
+        `GET /workspaces/current/mail`, `PUT|DELETE …/mail/account` (admin, con
+        bitácora `workspace.mail_account_change`); el diagnóstico de Plataforma
+        registra la vía `tenant_account`. 14 tests (6 puros del armado/errores/
+        límites + 8 con Postgres real y la red simulada: sale por Gmail y por
+        Graph sin tocar la plataforma, cuenta destinatarios, privada/sin
+        autorizar/ajena rechazadas, límite que no cae a otra vía, conexión
+        borrada ruidosa, borrar/desconectar bloqueados, SMTP que la reemplaza,
+        volver a la plataforma) — 224 front y 129 shared en verde — + E2E
+        navegador 22/22 con la llamada REAL a Google (token falso → 401 →
+        «reconectala», no «enviado»), celular y modo oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

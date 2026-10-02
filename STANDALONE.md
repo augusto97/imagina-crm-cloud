@@ -2179,6 +2179,56 @@ justifique. Para que el paso manual no dependa de la memoria del operador:
   COMPARTIDO para todos, así que se recuerda hasta que el operador marca «Ya
   lo saqué». Si la empresa lo vuelve a verificar, sale solo de la lista.
 
+### ADR-S29 — El correo de la empresa por su cuenta de Google o Microsoft (v0.1.249)
+
+**Contexto.** Una empresa tenía dos formas de mandar sus correos
+(automatizaciones, enlaces del portal, avisos): el correo de la plataforma (con
+la cuota del plan, ADR-S18) o su propio SMTP (ADR-S11). Para quien usa Google
+Workspace o Microsoft 365, el SMTP es la parte más difícil de la
+configuración: Google exige contraseñas de aplicación que muchos admins
+bloquean, y Microsoft ya retiró el SMTP con usuario y contraseña. Esas
+empresas ya conectan Gmail u Outlook en Integraciones (ADR-S22) con permisos
+de envío.
+
+**Decisión.**
+- **Tercera forma de envío**: la empresa elige una conexión de Gmail u Outlook
+  (`tenants.settings.mail_account = { connection_id }`) y el `MailService` la
+  usa **primero**, antes del SMTP propio y de la plataforma. Una sola forma
+  activa: guardar un SMTP borra la elección. Sólo correos de la EMPRESA: los de
+  cuenta (verificación, recuperación, invitaciones) siguen por la plataforma.
+- **Por la API, no por SMTP con OAuth**: Gmail API (`users.messages.send` con el
+  mensaje RFC 2822 armado acá, `multipart/alternative` con texto de respaldo) y
+  Microsoft Graph (`/me/sendMail`, guardando en Enviados). El SMTP de Gmail con
+  OAuth pide `https://mail.google.com/`, un permiso **restringido** que obliga a
+  la auditoría CASA; `gmail.send` y `Mail.Send` son los que la conexión ya
+  tiene. La petición la arma una función PURA (`mail-account-request.ts`).
+- **El remitente es la cuenta conectada.** Un `from` distinto que pida una
+  automatización pasa a `Reply-To`: Gmail lo reescribiría en silencio y Graph lo
+  rechaza (`ErrorSendAsDenied`), así se comporta igual en los dos.
+- **Falla ruidosa, nunca cambia de vía en silencio** (lección de v0.1.150): una
+  conexión borrada, sin autorizar o con el acceso revocado hace FALLAR el envío
+  con el motivo; el límite del proveedor es irrecuperable para la cola (Google y
+  Microsoft bloquean hasta 24 h). La conexión elegida no se puede borrar ni
+  desconectar (409) hasta elegir otra forma de envío, y tiene que ser del EQUIPO
+  (una privada dejaría el correo de la empresa en manos de una conexión que los
+  demás admins no ven).
+- **Los límites a la vista, antes de elegir.** `MAIL_ACCOUNT_LIMITS` (shared)
+  por tipo de cuenta, deducido de la dirección: Gmail personal ~500/día, Google
+  Workspace 2.000/día, Outlook.com hasta 5.000/día (menos en cuentas nuevas),
+  Microsoft 365 10.000 destinatarios/día y 30 por minuto. Se muestran con qué
+  pasa si se pasan y las condiciones (remitente fijo, quedan en Enviados, no es
+  para campañas, conviene una casilla compartida). Un contador de destinatarios
+  por día en Redis (`mailacct:{tenant}:{día UTC}`) muestra "hoy van N de ~M" —
+  aproximado y así se dice: el proveedor suma lo que la persona manda a mano.
+- **Sin cuota de la plataforma**, igual que el SMTP propio (ADR-S18): no pasa
+  por nuestra infraestructura. `own_smtp` del resumen de facturación pasa a
+  significar "correo propio" (SMTP o cuenta).
+
+**Alternativas descartadas.** SMTP con XOAUTH2 (permiso restringido + CASA);
+dejar elegir cualquier remitente (Graph lo rechaza y Gmail lo cambia sin avisar);
+cortar el envío cuando nuestro contador llega al límite (no vemos lo que la
+persona manda a mano: el proveedor decide y nosotros mostramos su error).
+
 ---
 
-**Versión del documento:** 1.59.0 (guías completas de integraciones + páginas públicas)
+**Versión del documento:** 1.60.0 (correo de la empresa por su cuenta de Google o Microsoft)

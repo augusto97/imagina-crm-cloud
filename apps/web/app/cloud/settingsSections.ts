@@ -60,7 +60,7 @@ export function settingsSectionGroups({
                           { id: 'miembros', label: 'Miembros', icon: Users },
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
-                          { id: 'correo', label: 'Correo (SMTP)', icon: Mail },
+                          { id: 'correo', label: 'Correo', icon: Mail },
                           // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.
                           { id: 'asistente', label: 'Asistente IA', icon: Sparkles },
                           // v0.1.114 — quién cambió qué en el workspace.
