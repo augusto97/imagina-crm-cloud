@@ -414,6 +414,13 @@
       "when": 1784200000027,
       "tag": "0058_portal_multi_access",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784200000028,
+      "tag": "0059_sql_syncs",
+      "breakpoints": true
     }
   ]
 }

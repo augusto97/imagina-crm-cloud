@@ -2042,4 +2042,58 @@ deja claro que cambiar un campo de la app es `update_field`, nunca un conector.
 
 ---
 
-**Versión del documento:** 1.55.0 (acciones de conector bien identificadas)
+### ADR-S27 — Sincronizar una lista desde SQL Server / Azure SQL (v0.1.243)
+
+**Contexto.** Un cliente tiene su facturación en un ERP sobre SQL Server
+(Azure SQL) y necesita verla en una lista de la app: traer cada hora o cada día
+el resultado de una consulta o procedimiento almacenado y **actualizar por una
+columna clave** (NIT, número de factura) en vez de duplicar. Es el mismo
+problema que "actualizar desde un archivo" (ADR-S25), pero sin archivo y
+programado.
+
+**Decisión.**
+- **Integración por clave** en la galería (`sqlserver`, categoría «Bases de
+  datos»): servidor, base, usuario, contraseña cifrada (secret-box), puerto,
+  cifrado y certificado. Conectar EJECUTA una consulta de verificación (login,
+  base, versión y si el usuario puede escribir): si no conecta no se guarda, y
+  un usuario con permisos de escritura se guarda con un aviso (se recomienda uno
+  de sólo lectura).
+- **Sólo lectura por construcción**: toda consulta corre dentro de una
+  transacción que se **deshace siempre**, así que ni un `UPDATE` escrito por
+  error ni un procedimiento con efectos colaterales deja cambios en la base del
+  cliente. Sólo servidores públicos (`resolvePublicHost`, mismo criterio que el
+  SMTP de las empresas, SEC-27); `SQL_ALLOW_PRIVATE_HOSTS=true` para una base
+  en la red interna a propósito.
+- **Una conexión, varias sincronizaciones** (`sql_syncs`, RLS): cada una es
+  consulta o procedimiento (con parámetros), lista destino, columna clave →
+  campo clave, columna → campo, y horario (cada 15 min a cada día, o diaria a
+  una hora en una zona). Cola BullMQ propia (`sql-sync`) con tick por minuto y
+  candado en Redis por sincronización: nunca dos corridas de la misma a la vez.
+- **Emparejar, no duplicar**: la clave se normaliza igual que en "actualizar
+  desde un archivo" (`normalizeKey`/`keyExpr`); si existe se actualiza SÓLO lo
+  que cambió (`data || patch`), si no se crea (opcional). Cada celda pasa por el
+  MISMO camino que una celda de CSV (`coerceCellValue` + `validateFieldValue`):
+  una sola forma de interpretar números, sí/no y etiquetas de select. Las
+  fechas `datetime` sin zona se interpretan en la zona elegida en la
+  sincronización; `datetimeoffset` ya es un instante.
+- **Lo que deja de aparecer** no se toca por defecto; opcionalmente se marca en
+  una casilla («Está en SQL»), y sólo con un resultado completo (si se cortó por
+  el tope de filas no se marca nada).
+- **Automatizaciones**: la primera carga no dispara (cientos de correos de
+  golpe); las siguientes sí, con el antes y el después, y quedan en la
+  actividad del registro. El límite de registros del plan se respeta (las
+  altas que no entran se saltean con aviso; las actualizaciones siguen).
+- **Topes**: 50.000 filas por corrida, 60 s de consulta por defecto (máx 300),
+  `@ultima_sincronizacion` (UTC, NULL la primera vez) para consultas
+  incrementales. Empresa en solo-lectura (ADR-S09/SEC-34): no corre.
+- **Driver**: `mssql` (tedious), cargado con `import()` la primera vez que se
+  usa, detrás de la interfaz `SqlRunner` (los tests usan un runner falso). Sin
+  el paquete instalado, conectar devuelve el motivo («el servidor no tiene
+  instalado el driver de SQL Server»).
+- Las columnas sincronizadas se marcan en la lista (`settings.sql_sync`) pero
+  **no se bloquean**: la base es la fuente, así que un valor editado a mano
+  vuelve al de SQL en la próxima corrida.
+
+---
+
+**Versión del documento:** 1.56.0 (sincronización desde SQL Server)

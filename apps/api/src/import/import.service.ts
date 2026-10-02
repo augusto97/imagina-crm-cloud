@@ -522,23 +522,7 @@ export class ImportService {
             if (rawValues.size === 0) continue;
 
             const existing = readOptions(field);
-            const known = new Set<string>();
-            const usedSlugs: string[] = [];
-            for (const opt of existing) {
-                known.add(ciKey(opt.label));
-                known.add(ciKey(opt.value));
-                usedSlugs.push(opt.value);
-            }
-
-            const newOptions: SelectOption[] = [];
-            for (const value of rawValues) {
-                if (known.has(ciKey(value))) continue;
-                const optSlug = makeOptionSlug(value, usedSlugs);
-                newOptions.push({ value: optSlug, label: value.slice(0, 190) });
-                usedSlugs.push(optSlug);
-                known.add(ciKey(value));
-                known.add(ciKey(optSlug));
-            }
+            const newOptions = planSelectExpansion(field, rawValues);
             if (newOptions.length === 0) continue;
 
             await this.fields.update(tenantId, String(listId), String(field.id), {
@@ -549,6 +533,33 @@ export class ImportService {
 
         return result;
     }
+}
+
+/**
+ * Las opciones NUEVAS que harían falta para que todos esos valores existan en
+ * el select (match sin distinguir mayúsculas contra etiqueta y valor). Puro:
+ * lo usan el import CSV y la sincronización desde SQL (v0.1.243).
+ */
+export function planSelectExpansion(field: Field, rawValues: Iterable<string>): SelectOption[] {
+    const existing = readOptions(field);
+    const known = new Set<string>();
+    const usedSlugs: string[] = [];
+    for (const opt of existing) {
+        known.add(ciKey(opt.label));
+        known.add(ciKey(opt.value));
+        usedSlugs.push(opt.value);
+    }
+    const newOptions: SelectOption[] = [];
+    for (const raw of rawValues) {
+        const value = raw.trim();
+        if (value === '' || known.has(ciKey(value))) continue;
+        const optSlug = makeOptionSlug(value, usedSlugs);
+        newOptions.push({ value: optSlug, label: value.slice(0, 190) });
+        usedSlugs.push(optSlug);
+        known.add(ciKey(value));
+        known.add(ciKey(optSlug));
+    }
+    return newOptions;
 }
 
 /** Una fila validada, lista para insertar, con sus referencias de jerarquía. */

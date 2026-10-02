@@ -64,6 +64,7 @@ import {
     relations,
     templates,
     connectionSyncs,
+    sqlSyncs,
     syncLinks,
     bulkEditItems,
     bulkEdits,
@@ -330,6 +331,7 @@ export class PlatformService {
             await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, id));
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));
             await tx.delete(connectionSyncs).where(eq(connectionSyncs.tenantId, id));
+            await tx.delete(sqlSyncs).where(eq(sqlSyncs.tenantId, id));
             await tx.delete(automationHooks).where(eq(automationHooks.tenantId, id));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));

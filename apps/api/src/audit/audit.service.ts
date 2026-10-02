@@ -74,6 +74,10 @@ export type AuditAction =
     | 'store_sync.map_meta'
     | 'store_sync.bulk_edit'
     | 'store_sync.create_variations'
+    // v0.1.243 — sincronización desde SQL Server (trae datos de una base externa).
+    | 'sql_sync.create'
+    | 'sql_sync.update'
+    | 'sql_sync.delete'
     | 'bulk_edit.revert';
 
 export interface AuditEntryDto {

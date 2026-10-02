@@ -9,6 +9,12 @@ import {
     verifyIntegrationResultSchema,
     storeSyncStatusSchema,
     type StoreSyncStatus,
+    type CreateSqlSyncInput,
+    type SqlPreviewInput,
+    type SqlPreviewResult,
+    type SqlSync,
+    type SqlSyncDryRun,
+    type UpdateSqlSyncInput,
     type SetupStoreSyncInput,
     type UpdateStoreSyncInput,
     type MapStoreMetaInput,
@@ -877,6 +883,34 @@ export class CloudClient {
     }
     async storeSyncRemove(connectionId: number): Promise<void> {
         await this.request('DELETE', `/connections/${connectionId}/sync`, {});
+    }
+    // ── Sincronización desde SQL Server (v0.1.243) ──────────────────────
+    // Las respuestas son DTOs del backend tipados en shared; no hace falta
+    // re-validar su forma en el cliente.
+    async sqlSyncs(connectionId: number): Promise<SqlSync[]> {
+        return (await this.request('GET', `/connections/${connectionId}/sql-syncs`, { schema: z.object({ data: z.array(z.custom<SqlSync>()) }) })).data;
+    }
+    async sqlSyncCreate(connectionId: number, input: CreateSqlSyncInput): Promise<SqlSync> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sql-syncs`, { body: input, schema: z.object({ data: z.custom<SqlSync>() }) })
+        ).data;
+    }
+    async sqlPreview(connectionId: number, input: SqlPreviewInput): Promise<SqlPreviewResult> {
+        return (
+            await this.request('POST', `/connections/${connectionId}/sql-preview`, { body: input, schema: z.object({ data: z.custom<SqlPreviewResult>() }) })
+        ).data;
+    }
+    async sqlSyncUpdate(syncId: number, input: UpdateSqlSyncInput): Promise<SqlSync> {
+        return (await this.request('PATCH', `/sql-syncs/${syncId}`, { body: input, schema: z.object({ data: z.custom<SqlSync>() }) })).data;
+    }
+    async sqlSyncRun(syncId: number): Promise<SqlSync> {
+        return (await this.request('POST', `/sql-syncs/${syncId}/run`, { body: {}, schema: z.object({ data: z.custom<SqlSync>() }) })).data;
+    }
+    async sqlSyncDryRun(syncId: number): Promise<SqlSyncDryRun> {
+        return (await this.request('POST', `/sql-syncs/${syncId}/dry-run`, { body: {}, schema: z.object({ data: z.custom<SqlSyncDryRun>() }) })).data;
+    }
+    async sqlSyncRemove(syncId: number): Promise<void> {
+        await this.request('DELETE', `/sql-syncs/${syncId}`, {});
     }
     platformIntegrationsGet(): Promise<PlatformIntegrations> {
         return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });

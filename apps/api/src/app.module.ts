@@ -30,6 +30,7 @@ import { PlatformModule } from './platform/platform.module';
 import { AuditModule } from './audit/audit.service';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { StoreSyncModule } from './sync/store-sync.module';
+import { SqlSyncModule } from './sql-sync/sql-sync.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
 import { RecordsModule } from './records/records.module';
@@ -56,6 +57,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AuditModule,
         ConnectorsModule,
         StoreSyncModule,
+        SqlSyncModule,
         AuthModule,
         WorkspacesModule,
         MeModule,

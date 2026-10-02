@@ -363,7 +363,7 @@ export function normalizeKey(field: Field | null, raw: string): string {
 }
 
 /** La misma normalización, en SQL (sobre la columna JSONB del campo). */
-function keyExpr(field: Field) {
+export function keyExpr(field: Field) {
     const col = sql`(${records.data} ->> ${`f${field.id}`})`;
     if (field.type === 'phone') return sql`regexp_replace(${col}, '[^0-9]', '', 'g')`;
     if (field.type === 'number') return sql`(CASE WHEN ${col} ~ '^-?[0-9.]+$' THEN ((${col})::numeric)::float8::text ELSE lower(${col}) END)`;
