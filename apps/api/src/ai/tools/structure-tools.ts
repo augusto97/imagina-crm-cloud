@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+    AUTOMATION_ACTIONS,
     AGGREGATE_METRICS,
     BLUEPRINT_VERSION,
     COLOR_PRESETS,
@@ -235,9 +236,10 @@ const automationSpec = z.object({
         .max(20)
         .describe(
             'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?} | ' +
-                'update_field {values: {slug: valor}} | create_record {target_list: slug, values: {slug: valor}} | ' +
+                'update_field {values: {slug: valor}} — cambia campos DEL REGISTRO que disparó la automatización (es lo que corresponde a "cambiar/actualizar/marcar un campo") | ' +
+                'create_record {target_list: slug, values: {slug: valor}} | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — usá las que lista `connectors` en get_list_schema | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usá exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
@@ -1242,7 +1244,8 @@ export class StructureTools implements AiProposalApplier {
             if (!l) throw new AiToolError(`La lista destino «${target}» no existe. Listas: ${lists.map((x) => x.slug).join(', ')}.`);
             return l.id;
         });
-        const actionLabels = describeActions(parsed.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug);
+        const connectorLabel = await this.validateActionTypes(ctx, parsed.data.actions as unknown[]);
+        const actionLabels = describeActions(parsed.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel);
         return this.saveProposal(ctx, {
             kind: 'create_automation',
             title: `Crear la automatización «${input.name}» en «${list.name}»`,
@@ -1535,6 +1538,12 @@ export class StructureTools implements AiProposalApplier {
             });
             if (!merged.success) throw new AiToolError(zodIssues(merged.error));
             translateBulkEditActions(merged.data.actions as unknown[], fields, list.name);
+            // Las acciones guardadas antes pueden apuntar a una conexión que ya
+            // no está: sólo se exige que sean válidas si esta propuesta las
+            // reemplaza (renombrar o pausar no tiene por qué fallar por eso).
+            const connectorLabel = await this.validateActionTypes(ctx, merged.data.actions as unknown[], {
+                strict: input.actions !== undefined,
+            });
             this.validateAutomationSlugs(merged.data, new Set(fields.map((f) => f.slug)), (target) => {
                 const l = bySlug.get(target);
                 if (!l) throw new AiToolError(`La lista destino «${target}» no existe. Listas: ${lists.map((x) => x.slug).join(', ')}.`);
@@ -1553,14 +1562,14 @@ export class StructureTools implements AiProposalApplier {
                 patch.actions = merged.data.actions;
                 changes.push({
                     label: 'Acciones',
-                    from: describeActions(auto.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug).join(' → '),
-                    to: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug).join(' → '),
+                    from: describeActions(auto.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel).join(' → '),
+                    to: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel).join(' → '),
                 });
             }
             automationPreview = {
                 name: merged.data.name,
                 trigger: triggerLabel(merged.data.trigger_type, merged.data.trigger_config ?? {}, fields),
-                actions: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug),
+                actions: describeActions(merged.data.actions as Array<{ type: string; config: Record<string, unknown> }>, bySlug, connectorLabel),
             };
         }
         if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la automatización actual.');
@@ -2388,6 +2397,84 @@ export class StructureTools implements AiProposalApplier {
     }
 
     /**
+     * Comprueba el TIPO de cada acción (incluidas las ramas de un `if_else`)
+     * y que una `connector_action` apunte a una conexión y una acción que
+     * existen de verdad, con sus datos obligatorios. Sin esto el modelo podía
+     * proponer un tipo inventado (que el editor mostraba como la primera
+     * opción de la lista) o un conector equivocado, y la tarjeta decía apenas
+     * «Conector: send_text» — nadie veía qué se iba a ejecutar. Devuelve el
+     * nombre REAL de cada acción de conector («Enviar mensaje de WhatsApp ·
+     * WhatsApp») para la tarjeta de la propuesta.
+     */
+    private async validateActionTypes(
+        ctx: AiToolContext,
+        actions: unknown[],
+        opts: { strict?: boolean } = {},
+    ): Promise<(cfg: Record<string, unknown>) => string> {
+        const strict = opts.strict ?? true;
+        const connections = await this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []);
+        const label = (cfg: Record<string, unknown>): string => {
+            const conn = connections.find((c) => c.id === Number(cfg.connection_id));
+            const act = conn?.actions.find((a) => a.key === cfg.action_key);
+            return conn && act ? `${act.label} (${conn.name})` : `Conector: ${String(cfg.action_key ?? '')}`;
+        };
+        if (!strict) return label;
+        const known: string[] = [...AUTOMATION_ACTIONS, 'connector_action'];
+        const available = (): string =>
+            connections
+                .filter((c) => c.actions.length > 0)
+                .map((c) => `${c.id} «${c.name}»: ${c.actions.map((a) => a.key).join(', ')}`)
+                .join(' | ') || 'ninguna';
+        const walk = (list: unknown[], path: string): void => {
+            list.forEach((raw, i) => {
+                const a = raw as { type?: unknown; config?: Record<string, unknown> };
+                const where = `${path}${i + 1}`;
+                const type = String(a?.type ?? '');
+                if (!known.includes(type)) {
+                    throw new AiToolError(
+                        `La acción ${where} tiene un tipo desconocido «${type}». Tipos válidos: ${known.join(', ')}. ` +
+                            'Para cambiar campos del registro que disparó la automatización usá update_field {values: {slug: valor}}.',
+                    );
+                }
+                const cfg = a.config ?? {};
+                if (type === 'if_else') {
+                    walk((cfg.then_actions as unknown[] | undefined) ?? [], `${where}.sí.`);
+                    walk((cfg.else_actions as unknown[] | undefined) ?? [], `${where}.no.`);
+                    return;
+                }
+                if (type !== 'connector_action') return;
+                const conn = connections.find((c) => c.id === Number(cfg.connection_id));
+                if (!conn) {
+                    throw new AiToolError(
+                        `La acción ${where} usa la conexión ${String(cfg.connection_id ?? '(sin connection_id)')}, que no existe o no está a tu alcance. ` +
+                            `Conexiones disponibles: ${available()}. Usá connector_action SÓLO para ejecutar algo en un servicio externo; para cambiar un campo del registro es update_field.`,
+                    );
+                }
+                const act = conn.actions.find((x) => x.key === cfg.action_key);
+                if (!act) {
+                    throw new AiToolError(
+                        `La conexión «${conn.name}» no tiene la acción «${String(cfg.action_key ?? '')}». Acciones: ${conn.actions.map((x) => x.key).join(', ') || 'ninguna'}.`,
+                    );
+                }
+                const values = (cfg.values && typeof cfg.values === 'object' ? cfg.values : {}) as Record<string, unknown>;
+                const keys = new Set(act.params.map((p) => p.key));
+                const unknownKeys = Object.keys(values).filter((k) => !keys.has(k));
+                if (unknownKeys.length > 0) {
+                    throw new AiToolError(
+                        `«${act.label}» no tiene los datos ${unknownKeys.join(', ')}. Datos que acepta: ${act.params.map((p) => p.key).join(', ')}.`,
+                    );
+                }
+                const missing = act.params.filter((p) => p.required && String(values[p.key] ?? '').trim() === '');
+                if (missing.length > 0) {
+                    throw new AiToolError(`A «${act.label}» le faltan datos obligatorios: ${missing.map((p) => p.key).join(', ')}.`);
+                }
+            });
+        };
+        walk(actions, '');
+        return label;
+    }
+
+    /**
      * Comprueba que los slugs que la automatización referencia existan en
      * la lista (trigger, condiciones, update_field, merge tags) y resuelve
      * las listas destino de `create_record` (slug → id) IN PLACE.
@@ -2703,7 +2790,11 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
     }
 }
 
-function describeActions(actions: Array<{ type: string; config: Record<string, unknown> }>, lists: Map<string, List>): string[] {
+function describeActions(
+    actions: Array<{ type: string; config: Record<string, unknown> }>,
+    lists: Map<string, List>,
+    connectorLabel: (cfg: Record<string, unknown>) => string = (cfg) => `Conector: ${String(cfg.action_key ?? '')}`,
+): string[] {
     return actions.map((a) => {
         const cfg = a.config ?? {};
         switch (a.type) {
@@ -2719,7 +2810,7 @@ function describeActions(actions: Array<{ type: string; config: Record<string, u
             case 'call_webhook':
                 return `Llamar webhook ${String(cfg.url ?? '')}`;
             case 'connector_action':
-                return `Conector: ${String(cfg.action_key ?? '')}`;
+                return connectorLabel(cfg);
             case 'if_else':
                 return 'Condicional sí / no';
             default:

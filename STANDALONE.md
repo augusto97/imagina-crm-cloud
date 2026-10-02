@@ -2025,4 +2025,21 @@ B. Ser del equipo de LA MISMA empresa sigue rechazado (409
 
 ---
 
-**Versión del documento:** 1.54.0 (portal con varios accesos por persona)
+**Acciones de conector bien identificadas (v0.1.242).** Todas las acciones de
+un conector comparten el tipo `connector_action` y se distinguen por
+`connection_id` + `action_key`. El selector "Tipo de acción" del editor usaba
+el tipo como valor de la opción, así que una acción de conector cualquiera se
+mostraba como la PRIMERA del catálogo (p. ej. «Enviar mensaje de WhatsApp»), y
+elegir otra desde ese selector borraba la conexión. Ahora cada acción de
+conector es su propia opción (`connector:<id>:<clave>`, `ActionTypeSelect`
+compartido por el flujo, el lienzo y las ramas si/sino) y lo que el catálogo no
+conoce se muestra tal cual. Del lado del asistente/MCP, una propuesta de
+automatización valida el TIPO de cada acción (incluidas las ramas) y que una
+`connector_action` apunte a una conexión y acción que existen, con sus datos
+obligatorios y sin datos de más; la tarjeta nombra la acción real
+(«Enviar mensaje de WhatsApp (WhatsApp)») y la descripción de la herramienta
+deja claro que cambiar un campo de la app es `update_field`, nunca un conector.
+
+---
+
+**Versión del documento:** 1.55.0 (acciones de conector bien identificadas)

@@ -44,6 +44,8 @@ import {
     helpForTrigger,
     TriggerConfigEditor,
 } from './config-editors';
+import { ActionTypeSelect } from './ActionTypeSelect';
+import { actionTitle } from './actionTypeOptions';
 
 /**
  * Lienzo visual del editor de automatizaciones (v0.1.91) — vista tipo
@@ -812,7 +814,7 @@ function NodeConfigPanel({
     fields: FieldEntity[];
 }): JSX.Element {
     const meta = actionMetaFor(spec.type);
-    const label = actionsCatalog.find((a) => a.slug === spec.type)?.label ?? meta.title;
+    const label = actionTitle(spec, actionsCatalog, meta.title);
     const isIf = spec.type === 'if_else';
 
     return (
@@ -844,19 +846,12 @@ function NodeConfigPanel({
                     />
                 ) : (
                     <>
-                        <Select
-                            value={spec.type}
-                            onChange={(e) => onChange({ type: e.target.value, config: {} })}
-                            aria-label={__('Tipo de acción')}
-                        >
-                            {actionsCatalog
-                                .filter((a) => a.slug !== 'if_else')
-                                .map((a) => (
-                                    <option key={a.slug} value={a.slug}>
-                                        {a.label}
-                                    </option>
-                                ))}
-                        </Select>
+                        <ActionTypeSelect
+                            spec={spec}
+                            actionsCatalog={actionsCatalog}
+                            onChange={onChange}
+                            exclude={['if_else']}
+                        />
                         <ActionConfigEditor
                             spec={spec}
                             onChange={onChange}

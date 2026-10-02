@@ -29,6 +29,7 @@ import type {
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 import type { WebhookTestResult } from '@imagina-base/shared';
+import { ActionTypeSelect } from './ActionTypeSelect';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -795,22 +796,16 @@ export function ActionsEditor({
                                 <span className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-bg-primary/10 imcrm-text-[11px] imcrm-font-bold imcrm-text-primary imcrm-ring-1 imcrm-ring-primary/15">
                                     {i + 1}
                                 </span>
-                                <Select
-                                    value={spec.type}
-                                    onChange={(e) => {
+                                <ActionTypeSelect
+                                    spec={spec}
+                                    actionsCatalog={actionsCatalog}
+                                    onChange={(picked) => {
                                         const next = [...value];
-                                        next[i] = { type: e.target.value, config: {} };
+                                        next[i] = picked;
                                         onChange(next);
                                     }}
                                     className="imcrm-flex-1"
-                                    aria-label={__('Tipo de acción')}
-                                >
-                                    {actionsCatalog.map((a) => (
-                                        <option key={a.slug} value={a.slug}>
-                                            {a.label}
-                                        </option>
-                                    ))}
-                                </Select>
+                                />
                                 <Button
                                     type="button"
                                     variant="ghost"
