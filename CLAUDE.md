@@ -6584,6 +6584,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         copiados, progreso recordado al recargar, páginas públicas sin sesión y
         sin errores de CSP, condiciones propias publicadas, celular.
 
+  - [x] **Selector de acción con estilo (v0.1.248, reporte del usuario con
+        captura: "el campo donde se selecciona la acción no parece tener
+        estilos")**: el «Tipo de acción» de las automatizaciones era un
+        `<select>` nativo y en Safari se veía crudo, sin íconos ni logos. Ahora
+        `ActionTypeSelect` es un botón con la forma de los demás campos: ícono
+        de la acción o logo de la app, nombre, una línea de descripción (o el
+        nombre de la conexión) y chevron. Abre el MISMO menú que el «+» de
+        agregar acción (`ActionTypeMenu`, que ganó `selectedValue` con check en
+        la elegida, `align` y el ancho del disparador). Las tres superficies lo
+        heredan: flujo, panel del lienzo y ramas si/sino. Una acción guardada
+        que ya no existe se muestra con el aviso en rojo, no como otra. Se
+        conservan las reglas de v0.1.242: cada acción de conector es su propia
+        opción y elegirla mantiene la conexión. E2E navegador 14/14 (botón y no
+        `<select>`, menú con la actual marcada, cambiar a otra acción de
+        conector, guardado con la conexión correcta, título del lienzo); 224
+        tests del front en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
