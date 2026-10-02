@@ -73,6 +73,14 @@ export const portalBootSchema = z.object({
     layout_data: portalLayoutDataSchema.nullable().default(null),
     /** Campos que el cliente puede editar (los de bloques marcados editables). */
     editable_field_ids: z.array(idSchema).default([]),
+    /**
+     * v0.1.241 — el ACCESO que se está viendo (id del vínculo). Una persona
+     * puede tener varios en la misma empresa (uno por registro) y elige cuál
+     * ver; el SPA lo manda de vuelta en `X-Portal-Account`.
+     */
+    account_id: idSchema.nullable().default(null),
+    /** v0.1.241 — nombre de la empresa (para el selector de cuentas). */
+    tenant_name: z.string().default(''),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 
@@ -156,6 +164,63 @@ export const portalAccessListSchema = z.object({
     users: z.array(portalAccessUserSchema),
 });
 export type PortalAccessList = z.infer<typeof portalAccessListSchema>;
+
+/**
+ * v0.1.241 — ANTES de dar acceso, el admin pregunta qué pasa con ese email EN
+ * SU EMPRESA (nunca en otras: no es un directorio de quién es cliente de
+ * quién). `new` = no tiene acceso; `this_record` = ya lo tiene en este
+ * registro; `other_records` = tiene acceso a OTROS registros de esta empresa
+ * (dárselo suma uno más, no reemplaza nada); `staff` = es del equipo de esta
+ * empresa y el portal no es para él.
+ */
+export const portalAccessCheckSchema = z.object({
+    status: z.enum(['new', 'this_record', 'other_records', 'staff']),
+    records: z
+        .array(z.object({ list_name: z.string(), record_id: idSchema, record_title: z.string() }))
+        .default([]),
+});
+export type PortalAccessCheck = z.infer<typeof portalAccessCheckSchema>;
+
+/**
+ * v0.1.241 — una CUENTA del portal: un registro al que la persona tiene
+ * acceso (su ficha en una empresa). `same_company` = se cambia sin recargar
+ * (misma empresa que la sesión); las de otra empresa se abren con un enlace
+ * de un solo uso que acuña el servidor.
+ */
+export const portalAccountSchema = z.object({
+    id: idSchema,
+    tenant_id: idSchema,
+    tenant_name: z.string(),
+    list_name: z.string(),
+    record_id: idSchema,
+    record_title: z.string(),
+    current: z.boolean(),
+    same_company: z.boolean(),
+    available: z.boolean(),
+});
+export type PortalAccount = z.infer<typeof portalAccountSchema>;
+
+export const portalAccountsSchema = z.object({
+    accounts: z.array(portalAccountSchema),
+    /**
+     * La sesión ve las cuentas de TODAS sus empresas. Sólo las sesiones que
+     * abrió un enlace llegado al correo de la persona (y en el dominio de la
+     * plataforma — un dominio propio lo controla una empresa) lo tienen.
+     */
+    all_companies: z.boolean(),
+});
+export type PortalAccounts = z.infer<typeof portalAccountsSchema>;
+
+/** Cambiar a una cuenta de otra empresa: ruta de un solo uso para navegar. */
+export const portalSwitchResultSchema = z.object({ path: z.string().nullable() });
+export type PortalSwitchResult = z.infer<typeof portalSwitchResultSchema>;
+
+export const portalEmailLinkResultSchema = z.object({
+    email_sent: z.boolean(),
+    /** El email enmascarado al que salió (`an***@gmail.com`). */
+    email_hint: z.string(),
+});
+export type PortalEmailLinkResult = z.infer<typeof portalEmailLinkResultSchema>;
 
 /** Candidatas a "listas relacionadas" del portal, detectadas por el backend. */
 export const portalRelatedOptionsSchema = z.object({

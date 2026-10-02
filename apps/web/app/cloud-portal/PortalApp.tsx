@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery as useRQ } from '@tanstack/react-query';
 import { hexToHslTriplet } from '@/hooks/useBranding';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { isDataField, jsonbKeyForField, type Field, type PortalBoot } from '@imagina-base/shared';
 import { PAGE_FONT_STACKS, readPageSettings } from '@/lib/blockStyle';
@@ -9,7 +9,9 @@ import { applyDocumentTitle, applyFavicon } from '@/lib/favicon';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
+import { PortalAccountMenu } from '@/cloud-portal/PortalAccountMenu';
 import { PortalLayout } from '@/cloud-portal/PortalLayout';
+import { setPortalAccount } from '@/portal/portalAccount';
 import { setTenantFormat } from '@/lib/tenantFormat';
 
 /**
@@ -33,10 +35,12 @@ function AccessPage(): JSX.Element {
     const [params] = useSearchParams();
     const navigate = useNavigate();
     const token = params.get('token') ?? '';
+    // v0.1.241 — el enlace de "cambiar a otra empresa" trae la cuenta a abrir.
+    const cuenta = params.get('cuenta');
 
     const consume = useMutation({
         mutationFn: () => portalApi.consumePortal(token),
-        onSuccess: () => navigate('/portal', { replace: true }),
+        onSuccess: () => navigate(cuenta && /^\d+$/.test(cuenta) ? `/portal?cuenta=${cuenta}` : '/portal', { replace: true }),
     });
 
     // El enlace es de un solo uso: StrictMode monta el efecto dos veces y el
@@ -64,21 +68,59 @@ function AccessPage(): JSX.Element {
 }
 
 function PortalPage(): JSX.Element {
+    const [params, setParams] = useSearchParams();
+    const qc = useQueryClient();
+    const [loggedOut, setLoggedOut] = useState(false);
+    // v0.1.241 — la cuenta elegida vive en la URL (`?cuenta=`), así recargar o
+    // compartir la pestaña mantiene lo que se estaba mirando. Se fija ANTES de
+    // pedir nada: todos los requests del portal la mandan.
+    const raw = params.get('cuenta');
+    const cuenta = raw && /^\d+$/.test(raw) ? Number(raw) : null;
+    setPortalAccount(cuenta);
+
     const boot = useQuery({
-        queryKey: ['portal-me'],
+        queryKey: ['portal-me', cuenta],
         queryFn: () => portalApi.portalMe(),
         retry: false,
+        enabled: !loggedOut,
     });
 
+    // Una cuenta que ya no está (le quitaron ese acceso): se vuelve a la de
+    // siempre en vez de mostrar un error.
+    const stale = boot.error instanceof CloudApiError && boot.error.code === 'portal_account_not_found' && cuenta !== null;
+    useEffect(() => {
+        if (stale) setParams({}, { replace: true });
+    }, [stale, setParams]);
+
+    if (loggedOut) return <RequestAccessScreen note="Cerraste sesión." />;
     // v0.1.154 — el enlace vence a las 24 h y la sesión a los 30 días de
     // inactividad: en vez de un cartel muerto, el cliente pide uno nuevo acá.
-    if (boot.isError) return <RequestAccessScreen />;
+    if (boot.isError && !stale) return <RequestAccessScreen />;
     if (!boot.data) return <Centered>Cargando tu portal…</Centered>;
 
-    return <PortalContent boot={boot.data} />;
+    return (
+        <PortalContent
+            key={boot.data.account_id ?? 0}
+            boot={boot.data}
+            onSelectAccount={(id) => setParams({ cuenta: String(id) })}
+            onLogout={() => {
+                setPortalAccount(null);
+                qc.clear();
+                setLoggedOut(true);
+            }}
+        />
+    );
 }
 
-function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
+function PortalContent({
+    boot,
+    onSelectAccount,
+    onLogout,
+}: {
+    boot: PortalBoot;
+    onSelectAccount: (id: number) => void;
+    onLogout: () => void;
+}): JSX.Element {
     const dataFields = boot.fields.filter((f) => isDataField(f.type));
 
     // White-label: el portal sale con la marca de la empresa (mismo mecanismo
@@ -146,6 +188,7 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                         </p>
                         <h1 className="imcrm-text-lg imcrm-font-semibold imcrm-tracking-tight">Tu portal</h1>
                     </div>
+                    <PortalAccountMenu accountId={boot.account_id ?? null} onSelect={onSelectAccount} onLogout={onLogout} />
                 </div>
             </header>
 
@@ -168,7 +211,7 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
                     tickets…). El backend ya devuelve SOLO las filas del
                     cliente (scope del portal) y sin los campos ocultos. */}
                 {(boot.related_lists ?? []).map((rel) => (
-                    <RelatedListSection key={rel.list_id} slug={rel.slug} name={rel.name} />
+                    <RelatedListSection key={rel.list_id} accountId={boot.account_id ?? null} slug={rel.slug} name={rel.name} />
                 ))}
             </main>
         </div>
@@ -179,9 +222,9 @@ function PortalContent({ boot }: { boot: PortalBoot }): JSX.Element {
  * Una lista relacionada dentro del portal: "Mis facturas", "Mis tickets".
  * Pide `/portal/lists/:slug/records`, que ya viene acotado a lo del cliente.
  */
-function RelatedListSection({ slug, name }: { slug: string; name: string }): JSX.Element | null {
+function RelatedListSection({ accountId, slug, name }: { accountId: number | null; slug: string; name: string }): JSX.Element | null {
     const q = useRQ({
-        queryKey: ['portal-related', slug],
+        queryKey: ['portal-related', accountId, slug],
         queryFn: () => portalApi.portalRelatedRecords(slug, { per_page: 20 }),
         retry: false,
     });

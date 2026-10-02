@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { usePortalPreview } from '../PreviewContext';
+import { portalAccountHeaders } from '../portalAccount';
 import type { PortalBootData } from '../types';
 
 interface ActivityItem {
@@ -45,7 +46,7 @@ export function ActivityTimelineBlock({ config, boot }: Props): JSX.Element {
         fetch(url, {
             signal: ac.signal,
             credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
+            headers: { Accept: 'application/json', ...portalAccountHeaders() },
         })
             .then(async (res) => {
                 if (!res.ok) throw new Error(`http-${res.status}`);

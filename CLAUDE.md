@@ -6272,6 +6272,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         límite del plan; consola: invitar por encima del límite, rol, último
         admin protegido, sumar a otra empresa desde Usuarios, bitácora).
 
+  - [x] **Portal: varios accesos por persona, selector de cuenta y empresa,
+        aviso al dar acceso y equipo de otra empresa como cliente (v0.1.241,
+        pregunta del usuario: "¿cómo se maneja si un usuario tiene acceso al
+        portal desde varias listas o varios workspaces?" → "hazlos todos")**.
+        (a) **Dar acceso a otro registro SUMA**: el vínculo era único por
+        (persona, empresa) y un segundo acceso REEMPLAZABA el primero en
+        silencio — el cliente dejaba de ver su ficha sin que nadie se
+        enterara. Ahora es único por (persona, registro) (migración 0058) y
+        antes de dar un acceso nuevo la ficha pregunta al servidor qué pasa con
+        ese email EN ESTA EMPRESA (`GET /lists/:l/portal/access/check`, nunca
+        mira otras): si ya tiene otros, un aviso dice cuáles y que SUMA; si es
+        del equipo, no se da y se explica por qué. "Dar acceso a otra persona"
+        en un registro que ya tiene una, y quitar acceso por registro (la
+        membresía y las sesiones caen sólo cuando no le queda ninguno).
+        (b) **Selector de cuenta en el portal**: menú arriba a la derecha con
+        las cuentas de la persona (una por registro, agrupadas por empresa), la
+        elegida viaja en `?cuenta=` (recargar la conserva) y en
+        `X-Portal-Account` — el servidor la valida contra SUS vínculos en la
+        empresa de la sesión; un id ajeno es 404. Más **Salir**.
+        (c) **Empresas distintas sin otro email**: la sesión ve las cuentas de
+        otras empresas sólo si la abrió un enlace que llegó ÚNICAMENTE a su
+        correo (uno que se le devolvió a la empresa, jamás) y en un host de la
+        plataforma (un dominio propio lo controla una empresa). Cambiar de
+        empresa acuña un enlace de un solo uso de 2 min. Si la sesión no tiene
+        ese permiso, "¿Sos cliente de otra empresa?" le manda a su correo el
+        enlace de "todas mis cuentas". Pedir un enlace nuevo desde la pantalla
+        de entrar manda UNO por empresa (antes, uno por vínculo).
+        (d) **Equipo de una empresa, cliente de otra**: antes se rechazaba
+        (`portal_email_not_client`, de cuando una sesión del portal valía como
+        la cuenta entera). Ahora la sesión del portal tiene **cookie propia**
+        (`imbase_portal`): abrir un portal ya no cierra la sesión de trabajo
+        del mismo navegador, y `/portal/*` no acepta sesiones de contraseña ni
+        de impersonación. Ser del equipo de LA MISMA empresa sigue rechazado
+        (409 `portal_email_is_staff`). 6 tests de integración nuevos (33 en el
+        spec del portal, incluido el guard con las dos cookies) + E2E navegador
+        33/33 (aviso al segundo registro, el primero conservado, equipo
+        rechazado, cookie propia sin cerrar la sesión del admin en el mismo
+        navegador, menú con las dos cuentas y cambio con `?cuenta=`, empresa B
+        con enlace sólo por correo, "todas mis cuentas" → las dos empresas
+        agrupadas y cambio entre ellas, la dueña de B como cliente de A con su
+        app intacta, quitar un acceso conserva el otro, salir, celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

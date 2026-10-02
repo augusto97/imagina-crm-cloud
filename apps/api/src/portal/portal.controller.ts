@@ -28,7 +28,11 @@ import {
     type PortalLayoutData,
     type MagicLinkResult,
     type PortalBoot,
+    type PortalAccessCheck,
     type PortalAccessList,
+    type PortalAccounts,
+    type PortalEmailLinkResult,
+    type PortalSwitchResult,
     type PortalCommentInput,
     type PortalRequestAccessInput,
     type PortalRelatedOptions,
@@ -36,7 +40,8 @@ import {
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
+import { SessionService } from '../auth/session.service';
+import { PORTAL_SESSION_COOKIE, SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -50,6 +55,7 @@ const portalPreviewSchema = layoutDataRequestSchema.extend({ record_id: idSchema
 export class PortalController {
     constructor(
         private readonly portal: PortalService,
+        private readonly sessions: SessionService,
         @Inject(ENV) private readonly env: Env,
     ) {}
 
@@ -87,7 +93,27 @@ export class PortalController {
         return this.portal.accessFor(req.tenant!.tenantId, list, Number(recordId) || 0);
     }
 
-    /** Quita el acceso de un cliente (borra el vínculo y revoca sus sesiones). */
+    /**
+     * v0.1.241 — antes de dar acceso: ¿ese email ya tiene acceso a otros
+     * registros de ESTA empresa, o es de su equipo? (nunca mira otras empresas)
+     */
+    @Get('lists/:list/portal/access/check')
+    @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+    @RequireCapability('manage_lists')
+    checkAccess(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Query('email') email: string,
+        @Query('record_id') recordId: string,
+    ): Promise<PortalAccessCheck> {
+        return this.portal.checkAccess(req.tenant!.tenantId, list, String(email ?? ''), Number(recordId) || 0);
+    }
+
+    /**
+     * Quita el acceso de un cliente. Con `record_id`, sólo el de ese registro
+     * (v0.1.241: puede tener varios); la membresía y las sesiones caen cuando
+     * no le queda ninguno en la empresa.
+     */
     @Delete('lists/:list/portal/access/:userId')
     @HttpCode(204)
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
@@ -96,8 +122,15 @@ export class PortalController {
         @Req() req: FastifyRequest,
         @Param('list') list: string,
         @Param('userId') userId: string,
+        @Query('record_id') recordId?: string,
     ): Promise<void> {
-        return this.portal.revokeAccess(req.tenant!.tenantId, list, Number(userId) || 0);
+        const rid = Number(recordId);
+        return this.portal.revokeAccess(
+            req.tenant!.tenantId,
+            list,
+            Number(userId) || 0,
+            Number.isInteger(rid) && rid > 0 ? rid : undefined,
+        );
     }
 
     /**
@@ -164,8 +197,18 @@ export class PortalController {
         const { sessionToken } = await this.portal.consume(input.token, {
             userAgent: String(req.headers['user-agent'] ?? ''),
             ip: req.ip,
+            host: req.host,
         });
-        reply.setCookie(SESSION_COOKIE, sessionToken, {
+        // v0.1.241 — el navegador cambia de sesión del portal: la anterior se
+        // cierra (si no, quedaba viva 30 días sin que nadie la usara).
+        const previous = req.cookies?.[PORTAL_SESSION_COOKIE];
+        if (previous && previous !== sessionToken) {
+            const old = await this.sessions.peek(previous);
+            if (old?.portalTenantId !== undefined) await this.sessions.destroy(previous);
+        }
+        // v0.1.241 — cookie PROPIA del portal: abrir un portal ya no cierra la
+        // sesión de trabajo de la app en el mismo navegador.
+        reply.setCookie(PORTAL_SESSION_COOKIE, sessionToken, {
             httpOnly: true,
             // SEC-14: en producción SIEMPRE Secure.
             secure: this.env.COOKIE_SECURE || this.env.NODE_ENV === 'production',
@@ -174,6 +217,41 @@ export class PortalController {
             maxAge: this.env.SESSION_TTL_SECONDS,
         });
         return { ok: true };
+    }
+
+    /** v0.1.241 — salir del portal (sólo la sesión del portal de este navegador). */
+    @Post('portal/logout')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    async logout(@Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply): Promise<{ ok: true }> {
+        await this.sessions.destroy(req.sessionToken!);
+        reply.clearCookie(PORTAL_SESSION_COOKIE, { path: '/' });
+        // Sesiones del portal abiertas antes de v0.1.241 vivían en la cookie general.
+        if (req.cookies?.[SESSION_COOKIE] === req.sessionToken) reply.clearCookie(SESSION_COOKIE, { path: '/' });
+        return { ok: true };
+    }
+
+    /** v0.1.241 — las cuentas de la persona (registros a los que tiene acceso). */
+    @Get('portal/accounts')
+    @UseGuards(SessionGuard)
+    accounts(@Req() req: FastifyRequest): Promise<PortalAccounts> {
+        return this.portal.accounts(portalActor(req));
+    }
+
+    /** v0.1.241 — abrir una cuenta de otra empresa (ruta de un solo uso). */
+    @Post('portal/accounts/:id/switch')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    switchAccount(@Req() req: FastifyRequest, @Param('id') id: string): Promise<PortalSwitchResult> {
+        return this.portal.switchAccount(portalActor(req), Number(id) || 0);
+    }
+
+    /** v0.1.241 — mandarme al correo un enlace con TODAS mis cuentas. */
+    @Post('portal/accounts/email-link')
+    @HttpCode(200)
+    @UseGuards(SessionGuard)
+    emailAllAccounts(@Req() req: FastifyRequest): Promise<PortalEmailLinkResult> {
+        return this.portal.emailAllAccounts(portalActor(req));
     }
 
     /** Boot del portal para el client autenticado. */
@@ -248,7 +326,19 @@ export class PortalController {
     }
 }
 
-/** SEC-24 — quién llama al portal: el usuario y la empresa de su enlace. */
+/**
+ * SEC-24 — quién llama al portal: el usuario y la empresa de su enlace.
+ * v0.1.241 — más el acceso con el que entró y el que eligió en el portal
+ * (`X-Portal-Account`, validado contra SUS vínculos en `requireLink`).
+ */
 function portalActor(req: FastifyRequest): PortalActor {
-    return { userId: req.authUserId!, tenantId: req.portalTenantId ?? null };
+    const raw = req.headers['x-portal-account'];
+    const requested = Number(Array.isArray(raw) ? raw[0] : raw);
+    return {
+        userId: req.authUserId!,
+        tenantId: req.portalTenantId ?? null,
+        ...(req.portalLinkId !== undefined ? { linkId: req.portalLinkId } : {}),
+        ...(Number.isInteger(requested) && requested > 0 ? { requestedLinkId: requested } : {}),
+        account: req.portalAccount === true,
+    };
 }
