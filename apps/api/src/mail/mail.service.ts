@@ -2,6 +2,7 @@ import {
     Inject,
     Injectable,
     Logger,
+    Optional,
     type OnApplicationShutdown,
     type OnModuleInit,
     ServiceUnavailableException,
@@ -14,7 +15,15 @@ import { ENV, type Env } from '../config/env';
 import { recordMail } from '../observability/diagnostics';
 import { guardRedis } from '../redis/redis.util';
 import { EmailQuotaExceededError, EmailQuotaService } from './email-quota.service';
-import { MAIL_TRANSPORT, type MailMessage, type MailTransport } from './mail.types';
+import {
+    MAIL_ACCOUNT_SENDER,
+    MAIL_TRANSPORT,
+    MailAccountLimitError,
+    MailAccountUnusableError,
+    type MailMessage,
+    type MailTransport,
+    type TenantMailAccountSender,
+} from './mail.types';
 import { PlatformSettingsService } from './platform-settings.service';
 import { TenantSmtpService } from './tenant-smtp.service';
 import { SmtpMailTransport } from './transports/smtp.transport';
@@ -44,6 +53,9 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         private readonly platform?: PlatformSettingsService,
         private readonly tenantSmtp?: TenantSmtpService,
         private readonly quota?: EmailQuotaService,
+        // v0.1.249 — la cuenta de Google/Microsoft de la empresa (lo provee el
+        // módulo de conectores; opcional para los specs de correo).
+        @Optional() @Inject(MAIL_ACCOUNT_SENDER) private readonly accountSender?: TenantMailAccountSender,
     ) {}
 
     /**
@@ -64,6 +76,13 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         // SUBE. Antes se capturaba y se seguía con plataforma/env: en una
         // instalación sin SMTP de plataforma eso significaba caer al transporte
         // `log`, o sea "enviado" en la UI y nada en la bandeja del cliente.
+        // 0) v0.1.249 — la CUENTA de Google o Microsoft que eligió la empresa.
+        //    Va primero: elegirla es una decisión explícita (guardar un SMTP la
+        //    borra), y si no se puede usar lanza en vez de caer a otra vía.
+        if (message?.tenantId !== undefined && this.accountSender) {
+            const transport = await this.accountSender.resolve(message.tenantId);
+            if (transport) return { transport, own: true, via: 'tenant_account' };
+        }
         if (message?.tenantId !== undefined && this.tenantSmtp) {
             const cfg = await this.tenantSmtp.getForSend(message.tenantId);
             if (cfg) {
@@ -165,7 +184,9 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             ({ transport, own, via } = await this.resolve(message));
         } catch (err) {
             // Un SMTP configurado pero roto: queda registrado con el motivo.
-            recordMail({ ...base, via: message.tenantId === undefined ? 'platform_smtp' : 'tenant_smtp', status: 'failed', error: errorText(err) });
+            const failedVia: MailVia =
+                message.tenantId === undefined ? 'platform_smtp' : err instanceof MailAccountUnusableError ? 'tenant_account' : 'tenant_smtp';
+            recordMail({ ...base, via: failedVia, status: 'failed', error: errorText(err) });
             throw err;
         }
         const metered = !own && message.tenantId !== undefined && this.quota !== undefined;
@@ -228,6 +249,8 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                     } catch (err) {
                         // Sin cuota no sirve reintentar: el mes no cambia en 2s.
                         if (err instanceof EmailQuotaExceededError) throw new UnrecoverableError(err.message);
+                        // Ídem con el límite diario de Google/Microsoft (hasta 24 h).
+                        if (err instanceof MailAccountLimitError) throw new UnrecoverableError(err.message);
                         throw err;
                     }
                 },

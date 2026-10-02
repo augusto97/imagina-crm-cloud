@@ -154,6 +154,7 @@ import {
     slugCheckResultSchema,
     smtpConfigSchema,
     smtpConfigPublicSchema,
+    tenantMailStatusSchema,
     platformDiagnosticsSchema,
     platformDomainSchema,
     platformDomainsSchema,
@@ -231,6 +232,7 @@ import {
     type SlugCheckResult,
     type SmtpConfig,
     type SmtpConfigPublic,
+    type TenantMailStatus,
     type PlatformDiagnostics,
     type PlatformDomain,
     type PlatformDomains,
@@ -633,6 +635,19 @@ export class CloudClient {
     }
 
     // --- SMTP propio del workspace (white-label de correo, sólo admin) ---
+    /** v0.1.249 — cómo salen los correos de la empresa (plataforma, SMTP o su cuenta). */
+    tenantMailGet(): Promise<TenantMailStatus> {
+        return this.request('GET', '/workspaces/current/mail', { schema: tenantMailStatusSchema });
+    }
+    tenantMailSetAccount(connectionId: number): Promise<TenantMailStatus> {
+        return this.request('PUT', '/workspaces/current/mail/account', {
+            body: { connection_id: connectionId },
+            schema: tenantMailStatusSchema,
+        });
+    }
+    tenantMailClearAccount(): Promise<TenantMailStatus> {
+        return this.request('DELETE', '/workspaces/current/mail/account', { schema: tenantMailStatusSchema });
+    }
     tenantSmtpGet(): Promise<SmtpConfigPublic> {
         return this.request('GET', '/workspaces/current/smtp', { schema: smtpConfigPublicSchema });
     }

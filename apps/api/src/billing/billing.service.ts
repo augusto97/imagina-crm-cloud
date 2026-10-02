@@ -37,7 +37,7 @@ export class BillingService {
             this.emailQuota.usedThisMonth(tenantId),
             // Con SMTP propio los correos salen por el servidor del cliente:
             // no consumen la cuota de la plataforma (ADR-S18).
-            this.tenantSmtp.get(tenantId),
+            this.tenantSmtp.ownMail(tenantId),
             // Ídem con la clave IA propia (ADR-S21).
             this.aiQuota ? this.aiQuota.usedThisMonth(tenantId) : Promise.resolve(0),
             this.aiSettings ? this.aiSettings.tenantHasOwnKey(tenantId) : Promise.resolve(false),
@@ -55,7 +55,7 @@ export class BillingService {
             }),
             limits: await this.plans.limits(plan),
             usage,
-            own_smtp: smtp.configured,
+            own_smtp: smtp,
         };
     }
 

@@ -238,7 +238,7 @@ export class PlatformService {
             // Consumo de correo de plataforma del mes (ADR-S18): es lo que le
             // cuesta al operador. Con SMTP propio, el cliente no consume nada.
             this.emailQuota.usedThisMonth(id),
-            this.tenantSmtp.get(id),
+            this.tenantSmtp.ownMail(id),
             // Ídem pedidos al asistente con la clave de la plataforma (ADR-S21).
             this.aiQuota ? this.aiQuota.usedThisMonth(id) : Promise.resolve(0),
             this.aiSettings ? this.aiSettings.tenantHasOwnKey(id) : Promise.resolve(false),
@@ -255,7 +255,7 @@ export class PlatformService {
             })),
             limits,
             emails_month: emails,
-            own_smtp: smtp.configured,
+            own_smtp: smtp,
             ai_requests_month: aiUsed,
             own_ai_key: ownAiKey,
         };

@@ -114,11 +114,12 @@ export type SmtpDnsReport = z.infer<typeof smtpDnsReportSchema>;
 /**
  * Por dónde salió (o no) un correo:
  *  - `tenant_smtp`: el SMTP propio de la empresa;
+ *  - `tenant_account`: la cuenta de Google o Microsoft de la empresa (v0.1.249);
  *  - `platform_smtp`: el de Plataforma → Correo;
  *  - `server_smtp`: el del `.env` del servidor;
  *  - `none`: no hay ninguno — el correo NO salió (transporte de registro).
  */
-export const MAIL_VIAS = ['tenant_smtp', 'platform_smtp', 'server_smtp', 'none'] as const;
+export const MAIL_VIAS = ['tenant_smtp', 'tenant_account', 'platform_smtp', 'server_smtp', 'none'] as const;
 export type MailVia = (typeof MAIL_VIAS)[number];
 
 /** Un intento de envío, tal como lo vio el servidor. */

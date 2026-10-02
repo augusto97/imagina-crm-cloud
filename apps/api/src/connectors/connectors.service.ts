@@ -6,6 +6,7 @@ import {
     integrationDef,
     integrationScopes,
     isIntegrationKey,
+    isMailAccountIntegration,
     oauthConfigSchema,
     type AuthorizeIntegrationInput,
     type ConnectIntegrationKeyInput,
@@ -26,6 +27,7 @@ import {
     type IntegrationKey,
     type IntegrationProvider,
     type IntegrationsOverview,
+    type MailAccountIntegration,
     type OAuthConfig,
     type OAuthStartResult,
     type OAuthStatus,
@@ -240,6 +242,17 @@ function readOAuthState(raw: unknown): StoredOAuthState {
     };
 }
 
+/** Una conexión de Gmail u Outlook que puede mandar el correo de la empresa. */
+export interface MailCapableConnection {
+    id: number;
+    name: string;
+    integration: MailAccountIntegration;
+    visibility: ConnectorVisibility;
+    address: string | null;
+    /** `null` = autorizada y usable. */
+    problem: string | null;
+}
+
 /** Acción de un conector lista para ejecutar. */
 export interface ResolvedAction {
     parts: ConnectionParts;
@@ -452,6 +465,90 @@ export class ConnectorsService {
                 fields: readFields(row.config.fields),
             },
         };
+    }
+
+    // ── Correo de la empresa por su cuenta (v0.1.249, ADR-S29) ───────────
+
+    /**
+     * Las conexiones de Gmail y Outlook de la empresa, con lo que hace falta
+     * para elegir una como cuenta de envío. Sin tokens: sólo si está lista.
+     */
+    async mailCapableConnections(tenantId: number): Promise<MailCapableConnection[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select(COLUMNS).from(connections).where(eq(connections.tenantId, tenantId)).orderBy(asc(connections.name)),
+        );
+        const out: MailCapableConnection[] = [];
+        for (const raw of rows as ConnectionRow[]) {
+            if (!isMailAccountIntegration(raw.provider)) continue;
+            const secrets = this.readSecrets(raw);
+            const state = readOAuthState(raw.config.oauth_state);
+            const label = raw.config.account_label;
+            let problem: string | null = null;
+            if (secrets === null) problem = new ConnectionUnusableError(raw.name).message;
+            else if (typeof raw.secrets.access_token !== 'string') {
+                problem = `«${raw.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones.`;
+            } else if (state.error) problem = `La última renovación del acceso falló: ${state.error}`;
+            out.push({
+                id: raw.id,
+                name: raw.name,
+                integration: raw.provider,
+                visibility: raw.visibility as ConnectorVisibility,
+                address: typeof label === 'string' && label.includes('@') ? label : null,
+                problem,
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Credencial VIGENTE de la cuenta de envío (renueva el token si hace
+     * falta). Lanza con el motivo legible si no se puede usar: el correo de la
+     * empresa no cae a otra vía en silencio.
+     */
+    async mailAccountAccess(
+        tenantId: number,
+        id: number,
+    ): Promise<{ name: string; integration: MailAccountIntegration; address: string | null; accessToken: string }> {
+        const found = await this.row(tenantId, id);
+        if (!found || !isMailAccountIntegration(found.provider)) {
+            throw new Error(
+                'La cuenta con la que salía el correo de la empresa ya no existe. Elegí otra en Ajustes → Correo.',
+            );
+        }
+        const row = (await this.ensureFreshToken(tenantId, found)) ?? found;
+        const secrets = this.readSecrets(row);
+        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        const token = secrets.access_token ?? '';
+        if (token === '') {
+            throw new Error(
+                `«${row.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones para que vuelva a salir el correo de la empresa.`,
+            );
+        }
+        const label = row.config.account_label;
+        return {
+            name: row.name,
+            integration: row.provider as MailAccountIntegration,
+            address: typeof label === 'string' && label.includes('@') ? label : null,
+            accessToken: token,
+        };
+    }
+
+    /** Si la conexión es la cuenta de envío de la empresa, no se borra ni desconecta. */
+    private async assertNotMailAccount(tenantId: number, id: number, name: string, verb: string): Promise<void> {
+        const [row] = await this.db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const chosen = (row?.settings as Record<string, unknown> | undefined)?.mail_account as
+            | { connection_id?: unknown }
+            | undefined;
+        if (Number(chosen?.connection_id) !== id) return;
+        throw new ConflictException({
+            code: 'connection_mail_account',
+            message: `«${name}» es la cuenta con la que sale el correo de la empresa. Elegí otra forma de envío en Ajustes → Correo antes de ${verb}la.`,
+            data: { status: 409 },
+        });
     }
 
     private partsFrom(row: ConnectionRow | null): ConnectionParts | null {
@@ -851,6 +948,7 @@ export class ConnectorsService {
         id: number,
     ): Promise<Connection> {
         const row = await this.requireEditable(tenantId, userId, role, id);
+        await this.assertNotMailAccount(tenantId, id, row.name, 'desconectar');
         const secrets = { ...row.secrets };
         delete secrets.access_token;
         delete secrets.refresh_token;
@@ -1576,6 +1674,8 @@ export class ConnectorsService {
         force: boolean,
     ): Promise<void> {
         const current = await this.requireEditable(tenantId, userId, role, id);
+        // v0.1.249 — ni con `force`: borrarla dejaría a la empresa sin correo.
+        await this.assertNotMailAccount(tenantId, id, current.name, 'borrar');
         const usage = await this.usage(tenantId, id);
         if (usage.length > 0 && !force) {
             throw new ConflictException({

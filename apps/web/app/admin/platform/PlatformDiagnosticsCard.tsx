@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
  */
 const VIA_LABEL: Record<MailVia, string> = {
     tenant_smtp: 'SMTP de la empresa',
+    tenant_account: 'Cuenta de Google/Microsoft de la empresa',
     platform_smtp: 'SMTP de plataforma',
     server_smtp: 'SMTP del servidor (.env)',
     none: 'Sin SMTP',

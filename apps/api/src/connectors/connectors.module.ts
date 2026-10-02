@@ -4,6 +4,8 @@ import { ConnectorsController } from './connectors.controller';
 import { ConnectorsOAuthController } from './connectors-oauth.controller';
 import { ConnectorsService } from './connectors.service';
 import { IntegrationAppsService } from './integration-apps.service';
+import { MailAccountService } from './mail-account.service';
+import { MAIL_ACCOUNT_SENDER } from '../mail/mail.types';
 import { IntegrationsController } from './integrations.controller';
 import { PlatformIntegrationsController } from './platform-integrations.controller';
 import { ENV, type Env } from '../config/env';
@@ -31,6 +33,9 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
     providers: [
         ConnectorsService,
         IntegrationAppsService,
+        // v0.1.249 — el correo de la empresa por su cuenta de Google/Microsoft.
+        MailAccountService,
+        { provide: MAIL_ACCOUNT_SENDER, useExisting: MailAccountService },
         // v0.1.243 — SQL Server / Azure SQL. Los tests lo reemplazan por uno falso.
         {
             provide: SQL_RUNNER,
@@ -38,6 +43,6 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
             inject: [ENV],
         },
     ],
-    exports: [ConnectorsService, IntegrationAppsService, SQL_RUNNER],
+    exports: [ConnectorsService, IntegrationAppsService, MailAccountService, MAIL_ACCOUNT_SENDER, SQL_RUNNER],
 })
 export class ConnectorsModule {}
