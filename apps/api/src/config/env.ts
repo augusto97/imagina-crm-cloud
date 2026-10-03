@@ -150,6 +150,12 @@ const envSchema = z.object({
      * (los E2E no tienen credenciales reales). En producción se ignora.
      */
     MERCADOPAGO_API_URL: z.string().default(''),
+    /**
+     * v0.1.251 — sólo desarrollo/pruebas: Wompi SIMULADO (base de la API y de
+     * la página de pago). En producción se ignoran.
+     */
+    WOMPI_API_URL: z.string().default(''),
+    WOMPI_CHECKOUT_URL: z.string().default(''),
 
     // --- Superadmins de plataforma (no de workspace): emails separados por coma.
     // Único rol que puede operar la auto-actualización del servidor.

@@ -6,11 +6,16 @@ export interface TriggerEvent {
     tenantId: number;
     listId: number;
     recordId: number;
-    trigger: 'record_created' | 'record_updated';
+    trigger: 'record_created' | 'record_updated' | 'payment_received';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
     before?: Record<string, unknown>;
+    /**
+     * v0.1.251 — el cobro que se acaba de pagar (trigger `payment_received`):
+     * lo que la automatización usa como `{{pago.*}}`.
+     */
+    payment?: Record<string, unknown>;
 }
 
 /** v0.1.221 — la acción «Editar en lote» de una automatización, lista para el worker. */

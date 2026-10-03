@@ -27,6 +27,7 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
+import { CollectionsService } from '../collections/collections.service';
 import { automationRuns, lists, records } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
@@ -48,6 +49,8 @@ const MAX_IF_ELSE_DEPTH = 5;
 const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     record_created: ['record_created'],
     record_updated: ['record_updated', 'field_changed'],
+    // v0.1.251 — un cliente pagó un link de Mercado Pago o Wompi.
+    payment_received: ['payment_received'],
 };
 
 interface RunContext {
@@ -68,6 +71,11 @@ interface RunContext {
     payload?: Record<string, unknown>;
     /** v0.1.221 — la automatización que corre (la edición en lote la nombra). */
     automation?: { id: number; name: string };
+    /**
+     * v0.1.251 — el cobro en contexto: el que acaba de pagarse (trigger
+     * `payment_received`) o el link que creó una acción anterior. `{{pago.x}}`.
+     */
+    pago?: Record<string, unknown>;
 }
 
 /**
@@ -93,6 +101,8 @@ export class AutomationEngine {
         @Optional() private readonly dispatcher?: AutomationDispatcher,
         // v0.1.228 — límite de registros del plan para create_record.
         @Optional() private readonly billing?: BillingService,
+        // v0.1.251 — la acción «Crear link de pago» (Mercado Pago / Wompi).
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -127,6 +137,7 @@ export class AutomationEngine {
                     data: event.after,
                     before: event.before,
                     ...maps,
+                    ...(event.payment ? { pago: event.payment } : {}),
                 };
                 if (!this.triggerMatches(auto, ctx)) continue;
                 await this.runOne(tx, ctx, auto);
@@ -294,6 +305,11 @@ export class AutomationEngine {
             // webhook entrante.
             if (token.startsWith('payload.')) {
                 return getPath(ctx.payload, token.slice('payload.'.length));
+            }
+            // v0.1.251 — {{pago.link}}, {{pago.monto}}… del cobro en contexto.
+            if (token.startsWith('pago.')) {
+                const v = ctx.pago?.[token.slice('pago.'.length)];
+                return v === null ? '' : v;
             }
             const key = ctx.slugToKey.get(token);
             if (key !== undefined) {
@@ -658,6 +674,48 @@ export class AutomationEngine {
                 // petición la arma el código de esa app y la RESPUESTA se revisa
                 // —Slack, Telegram y WAS contestan 200 con el error adentro—, así
                 // un mensaje que no salió no queda como «exitoso» en el historial.
+                // v0.1.251 — «Crear link de pago» (Mercado Pago / Wompi): no es
+                // una petición suelta — el link queda guardado, escrito en el
+                // registro y se sigue solo hasta que el cliente paga.
+                if (
+                    resolved.integration &&
+                    (resolved.integration.key === 'mercadopago' || resolved.integration.key === 'wompi') &&
+                    resolved.action.key === 'create_payment_link'
+                ) {
+                    if (ctx.recordId === null) return skip('connector_action', 'Un link de pago necesita un registro.');
+                    if (!this.collections) throw new Error('Cobros no disponibles en este servidor.');
+                    const compiled = compileIntegrationValues(resolved.integration.key, resolved.action, values, merge, merge);
+                    if (compiled.missing.length > 0) {
+                        return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
+                    }
+                    const v = compiled.values;
+                    const amount = parseAmount(v.amount ?? '');
+                    if (amount === null) {
+                        throw new Error(`${resolved.action.label}: el monto «${v.amount ?? ''}» no es un número.`);
+                    }
+                    const days = Number(v.expires_days ?? '');
+                    const created = await this.collections.createLinkInTx(tx, ctx.tenantId, {
+                        connectionId: connId,
+                        listId: ctx.listId,
+                        recordId: ctx.recordId,
+                        title: v.title ?? '',
+                        amount,
+                        currency: v.currency ?? 'COP',
+                        payerEmail: (v.payer_email ?? '').trim() || null,
+                        expiresDays: Number.isFinite(days) && days > 0 ? Math.min(365, Math.floor(days)) : null,
+                        userId: null,
+                    }).catch((err: unknown) => {
+                        throw new Error(`${resolved.action!.label}: ${err instanceof Error ? err.message : String(err)}`);
+                    });
+                    if (created.write) ctx.data = created.write.after;
+                    ctx.pago = { ...created.context };
+                    return ok('connector_action', `${resolved.name} → link de pago ${created.link.url}`, {
+                        action: resolved.action.key,
+                        integration: resolved.integration.key,
+                        link_id: created.link.id,
+                        url: created.link.url,
+                    });
+                }
                 if (resolved.integration) {
                     const integ = resolved.integration;
                     // SEC-33: en el cuerpo HTML de Gmail/Outlook los valores se escapan, igual
@@ -838,4 +896,27 @@ function resolveDateFieldId(
         return f ? f.id : null;
     }
     return null;
+}
+
+/**
+ * v0.1.251 — un monto escrito por una persona o un merge tag: «150000»,
+ * «150.000» (punto de miles), «1.234,56», «$ 99.90». `null` si no es número.
+ */
+export function parseAmount(raw: string): number | null {
+    let t = raw.replace(/[^\d.,-]/g, '');
+    if (t === '' || t === '-') return null;
+    const lastDot = t.lastIndexOf('.');
+    const lastComma = t.lastIndexOf(',');
+    if (lastDot >= 0 && lastComma >= 0) {
+        // El último separador es el decimal.
+        t = lastComma > lastDot ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+    } else if (lastComma >= 0) {
+        // «1,5» decimal; «150,000» miles.
+        t = /^-?\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, '') : t.replace(',', '.');
+    } else if (lastDot >= 0) {
+        // «150.000» / «1.500.000» = miles (grupos de a tres); «99.90» decimal.
+        if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+    }
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
 }

@@ -2282,6 +2282,53 @@ el `preapproval` sin plan toma el monto del momento); dejar `past_due` al primer
 rechazo (Mercado Pago reintenta la tarjeta durante la gracia); cambiar el
 estado en el retorno del navegador (falsificable).
 
+### ADR-S31 — Cobros de las empresas con Mercado Pago y Wompi (v0.1.251)
+
+**Contexto.** Las empresas que usan la app para facturar (cartera, cuotas,
+pedidos) le cobraban al cliente por fuera y marcaban «pagado» a mano. Pidieron
+crear el link de pago desde el registro o una automatización y saber solo quién
+ya pagó. Distinto de ADR-S30 (el operador cobrándole el plan a la empresa): acá
+la plata va a la cuenta de **cada empresa**, sin comisión de la plataforma.
+
+**Decisión.**
+- **Dos integraciones por clave** en la galería (ADR-S22), categoría «Cobros y
+  pagos»: Mercado Pago (Access Token) y Wompi (llave pública + privada +
+  secreto de eventos). La credencial se **verifica antes de guardarse**
+  (`/users/me` / `/merchants/{pub}`; las llaves de Wompi tienen que ser del
+  MISMO ambiente) y queda cifrada. Un integración por clave ahora puede tener
+  un **segundo secreto** (`secret_slot: 'signing_secret'`).
+- **Link de pago = fila de `payment_links`** (RLS) atada a un registro: Checkout
+  Pro (`/checkout/preferences`, referencia propia `ib_…` en
+  `external_reference`) o Payment Link de Wompi (un solo uso, COP, mínimo
+  $1.500). Lo crean el botón «Cobrar» de la ficha y la acción «Crear link de
+  pago» de una automatización — el MISMO `createLinkInTx` — y la acción deja
+  `{{pago.link}}` para la acción siguiente (WhatsApp, correo).
+- **El estado nunca se le cree al aviso**: `POST /public/collections/:token`
+  (tabla `collection_hooks` sin RLS, token por conexión) sólo toma el id del
+  pago y lo **relee del proveedor con la credencial de la empresa**; Wompi
+  además firma (SHA-256 de las propiedades + timestamp + secreto, comparado en
+  tiempo constante). El pago se aplica sólo al link de ESA conexión. Mercado
+  Pago recibe la URL por link (`notification_url`); en Wompi se pega una vez.
+- **Reglas de estado** (`nextLinkState`, puro): un aprobado gana; un link
+  pagado no se «despaga» con un intento rechazado de otro pago; el reembolso de
+  ESE pago sí lo cambia; aprobado por otro monto o moneda → «Monto distinto».
+  «Verificar» busca los pagos del link cuando el aviso no llegó; los pendientes
+  con vencimiento pasan a «Vencido» (barrido cada 15 min, idempotente).
+- **Columnas de cobro** (opt-in, «Agregar columnas»): link, estado (select con
+  valores estables), fecha, monto y medio — `settings.collections.fields`. Cada
+  cambio pasa por el validador del campo y deja actividad; dispara
+  `record_updated` y, al quedar pagado, el disparador nuevo **«Cuando se recibe
+  un pago»** (`payment_received`, con `{{pago.*}}`); en solo-lectura no corre.
+- «Probar ahora» de la acción NO crea un link (sería un cobro real): muestra lo
+  que se crearía.
+
+**Alternativas descartadas.** Confiar en el cuerpo del aviso (falsificable);
+una URL de avisos global (hay que saber de qué empresa es antes de leer nada);
+cobrar con credenciales de la plataforma y repartir (comisión, regulación y
+responsabilidad que el usuario no quiere); suscripciones recurrentes de las
+empresas a sus clientes (otra pieza: hoy se arma con una recurrencia + la
+acción «Crear link de pago»).
+
 ---
 
-**Versión del documento:** 1.61.0 (cobro de planes por período pagado + renovación automática)
+**Versión del documento:** 1.62.0 (cobros de las empresas con Mercado Pago y Wompi)

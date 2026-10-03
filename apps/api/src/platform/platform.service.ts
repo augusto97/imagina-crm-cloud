@@ -67,6 +67,8 @@ import {
     templates,
     connectionSyncs,
     sqlSyncs,
+    paymentLinks,
+    collectionHooks,
     syncLinks,
     bulkEditItems,
     bulkEdits,
@@ -331,6 +333,9 @@ export class PlatformService {
             // connections, templates, carpetas, menciones, recurrencias y la
             // bitácora, agregadas en releases posteriores al original.
             await tx.delete(mentions).where(eq(mentions.tenantId, id));
+            // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
+            await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
+            await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));
             await tx.delete(bulkEditItems).where(eq(bulkEditItems.tenantId, id));
             await tx.delete(bulkEdits).where(eq(bulkEdits.tenantId, id));
             await tx.delete(syncLinks).where(eq(syncLinks.tenantId, id));

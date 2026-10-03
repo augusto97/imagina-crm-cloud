@@ -9,7 +9,7 @@ import {
     type IntegrationDef,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ChevronDown, ChevronRight, Lock, RefreshCw, Settings2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
@@ -389,6 +389,14 @@ function ConnectedRow({
                     <Link to={`/settings/stores/${c.id}`} data-testid="imcrm-store-sync-open">
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Sincronizar tienda')}
+                    </Link>
+                </Button>
+            )}
+            {(c.integration_key === 'mercadopago' || c.integration_key === 'wompi') && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/collections/${c.id}`} data-testid="imcrm-collections-open">
+                        <Wallet className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Cobros')}
                     </Link>
                 </Button>
             )}

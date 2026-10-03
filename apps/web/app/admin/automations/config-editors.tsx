@@ -145,6 +145,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Corre en el horario que elijas, sin un registro en particular: ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche), crear un registro de resumen o avisar por correo.');
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
+        case 'payment_received':
+            return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones podés usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
             return '';
     }

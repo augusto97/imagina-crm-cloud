@@ -91,3 +91,19 @@ desde Ajustes, o que el operador les fije un corte en la consola.
    **Aprobado** y en Ajustes → Suscripción "Pagado hasta el …".
 4. Activar la renovación automática con una tarjeta de prueba y verificar que
    pase a "Renovación automática activa"; cancelarla.
+
+## Cobros de las EMPRESAS a sus clientes (v0.1.251, ADR-S31)
+
+Distinto de todo lo anterior: acá cada empresa cobra con SU cuenta de Mercado
+Pago o Wompi (sin comisión de la plataforma). El operador no configura nada.
+
+- **Mercado Pago**: la empresa pega su Access Token en Ajustes → Integraciones.
+  Cada link lleva su URL de avisos (`/api/v1/public/collections/<token>`), así
+  que no hay nada más que configurar — siempre que `APP_BASE_URL` sea **https**
+  (Mercado Pago no acepta avisos a http; sin https queda «Verificar» a mano).
+- **Wompi**: la empresa pega llave pública, privada y secreto de eventos, y
+  después copia la URL de eventos desde Integraciones → Cobros y la pega en
+  Wompi → Desarrolladores → «URL de Eventos».
+- Los avisos nunca se creen: el pago se vuelve a consultar con la credencial
+  de la empresa antes de marcar nada. Si un proxy bloquea `/api/v1/public/*`,
+  los pagos sólo se ven al tocar «Verificar».

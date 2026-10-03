@@ -10,6 +10,7 @@ import {
     Sparkles,
     Wand2,
     Webhook,
+    BadgeDollarSign,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
@@ -66,6 +67,11 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: Webhook,
         title: 'Llega un webhook',
         description: 'Dispara cuando otro sistema (un formulario, Zapier, etc.) llama una URL pública única.',
+    },
+    payment_received: {
+        icon: BadgeDollarSign,
+        title: 'Se recibe un pago',
+        description: 'Dispara cuando un cliente paga un link de Mercado Pago o Wompi de un registro de esta lista.',
     },
 };
 
@@ -212,6 +218,8 @@ export function summarizeTrigger(
         }
         case 'incoming_webhook':
             return __('Cuando llega un webhook entrante');
+        case 'payment_received':
+            return __('Cuando un cliente paga un link de cobro');
         default:
             return triggerType;
     }

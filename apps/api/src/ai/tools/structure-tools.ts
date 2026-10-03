@@ -221,14 +221,15 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received']),
     trigger_config: z
         .record(z.unknown())
         .optional()
         .describe(
             'record_updated: {changed_fields: [slugs], field_filters: [{field, op, value}]}. ' +
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
-                'scheduled: {cron: "0 9 * * 1"}. record_created/incoming_webhook: {field_filters?}.',
+                'scheduled: {cron: "0 9 * * 1"}. record_created/incoming_webhook: {field_filters?}. ' +
+                'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -518,7 +519,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -2785,6 +2786,8 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return `Programada (${String(cfg.cron ?? '')})`;
         case 'incoming_webhook':
             return 'Al recibir un webhook';
+        case 'payment_received':
+            return 'Cuando se recibe un pago';
         default:
             return type;
     }

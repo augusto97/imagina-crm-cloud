@@ -34,6 +34,7 @@ import { useList } from '@/hooks/useLists';
 import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
+import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
@@ -370,6 +371,13 @@ export function RecordDetailDrawer({
                                     {listData.data !== undefined && (
                                         <div className="imcrm-mt-4">
                                             <PortalAccessButton list={listData.data} record={record} />
+                                        </div>
+                                    )}
+                                    {/* v0.1.251 — cobros (Mercado Pago / Wompi). Se oculta solo
+                                        si la empresa no conectó ninguno. */}
+                                    {listData.data !== undefined && (
+                                        <div className="imcrm-mt-4">
+                                            <RecordPaymentsPanel listId={listData.data.id} recordId={record.id} />
                                         </div>
                                     )}
 

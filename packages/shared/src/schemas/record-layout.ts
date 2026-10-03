@@ -79,6 +79,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'spacer',
     // Acciones
     'portal_access',
+    // v0.1.251 — cobros con Mercado Pago / Wompi (links de pago del registro).
+    'payments',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;

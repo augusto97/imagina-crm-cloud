@@ -16,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
@@ -315,6 +316,9 @@ export function RecordPage(): JSX.Element {
                             la lista no está habilitado). */}
                         <div className="imcrm-mt-4">
                             <PortalAccessButton list={list.data} record={record.data} />
+                        </div>
+                        <div className="imcrm-mt-4">
+                            <RecordPaymentsPanel listId={list.data.id} recordId={id} />
                         </div>
                         <RecordBacklinks listId={list.data.id} recordId={id} />
                         {error !== null && (
