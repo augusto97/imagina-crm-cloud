@@ -454,6 +454,9 @@ export class TenantTransferService {
                 // servidor viejo: se reconfigura después de migrar.
                 customDomain: null,
                 subscriptionEndsAt: this.date(tenantRow.subscriptionEndsAt),
+                // v0.1.250 — el período pagado viaja (el historial de pagos no:
+                // sus ids son de la cuenta de cobro del servidor de origen).
+                paidUntil: this.date(tenantRow.paidUntil),
             })
             .returning({ id: tenants.id });
         const tenantId = createdTenant!.id;

@@ -1,12 +1,12 @@
 import { Logger } from '@nestjs/common';
-import type { BillingStatus } from '@imagina-base/shared';
+import type { BillingPaymentStatus } from '@imagina-base/shared';
 import type { Env } from '../../config/env';
 import {
     decodeReference,
     type CheckoutRequest,
     type CheckoutSession,
-    type PaymentEvent,
     type PaymentGateway,
+    type PaymentNotice,
 } from '../payment.types';
 
 const PAYPAL_API = {
@@ -29,6 +29,7 @@ const PAYPAL_API = {
  */
 export class PayPalGateway implements PaymentGateway {
     readonly provider = 'paypal' as const;
+    readonly supportsSubscription = false;
     private readonly logger = new Logger('PayPal');
 
     constructor(
@@ -36,8 +37,12 @@ export class PayPalGateway implements PaymentGateway {
         private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
     ) {}
 
-    get enabled(): boolean {
+    private get enabled(): boolean {
         return this.env.PAYPAL_CLIENT_ID !== '' && this.env.PAYPAL_CLIENT_SECRET !== '';
+    }
+
+    isEnabled(): Promise<boolean> {
+        return Promise.resolve(this.enabled);
     }
 
     private get base(): string {
@@ -71,7 +76,7 @@ export class PayPalGateway implements PaymentGateway {
                 purchase_units: [
                     {
                         custom_id: req.reference,
-                        description: `Imagina Base — plan ${req.plan}`,
+                        description: req.title.slice(0, 127),
                         amount: { currency_code: req.currency, value: req.amount.toFixed(2) },
                     },
                 ],
@@ -90,39 +95,53 @@ export class PayPalGateway implements PaymentGateway {
         return { url: approve.href, externalId: order.id };
     }
 
-    async handleWebhook(
-        headers: Record<string, string | undefined>,
-        rawBody: string,
-    ): Promise<PaymentEvent | null> {
-        if (!this.enabled || !this.env.PAYPAL_WEBHOOK_ID) return null;
+    async handleWebhook(headers: Record<string, string | undefined>, rawBody: string): Promise<PaymentNotice[]> {
+        if (!this.enabled || !this.env.PAYPAL_WEBHOOK_ID) return [];
         const event = safeJson(rawBody);
-        if (!event) return null;
+        if (!event) return [];
 
         const verified = await this.verify(headers, rawBody);
         if (!verified) {
             this.logger.warn('firma de webhook inválida — rechazado');
-            return null;
+            return [];
         }
 
         const customId = extractCustomId(event);
         const ref = customId ? decodeReference(customId) : null;
-        if (!ref) return null;
+        if (!ref) return [];
+        const notice = (externalId: string, status: BillingPaymentStatus, amount: number): PaymentNotice => ({
+            kind: 'payment',
+            tenantId: ref.tenantId,
+            plan: ref.plan ?? null,
+            mode: 'period',
+            months: ref.months,
+            externalId,
+            status,
+            amount,
+            currency: 'USD',
+            method: 'PayPal',
+        });
 
         if (event.event_type === 'CHECKOUT.ORDER.APPROVED') {
             const orderId = event.resource?.id;
-            if (typeof orderId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(orderId)) return null;
+            if (typeof orderId !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(orderId)) return [];
             const captured = await this.capture(orderId);
-            if (!captured) return null;
-            return { tenantId: ref.tenantId, plan: ref.plan, status: 'active' };
-        }
-        // Una captura "completada" que no dice COMPLETED (p. ej. PENDING por
-        // revisión de PayPal) todavía no es plata cobrada.
-        if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && event.resource?.status !== undefined && event.resource.status !== 'COMPLETED') {
-            return null;
+            if (!captured) return [];
+            return [notice(orderId, 'approved', ref.amount ?? 0)];
         }
         const status = mapPayPalEvent(event.event_type);
-        if (!status) return null;
-        return { tenantId: ref.tenantId, plan: ref.plan, status };
+        if (!status) return [];
+        // Una captura "completada" que no dice COMPLETED (p. ej. PENDING por
+        // revisión de PayPal) todavía no es plata cobrada.
+        if (status === 'approved' && event.resource?.status !== undefined && event.resource.status !== 'COMPLETED') {
+            return [];
+        }
+        // La captura y su reembolso se registran contra la ORDEN: el mismo cobro
+        // que ya se aplicó por `CHECKOUT.ORDER.APPROVED` cae en la misma fila.
+        const orderId = event.resource?.supplementary_data?.related_ids?.order_id ?? event.resource?.id;
+        if (!orderId) return [];
+        const amount = Number(event.resource?.amount?.value ?? ref.amount ?? 0);
+        return [notice(orderId, status, Number.isFinite(amount) ? amount : 0)];
     }
 
     /**
@@ -186,20 +205,17 @@ export class PayPalGateway implements PaymentGateway {
     }
 }
 
-/** Evento de PayPal → estado de billing (sólo los que cambian el estado). */
-export function mapPayPalEvent(eventType: string | undefined): BillingStatus | null {
+/** Evento de PayPal → estado del cobro en el registro de pagos. */
+export function mapPayPalEvent(eventType: string | undefined): BillingPaymentStatus | null {
     switch (eventType) {
         // `CHECKOUT.ORDER.APPROVED` NO está acá a propósito: aprobar no es
         // pagar (ver `handleWebhook`, que captura antes de activar).
         case 'PAYMENT.CAPTURE.COMPLETED':
-        case 'BILLING.SUBSCRIPTION.ACTIVATED':
-            return 'active';
+            return 'approved';
         case 'PAYMENT.CAPTURE.DENIED':
-        case 'BILLING.SUBSCRIPTION.SUSPENDED':
-            return 'past_due';
-        case 'BILLING.SUBSCRIPTION.CANCELLED':
+            return 'rejected';
         case 'PAYMENT.CAPTURE.REFUNDED':
-            return 'canceled';
+            return 'refunded';
         default:
             return null;
     }
@@ -220,6 +236,8 @@ interface PayPalEvent {
         id?: string;
         status?: string;
         custom_id?: string;
+        amount?: { value?: string };
+        supplementary_data?: { related_ids?: { order_id?: string } };
         purchase_units?: Array<{ custom_id?: string }>;
     };
 }

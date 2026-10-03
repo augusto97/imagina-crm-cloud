@@ -5,10 +5,12 @@ import {
     ForbiddenException,
     Injectable,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { memberships, tenants } from '../db/schema';
+import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
 import { TenantDb } from './tenant-db.service';
 
 export interface TenantContext {
@@ -29,7 +31,10 @@ const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
-    constructor(private readonly tenantDb: TenantDb) {}
+    constructor(
+        private readonly tenantDb: TenantDb,
+        private readonly reflector: Reflector,
+    ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const req = context.switchToHttp().getRequest<FastifyRequest>();
@@ -54,6 +59,7 @@ export class TenantGuard implements CanActivate {
                     status: tenants.status,
                     archivedAt: tenants.archivedAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
+                    paidUntil: tenants.paidUntil,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -92,8 +98,12 @@ export class TenantGuard implements CanActivate {
             status,
             archived_at: membership.archivedAt,
             subscription_ends_at: membership.subscriptionEndsAt,
+            paid_until: membership.paidUntil,
         });
-        if (readOnly && MUTATING_METHODS.has(req.method)) {
+        const allowed =
+            readOnly &&
+            this.reflector.getAllAndOverride<boolean>(ALLOW_READ_ONLY, [context.getHandler(), context.getClass()]) === true;
+        if (readOnly && MUTATING_METHODS.has(req.method) && !allowed) {
             throw new ForbiddenException({
                 code: 'workspace_read_only',
                 message: 'El workspace está en solo-lectura por el estado de facturación',

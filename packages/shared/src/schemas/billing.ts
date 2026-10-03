@@ -54,22 +54,44 @@ export function isReadOnly(status: BillingStatus): boolean {
 }
 
 /**
+ * v0.1.250 — Días de gracia después de que vence un período PAGADO por la
+ * app (`paid_until`) antes de pasar a solo-lectura: el tiempo de una
+ * renovación que se demora (un PSE pendiente, una tarjeta que rebota y el
+ * reintento de Mercado Pago). La fecha manual del operador
+ * (`subscription_ends_at`) es un corte exacto y no tiene gracia.
+ */
+export const BILLING_GRACE_DAYS = 5;
+
+/** Desde cuándo una empresa con período pagado pasa a solo-lectura. */
+export function paidReadOnlyAt(paidUntil: string | Date): Date {
+    const d = paidUntil instanceof Date ? paidUntil : new Date(paidUntil);
+    return new Date(d.getTime() + BILLING_GRACE_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/**
  * Solo-lectura EFECTIVO de una empresa (ADR-S09). Además del estado de
- * facturación, cae a solo-lectura si está archivada o si su suscripción
- * ('paga hasta') venció. Una sola fuente de verdad para el guard, el billing
- * y la consola de operador.
+ * facturación, cae a solo-lectura si está archivada, si su suscripción manual
+ * ('paga hasta' del operador) venció, o si el período que pagó por la app
+ * venció hace más de los días de gracia. Una sola fuente de verdad para el
+ * guard, el billing y la consola de operador.
  */
 export function isEffectivelyReadOnly(opts: {
     status: BillingStatus;
     archived_at?: string | Date | null;
     subscription_ends_at?: string | Date | null;
+    paid_until?: string | Date | null;
     now?: Date;
 }): boolean {
     if (isReadOnly(opts.status)) return true;
     if (opts.archived_at) return true;
+    const now = (opts.now ?? new Date()).getTime();
     if (opts.subscription_ends_at) {
         const ends = opts.subscription_ends_at instanceof Date ? opts.subscription_ends_at : new Date(opts.subscription_ends_at);
-        if (!Number.isNaN(ends.getTime()) && ends.getTime() <= (opts.now ?? new Date()).getTime()) return true;
+        if (!Number.isNaN(ends.getTime()) && ends.getTime() <= now) return true;
+    }
+    if (opts.paid_until) {
+        const cut = paidReadOnlyAt(opts.paid_until);
+        if (!Number.isNaN(cut.getTime()) && cut.getTime() <= now) return true;
     }
     return false;
 }
@@ -108,6 +130,10 @@ export const billingSummarySchema = z.object({
     own_smtp: z.boolean().default(false),
     /** La empresa tiene clave IA propia → sus pedidos no consumen cuota (ADR-S21). */
     own_ai_key: z.boolean().default(false),
+    /** v0.1.250 — hasta cuándo está pagado por la app (`null` = sin período pagado). */
+    paid_until: z.string().nullable().default(null),
+    /** Fecha manual del operador (`null` = sin corte). */
+    subscription_ends_at: z.string().nullable().default(null),
 });
 export type BillingSummary = z.infer<typeof billingSummarySchema>;
 

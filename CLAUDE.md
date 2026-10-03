@@ -6653,6 +6653,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         navegador 22/22 con la llamada REAL a Google (token falso → 401 →
         «reconectala», no «enviado»), celular y modo oscuro.
 
+  - [x] **Cobro de planes: período pagado + renovación automática (v0.1.250,
+        ADR-S30, pedido del usuario: "vincular Mercado Pago para cobrar los
+        planes" → "las dos formas, sin comisión")**. Hasta acá un pago aprobado
+        dejaba a la empresa activa PARA SIEMPRE (no había vencimiento), un pago
+        pendiente —un PSE en proceso— la mandaba a solo-lectura aunque tuviera
+        meses pagados, y una empresa en solo-lectura ni siquiera podía pagar (el
+        `TenantGuard` le rechazaba el checkout justamente por estar vencida).
+        (a) **Período pagado** (`tenants.paid_until`, migración 0061): cada pago
+        aprobado lo EXTIENDE desde donde termina —pagar antes no pierde días— o
+        desde hoy si ya venció; meses recortados al último día (31-ene + 1 =
+        28-feb). Vencido + **5 días de gracia** → solo-lectura, por la MISMA
+        `isEffectivelyReadOnly` del guard, el resumen y la consola.
+        (b) **Dos formas de pagar** en Ajustes → Suscripción: **N meses** de una
+        vez (1/3/6/12; Checkout Pro de Mercado Pago con PSE, Nequi, tarjeta o
+        efectivo, o PayPal) y **renovación automática** con tarjeta (suscripción
+        `preapproval` mensual de Mercado Pago que arranca cuando vence lo ya
+        pagado: nadie paga dos veces el mismo mes). Panel nuevo con el estado
+        ("Pagado hasta… quedan N días" / "venció, tenés hasta…" / "solo-lectura"),
+        la renovación (pendiente con "Terminar en Mercado Pago", activa con su
+        próximo cobro, cancelar) y el **historial de pagos** con medio, monto y
+        hasta cuándo dejó pagado cada uno.
+        (c) **Registro de pagos** (`billing_payments`, RLS, único por proveedor
+        + id del cobro): es lo que hace idempotente el aviso — los reintentos y
+        el cobro de una cuota que llega por DOS avisos (`payment` y
+        `subscription_authorized_payment`, con el mismo id de pago) extienden
+        UNA vez. Pendiente/rechazado se registran sin tocar la empresa; un aviso
+        viejo no deshace uno aprobado; un reembolso resta esos meses. Los avisos
+        se verifican con la firma y el pago se RELEE de la API (nunca se le cree
+        al cuerpo); la referencia lleva el monto y un pago por menos se rechaza.
+        (d) **Pagar en solo-lectura**: `@AllowReadOnly()` (metadata que lee el
+        `TenantGuard`) en el checkout y en cancelar la renovación.
+        (e) **Plataforma → Cobros**: las credenciales de Mercado Pago se cargan
+        desde la consola (cifradas, `platform:payments`, viajan en el snapshot;
+        el `.env` queda de respaldo, el token nunca vuelve: `••••abcd`), con los
+        pasos y la URL de avisos para copiar, modo prueba/producción y los
+        **pagos recientes** de todas las empresas.
+        (f) **Avisos de vencimiento** por correo a los admins: 3 días antes, al
+        vencer y al pasar a solo-lectura (con renovación activa sólo el corte);
+        una vez por período (Redis `SET NX`), cola BullMQ propia.
+        Sin comisión de plataforma, y Wompi queda SOLO como conector de las
+        empresas (próximas versiones). 39 tests en el spec de pagos (referencia,
+        período y gracia, firma, la pasarela de Mercado Pago contra la red
+        simulada, PayPal, avisos, y el registro con Postgres real: extender una
+        vez, pendiente que no toca, reembolso, renovación con la cuota por dos
+        caminos, reemplazo y cancelación, RLS) — 955 API y 224 front en verde —
+        + E2E navegador 34/34 contra un Mercado Pago simulado (consola cifrada,
+        pago de 3 meses por PSE con aviso pendiente y aprobado, reintento sin
+        duplicar, firma falsa ignorada, renovación con arranque al vencimiento y
+        cancelación, gracia, solo-lectura que deja pagar y se reactiva al
+        instante, pagos recientes, celular). **Límite de la verificación**: sin
+        credenciales reales de Mercado Pago el proveedor se simuló con la forma
+        de su API; la prueba con la cuenta de prueba queda para el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -31,6 +31,8 @@ export const platformTenantSchema = z.object({
     archived: z.boolean(),
     /** Fecha 'paga hasta' (ISO) o null si no tiene vencimiento. */
     subscription_ends_at: z.string().nullable(),
+    /** v0.1.250 — hasta cuándo pagó por la app (Mercado Pago/PayPal). */
+    paid_until: z.string().nullable().default(null),
     created_at: z.string(),
     owner: platformOwnerSchema.nullable(),
     usage: usageSchema,

@@ -42,6 +42,8 @@ import {
     dashboards,
     emailUsage,
     aiUsage,
+    billingPayments,
+    billingSubscriptions,
     fields,
     impersonationLog,
     lists,
@@ -201,9 +203,11 @@ export class PlatformService {
                 status,
                 archived_at: t.archivedAt,
                 subscription_ends_at: t.subscriptionEndsAt,
+                paid_until: t.paidUntil,
             }),
             archived: t.archivedAt != null,
             subscription_ends_at: t.subscriptionEndsAt ? t.subscriptionEndsAt.toISOString() : null,
+            paid_until: t.paidUntil ? t.paidUntil.toISOString() : null,
             created_at: t.createdAt.toISOString(),
             owner,
             usage,
@@ -355,6 +359,8 @@ export class PlatformService {
             await tx.delete(auditLog).where(eq(auditLog.tenantId, id));
             await tx.delete(emailUsage).where(eq(emailUsage.tenantId, id));
             await tx.delete(aiUsage).where(eq(aiUsage.tenantId, id));
+            await tx.delete(billingPayments).where(eq(billingPayments.tenantId, id));
+            await tx.delete(billingSubscriptions).where(eq(billingSubscriptions.tenantId, id));
             await tx.delete(personalAccessTokens).where(eq(personalAccessTokens.tenantId, id));
             await tx.delete(memberships).where(eq(memberships.tenantId, id));
             await tx.delete(tenants).where(eq(tenants.id, id));

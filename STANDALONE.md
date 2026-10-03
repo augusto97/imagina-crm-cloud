@@ -297,7 +297,11 @@ sobre infraestructura real:
 
 ## 11. Billing y planes
 
-- **Stripe** + webhooks (evaluar dLocal/Wompi si el mercado CO/LATAM lo pide).
+- **Mercado Pago** (COP) + PayPal (USD) detrás de `PaymentGateway` (ADR-S12;
+  Stripe no opera en Colombia). Dos formas de pagar (ADR-S30): N meses de una
+  vez (PSE, Nequi, tarjeta, efectivo) o renovación automática con tarjeta.
+  Cada pago aprobado extiende `paid_until`; vencido + 5 días de gracia →
+  solo-lectura.
 - Suscripción por workspace; límites por plan (nº de records, usuarios,
   automatizaciones/mes, storage) aplicados por un `PlanGuard` central.
 - Trial 14 días sin tarjeta. El workspace nunca se borra al impagar: se
@@ -2231,4 +2235,53 @@ persona manda a mano: el proveedor decide y nosotros mostramos su error).
 
 ---
 
-**Versión del documento:** 1.60.0 (correo de la empresa por su cuenta de Google o Microsoft)
+### ADR-S30 — Cobro de planes por período pagado + renovación automática (v0.1.250)
+
+**Contexto.** Hasta acá un pago aprobado dejaba a la empresa `active` SIN fecha:
+pagaba una vez y quedaba activa para siempre. Además un pago pendiente (un PSE
+en proceso, un pago en efectivo todavía no hecho) la pasaba a `past_due`, o sea
+a solo-lectura, aunque tuviera meses pagados; y una empresa ya en solo-lectura
+no podía pagar porque el `TenantGuard` le rechazaba el checkout. Las
+credenciales de Mercado Pago sólo vivían en el `.env`.
+
+**Decisión.**
+- **Período pagado**: `tenants.paid_until`. Cada pago aprobado lo EXTIENDE desde
+  donde termina (si todavía no venció) o desde hoy (si ya venció):
+  `extendPaidUntil` en shared, con meses recortados al último día. Vencido el
+  período + `BILLING_GRACE_DAYS` (5) → solo-lectura por `isEffectivelyReadOnly`
+  (la misma función del guard, el resumen y la consola). `subscription_ends_at`
+  sigue siendo el corte MANUAL del operador, exacto y sin gracia.
+- **Dos formas de pagar**: N meses de una vez (1/3/6/12; Checkout Pro de Mercado
+  Pago o PayPal) o **renovación automática** con tarjeta (suscripción
+  `preapproval` de Mercado Pago, mensual, que arranca cuando vence lo ya pagado).
+  Una renovación viva a la vez; una nueva autorizada cancela a la anterior.
+- **Registro de pagos** `billing_payments` (RLS, único por proveedor + id del
+  COBRO): es lo que hace idempotente el aviso. El cobro de una cuota llega por
+  dos avisos (`payment` y `subscription_authorized_payment`) con el mismo id de
+  pago → una fila, un mes. Pendiente/rechazado se registran sin tocar la empresa;
+  un aviso viejo no deshace uno aprobado; un reembolso resta los meses. La
+  empresa se bloquea (`FOR UPDATE`) al aplicar.
+- **Avisos verificados y releídos**: firma `x-signature` (id en minúsculas, la
+  parte que no viene se omite del manifest) y después se vuelve a leer el
+  recurso con nuestro token. La referencia del período lleva el monto: un pago
+  por menos se registra como rechazado. Un error al releer se relanza (500) para
+  que el proveedor reintente.
+- **Pagar en solo-lectura**: `@AllowReadOnly()` (metadata leída por el
+  `TenantGuard`) en checkout y cancelar renovación.
+- **Credenciales en la consola**: Plataforma → Cobros (Redis `platform:payments`,
+  cifradas con `SECRETS_KEY`, viajan en el snapshot), con el `.env` de respaldo.
+- **Avisos de vencimiento** por correo a los admins (vía de la plataforma) 3 días
+  antes, al vencer y al cortar; una vez por período (Redis `SET NX`).
+- **Sin comisión de plataforma** y Wompi sólo como conector de las empresas
+  (decisiones del usuario; los conectores de cobro de las empresas son otra
+  pieza).
+
+**Alternativas descartadas.** Planes de suscripción (`preapproval_plan`) en
+Mercado Pago (un plan por precio duplicaría la tabla `plans` en el proveedor;
+el `preapproval` sin plan toma el monto del momento); dejar `past_due` al primer
+rechazo (Mercado Pago reintenta la tarjeta durante la gracia); cambiar el
+estado en el retorno del navegador (falsificable).
+
+---
+
+**Versión del documento:** 1.61.0 (cobro de planes por período pagado + renovación automática)
