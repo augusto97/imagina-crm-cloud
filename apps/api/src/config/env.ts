@@ -145,6 +145,11 @@ const envSchema = z.object({
     PAYPAL_WEBHOOK_ID: z.string().default(''),
     MERCADOPAGO_ACCESS_TOKEN: z.string().default(''),
     MERCADOPAGO_WEBHOOK_SECRET: z.string().default(''),
+    /**
+     * Sólo desarrollo/pruebas: apunta la pasarela a un Mercado Pago SIMULADO
+     * (los E2E no tienen credenciales reales). En producción se ignora.
+     */
+    MERCADOPAGO_API_URL: z.string().default(''),
 
     // --- Superadmins de plataforma (no de workspace): emails separados por coma.
     // Único rol que puede operar la auto-actualización del servidor.

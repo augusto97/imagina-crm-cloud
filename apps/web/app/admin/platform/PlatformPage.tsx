@@ -19,6 +19,7 @@ import { isPlatformTab, PLATFORM_TABS, type PlatformTabId } from './platformTabs
 import { PlatformAiCard } from './PlatformAiCard';
 import { PlatformDiagnosticsCard } from './PlatformDiagnosticsCard';
 import { PlatformDomainsCard } from './PlatformDomainsCard';
+import { PlatformPaymentsCard } from './PlatformPaymentsCard';
 import { PlatformIntegrationsCard } from './PlatformIntegrationsCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
@@ -183,6 +184,7 @@ export function PlatformPage(): JSX.Element {
             {tab === 'correo' && <SmtpSettingsPanel />}
             {tab === 'diagnostico' && <PlatformDiagnosticsCard />}
             {tab === 'dominios' && <PlatformDomainsCard />}
+            {tab === 'cobros' && <PlatformPaymentsCard />}
             {tab === 'ai' && <PlatformAiCard />}
             {tab === 'integraciones' && <PlatformIntegrationsCard />}
             {tab === 'updates' && <SystemUpdatesPanel />}

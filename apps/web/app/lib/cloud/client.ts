@@ -127,6 +127,14 @@ import {
     addMemberSchema,
     checkoutResultSchema,
     createCheckoutSchema,
+    platformPaymentRowSchema,
+    platformPaymentsViewSchema,
+    subscriptionInfoSchema,
+    updatePlatformPaymentsSchema,
+    type PlatformPaymentRow,
+    type PlatformPaymentsView,
+    type SubscriptionInfo,
+    type UpdatePlatformPaymentsInput,
     magicLinkResultSchema,
     paginated,
     paymentConfigSchema,
@@ -1197,6 +1205,25 @@ export class CloudClient {
             body: createCheckoutSchema.parse(input),
             schema: checkoutResultSchema,
         });
+    }
+    /** v0.1.250 — período pagado, renovación automática e historial de pagos. */
+    subscriptionInfo(): Promise<SubscriptionInfo> {
+        return this.request('GET', '/billing/subscription', { schema: subscriptionInfoSchema });
+    }
+    cancelAutoRenew(): Promise<SubscriptionInfo> {
+        return this.request('POST', '/billing/subscription/cancel', { schema: subscriptionInfoSchema });
+    }
+    platformPaymentsGet(): Promise<PlatformPaymentsView> {
+        return this.request('GET', '/platform/payments', { schema: platformPaymentsViewSchema });
+    }
+    platformPaymentsUpdate(input: UpdatePlatformPaymentsInput): Promise<PlatformPaymentsView> {
+        return this.request('PATCH', '/platform/payments', {
+            body: updatePlatformPaymentsSchema.parse(input),
+            schema: platformPaymentsViewSchema,
+        });
+    }
+    platformPaymentsRecent(): Promise<PlatformPaymentRow[]> {
+        return this.request('GET', '/platform/payments/recent', { schema: platformPaymentRowSchema.array() });
     }
 
     // --- export / import ---

@@ -468,6 +468,7 @@ export class AutomationsService {
                 status: tenants.status,
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
+                paidUntil: tenants.paidUntil,
             })
             .from(automationHooks)
             .innerJoin(tenants, eq(tenants.id, automationHooks.tenantId))
@@ -483,6 +484,7 @@ export class AutomationsService {
                 status: row.status as BillingStatus,
                 archived_at: row.archivedAt,
                 subscription_ends_at: row.subscriptionEndsAt,
+                paid_until: row.paidUntil,
             }),
         };
     }

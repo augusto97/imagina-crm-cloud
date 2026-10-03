@@ -13,7 +13,7 @@ import { tenants } from '../db/schema';
  */
 export async function tenantIsReadOnly(tx: Tx, tenantId: number): Promise<boolean> {
     const [t] = await tx
-        .select({ status: tenants.status, archivedAt: tenants.archivedAt, subscriptionEndsAt: tenants.subscriptionEndsAt })
+        .select({ status: tenants.status, archivedAt: tenants.archivedAt, subscriptionEndsAt: tenants.subscriptionEndsAt, paidUntil: tenants.paidUntil })
         .from(tenants)
         .where(eq(tenants.id, tenantId))
         .limit(1);
@@ -22,5 +22,6 @@ export async function tenantIsReadOnly(tx: Tx, tenantId: number): Promise<boolea
         status: t.status as BillingStatus,
         archived_at: t.archivedAt,
         subscription_ends_at: t.subscriptionEndsAt,
+        paid_until: t.paidUntil,
     });
 }

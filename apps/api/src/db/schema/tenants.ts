@@ -13,6 +13,9 @@ export const tenants = pgTable('tenants', {
     portalDomain: varchar('portal_domain', { length: 253 }).unique(),
     // Suscripción 'paga hasta' (operador): al vencer → solo-lectura (ADR-S09).
     subscriptionEndsAt: timestamp('subscription_ends_at', { withTimezone: true }),
+    // v0.1.250 — hasta cuándo pagó por la app (Mercado Pago/PayPal). Vencido +
+    // días de gracia → solo-lectura. Lo escribe SÓLO el aviso de pago.
+    paidUntil: timestamp('paid_until', { withTimezone: true }),
     // Archivada por el operador: deja de operar (solo-lectura) y se oculta de la grilla.
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

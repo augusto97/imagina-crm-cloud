@@ -31,7 +31,7 @@ export class BillingService {
     ) {}
 
     async summary(tenantId: number): Promise<BillingSummary> {
-        const { plan, status, archivedAt, subscriptionEndsAt } = await this.planStatus(tenantId);
+        const { plan, status, archivedAt, subscriptionEndsAt, paidUntil } = await this.planStatus(tenantId);
         const [usage, emails, smtp, aiUsed, ownAiKey] = await Promise.all([
             this.tenantDb.withTenant(tenantId, (tx) => this.usage(tx, tenantId)),
             this.emailQuota.usedThisMonth(tenantId),
@@ -52,10 +52,13 @@ export class BillingService {
                 status,
                 archived_at: archivedAt,
                 subscription_ends_at: subscriptionEndsAt,
+                paid_until: paidUntil,
             }),
             limits: await this.plans.limits(plan),
             usage,
             own_smtp: smtp,
+            paid_until: paidUntil ? paidUntil.toISOString() : null,
+            subscription_ends_at: subscriptionEndsAt ? subscriptionEndsAt.toISOString() : null,
         };
     }
 
@@ -143,7 +146,7 @@ export class BillingService {
 
     private async planStatus(
         tenantId: number,
-    ): Promise<{ plan: Plan; status: BillingStatus; archivedAt: Date | null; subscriptionEndsAt: Date | null }> {
+    ): Promise<{ plan: Plan; status: BillingStatus; archivedAt: Date | null; subscriptionEndsAt: Date | null; paidUntil: Date | null }> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [t] = await tx
                 .select({
@@ -151,6 +154,7 @@ export class BillingService {
                     status: tenants.status,
                     archivedAt: tenants.archivedAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
+                    paidUntil: tenants.paidUntil,
                 })
                 .from(tenants)
                 .where(eq(tenants.id, tenantId))
@@ -162,6 +166,7 @@ export class BillingService {
             status: (row?.status ?? 'trialing') as BillingStatus,
             archivedAt: row?.archivedAt ?? null,
             subscriptionEndsAt: row?.subscriptionEndsAt ?? null,
+            paidUntil: row?.paidUntil ?? null,
         };
     }
 

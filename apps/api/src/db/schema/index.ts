@@ -30,3 +30,4 @@ export * from './personal-tokens';
 export * from './oauth-clients';
 export * from './store-sync';
 export * from './bulk-edits';
+export * from './billing-payments';

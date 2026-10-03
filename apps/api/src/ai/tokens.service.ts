@@ -188,6 +188,7 @@ export class PersonalTokensService {
                 tenantStatus: tenants.status,
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
+                paidUntil: tenants.paidUntil,
             })
             .from(personalAccessTokens)
             .innerJoin(users, eq(users.id, personalAccessTokens.userId))
@@ -214,6 +215,7 @@ export class PersonalTokensService {
             status: row.tenantStatus as BillingStatus,
             archived_at: row.archivedAt,
             subscription_ends_at: row.subscriptionEndsAt,
+            paid_until: row.paidUntil,
         });
         const scope = readOnly ? 'read' : (row.scope as PersonalTokenScope);
         return { tokenId: row.id, userId: row.userId, tenantId: row.tenantId, role: row.role as Role, scope };

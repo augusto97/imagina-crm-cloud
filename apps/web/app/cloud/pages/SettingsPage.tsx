@@ -92,7 +92,12 @@ export function SettingsPage(): JSX.Element {
 
             {checkout === 'success' && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-success/25 imcrm-bg-success/10 imcrm-p-3 imcrm-text-sm imcrm-text-success">
-                    ¡Gracias! Estamos confirmando tu pago; el plan se actualiza en cuanto el proveedor lo notifique.
+                    ¡Gracias! Estamos confirmando tu pago con el proveedor: el período se actualiza apenas lo confirme (con PSE o en efectivo puede tardar un rato).
+                </div>
+            )}
+            {checkout === 'subscription' && (
+                <div className="imcrm-rounded-lg imcrm-border imcrm-border-success/25 imcrm-bg-success/10 imcrm-p-3 imcrm-text-sm imcrm-text-success">
+                    Listo. Cuando Mercado Pago confirme la autorización de la tarjeta, la renovación automática queda activa.
                 </div>
             )}
             {checkout === 'cancel' && (
@@ -201,6 +206,15 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-1">
+                {summary.paid_until && (
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="billing-paid-until">
+                        Pagado hasta el{' '}
+                        <span className="imcrm-font-medium imcrm-text-foreground">
+                            {new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(summary.paid_until))}
+                        </span>
+                        . Los pagos y la renovación están en Suscripción.
+                    </p>
+                )}
                 <UsageBar label="Registros" used={summary.usage.records} limit={summary.limits.max_records} />
                 <UsageBar label="Usuarios" used={summary.usage.users} limit={summary.limits.max_users} />
                 <UsageBar
