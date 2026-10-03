@@ -6706,6 +6706,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         credenciales reales de Mercado Pago el proveedor se simuló con la forma
         de su API; la prueba con la cuenta de prueba queda para el servidor.
 
+  - [x] **Cobros de las empresas: Mercado Pago y Wompi (v0.1.251, ADR-S31,
+        pedido del usuario: "un conector que se pueda vincular a las tablas y
+        saber si un cliente ya pagó" — incluye lo que iba a ser v0.1.252,
+        Wompi)**: la plata va a la cuenta de CADA empresa, sin comisión.
+        (a) **Dos apps por clave** en la galería («Cobros y pagos»): Mercado
+        Pago (Access Token) y Wompi (llave pública + privada + secreto de
+        eventos). La credencial se verifica ANTES de guardarse (Wompi: las
+        llaves del mismo ambiente) y queda cifrada; una integración por clave
+        puede tener ahora un segundo secreto (`secret_slot: 'signing_secret'`,
+        va a `secrets.signing_secret`). (b) **«Cobrar» en la ficha** (panel
+        «Cobros» en la clásica y bloque «Cobros» en la diseñada): concepto,
+        monto y correo sugeridos del registro, montos latinos («150.000»),
+        vencimiento en días; el link queda copiado. Tabla `payment_links`
+        (migración 0062, RLS) y «Agregar columnas» crea link / estado (select
+        con colores) / fecha / monto / medio en la lista
+        (`settings.collections.fields`) para filtrar quién debe. (c) **Avisos
+        que no se creen**: `POST /public/collections/:token` (tabla
+        `collection_hooks` sin RLS) sólo toma el id del pago y lo RELEE del
+        proveedor con la credencial de la empresa; Wompi además se verifica por
+        firma. Un pago sólo toca un link de ESA conexión; un pagado no se
+        despaga con un rechazo posterior; el reembolso sí; otro monto → «Monto
+        distinto»; «Verificar» consulta a mano y los vencidos pasan a
+        «Vencido» solos. (d) **Automatizaciones**: acción «Crear link de pago»
+        (deja `{{pago.link}}`/`{{pago.monto}}` para el WhatsApp siguiente; su
+        «Probar ahora» NO crea un cobro real) y disparador **«Cuando se recibe
+        un pago»** con `{{pago.monto_pagado}}`, `{{pago.metodo}}`… (sección
+        nueva en el selector de variables; el asistente/MCP lo conoce).
+        (e) **Integraciones → Cobros** por conexión: URL de eventos para pegar
+        en Wompi, último aviso, pendientes/pagados/cobrado y los últimos links.
+        Borrar una empresa limpia las tablas nuevas; migrarla avisa que el
+        historial de links no viaja. **Bug atrapado en el E2E**: el título
+        sugerido salía «Registro #N» porque los campos se leían sin orden y el
+        «Medio de pago» (texto) quedaba primero. 10 tests de integración
+        (conectar/cifrar, crear desde el registro, aviso releído, monto
+        distinto, Verificar + reembolso, Wompi con firma, acción con
+        `{{pago.link}}`, disparador, aislamiento entre empresas, agente sin
+        alcance, vencimiento) + 2 del front — 965 API y 226 front en verde — +
+        E2E navegador 33/33 contra un Mercado Pago y un Wompi simulados.
+        **Límite de la verificación**: sin credenciales reales los proveedores
+        se simularon con la forma de sus APIs; la prueba con cuentas de prueba
+        (TEST- / pub_test_) queda para el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

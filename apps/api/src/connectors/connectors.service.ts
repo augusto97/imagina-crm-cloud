@@ -38,6 +38,12 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
+import {
+    collectionVerifyRequest,
+    parseCollectionVerify,
+    precheckCreds,
+} from '../collections/collection-gateways';
+import { gatewayBases } from '../collections/gateway-bases';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { findConnectorAction, readConnectorActions } from './connector-actions';
@@ -416,6 +422,7 @@ export class ConnectorsService {
                         secret: secrets.token ?? '',
                         accessToken: secrets.access_token ?? '',
                         fields: readFields(row.config.fields),
+                        signingSecret: secrets.signing_secret ?? '',
                     },
                 },
             };
@@ -452,7 +459,29 @@ export class ConnectorsService {
         tenantId: number,
         id: number,
     ): Promise<{ name: string; provider: string; creds: IntegrationCreds } | null> {
-        const row = await this.row(tenantId, id);
+        return this.credsOfRow(await this.row(tenantId, id));
+    }
+
+    /**
+     * v0.1.251 — lo mismo, dentro de una transacción ya abierta (el motor de
+     * automatizaciones y los cobros no toman una segunda conexión del pool).
+     */
+    async integrationCredsInTx(
+        tx: Tx,
+        tenantId: number,
+        id: number,
+    ): Promise<{ name: string; provider: string; visibility: string; ownerUserId: number | null; creds: IntegrationCreds } | null> {
+        const [raw] = await tx
+            .select(COLUMNS)
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)))
+            .limit(1);
+        const row = (raw as ConnectionRow | undefined) ?? null;
+        const out = this.credsOfRow(row);
+        return out && row ? { ...out, visibility: row.visibility, ownerUserId: row.ownerUserId } : null;
+    }
+
+    private credsOfRow(row: ConnectionRow | null): { name: string; provider: string; creds: IntegrationCreds } | null {
         if (!row) return null;
         const secrets = this.readSecrets(row);
         if (secrets === null) throw new ConnectionUnusableError(row.name);
@@ -463,6 +492,7 @@ export class ConnectorsService {
                 secret: secrets.token ?? '',
                 accessToken: secrets.access_token ?? '',
                 fields: readFields(row.config.fields),
+                signingSecret: secrets.signing_secret ?? '',
             },
         };
     }
@@ -1236,7 +1266,11 @@ export class ConnectorsService {
         if (def.auth.kind !== 'key') throw new BadRequestException({ code: 'integration_not_key', message: 'Esa app se conecta con «Conectar», no con una clave.', data: { status: 400 } });
 
         for (const f of def.auth.fields) {
-            const value = f.secret ? creds.secret : (creds.fields[f.key] ?? '');
+            const value = f.secret
+                ? f.secret_slot === 'signing_secret'
+                    ? (creds.signingSecret ?? '')
+                    : creds.secret
+                : (creds.fields[f.key] ?? '');
             if (f.required && value.trim() === '') {
                 throw new BadRequestException({
                     code: 'integration_field_missing',
@@ -1260,6 +1294,9 @@ export class ConnectorsService {
         const provided = secretKey ? (input.fields[secretKey.key] ?? '').trim() : '';
         const secrets = { ...(row?.secrets ?? {}) };
         if (provided !== '') secrets.token = encryptSecret(provided, this.env.SECRETS_KEY);
+        const signingKey = signingField(def);
+        const providedSigning = signingKey ? (input.fields[signingKey.key] ?? '').trim() : '';
+        if (providedSigning !== '') secrets.signing_secret = encryptSecret(providedSigning, this.env.SECRETS_KEY);
         const config: Record<string, unknown> = {
             ...(row?.config ?? {}),
             fields: { ...creds.fields, ...(outcome.fields ?? {}) },
@@ -1279,7 +1316,7 @@ export class ConnectorsService {
                     targetType: 'connection',
                     targetId: row.id,
                     targetLabel: row.name,
-                    meta: { integration: key, secret_rotated: provided !== '' },
+                    meta: { integration: key, secret_rotated: provided !== '' || providedSigning !== '' },
                 });
                 return row.id;
             }
@@ -1386,6 +1423,8 @@ export class ConnectorsService {
             out[f.key] = value !== '' ? value : f.default;
         }
         const typedSecret = secretDef ? (fields[secretDef.key] ?? '').trim() : '';
+        const signingDef = signingField(def);
+        const typedSigning = signingDef ? (fields[signingDef.key] ?? '').trim() : '';
         return {
             def,
             row,
@@ -1393,13 +1432,39 @@ export class ConnectorsService {
                 secret: typedSecret !== '' ? typedSecret : (stored.token ?? ''),
                 accessToken: '',
                 fields: out,
+                signingSecret: typedSigning !== '' ? typedSigning : (stored.signing_secret ?? ''),
             },
         };
+    }
+
+    /**
+     * v0.1.251 — Mercado Pago / Wompi: una credencial que no funciona NO se
+     * guarda (a diferencia de una app de mensajería, acá un error se notaría
+     * recién cuando un cliente intenta pagar).
+     */
+    private async runCollectionVerify(key: 'mercadopago' | 'wompi', creds: IntegrationCreds): Promise<VerifyOutcome> {
+        const base: VerifyOutcome = { ok: false, label: null, error: null, warning: null, options: {} };
+        const pre = precheckCreds(key, creds);
+        if (pre) return { ...base, error: pre };
+        const req = collectionVerifyRequest(key, creds, gatewayBases(this.env));
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                captureBody: true,
+                timeoutMs: 15_000,
+            });
+            return parseCollectionVerify(key, res.status, res.body ?? '', creds);
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return { ...base, error: `No pudimos comunicarnos con ${key === 'wompi' ? 'Wompi' : 'Mercado Pago'} (${message}). Probá de nuevo en un momento.` };
+        }
     }
 
     private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
         if (key === 'woocommerce') return this.runWooVerify(creds);
         if (key === 'sqlserver') return this.runSqlVerify(creds);
+        if (key === 'mercadopago' || key === 'wompi') return this.runCollectionVerify(key, creds);
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
         try {
@@ -2309,10 +2374,19 @@ export class ConnectorsService {
     }
 }
 
-/** El único campo secreto de una app por clave (va a `secrets.token`). */
+/** El campo secreto principal de una app por clave (va a `secrets.token`). */
 function secretField(def: IntegrationDef): { key: string; label: string } | null {
     if (def.auth.kind !== 'key') return null;
-    return def.auth.fields.find((f) => f.secret) ?? null;
+    return def.auth.fields.find((f) => f.secret && f.secret_slot !== 'signing_secret') ?? null;
+}
+
+/**
+ * El segundo secreto (v0.1.251): el que va a `secrets.signing_secret` —el
+ * secreto de eventos de Wompi—. La mayoría de las apps no lo tiene.
+ */
+function signingField(def: IntegrationDef): { key: string; label: string } | null {
+    if (def.auth.kind !== 'key') return null;
+    return def.auth.fields.find((f) => f.secret && f.secret_slot === 'signing_secret') ?? null;
 }
 
 /** Acciones que referencian una conexión por id. */

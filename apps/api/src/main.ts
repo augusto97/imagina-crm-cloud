@@ -66,7 +66,8 @@ async function bootstrap(): Promise<void> {
                 : // v0.1.207 — los avisos de una tienda llegan todos de la misma IP y
                   // en ráfagas (una edición masiva de productos); WooCommerce APAGA el
                   // aviso tras varias entregas fallidas. Van firmados (HMAC) y con token.
-                  path.startsWith('/api/v1/public/store-hooks/')
+                  // v0.1.251 — avisos de pago de Mercado Pago / Wompi: mismo caso.
+                  path.startsWith('/api/v1/public/store-hooks/') || path.startsWith('/api/v1/public/collections/')
                   ? env.RATE_LIMIT_MAX * 10
                   : env.RATE_LIMIT_MAX;
         },

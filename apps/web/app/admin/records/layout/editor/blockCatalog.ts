@@ -30,6 +30,7 @@ import {
     Table2,
     TextCursorInput,
     UserRound,
+    Wallet,
     Activity,
     type LucideIcon,
 } from 'lucide-react';
@@ -219,6 +220,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Invitar al cliente a su portal.'),
         icon: UserRound,
         create: () => block('portal_access'),
+    },
+    {
+        key: 'payments',
+        type: 'payments',
+        category: 'conversation',
+        label: __('Cobros'),
+        description: __('Links de pago (Mercado Pago / Wompi) y si ya pagó.'),
+        icon: Wallet,
+        create: () => block('payments'),
     },
     // Contenido
     { key: 'heading', type: 'heading', category: 'content', label: __('Título'), description: __('Un título de sección.'), icon: Heading, create: () => block('heading', { text: __('Nuevo título'), level: 2 }) },

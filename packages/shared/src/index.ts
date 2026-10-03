@@ -48,6 +48,7 @@ export * from './field-types/duration';
 export * from './schemas/templates';
 export * from './schemas/connector';
 export * from './schemas/integrations';
+export * from './schemas/collections';
 export * from './schemas/provider-guides';
 export * from './schemas/legal-pages';
 export * from './schemas/store-sync';

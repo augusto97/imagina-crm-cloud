@@ -409,6 +409,18 @@ export class AutomationsService {
                 sample_record_id: sampleRecordId,
             };
         }
+        // v0.1.251 — un link de cobro no se "prueba" de verdad: crearía un
+        // link real a nombre de la empresa. Se muestra lo que se crearía.
+        if (integ.key === 'mercadopago' || integ.key === 'wompi') {
+            const v = compiled.values;
+            const currency = integ.key === 'wompi' ? 'COP' : (v.currency || 'COP');
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: `Así se crearía el link: «${v.title ?? ''}» por ${v.amount ?? ''} ${currency}${v.payer_email ? ` para ${v.payer_email}` : ''}. Para no generar un cobro real, la prueba no lo envía: probalo con «Cobrar» en un registro.`,
+                sample_record_id: sampleRecordId,
+            };
+        }
         let req;
         try {
             req = buildIntegrationRequest(integ.key, action.key, compiled, integ.creds);

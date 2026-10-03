@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
+import { PAYMENT_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -236,6 +237,11 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
 
+    // v0.1.251 — el cobro en contexto: el link que creó «Crear link de pago»
+    // en una acción anterior, o el pago recién recibido (trigger «Cuando se
+    // recibe un pago»).
+    const visiblePayment = PAYMENT_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Cobro')));
+
     return (
         <div className="imcrm-flex imcrm-flex-col">
             <div className="imcrm-relative imcrm-border-b imcrm-border-border">
@@ -281,6 +287,13 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
                             label: f.label,
                             hint: `before.${f.slug}`,
                         }))}
+                        onPick={onPick}
+                    />
+                )}
+                {visiblePayment.length > 0 && (
+                    <Section
+                        title={__('Cobro (link de pago / pago recibido)')}
+                        items={visiblePayment.map((t) => ({ tag: t.tag, label: t.label, hint: `{{${t.tag}}}` }))}
                         onPick={onPick}
                     />
                 )}

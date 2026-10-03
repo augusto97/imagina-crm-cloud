@@ -1122,6 +1122,17 @@ export class TenantTransferService {
                 `El dominio del portal de clientes «${String(tenantRow.portalDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo acá.`,
             );
         }
+        // v0.1.251 — cobros: la conexión viaja, el historial de links no (cada
+        // link tiene su URL de avisos en el servidor de origen).
+        const [collections] = await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])));
+        if (Number(collections?.n ?? 0) > 0) {
+            warnings.push(
+                'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pegá la nueva en Desarrolladores → «URL de Eventos» (la ves en Integraciones → Cobros).',
+            );
+        }
 
         return {
             tenant_id: tenantId,

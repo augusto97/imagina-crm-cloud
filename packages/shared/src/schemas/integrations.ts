@@ -116,6 +116,8 @@ export const INTEGRATION_KEYS = [
     'outlook',
     'woocommerce',
     'sqlserver',
+    'mercadopago',
+    'wompi',
 ] as const;
 export const integrationKeySchema = z.enum(INTEGRATION_KEYS);
 export type IntegrationKey = z.infer<typeof integrationKeySchema>;
@@ -131,6 +133,7 @@ export const INTEGRATION_CATEGORY_LABEL = {
     datos: 'Hojas de cálculo',
     comercio: 'Tiendas online',
     bases_datos: 'Bases de datos',
+    pagos: 'Cobros y pagos',
 } as const;
 export type IntegrationCategory = keyof typeof INTEGRATION_CATEGORY_LABEL;
 
@@ -162,6 +165,13 @@ export interface IntegrationFieldDef {
      * confiar en el certificado— que como texto libre serían una trampa.
      */
     type: 'text' | 'boolean' | 'number';
+    /**
+     * Dónde se guarda un dato SECRETO (v0.1.251). Casi todas las apps tienen
+     * una sola clave (`token`); Wompi tiene dos —la llave privada para crear
+     * links y el secreto de eventos para verificar sus avisos— y la segunda va
+     * al lugar del secreto de firma.
+     */
+    secret_slot: 'token' | 'signing_secret';
 }
 
 export type IntegrationAuth =
@@ -198,6 +208,7 @@ function field(def: Partial<IntegrationFieldDef> & { key: string; label: string 
         lookup: false,
         hidden: false,
         type: 'text',
+        secret_slot: 'token',
         ...def,
     };
 }
@@ -736,7 +747,119 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 ],
             }),
         ],
-    },    {
+    },
+    {
+        key: 'mercadopago',
+        name: 'Mercado Pago',
+        tagline: 'Cobrá con links de pago y enterate solo cuando te pagan.',
+        description:
+            'Creá links de pago desde un registro o una automatización (PSE, Nequi, tarjeta, efectivo), mandalos por WhatsApp o correo, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
+        category: 'pagos',
+        color: '#00B1EA',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'access_token',
+                    label: 'Access Token',
+                    secret: true,
+                    required: true,
+                    placeholder: 'APP_USR-…',
+                    help: 'El de producción empieza con APP_USR-. Para probar, el de prueba (TEST-). Se guarda cifrado.',
+                }),
+            ],
+            how_to: [
+                'Entrá a mercadopago.com.co/developers → Tus integraciones y creá una aplicación (o abrí la que ya tengas).',
+                'En «Credenciales de producción» copiá el Access Token (empieza con APP_USR-) y pegalo acá. Para probar sin plata real, usá el de prueba (TEST-).',
+                'Listo: los pagos te llegan a TU cuenta de Mercado Pago, sin comisión de Imagina Base. Cada link le avisa a la app cuando se paga; no hay que configurar nada más.',
+            ],
+        },
+        actions: [
+            action({
+                key: 'create_payment_link',
+                label: 'Crear link de pago (Mercado Pago)',
+                description: 'Un link para que el cliente pague; queda en el registro y se actualiza solo cuando paga.',
+                params: [
+                    { key: 'title', label: 'Concepto', required: true, help: 'Lo que ve el cliente al pagar. Ej.: Factura {{numero}}.' },
+                    { key: 'amount', label: 'Monto', type: 'number', required: true, help: 'Un número o una variable como {{total}}.' },
+                    {
+                        key: 'currency',
+                        label: 'Moneda',
+                        type: 'select',
+                        default: 'COP',
+                        options: [
+                            { value: 'COP', label: 'Peso colombiano (COP)' },
+                            { value: 'MXN', label: 'Peso mexicano (MXN)' },
+                            { value: 'ARS', label: 'Peso argentino (ARS)' },
+                            { value: 'CLP', label: 'Peso chileno (CLP)' },
+                            { value: 'PEN', label: 'Sol peruano (PEN)' },
+                            { value: 'UYU', label: 'Peso uruguayo (UYU)' },
+                            { value: 'BRL', label: 'Real (BRL)' },
+                        ],
+                        help: 'La de tu cuenta de Mercado Pago.',
+                    },
+                    { key: 'payer_email', label: 'Correo del cliente', help: 'Opcional: Mercado Pago lo usa para precompletar el pago.' },
+                    { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
+                ],
+            }),
+        ],
+    },
+    {
+        key: 'wompi',
+        name: 'Wompi',
+        tagline: 'Links de pago de Bancolombia: PSE, Nequi, tarjeta y efectivo.',
+        description:
+            'Creá links de pago de Wompi desde un registro o una automatización, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
+        category: 'pagos',
+        color: '#2C2A29',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'public_key',
+                    label: 'Llave pública',
+                    required: true,
+                    placeholder: 'pub_prod_…',
+                    help: 'Empieza con pub_prod_ (o pub_test_ para probar).',
+                }),
+                field({
+                    key: 'private_key',
+                    label: 'Llave privada',
+                    secret: true,
+                    required: true,
+                    placeholder: 'prv_prod_…',
+                    help: 'Empieza con prv_prod_ (o prv_test_). Se guarda cifrada.',
+                }),
+                field({
+                    key: 'events_secret',
+                    label: 'Secreto de eventos',
+                    secret: true,
+                    secret_slot: 'signing_secret',
+                    placeholder: 'prod_events_…',
+                    help: 'Para verificar los avisos de pago que manda Wompi. Se guarda cifrado.',
+                }),
+            ],
+            how_to: [
+                'Entrá a comercios.wompi.co → Desarrolladores → Programadores.',
+                'Copiá la llave pública (pub_prod_…), la llave privada (prv_prod_…) y el secreto de Eventos (prod_events_…) y pegalos acá. Para probar sin plata real, usá las de Sandbox (test).',
+                'Después de conectar, abrí «Cobros» en esta conexión, copiá la URL de eventos y pegala en Wompi → Desarrolladores → «URL de Eventos». Así la app se entera sola de cada pago.',
+            ],
+        },
+        actions: [
+            action({
+                key: 'create_payment_link',
+                label: 'Crear link de pago (Wompi)',
+                description: 'Un link para que el cliente pague; queda en el registro y se actualiza solo cuando paga.',
+                params: [
+                    { key: 'title', label: 'Concepto', required: true, help: 'Lo que ve el cliente al pagar. Ej.: Factura {{numero}}.' },
+                    { key: 'amount', label: 'Monto (COP)', type: 'number', required: true, help: 'Un número o una variable como {{total}}.' },
+                    { key: 'payer_email', label: 'Correo del cliente', help: 'Opcional.' },
+                    { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
+                ],
+            }),
+        ],
+    },
+    {
         key: 'sqlserver',
         name: 'SQL Server / Azure SQL',
         tagline: 'Traé datos de tu base de datos a una lista, cada hora o cada día.',

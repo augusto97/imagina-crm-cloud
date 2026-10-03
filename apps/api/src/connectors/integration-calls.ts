@@ -22,6 +22,11 @@ export interface IntegrationCreds {
     accessToken: string;
     /** Datos NO secretos guardados en la conexión (cuenta, servidor). */
     fields: Record<string, string>;
+    /**
+     * Segundo secreto, si la app lo tiene (v0.1.251: el secreto de eventos de
+     * Wompi, con el que se verifican sus avisos de pago).
+     */
+    signingSecret?: string;
 }
 
 export interface IntegrationRequest {

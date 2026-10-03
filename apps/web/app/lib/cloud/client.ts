@@ -11,6 +11,12 @@ import {
     storeSyncStatusSchema,
     type StoreSyncStatus,
     type CreateSqlSyncInput,
+    type CollectionConnection,
+    type CollectionConnectionDetail,
+    type CollectionFields,
+    type CreatePaymentLinkInput,
+    type PaymentLink,
+    type RecordPayments,
     type SqlPreviewInput,
     type SqlPreviewResult,
     type SqlSync,
@@ -949,6 +955,28 @@ export class CloudClient {
     }
     async sqlSyncRemove(syncId: number): Promise<void> {
         await this.request('DELETE', `/sql-syncs/${syncId}`, {});
+    }
+    // ── Cobros de la empresa: Mercado Pago / Wompi (v0.1.251) ───────────
+    async collectionConnections(): Promise<CollectionConnection[]> {
+        return (await this.request('GET', '/collections/connections', { schema: z.object({ data: z.array(z.custom<CollectionConnection>()) }) })).data;
+    }
+    collectionConnection(id: number): Promise<CollectionConnectionDetail> {
+        return this.request('GET', `/collections/connections/${id}`, { schema: z.custom<CollectionConnectionDetail>() });
+    }
+    recordPayments(list: string | number, recordId: number): Promise<RecordPayments> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/payments`, { schema: z.custom<RecordPayments>() });
+    }
+    createPaymentLink(list: string | number, recordId: number, input: CreatePaymentLinkInput): Promise<PaymentLink> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/payments`, { body: input, schema: z.custom<PaymentLink>() });
+    }
+    verifyPaymentLink(id: number): Promise<PaymentLink> {
+        return this.request('POST', `/payment-links/${id}/verify`, { body: {}, schema: z.custom<PaymentLink>() });
+    }
+    cancelPaymentLink(id: number): Promise<PaymentLink> {
+        return this.request('POST', `/payment-links/${id}/cancel`, { body: {}, schema: z.custom<PaymentLink>() });
+    }
+    setupCollectionFields(list: string | number): Promise<CollectionFields> {
+        return this.request('POST', `/lists/${list}/collections/setup`, { body: {}, schema: z.custom<CollectionFields>() });
     }
     platformIntegrationsGet(): Promise<PlatformIntegrations> {
         return this.request('GET', '/platform/integrations', { schema: platformIntegrationsSchema });
