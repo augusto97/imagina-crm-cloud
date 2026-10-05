@@ -11,6 +11,10 @@
 > - **`HANDOFF.md`** — lecciones aprendidas durante el desarrollo del plugin
 >   WordPress hermano (bugs reales que costaron días). Evitan repetir
 >   errores ya pagados.
+> - **`CONTINUIDAD.md`** — el **salvavidas**: cómo trabajamos con el usuario,
+>   ritual de release, cómo llegan las actualizaciones a los servidores, el
+>   servidor de producción, el entorno de desarrollo (`scripts/dev/up.sh`),
+>   estado actual, hilos abiertos y bitácora. **Se actualiza en cada release.**
 > - **`CONTRACT.md`** — especificación funcional exacta heredada del plugin:
 >   operadores de filtros, reglas de slugs, capabilities, tipos de campo,
 >   shapes de vistas/automatizaciones/portal. Ante dudas más finas:
@@ -6756,3 +6760,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 3. Cada feature: schema Zod en shared → migración Drizzle (si aplica) →
    service+repo con tests → endpoint → frontend. En ese orden.
 4. Marcar las fases del §5 al completarlas.
+5. **Mantener `CONTINUIDAD.md` al día SIEMPRE** (pedido explícito del usuario,
+   2026-10-05): en cada release, una entrada en su §11 «Bitácora» y, si
+   cambia, su §10 «Estado actual / hilos abiertos». También anotar ahí las
+   decisiones y pedidos importantes de la conversación aunque no generen
+   release (ej. una pregunta que quedó esperando respuesta). Es el respaldo
+   por si la conversación se pierde: lo que no esté escrito ahí, se pierde.
