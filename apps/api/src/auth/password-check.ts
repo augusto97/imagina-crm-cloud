@@ -13,7 +13,8 @@ import type Redis from 'ioredis';
  */
 const MAX_FAILS = 10;
 const WINDOW_SECONDS = 15 * 60;
-const failKey = (userId: number): string => `pwcheckfail:${userId}`;
+export const passwordCheckFailKey = (userId: number): string => `pwcheckfail:${userId}`;
+const failKey = passwordCheckFailKey;
 
 export async function verifyAccountPassword(
     redis: Redis | undefined,

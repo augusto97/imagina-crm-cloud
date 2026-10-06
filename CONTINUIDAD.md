@@ -349,8 +349,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.253** (fix de permisos: el agente no veía lo que
-creaba), en `main`.
+versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
+`main`.
 
 **Hilos abiertos (lo último que se habló)**
 - **PSE propio (contratado con ACH Colombia, NO el que traen Wompi/MP)** —
@@ -399,6 +399,23 @@ creaba), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.254** — Reporte del usuario: "impersonar me cierra la
+  sesión y al volver a entrar dice demasiados intentos". Causa (regresión de
+  SEC-24, v0.1.225): el guard de la consola chequeaba "¿sesión abierta con
+  contraseña?" ANTES de "¿es superadmin?", y la sesión impersonada no lo es →
+  `reauth_required` → la app, al sondear si mostrar Plataforma, hacía logout y
+  recargaba: la impersonación moría al nacer. Fix: impersonada → 403 (no
+  reauth), primero quién es y después cómo entró; la app ni sondea la consola
+  mientras se impersona; y **cerrar sesión impersonando devuelve al operador**
+  a su sesión (antes lo dejaba afuera). Los "demasiados intentos": el freno por
+  cuenta (10 contraseñas mal en 15 min) o el de IP (15 logins/min); el mensaje
+  proponía "restablecé tu contraseña" pero el reset NO levantaba el freno —
+  ahora sí. Verificado E2E (impersonar → app del agente con banner → logout
+  vuelve al operador con la consola).
+- **2026-10-06 · (pregunta)** — "¿Cómo hacen admin y agente para ver todo de
+  una lista?": admin siempre ve todo; al agente se le abre por lista en
+  Ajustes → Permisos → tarjeta Agente → «Colaborar» (o «Control total»), o a
+  una persona puntual en Compartir → Con tu equipo → Personas con acceso.
 - **2026-10-06 · v0.1.253** — Reporte de un cliente: "un agente crea
   registros y después no los ve; el admin sí". Con la configuración por
   defecto ("Solo lo suyo") funcionaba (verificado por API y en navegador); el

@@ -1,4 +1,6 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import { SuperadminGuard } from '../src/authz/superadmin.guard';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
@@ -591,6 +593,54 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         await platform.setUserDisabled(sess.user.id, true);
         const opToken = await sessions.create(op!.id);
         await expect(platform.impersonate(op!.id, opToken, sess.user.id)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    // v0.1.254 — reporte del usuario: impersonar cerraba la sesión. La app
+    // sondea /platform/stats y el guard respondía `reauth_required` (sesión no
+    // abierta con contraseña) a la sesión IMPERSONADA → la app hacía logout.
+    it('guard de la consola: impersonada y no-superadmin → 403; sólo un superadmin sin contraseña recibe reauth', async () => {
+        const env = loadEnv({ PLATFORM_SUPERADMINS: SUPERADMIN, DATABASE_URL: pg.container.getConnectionUri() });
+        const guard = new SuperadminGuard(env, pg.db);
+        const ctx = (req: Partial<FastifyRequest>): ExecutionContext =>
+            ({ switchToHttp: () => ({ getRequest: () => req }) }) as unknown as ExecutionContext;
+        const [boss] = await pg.db
+            .insert(users)
+            .values({ email: SUPERADMIN, passwordHash: 'x', name: 'Boss' })
+            .onConflictDoNothing()
+            .returning();
+        const bossId = boss?.id ?? (await pg.db.select().from(users).where(eq(users.email, SUPERADMIN)))[0]!.id;
+        const sess = await auth.register({ email: 'guard@imp.test', password: 'password123', name: 'G', workspace_name: 'GuardWS' });
+
+        // La sesión impersonada (aunque el operador sea el superadmin): 403, NO reauth.
+        await expect(
+            guard.canActivate(ctx({ authUserId: sess.user.id, impersonatedBy: bossId, sessionVia: undefined })),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        // Un usuario común con una sesión sin marca: 403 (antes, reauth_required).
+        await expect(
+            guard.canActivate(ctx({ authUserId: sess.user.id, sessionVia: undefined })),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        // El superadmin con una sesión vieja sin contraseña: reauth.
+        await expect(guard.canActivate(ctx({ authUserId: bossId, sessionVia: undefined }))).rejects.toBeInstanceOf(
+            UnauthorizedException,
+        );
+        // Y con contraseña, adentro.
+        await expect(guard.canActivate(ctx({ authUserId: bossId, sessionVia: 'password' }))).resolves.toBe(true);
+    });
+
+    it('restablecer la contraseña levanta el freno de intentos fallidos del login', async () => {
+        const reg = await auth.register({ email: 'freno@imp.test', password: 'password123', name: 'F', workspace_name: 'FrenoWS' });
+        for (let i = 0; i < 10; i++) {
+            await auth.login({ email: 'freno@imp.test', password: 'mala-clave-1' }).catch(() => undefined);
+        }
+        await expect(auth.login({ email: 'freno@imp.test', password: 'password123' })).rejects.toMatchObject({ status: 429 });
+        await auth.requestPasswordReset('freno@imp.test');
+        let token = '';
+        for (const k of await redis.keys('pwreset:*')) {
+            if ((await redis.get(k)) === String(reg.user.id)) token = k.slice('pwreset:'.length);
+        }
+        expect(token).not.toBe('');
+        await auth.resetPassword(token, 'nueva-clave-123');
+        await expect(auth.login({ email: 'freno@imp.test', password: 'nueva-clave-123' })).resolves.toBeTruthy();
     });
 
     it('stopImpersonation sobre una sesión normal → error', async () => {
