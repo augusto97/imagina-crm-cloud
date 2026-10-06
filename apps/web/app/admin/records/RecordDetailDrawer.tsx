@@ -44,6 +44,7 @@ import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from './RecordMetaGrid';
 import { parseUtcDate } from '@/lib/utcDate';
 
+import { formatLongDate } from '@/lib/tenantFormat';
 interface RecordDetailDrawerProps {
     listId: number;
     /**
@@ -80,7 +81,7 @@ function formatCreatedDate(value: string | null | undefined): string {
     const d = parseUtcDate(value);
     return Number.isNaN(d.getTime())
         ? value
-        : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+        : formatLongDate(d);
 }
 
 /**
@@ -400,9 +401,11 @@ export function RecordDetailDrawer({
                                             className="imcrm-mr-auto imcrm-gap-2 imcrm-text-destructive hover:imcrm-text-destructive"
                                             onClick={handleDelete}
                                             disabled={remove.isPending}
+                                            aria-label={__('Eliminar')}
+                                            title={__('Eliminar')}
                                         >
                                             <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                            {__('Eliminar')}
+                                            <span className="imcrm-hidden sm:imcrm-inline">{__('Eliminar')}</span>
                                         </Button>
                                     )}
                                     <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -410,7 +413,12 @@ export function RecordDetailDrawer({
                                     </Button>
                                     <Button onClick={handleSave} disabled={!dirty || update.isPending} className="imcrm-gap-2">
                                         <Save className="imcrm-h-4 imcrm-w-4" />
-                                        {update.isPending ? __('Guardando…') : __('Guardar cambios')}
+                                        {update.isPending ? __('Guardando…') : (
+                                            <>
+                                                <span className="sm:imcrm-hidden">{__('Guardar')}</span>
+                                                <span className="imcrm-hidden sm:imcrm-inline">{__('Guardar cambios')}</span>
+                                            </>
+                                        )}
                                     </Button>
                                 </SheetFooter>
                             </div>

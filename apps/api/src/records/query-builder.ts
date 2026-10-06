@@ -104,6 +104,13 @@ function compileCondition(
     if (isThroughField(field.type) || field.type === 'computed') {
         return field.expr ? compileOverride(field.expr, field.valueKind ?? 'numeric', cond) : undefined;
     }
+    // v0.1.252 — una relación vive en la tabla `relations`, no en `data`:
+    // antes se descartaba y «sin vínculos» devolvía TODO (por API, por el MCP
+    // o en la condición de una automatización). Sólo en la consulta principal
+    // (dentro de la subconsulta de un rollup el registro tiene otro alias).
+    if (field.type === 'relation') {
+        return dataRef === records.data ? compileRelation(field.id, cond) : undefined;
+    }
     if (!isDataField(field.type) || NON_FILTERABLE.includes(field.type)) {
         return undefined; // no filtrable → se descarta
     }
@@ -554,4 +561,44 @@ function asPreset(value: unknown): DateRangePreset {
 
 function escapeLike(value: string): string {
     return value.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+/**
+ * Condición sobre un campo `relation`: «tiene vínculos» / «no tiene» y
+ * «vinculado a» uno o varios registros (por id). Los vínculos a registros
+ * borrados no cuentan, igual que al leer. El id del campo y los ids vienen
+ * validados como enteros: viajan como parámetros.
+ */
+function compileRelation(fieldId: number, cond: { op: string; value?: unknown }): SQL | undefined {
+    const linked = (extra: SQL | undefined) => sql`EXISTS (
+        SELECT 1 FROM relations rel
+        JOIN records tgt ON tgt.id = rel.target_record_id AND tgt.deleted_at IS NULL
+        WHERE rel.source_record_id = ${records.id}
+          AND rel.tenant_id = ${records.tenantId}
+          AND rel.field_id = ${fieldId}${extra ? sql` AND ${extra}` : sql``}
+    )`;
+    switch (cond.op) {
+        case 'is_not_null':
+            return linked(undefined);
+        case 'is_null':
+            return sql`NOT ${linked(undefined)}`;
+        case 'eq':
+        case 'in':
+        case 'contains': {
+            const raw = Array.isArray(cond.value) ? cond.value : [cond.value];
+            const ids = raw.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 200);
+            if (ids.length === 0) return undefined;
+            return linked(sql`rel.target_record_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
+        }
+        case 'neq':
+        case 'nin':
+        case 'not_contains': {
+            const raw = Array.isArray(cond.value) ? cond.value : [cond.value];
+            const ids = raw.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 200);
+            if (ids.length === 0) return undefined;
+            return sql`NOT ${linked(sql`rel.target_record_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`)}`;
+        }
+        default:
+            return undefined;
+    }
 }

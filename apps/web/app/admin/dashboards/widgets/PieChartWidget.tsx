@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
-import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, groupKeysOf } from './useChartColors';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -49,7 +49,7 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const showLegend = widget.config.show_legend !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     // v0.1.178 — la leyenda muestra la ETIQUETA de la opción, no el value.
-    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id, groupKeysOf(data.data));
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en un sector → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);

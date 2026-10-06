@@ -5,6 +5,9 @@ import { PhoneDisplay } from '@/components/fields/PhoneControl';
 import { RatingControl, type RatingIcon } from '@/components/fields/RatingControl';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
+import { useAttachment } from '@/hooks/useAttachments';
+import { __ } from '@/lib/i18n';
+import { Paperclip } from 'lucide-react';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import { lookupDisplayField, lookupValues, rollupDisplayField } from '@/lib/throughFields';
@@ -175,6 +178,22 @@ export function renderCellValue(field: FieldEntity, value: unknown): React.React
         );
     }
 
+    // v0.1.252 — antes caía al String(value) final: la celda decía «17» (el
+    // id del adjunto) o «[17]». Ahora el nombre del archivo, con enlace.
+    if (field.type === 'file') {
+        const ids = (Array.isArray(value) ? value : [value])
+            .map((v) => (typeof v === 'number' ? v : Number(v)))
+            .filter((n) => Number.isInteger(n) && n > 0);
+        if (ids.length > 0) return <FileCell id={ids[0]!} more={ids.length - 1} />;
+        if (typeof value === 'string' && /^https?:\/\//i.test(value.trim())) {
+            return (
+                <a href={value.trim()} target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline" onClick={(e) => e.stopPropagation()}>
+                    {value.trim().split('/').pop() || value}
+                </a>
+            );
+        }
+    }
+
     if (field.type === 'user') {
         const id = typeof value === 'number' ? value : Number(value);
         if (Number.isFinite(id) && id > 0) {
@@ -252,6 +271,28 @@ function UserCell({ id }: { id: number }): JSX.Element {
                 />
             )}
             <span className="imcrm-truncate">{user.display_name || user.login}</span>
+        </span>
+    );
+}
+
+export function FileCell({ id, more }: { id: number; more: number }): JSX.Element {
+    const { data, isLoading } = useAttachment(id);
+    if (isLoading) return <span className="imcrm-text-muted-foreground">…</span>;
+    if (!data) return <span className="imcrm-text-muted-foreground">{__('Archivo no disponible')}</span>;
+    return (
+        <span className="imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-gap-1.5">
+            <Paperclip className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+            <a
+                href={data.url}
+                target="_blank"
+                rel="noreferrer"
+                className="imcrm-truncate imcrm-text-primary hover:imcrm-underline"
+                title={data.title}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {data.title}
+            </a>
+            {more > 0 && <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">+{more}</span>}
         </span>
     );
 }

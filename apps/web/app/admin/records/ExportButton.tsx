@@ -159,7 +159,7 @@ export function ExportButton({
             setOpen(false);
         } catch {
              
-            alert(__('No se pudo exportar. Vuelve a intentarlo.'));
+            alert(__('No se pudo exportar. Volvé a intentarlo.'));
         } finally {
             setBusy(false);
         }

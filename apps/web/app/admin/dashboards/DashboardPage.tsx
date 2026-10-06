@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, BarChart3, CalendarRange, Copy, LayoutTemplate, Loader2, MonitorPlay, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarRange, Copy, LayoutTemplate, Loader2, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-react';
 
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
@@ -14,6 +14,13 @@ const DashboardGrid = lazy(() =>
 );
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -358,22 +365,6 @@ export function DashboardPage(): JSX.Element {
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                     {/* v0.1.105 — en modo presentación se OCULTA el chrome de
                       * edición: queda el período y un botón para SALIR. */}
-                    {! tvMode && (
-                        <>
-                            <Button
-                                variant="outline"
-                                className="imcrm-gap-2"
-                                onClick={() => setSettingsDialogOpen(true)}
-                            >
-                                <Settings className="imcrm-h-4 imcrm-w-4" />
-                                {__('Editar')}
-                            </Button>
-                            <Button variant="outline" className="imcrm-gap-2 imcrm-text-destructive" onClick={handleDeleteDashboard}>
-                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                {__('Eliminar')}
-                            </Button>
-                        </>
-                    )}
                     {/* v0.1.100 — período global: pisa el período de los
                       * widgets con campo de fecha. '' = cada widget el suyo. */}
                     <Select
@@ -441,15 +432,39 @@ export function DashboardPage(): JSX.Element {
                     {! tvMode && (
                         <>
                             <PortalPageSettingsButton value={page} onChange={(next) => void handlePageSettings(next)} />
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => setSaveTemplateOpen(true)}
-                                aria-label={__('Guardar como plantilla')}
-                                title={__('Guardar como plantilla')}
-                            >
-                                <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
-                            </Button>
+                            {/* v0.1.252 — las acciones ocasionales van a un menú: el
+                                header tenía siete botones en fila. */}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        aria-label={__('Más acciones')}
+                                        title={__('Más acciones')}
+                                        data-testid="imcrm-dashboard-more"
+                                    >
+                                        <MoreHorizontal className="imcrm-h-4 imcrm-w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="imcrm-w-56">
+                                    <DropdownMenuItem onSelect={() => setSettingsDialogOpen(true)}>
+                                        <Settings className="imcrm-h-4 imcrm-w-4" />
+                                        {__('Configuración')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => setSaveTemplateOpen(true)}>
+                                        <LayoutTemplate className="imcrm-h-4 imcrm-w-4" />
+                                        {__('Guardar como plantilla')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        onSelect={() => void handleDeleteDashboard()}
+                                        className="imcrm-text-destructive focus:imcrm-text-destructive"
+                                    >
+                                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                                        {__('Eliminar dashboard')}
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                             <Button onClick={handleAddWidget} className="imcrm-gap-2">
                                 <Plus className="imcrm-h-4 imcrm-w-4" />
                                 {__('Añadir widget')}
@@ -606,7 +621,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }): JSX.Element {
             </span>
             <h2 className="imcrm-text-base imcrm-font-medium">{__('Dashboard vacío')}</h2>
             <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                {__('Añade tu primer widget — KPI, gráfico de barras o de tendencia.')}
+                {__('Agregá tu primer widget: un indicador, un gráfico de barras o de tendencia.')}
             </p>
             <Button onClick={onAdd} className="imcrm-mt-2 imcrm-gap-2">
                 <Plus className="imcrm-h-4 imcrm-w-4" />

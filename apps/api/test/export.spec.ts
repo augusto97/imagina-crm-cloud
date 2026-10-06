@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { exportBundleSchema } from '@imagina-base/shared';
-import { tenants } from '../src/db/schema';
+import { memberships, tenants, users } from '../src/db/schema';
+import { withTenant } from '../src/db/tenant-tx';
 import { ExportService } from '../src/export/export.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -192,6 +193,42 @@ describe('ExportService (Postgres real)', () => {
             (c) => { filtered += c; },
         );
         expect(filtered.trimEnd().split('\r\n')).toEqual(['Nombre', 'Globex']);
+    });
+
+    it('streamCsvExport: etiquetas, nombre de la persona, Sí/No (v0.1.252)', async () => {
+        await listsService.create(tenantId, { name: 'Legibles' });
+        const nombre = await fieldsService.create(tenantId, 'legibles', { label: 'Nombre', type: 'text', slug: 'nombre' });
+        const estado = await fieldsService.create(tenantId, 'legibles', {
+            label: 'Estado', type: 'select', slug: 'estado',
+            config: { options: [{ value: 'en_curso', label: 'En curso' }, { value: 'listo', label: 'Listo' }] },
+        });
+        const tags = await fieldsService.create(tenantId, 'legibles', {
+            label: 'Tags', type: 'multi_select', slug: 'tags',
+            config: { options: [{ value: 'vip', label: 'VIP' }, { value: 'promo', label: 'Promo' }] },
+        });
+        const ok = await fieldsService.create(tenantId, 'legibles', { label: 'OK', type: 'checkbox', slug: 'ok' });
+        const resp = await fieldsService.create(tenantId, 'legibles', { label: 'Responsable', type: 'user', slug: 'resp' });
+        const [u] = await pg.db.insert(users).values({ email: 'ana@acme.test', passwordHash: 'x', name: 'Ana Pérez' }).returning();
+        await withTenant(pg.db, tenantId, (tx) => tx.insert(memberships).values({ userId: u!.id, tenantId, role: 'agent' }));
+        await recordsService.create(tenantId, admin, 'legibles', {
+            data: {
+                [`f${nombre.id}`]: 'Uno',
+                [`f${estado.id}`]: 'en_curso',
+                [`f${tags.id}`]: ['vip', 'promo'],
+                [`f${ok.id}`]: true,
+                [`f${resp.id}`]: u!.id,
+            },
+        });
+        let out = '';
+        await exportService.streamCsvExport(
+            tenantId, admin, 'legibles',
+            { fieldIds: [], delimiter: ',', withBom: false },
+            () => {},
+            (c) => { out += c; },
+        );
+        const lines = out.trimEnd().split('\r\n');
+        expect(lines[0]).toBe('Nombre,Estado,Tags,OK,Responsable');
+        expect(lines[1]).toBe('Uno,En curso,"VIP, Promo",Sí,Ana Pérez');
     });
 
     // v0.1.132 — la jerarquía viaja en el CSV (y las subtareas NO se pierden).

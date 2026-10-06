@@ -12,7 +12,7 @@ import { proxiedImageUrl } from '@/lib/imageProxy';
 /**
  * Vista Cards (Fase 12.A+): grid de tarjetas. Cada tarjeta muestra:
  *  - Imagen de portada opcional (del `coverField` configurado, tipo file).
- *  - Avatar colorizado generado desde el título (cuando no hay cover).
+ *  - Sin portada: avatar chico junto al título (v0.1.252).
  *  - Título grande con el valor del primary field del record.
  *  - Hasta N campos extra (los configurados en `extraFields`) abajo
  *    con label inline.
@@ -71,7 +71,7 @@ export function CardsView({
         return (
             <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-6 imcrm-py-12 imcrm-text-center">
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Sin records que mostrar.')}
+                    {__('No hay registros para mostrar.')}
                 </p>
             </div>
         );
@@ -129,56 +129,67 @@ function Card({
     const displayTitle = title || `#${record.id}`;
     const avatarBg = colorFromString(displayTitle);
     const initials = makeInitials(displayTitle);
+    const rows = extraFields.filter((f) => !isEmptyValue(record.fields[f.slug]));
 
+    // v0.1.252 — sin portada, la tarjeta ya no es un bloque de color con
+    // iniciales que ocupa la mitad (parecía un juguete y no decía nada):
+    // un avatar chico junto al título y los DATOS del registro abajo.
     return (
         <button
             type="button"
             onClick={onClick}
-            className="imcrm-group imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-left imcrm-shadow-imcrm-sm imcrm-transition-shadow hover:imcrm-shadow-imcrm-md focus:imcrm-outline-none focus:imcrm-ring-2 focus:imcrm-ring-primary focus:imcrm-ring-offset-2"
+            className="imcrm-group imcrm-flex imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-left imcrm-shadow-imcrm-sm imcrm-transition-[box-shadow,border-color] hover:imcrm-border-foreground/20 hover:imcrm-shadow-imcrm-md focus:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary focus-visible:imcrm-ring-offset-2"
         >
-            {coverUrl ? (
+            {coverUrl && (
                 <div
                     className="imcrm-relative imcrm-aspect-[16/9] imcrm-w-full imcrm-bg-muted"
                     style={{ backgroundImage: `url("${coverUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' }}
                     aria-hidden
                 />
-            ) : (
-                <div
-                    className="imcrm-flex imcrm-aspect-[16/9] imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-text-2xl imcrm-font-semibold imcrm-text-white"
-                    style={{ backgroundColor: avatarBg }}
-                    aria-hidden
-                >
-                    {initials}
-                </div>
             )}
 
-            <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1.5 imcrm-px-3 imcrm-py-2.5">
-                <h3 className="imcrm-line-clamp-1 imcrm-text-sm imcrm-font-semibold imcrm-tracking-tight imcrm-text-foreground">
-                    {displayTitle}
-                </h3>
-                {extraFields.length > 0 && (
-                    <dl className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-text-[11px]">
-                        {extraFields.map((f) => {
-                            const raw = record.fields[f.slug];
-                            if (raw == null || raw === '' || (Array.isArray(raw) && raw.length === 0)) {
-                                return null;
-                            }
-                            return (
-                                <div key={f.id} className="imcrm-flex imcrm-items-baseline imcrm-gap-1.5">
-                                    <dt className="imcrm-shrink-0 imcrm-truncate imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
-                                        {f.label}
-                                    </dt>
-                                    <dd className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-foreground">
-                                        {renderCellValue(f, raw)}
-                                    </dd>
-                                </div>
-                            );
-                        })}
+            <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-2.5 imcrm-p-3">
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5">
+                    {!coverUrl && (
+                        <span
+                            className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-[11px] imcrm-font-semibold"
+                            style={{
+                                backgroundColor: `color-mix(in srgb, ${avatarBg} 16%, transparent)`,
+                                color: `color-mix(in srgb, ${avatarBg} 75%, hsl(var(--imcrm-foreground)))`,
+                            }}
+                            aria-hidden
+                        >
+                            {initials}
+                        </span>
+                    )}
+                    <div className="imcrm-min-w-0 imcrm-flex-1">
+                        <h3 className="imcrm-line-clamp-2 imcrm-text-sm imcrm-font-semibold imcrm-leading-snug imcrm-tracking-tight imcrm-text-foreground">
+                            {displayTitle}
+                        </h3>
+                        <span className="imcrm-text-[11px] imcrm-tabular-nums imcrm-text-muted-foreground">#{record.id}</span>
+                    </div>
+                </div>
+                {rows.length > 0 && (
+                    <dl className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-border-t imcrm-border-border/70 imcrm-pt-2.5 imcrm-text-xs">
+                        {rows.map((f) => (
+                            <div key={f.id} className="imcrm-flex imcrm-min-h-[20px] imcrm-items-center imcrm-gap-2">
+                                <dt className="imcrm-w-[40%] imcrm-shrink-0 imcrm-truncate imcrm-text-muted-foreground">
+                                    {f.label}
+                                </dt>
+                                <dd className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-foreground">
+                                    {renderCellValue(f, record.fields[f.slug])}
+                                </dd>
+                            </div>
+                        ))}
                     </dl>
                 )}
             </div>
         </button>
     );
+}
+
+function isEmptyValue(raw: unknown): boolean {
+    return raw == null || raw === '' || (Array.isArray(raw) && raw.length === 0);
 }
 
 function makeInitials(title: string): string {

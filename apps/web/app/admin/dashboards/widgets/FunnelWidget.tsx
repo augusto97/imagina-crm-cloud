@@ -6,7 +6,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
-import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, useGroupOptionOrder } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, useGroupOptionOrder, groupKeysOf } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -35,7 +35,7 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     const orderMap = useGroupOptionOrder(widget.list_id, widget.config.group_by_field_id);
     // v0.1.178 — las etapas muestran la ETIQUETA de la opción, no el value.
-    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id, groupKeysOf(data.data));
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en una etapa → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);

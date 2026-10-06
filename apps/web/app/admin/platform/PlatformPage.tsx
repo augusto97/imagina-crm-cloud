@@ -30,6 +30,7 @@ import { SmtpSettingsPanel } from '@/cloud/components/SmtpSettingsPanel';
 import { SystemUpdatesPanel } from '@/cloud/components/SystemUpdatesPanel';
 import { BackupsPanel } from '@/cloud/components/BackupsPanel';
 
+import { formatNumber } from '@/lib/tenantFormat';
 /**
  * Consola de PLATAFORMA (operador SaaS). Sólo la ve el superadmin. Header de
  * operador (icon chip + badge Superadmin), KPIs con StatTile (la primitiva
@@ -85,7 +86,9 @@ export function PlatformPage(): JSX.Element {
                 </div>
             </header>
 
-            {/* KPIs del negocio */}
+            {/* KPIs del negocio — v0.1.252: sólo en Empresas (antes se repetían
+                arriba de CADA sección, empujando el contenido hacia abajo). */}
+            {tab === 'tenants' && (
             <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 md:imcrm-grid-cols-3 xl:imcrm-grid-cols-5">
                 {stats.isLoading &&
                     Array.from({ length: 5 }).map((_, i) => (
@@ -99,47 +102,51 @@ export function PlatformPage(): JSX.Element {
                         <StatTile
                             icon={Building2}
                             label={__('Empresas')}
-                            value={s.tenants_total.toLocaleString()}
+                            value={formatNumber(s.tenants_total)}
                             tone="blue"
                             hint={`${s.signups_last_30d} ${__('nuevas en 30 días')}`}
                         />
                         <StatTile
                             icon={BadgeCheck}
                             label={__('Activas')}
-                            value={s.by_status.active.toLocaleString()}
+                            value={formatNumber(s.by_status.active)}
                             tone="mint"
                             hint={`${s.by_status.trialing} ${__('en prueba')}`}
                         />
                         <StatTile
                             icon={AlertTriangle}
                             label={__('Impagas')}
-                            value={s.read_only_tenants.toLocaleString()}
+                            value={formatNumber(s.read_only_tenants)}
                             tone="amber"
                             hint={__('en solo-lectura')}
                         />
                         <StatTile
                             icon={Users}
                             label={__('Usuarios')}
-                            value={s.users_total.toLocaleString()}
+                            value={formatNumber(s.users_total)}
                             tone="violet"
                             hint={__('cuentas en total')}
                         />
                         <StatTile
                             icon={Database}
                             label={__('Registros')}
-                            value={s.records_total.toLocaleString()}
+                            value={formatNumber(s.records_total)}
                             tone="cyan"
                             hint={__('en toda la plataforma')}
                         />
                     </>
                 )}
             </div>
+            )}
 
             {/* Pestañas de gestión */}
             <div
                 role="tablist"
                 aria-label={__('Secciones de la consola')}
-                className="imcrm-flex imcrm-flex-wrap imcrm-gap-1 imcrm-border-b imcrm-border-border"
+                // v0.1.252 — en escritorio el panel lateral ya lista las
+                // secciones: las pestañas sólo hacen falta en el celular, y ahí
+                // van en una fila que scrollea en vez de ocupar media pantalla.
+                className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-overflow-y-hidden imcrm-border-b imcrm-border-border lg:imcrm-hidden"
             >
                 {TABS.map((t) => {
                     const Icon = t.icon;
@@ -151,7 +158,7 @@ export function PlatformPage(): JSX.Element {
                             aria-selected={active}
                             onClick={() => setTab(t.id)}
                             className={cn(
-                                'imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-font-medium imcrm-transition-colors',
+                                'imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-font-medium imcrm-transition-colors',
                                 active
                                     ? 'imcrm-border-primary imcrm-text-foreground'
                                     : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
@@ -168,7 +175,7 @@ export function PlatformPage(): JSX.Element {
                                             : 'imcrm-bg-muted imcrm-text-muted-foreground',
                                     )}
                                 >
-                                    {t.count.toLocaleString()}
+                                    {formatNumber(t.count)}
                                 </span>
                             )}
                         </button>

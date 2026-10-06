@@ -98,6 +98,10 @@ const config: Config = {
             },
             fontFamily: {
                 sans: [
+                    // v0.1.252 — Inter se sirve desde la app (@fontsource-variable/inter,
+                    // CSP `font-src 'self'`); antes se declaraba pero nunca se cargaba
+                    // y cada sistema caía a su fuente propia.
+                    'Inter Variable',
                     'Inter',
                     'ui-sans-serif',
                     'system-ui',

@@ -168,13 +168,16 @@ export class BulkStructureService {
             await this.billing.assertCanCreateRecords(tenantId, total);
             for (const row of loaded.rows) {
                 try {
-                    const copy = await this.records.create(tenantId, actor, String(list.id), {
-                        data: copyData(loaded.fields, row.data),
-                        parent_id: row.parentId ?? null,
-                    });
+                    const copy = await this.records.create(
+                        tenantId,
+                        actor,
+                        String(list.id),
+                        { data: copyData(loaded.fields, row.data), parent_id: row.parentId ?? null },
+                        { planChecked: true },
+                    );
                     result.created++;
                     for (const child of children.get(row.id) ?? []) {
-                        await this.records.create(tenantId, actor, String(list.id), { data: copyData(loaded.fields, child.data), parent_id: copy.id });
+                        await this.records.create(tenantId, actor, String(list.id), { data: copyData(loaded.fields, child.data), parent_id: copy.id }, { planChecked: true });
                         result.created++;
                     }
                     result.succeeded.push(row.id);

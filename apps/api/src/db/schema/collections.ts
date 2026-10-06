@@ -49,7 +49,7 @@ export const paymentLinks = pgTable(
     },
     (t) => [
         uniqueIndex('payment_links_external_ux').on(t.provider, t.externalId),
-        index('payment_links_record_ix').on(t.tenantId, t.recordId),
+        index('payment_links_record_ix').on(t.recordId, t.tenantId),
         index('payment_links_connection_ix').on(t.tenantId, t.connectionId, t.createdAt),
     ],
 );

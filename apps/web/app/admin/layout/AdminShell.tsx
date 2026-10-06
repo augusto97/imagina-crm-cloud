@@ -5,6 +5,7 @@ import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
 import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
+import { ActivePathSync } from './activePath';
 import { Sidebar } from '@/admin/layout/Sidebar';
 import { SkipLink } from '@/admin/layout/SkipLink';
 import { Topbar } from '@/admin/layout/Topbar';
@@ -72,6 +73,7 @@ export function AdminShell(): JSX.Element {
                     onClick={() => setMobileNavOpen(false)}
                 />
             )}
+            <ActivePathSync />
             <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
             <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                 <ImpersonationBanner />

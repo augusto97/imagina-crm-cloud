@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link } from 'react-router';
 import {
     ChevronDown,
     ChevronRight,
@@ -34,6 +34,8 @@ import type { ListGroup, ListSummary } from '@/types/list';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
 
 import { IconColorSubmenu } from './IconColorSubmenu';
+import { useEventCallback } from '@/hooks/useEventCallback';
+import { useIsPathActive } from './activePath';
 import { ListPanelItem } from './ListPanelItem';
 import { usePeekHold } from './peekHold';
 
@@ -87,6 +89,8 @@ export function ListsTree({
     dragIndexRef,
 }: ListsTreeProps): JSX.Element {
     const groups = useListGroups();
+    // Estable entre renders: los items del panel son memo (v0.1.253).
+    const toggleStar = useEventCallback(onToggleStar);
     const createGroup = useCreateListGroup();
     const move = useMoveListToGroup();
 
@@ -169,7 +173,7 @@ export function ListsTree({
             <ListPanelItem
                 list={list}
                 starred={starredIds.includes(list.id)}
-                onToggleStar={() => onToggleStar(list.id)}
+                onToggleStar={toggleStar}
             />
         </li>
     );
@@ -321,8 +325,7 @@ function FolderHeader({
 
     const Icon = listIcon(group.icon) ?? DEFAULT_FOLDER_ICON;
     const color = listColor(group.color);
-    const { pathname } = useLocation();
-    const active = pathname === `/folders/${group.id}`;
+    const active = useIsPathActive(`/folders/${group.id}`);
 
     const submitRename = (): void => {
         const name = draft.trim();

@@ -71,6 +71,8 @@ import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { formatDate, formatNumber } from '@/lib/tenantFormat';
+import { parseUtcDate } from '@/lib/utcDate';
 const STATUS_LABEL: Record<BillingStatus, string> = {
     trialing: __('En prueba'),
     active: __('Activa'),
@@ -90,7 +92,7 @@ const STATUS_BADGE: Record<BillingStatus, 'info' | 'success' | 'warning' | 'dest
     past_due: 'warning',
     canceled: 'destructive',
 };
-const fmtLimit = (v: number | null): string => (v === null ? '∞' : v.toLocaleString());
+const fmtLimit = (v: number | null): string => (v === null ? '∞' : formatNumber(v));
 /** Bytes → MB con 1 decimal (para comparar/mostrar contra `max_storage_mb`). */
 const formatMb = (bytes: number): number => Math.round((bytes / (1024 * 1024)) * 10) / 10;
 
@@ -263,7 +265,7 @@ export function PlatformTenantsCard(): JSX.Element {
                             <thead>
                                 <tr className="imcrm-border-b imcrm-border-border imcrm-text-left imcrm-text-xs imcrm-uppercase imcrm-tracking-wider imcrm-text-muted-foreground">
                                     <th className="imcrm-py-2 imcrm-pr-3 imcrm-font-medium">{__('Empresa')}</th>
-                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Owner')}</th>
+                                    <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Admin')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Plan')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium">{__('Estado')}</th>
                                     <th className="imcrm-px-2 imcrm-py-2 imcrm-font-medium imcrm-text-right">{__('Uso')}</th>
@@ -328,13 +330,13 @@ export function PlatformTenantsCard(): JSX.Element {
                                                 className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-3 imcrm-tabular-nums imcrm-text-muted-foreground"
                                                 title={__('Registros · Usuarios · Automatizaciones')}
                                             >
-                                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Database className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.records.toLocaleString()}</span>
+                                                <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Database className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{formatNumber(t.usage.records)}</span>
                                                 <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Users className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.users}</span>
                                                 <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1"><Zap className="imcrm-h-3 imcrm-w-3 imcrm-opacity-60" aria-hidden />{t.usage.automations}</span>
                                             </div>
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-xs imcrm-text-muted-foreground imcrm-whitespace-nowrap">
-                                            {new Date(t.created_at).toLocaleDateString()}
+                                            {formatDate(parseUtcDate(t.created_at))}
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right">
                                             <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1">
@@ -506,7 +508,7 @@ function UsageRow({ label, used, limit, suffix = '' }: { label: string; used: nu
             <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-text-sm">
                 <span>{label}</span>
                 <span className="imcrm-tabular-nums imcrm-text-xs imcrm-text-muted-foreground">
-                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}{suffix}</span> / {fmtLimit(limit)}{limit === null ? '' : suffix}
+                    <span className="imcrm-font-semibold imcrm-text-foreground">{formatNumber(used)}{suffix}</span> / {fmtLimit(limit)}{limit === null ? '' : suffix}
                 </span>
             </div>
             <div className="imcrm-h-1.5 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">

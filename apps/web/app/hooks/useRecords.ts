@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
@@ -29,6 +28,26 @@ import type {
  * sólo el identificador conocido — el peor caso es no invalidar una
  * key alternativa, pero la mutación ya aplicó su optimistic update.
  */
+/**
+ * v0.1.253 — cambios de registros hechos DESDE esta pestaña. Al editar una
+ * celda, la mutación ya refresca la lista; segundos después llega por el
+ * socket el aviso de ESE MISMO cambio y la refrescaba otra vez (dos GET de 200
+ * filas por cada edición). El realtime saltea una lista que esta pestaña acaba
+ * de refrescar.
+ */
+const recentLocalChanges = new Map<string, number>();
+const LOCAL_ECHO_WINDOW_MS = 2500;
+
+export function markLocalRecordsChange(qc: QueryClient, listId: string | number): void {
+    const now = Date.now();
+    for (const id of listIdentifiersFor(qc, listId)) recentLocalChanges.set(id, now);
+}
+
+export function isRecentLocalRecordsChange(listId: string | number): boolean {
+    const t = recentLocalChanges.get(String(listId));
+    return t !== undefined && Date.now() - t < LOCAL_ECHO_WINDOW_MS;
+}
+
 export function listIdentifiersFor(
     qc: QueryClient,
     idOrSlug: string | number,
@@ -121,6 +140,8 @@ export interface GroupedBundleResponse {
         group_by_type: string;
         total_groups: number;
         total_records: number;
+        /** v0.1.252 — grupos que existen pero no se mandan (tope del servidor). */
+        hidden_groups?: number;
     };
     /**
      * Map keyed por valor crudo del bucket (string), o `__null__` para
@@ -215,40 +236,10 @@ export function useRecords(listId: string | number | undefined, query: RecordsQu
         placeholderData: keepPreviousData,
     });
 
-    // Prefetch de la siguiente página: cuando recibimos data de la
-    // página actual y todavía hay más, pre-disparamos el fetch de
-    // page+1 en background. React Query lo cachea por queryKey
-    // distinto, así que cuando el user scrollea o avanza de página,
-    // los datos ya están listos. Cero pausa visible.
-    //
-    // 0.36.7: ahora dentro de useEffect — antes vivía en el cuerpo
-    // del hook y se ejecutaba en cada render (efecto durante render
-    // viola las reglas de React y hacía trabajo redundante en sesiones
-    // largas con re-renders frecuentes). prefetchQuery sigue siendo
-    // idempotente; sólo cambia que ahora corre cuando la fila/página
-    // cambia, no en cada render.
-    const meta = result.data?.meta;
-    const currentPage = (query.page as number | undefined) ?? 1;
-    const totalPages = (meta as { total_pages?: number } | undefined)?.total_pages ?? 1;
-    const shouldPrefetch =
-        listId !== undefined && listId !== '' &&
-        result.isSuccess &&
-        currentPage < totalPages;
-
-    useEffect(() => {
-        if (! shouldPrefetch) return;
-        const nextQuery: RecordsQuery = { ...query, page: currentPage + 1 };
-        void qc.prefetchQuery({
-            queryKey: recordsKeys.list(keyId, nextQuery),
-            queryFn: async () => {
-                const res = await api.get<RecordEntity[]>(`/lists/${listId}/records`, {
-                    query: nextQuery as Record<string, unknown>,
-                });
-                return { data: res.data, meta: res.meta } as unknown as RecordListResponse;
-            },
-        });
-    }, [shouldPrefetch, listId, keyId, currentPage, totalPages]);
-
+    // v0.1.253 — se quitó la precarga automática de la página siguiente: se
+    // pedía en CADA apertura de lista (también en kanban, calendario y
+    // tarjetas, que no paginan) — 200 filas más por visita que casi nadie
+    // usa. `keepPreviousData` ya evita el parpadeo al pasar de página.
     return result;
 }
 
@@ -431,6 +422,7 @@ export function useUpdateRecord(listId: string | number) {
             }
         },
         onSettled: () => {
+            markLocalRecordsChange(qc, listId);
             invalidateForList(qc, recordsKeys.all, listId);
             // v0.1.149 — cada edición escribe una entrada de actividad: el
             // feed de la ficha tiene que verla sin recargar.

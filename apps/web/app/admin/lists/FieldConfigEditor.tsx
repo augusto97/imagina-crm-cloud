@@ -22,6 +22,7 @@ import { Select } from '@/components/ui/select';
 import { useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
 import { useRelationPaths, type RelationPath } from '@/hooks/useRelationPaths';
+import { slugify } from '@/lib/slug';
 import { __, sprintf } from '@/lib/i18n';
 import type { FieldTypeSlug } from '@/types/field';
 import type { FilterTree } from '@/types/record';
@@ -170,19 +171,19 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                 {__('Opciones')}
             </legend>
             <p className="imcrm-text-[12px] imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Cada opción tiene un valor (interno, snake_case), un label visible y un color opcional para diferenciarla en chips.')}
+                {__('Escribí la etiqueta que se ve; el valor interno se completa solo (podés cambiarlo). El color es opcional.')}
             </p>
 
             {options.length === 0 ? (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-warning/40 imcrm-bg-warning/5 imcrm-px-3 imcrm-py-3 imcrm-text-[12px] imcrm-text-warning">
-                    {__('Añade al menos una opción para que el campo sea usable.')}
+                    {__('Agregá al menos una opción para que el campo se pueda usar.')}
                 </div>
             ) : (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                     <li className="imcrm-grid imcrm-grid-cols-[2.25rem_1fr_1fr_auto] imcrm-gap-2 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
                         <span>{__('Color')}</span>
-                        <span>{__('Valor')}</span>
-                        <span>{__('Label')}</span>
+                        <span>{__('Etiqueta')}</span>
+                        <span>{__('Valor interno')}</span>
                         <span aria-hidden />
                     </li>
                     {options.map((opt, i) => (
@@ -199,22 +200,35 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                                 }}
                             />
                             <Input
+                                value={opt.label}
+                                onChange={(e) => {
+                                    const next = [...options];
+                                    const prev = next[i]!;
+                                    // v0.1.252 — el valor interno se completa SOLO a
+                                    // partir de la etiqueta (mientras nadie lo haya
+                                    // tocado). Antes quedaba vacío y crear el campo
+                                    // fallaba con «Config inválida…».
+                                    const auto = prev.value === '' || prev.value === optionValueFor(prev.label, options, i);
+                                    next[i] = {
+                                        ...prev,
+                                        label: e.target.value,
+                                        value: auto ? optionValueFor(e.target.value, options, i) : prev.value,
+                                    };
+                                    setOptions(next);
+                                }}
+                                placeholder={__('Activo')}
+                                aria-label={__('Etiqueta')}
+                            />
+                            <Input
                                 value={opt.value}
                                 onChange={(e) => {
                                     const next = [...options];
                                     next[i] = { ...next[i]!, value: e.target.value };
                                     setOptions(next);
                                 }}
-                                placeholder="active"
-                            />
-                            <Input
-                                value={opt.label}
-                                onChange={(e) => {
-                                    const next = [...options];
-                                    next[i] = { ...next[i]!, label: e.target.value };
-                                    setOptions(next);
-                                }}
-                                placeholder={__('Activo')}
+                                placeholder="activo"
+                                aria-label={__('Valor interno')}
+                                className="imcrm-font-mono imcrm-text-xs"
                             />
                             <span className="imcrm-flex imcrm-items-center">
                                 {/* v0.1.107 — reordenar opciones: el orden del
@@ -496,7 +510,7 @@ function RelationEditor({ config, onChange }: SubProps): JSX.Element {
                 value={targetId}
                 onChange={(e) => onChange({ ...config, target_list_id: Number(e.target.value) })}
             >
-                <option value={0}>{__('— Selecciona —')}</option>
+                <option value={0}>{__('Elegí…')}</option>
                 {(lists.data ?? []).map((l) => (
                     <option key={l.id} value={l.id}>
                         {l.name}
@@ -574,7 +588,7 @@ function RelationPathSelect({
                 }}
                 data-testid="through-relation"
             >
-                <option value={0}>{__('— Selecciona —')}</option>
+                <option value={0}>{__('Elegí…')}</option>
                 {options.map((p) => (
                     <option key={p.relation_field_id} value={p.relation_field_id}>
                         {pathLabel(p)}
@@ -618,7 +632,7 @@ function LookupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                         onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
                         data-testid="through-target"
                     >
-                        <option value={0}>{__('— Selecciona —')}</option>
+                        <option value={0}>{__('Elegí…')}</option>
                         {eligible.map((f) => (
                             <option key={f.id} value={f.id}>
                                 {f.label}
@@ -697,7 +711,7 @@ function RollupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                         onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
                         data-testid="through-target"
                     >
-                        <option value={0}>{__('— Selecciona —')}</option>
+                        <option value={0}>{__('Elegí…')}</option>
                         {eligible.map((f) => (
                             <option key={f.id} value={f.id}>
                                 {f.label}
@@ -926,7 +940,7 @@ function ComputedEditor({
                     value={operation}
                     onChange={(e) => setOperation(e.target.value)}
                 >
-                    <option value="">{__('— Selecciona —')}</option>
+                    <option value="">{__('Elegí…')}</option>
                     {COMPUTED_OPS.map((op) => (
                         <option key={op.slug} value={op.slug}>
                             {op.label}
@@ -961,7 +975,7 @@ function ComputedEditor({
                                     onChange={(e) => setInputAt(i, Number(e.target.value))}
                                     className="imcrm-flex-1"
                                 >
-                                    <option value={0}>{__('— Selecciona campo —')}</option>
+                                    <option value={0}>{__('Elegí un campo…')}</option>
                                     {eligibleFields.map((f) => (
                                         <option key={f.id} value={f.id}>
                                             {f.label}
@@ -1012,4 +1026,14 @@ function ComputedEditor({
             )}
         </div>
     );
+}
+
+/** Valor interno de una opción a partir de su etiqueta, sin chocar con las otras. */
+function optionValueFor(label: string, options: Array<{ value: string }>, index: number): string {
+    const base = slugify(label) || '';
+    if (base === '') return '';
+    const taken = new Set(options.filter((_, j) => j !== index).map((o) => o.value));
+    let candidate = base;
+    for (let n = 2; taken.has(candidate); n++) candidate = `${base}_${n}`;
+    return candidate;
 }

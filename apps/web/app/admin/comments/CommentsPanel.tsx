@@ -17,6 +17,7 @@ import { __, sprintf } from '@/lib/i18n';
 import type { CommentEntity } from '@/types/comment';
 import { parseUtcDate } from '@/lib/utcDate';
 
+import { formatDateTime } from '@/lib/tenantFormat';
 /**
  * Hilo de comentarios para un registro específico.
  *
@@ -138,7 +139,7 @@ export function CommentsPanel({
                 <div className="imcrm-relative">
                     <Textarea
                         ref={textareaRef}
-                        placeholder={__('Escribe un comentario… Usa @ para mencionar.')}
+                        placeholder={__('Escribí un comentario… Usá @ para mencionar.')}
                         rows={3}
                         value={draft}
                         onChange={(e) => {
@@ -283,7 +284,7 @@ function CommentItem({
                         )}
                     </span>
                     <span className="imcrm-text-muted-foreground">
-                        {parseUtcDate(comment.created_at).toLocaleString()}
+                        {formatDateTime(parseUtcDate(comment.created_at))}
                     </span>
                     {wasEdited && (
                         <span className="imcrm-text-muted-foreground">{__('(editado)')}</span>
@@ -354,7 +355,7 @@ function EmptyState(): JSX.Element {
         <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-py-8 imcrm-text-center imcrm-text-muted-foreground">
             <MessageSquare className="imcrm-h-6 imcrm-w-6" />
             <p className="imcrm-text-sm">{__('Aún no hay comentarios.')}</p>
-            <p className="imcrm-text-xs">{__('Inicia la conversación enviando el primero.')}</p>
+            <p className="imcrm-text-xs">{__('Empezá la conversación con el primero.')}</p>
         </div>
     );
 }

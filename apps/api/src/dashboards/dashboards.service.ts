@@ -20,6 +20,10 @@ import { hiddenFieldsFor } from '../lists/list-acl';
 import type { RelatedScope } from '../records/related-scope';
 import { RecordsService } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { mapLimit } from '../common/map-limit';
+
+/** Widgets de un tablero evaluados a la vez (cada uno abre varias transacciones). */
+const WIDGET_CONCURRENCY = 4;
 
 type Row = typeof dashboards.$inferSelect;
 
@@ -190,15 +194,16 @@ export class DashboardsService {
         // métrica que no aplica, un campo borrado) devuelve su propio error y
         // el resto del tablero se dibuja. Antes el Promise.all rechazaba el
         // bundle entero y TODOS los widgets salían en rojo.
-        const entries = await Promise.all(
-            dash.widgets.map(async (w) => {
-                try {
-                    return [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const;
-                } catch (err) {
-                    return [w.id, { __error: widgetErrorMessage(err) }] as const;
-                }
-            }),
-        );
+        // v0.1.252 — de a WIDGET_CONCURRENCY: en paralelo sin tope un tablero
+        // de 11 widgets abría ~90 transacciones a la vez y con unos pocos
+        // tableros abiertos el pool se agotaba para el resto de la app.
+        const entries = await mapLimit(dash.widgets, WIDGET_CONCURRENCY, async (w) => {
+            try {
+                return [w.id, await this.computeWidget(tenantId, viewer, w, override)] as const;
+            } catch (err) {
+                return [w.id, { __error: widgetErrorMessage(err) }] as const;
+            }
+        });
         return Object.fromEntries(entries);
     }
 

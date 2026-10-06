@@ -102,6 +102,12 @@ export class RecordsService {
         actor: Actor,
         listIdOrSlug: string,
         input: CreateRecordInput,
+        /**
+         * `planChecked`: quien llama YA verificó el límite del plan para el lote
+         * entero (`assertCanCreateRecords(n)`). Sin esto, duplicar 5.000
+         * registros contaba la tabla 5.000 veces (O(N²), auditoría v0.1.252).
+         */
+        opts: { planChecked?: boolean } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -114,7 +120,7 @@ export class RecordsService {
                 data: { status: 403 },
             });
         }
-        await this.billing?.assertCanCreateRecord(tenantId);
+        if (!opts.planChecked) await this.billing?.assertCanCreateRecord(tenantId);
         const fields = await this.fields.listByListId(tenantId, listId);
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
@@ -1241,6 +1247,8 @@ function withComputed<T extends { data: Record<string, unknown> }>(fields: Field
  * ambas direcciones — las celdas vacías siempre al final, estilo hoja.
  */
 const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup'];
+/** Tipos cuyo orden es alfabético (expresión de texto). */
+const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup']);
 
 function parseFieldSort(
     raw: string | undefined,
@@ -1253,12 +1261,19 @@ function parseFieldSort(
         if (!m) continue;
         const field = fieldsById.get(Number(m[1]));
         if (!field) continue;
-        // v0.1.229 — un computed numérico con expresión SQL sí ordena.
-        const computedWithExpr = field.type === 'computed' && field.expr !== undefined;
-        if (NON_SORTABLE.includes(field.type) && !computedWithExpr) continue;
+        // Un campo con expresión SQL inyectada ordena aunque su tipo no
+        // viva en `data`: computed numérico (v0.1.229) y, desde v0.1.252,
+        // también el LOOKUP (el menú de la columna lo ofrecía y no hacía nada).
+        const hasExpr = field.expr !== undefined;
+        if (NON_SORTABLE.includes(field.type) && !hasExpr) continue;
         // Un rollup sin subconsulta (config sin resolver) no ordena.
-        if (field.type === 'rollup' && !field.expr) continue;
-        const expr = fieldTypedExpr(field);
+        if (field.type === 'rollup' && !hasExpr) continue;
+        const typed = fieldTypedExpr(field);
+        // v0.1.252 — el texto se ordena como lo lee una persona: sin
+        // distinguir mayúsculas y con «Épsilon» junto a «epsilon». La imagen
+        // de Postgres (Alpine/musl) ordena `en_US.utf8` como C — mayúsculas
+        // primero y los acentos al final. ICU viene en la imagen oficial.
+        const expr = TEXT_SORT_TYPES.has(field.type) ? sql`${typed} COLLATE "und-x-icu"` : typed;
         out.push(m[2] === 'desc' ? sql`${expr} DESC NULLS LAST` : sql`${expr} ASC NULLS LAST`);
     }
     return out;

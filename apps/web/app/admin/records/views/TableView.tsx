@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     flexRender,
     getCoreRowModel,
@@ -6,6 +6,7 @@ import {
     useReactTable,
     type ColumnDef,
     type ColumnOrderState,
+    type ColumnSizingInfoState,
     type ColumnSizingState,
     type VisibilityState,
 } from '@tanstack/react-table';
@@ -123,6 +124,15 @@ interface TableViewProps {
  * - Tipos no soportados inline (user, file, relation) muestran solo
  *   lectura aquí; se editan desde RecordDetailDrawer.
  */
+
+const EMPTY_SIZING_INFO: ColumnSizingInfoState = {
+    startOffset: null,
+    startSize: null,
+    deltaOffset: null,
+    deltaPercentage: null,
+    isResizingColumn: false,
+    columnSizingStart: [],
+};
 export function TableView({
     listId,
     listSlug,
@@ -258,7 +268,10 @@ export function TableView({
                 meta: { fieldId: field.id, primary: field.is_primary, sortable: !UNSORTABLE.includes(field.type) },
             }));
 
+        // v0.1.252 — el ID va al final (antes primero y ancho): lo que se
+        // escanea es el nombre, el número es referencia.
         return [
+            ...dynamic,
             {
                 id: 'id',
                 header: __('ID'),
@@ -273,7 +286,6 @@ export function TableView({
                 maxSize: 120,
                 meta: { fieldId: null },
             },
-            ...dynamic,
             {
                 id: 'updated_at',
                 header: __('Actualizado'),
@@ -335,6 +347,27 @@ export function TableView({
     );
     const relationTitles = useRelationTitlesForRows(fields, relationRows);
 
+    // v0.1.252 — el estado del ARRASTRE se controla acá y se evalúa en el
+    // acto. TanStack calcula el ancho nuevo DENTRO del updater de
+    // `setColumnSizingInfo`; con el estado interno, React lo evalúa recién en
+    // el próximo render, así que cuando llegaba `onColumnSizingChange` el
+    // ancho nuevo todavía no existía: arrastrar el borde no cambiaba nada y
+    // al soltar quedaba 0 (que la vista guardaba). La agrupada no lo sufría.
+    // Mientras se arrastra el asa de resize, el <th> no inicia un drag de columna.
+    const resizingRef = useRef(false);
+    const markResizing = (): void => {
+        resizingRef.current = true;
+        const clear = (): void => {
+            resizingRef.current = false;
+            window.removeEventListener('mouseup', clear, true);
+        };
+        window.addEventListener('mouseup', clear, true);
+    };
+    const sizingInfoRef = useRef<ColumnSizingInfoState>(EMPTY_SIZING_INFO);
+    const [columnSizingInfo, setColumnSizingInfo] = useState<ColumnSizingInfoState>(EMPTY_SIZING_INFO);
+    const columnSizingRef = useRef(columnSizing);
+    columnSizingRef.current = columnSizing;
+
     const table = useReactTable({
         data: dataWithSubRows,
         columns,
@@ -345,6 +378,7 @@ export function TableView({
         state: {
             columnVisibility,
             columnSizing,
+            columnSizingInfo,
             columnOrder,
             // Sólo tienen subfilas los padres abiertos, así que "todo
             // expandido" equivale a "los que el usuario abrió".
@@ -354,8 +388,14 @@ export function TableView({
             const next = typeof updater === 'function' ? updater(columnVisibility) : updater;
             onColumnVisibilityChange(next);
         },
+        onColumnSizingInfoChange: (updater) => {
+            const next = typeof updater === 'function' ? updater(sizingInfoRef.current) : updater;
+            sizingInfoRef.current = next;
+            setColumnSizingInfo(next);
+        },
         onColumnSizingChange: (updater) => {
-            const next = typeof updater === 'function' ? updater(columnSizing) : updater;
+            const next = typeof updater === 'function' ? updater(columnSizingRef.current) : updater;
+            columnSizingRef.current = next;
             onColumnSizingChange(next);
         },
         onColumnOrderChange: (updater) => {
@@ -380,26 +420,57 @@ export function TableView({
     const VIRTUALIZATION_THRESHOLD = 100;
     const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
 
+    // v0.1.253 — el scroll vertical es el del `<main>` (desde v0.1.70), no el
+    // del wrapper de la tabla (que sólo scrollea en horizontal y mide lo mismo
+    // que su contenido). Apuntado al wrapper, el virtualizer creía que TODO
+    // era visible y dibujaba las 200 filas (~17.000 elementos): el modal, la
+    // búsqueda y el cambio de vista recalculaban estilos sobre todo eso.
+    // Ahora mira al `<main>` y descuenta con `scrollMargin` lo que hay arriba
+    // de la tabla (cabecera de la página, pestañas, toolbar).
+    const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
+    const [scrollMargin, setScrollMargin] = useState(0);
+    useLayoutEffect(() => {
+        const body = tableContainerRef.current;
+        if (!body || !shouldVirtualize) return;
+        const main = body.closest<HTMLElement>('#imcrm-main');
+        setScrollEl(main);
+        if (!main) return;
+        const measure = (): void => {
+            const m = body.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+            setScrollMargin((prev) => (Math.abs(prev - m) > 1 ? m : prev));
+        };
+        measure();
+        const ro = new ResizeObserver(measure);
+        ro.observe(main.firstElementChild ?? main);
+        return () => ro.disconnect();
+    }, [shouldVirtualize]);
+
     const rowVirtualizer = useVirtualizer({
         count: rows.length,
-        getScrollElement: () => tableContainerRef.current,
-        // 40px es el alto típico de una row (py-2.5 = 10px×2 + ~20px
-        // de contenido). Real heights pueden variar — virtualizer
-        // mide post-render y ajusta. Estimate solo afecta el reserve
-        // inicial del scrollbar.
-        estimateSize: () => 40,
+        getScrollElement: () => scrollEl,
+        // Alto estimado por densidad (25 / 37 / 49 px); el virtualizer mide
+        // cada fila al dibujarla (`measureElement`), así "Ajustar texto" y las
+        // subtareas no descuadran el scroll.
+        estimateSize: () =>
+            (density ?? (spreadsheet ? 'compact' : 'normal')) === 'compact'
+                ? 25
+                : (density ?? 'normal') === 'comfortable'
+                  ? 49
+                  : 37,
+        scrollMargin,
         // Buffer: rows extra renderizadas arriba/abajo del viewport
         // para que el scroll fluido no muestre "huecos blancos"
         // mientras los nuevos rows pintan.
-        overscan: 10,
-        enabled: shouldVirtualize,
+        overscan: 12,
+        enabled: shouldVirtualize && scrollEl !== null,
     });
 
-    const virtualRows = shouldVirtualize ? rowVirtualizer.getVirtualItems() : [];
-    const virtualTotalSize = shouldVirtualize ? rowVirtualizer.getTotalSize() : 0;
-    const paddingTop = virtualRows.length > 0 ? (virtualRows[0]?.start ?? 0) : 0;
+    const virtualActive = shouldVirtualize && scrollEl !== null;
+    const virtualRows = virtualActive ? rowVirtualizer.getVirtualItems() : [];
+    const virtualTotalSize = virtualActive ? rowVirtualizer.getTotalSize() : 0;
+    const paddingTop = virtualRows.length > 0 ? Math.max(0, (virtualRows[0]?.start ?? 0) - scrollMargin) : 0;
     const paddingBottom = virtualRows.length > 0
-        ? virtualTotalSize - (virtualRows[virtualRows.length - 1]?.end ?? 0)
+        ? Math.max(0, virtualTotalSize - ((virtualRows[virtualRows.length - 1]?.end ?? 0) - scrollMargin))
         : 0;
 
     /**
@@ -596,6 +667,15 @@ export function TableView({
                                         }}
                                         draggable={isDraggable}
                                         onDragStart={isDraggable ? (e) => {
+                                            // v0.1.252 — si el mousedown fue en el ASA de
+                                            // resize, el <th> draggable igual arrancaba un
+                                            // drag HTML5 (el dragstart lo dispara el <th>, no
+                                            // el asa) y se tragaba los mousemove: arrastrar el
+                                            // borde no cambiaba el ancho.
+                                            if (resizingRef.current) {
+                                                e.preventDefault();
+                                                return;
+                                            }
                                             setDraggingColId(h.id);
                                             // Algunos navegadores (Firefox) requieren
                                             // setData para iniciar el drag.
@@ -634,7 +714,7 @@ export function TableView({
                                                 : undefined
                                         }
                                         className={cn(
-                                            'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                            'imcrm-group/th imcrm-relative imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[12px] imcrm-font-medium imcrm-text-muted-foreground',
                                             // Sticky cells necesitan bg sólido para
                                             // tapar las celdas que pasan por detrás
                                             // horizontalmente al scrollear.
@@ -648,7 +728,7 @@ export function TableView({
                                                 <span
                                                     className="imcrm-cursor-grab imcrm-text-muted-foreground/40 imcrm-opacity-0 imcrm-transition-opacity group-hover/th:imcrm-opacity-100 active:imcrm-cursor-grabbing"
                                                     aria-hidden
-                                                    title={__('Arrastra para reordenar')}
+                                                    title={__('Arrastrá para reordenar')}
                                                 >
                                                     <GripVertical className="imcrm-h-3 imcrm-w-3" />
                                                 </span>
@@ -724,6 +804,7 @@ export function TableView({
                                                     // (sino el browser inicia un drag de
                                                     // columna en lugar del resize).
                                                     e.stopPropagation();
+                                                    markResizing();
                                                     h.getResizeHandler()(e);
                                                 }}
                                                 onTouchStart={h.getResizeHandler()}
@@ -805,7 +886,7 @@ export function TableView({
                                     <td colSpan={columns.length + 1} />
                                 </tr>
                             )}
-                            {(shouldVirtualize
+                            {(virtualActive
                                 ? virtualRows.map((vi) => rows[vi.index]!)
                                 : rows
                             ).map((row, visualIndex) => {
@@ -813,12 +894,14 @@ export function TableView({
                             // Numeración continua entre páginas; con
                             // virtualización el índice real es el de la fila.
                             const rowNumber = rowNumberOffset
-                                + (shouldVirtualize
+                                + (virtualActive
                                     ? virtualRows[visualIndex]?.index ?? visualIndex
                                     : visualIndex) + 1;
                             return (
                                 <tr
                                     key={row.id}
+                                    data-index={virtualActive ? virtualRows[visualIndex]?.index : undefined}
+                                    ref={virtualActive ? rowVirtualizer.measureElement : undefined}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setRowMenu({ record: row.original, x: e.clientX, y: e.clientY });
@@ -974,7 +1057,7 @@ export function TableView({
                                                 className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground"
                                             >
                                                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                {__('Agregar tarea')}
+                                                {__('Agregar registro')}
                                             </button>
                                         </td>
                                     );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { usePortalPreview } from '../PreviewContext';
 import { portalAccountHeaders } from '../portalAccount';
 import type { PortalBootData } from '../types';
@@ -145,10 +146,7 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
 }
 
 function formatRelativeDate(iso: string): string {
-    const normalized = iso.replace(' ', 'T');
-    const date = new Date(normalized.endsWith('Z') ? normalized : normalized + 'Z');
-    if (Number.isNaN(date.getTime())) return iso;
-    return date.toLocaleString();
+    return formatDateTimeStr(iso);
 }
 
 const MOCK_COMMENTS: CommentItem[] = [

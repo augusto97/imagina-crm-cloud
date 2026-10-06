@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import {
     IMPORT_MATCH_BY_ID,
     IMPORT_MATCH_TYPES,
@@ -16,6 +16,7 @@ import {
     type List,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { BillingService } from '../billing/billing.service';
 import { records } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -66,6 +67,7 @@ export class ImportUpdateService {
         private readonly importer: ImportService,
         private readonly history: BulkHistoryService,
         private readonly realtime: RealtimeService,
+        @Optional() private readonly billing?: BillingService,
     ) {}
 
     async preview(tenantId: number, actor: Actor, listIdOrSlug: string, input: ImportUpdateInput): Promise<ImportUpdatePreview> {
@@ -136,6 +138,18 @@ export class ImportUpdateService {
         );
         const items: BulkItemInput[] = [];
         let touched = false;
+        // Límite del plan UNA vez por tramo (no un conteo por fila creada).
+        const toCreate = plans.filter((p) => !p.error && p.recordId === null && p.create).length;
+        let planChecked = false;
+        if (toCreate > 0 && this.billing) {
+            try {
+                await this.billing.assertCanCreateRecords(tenantId, toCreate);
+                planChecked = true;
+            } catch {
+                // No entra el tramo entero: se sigue fila por fila para crear
+                // hasta el tope y reportar el resto con el motivo.
+            }
+        }
         for (const p of plans) {
             if (p.error) {
                 result.failed.push({ row: p.row, message: p.error });
@@ -147,7 +161,7 @@ export class ImportUpdateService {
                     continue;
                 }
                 try {
-                    await this.records.create(tenantId, actor, String(ctx.list.id), { data: p.create });
+                    await this.records.create(tenantId, actor, String(ctx.list.id), { data: p.create }, { planChecked });
                     result.created++;
                     touched = true;
                 } catch (err) {
@@ -242,6 +256,9 @@ export class ImportUpdateService {
         const byId = new Map(ctx.fields.map((f) => [f.id, f]));
         const labelOf = (id: number) => byId.get(id)?.label ?? `#${id}`;
 
+        const members = [...ctx.mapping.values()].some((slug) => ctx.bySlug.get(slug)?.type === 'user')
+            ? await this.importer.memberLookup(tenantId)
+            : undefined;
         return slice.map((row, i): RowPlan => {
             const index = from + i;
             const rowNumber = index + 2;
@@ -264,7 +281,7 @@ export class ImportUpdateService {
                     if (input.clear_empty) values[`f${field.id}`] = null;
                     continue;
                 }
-                const coerced = coerceCellValue(raw, field);
+                const coerced = coerceCellValue(raw, field, members);
                 const res = validateFieldValue({ type: field.type, config: field.config, is_required: false }, coerced);
                 if (!res.ok) return { ...base, error: `${field.label}: ${res.error}` };
                 values[`f${field.id}`] = res.value;

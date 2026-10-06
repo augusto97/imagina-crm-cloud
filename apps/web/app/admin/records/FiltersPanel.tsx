@@ -58,7 +58,7 @@ export function FiltersPanel({
                         <span
                             className="imcrm-cursor-help imcrm-text-muted-foreground"
                             title={__(
-                                'Combina filtros con Y / O. Usa "Agregar filtro anidado" para grupos.',
+                                'Combiná filtros con Y / O. Usá "Agregar filtro anidado" para grupos.',
                             )}
                         >
                             <Info className="imcrm-h-3 imcrm-w-3" />
@@ -135,7 +135,7 @@ export function FiltersPanel({
                         <span
                             className="imcrm-cursor-help imcrm-text-muted-foreground"
                             title={__(
-                                'Combina filtros con Y / O. Usa "Agregar filtro anidado" para grupos.',
+                                'Combiná filtros con Y / O. Usá "Agregar filtro anidado" para grupos.',
                             )}
                         >
                             <Info className="imcrm-h-3 imcrm-w-3" />

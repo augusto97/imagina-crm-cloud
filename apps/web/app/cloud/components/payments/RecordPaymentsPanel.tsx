@@ -105,6 +105,40 @@ export function RecordPaymentsPanel({
     }
 
     const paid = data.links.find((l) => l.status === 'approved');
+    // v0.1.253 — en la ficha clásica, una lista que no cobra (sin columnas de
+    // cobro ni links para este registro) no lleva la tarjeta completa: salía
+    // en TODAS las fichas, también en Tareas. Queda una línea discreta para
+    // cobrar igual si hace falta; el bloque «Cobros» de una ficha diseñada se
+    // pone a propósito, así que ahí siempre va completo.
+    if (!showEmptyHint && data.fields === null && data.links.length === 0) {
+        return (
+            <>
+                <button
+                    type="button"
+                    onClick={() => setCollecting(true)}
+                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground"
+                    data-testid="imcrm-payment-collect"
+                >
+                    <Wallet className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Cobrar este registro')}
+                </button>
+                {collecting && (
+                    <CollectDialog
+                        data={data}
+                        listId={listId}
+                        recordId={recordId}
+                        onClose={() => setCollecting(false)}
+                        onCreated={(link) => {
+                            setCollecting(false);
+                            refresh();
+                            void navigator.clipboard?.writeText(link.url).catch(() => undefined);
+                            toast.success(__('Link de pago creado'), __('Ya está copiado: pegáselo al cliente por WhatsApp o correo.'));
+                        }}
+                    />
+                )}
+            </>
+        );
+    }
     return (
         <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-record-payments">
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">

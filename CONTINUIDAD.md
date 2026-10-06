@@ -349,8 +349,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.251** (cobros de las empresas con Mercado Pago y
-Wompi), mergeada en `main` (PR #257).
+versión publicada: **v0.1.252** (auditoría integral: rendimiento, fallas
+funcionales y UI/UX), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - **PSE propio (contratado con ACH Colombia, NO el que traen Wompi/MP)** —
@@ -368,6 +368,21 @@ Wompi), mergeada en `main` (PR #257).
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
 
+**Pendientes de la auditoría v0.1.252 (por valor)**
+- Modal del registro y formulario de alta en celular: siguen siendo largos
+  (se arregló lo que se salía de pantalla, no el diseño).
+- Virtualizar la vista AGRUPADA (la plana ya lo está).
+- Bundle inicial ~600 KB gz: `packages/shared` compilado a CommonJS (no hace
+  tree-shaking), rutas y diálogos eager, `icon-catalog` precargado en el login.
+- Servidor: un contexto por request (hoy se re-leen lista/campos en varias
+  transacciones), `search_text` indexado para la búsqueda, `next_fire_at` en
+  recurrencias, `findById` que no traiga la descripción si no hace falta.
+- Import que crea opciones de select de filas que después se rechazan.
+- Actividad: porcentaje y duración salen crudos («Avance en 100»).
+- Conversión de tipo usuario→texto escribe el id; casilla→texto «true/false».
+- Dos `<main>` anidados en la página del registro; `<button>` dentro de
+  `<button>` en el selector de usuario.
+
 **Pendientes técnicos conocidos (no urgentes)**
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).
@@ -384,6 +399,17 @@ Wompi), mergeada en `main` (PR #257).
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.252** — Auditoría integral pedida por el usuario
+  ("rendimiento, módulos, campos, que todo funcione, velocidad y muy
+  importante la estética"). Se corrieron 4 auditorías en paralelo (servidor,
+  front, UX con capturas, QA funcional de los 22 tipos de campo) y se
+  arreglaron: fecha y hora que NO se guardaba (bloqueante), rate limit en 500,
+  resize de columnas, archivos que no se abrían en ningún lado (ahora URL
+  firmada), selección sin valor interno, orden por lookup y orden de texto
+  (ICU), filtro por relación, nombres de personas en tableros y CSV legible
+  (con import de vuelta) + índices/consultas/virtualización + UI (formato
+  regional en toda la app, voseo, Inter, tarjetas, tablero, Plataforma,
+  celular). Detalle en `CLAUDE.md` §5; lo que quedó, en §10.
 - **2026-10-05 · (sin versión)** — Se creó este archivo y `scripts/dev/`
   (up/start/restart, usuario de pruebas, plantilla E2E, dobles de WooCommerce,
   Mercado Pago/Wompi y del build de producción). Pedido del usuario: tener un

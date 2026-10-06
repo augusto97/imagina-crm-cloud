@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, ilike, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
 import type { Db, Tx } from '../db/client';
 import { memberships, users } from '../db/schema';
 
@@ -52,6 +52,16 @@ export class MeRepository {
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
             .limit(1);
         return row ?? null;
+    }
+
+    /** v0.1.252 — varios miembros de una vez (etiquetas de los gráficos). */
+    async findMembers(tx: Tx, tenantId: number, userIds: number[]): Promise<MeUserRow[]> {
+        if (userIds.length === 0) return [];
+        return tx
+            .select({ id: users.id, name: users.name, email: users.email })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, userIds)));
     }
 
     /** Firma de email del usuario (users no tiene RLS; filtra por id de sesión). */

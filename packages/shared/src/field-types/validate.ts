@@ -118,12 +118,17 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
         }
         case 'url': {
             if (typeof raw !== 'string') return fail('Se esperaba una URL.');
+            // v0.1.252 — «acme.com» o «www.acme.com/precios» (como lo escribe
+            // cualquiera) se guarda con https:// adelante en vez de rechazarse.
+            const url = /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(:\d+)?([/?#][^\s]*)?$/i.test(raw.trim())
+                ? `https://${raw.trim()}`
+                : raw;
             // Requiere esquema http(s)/ftp/mailto + host. Sin depender del
             // global `URL` (shared es platform-agnóstico: front y back).
-            if (!/^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i.test(raw) && !/^mailto:[^\s@]+@[^\s@]+$/i.test(raw)) {
+            if (!/^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/i.test(url) && !/^mailto:[^\s@]+@[^\s@]+$/i.test(url)) {
                 return fail('URL inválida.');
             }
-            return ok(raw);
+            return ok(url);
         }
         case 'email': {
             if (typeof raw !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {

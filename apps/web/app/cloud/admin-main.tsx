@@ -12,6 +12,7 @@ import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
 import { initTheme } from '@/lib/theme';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
+import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
 // Tema claro/oscuro (v0.1.112): el script inline de index.html ya pintó el

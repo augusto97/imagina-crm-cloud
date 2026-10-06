@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { usePortalPreview } from '../PreviewContext';
 import { portalAccountHeaders } from '../portalAccount';
 import type { PortalBootData } from '../types';
@@ -111,13 +112,8 @@ function readableAction(action: string): string {
 }
 
 function formatDate(iso: string): string {
-    try {
-        // ISO con 'Z' (backend) o naive-UTC (mocks legacy) — nunca 'ZZ'.
-        const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z');
-        return d.toLocaleString();
-    } catch {
-        return iso;
-    }
+    // ISO con zona (backend) o naive-UTC (mocks legacy).
+    return formatDateTimeStr(iso);
 }
 
 const MOCK_ACTIVITY: ActivityItem[] = [

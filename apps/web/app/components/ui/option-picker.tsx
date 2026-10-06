@@ -167,8 +167,8 @@ export function OptionPicker({
         if (mode === 'single') {
             if (currentSingle === null || currentSingle === '') {
                 return (
-                    <span className="imcrm-text-muted-foreground">
-                        {isCell ? '—' : __('— Seleccionar —')}
+                    <span className="imcrm-truncate imcrm-text-muted-foreground">
+                        {isCell ? '—' : __('Elegir…')}
                     </span>
                 );
             }
@@ -188,8 +188,8 @@ export function OptionPicker({
         // multi: show chips de los seleccionados, o placeholder si vacío.
         if (currentSet.size === 0) {
             return (
-                <span className="imcrm-text-muted-foreground">
-                    {isCell ? '—' : __('— Seleccionar —')}
+                <span className="imcrm-truncate imcrm-text-muted-foreground">
+                    {isCell ? '—' : __('Elegir…')}
                 </span>
             );
         }

@@ -10,6 +10,7 @@ import {
 import { useImpersonations } from '@/hooks/usePlatform';
 import { __ } from '@/lib/i18n';
 
+import { formatDateTimeStr } from '@/lib/tenantFormat';
 /** Log de auditoría de impersonación (ADR-S15 F5): transparencia para el operador. */
 export function PlatformImpersonationsCard(): JSX.Element {
     const log = useImpersonations();
@@ -59,11 +60,11 @@ export function PlatformImpersonationsCard(): JSX.Element {
                                             <span className="imcrm-text-xs imcrm-text-muted-foreground">{e.target_email}</span>
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2 imcrm-text-muted-foreground imcrm-whitespace-nowrap">
-                                            {new Date(e.started_at).toLocaleString()}
+                                            {formatDateTimeStr(e.started_at)}
                                         </td>
                                         <td className="imcrm-px-2 imcrm-py-2 imcrm-whitespace-nowrap">
                                             {e.ended_at ? (
-                                                <span className="imcrm-text-muted-foreground">{new Date(e.ended_at).toLocaleString()}</span>
+                                                <span className="imcrm-text-muted-foreground">{formatDateTimeStr(e.ended_at)}</span>
                                             ) : (
                                                 <span className="imcrm-rounded-full imcrm-bg-amber-500/10 imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-text-amber-600 dark:imcrm-text-amber-400">
                                                     {__('activa')}

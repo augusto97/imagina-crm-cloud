@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
 import { Copy, Link2, Pencil, Pin, PinOff, Settings2, Trash2 } from 'lucide-react';
 
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -14,6 +13,7 @@ import type { DashboardEntity } from '@/types/dashboard';
 import { DashboardSettingsDialog } from '@/admin/dashboards/DashboardSettingsDialog';
 
 import { IconColorSubmenu } from './IconColorSubmenu';
+import { currentPathname, goTo } from './activePath';
 import { PanelListLink } from './PanelListLink';
 
 /** El icono guardado en `settings` (string o nada). */
@@ -40,8 +40,6 @@ export function DashboardPanelItem({
     starred: boolean;
     onToggleStar: () => void;
 }): JSX.Element {
-    const navigate = useNavigate();
-    const { pathname } = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
     const update = useUpdateDashboard(dashboard.id);
@@ -99,7 +97,8 @@ export function DashboardPanelItem({
         try {
             await remove.mutateAsync(dashboard.id);
             toast.success(__('Dashboard eliminado'));
-            if (pathname === base || pathname.startsWith(`${base}/`)) navigate('/dashboards');
+            const pathname = currentPathname();
+            if (pathname === base || pathname.startsWith(`${base}/`)) goTo('/dashboards');
         } catch (err) {
             if (err instanceof Error) toast.error(__('No se pudo eliminar el dashboard'), err.message);
         }

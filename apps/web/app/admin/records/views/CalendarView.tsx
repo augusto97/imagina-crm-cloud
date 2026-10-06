@@ -3,7 +3,7 @@ import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { colorVar, type OptionColor } from '@/components/ui/color-picker';
 import { Button } from '@/components/ui/button';
-import { __, sprintf } from '@/lib/i18n';
+import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
@@ -137,7 +137,7 @@ export function CalendarView({
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">
                         {sprintf(
                             /* translators: %d: records in the visible month */
-                            __('%d registros'),
+                            _n('%d registro', '%d registros', monthCount),
                             monthCount,
                         )}
                     </span>

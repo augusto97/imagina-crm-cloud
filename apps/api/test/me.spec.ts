@@ -129,6 +129,21 @@ describe('MeService (Postgres real, RLS)', () => {
         });
     });
 
+    describe('users?ids= (lote)', () => {
+        it('devuelve sólo los miembros del tenant, sin repetir, e ignora ids inválidos', async () => {
+            const ana = await makeUser('Ana');
+            const bob = await makeUser('Bob');
+            const alien = await makeUser('Zoe');
+            await addMember(ana.id, tenantId);
+            await addMember(bob.id, tenantId);
+            await addMember(alien.id, otherTenantId);
+
+            const res = await me.getUsers(tenantId, [ana.id, bob.id, ana.id, alien.id, 0, -3, Number.NaN]);
+            expect(res.map((u) => u.display_name).sort()).toEqual(['Ana', 'Bob']);
+            expect(await me.getUsers(tenantId, [])).toEqual([]);
+        });
+    });
+
     describe('users/:id', () => {
         it('devuelve el miembro del tenant activo', async () => {
             const bob = await makeUser('Bob');

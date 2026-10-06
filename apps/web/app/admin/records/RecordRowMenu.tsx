@@ -111,7 +111,7 @@ export function RecordRowMenu({
             title: __('¿Eliminar este registro?'),
             description: sprintf(
                 /* translators: %d: record id */
-                __('Se quita de la lista. Podés recuperarlo desde la papelera si hiciera falta. (#%d)'),
+                __('Se quita de la lista para todo el equipo, con sus subtareas. (#%d)'),
                 record.id,
             ),
             confirmLabel: __('Eliminar'),

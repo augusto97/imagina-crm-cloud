@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { ActivityEntity } from '@/types/activity';
 import { parseUtcDate } from '@/lib/utcDate';
 
+import { formatDateTime } from '@/lib/tenantFormat';
 const SEEN_AT_KEY = 'imcrm:mentions-seen-at';
 
 /**
@@ -120,7 +121,7 @@ export function NotificationBell(): JSX.Element {
                         </p>
                     ) : items.length === 0 ? (
                         <p className="imcrm-px-3 imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Aún no tienes menciones.')}
+                            {__('Todavía no tenés menciones.')}
                         </p>
                     ) : (
                         <ul className="imcrm-flex imcrm-max-h-80 imcrm-flex-col imcrm-overflow-y-auto">
@@ -134,7 +135,7 @@ export function NotificationBell(): JSX.Element {
                                     </p>
                                     <p className="imcrm-mt-1 imcrm-text-[10px] imcrm-text-muted-foreground">
                                         {m.created_at
-                                            ? parseUtcDate(m.created_at).toLocaleString()
+                                            ? formatDateTime(parseUtcDate(m.created_at))
                                             : ''}
                                     </p>
                                 </li>

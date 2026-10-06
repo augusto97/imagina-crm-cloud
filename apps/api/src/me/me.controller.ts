@@ -67,6 +67,17 @@ export class MeController {
         };
     }
 
+    /** v0.1.252 — `GET /me/users?ids=1,2,3`: varios miembros en una request. */
+    @Get('users')
+    @UseGuards(SessionGuard, TenantGuard)
+    async getUsers(
+        @Req() req: FastifyRequest,
+        @Query('ids') ids?: string,
+    ): Promise<{ data: MeUserSummary[] }> {
+        const parsed = (ids ?? '').split(',').map((s) => Number(s.trim()));
+        return { data: await this.me.getUsers(tenantId(req), parsed) };
+    }
+
     @Get('users/:id')
     @UseGuards(SessionGuard, TenantGuard)
     getUser(

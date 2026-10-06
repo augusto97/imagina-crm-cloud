@@ -442,6 +442,13 @@
       "when": 1784200000031,
       "tag": "0062_collections",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1784200000032,
+      "tag": "0063_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

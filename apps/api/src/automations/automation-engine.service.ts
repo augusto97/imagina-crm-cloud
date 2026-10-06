@@ -14,7 +14,7 @@ import {
     type FieldValueSpec,
     type StoreListMarker,
 } from '@imagina-base/shared';
-import { and, eq, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, lte, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
@@ -216,37 +216,51 @@ export class AutomationEngine {
                 where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
                   and ar.record_id = ${records.id} and ar.status <> 'failed')`;
 
-            const due = await tx
-                .select({ id: records.id, data: records.data })
-                .from(records)
-                .where(
-                    and(
-                        eq(records.tenantId, tenantId),
-                        eq(records.listId, auto.listId),
-                        isNull(records.deletedAt),
-                        lte(dueExpr, threshold),
-                        sql`not ${alreadyRan}`,
-                    ),
-                )
-                .limit(500);
+            // v0.1.252 — keyset por id en tandas de 500. Antes era UN `limit 500`
+            // sin orden: los vencidos que no pasan los field_filters no
+            // registran run (a propósito: si vuelven a cumplir, disparan), así
+            // que con más de 500 de esos la consulta devolvía SIEMPRE los
+            // mismos y el resto de los vencidos no se procesaba nunca.
+            const BATCH = 500;
+            const MAX_BATCHES = 50;
+            let afterId = 0;
+            for (let batch = 0; batch < MAX_BATCHES; batch++) {
+                const due = await tx
+                    .select({ id: records.id, data: records.data })
+                    .from(records)
+                    .where(
+                        and(
+                            eq(records.tenantId, tenantId),
+                            eq(records.listId, auto.listId),
+                            isNull(records.deletedAt),
+                            gt(records.id, afterId),
+                            lte(dueExpr, threshold),
+                            sql`not ${alreadyRan}`,
+                        ),
+                    )
+                    .orderBy(asc(records.id))
+                    .limit(BATCH);
 
-            for (const rec of due) {
-                const ctx: RunContext = {
-                    tenantId,
-                    listId: auto.listId,
-                    recordId: rec.id,
-                    data: rec.data,
-                    slugToKey,
-                    fieldsBySlug,
-                };
-                // Los field_filters del trigger se evalúan AL DISPARAR (no
-                // solo en process()): "recordar a los 20 días SI la factura
-                // sigue pendiente" depende de esto. Un record filtrado no
-                // registra run → si más adelante vuelve a cumplir, dispara.
-                if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
-                    continue;
+                for (const rec of due) {
+                    const ctx: RunContext = {
+                        tenantId,
+                        listId: auto.listId,
+                        recordId: rec.id,
+                        data: rec.data,
+                        slugToKey,
+                        fieldsBySlug,
+                    };
+                    // Los field_filters del trigger se evalúan AL DISPARAR (no
+                    // solo en process()): "recordar a los 20 días SI la factura
+                    // sigue pendiente" depende de esto. Un record filtrado no
+                    // registra run → si más adelante vuelve a cumplir, dispara.
+                    if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx))) {
+                        continue;
+                    }
+                    await this.runOne(tx, ctx, auto);
                 }
-                await this.runOne(tx, ctx, auto);
+                if (due.length < BATCH) break;
+                afterId = due[due.length - 1]!.id;
             }
         });
     }

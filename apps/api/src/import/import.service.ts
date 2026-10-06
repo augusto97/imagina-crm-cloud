@@ -30,6 +30,8 @@ import { ListsService } from '../lists/lists.service';
 import { RecordsRepository } from '../records/records.repository';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { eq } from 'drizzle-orm';
+import { memberships, users } from '../db/schema';
 
 /**
  * Import de filas a una lista (CONTRACT §11). Valida cada valor con el
@@ -310,6 +312,9 @@ export class ImportService {
         const staged: Array<StagedRow> = [];
         let skipped = 0;
 
+        const members = [...mapping.values()].some((slug) => bySlug.get(slug)?.type === 'user')
+            ? await this.memberLookup(tenantId)
+            : undefined;
         rows.forEach((row, idx) => {
             const rowNumber = idx + 2; // +1 header, +1 human-friendly.
             const data: Record<string, unknown> = {};
@@ -319,7 +324,7 @@ export class ImportService {
                 if (!field) continue;
                 const rawCell = row[colIdx] ?? '';
                 const rawTrimmed = rawCell.trim();
-                const coerced = coerceCellValue(rawCell, field);
+                const coerced = coerceCellValue(rawCell, field, members);
                 if (coerced === null || coerced === '' || (Array.isArray(coerced) && coerced.length === 0)) {
                     if (rawTrimmed !== '') {
                         cellWarnings.push({
@@ -482,6 +487,32 @@ export class ImportService {
     }
 
     /** Campos importables: los que viven en `records.data` (sin relation/computed). */
+    /**
+     * v0.1.252 — Miembros del workspace por email y por nombre (minúsculas)
+     * → id, para leer una columna de persona escrita como la exporta el CSV.
+     * Un nombre repetido no resuelve (sería adivinar a quién).
+     */
+    async memberLookup(tenantId: number): Promise<Map<string, number>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: users.id, name: users.name, email: users.email })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .where(eq(memberships.tenantId, tenantId)),
+        );
+        const out = new Map<string, number>();
+        const dupNames = new Set<string>();
+        for (const u of rows) {
+            out.set(u.email.toLowerCase(), u.id);
+            const n = (u.name ?? '').trim().toLowerCase();
+            if (n === '') continue;
+            if (out.has(n) && out.get(n) !== u.id) dupNames.add(n);
+            else out.set(n, u.id);
+        }
+        for (const n of dupNames) out.delete(n);
+        return out;
+    }
+
     async importableFields(tenantId: number, listId: number): Promise<Field[]> {
         const all = await this.fields.listByListId(tenantId, listId);
         return all.filter((f) => isDataField(f.type));
@@ -607,7 +638,7 @@ function readOptions(field: Field): SelectOption[] {
  * cada tipo. Best-effort: si no parsea, se devuelve el crudo y el validador
  * reporta el error con mensaje por campo.
  */
-export function coerceCellValue(raw: string, field: Field): unknown {
+export function coerceCellValue(raw: string, field: Field, members?: Map<string, number>): unknown {
     const trimmed = raw.trim();
     if (trimmed === '') return field.type === 'multi_select' ? [] : null;
 
@@ -627,6 +658,10 @@ export function coerceCellValue(raw: string, field: Field): unknown {
             return clean !== '' && !Number.isNaN(Number(clean)) ? Number(clean) : trimmed;
         }
         case 'user':
+            // v0.1.252 — el CSV exporta el NOMBRE de la persona: se acepta el
+            // nombre o el email de un miembro (además del id).
+            if (/^\d+$/.test(trimmed)) return Number(trimmed);
+            return members?.get(trimmed.toLowerCase()) ?? trimmed;
         case 'file':
             return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
         case 'date':

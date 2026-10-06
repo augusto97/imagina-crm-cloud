@@ -53,7 +53,7 @@ export function validateSlugFormat(slug: string): SlugValidationResult {
     if (!SLUG_REGEX.test(slug)) {
         return {
             ok: false,
-            message: 'Usa snake_case: minúsculas, números y guiones bajos. Debe empezar por letra.',
+            message: 'Sólo minúsculas, números y guiones bajos, empezando por una letra.',
         };
     }
     return { ok: true };

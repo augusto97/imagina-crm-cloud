@@ -44,7 +44,11 @@ export function LineChartWidget({ dashboardId, widget, area }: LineChartWidgetPr
 
     const rows =
         data.data && 'data' in data.data
-            ? data.data.data.map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
+            ? data.data.data
+                  // v0.1.252 — los registros SIN fecha no son un punto del
+                  // tiempo: dibujarlos al final deformaba la tendencia.
+                  .filter((r) => r.label !== '(sin valor)')
+                  .map((r) => ({ label: r.label, value: typeof r.value === 'number' ? r.value : Date.parse(r.value) || 0 }))
             : [];
     const avg = rows.length > 0 ? rows.reduce((s, r) => s + r.value, 0) / rows.length : null;
 

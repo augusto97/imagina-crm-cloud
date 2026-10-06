@@ -72,6 +72,10 @@ describe('validateFieldValue — date/datetime/url/email/user', () => {
     it('url y email validan formato; email se normaliza a minúsculas', () => {
         expect(validateFieldValue(field('url'), 'https://x.com/y').ok).toBe(true);
         expect(validateFieldValue(field('url'), 'no-url').ok).toBe(false);
+        // v0.1.252 — un dominio sin esquema se guarda con https://.
+        const bare = validateFieldValue(field('url'), 'www.acme.com/precios');
+        expect(bare.ok && bare.value).toBe('https://www.acme.com/precios');
+        expect(validateFieldValue(field('url'), 'a@b.com').ok).toBe(false);
         expect(validateFieldValue(field('email'), 'A@B.COM')).toEqual({ ok: true, value: 'a@b.com' });
         expect(validateFieldValue(field('email'), 'bad@').ok).toBe(false);
     });

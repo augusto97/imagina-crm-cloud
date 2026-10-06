@@ -164,6 +164,8 @@ export interface RecordGroupsResponse {
         group_by_type: string;
         total_groups: number;
         total_records: number;
+        /** v0.1.252 — grupos que existen pero no se mandan (tope del servidor). */
+        hidden_groups?: number;
     };
 }
 

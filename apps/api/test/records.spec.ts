@@ -184,6 +184,18 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         expect(page.data.map((r) => r.data[key('nombre')])).toEqual(['Alpha', 'Beta', 'Gamma']);
     });
 
+    it('sort de texto como lo lee una persona: sin distinguir mayúsculas ni acentos al final (v0.1.252)', async () => {
+        for (const n of ['beta', 'Épsilon', 'alfa', 'Gamma', 'Una', 'epsilon']) {
+            await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: n } });
+        }
+        const page = await service.list(tenantA, admin, 'clientes', {
+            limit: 50,
+            sort_dir: 'asc',
+            sort: `field_${fieldByType['nombre']!.id}:asc`,
+        });
+        expect(page.data.map((r) => r.data[key('nombre')])).toEqual(['alfa', 'beta', 'epsilon', 'Épsilon', 'Gamma', 'Una']);
+    });
+
     it('filtro: comparación numérica tipada (gte)', async () => {
         await seed();
         const page = await service.list(tenantA, admin, 'clientes', {
@@ -469,6 +481,29 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
         await service.remove(tenantA, admin, 'proyectos', p1.id);
         const fetched = await service.get(tenantA, admin, 'clientes', rec.id);
         expect(fetched.relations?.[rk]).toEqual([p2.id]);
+    });
+
+    it('relation: se FILTRA por vínculos (tiene / no tiene / vinculado a) — v0.1.252', async () => {
+        const { relField, p1, p2 } = await setupRelationField();
+        const rk = `f${relField.id}`;
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Con Web', [rk]: [p1.id] } });
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Con App', [rk]: [p2.id] } });
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Sin nada' } });
+        const names = async (op: string, value?: unknown) => {
+            const page = await service.list(tenantA, admin, 'clientes', {
+                limit: 50,
+                sort_dir: 'asc',
+                filter_tree: filter([{ type: 'condition', field_id: relField.id, op, value }]),
+            });
+            return page.data.map((r) => r.data[key('nombre')]);
+        };
+        expect(await names('is_not_null')).toEqual(['Con Web', 'Con App']);
+        expect(await names('is_null')).toEqual(['Sin nada']);
+        expect(await names('eq', p2.id)).toEqual(['Con App']);
+        expect(await names('neq', p2.id)).toEqual(['Con Web', 'Sin nada']);
+        // Un vínculo a un registro borrado ya no cuenta.
+        await service.remove(tenantA, admin, 'proyectos', p1.id);
+        expect(await names('is_null')).toEqual(['Con Web', 'Sin nada']);
     });
 
     it('computed: se evalúa lazy en cada lectura (sum + concat encadenado) y no acepta escritura', async () => {

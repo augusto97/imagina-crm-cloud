@@ -191,7 +191,9 @@ export function CompactFieldRow({
                     'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
                     // Con icono de tipo (drawer/página, estilo ClickUp) el
                     // label ocupa ~200px; sin icono (layout CRM) queda 120px.
-                    showTypeIcon ? 'imcrm-w-[200px]' : 'imcrm-w-[120px]',
+                    // v0.1.252 — en el celular el label se achica para que el
+                    // control tenga lugar (antes los selects se aplastaban).
+                    showTypeIcon ? 'imcrm-w-[112px] sm:imcrm-w-[200px]' : 'imcrm-w-[104px] sm:imcrm-w-[120px]',
                 )}
             >
                 {showTypeIcon && (

@@ -68,7 +68,12 @@ export class FilesService {
 
     /** URL relativa firmada, válida por `ttlSeconds`. */
     signedUrl(tenantId: number, id: number, ttlSeconds = 3600): string {
-        const exp = Math.floor(Date.now() / 1000) + Math.max(60, ttlSeconds);
+        // v0.1.252 — el vencimiento se redondea a la HORA siguiente: así la
+        // misma URL sirve durante esa hora y el navegador la cachea (antes
+        // cada consulta daba otra URL y las imágenes se bajaban de nuevo).
+        // Nunca vence ANTES de lo pedido.
+        const now = Math.floor(Date.now() / 1000);
+        const exp = Math.ceil((now + Math.max(60, ttlSeconds)) / 3600) * 3600;
         const sig = this.sign(tenantId, id, exp);
         return `/api/v1/files/${id}/signed?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
     }
@@ -131,7 +136,7 @@ export class FilesService {
                 .returning();
             return inserted!;
         });
-        return toDto(row);
+        return toDto(row, this.signedUrl(tenantId, row.id, 4 * 3600));
     }
 
     /** Resuelve un batch de IDs (para tarjetas/galerías — 1 request). */
@@ -148,7 +153,10 @@ export class FilesService {
                 .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique), readableBy(tenantId, actor)))
                 .orderBy(desc(attachments.id)),
         );
-        return rows.map(toDto);
+        // v0.1.252 — URL FIRMADA: la descarga con sesión exige el header
+        // X-Tenant-Id, que un <a href> o un <img> nunca mandan (el enlace de
+        // un archivo en la tabla/ficha daba 400). La lectura ya pasó el ACL.
+        return rows.map((r) => toDto(r, this.signedUrl(tenantId, r.id, 4 * 3600)));
     }
 
     /** Stream de descarga. 404 si no existe EN ESTE tenant (RLS + explícito). */
@@ -208,10 +216,10 @@ export class FilesService {
     }
 }
 
-function toDto(row: typeof attachments.$inferSelect): AttachmentDto {
+function toDto(row: typeof attachments.$inferSelect, url: string): AttachmentDto {
     return {
         id: row.id,
-        url: `/api/v1/files/${row.id}/download`,
+        url,
         title: row.filename,
         mime_type: row.mime,
         size_bytes: row.sizeBytes,

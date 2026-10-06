@@ -56,7 +56,7 @@ export class ExportController {
                         'content-type': 'text/csv; charset=utf-8',
                         'content-disposition': `attachment; filename="${filename}"`,
                     }),
-                (chunk) => reply.raw.write(chunk),
+                (chunk) => writeWithBackpressure(reply.raw, chunk),
             );
             reply.raw.end();
             return;
@@ -83,10 +83,29 @@ export class ExportController {
             req.tenant!.tenantId,
             list,
             new Date().toISOString(),
-            (chunk) => reply.raw.write(chunk),
+            (chunk) => writeWithBackpressure(reply.raw, chunk),
         );
         reply.raw.end();
     }
+}
+
+/**
+ * v0.1.252 — respeta la contrapresión del socket: si `write` devuelve false
+ * (el buffer del cliente está lleno) se espera a `drain`. Sin esto, con un
+ * cliente lento el archivo ENTERO quedaba acumulado en la memoria del proceso.
+ */
+function writeWithBackpressure(raw: NodeJS.WritableStream & { destroyed?: boolean }, chunk: string): Promise<void> | void {
+    if (raw.write(chunk)) return;
+    if (raw.destroyed) return;
+    return new Promise<void>((resolve) => {
+        const done = (): void => {
+            raw.off('drain', done);
+            raw.off('close', done);
+            resolve();
+        };
+        raw.once('drain', done);
+        raw.once('close', done);
+    });
 }
 
 /** Parsea y valida el `filter_tree` JSON del query param (whitelist Zod). */

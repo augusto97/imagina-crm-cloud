@@ -17,6 +17,7 @@ import { useDashboards, useDuplicateDashboard } from '@/hooks/useDashboards';
 import { __, sprintf } from '@/lib/i18n';
 
 import { DashboardCreateDialog } from './DashboardCreateDialog';
+import { formatDate } from '@/lib/tenantFormat';
 import { parseUtcDate } from '@/lib/utcDate';
 
 export function DashboardsIndexPage(): JSX.Element {
@@ -117,7 +118,7 @@ export function DashboardsIndexPage(): JSX.Element {
                                         {sprintf(
                                             /* translators: %s: date */
                                             __('Editado %s'),
-                                            parseUtcDate(d.updated_at).toLocaleDateString(),
+                                            formatDate(parseUtcDate(d.updated_at)),
                                         )}
                                     </span>
                                 </CardContent>
@@ -152,7 +153,7 @@ function DashboardsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
         <EmptyState
             icon={BarChart3}
             title={__('Aún no hay dashboards')}
-            description={__('Crea un dashboard con KPIs y gráficos sobre cualquiera de tus listas.')}
+            description={__('Creá un tablero con indicadores y gráficos sobre cualquiera de tus listas.')}
             action={
                 <Button onClick={onCreate} className="imcrm-gap-2">
                     <Plus className="imcrm-h-4 imcrm-w-4" />

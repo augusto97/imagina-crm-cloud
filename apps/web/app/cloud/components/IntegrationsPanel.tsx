@@ -346,7 +346,9 @@ function ConnectedRow({
             data-integration={c.integration_key ?? ''}
         >
             <IntegrationLogo integrationKey={c.integration_key} size={32} />
-            <div className="imcrm-min-w-0 imcrm-flex-1">
+            {/* v0.1.252 — base de 12rem: en el celular los botones bajan a su
+                propia línea en vez de aplastar el texto hasta 4 renglones. */}
+            <div className="imcrm-min-w-0 imcrm-flex-1 imcrm-basis-48">
                 <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
                     {def?.name ?? c.name}
                     {c.account_label && (
@@ -409,7 +411,7 @@ function ConnectedRow({
                 </Button>
             )}
             {c.can_edit && (
-                <div className="imcrm-flex imcrm-gap-1">
+                <div className="imcrm-flex imcrm-gap-1 max-sm:imcrm-ml-auto">
                     <Button size="sm" variant="ghost" disabled={busy} onClick={onReconnect} data-testid="imcrm-integration-reconnect">
                         {isOAuth ? __('Reconectar') : __('Actualizar clave')}
                     </Button>

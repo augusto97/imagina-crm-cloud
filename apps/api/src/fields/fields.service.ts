@@ -183,10 +183,15 @@ export class FieldsService {
      * ejecuta en la conexión base fuera del scope de tenant. Best-effort: un
      * fallo del DDL se loguea pero no rompe la request (el flag ya se guardó).
      */
-    private async syncFieldIndexes(fieldId: number, type: FieldType, enable: boolean): Promise<void> {
+    private async syncFieldIndexes(
+        fieldId: number,
+        type: FieldType,
+        enable: boolean,
+        listId = 0,
+    ): Promise<void> {
         if (!this.db) return;
         const statements = enable
-            ? createIndexStatements(fieldId, type)
+            ? createIndexStatements(fieldId, type, listId)
             : dropIndexStatements(fieldId);
         for (const stmt of statements) {
             try {
@@ -372,6 +377,9 @@ export class FieldsService {
                 position,
             });
         });
+        // v0.1.252 — un campo creado YA indexado no creaba su índice (sólo
+        // el toggle posterior lo hacía): el flag quedaba prendido sin efecto.
+        if (row.isIndexed) await this.syncFieldIndexes(row.id, row.type as FieldType, true, listId);
         this.realtime.fields(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
         // cómo se leen los records: sin esto la tabla mostraba "—" en la
@@ -458,10 +466,10 @@ export class FieldsService {
             // suelta siempre y se recrea con la del nuevo si estaba activo.
             await this.syncFieldIndexes(row.id, row.type as FieldType, false);
             if (row.isIndexed) {
-                await this.syncFieldIndexes(row.id, row.type as FieldType, true);
+                await this.syncFieldIndexes(row.id, row.type as FieldType, true, listId);
             }
         } else if (patch.is_indexed !== undefined) {
-            await this.syncFieldIndexes(row.id, row.type as FieldType, patch.is_indexed);
+            await this.syncFieldIndexes(row.id, row.type as FieldType, patch.is_indexed, listId);
         }
         // Un cambio de schema (config/slug/required) afecta cómo se leen los
         // records → invalidamos fields Y records de la lista.

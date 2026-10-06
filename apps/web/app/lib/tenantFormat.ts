@@ -1,3 +1,4 @@
+import { parseUtcDate } from './utcDate';
 /**
  * Formato regional por workspace (v0.1.104): separadores de número, orden
  * de fecha y reloj 12/24 h. La config vive en `tenants.settings.format`,
@@ -35,6 +36,25 @@ export function getTenantFormat(): TenantFormat {
 }
 
 /**
+ * v0.1.253 — `toLocaleString` crea un `Intl.NumberFormat` NUEVO en cada
+ * llamada; con 200 filas × varias columnas numéricas eran 30-120 ms por
+ * render. Los formateadores se cachean por precisión (son pocas).
+ */
+const formatters = new Map<string, Intl.NumberFormat>();
+function numberFormatter(minFrac: number, maxFrac: number): Intl.NumberFormat {
+    const key = `${minFrac}:${maxFrac}`;
+    let f = formatters.get(key);
+    if (!f) {
+        f = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: minFrac,
+            maximumFractionDigits: Math.max(minFrac, maxFrac),
+        });
+        formatters.set(key, f);
+    }
+    return f;
+}
+
+/**
  * Número con los separadores del workspace. Se formatea SIEMPRE en base
  * en-US (miles «,» decimal «.») y se mapean los separadores — así el
  * resultado no depende del locale del navegador de cada miembro.
@@ -44,10 +64,7 @@ export function formatNumber(
     opts: { minFrac?: number; maxFrac?: number } = {},
     format: TenantFormat = current,
 ): string {
-    const base = num.toLocaleString('en-US', {
-        minimumFractionDigits: opts.minFrac ?? 0,
-        maximumFractionDigits: opts.maxFrac ?? Math.max(opts.minFrac ?? 0, 3),
-    });
+    const base = numberFormatter(opts.minFrac ?? 0, opts.maxFrac ?? Math.max(opts.minFrac ?? 0, 3)).format(num);
     if (format.number_format === 'dot_comma') {
         return base.replace(/[.,]/g, (ch) => (ch === ',' ? '.' : ','));
     }
@@ -106,17 +123,40 @@ export function formatTimeOfDay(date: Date, format: TenantFormat = current): str
  * devuelve tal cual.
  */
 export function formatDateTimeStr(value: string, format: TenantFormat = current): string {
-    const raw = value.trim().replace(' ', 'T');
-    const date = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : `${raw}Z`);
+    const date = parseUtcDate(value);
     if (Number.isNaN(date.getTime())) return value;
+    return formatDateTime(date, format);
+}
+
+/** Un `Date` (instante) en la fecha LOCAL con el formato de la empresa. */
+export function formatDate(date: Date, format: TenantFormat = current): string {
+    if (Number.isNaN(date.getTime())) return '—';
     const y = date.getFullYear();
     const mo = pad2(date.getMonth() + 1);
     const d = pad2(date.getDate());
-    const datePart =
-        format.date_format === 'dmy'
-            ? `${d}/${mo}/${y}`
-            : format.date_format === 'mdy'
-              ? `${mo}/${d}/${y}`
-              : `${y}-${mo}-${d}`;
-    return `${datePart} ${formatTimeOfDay(date, format)}`;
+    return format.date_format === 'dmy'
+        ? `${d}/${mo}/${y}`
+        : format.date_format === 'mdy'
+          ? `${mo}/${d}/${y}`
+          : `${y}-${mo}-${d}`;
+}
+
+/** Un `Date` (instante) en la fecha y hora LOCALES con el formato de la empresa. */
+export function formatDateTime(date: Date, format: TenantFormat = current): string {
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDate(date, format)} ${formatTimeOfDay(date, format)}`;
+}
+
+const MONTHS_ES = [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/**
+ * v0.1.252 — Fecha larga en español ("6 de octubre de 2026"), sin depender
+ * del idioma del navegador (antes salía "October 6, 2026" en uno en inglés).
+ */
+export function formatLongDate(date: Date): string {
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${date.getDate()} de ${MONTHS_ES[date.getMonth()]} de ${date.getFullYear()}`;
 }

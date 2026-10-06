@@ -112,7 +112,7 @@ export function MentionAutocomplete({
                     {search.isLoading
                         ? __('Buscando…')
                         : debounced.length === 0
-                          ? __('Escribe para buscar usuarios.')
+                          ? __('Escribí para buscar personas.')
                           : __('Sin resultados.')}
                 </p>
             ) : (
