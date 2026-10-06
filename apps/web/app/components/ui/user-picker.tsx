@@ -93,14 +93,20 @@ export function UserPicker({
     // ID del usuario logueado (boot data). Si no hay (sesión expirada
     // o boot fallback), el botón "Asignar a mí" no se muestra.
     const meId = showAssignMe ? getBootData().user.id || null : null;
+    const canClear = !disabled && currentUser.data !== undefined && currentUser.data !== null;
 
     return (
         <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
+            {/* v0.1.255 — la × de quitar va AL LADO del disparador, no adentro:
+                un <button> dentro de otro es HTML inválido (el navegador lo
+                re-anida y el click podía abrir el popover en vez de quitar). */}
+            <div className="imcrm-relative imcrm-w-full">
             <PopoverTrigger asChild>
                 <button
                     type="button"
                     disabled={disabled}
                     className={cn(
+                        canClear && (flat ? 'imcrm-pr-6' : 'imcrm-pr-12'),
                         flat
                             ? 'imcrm--mx-1 imcrm-inline-flex imcrm-min-h-[1.5rem] imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent/40'
                             : cn(
@@ -112,11 +118,7 @@ export function UserPicker({
                     )}
                 >
                     {currentUser.data ? (
-                        <UserChip
-                            user={currentUser.data}
-                            compact={compact}
-                            onClear={!disabled ? clear : undefined}
-                        />
+                        <UserChip user={currentUser.data} compact={compact} />
                     ) : value && currentUser.isLoading ? (
                         <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-muted-foreground">
                             <Loader2 className="imcrm-h-3 imcrm-w-3 imcrm-animate-spin" />
@@ -137,6 +139,21 @@ export function UserPicker({
                     {!flat && <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />}
                 </button>
             </PopoverTrigger>
+            {canClear && (
+                <button
+                    type="button"
+                    onClick={clear}
+                    title={__('Quitar')}
+                    aria-label={__('Quitar')}
+                    className={cn(
+                        'imcrm-absolute imcrm-top-1/2 imcrm--translate-y-1/2 imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive',
+                        flat ? 'imcrm-right-0' : 'imcrm-right-7',
+                    )}
+                >
+                    <X className="imcrm-h-3 imcrm-w-3" />
+                </button>
+            )}
+            </div>
 
             <PopoverContent align="start" sideOffset={4} className="imcrm-w-72 imcrm-p-0">
                 <div className="imcrm-border-b imcrm-border-border imcrm-p-2">
@@ -246,15 +263,7 @@ export function UserPicker({
 
 // ─── Sub-components ──────────────────────────────────────────────────
 
-function UserChip({
-    user,
-    compact,
-    onClear,
-}: {
-    user: WpUserSummary;
-    compact?: boolean;
-    onClear?: (e: React.MouseEvent) => void;
-}): JSX.Element {
+function UserChip({ user, compact }: { user: WpUserSummary; compact?: boolean }): JSX.Element {
     return (
         <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2">
             <Avatar user={user} />
@@ -268,16 +277,6 @@ function UserChip({
                     </span>
                 )}
             </span>
-            {onClear && (
-                <button
-                    type="button"
-                    onClick={onClear}
-                    title={__('Quitar')}
-                    className="imcrm-ml-auto imcrm-shrink-0 imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive"
-                >
-                    <X className="imcrm-h-3 imcrm-w-3" />
-                </button>
-            )}
         </span>
     );
 }

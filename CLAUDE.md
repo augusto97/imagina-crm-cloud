@@ -6897,6 +6897,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la URL `/login` que conserva el path de la recarga, la app está
         adentro).
 
+  - [x] **Fallas chicas de la auditoría v0.1.252 (v0.1.255)**: cuatro
+        pendientes funcionales. (a) **El import creaba opciones de select de
+        filas que después se rechazaban**: `expandSelectOptions` agregaba al
+        campo toda etiqueta nueva del ARCHIVO entero (incluidas las filas
+        inválidas por otro campo y las que pasaban el tope de 5.000) antes de
+        validar nada, así que un CSV con errores dejaba opciones colgadas para
+        siempre. Ahora se PLANIFICAN en memoria (`planOptionExpansions`, puro),
+        las filas se validan contra el campo ya ampliado y recién después del
+        chequeo del plan se guardan SÓLO las opciones que usa alguna fila que
+        entra (`persistUsedOptions`); si no entra ninguna, el campo no se toca.
+        «Actualizar desde un archivo» además agregaba opciones sin
+        `manage_fields`: ahora exige el permiso, igual que el import. (b)
+        **Actividad legible**: porcentaje, duración, calificación y teléfono
+        salían crudos («Avance en 100») — ahora «100 %», «1h 30m», «4 de 5» y
+        el teléfono formateado; un campo persona muestra el NOMBRE (antes
+        «Usuario #3»). (c) **Conversión de tipo a texto**: escribía el valor
+        guardado en vez de lo que la persona leía — persona → texto daba el
+        id, casilla → texto «true/false» y select → texto el value interno
+        (`pendiente_pago`). Ahora escribe nombre, «Sí/No» y la etiqueta; a
+        select/multi_select las opciones nacen de ese mismo texto, y entre
+        selects se conservan las opciones (con etiquetas y colores) en vez de
+        regenerarlas de los valores. (d) **HTML inválido**: dos `<main>`
+        anidados en la página del registro (el del shell y otro de la página)
+        y la × de quitar del selector de usuario era un `<button>` dentro del
+        disparador `<button>` (el navegador lo re-anida y el click podía abrir
+        el popover en vez de quitar): la × pasa al lado del disparador. Tests:
+        1 de integración del import (fila rechazada sin opción colgada, campo
+        intacto si no entra ninguna), 1 de conversiones (nombre, Sí/No,
+        etiqueta, opciones de select desde Sí/No) y 1 unitario de Actividad —
+        y E2E navegador 17/17 (import, Actividad con los cuatro tipos y el
+        nombre, un solo `<main>`, cero botones anidados, la × quita sin abrir
+        el popover, conversiones por API, cero avisos de anidamiento).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -262,7 +262,7 @@ export function RecordPage(): JSX.Element {
             </header>
 
             <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-6 lg:imcrm-grid-cols-3">
-                <main className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
                     {/* Grilla de metadatos estilo ClickUp: icono+label → valor. */}
                     <RecordMetaGrid record={record.data} fields={fields.data} values={values} />
 
@@ -327,7 +327,7 @@ export function RecordPage(): JSX.Element {
                             </div>
                         )}
                     </section>
-                </main>
+                </div>
 
                 {/* Panel derecho "Actividad" estilo ClickUp: en lg+ pierde el
                  * chrome de card y queda como columna con hairline izquierda;

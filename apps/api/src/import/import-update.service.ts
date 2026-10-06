@@ -6,6 +6,7 @@ import {
     IMPORT_UPDATE_MAX_ROWS,
     readStoreListMarker,
     resolveTitleFieldId,
+    roleHasCapability,
     sameBulkValue,
     validateFieldValue,
     type Field,
@@ -115,8 +116,11 @@ export class ImportUpdateService {
         const to = Math.min(ctx.rows.length, from + (input.row_limit ?? IMPORT_UPDATE_CHUNK));
         // Opciones de select que el archivo trae y la lista no tiene: se agregan
         // (igual que el import); en una lista de la tienda no — las opciones son
-        // de WooCommerce y un valor desconocido se informa por fila.
-        if (!ctx.store && from === 0) {
+        // de WooCommerce y un valor desconocido se informa por fila. Agregar
+        // opciones es cambiar el esquema: sólo con `manage_fields` (igual que el
+        // import y el «Crear» del selector); sin ese permiso el valor
+        // desconocido queda como error de la fila.
+        if (!ctx.store && from === 0 && roleHasCapability(actor.role, 'manage_fields')) {
             const expanded = await this.importer.expandSelectOptions(tenantId, ctx.list.id, ctx.rows, ctx.mapping, ctx.fields);
             if (Object.keys(expanded).length > 0) ctx.fields = await this.importer.importableFields(tenantId, ctx.list.id);
         }

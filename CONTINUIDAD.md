@@ -349,21 +349,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
-`main`.
+versión publicada: **v0.1.255** (fallas chicas de la auditoría), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- **PSE propio (contratado con ACH Colombia, NO el que traen Wompi/MP)** —
-  2026-10-03. El usuario aclaró que se refería a PSE como integración aparte.
-  Se le explicaron dos modalidades: (1) **PSE sin integración / "PSE Pagos"**
-  (página alojada en `psepagos.co`, el cliente escribe referencia y monto;
-  integrable con un botón + conciliación subiendo el reporte de PSE por
-  referencia, reutilizando "actualizar desde archivo" de v0.1.219) y (2) **PSE
-  por web service** (SOAP + WS-Security + certificado Certicámara + VPN;
-  contrato por empresa y certificación de ACH — trámite comercial). **Pendiente:
-  que el usuario diga qué modalidad tiene la empresa** y, si puede, pase el
-  enlace de su página PSE o el instructivo de ACH. No confirmado: si PSE Pagos
-  acepta referencia/monto precargados por URL ni si avisa pagos automáticamente.
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
@@ -377,11 +365,6 @@ versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
   transacciones), `search_text` indexado para la búsqueda, `next_fire_at` en
   recurrencias, `findById` que no traiga la descripción si no hace falta.
-- Import que crea opciones de select de filas que después se rechazan.
-- Actividad: porcentaje y duración salen crudos («Avance en 100»).
-- Conversión de tipo usuario→texto escribe el id; casilla→texto «true/false».
-- Dos `<main>` anidados en la página del registro; `<button>` dentro de
-  `<button>` en el selector de usuario.
 
 **Pendientes técnicos conocidos (no urgentes)**
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
@@ -399,6 +382,18 @@ versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.255** — El usuario pidió seguir con los pendientes de la
+  auditoría. Plan en cuatro entregas: (1) fallas chicas, (2) rendimiento del
+  front (bundle inicial + virtualizar la agrupada), (3) rendimiento del
+  servidor, (4) modal del registro en celular. Esta es la (1): el import ya no
+  deja opciones colgadas de filas rechazadas (y «actualizar desde archivo» exige
+  `manage_fields` para crear opciones), Actividad legible (%, duración,
+  calificación, teléfono y nombre de la persona), conversiones de tipo a texto
+  con lo que la persona leía, y HTML sin `<main>` ni `<button>` anidados.
+- **2026-10-06 · conversación** — El usuario confirmó que la impersonación ya
+  funciona (v0.1.254) y **descartó el PSE propio** (ACH Colombia): "ya no lo
+  planeo implementar". Se quitó de los hilos abiertos; los pagos por PSE siguen
+  disponibles a través de Mercado Pago y Wompi (v0.1.250 / v0.1.251).
 - **2026-10-06 · v0.1.254** — Reporte del usuario: "impersonar me cierra la
   sesión y al volver a entrar dice demasiados intentos". Causa (regresión de
   SEC-24, v0.1.225): el guard de la consola chequeaba "¿sesión abierta con
@@ -446,7 +441,7 @@ versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
   Mercado Pago/Wompi y del build de producción). Pedido del usuario: tener un
   salvavidas por si se pierde la conversación y **mantenerlo actualizado
   siempre** (regla agregada en `CLAUDE.md`).
-- **2026-10-03 · conversación** — Pregunta sobre PSE: ver §10 «Hilos abiertos».
+- **2026-10-03 · conversación** — Pregunta sobre PSE propio (ACH Colombia); descartado el 2026-10-06.
 - **2026-10-03 · v0.1.251** — Cobros de las empresas con Mercado Pago y Wompi
   (ADR-S31): links de pago desde la ficha y desde automatizaciones, avisos
   verificados releyendo el pago, estado en columnas de la lista, disparador

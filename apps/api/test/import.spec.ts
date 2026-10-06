@@ -166,6 +166,34 @@ describe('ImportService (Postgres real)', () => {
         expect(globex.data[`f${f.estado!.id}`]).toBe('vencido'); // etiqueta → value
     });
 
+    it('run: una fila rechazada no deja su opción nueva colgada en el campo', async () => {
+        // "Pausado" sólo aparece en una fila que falla por el monto: no se
+        // agrega. "Vencido" aparece en una fila que entra: sí.
+        const csv = 'Nombre;Importe;Estado\nBien;10;Vencido\nMal;no-numero;Pausado\n';
+        const res = await importService.runCsv(tenantId, admin, 'clientes', {
+            csv,
+            mapping: { '0': 'nombre', '1': 'monto', '2': 'estado' },
+            new_fields: [],
+        });
+        expect(res.imported).toBe(1);
+        expect(res.skipped).toBe(1);
+        expect(res.expanded_options.estado).toEqual([{ value: 'vencido', label: 'Vencido' }]);
+        const estado = await fieldsService.get(tenantId, 'clientes', 'estado');
+        const values = ((estado.config as { options: Array<{ value: string }> }).options).map((o) => o.value);
+        expect(values).toEqual(['activo', 'vencido']);
+
+        // Si ninguna fila entra, el campo no se toca.
+        const none = await importService.runCsv(tenantId, admin, 'clientes', {
+            csv: 'Nombre;Importe;Estado\nMal;no-numero;Suspendido\n',
+            mapping: { '0': 'nombre', '1': 'monto', '2': 'estado' },
+            new_fields: [],
+        });
+        expect(none.imported).toBe(0);
+        expect(none.expanded_options).toEqual({});
+        const after = await fieldsService.get(tenantId, 'clientes', 'estado');
+        expect(((after.config as { options: unknown[] }).options)).toHaveLength(2);
+    });
+
     it('run: crea campos nuevos on-the-fly y reporta columnas sin mapping con datos', async () => {
         const csv = 'Nombre,Email,Notas\nACME,a@x.com,algo importante\n';
         const res = await importService.runCsv(tenantId, admin, 'clientes', {

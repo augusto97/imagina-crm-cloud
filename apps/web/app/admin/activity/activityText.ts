@@ -1,6 +1,7 @@
+import { formatDuration, formatPhone, type DurationFormat } from '@imagina-base/shared';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { __, sprintf } from '@/lib/i18n';
-import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
+import { formatDateStr, formatDateTimeStr, formatNumber } from '@/lib/tenantFormat';
 import type { FieldEntity } from '@/types/field';
 import type { ActivityEntity } from '@/types/activity';
 
@@ -117,7 +118,27 @@ export function formatActivityValue(field: FieldEntity | undefined, value: unkno
                 : undefined;
             return found?.label ?? String(value);
         }
+        // v0.1.255 — salían crudos («Avance en 100», «Duración en 90»).
+        case 'percent': {
+            const n = typeof value === 'number' ? value : Number(value);
+            return Number.isFinite(n) ? `${formatNumber(n, { maxFrac: 2 })} %` : String(value);
+        }
+        case 'duration': {
+            const text = formatDuration(value, (field.config as { format?: DurationFormat }).format);
+            return text === '' ? String(value) : text;
+        }
+        case 'rating': {
+            const n = typeof value === 'number' ? value : Number(value);
+            const max = Number((field.config as { max?: number }).max) || 5;
+            return Number.isFinite(n) ? sprintf(/* translators: 1: stars, 2: max */ __('%1$s de %2$s'), String(n), String(max)) : String(value);
+        }
+        case 'phone': {
+            const text = formatPhone(value);
+            return text === '' ? String(value) : text;
+        }
         case 'user':
+            // El NOMBRE lo resuelve `ActivityValue` (necesita una consulta);
+            // éste es el texto de respaldo para un usuario borrado.
             return sprintf(/* translators: %s: user id */ __('Usuario #%s'), String(value));
         case 'file':
             return __('un archivo');
