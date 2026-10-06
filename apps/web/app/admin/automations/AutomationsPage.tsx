@@ -175,7 +175,7 @@ export function AutomationsPage(): JSX.Element {
                 <EmptyState
                     icon={Zap}
                     title={__('Aún no hay automatizaciones')}
-                    description={__('Crea reglas que reaccionen a cambios en tus registros: enviar correos, actualizar campos, crear registros en otras listas, llamar webhooks…')}
+                    description={__('Creá reglas que reaccionen a los cambios en tus registros: enviar correos, actualizar campos, crear registros en otras listas, avisar a otras apps…')}
                     action={
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-2">
                             <Button className="imcrm-gap-2" onClick={() => setTemplatesOpen(true)}>

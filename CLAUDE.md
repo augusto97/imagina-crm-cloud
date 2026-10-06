@@ -6752,6 +6752,93 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         se simularon con la forma de sus APIs; la prueba con cuentas de prueba
         (TEST- / pub_test_) queda para el servidor.
 
+  - [x] **Auditoría integral: rendimiento, fallas funcionales y UI/UX
+        (v0.1.252, pedido del usuario: "audita la app — rendimiento, módulos,
+        campos, que todo funcione, velocidad y la estética")**. Tres frentes
+        auditados en paralelo (servidor, front, UX con capturas en claro/oscuro/
+        celular) más un QA funcional que recorrió los 22 tipos de campo, vistas,
+        ficha, automatizaciones, tableros y portal. Cada hallazgo se verificó
+        antes de tocarlo.
+        **Fallas reales arregladas**: (a) **BLOQUEANTE — los campos «Fecha y
+        hora» no se podían guardar desde ninguna pantalla**: el editor mandaba
+        la hora local sin zona (`2026-10-20T09:30`) y el backend la exige; ahora
+        viaja el instante UTC (`formatDateValue`, con tests) y se muestra en la
+        hora local de quien mira. (b) **El límite de pedidos respondía 500
+        «Error interno»** (y cada rechazo quedaba como error del servidor en
+        Diagnóstico): el filtro de excepciones respeta los 4xx de Fastify
+        (429/413/415) con mensaje en criollo. (c) **Arrastrar el borde de una
+        columna no la ensanchaba en la tabla plana** (y la vista guardaba 0):
+        el `<th>` draggable arrancaba un drag HTML5 que se tragaba los
+        mousemove, y además el ancho nuevo de TanStack se calcula dentro de un
+        updater que React evaluaba tarde — ahora `columnSizingInfo` se controla
+        con evaluación inmediata y el `<th>` no arrastra mientras se redimensiona.
+        (d) **Los archivos no se podían abrir desde la tabla, la ficha ni el
+        portal**: la celda mostraba «17» (el id), la ficha «#17», el portal la
+        URL firmada como texto, y la descarga con sesión exige `X-Tenant-Id`, que
+        un `<a>`/`<img>` nunca manda (400). `GET /files?ids=` devuelve ahora una
+        URL FIRMADA (ya pasó el ACL; vencimiento redondeado a la hora para que el
+        navegador la cachee) y la celda muestra el nombre con enlace, resuelto en
+        lote (cargador estilo DataLoader: todas las celdas de un tick → un
+        request). (e) **Crear un campo Selección fallaba** si se completaba sólo
+        la etiqueta: el valor interno se genera solo desde la etiqueta. (f)
+        **Ordenar por un lookup no hacía nada** (el menú lo ofrecía) y **el
+        orden de texto ponía las mayúsculas antes y los acentos al final**
+        (Postgres Alpine/musl ordena `en_US.utf8` como C): `COLLATE "und-x-icu"`
+        en los tipos de texto. (g) **Filtrar por una relación se ignoraba** (sin
+        vínculos devolvía todo — por API, MCP o automatizaciones): `EXISTS` sobre
+        `relations` (tiene / no tiene / vinculado a), sin contar vínculos a
+        registros borrados; agrupar por relación o archivo se rechaza con el
+        motivo y su pie sólo cuenta. (h) **Tableros agrupados por persona
+        mostraban el id**: `GET /me/users?ids=` (lote) + etiquetas con el nombre.
+        (i) **El CSV exportaba valores internos** (id de usuario, `[17]`,
+        `vip`, `0/1`): ahora etiqueta, nombre, nombre del archivo y «Sí/No», y el
+        import lee el nombre o el email de una persona (el ida y vuelta cierra).
+        (j) Menores: la casilla se marca con UN click, una URL sin `https://`
+        se completa sola, el historial de una automatización se refresca tras
+        «Ejecutar ahora», la línea de tiempo ya no dibuja «(sin valor)» como un
+        mes, «papelera» inexistente, «Calendar/Cards» y «1 registros».
+        **Rendimiento**: índices en todas las FKs que borraban por escaneo
+        (comments, mentions, portal_links, bulk_edit_items, records.parent_id,
+        relations/recurrences/payment_links reordenados), índice parcial del
+        listado (Index Only Scan, 0,29 ms), los `is_indexed` acotados a SU lista
+        (antes indexaban la tabla compartida entera) y fuera dos GIN muertos
+        (migración 0063); el pie de una lista calcula cada rollup UNA vez por
+        fila (antes una subconsulta por métrica); tope de 300 grupos en la vista
+        agrupada (agrupar por un campo casi único devolvía 20k grupos); tableros
+        con concurrencia acotada; `due_date_reached` por lotes keyset (el LIMIT
+        500 podía trabarse); el límite del plan se consulta UNA vez por lote;
+        export CSV con backpressure; pool configurable (`DB_POOL_MAX`). Front:
+        la tabla se VIRTUALIZA de verdad contra el scroller del `<main>` (antes
+        nunca se activaba), cero prefetch de página siguiente, el eco realtime de
+        una edición propia no recarga la lista, diálogos montados sólo al
+        abrirse, formatters de número cacheados, panel lateral sin re-renders por
+        ruta.
+        **UI/UX**: fechas y números de TODA la app en el formato de la empresa
+        (`formatDate`/`formatDateTime`/`formatLongDate` — chau «October 6,
+        2026»), textos al voseo y sin jerga («merge tags», «Setea», «OWNER»),
+        chips de opción con tinta por contraste WCAG real, **Inter** servida por
+        la app (`@fontsource-variable/inter`, antes se declaraba y nunca se
+        cargaba), cabeceras de tabla sin mayúsculas y el ID al final, **tarjetas**
+        con datos reales (avatar chico + campos) en vez del bloque de color con
+        iniciales, tablero con las acciones ocasionales en un «…» y valores de
+        barra que ya no se cortan, Plataforma sin pestañas duplicadas en
+        escritorio ni métricas repetidas, y en **celular**: «Nuevo registro»,
+        «Guardar» de automatizaciones y el pie del modal ya no se salen de la
+        pantalla, formulario de alta con lugar para los controles e
+        integraciones legibles. Tests: 973 API en verde (nuevos: filtro de excepciones,
+        lote de usuarios, orden ICU, lookup que ordena, filtro por relación, CSV
+        legible, archivos firmados), 232 front, 129 shared — E2E navegador sobre
+        la lista de QA (fecha y hora guarda con `Z`, casilla 1 click, archivo
+        con enlace firmado que descarga sin sesión, resize 130→220 px, tablero
+        con «E2E Tester», tarjetas, celular sin desborde) y 640 pedidos → 600
+        normales + 40 × 429.
+        **Queda (anotado en CONTINUIDAD)**: import que crea opciones de filas
+        rechazadas, virtualizar la vista agrupada, bundle inicial (shared en
+        CJS, rutas eager), contexto por request en el servidor, `search_text`
+        indexado, `next_fire_at` en recurrencias, el modal del registro en
+        celular (formulario largo) y los textos de Actividad para porcentaje y
+        duración.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

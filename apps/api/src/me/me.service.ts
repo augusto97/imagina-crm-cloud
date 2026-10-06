@@ -38,6 +38,20 @@ export class MeService {
         return rows.map(toSummary);
     }
 
+    /**
+     * v0.1.252 — Miembros por ids (hasta 100), en UNA query: los gráficos
+     * agrupados por un campo persona mostraban el id («1») en vez del
+     * nombre. Los ids que no son miembros simplemente no vuelven.
+     */
+    async getUsers(tenantId: number, ids: number[]): Promise<MeUserSummary[]> {
+        const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 100);
+        if (clean.length === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.repo.findMembers(tx, tenantId, clean),
+        );
+        return rows.map(toSummary);
+    }
+
     /** Lookup de un miembro del tenant activo por id — 404 si no es miembro. */
     async getUser(tenantId: number, userId: number): Promise<MeUserSummary> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>

@@ -97,7 +97,7 @@ export function DescriptionEditor({
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     const extensions = useMemo(
-        () => descriptionExtensions(__('Escribe algo o «/» para insertar bloques')),
+        () => descriptionExtensions(__('Escribí algo o «/» para insertar bloques')),
         [],
     );
 

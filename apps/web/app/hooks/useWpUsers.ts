@@ -79,3 +79,22 @@ export function usePrefetchWpUser(): (id: number) => void {
         });
     };
 }
+
+/**
+ * v0.1.252 — Nombres de varios miembros en UNA request (`GET /me/users?ids=`).
+ * Lo usan los gráficos agrupados por un campo persona: antes la barra decía
+ * «1» (el id) en vez de «Ana». Devuelve id → nombre visible.
+ */
+export function useMemberNames(ids: number[]) {
+    const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b).slice(0, 100);
+    return useQuery<Map<number, string>>({
+        queryKey: ['member-names', clean.join(',')],
+        queryFn: async () => {
+            const res = await api.get<WpUserSummary[]>('/me/users', { query: { ids: clean.join(',') } });
+            return new Map(res.data.map((u) => [u.id, u.display_name || u.login]));
+        },
+        enabled: clean.length > 0,
+        staleTime: 5 * 60_000,
+        refetchOnWindowFocus: false,
+    });
+}

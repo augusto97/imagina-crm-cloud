@@ -122,6 +122,11 @@ export class AggregateService {
         if (req.group_by_field_id !== undefined) {
             const groupField = byId.get(req.group_by_field_id);
             if (!groupField) throw badRequest('group_by_field_id no pertenece a la lista');
+            // v0.1.252 — una relación no vive en `data`: agrupar por ella daba
+            // UN solo grupo con todo. Se dice en vez de devolver algo falso.
+            if (groupField.type === 'relation' || groupField.type === 'file') {
+                throw badRequest(`No se puede agrupar por «${groupField.label}»: los campos de tipo ${groupField.type === 'relation' ? 'relación' : 'archivo'} no forman grupos.`);
+            }
             // v0.1.97 — bucketing temporal: si el campo agrupado es fecha y el
             // request trae `time_bucket`, agrupamos por bucket (día/semana/mes/
             // trimestre/año) en vez de por valor crudo. Los labels resultantes
@@ -266,20 +271,50 @@ export class AggregateService {
             filterWhere,
         );
 
+        // v0.1.252 — un campo DERIVADO (rollup, lookup, computed) es una
+        // subconsulta correlacionada; el pie pide 5-6 métricas sobre él y cada
+        // una la repetía por fila (medido: 1,16 s con 20k registros). Ahora se
+        // calcula UNA vez por fila en una subconsulta que se llama "records"
+        // —así las expresiones de los campos comunes (`"records"."data"`) siguen
+        // valiendo sin tocarlas— y las métricas leen esa columna.
+        const derived = targets.filter((f) => fieldsById.get(f.id)?.expr !== undefined);
+        const metricFields = new Map(fieldsById);
+        const derivedCols: SQL[] = [];
+        for (const f of derived) {
+            const ff = fieldsById.get(f.id)!;
+            const alias = `dv_${f.id}`;
+            derivedCols.push(sql`${ff.expr} as ${sql.identifier(alias)}`);
+            metricFields.set(f.id, { ...ff, expr: sql`${sql.identifier('records')}.${sql.identifier(alias)}` });
+        }
+
         const cols: Record<string, SQL> = {};
         const plan: Array<{ slug: string; metric: AggregateMetric; key: string }> = [];
         for (const f of targets) {
             for (const metric of metricsFor(f.type, fieldsById.get(f.id))) {
                 const key = `a${f.id}_${metric}`;
-                cols[key] = this.metricExpr(metric, f, fieldsById);
+                cols[key] = this.metricExpr(metric, f, metricFields);
                 plan.push({ slug: f.slug, metric, key });
             }
         }
         if (plan.length === 0) return { totals: {}, groups: [] };
 
-        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx.select(cols).from(records).where(baseWhere),
+        const source =
+            derivedCols.length > 0
+                ? sql`(select ${records.id}, ${records.data}, ${sql.join(derivedCols, sql`, `)} from ${records} where ${baseWhere}) as ${sql.identifier('records')}`
+                : sql`${records} where ${baseWhere}`;
+        const selectList = (extra?: SQL): SQL =>
+            sql.join(
+                [
+                    ...(extra ? [sql`${extra} as ${sql.identifier('grp')}`] : []),
+                    ...Object.entries(cols).map(([k, v]) => sql`${v} as ${sql.identifier(k)}`),
+                ],
+                sql`, `,
+            );
+
+        const totalsRes = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.execute(sql`select ${selectList()} from ${source}`),
         );
+        const row = (totalsRes.rows as Record<string, unknown>[])[0];
         const bagFrom = (r: Record<string, unknown> | undefined): Record<string, AggregateBag> => {
             const out: Record<string, AggregateBag> = {};
             for (const p of plan) {
@@ -287,23 +322,17 @@ export class AggregateService {
             }
             return out;
         };
-        const totals = bagFrom(row as Record<string, unknown> | undefined);
+        const totals = bagFrom(row);
 
         let groups: FooterAggregates['groups'] = [];
         if (opts.group_by_field_id !== undefined) {
             const gf = byId.get(opts.group_by_field_id);
             if (gf) {
                 const groupExpr = fieldTextExpr(gf.id);
-                const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
-                    tx
-                        .select({ grp: groupExpr, ...cols })
-                        .from(records)
-                        .where(baseWhere)
-                        .groupBy(groupExpr)
-                        .orderBy(groupExpr),
+                const res = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx.execute(sql`select ${selectList(groupExpr)} from ${source} group by 1 order by 1`),
                 );
-                groups = rows.map((r) => {
-                    const rec = r as Record<string, unknown>;
+                groups = (res.rows as Record<string, unknown>[]).map((rec) => {
                     const grp = rec.grp;
                     return {
                         value: grp === null || grp === undefined ? null : String(grp),
@@ -419,6 +448,9 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
             : ['count', 'count_empty', 'sum', 'avg', 'min', 'max'];
     }
     if (type === 'lookup') return [];
+    // v0.1.252 — una relación vive en otra tabla: «vacíos» y «únicos» se
+    // calculaban sobre `data` (siempre vacío) y mentían. Sólo el conteo.
+    if (type === 'relation' || type === 'file') return ['count'];
     // v0.1.229 — un computed numérico con expresión SQL se suma como número.
     if (type === 'computed') {
         return ff?.expr ? ['count', 'count_empty', 'sum', 'avg', 'min', 'max'] : ['count', 'count_empty', 'count_unique'];

@@ -5,6 +5,7 @@ import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { DESCRIPTION_SEARCH_FIELD_ID } from './query-builder';
 import { RecordsService, type Actor } from './records.service';
+import { mapLimit } from '../common/map-limit';
 
 const NULL_KEY = '__null__';
 /** Tope de grupos que se abren solos (el resto se pide al abrirlo). */
@@ -14,6 +15,8 @@ const MAX_AUTO_EXPANDED = 40;
  * pool (10) mientras corre: 3 deja lugar a las demás requests.
  */
 const GROUP_CONCURRENCY = 3;
+/** Grupos que viajan como máximo (el resto se informa en `hidden_groups`). */
+const MAX_BUCKETS = 300;
 
 interface GroupBucket {
     value: string | null;
@@ -25,6 +28,8 @@ interface GroupsMeta {
     group_by_type: string;
     total_groups: number;
     total_records: number;
+    /** v0.1.252 — grupos que existen pero NO viajan (tope MAX_BUCKETS). */
+    hidden_groups?: number;
 }
 
 /**
@@ -53,10 +58,16 @@ export class RecordsGroupedService {
     ): Promise<{ data: GroupBucket[]; meta: GroupsMeta }> {
         const meta = await this.groupMeta(tenantId, listKey, groupBy);
         const effectiveTree = await this.withSearch(tenantId, listKey, filterTree, search);
-        const buckets = await this.buckets(tenantId, listKey, groupBy, effectiveTree, actor);
+        const all = await this.buckets(tenantId, listKey, groupBy, effectiveTree, actor);
+        const buckets = all.slice(0, MAX_BUCKETS);
         return {
             data: buckets,
-            meta: { ...meta, total_groups: buckets.length, total_records: buckets.reduce((s, b) => s + b.count, 0) },
+            meta: {
+                ...meta,
+                total_groups: all.length,
+                total_records: all.reduce((s, b) => s + b.count, 0),
+                hidden_groups: all.length - buckets.length,
+            },
         };
     }
 
@@ -86,8 +97,13 @@ export class RecordsGroupedService {
         // La búsqueda se COMPONE como subtree OR de `contains` sobre los
         // campos searchables → aplica igual a buckets, filas y agregados.
         const effectiveTree = await this.withSearch(tenantId, listKey, opts.filterTree, opts.search);
-        const buckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree, actor);
-        const totalRecords = buckets.reduce((s, b) => s + b.count, 0);
+        // v0.1.252 — tope de grupos: agrupar por un campo casi único (email,
+        // monto) devolvía un grupo por registro — 20k grupos, ~1 MB por
+        // request y una pantalla inservible. Se muestran los primeros y se
+        // avisa cuántos quedan afuera; los totales siguen siendo de todos.
+        const allBuckets = await this.buckets(tenantId, listKey, opts.groupBy, effectiveTree, actor);
+        const buckets = allBuckets.slice(0, MAX_BUCKETS);
+        const totalRecords = allBuckets.reduce((s, b) => s + b.count, 0);
 
         const fields = await this.fields.list(tenantId, listKey);
         const toSlug = new Map(fields.map((f) => [`f${f.id}`, f.slug]));
@@ -172,7 +188,16 @@ export class RecordsGroupedService {
             expanded[key] = entry;
         });
 
-        return { buckets, meta: { ...meta, total_groups: buckets.length, total_records: totalRecords }, expanded };
+        return {
+            buckets,
+            meta: {
+                ...meta,
+                total_groups: allBuckets.length,
+                total_records: totalRecords,
+                hidden_groups: allBuckets.length - buckets.length,
+            },
+            expanded,
+        };
     }
 
     /**
@@ -268,16 +293,4 @@ function mapKeys(data: Record<string, unknown>, toSlug: Map<string, string>): Re
 
 function stripZ(value: string): string {
     return value.replace(/Z$/, '');
-}
-
-/** `items.map(fn)` con a lo sumo `limit` promesas en vuelo. */
-async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
-    let next = 0;
-    const worker = async (): Promise<void> => {
-        while (next < items.length) {
-            const item = items[next++] as T;
-            await fn(item);
-        }
-    };
-    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }

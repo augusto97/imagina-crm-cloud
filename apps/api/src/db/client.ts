@@ -29,10 +29,19 @@ const logger = new Logger('Postgres');
  *  - `connectionTimeoutMillis`: si la base no acepta conexiones, el pedido
  *    falla en 10 s con un error claro en vez de esperar para siempre.
  */
+function poolMax(): number {
+    const n = Number(process.env.DB_POOL_MAX);
+    return Number.isInteger(n) && n >= 2 && n <= 200 ? n : 20;
+}
+
 export function createPool(connectionString: string): Pool {
     const pool = new Pool({
         connectionString,
-        max: 10,
+        // v0.1.252 — configurable (DB_POOL_MAX). 20 por defecto: la API y los
+        // workers (automatizaciones, sincronizaciones, cobros) comparten el
+        // pool, y con 10 unos pocos tableros abiertos lo agotaban. Postgres
+        // acepta 100 conexiones por defecto: sobra para un nodo.
+        max: poolMax(),
         keepAlive: true,
         idleTimeoutMillis: 30_000,
         connectionTimeoutMillis: 10_000,

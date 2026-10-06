@@ -126,42 +126,75 @@ export function colorVar(color: OptionColor | undefined | null): string | undefi
 }
 
 /**
- * Pasada ClickUp: el chip de opción es SÓLIDO y saturado (bg = el color,
- * texto blanco — o tinta oscura en los presets claros donde el blanco no
- * contrasta: yellow/lime/amber). Es lo que hace que las tablas "se vean
- * vivas": el color fuerte queda reservado a los DATOS del usuario.
+ * Pasada ClickUp: el chip de opción es SÓLIDO y saturado (bg = el color). La
+ * tinta (blanca u oscura) se elige por CONTRASTE WCAG real: la que más
+ * contrasta con ese fondo. v0.1.253 — antes sólo yellow/lime/amber llevaban
+ * tinta oscura y los hex se decidían con una luminancia sin linealizar, así
+ * que chips como sky, emerald, cyan o blue salían con texto blanco a 2,6-3,6:1
+ * (ilegible, medido en la auditoría). El color fuerte sigue siendo el de los
+ * DATOS del usuario; sólo cambia el color de la letra encima.
  */
-const DARK_TEXT_PRESETS = new Set<PresetColor>(['yellow', 'lime', 'amber']);
+const PRESET_HSL: Record<PresetColor, [number, number, number]> = {
+    gray: [220, 9, 46], slate: [215, 16, 47], rose: [346, 77, 60], red: [0, 84, 55],
+    orange: [25, 95, 53], amber: [38, 92, 50], yellow: [48, 96, 53], lime: [84, 81, 44],
+    green: [142, 71, 45], emerald: [160, 84, 39], teal: [173, 80, 40], cyan: [188, 95, 43],
+    sky: [200, 90, 50], blue: [217, 91, 60], indigo: [239, 84, 67], violet: [262, 83, 58],
+    fuchsia: [292, 84, 60], pink: [330, 81, 60],
+};
+const INK = 'hsl(224 71% 10% / 0.88)';
+/** Luminancia WCAG aproximada de la tinta oscura sobre el chip. */
+const INK_LUMINANCE = 0.012;
+
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+    const sat = s / 100;
+    const lig = l / 100;
+    const k = (n: number): number => (n + h / 30) % 12;
+    const a = sat * Math.min(lig, 1 - lig);
+    const f = (n: number): number => lig - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return { r: Math.round(f(0) * 255), g: Math.round(f(8) * 255), b: Math.round(f(4) * 255) };
+}
+
+/** Luminancia relativa WCAG (canales linealizados). */
+export function wcagLuminance(rgb: { r: number; g: number; b: number }): number {
+    const lin = (c: number): number => {
+        const v = c / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(rgb.r) + 0.7152 * lin(rgb.g) + 0.0722 * lin(rgb.b);
+}
+
+/** Tinta del chip: la de mayor contraste WCAG contra el fondo. */
+export function chipInkFor(rgb: { r: number; g: number; b: number }): string {
+    const l = wcagLuminance(rgb);
+    const withWhite = 1.05 / (l + 0.05);
+    const withInk = (l + 0.05) / (INK_LUMINANCE + 0.05);
+    return withInk > withWhite ? INK : '#ffffff';
+}
 
 export function chipSoftStyle(color: OptionColor | undefined | null): React.CSSProperties | undefined {
     if (!color) return undefined;
 
     if (isPresetColor(color)) {
         const base = `var(--imcrm-opt-${color})`;
+        const [h, sat, l] = PRESET_HSL[color];
         return {
             backgroundColor: `hsl(${base})`,
             borderColor:     `hsl(${base})`,
-            color:           DARK_TEXT_PRESETS.has(color) ? 'hsl(224 71% 10% / 0.85)' : '#ffffff',
+            color:           chipInkFor(hslToRgb(h, sat, l)),
         };
     }
 
     if (isHexColor(color)) {
         const normalized = normalizeHex(color);
+        const rgb = hexToRgb(normalized);
         return {
             backgroundColor: normalized,
             borderColor:     normalized,
-            color:           relativeLuminance(normalized) > 0.55 ? 'hsl(224 71% 10% / 0.85)' : '#ffffff',
+            color:           rgb ? chipInkFor(rgb) : '#ffffff',
         };
     }
 
     return undefined;
-}
-
-/** Luminancia relativa aproximada (0-1) de un hex — decide texto blanco/oscuro. */
-function relativeLuminance(hex: string): number {
-    const rgb = hexToRgb(hex);
-    if (!rgb) return 0;
-    return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
 }
 
 // ─── Conversión hex → HSL para text color ─────────────────────────────

@@ -464,6 +464,17 @@ function GroupedTableViewImpl({
                     _n('%d registro', '%d registros', bundle.data?.meta.total_records ?? 0),
                     bundle.data?.meta.total_records ?? 0,
                 )}
+                {(bundle.data?.meta.hidden_groups ?? 0) > 0 && (
+                    <span className="imcrm-ml-1 imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                        {' · '}
+                        {sprintf(
+                            /* translators: %1$d shown groups, %2$d hidden groups */
+                            __('Se muestran los primeros %1$d grupos; %2$d más quedan afuera. Agrupá por un campo con menos valores distintos o filtrá.'),
+                            (bundle.data?.meta.total_groups ?? 0) - (bundle.data?.meta.hidden_groups ?? 0),
+                            bundle.data?.meta.hidden_groups ?? 0,
+                        )}
+                    </span>
+                )}
             </div>
         </div>
         </WrapTextContext.Provider>
@@ -542,8 +553,8 @@ function buildColumns(fields: FieldEntity[]): ColumnDef[] {
             isPrimary: f.is_primary,
         }));
     return [
-        { id: 'id', label: __('ID'), field: null, isPrimary: false },
         ...dynamic,
+        { id: 'id', label: __('ID'), field: null, isPrimary: false },
         { id: 'updated_at', label: __('Actualizado'), field: null, isPrimary: false },
     ];
 }
@@ -963,7 +974,7 @@ function GroupBucketSection({
                                                     // `overflow-hidden` evita que el contenido de
                                                     // columnas angostas desborde al th vecino (el
                                                     // chevron quedaba solapado con el botón "+").
-                                                    'imcrm-group/th imcrm-relative imcrm-overflow-hidden imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground imcrm-uppercase imcrm-tracking-[0.06em]',
+                                                    'imcrm-group/th imcrm-relative imcrm-overflow-hidden imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-[12px] imcrm-font-medium imcrm-text-muted-foreground',
                                                     // Sticky cell necesita bg sólido para
                                                     // tapar las celdas al scrollear
                                                     // horizontal — canvas, no card.
@@ -1174,7 +1185,7 @@ function GroupBucketSection({
                                                             className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-muted/40 hover:imcrm-text-foreground"
                                                         >
                                                             <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                            {__('Agregar tarea')}
+                                                            {__('Agregar registro')}
                                                         </button>
                                                     </td>
                                                 );

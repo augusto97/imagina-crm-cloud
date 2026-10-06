@@ -250,7 +250,7 @@ function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder={__('Escribe para buscar')}
+                    placeholder={__('Escribí para buscar')}
                     className="imcrm-h-9 imcrm-w-full imcrm-bg-transparent imcrm-pl-8 imcrm-pr-2 imcrm-text-sm focus-visible:imcrm-outline-none"
                     autoFocus
                 />

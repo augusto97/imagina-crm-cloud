@@ -42,13 +42,13 @@ export class SignedFilesController {
         @Query('exp') exp?: string,
         @Query('sig') sig?: string,
     ): Promise<void> {
-        const file = await this.files.openSigned(
-            id,
-            Number(tenant ?? 0),
-            Number(exp ?? 0),
-            String(sig ?? ''),
-        );
-        await streamFile(file, reply);
+        const expSec = Number(exp ?? 0);
+        const file = await this.files.openSigned(id, Number(tenant ?? 0), expSec, String(sig ?? ''));
+        // v0.1.253 — la URL firmada es inmutable hasta que vence (la firma
+        // cubre id + exp): el navegador la puede guardar hasta entonces. Sin
+        // esto, el logo del workspace se volvía a bajar en cada pantalla.
+        const ttl = Math.max(0, Math.min(86_400, Math.floor(expSec - Date.now() / 1000)));
+        await streamFile(file, reply, ttl > 0 ? `private, max-age=${ttl}, immutable` : undefined);
     }
 }
 
@@ -60,6 +60,7 @@ export class SignedFilesController {
 async function streamFile(
     file: { stream: NodeJS.ReadableStream; filename: string; mime: string; size: number },
     reply: FastifyReply,
+    cacheControl?: string,
 ): Promise<void> {
     // SEC-21 (v0.1.113): el mime lo eligió quien subió el archivo. Sólo los
     // tipos de la whitelist se sirven inline; el resto baja como binario
@@ -73,6 +74,7 @@ async function streamFile(
         'content-disposition': contentDispositionHeader(disposition, file.filename),
         'x-content-type-options': 'nosniff',
         'content-security-policy': "sandbox; default-src 'none'",
+        ...(cacheControl ? { 'cache-control': cacheControl } : {}),
     });
     file.stream.pipe(reply.raw);
     await new Promise<void>((resolve) => {

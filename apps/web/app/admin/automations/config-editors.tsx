@@ -296,7 +296,7 @@ function IncomingWebhookConfig({
             <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
                 {__('Hacé un POST con JSON a esa URL desde un formulario u otra plataforma. Las claves del payload que coincidan con slugs de esta lista')}
                 {slugs !== '' ? ` (${slugs}…)` : ''}
-                {__(' se usan en las condiciones y en los merge tags como {{slug}}; el resto queda disponible como {{payload.clave}}.')}
+                {__(' se usan en las condiciones y como variables {{slug}}; el resto queda disponible como {{payload.clave}}.')}
             </p>
             {token !== '' && <WebhookTestPanel fields={fields} />}
         </div>
@@ -418,7 +418,7 @@ function WebhookTestPanel({ fields }: { fields: FieldEntity[] }): JSX.Element | 
                                     <button
                                         type="button"
                                         onClick={() => copyTag(tag)}
-                                        title={__('Copiar merge tag')}
+                                        title={__('Copiar variable')}
                                         className="imcrm-shrink-0 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
                                     >
                                         {copiedTag === tag ? __('¡Copiado!') : tag}
@@ -458,7 +458,7 @@ function FieldChangedConfig({
                 onChange={(e) => onChange({ ...config, field: e.target.value })}
                 aria-label={__('Campo')}
             >
-                <option value="">{__('— Selecciona campo —')}</option>
+                <option value="">{__('Elegí un campo…')}</option>
                 {fields.map((f) => (
                     <option key={f.id} value={f.slug}>
                         {f.label} ({f.slug})
@@ -664,7 +664,7 @@ function DueDateConfig({
                 value={dueField}
                 onChange={(e) => onChange({ ...config, due_field: e.target.value })}
             >
-                <option value="">{__('— Selecciona campo —')}</option>
+                <option value="">{__('Elegí un campo…')}</option>
                 {dateFields.map((f) => (
                     <option key={f.id} value={f.slug}>
                         {f.label}
@@ -784,7 +784,7 @@ export function ActionsEditor({
 
             {value.length === 0 ? (
                 <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-4 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Aún no hay acciones. Añade al menos una.')}
+                    {__('Todavía no hay acciones. Agregá al menos una.')}
                 </p>
             ) : (
                 <ol className="imcrm-flex imcrm-flex-col imcrm-gap-2.5">
@@ -1087,7 +1087,7 @@ function UpdateFieldConfig({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Setea pares campo → valor en el registro que disparó el trigger. Soporta merge tags como {{slug}} o {{record.id}}.')}
+                {__('Elegí qué campos cambiar en el registro que disparó la automatización y su valor nuevo. Acepta variables como {{slug}} o {{record.id}}.')}
             </p>
             {/* Misma estructura de fila que CreateRecordConfig: selector +
                 eliminar arriba, valor a ancho completo abajo. */}
@@ -1215,7 +1215,7 @@ function CreateRecordConfig({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Crea un registro en la lista elegida. Los valores aceptan merge tags del registro que disparó el trigger ({{slug}}, {{record.id}}); en un campo de relación, {{record.id}} lo vincula a ese registro.')}
+                {__('Crea un registro en la lista elegida. Los valores aceptan variables del registro que disparó la automatización ({{slug}}, {{record.id}}); en un campo de relación, {{record.id}} lo vincula a ese registro.')}
             </p>
             <p className="imcrm-rounded-md imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
                 {__('Fechas con aritmética: |+1m suma un mes, |-1d resta un día — ej. {{before.proximo_cobro|+1m|-1d}} = fin del período anticipado. Etiquetas: {{campo|label}} escribe el texto de la opción en vez de su valor interno (acá, para un select destino, conviene el valor).')}
@@ -1335,7 +1335,7 @@ function FieldValueInput({
     if (!field) {
         return (
             <Input
-                placeholder={__('Selecciona un campo primero')}
+                placeholder={__('Elegí un campo primero')}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 className="imcrm-flex-1"
@@ -1353,7 +1353,7 @@ function FieldValueInput({
                 className="imcrm-flex-1"
                 aria-label={__('Valor')}
             >
-                <option value="">{__('— Selecciona valor —')}</option>
+                <option value="">{__('Elegí un valor…')}</option>
                 {options.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                         {opt.label || opt.value}
@@ -1670,7 +1670,7 @@ function ConnectorActionConfig({
                     {run.isPending ? __('Probando…') : __('Probar ahora')}
                 </Button>
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Usa un registro real de la lista para resolver las variables.')}
+                    {__('Usa un registro real de la lista para completar las variables.')}
                 </span>
             </div>
 
@@ -2115,7 +2115,7 @@ function SendEmailConfig({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Para (acepta merge tags y múltiples emails separados por coma)')}
+                {__('Para (acepta variables y varios correos separados por coma)')}
             </Label>
             <MergeTagInput
                 placeholder="{{email}} o user@example.com"
@@ -2135,7 +2135,7 @@ function SendEmailConfig({
             <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cuerpo')}</Label>
             <MergeTagInput
                 rows={4}
-                placeholder={__('Tu mensaje. Usa los chips abajo para insertar variables.')}
+                placeholder={__('Tu mensaje. Usá los botones de abajo para insertar variables.')}
                 value={body}
                 onChange={(next) => set({ body: next })}
                 fields={fields}

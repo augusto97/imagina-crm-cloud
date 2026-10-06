@@ -45,6 +45,17 @@ export class ApiExceptionFilter implements ExceptionFilter {
                     data: { status },
                 };
             }
+        } else if (clientErrorStatus(exception) !== null) {
+            // v0.1.252 — errores de CLIENTE que vienen de Fastify/plugins y no
+            // son HttpException (el rate limit, un body demasiado grande, un
+            // content-type que no se acepta): se respetan con su 4xx. Antes
+            // caían al 500 «Error interno» — el límite de pedidos respondía
+            // 500 y cada rechazo quedaba como error del servidor.
+            status = clientErrorStatus(exception)!;
+            const message = status === 429
+                ? 'Demasiados pedidos seguidos: esperá un momento y volvé a intentar.'
+                : exception instanceof Error && exception.message !== '' ? exception.message : 'Pedido rechazado';
+            body = { code: codeForStatus(status), message, data: { status } };
         } else {
             this.logger.error(exception instanceof Error ? exception.stack : String(exception));
             // v0.1.238 — queda a la vista en Plataforma → Diagnóstico.
@@ -60,6 +71,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
         void reply.status(status).send(body);
     }
+}
+
+/** `statusCode` 4xx de un error de Fastify o de un plugin; si no, null. */
+export function clientErrorStatus(exception: unknown): number | null {
+    if (typeof exception !== 'object' || exception === null) return null;
+    const code = (exception as { statusCode?: unknown }).statusCode;
+    return typeof code === 'number' && Number.isInteger(code) && code >= 400 && code < 500 ? code : null;
 }
 
 function isApiError(value: unknown): value is ApiError {
@@ -84,6 +102,10 @@ function codeForStatus(status: number): string {
             return 'not_found';
         case 409:
             return 'conflict';
+        case 413:
+            return 'payload_too_large';
+        case 415:
+            return 'unsupported_media_type';
         case 429:
             return 'rate_limited';
         default:

@@ -623,7 +623,7 @@ export function AutomationCanvas({
 
             {/* Hint de navegación */}
             <div className="imcrm-pointer-events-none imcrm-absolute imcrm-bottom-3 imcrm-left-3 imcrm-z-20 imcrm-rounded-md imcrm-bg-card/80 imcrm-px-2 imcrm-py-1 imcrm-text-[10px] imcrm-text-muted-foreground imcrm-backdrop-blur">
-                {__('Arrastra para moverte · Ctrl+rueda para zoom · click en un nodo para configurarlo')}
+                {__('Arrastrá para moverte · Ctrl+rueda para zoom · clic en un paso para configurarlo')}
             </div>
 
         </div>

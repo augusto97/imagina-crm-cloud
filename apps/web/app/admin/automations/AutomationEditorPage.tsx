@@ -30,7 +30,9 @@ import {
 import { useFields } from '@/hooks/useFields';
 import { useList, useLists } from '@/hooks/useLists';
 import { api, ApiError } from '@/lib/api';
-import { __, sprintf } from '@/lib/i18n';
+import { useQueryClient } from '@tanstack/react-query';
+import { automationsKeys } from '@/hooks/useAutomations';
+import { __, _n, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type {
     ActionMeta,
@@ -233,13 +235,18 @@ function EditorBody({
     const [runsOpen, setRunsOpen] = useState(false);
     // v0.1.221 — «Ejecutar ahora» de una automatización programada.
     const [runningNow, setRunningNow] = useState(false);
+    const qc = useQueryClient();
     const runNow = async (): Promise<void> => {
         if (!editing) return;
         setRunningNow(true);
         try {
             await api.post(`/lists/${list.id}/automations/${editing.id}/run`, {});
             toast.success(__('En marcha: el resultado aparece en el historial en unos segundos.'));
-            window.setTimeout(() => setRunsOpen(true), 1500);
+            // v0.1.252 — el historial se refresca solo: abierto en la misma
+            // sesión mostraba «Aún no hay ejecuciones» hasta recargar.
+            const refreshRuns = (): void => void qc.invalidateQueries({ queryKey: [...automationsKeys.all, 'runs'] });
+            window.setTimeout(() => { refreshRuns(); setRunsOpen(true); }, 1500);
+            window.setTimeout(refreshRuns, 5000);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : __('No se pudo ejecutar.'));
         } finally {
@@ -362,7 +369,7 @@ function EditorBody({
             return;
         }
         if (state.actions.length === 0) {
-            setError(__('Añade al menos una acción — sin acciones la automatización no hace nada.'));
+            setError(__('Agregá al menos una acción: sin acciones la automatización no hace nada.'));
             return;
         }
 
@@ -447,13 +454,14 @@ function EditorBody({
                             <input
                                 value={state.description}
                                 onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-                                placeholder={__('Añade una descripción (opcional)…')}
+                                placeholder={__('Agregá una descripción (opcional)…')}
                                 aria-label={__('Descripción')}
                                 className="imcrm-w-full imcrm-border-0 imcrm-bg-transparent imcrm-p-0 imcrm-text-[13px] imcrm-text-muted-foreground imcrm-outline-none placeholder:imcrm-text-muted-foreground/40 focus:imcrm-ring-0"
                             />
                         </div>
 
-                        <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
+                        {/* v0.1.252 — envuelve en el celular (antes «Guardar» quedaba fuera de la pantalla). */}
+                        <div className="imcrm-flex imcrm-max-w-full imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                             <ModeSwitcher mode={mode} onChange={switchMode} />
                             <ActiveTogglePill
                                 active={state.isActive}
@@ -479,9 +487,11 @@ function EditorBody({
                                     size="sm"
                                     className="imcrm-gap-1.5"
                                     onClick={() => setRunsOpen(true)}
+                                    aria-label={__('Historial')}
+                                    title={__('Historial')}
                                 >
                                     <History className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Historial')}
+                                    <span className="imcrm-hidden sm:imcrm-inline">{__('Historial')}</span>
                                 </Button>
                             )}
                             <Button size="sm" onClick={handleSave} disabled={isPending} className="imcrm-gap-1.5">
@@ -550,7 +560,7 @@ function EditorBody({
                                 <Badge variant="outline" className="imcrm-shrink-0">
                                     {sprintf(
                                         /* translators: %d: filter count */
-                                        __('%d condiciones'),
+                                        _n('%d condición', '%d condiciones', triggerFilters),
                                         triggerFilters,
                                     )}
                                 </Badge>

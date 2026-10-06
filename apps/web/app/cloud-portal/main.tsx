@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router';
 import { PortalApp } from '@/cloud-portal/PortalApp';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
+import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
 // Tras una auto-actualización del servidor, una pestaña abierta sigue siendo

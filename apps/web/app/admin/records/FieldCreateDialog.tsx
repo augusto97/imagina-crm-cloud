@@ -111,7 +111,7 @@ export function FieldCreateDialog({
                                 {__('Editar campo')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Cambia el nombre y la configuración. El tipo se convierte desde los ajustes avanzados.')}
+                                {__('Cambiá el nombre y la configuración. El tipo se convierte desde los ajustes avanzados.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>

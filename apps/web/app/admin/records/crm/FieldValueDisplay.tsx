@@ -1,3 +1,4 @@
+import { FileCell } from '@/admin/records/renderCellValue';
 import { Check, ExternalLink, Mail, Minus, Paperclip, User as UserIcon } from 'lucide-react';
 
 import { formatDuration, type DurationFormat } from '@imagina-base/shared';
@@ -279,11 +280,33 @@ function UserDisplay({ value }: { value: unknown }): JSX.Element {
     );
 }
 
+/**
+ * v0.1.252 — Antes mostraba «#17» (el id) y, en el portal, «#/api/v1/files/…»
+ * (la URL firmada como texto). Ahora: ids → nombre del archivo con enlace
+ * (resueltos en lote); URL (firmada del portal o externa) → enlace.
+ */
 function FileDisplay({ value }: { value: unknown }): JSX.Element {
+    const items = Array.isArray(value) ? value : [value];
+    const ids = items
+        .map((v) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN))
+        .filter((n) => Number.isInteger(n) && n > 0);
+    if (ids.length > 0) return <FileCell id={ids[0]!} more={ids.length - 1} />;
+    const urls = items.filter((v): v is string => typeof v === 'string' && /^(https?:\/\/|\/api\/)/i.test(v.trim()));
+    if (urls.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
     return (
-        <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-muted-foreground">
-            <Paperclip className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-            <span className="imcrm-tabular-nums">#{String(value)}</span>
+        <span className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+            {urls.map((u, i) => (
+                <a
+                    key={i}
+                    href={u.trim()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-primary hover:imcrm-underline"
+                >
+                    <Paperclip className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+                    {urls.length > 1 ? `${__('Descargar archivo')} ${i + 1}` : __('Descargar archivo')}
+                </a>
+            ))}
         </span>
     );
 }

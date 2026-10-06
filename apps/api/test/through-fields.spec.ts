@@ -360,11 +360,21 @@ describe('lookup / rollup a través de relation (Postgres real)', () => {
             { group: 'bogota', value: 3 },
             { group: 'medellin', value: 1 },
         ]);
-        // Ordenar por el lookup tampoco rompe (la expresión es la misma).
-        const ordered = await records_.list(tenantA, admin, 'facturas', {
+        // Ordenar por el lookup ORDENA de verdad (v0.1.252: antes se
+        // descartaba y salía por id; este test sólo contaba filas).
+        const ciudadDe = (r: { data: Record<string, unknown> }) => {
+            const v = r.data[`f${lk.id}`];
+            return Array.isArray(v) ? String(v[0] ?? '') : String(v ?? '');
+        };
+        const desc = await records_.list(tenantA, admin, 'facturas', {
             limit: 50, sort: `field_${lk.id}:desc`,
         } as never);
-        expect(ordered.data).toHaveLength(4);
+        expect(desc.data).toHaveLength(4);
+        expect(ciudadDe(desc.data[0]!)).toBe('medellin');
+        const asc = await records_.list(tenantA, admin, 'facturas', {
+            limit: 50, sort: `field_${lk.id}:asc`,
+        } as never);
+        expect(ciudadDe(asc.data[asc.data.length - 1]!)).toBe('medellin');
     });
 
     it('agrupa por un ROLLUP y el bucket trae SUS registros', async () => {

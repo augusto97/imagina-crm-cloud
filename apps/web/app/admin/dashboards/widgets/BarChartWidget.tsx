@@ -6,7 +6,7 @@ import { formatNumber } from '@/lib/tenantFormat';
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
-import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap } from './useChartColors';
+import { applyHideZero, categoryColor, displayGroupLabel, useGroupColorMap, useGroupLabelMap, groupKeysOf } from './useChartColors';
 import { useSegmentNav } from './useSegmentNav';
 import { AverageBadge, AVG_LINE_COLOR, useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -39,7 +39,7 @@ export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JS
     const showAvg = widget.config.show_average_line !== false;
     const colorMap = useGroupColorMap(widget.list_id, widget.config.group_by_field_id);
     // v0.1.178 — las barras muestran la ETIQUETA de la opción, no el value.
-    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id);
+    const labelMap = useGroupLabelMap(widget.list_id, widget.config.group_by_field_id, groupKeysOf(data.data));
     const subtitle = useWidgetSubtitle(widget);
     // v0.1.100 — click en una barra → lista filtrada a ese valor.
     const onSegment = useSegmentNav(widget);
@@ -112,6 +112,9 @@ function BarRows({
     const total = rows.reduce((sum, r) => sum + r.value, 0) || 1;
     const avg = total / rows.length;
     const avgPct = (avg / max) * 100;
+    // v0.1.252 — la columna del valor se mide con el número más largo (antes
+    // fija en 4rem: «84,219,000» salía cortado). `ch` + tabular-nums = exacto.
+    const valueCh = Math.max(...rows.map((r) => formatNumber(r.value).length)) + 5;
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
@@ -153,7 +156,10 @@ function BarRows({
                                     />
                                 )}
                             </div>
-                            <span className="imcrm-w-16 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums">
+                            <span
+                                className="imcrm-shrink-0 imcrm-whitespace-nowrap imcrm-text-right imcrm-tabular-nums"
+                                style={{ width: `${valueCh}ch` }}
+                            >
                                 <span className="imcrm-font-semibold imcrm-text-foreground">
                                     {formatNumber(row.value)}
                                 </span>

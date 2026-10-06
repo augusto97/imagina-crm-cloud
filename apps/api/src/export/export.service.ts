@@ -14,7 +14,7 @@ import {
     type RecordDto,
     type ViewType,
 } from '@imagina-base/shared';
-import { records } from '../db/schema';
+import { attachments, memberships, records, users } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -59,7 +59,7 @@ export class ExportService {
         listIdOrSlug: string,
         opts: CsvExportOptions,
         onStart: (filename: string) => void,
-        write: (chunk: string) => void,
+        write: (chunk: string) => void | Promise<void>,
     ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         // `list` (no `listByListId`): trae los lookup/rollup con su relación
@@ -83,6 +83,12 @@ export class ExportService {
             columns.filter((c) => c.type === 'relation'),
         );
 
+        // v0.1.252 — el CSV dice lo que ve una persona: la ETIQUETA de una
+        // opción (no su valor interno), el NOMBRE de quien está asignado (no
+        // su id), «Sí/No» en una casilla y el nombre del archivo (no `[17]`).
+        // El import entiende las cuatro formas, así el ida y vuelta cierra.
+        const readable = await this.readableFormatter(tenantId, columns);
+
         // v0.1.132 — jerarquía. Las subtareas SIEMPRE se exportan (si no, el
         // archivo perdería filas en silencio), pero las dos columnas que la
         // describen sólo aparecen si la lista tiene alguna: una lista sin
@@ -90,9 +96,9 @@ export class ExportService {
         const withHierarchy = await this.hasSubtasks(tenantId, list.id);
 
         onStart(`${list.slug}.csv`);
-        if (opts.withBom) write('﻿');
+        if (opts.withBom) await write('﻿');
         const header = columns.map((c) => c.label);
-        write(
+        await write(
             csvLine(
                 withHierarchy ? [EXPORT_ID_HEADER, EXPORT_PARENT_HEADER, ...header] : header,
                 opts.delimiter,
@@ -109,13 +115,14 @@ export class ExportService {
                 include_subtasks: true,
             });
             await labeler.prime(page.data);
+            await readable.prime(page.data);
             for (const r of page.data) {
                 const cells = columns.map((c) =>
                     c.type === 'relation'
                         ? labeler.labels(c.id, r.relations?.[jsonbKeyForField(c.id)])
-                        : stringifyCell(r.data[jsonbKeyForField(c.id)], c.type, targetTypeOf(c)),
+                        : readable.cell(c, r.data[jsonbKeyForField(c.id)]) ?? stringifyCell(r.data[jsonbKeyForField(c.id)], c.type, targetTypeOf(c)),
                 );
-                write(
+                await write(
                     csvLine(
                         withHierarchy
                             ? [String(r.id), r.parent_id === null ? '' : String(r.parent_id), ...cells]
@@ -157,24 +164,24 @@ export class ExportService {
         tenantId: number,
         listIdOrSlug: string,
         now: string,
-        write: (chunk: string) => void,
+        write: (chunk: string) => void | Promise<void>,
     ): Promise<void> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.fields.list(tenantId, String(list.id));
         const views = await this.views.list(tenantId, String(list.id));
 
-        write('{"version":1');
-        write(`,"exported_at":${JSON.stringify(now)}`);
-        write(`,"list":${JSON.stringify(list)}`);
-        write(`,"fields":${JSON.stringify(fields.map((f) => ({ ...f, type: f.type as FieldType })))}`);
-        write(`,"views":${JSON.stringify(views.map((v) => ({ ...v, type: v.type as ViewType })))}`);
-        write(',"records":[');
+        await write('{"version":1');
+        await write(`,"exported_at":${JSON.stringify(now)}`);
+        await write(`,"list":${JSON.stringify(list)}`);
+        await write(`,"fields":${JSON.stringify(fields.map((f) => ({ ...f, type: f.type as FieldType })))}`);
+        await write(`,"views":${JSON.stringify(views.map((v) => ({ ...v, type: v.type as ViewType })))}`);
+        await write(',"records":[');
         let first = true;
         for await (const r of this.iterateRecords(tenantId, list.id)) {
-            write((first ? '' : ',') + JSON.stringify(r));
+            await write((first ? '' : ',') + JSON.stringify(r));
             first = false;
         }
-        write(']}');
+        await write(']}');
     }
 
     /**
@@ -186,6 +193,78 @@ export class ExportService {
      * nº 8), y con cache entre páginas: en una lista de facturas el mismo
      * cliente se repite muchísimo.
      */
+    private async readableFormatter(tenantId: number, columns: Field[]): Promise<ReadableFormatter> {
+        const optionLabels = new Map<number, Map<string, string>>();
+        for (const c of columns) {
+            if (c.type !== 'select' && c.type !== 'multi_select') continue;
+            const opts = (c.config as { options?: unknown }).options;
+            const m = new Map<string, string>();
+            if (Array.isArray(opts)) {
+                for (const o of opts as Array<{ value?: unknown; label?: unknown }>) {
+                    if (typeof o?.value === 'string') m.set(o.value, typeof o.label === 'string' && o.label !== '' ? o.label : o.value);
+                }
+            }
+            optionLabels.set(c.id, m);
+        }
+        const hasUser = columns.some((c) => c.type === 'user');
+        const members = new Map<number, string>();
+        if (hasUser) {
+            const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
+                    .select({ id: users.id, name: users.name, email: users.email })
+                    .from(memberships)
+                    .innerJoin(users, eq(users.id, memberships.userId))
+                    .where(eq(memberships.tenantId, tenantId)),
+            );
+            for (const u of rows) members.set(u.id, u.name && u.name.trim() !== '' ? u.name : u.email);
+        }
+        const fileCols = columns.filter((c) => c.type === 'file');
+        const fileTitles = new Map<number, string>();
+        const asIds = (v: unknown): number[] =>
+            (Array.isArray(v) ? v : [v]).map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0);
+
+        return {
+            prime: async (rows) => {
+                if (fileCols.length === 0) return;
+                const wanted = new Set<number>();
+                for (const r of rows) {
+                    for (const c of fileCols) {
+                        for (const id of asIds(r.data[jsonbKeyForField(c.id)])) if (!fileTitles.has(id)) wanted.add(id);
+                    }
+                }
+                if (wanted.size === 0) return;
+                const found = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ id: attachments.id, filename: attachments.filename })
+                        .from(attachments)
+                        .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, [...wanted]))),
+                );
+                for (const f of found) fileTitles.set(f.id, f.filename);
+            },
+            cell: (field, value) => {
+                if (value === null || value === undefined || value === '') return null;
+                switch (field.type) {
+                    case 'select':
+                        return typeof value === 'string' ? (optionLabels.get(field.id)?.get(value) ?? value) : null;
+                    case 'multi_select':
+                        return Array.isArray(value)
+                            ? value.map((v) => optionLabels.get(field.id)?.get(String(v)) ?? String(v)).join(', ')
+                            : null;
+                    case 'checkbox':
+                        return value === true || value === 1 || value === '1' ? 'Sí' : 'No';
+                    case 'user': {
+                        const id = Number(value);
+                        return Number.isInteger(id) && id > 0 ? (members.get(id) ?? String(id)) : null;
+                    }
+                    case 'file':
+                        return asIds(value).map((id) => fileTitles.get(id) ?? `#${id}`).join(', ');
+                    default:
+                        return null;
+                }
+            },
+        };
+    }
+
     private async relationLabeler(tenantId: number, relFields: Field[]): Promise<RelationLabeler> {
         const targets = new Map<number, { listId: number; titleKey: string }>();
         for (const f of relFields) {
@@ -390,4 +469,11 @@ function stringifyCell(value: unknown, type: string, targetType?: string): strin
     if (type === 'percent') return `${String(value)}%`;
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
+}
+
+/** v0.1.252 — formatea las celdas que una persona lee distinto de como se guardan. */
+interface ReadableFormatter {
+    prime(rows: Array<{ data: Record<string, unknown> }>): Promise<void>;
+    /** Texto legible, o null si el tipo no tiene formato propio (cae a stringifyCell). */
+    cell(field: Field, value: unknown): string | null;
 }

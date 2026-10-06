@@ -22,6 +22,7 @@ import type {
 } from '@/types/automation';
 import { parseUtcDate } from '@/lib/utcDate';
 
+import { formatDateTime } from '@/lib/tenantFormat';
 /**
  * Drawer lateral que muestra el historial reciente de ejecuciones de una
  * automatización. Cada run lista su status final, timestamps y el log
@@ -108,7 +109,7 @@ function RunCard({ run }: { run: AutomationRunEntity }): JSX.Element {
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <RunStatusBadge status={run.status} />
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {started ? parseUtcDate(started).toLocaleString() : '—'}
+                    {started ? formatDateTime(parseUtcDate(started)) : '—'}
                 </span>
             </div>
             {run.record_id !== null && (

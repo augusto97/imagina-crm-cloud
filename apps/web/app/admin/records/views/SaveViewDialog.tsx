@@ -183,15 +183,15 @@ export function SaveViewDialog({
                                 <option value="spreadsheet">{__('Hoja de cálculo (estilo Excel)')}</option>
                                 <option value="kanban" disabled={selectFields.length === 0}>
                                     {selectFields.length === 0
-                                        ? __('Kanban (necesitas al menos un campo Select)')
+                                        ? __('Kanban (necesitás al menos un campo de selección)')
                                         : __('Kanban')}
                                 </option>
                                 <option value="calendar" disabled={dateFields.length === 0}>
                                     {dateFields.length === 0
-                                        ? __('Calendar (necesitas al menos un campo Date o DateTime)')
-                                        : __('Calendar')}
+                                        ? __('Calendario (necesitás al menos un campo de fecha)')
+                                        : __('Calendario')}
                                 </option>
-                                <option value="cards">{__('Cards (grid de tarjetas)')}</option>
+                                <option value="cards">{__('Tarjetas')}</option>
                             </Select>
                         </div>
 

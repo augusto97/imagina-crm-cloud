@@ -224,6 +224,13 @@ export class PersonalTokensService {
     private async touch(id: number): Promise<void> {
         const last = this.touched.get(id) ?? 0;
         if (Date.now() - last < TOUCH_INTERVAL_MS) return;
+        // v0.1.252 — el mapa crecía para siempre (un id por token usado, y los
+        // OAuth se renuevan cada hora con id nuevo). Pasado el intervalo una
+        // entrada ya no sirve: se barren las viejas cuando el mapa crece.
+        if (this.touched.size > 5000) {
+            const cutoff = Date.now() - TOUCH_INTERVAL_MS;
+            for (const [k, t] of this.touched) if (t < cutoff) this.touched.delete(k);
+        }
         this.touched.set(id, Date.now());
         await this.db.update(personalAccessTokens).set({ lastUsedAt: new Date() }).where(eq(personalAccessTokens.id, id)).catch(() => undefined);
     }

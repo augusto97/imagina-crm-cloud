@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { tenants } from '../src/db/schema';
@@ -10,6 +9,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { RecordsRepository } from '../src/records/records.repository';
+import { RelationsRepository } from '../src/records/relations.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
@@ -63,6 +63,7 @@ describe(`Perf §13 (seed ${SEED})`, () => {
             rt,
             activity,
             new AutomationDispatcher(),
+            new RelationsRepository(),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'bench', name: 'Bench' }).returning();

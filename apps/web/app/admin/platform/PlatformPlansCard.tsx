@@ -31,6 +31,7 @@ import {
 import { ApiError } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 
+import { formatNumber } from '@/lib/tenantFormat';
 /** `''` (vacío) = ilimitado / sin precio (null); un número = ese valor. */
 function toLimit(v: string): number | null {
     const t = v.trim();
@@ -39,7 +40,7 @@ function toLimit(v: string): number | null {
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
 }
 const limitStr = (v: number | null): string => (v === null ? '' : String(v));
-const fmtLimit = (v: number | null): string => (v === null ? '∞' : v.toLocaleString());
+const fmtLimit = (v: number | null): string => (v === null ? '∞' : formatNumber(v));
 
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -140,7 +141,7 @@ export function PlatformPlansCard(): JSX.Element {
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_users)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">{fmtLimit(p.max_automations)}</td>
                                         <td className="imcrm-px-2 imcrm-py-2.5 imcrm-text-right imcrm-tabular-nums">
-                                            {p.max_storage_mb === null ? '∞' : `${p.max_storage_mb.toLocaleString()} MB`}
+                                            {p.max_storage_mb === null ? '∞' : `${formatNumber(p.max_storage_mb)} MB`}
                                         </td>
                                         {/* Cuota de correo por el SMTP de la plataforma (ADR-S18):
                                             con SMTP propio el cliente no consume nada de esto. */}

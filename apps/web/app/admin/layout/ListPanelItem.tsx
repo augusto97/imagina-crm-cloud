@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
+import { memo, useState } from 'react';
 import { readStoreListMarker } from '@imagina-base/shared';
 import {
     Check,
@@ -42,6 +41,7 @@ import { SaveAsTemplateDialog } from '@/admin/lists/SaveAsTemplateDialog';
 import { ShareDialog } from '@/admin/records/ShareDialog';
 
 import { IconColorSubmenu } from './IconColorSubmenu';
+import { currentPathname, goTo } from './activePath';
 import { PanelListLink } from './PanelListLink';
 
 type ListDialog = 'share' | 'duplicate' | 'template' | null;
@@ -63,17 +63,20 @@ type ListDialog = 'share' | 'duplicate' | 'template' | null;
  * sus propias queries (público, campos, vistas) y montarlo por cada fila
  * del menú sería N requests por abrir el panel.
  */
-export function ListPanelItem({
+/**
+ * v0.1.253 — memoizado: el panel puede tener cientos de listas y el Sidebar
+ * se re-renderiza en cada navegación. `onToggleStar` recibe el id (así el
+ * padre pasa UNA función estable para todas las filas).
+ */
+export const ListPanelItem = memo(function ListPanelItem({
     list,
     starred,
     onToggleStar,
 }: {
     list: ListSummary;
     starred: boolean;
-    onToggleStar: () => void;
+    onToggleStar: (listId: number) => void;
 }): JSX.Element {
-    const navigate = useNavigate();
-    const { pathname } = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
     const update = useUpdateList(list.id);
@@ -90,6 +93,7 @@ export function ListPanelItem({
     const canImport = useCan(CAP.IMPORT_RECORDS) && !storeManaged;
 
     const [dialog, setDialog] = useState<ListDialog>(null);
+    const toggleStar = (): void => onToggleStar(list.id);
 
     const base = `/lists/${list.slug}`;
     const link = `${window.location.origin}${window.location.pathname}#${base}/records`;
@@ -137,7 +141,8 @@ export function ListPanelItem({
             await remove.mutateAsync({ idOrSlug: list.id });
             toast.success(__('Lista eliminada'));
             // Si estabas parado en esa lista, la página ya no existe.
-            if (pathname.startsWith(`${base}/`) || pathname === base) navigate('/lists');
+            const pathname = currentPathname();
+            if (pathname.startsWith(`${base}/`) || pathname === base) goTo('/lists');
         } catch (err) {
             if (err instanceof Error) toast.error(__('No se pudo eliminar'), err.message);
         }
@@ -155,12 +160,12 @@ export function ListPanelItem({
                 starred={starred}
                 icon={listIcon(list.icon) ?? DEFAULT_LIST_ICON}
                 iconColor={listColor(list.color)}
-                onToggleStar={onToggleStar}
+                onToggleStar={toggleStar}
                 onRename={canManage ? (n) => void rename(n) : undefined}
                 held={dialog !== null}
                 menu={({ startRename }) => (
                     <>
-                        <DropdownMenuItem onSelect={onToggleStar}>
+                        <DropdownMenuItem onSelect={toggleStar}>
                             {starred ? <PinOff className="imcrm-h-3.5 imcrm-w-3.5" /> : <Pin className="imcrm-h-3.5 imcrm-w-3.5" />}
                             {starred ? __('Quitar de favoritos') : __('Anclar a favoritos')}
                         </DropdownMenuItem>
@@ -209,13 +214,13 @@ export function ListPanelItem({
 
                         <DropdownMenuSeparator />
                         {canCreate && (
-                            <DropdownMenuItem onSelect={() => navigate(`${base}/records?new=1`)}>
+                            <DropdownMenuItem onSelect={() => goTo(`${base}/records?new=1`)}>
                                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Nuevo registro')}
                             </DropdownMenuItem>
                         )}
                         {canImport && (
-                            <DropdownMenuItem onSelect={() => navigate(`${base}/records?import=1`)}>
+                            <DropdownMenuItem onSelect={() => goTo(`${base}/records?import=1`)}>
                                 <Upload className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Importar CSV / Excel')}
                             </DropdownMenuItem>
@@ -227,24 +232,24 @@ export function ListPanelItem({
 
                         {(canManage || canAutomations) && <DropdownMenuSeparator />}
                         {canManage && (
-                            <DropdownMenuItem onSelect={() => navigate(`${base}/edit?s=campos`)}>
+                            <DropdownMenuItem onSelect={() => goTo(`${base}/edit?s=campos`)}>
                                 <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Campos')}
                             </DropdownMenuItem>
                         )}
                         {canAutomations && (
-                            <DropdownMenuItem onSelect={() => navigate(`${base}/automations`)}>
+                            <DropdownMenuItem onSelect={() => goTo(`${base}/automations`)}>
                                 <Zap className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Automatizaciones')}
                             </DropdownMenuItem>
                         )}
                         {canManage && (
                             <>
-                                <DropdownMenuItem onSelect={() => navigate(`${base}/edit?s=permisos`)}>
+                                <DropdownMenuItem onSelect={() => goTo(`${base}/edit?s=permisos`)}>
                                     <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Uso compartido y permisos')}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => navigate(`${base}/edit?s=general`)}>
+                                <DropdownMenuItem onSelect={() => goTo(`${base}/edit?s=general`)}>
                                     <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
                                     {__('Ajustes de la lista')}
                                 </DropdownMenuItem>
@@ -301,4 +306,4 @@ export function ListPanelItem({
             )}
         </>
     );
-}
+});

@@ -48,11 +48,17 @@ export class BootstrapService {
             // Campo que hace de TÍTULO en cada lista (v0.1.136): se deriva de
             // `settings.title_field_id` con fallback al primer texto, en el
             // mismo lugar que lo resuelve `/fields`.
+            // Agrupado UNA vez (antes se filtraba la lista de campos entera por
+            // cada lista: con 466 listas y 6.000 campos, ~3 M de iteraciones).
+            const byList = new Map<number, Array<{ id: number; type: FieldType }>>();
+            for (const f of fieldRows) {
+                const arr = byList.get(f.listId) ?? [];
+                arr.push({ id: f.id, type: f.type as FieldType });
+                byList.set(f.listId, arr);
+            }
             const titleFieldIds = new Set<number>();
             for (const l of listRows) {
-                const own = fieldRows
-                    .filter((f) => f.listId === l.id)
-                    .map((f) => ({ id: f.id, type: f.type as FieldType }));
+                const own = byList.get(l.id) ?? [];
                 const titleId = resolveTitleFieldId(own, l.settings);
                 if (titleId !== null) titleFieldIds.add(titleId);
             }

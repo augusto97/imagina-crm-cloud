@@ -21,6 +21,7 @@ import {
     useUpsertRecurrence,
 } from '@/hooks/useRecurrences';
 import { moduleEnabled } from '@/lib/cloudFeatures';
+import { parseUtcDate } from '@/lib/utcDate';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -106,7 +107,7 @@ export function DateCellEditor({
             setOpen(false);
             return;
         }
-        const formatted = formatDateValue(next, isDateTime ? pickedTime : null);
+        const formatted = formatDateValue(next, pickedTime, isDateTime);
         onCommit(formatted);
         if (!isDateTime) {
             // Para `date` cerramos al elegir; para `datetime` el usuario
@@ -118,14 +119,14 @@ export function DateCellEditor({
     const applyShortcut = (offset: ShortcutOffset): void => {
         const next = computeShortcut(offset);
         setPickedDate(next);
-        onCommit(formatDateValue(next, isDateTime ? pickedTime : null));
+        onCommit(formatDateValue(next, pickedTime, isDateTime));
         if (!isDateTime) setOpen(false);
     };
 
     const setTime = (t: string): void => {
         setPickedTime(t);
         if (pickedDate) {
-            onCommit(formatDateValue(pickedDate, t));
+            onCommit(formatDateValue(pickedDate, t, isDateTime));
         }
     };
 
@@ -797,6 +798,19 @@ interface ParsedDateValue {
 
 function parseDateValue(value: string | null): ParsedDateValue {
     if (value === null || value === '') return { date: undefined, time: '' };
+    // v0.1.252 — un datetime guardado es un INSTANTE con zona (`…Z`): se
+    // muestra en la hora local de quien mira, no en la de UTC.
+    if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim())) {
+        const inst = parseUtcDate(value);
+        if (!Number.isNaN(inst.getTime())) {
+            const hh = String(inst.getHours()).padStart(2, '0');
+            const mm = String(inst.getMinutes()).padStart(2, '0');
+            return {
+                date: new Date(inst.getFullYear(), inst.getMonth(), inst.getDate()),
+                time: `${hh}:${mm}`,
+            };
+        }
+    }
     // Acepta "YYYY-MM-DD", "YYYY-MM-DD HH:mm:ss", "YYYY-MM-DDTHH:mm".
     const norm = value.replace('T', ' ');
     const [datePart, timePart] = norm.split(' ');
@@ -808,12 +822,20 @@ function parseDateValue(value: string | null): ParsedDateValue {
     return { date, time };
 }
 
-function formatDateValue(date: Date, time: string | null): string {
+/**
+ * v0.1.252 — Un `date` viaja como `YYYY-MM-DD`; un `datetime`, como el
+ * INSTANTE en UTC (`toISOString`, con `Z`). Antes mandaba la hora local sin
+ * zona (`2026-10-20T09:30`) y el backend —que exige zona— la rechazaba: los
+ * campos «Fecha y hora» no se podían guardar desde ninguna pantalla. Sin
+ * hora elegida, toma las 00:00 locales.
+ */
+export function formatDateValue(date: Date, time: string | null, isDateTime = false): string {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
-    if (time === null || time === '') return `${y}-${m}-${d}`;
-    return `${y}-${m}-${d}T${time}`;
+    if (!isDateTime) return `${y}-${m}-${d}`;
+    const [hh, mm] = (time && /^\d{1,2}:\d{2}/.test(time) ? time : '00:00').split(':').map(Number);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hh ?? 0, mm ?? 0).toISOString();
 }
 
 function statusOptions(

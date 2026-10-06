@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useRecurrencesForRecord } from '@/hooks/useRecurrences';
 import { useUpdateRecord } from '@/hooks/useRecords';
 import { ApiError } from '@/lib/api';
+import { parseUtcDate } from '@/lib/utcDate';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -131,6 +132,24 @@ function EditableCellInner({
         // "encajonado" que quedaba pegado). En multi el popover queda
         // abierto para marcar varias opciones; cada toggle commitea
         // optimista y los chips de la celda se actualizan en vivo.
+        // v0.1.252 — la casilla se marca con UN click (antes el primero sólo
+        // mostraba el control y había que clickear de nuevo).
+        if (field.type === 'checkbox' && canEdit) {
+            return (
+                <span className="imcrm-flex imcrm-h-full imcrm-items-center">
+                    <input
+                        type="checkbox"
+                        className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
+                        checked={Boolean(value)}
+                        disabled={update.isPending}
+                        aria-label={field.label}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => void commit(e.target.checked)}
+                    />
+                </span>
+            );
+        }
+
         if ((field.type === 'select' || field.type === 'multi_select') && canEdit) {
             return (
                 <OptionPicker
@@ -386,8 +405,9 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     {...commonProps}
                     ref={ref as React.RefObject<HTMLInputElement>}
                     type="datetime-local"
-                    value={typeof value === 'string' ? value.replace(' ', 'T').slice(0, 16) : ''}
-                    onChange={(e) => onChange(e.target.value || null)}
+                    value={typeof value === 'string' && value !== '' ? toLocalDateTimeInput(value) : ''}
+                    // v0.1.252 — el backend exige el instante con zona.
+                    onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
                 />
             );
         case 'percent':
@@ -523,3 +543,11 @@ const DateCellTrigger = forwardRef<
         </button>
     );
 });
+
+/** Instante del API → valor de un `<input type="datetime-local">` en hora local. */
+function toLocalDateTimeInput(value: string): string {
+    const d = parseUtcDate(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n: number): string => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}

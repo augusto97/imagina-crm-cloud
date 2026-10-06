@@ -14,6 +14,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { CAP, useCan } from '@/lib/permissions';
 
+import { formatNumber } from '@/lib/tenantFormat';
 interface ImportDialogProps {
     listId: number;
     listSlug: string;
@@ -424,7 +425,7 @@ function UploadStep({
             <FileUp className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <span className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                    {fileName !== '' ? fileName : __('Selecciona un archivo CSV')}
+                    {fileName !== '' ? fileName : __('Elegí un archivo CSV')}
                 </span>
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
                     {__('Click o arrastra. Tamaño máximo recomendado: 5 MB / 5 000 filas.')}
@@ -532,7 +533,7 @@ function MapStep({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-text-xs imcrm-text-muted-foreground">
                 <span>
-                    {preview.total_rows.toLocaleString()} {__('filas detectadas')} ·{' '}
+                    {formatNumber(preview.total_rows)} {__('filas detectadas')} ·{' '}
                     {preview.headers.length} {__('columnas')}
                     {newCount > 0 && (
                         <>
@@ -706,12 +707,12 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                     <CheckCircle2 className="imcrm-h-5 imcrm-w-5 imcrm-text-success" />
                 )}
                 <span>
-                    {result.imported.toLocaleString()} {__('registros importados')}
+                    {formatNumber(result.imported)} {__('registros importados')}
                     {result.skipped > 0 && (
                         <>
                             {' · '}
                             <span className="imcrm-text-muted-foreground">
-                                {result.skipped.toLocaleString()} {__('omitidos')}
+                                {formatNumber(result.skipped)} {__('omitidos')}
                             </span>
                         </>
                     )}
@@ -719,7 +720,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                         <>
                             {' · '}
                             <span className="imcrm-text-muted-foreground">
-                                {result.linked_subtasks!.toLocaleString()} {__('como subtareas')}
+                                {formatNumber(result.linked_subtasks!)} {__('como subtareas')}
                             </span>
                         </>
                     )}
@@ -746,7 +747,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                                 <span className="imcrm-font-medium">{c.header || `#${c.column_index}`}</span>
                                 {' — '}
                                 <span className="imcrm-text-muted-foreground">
-                                    {c.rows_with_data.toLocaleString()} {__('filas con datos')}
+                                    {formatNumber(c.rows_with_data)} {__('filas con datos')}
                                 </span>
                                 {c.sample && (
                                     <>
@@ -769,7 +770,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                 <details className="imcrm-rounded-md imcrm-border imcrm-border-warning/40 imcrm-bg-warning/5 imcrm-p-3 imcrm-text-xs">
                     <summary className="imcrm-cursor-pointer imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-font-medium imcrm-text-warning">
                         <TriangleAlert className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {result.cell_warnings.length.toLocaleString()} {__('celdas con datos NO importadas (click para detalles)')}
+                        {formatNumber(result.cell_warnings.length)} {__('celdas con datos NO importadas (click para detalles)')}
                     </summary>
                     <p className="imcrm-mt-2 imcrm-text-muted-foreground">
                         {__('Estos valores no pudieron convertirse al tipo del campo. Comunes: fechas en formato no reconocido, multi_select con items vacíos, números con caracteres no numéricos.')}
@@ -836,13 +837,13 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
             )}
             {result.truncated && (
                 <p className="imcrm-text-xs imcrm-text-warning">
-                    {__('Se procesaron las primeras 5 000 filas. Vuelve a ejecutar el import con el resto del archivo.')}
+                    {__('Se procesaron las primeras 5 000 filas. Volvé a importar con el resto del archivo.')}
                 </p>
             )}
             {result.errors.length > 0 && (
                 <details className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3 imcrm-text-xs">
                     <summary className="imcrm-cursor-pointer imcrm-font-medium imcrm-text-destructive">
-                        {result.errors.length.toLocaleString()} {__('filas con errores (click para ver detalles)')}
+                        {formatNumber(result.errors.length)} {__('filas con errores (click para ver detalles)')}
                     </summary>
                     <ul className="imcrm-mt-2 imcrm-flex imcrm-max-h-48 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto imcrm-text-muted-foreground">
                         {result.errors.slice(0, 50).map((e, i) => (

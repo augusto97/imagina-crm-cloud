@@ -41,21 +41,13 @@ import type { RecordEntity } from '@/types/record';
 import type { SavedViewEntity } from '@/types/view';
 
 import { BulkActionsToolbar } from './BulkActionsToolbar';
-import { BulkEditDialog } from './bulk/BulkEditDialog';
 import { newDraft, type BulkDraft } from './bulk/bulkOpMeta';
-import { BulkStructureDialog } from './bulk/BulkStructureDialog';
-import { BulkHistorySheet } from './bulk/BulkHistorySheet';
-import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
-import { StoreBulkDialog } from './bulk/StoreBulkDialog';
-import { StoreVariationsDialog } from './bulk/StoreVariationsDialog';
 import { StoreListBanner } from './StoreListBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
 import { FieldCreateDialog } from './FieldCreateDialog';
 import { FieldsPanel } from './FieldsPanel';
 import { FiltersPanel } from './FiltersPanel';
-import { ImportDialog } from './ImportDialog';
-import { ShareDialog } from './ShareDialog';
 import { Pagination } from './Pagination';
 import { RecordCreateDialog } from './RecordCreateDialog';
 import { RecordDetailDrawer } from './RecordDetailDrawer';
@@ -88,6 +80,7 @@ import {
 //    en paralelo gracias al prefetch agresivo del 0.57.9.
 import { CalendarView } from './views/CalendarView';
 import { CardsView } from './views/CardsView';
+import { pickPrimaryField } from '@/lib/recordCategorize';
 import { KanbanView } from './views/KanbanView';
 import { GroupedTableView } from './views/GroupedTableView';
 import { useEventCallback } from '@/hooks/useEventCallback';
@@ -103,6 +96,18 @@ import {
     viewConfigToState,
 } from './views/savedViewMapping';
 
+import { BulkEditDialog } from './bulk/BulkEditDialog';
+import { BulkStructureDialog } from './bulk/BulkStructureDialog';
+import { BulkHistorySheet } from './bulk/BulkHistorySheet';
+import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
+import { StoreBulkDialog } from './bulk/StoreBulkDialog';
+import { StoreVariationsDialog } from './bulk/StoreVariationsDialog';
+import { ImportDialog } from './ImportDialog';
+import { ShareDialog } from './ShareDialog';
+
+
+/** Tipos que no aportan en el cuerpo de una tarjeta (texto largo, archivos, vínculos). */
+const CARD_SKIP_TYPES = new Set<string>(['long_text', 'file', 'relation', 'lookup', 'computed']);
 export function RecordsPage(): JSX.Element {
     const { listSlug } = useParams<{ listSlug: string }>();
     const navigate = useNavigate();
@@ -595,9 +600,17 @@ const applyView = (view: SavedViewEntity | null): void => {
         if (! isCards || ! fields.data) return [];
         const ids = activeView?.config.card_field_ids ?? [];
         const byId = new Map(fields.data.map((f) => [f.id, f]));
-        return ids
+        const picked = ids
             .map((id) => byId.get(id))
             .filter((f): f is FieldEntity => f !== undefined);
+        if (picked.length > 0) return picked;
+        // v0.1.252 — sin campos elegidos, la tarjeta mostraba SÓLO el título
+        // (debajo de un bloque de color con iniciales). Ahora trae los
+        // primeros datos útiles de la lista; la vista los puede cambiar.
+        const primaryId = pickPrimaryField(fields.data)?.id;
+        return fields.data
+            .filter((f) => f.id !== primaryId && !CARD_SKIP_TYPES.has(f.type))
+            .slice(0, 4);
     }, [isCards, fields.data, activeView?.config.card_field_ids]);
 
     const cardsCoverField = useMemo(() => {
@@ -826,12 +839,15 @@ const applyView = (view: SavedViewEntity | null): void => {
                                 onChange={setFilterTree}
                             />
                         </div>
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                        {/* v0.1.252 — en el celular ocupa la fila entera: el buscador
+                            se estira y «Nuevo registro» queda en ícono (antes se
+                            salía de la pantalla). */}
+                        <div className="imcrm-flex imcrm-w-full imcrm-min-w-0 imcrm-items-center imcrm-gap-2 sm:imcrm-w-auto">
                             {listFetching && !records.isLoading && (
                                 <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
                             )}
                             {/* Búsqueda angosta (200px) que crece al enfocar. */}
-                            <div className="imcrm-relative imcrm-w-[200px] imcrm-transition-[width] imcrm-duration-150 focus-within:imcrm-w-[240px]">
+                            <div className="imcrm-relative imcrm-min-w-0 imcrm-flex-1 imcrm-transition-[width] imcrm-duration-150 sm:imcrm-w-[200px] sm:imcrm-flex-none sm:focus-within:imcrm-w-[240px]">
                                 <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-2 imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
                                 <Input
                                     value={state.search}
@@ -879,10 +895,11 @@ const applyView = (view: SavedViewEntity | null): void => {
                                         setCreateOpen(true);
                                     }}
                                     disabled={!fields.data || fields.data.length === 0}
-                                    className="imcrm-gap-1.5"
+                                    className="imcrm-shrink-0 imcrm-gap-1.5"
+                                    aria-label={__('Nuevo registro')}
                                 >
                                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    {__('Nuevo registro')}
+                                    <span className="imcrm-hidden sm:imcrm-inline">{__('Nuevo registro')}</span>
                                 </Button>
                             )}
                         </div>
@@ -911,21 +928,27 @@ const applyView = (view: SavedViewEntity | null): void => {
             {/* El ImportDialog vive FUERA de la rama "hay campos": importar un
                 CSV/Excel a una lista recién creada (sin campos) es el caso
                 típico — el diálogo crea los campos on-the-fly. */}
-            <ImportDialog
-                listId={list.data.id}
-                listSlug={list.data.slug}
-                open={importOpen}
-                onOpenChange={setImportOpen}
-                onUpdateInstead={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
-            />
+            {importOpen && (
+                <ImportDialog
+                    listId={list.data.id}
+                    listSlug={list.data.slug}
+                    open={importOpen}
+                    onOpenChange={setImportOpen}
+                    onUpdateInstead={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
+                />
+            )}
 
-            <ShareDialog
-                open={shareOpen}
-                onOpenChange={setShareOpen}
-                listId={list.data.id}
-                listName={list.data.name}
-                canPublish={canManageList}
-            />
+            {/* v0.1.253 — montado SÓLO abierto: cerrado igual pedía la
+                publicación, los campos y las vistas de la lista en cada visita. */}
+            {shareOpen && (
+                <ShareDialog
+                    open={shareOpen}
+                    onOpenChange={setShareOpen}
+                    listId={list.data.id}
+                    listName={list.data.name}
+                    canPublish={canManageList}
+                />
+            )}
 
             {fields.data && fields.data.length > 0 && (
                 <ViewSettingsSheet
@@ -979,7 +1002,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
-            {canCsvUpdate && list.data && (
+            {canCsvUpdate && list.data && csvUpdateOpen && (
                 <CsvUpdateDialog
                     open={csvUpdateOpen}
                     onOpenChange={setCsvUpdateOpen}
@@ -989,11 +1012,11 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
-            {canSeeBulkHistory && list.data && (
+            {canSeeBulkHistory && list.data && bulkHistoryOpen && (
                 <BulkHistorySheet open={bulkHistoryOpen} onOpenChange={setBulkHistoryOpen} listId={list.data.id} />
             )}
 
-            {storeMarker && canStoreBulk && (
+            {storeMarker && canStoreBulk && storeBulkOpen && (
                 <StoreBulkDialog
                     open={storeBulkOpen}
                     onOpenChange={setStoreBulkOpen}
@@ -1007,7 +1030,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
-            {storeMarker && canStoreBulk && (
+            {storeMarker && canStoreBulk && variationsOpen && (
                 <StoreVariationsDialog
                     open={variationsOpen}
                     onOpenChange={setVariationsOpen}
@@ -1020,7 +1043,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
-            {fields.data && fields.data.length > 0 && (
+            {fields.data && fields.data.length > 0 && bulkEditOpen && (
                 <BulkEditDialog
                     open={bulkEditOpen}
                     onOpenChange={setBulkEditOpen}
@@ -1038,7 +1061,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                 />
             )}
 
-            {list.data && (
+            {list.data && structure !== null && (
                 <BulkStructureDialog
                     action={structure?.action ?? null}
                     preferMatching={structure?.matching}

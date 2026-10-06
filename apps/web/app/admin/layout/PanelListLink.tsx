@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { NavLink } from 'react-router';
 import { MoreHorizontal, Pin } from 'lucide-react';
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -7,6 +6,7 @@ import { __, sprintf } from '@/lib/i18n';
 import type { ListIconComponent } from '@/lib/listIcons';
 import { cn } from '@/lib/utils';
 
+import { useIsPathActive } from './activePath';
 import { usePeekHold } from './peekHold';
 
 /** Lo que el menú contextual de un item recibe del propio item. */
@@ -55,6 +55,7 @@ export function PanelListLink({
     held?: boolean;
 }): JSX.Element {
     const [menuOpen, setMenuOpen] = useState(false);
+    const isActive = useIsPathActive(to);
     const [renaming, setRenaming] = useState(false);
     const [draft, setDraft] = useState(name);
     const peekHold = usePeekHold();
@@ -113,9 +114,12 @@ export function PanelListLink({
                     : undefined
             }
         >
-            <NavLink
-                to={to}
-                className={({ isActive }) =>
+            {/* v0.1.253 — `<a>` plano + ruta activa por store (ver activePath):
+                el HashRouter atiende el cambio de hash igual que un NavLink. */}
+            <a
+                href={`#${to}`}
+                aria-current={isActive ? 'page' : undefined}
+                className={
                     cn(
                         // v0.1.169 — 40px de alto y 14px en mobile (objetivo
                         // táctil); en escritorio las medidas compactas. El
@@ -146,7 +150,7 @@ export function PanelListLink({
                     />
                 )}
                 <span className="imcrm-truncate">{name}</span>
-            </NavLink>
+            </a>
             <div className="imcrm-absolute imcrm-right-1 imcrm-top-1/2 imcrm-flex -imcrm-translate-y-1/2 imcrm-items-center lg:imcrm-right-1.5">
                 <button
                     type="button"

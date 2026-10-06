@@ -773,7 +773,7 @@ function FavoritesSection({
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                         {s.lists.map((l) => (
                             <li key={`l-${l.id}`}>
-                                <ListPanelItem list={l} starred onToggleStar={() => onToggle('lists', l.id)} />
+                                <ListPanelItem list={l} starred onToggleStar={(id) => onToggle('lists', id)} />
                             </li>
                         ))}
                         {s.dashboards.map((d) => (

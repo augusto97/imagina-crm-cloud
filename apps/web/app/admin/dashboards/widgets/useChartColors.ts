@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { colorVar } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
+import { useMemberNames } from '@/hooks/useWpUsers';
 
 /**
  * Paleta de fallback para categorías sin color definido (campos que
@@ -98,13 +99,19 @@ export function useGroupColorMap(
 export function useGroupLabelMap(
     listId: number | undefined,
     groupByFieldId: number | undefined,
+    /** v0.1.252 — claves de los grupos: con un campo persona son ids de usuario. */
+    keys: string[] = [],
 ): Map<string, string> {
     const options = useGroupOptions(listId, groupByFieldId);
+    const fields = useFields(listId && listId > 0 ? listId : undefined);
+    const isUser = fields.data?.find((f) => f.id === groupByFieldId)?.type === 'user';
+    const names = useMemberNames(isUser ? keys.map((k) => Number(k)) : []);
     return useMemo(() => {
         const map = new Map<string, string>();
         for (const [key, o] of options) map.set(key, o.label);
+        for (const [id, name] of names.data ?? []) map.set(String(id), name);
         return map;
-    }, [options]);
+    }, [options, names.data]);
 }
 
 /**
@@ -188,4 +195,13 @@ export function applyHideZero(
     const filtered = rows.filter((r) => r.value !== 0);
     // Si TODO es 0, mejor mostrar los datos que un chart vacío confuso.
     return filtered.length > 0 ? filtered : rows;
+}
+
+/** v0.1.252 — Claves de grupo de la respuesta de un widget (para `useGroupLabelMap`). */
+export function groupKeysOf(payload: unknown): string[] {
+    if (payload === null || typeof payload !== 'object' || !('data' in payload)) return [];
+    const rows = (payload as { data: unknown }).data;
+    return Array.isArray(rows)
+        ? rows.map((r) => String((r as { label?: unknown }).label ?? ''))
+        : [];
 }

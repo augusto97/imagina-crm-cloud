@@ -324,7 +324,7 @@ function ListsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
             title={__('Aún no hay listas')}
             description={
                 canCreate
-                    ? __('Crea tu primera lista para empezar a capturar registros.')
+                    ? __('Creá tu primera lista para empezar a cargar registros.')
                     : __('Tu rol no tiene listas asignadas todavía. Contacta al administrador.')
             }
             action={

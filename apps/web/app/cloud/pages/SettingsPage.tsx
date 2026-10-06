@@ -25,6 +25,7 @@ import { TenantMailPanel } from '@/cloud/components/TenantMailPanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
+import { formatNumber } from '@/lib/tenantFormat';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
     trialing: 'En prueba',
     active: 'Activa',
@@ -284,9 +285,9 @@ function UsageBar({
             <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-text-sm">
                 <span className="imcrm-font-medium">{label}</span>
                 <span className="imcrm-tabular-nums imcrm-text-xs imcrm-text-muted-foreground">
-                    <span className="imcrm-font-semibold imcrm-text-foreground">{used.toLocaleString()}{suffix}</span>
+                    <span className="imcrm-font-semibold imcrm-text-foreground">{formatNumber(used)}{suffix}</span>
                     {' / '}
-                    {limit === null ? '∞' : `${limit.toLocaleString()}${suffix}`}
+                    {limit === null ? '∞' : `${formatNumber(limit)}${suffix}`}
                 </span>
             </div>
             <div className="imcrm-h-1.5 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted">

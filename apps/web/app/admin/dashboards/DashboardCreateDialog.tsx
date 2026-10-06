@@ -57,7 +57,7 @@ export function DashboardCreateDialog({ open, onOpenChange }: DashboardCreateDia
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Nuevo dashboard')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {mode === 'blank'
-                                    ? __('Crea el contenedor; añade widgets desde la propia página del dashboard.')
+                                    ? __('Creá el tablero; los widgets se agregan desde su propia página.')
                                     : __('Elegí una plantilla y la lista sobre la que se arma: nace con los widgets listos.')}
                             </Dialog.Description>
                         </div>
