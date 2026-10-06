@@ -33,7 +33,7 @@ import { impersonationLog, memberships, personalAccessTokens, tenants, users } f
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
-import { verifyAccountPassword } from './password-check';
+import { passwordCheckFailKey, verifyAccountPassword } from './password-check';
 import { SessionService, type ActiveSession } from './session.service';
 import {
     generateBackupCodes,
@@ -228,10 +228,17 @@ export class AuthService implements OnModuleInit {
         // v0.1.240: el enlace llegó a la casilla de la persona, así que abrirlo
         // prueba que el email es suyo (cuenta verificada) y cierra una
         // invitación pendiente.
-        await this.db
+        const [updated] = await this.db
             .update(users)
             .set({ passwordHash, invitedAt: null, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
-            .where(eq(users.id, Number(userId)));
+            .where(eq(users.id, Number(userId)))
+            .returning({ email: users.email });
+        // v0.1.254 — el aviso de "demasiados intentos" ofrece restablecer la
+        // contraseña como salida, pero el contador seguía ahí y el login nuevo
+        // rebotaba igual hasta que vencían los 15 minutos. Quien canjeó el
+        // enlace probó que el correo es suyo: se le levanta el freno.
+        if (updated?.email) await this.redis.del(loginFailKey(updated.email)).catch(() => undefined);
+        await this.redis.del(passwordCheckFailKey(Number(userId))).catch(() => undefined);
         // SEC-22 (v0.1.113): cambiar la contraseña REVOCA todas las sesiones
         // abiertas. Sin esto, quien hubiera robado una sesión seguía dentro
         // después de que la víctima "recuperaba" la cuenta (el TTL de sesión

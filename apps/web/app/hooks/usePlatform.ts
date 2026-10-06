@@ -19,6 +19,7 @@ import type {
     UpdateTenantInput,
 } from '@imagina-base/shared';
 
+import { useSession } from '@/cloud/session';
 import { api, ApiError } from '@/lib/api';
 
 /**
@@ -40,8 +41,14 @@ export const platformKeys = {
 };
 
 export function useIsSuperadmin() {
+    // v0.1.254 — mientras el operador impersona, la app es la de OTRA persona:
+    // no hay consola que mostrar, así que ni se pregunta. Antes el sondeo
+    // recibía `reauth_required`, cerraba la sesión y la impersonación terminaba
+    // en el login apenas empezaba.
+    const impersonating = useSession((s) => s.impersonating !== null && s.impersonating !== undefined);
     return useQuery({
-        queryKey: platformKeys.is(),
+        queryKey: [...platformKeys.is(), impersonating],
+        enabled: !impersonating,
         queryFn: async (): Promise<boolean> => {
             try {
                 await api.get<PlatformStats>('/platform/stats');

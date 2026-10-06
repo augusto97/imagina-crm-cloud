@@ -146,6 +146,19 @@ export class AuthController {
         @Req() req: FastifyRequest,
         @Res({ passthrough: true }) reply: FastifyReply,
     ): Promise<void> {
+        // v0.1.254 — cerrar sesión estando IMPERSONANDO termina la
+        // impersonación y devuelve al operador a su propia sesión (lo mismo que
+        // "Volver a mi cuenta"). Antes destruía la impersonación y borraba la
+        // cookie: el operador quedaba afuera y tenía que volver a loguearse.
+        if (req.impersonatedBy !== undefined) {
+            const { origToken } = await this.auth.stopImpersonation(req.sessionToken as string);
+            if (origToken) {
+                this.setSessionCookie(reply, origToken);
+                return;
+            }
+            reply.clearCookie(SESSION_COOKIE, { path: '/' });
+            return;
+        }
         await this.auth.logout(req.sessionToken as string);
         reply.clearCookie(SESSION_COOKIE, { path: '/' });
     }

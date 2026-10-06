@@ -6871,6 +6871,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         crea sin asignarse → lo ve, lo abre y lo edita; el registro ajeno
         sigue oculto).
 
+  - [x] **La impersonación del superadmin vuelve a funcionar (v0.1.254,
+        reporte del usuario: "impersonar me cierra la sesión, y al volver a
+        entrar dice demasiados intentos")**. Regresión de SEC-24 (v0.1.225):
+        el `SuperadminGuard` chequeaba "¿sesión abierta con contraseña?" ANTES
+        de "¿es superadmin?", y una sesión IMPERSONADA no se abre con
+        contraseña → respondía `reauth_required`; la app, al sondear
+        `/platform/stats` para decidir si mostrar Plataforma, interpreta ese
+        código como "cerrá la sesión y volvé al login" — la impersonación
+        moría apenas empezaba (reproducido en el navegador: impersonate 200 →
+        stats 401 reauth → logout → login). Ahora: (a) una sesión impersonada
+        recibe 403 (no hay consola para quien mira como otro) y el guard
+        pregunta primero QUIÉN es y después CÓMO entró — `reauth_required`
+        sólo se lo lleva un superadmin de verdad; (b) la app ni sondea la
+        consola mientras se impersona; (c) **cerrar sesión impersonando
+        devuelve al operador a su propia sesión** (antes destruía todo y lo
+        dejaba en el login). Y los "demasiados intentos": el mensaje del freno
+        por cuenta (10 contraseñas mal en 15 min) ofrecía "restablecé tu
+        contraseña" pero el reset NO levantaba el contador — ahora lo limpia
+        (también el de la contraseña en la sesión). 2 tests (el del guard falla
+        con el código anterior; reset que desbloquea el login) — 63 en los
+        specs de auth y plataforma — + E2E navegador 8/9 (impersonar → app del
+        agente con banner y sus registros, sin reauth ni logout, sin
+        Plataforma; cerrar sesión → vuelve el operador con la consola; la ✗ es
+        la URL `/login` que conserva el path de la recarga, la app está
+        adentro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
