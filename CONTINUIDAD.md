@@ -349,8 +349,8 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.252** (auditoría integral: rendimiento, fallas
-funcionales y UI/UX), en `main`.
+versión publicada: **v0.1.253** (fix de permisos: el agente no veía lo que
+creaba), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - **PSE propio (contratado con ACH Colombia, NO el que traen Wompi/MP)** —
@@ -399,6 +399,20 @@ funcionales y UI/UX), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.253** — Reporte de un cliente: "un agente crea
+  registros y después no los ve; el admin sí". Con la configuración por
+  defecto ("Solo lo suyo") funcionaba (verificado por API y en navegador); el
+  fallo aparecía con el ajuste fino: (1) **«Los que tiene asignados»** — el
+  registro que el agente creaba sin ponerse de responsable desaparecía al
+  instante, y sin campo de responsable elegido no veía NADA; (2) **«Ver: nada»
+  + «Crear: sí»** — creaba a ciegas. Regla nueva: **quien crea un registro
+  siempre lo ve** (assigned = asignados O creados; create con view none →
+  own). Además los **archivos** del agente siguen ahora el acceso de cada
+  lista (antes sólo veía lo que subió o lo de registros que creó: con
+  «Colaborar» veía el registro pero el adjunto daba 404). No se pudo ver la
+  config real del cliente (el MCP conectado es el workspace del usuario):
+  si el cliente sigue con el problema, pedir captura de Ajustes de la lista →
+  Permisos.
 - **2026-10-06 · v0.1.252** — Auditoría integral pedida por el usuario
   ("rendimiento, módulos, campos, que todo funcione, velocidad y muy
   importante la estética"). Se corrieron 4 auditorías en paralelo (servidor,

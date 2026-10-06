@@ -2,9 +2,11 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { roleHasCapability, type Role } from '@imagina-base/shared';
-import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
-import { attachments, records } from '../db/schema';
+import { attachments, dashboards, fields, lists, records } from '../db/schema';
+import type { Tx } from '../db/client';
+import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { FILE_STORAGE, type FileStorage } from './file-storage';
 
@@ -31,16 +33,78 @@ export interface FileActor {
  * SEC-25 (v0.1.226) — qué adjuntos puede ver alguien. Los ids son
  * secuenciales: sin esto, un agente que sólo ve SUS registros bajaba todos
  * los archivos de la empresa probando `/files/1`, `/files/2`… Quien ve todos
- * los registros (`view_records`) ve todos los archivos; quien ve sólo lo suyo
- * ve lo que SUBIÓ y lo que cuelga de un registro SUYO.
+ * los registros (`view_records`) ve todos los archivos.
+ *
+ * v0.1.253 — el resto (el agente) sigue el ACL de CADA LISTA, no su rol
+ * global: antes sólo veía lo que subió y lo de registros que CREÓ, así que si
+ * el admin le daba "Colaborar" en una lista (o le asignaba un registro), veía
+ * el registro pero sus archivos daban 404. Ahora ve lo que subió, lo que cuelga
+ * de un registro que alcanza en esa lista (campo de archivo no oculto para él,
+ * o un bloque de la descripción), las imágenes del diseño de esas listas y las
+ * de los tableros que puede abrir.
  */
-function readableBy(tenantId: number, actor: FileActor | undefined): SQL | undefined {
+async function readableBy(
+    tx: Tx,
+    tenantId: number,
+    actor: FileActor | undefined,
+): Promise<SQL | undefined> {
     if (!actor || roleHasCapability(actor.role, 'view_records')) return undefined;
-    return sql`(${attachments.createdBy} = ${actor.userId} OR EXISTS (
-        SELECT 1 FROM ${records} r
-        WHERE r.tenant_id = ${tenantId} AND r.created_by = ${actor.userId} AND r.deleted_at IS NULL
-          AND jsonb_path_exists(r.data, '$.*[*] ? (@ == $x)', jsonb_build_object('x', ${attachments.id}))
-    ))`;
+    const vars = sql`jsonb_build_object('x', ${attachments.id})`;
+    const listRows = await tx
+        .select({ id: lists.id, settings: lists.settings })
+        .from(lists)
+        .where(eq(lists.tenantId, tenantId));
+    const fileFields = await tx
+        .select({ id: fields.id, listId: fields.listId, slug: fields.slug })
+        .from(fields)
+        .where(and(eq(fields.tenantId, tenantId), eq(fields.type, 'file')));
+
+    const perList: SQL[] = [];
+    const visibleLists: number[] = [];
+    for (const l of listRows) {
+        const settings = (l.settings ?? {}) as Record<string, unknown>;
+        const perms = effectivePermissions(settings, actor.role, actor.userId);
+        if (perms.view === 'none') continue;
+        visibleLists.push(l.id);
+        const hidden = new Set(perms.fields_hidden);
+        const refs: SQL[] = fileFields
+            .filter((f) => f.listId === l.id && !hidden.has(f.slug))
+            .map((f) => sql`jsonb_path_exists(${records.data} -> ${`f${f.id}`}, 'lax $[*] ? (@ == $x)', ${vars}, true)`);
+        refs.push(sql`jsonb_path_exists(coalesce(${records.description}, 'null'::jsonb), 'lax $.**.fileId ? (@ == $x)', ${vars}, true)`);
+        const assignmentId = resolvePermissions(settings).assignment_field_id;
+        const scope = scopeWhere(perms.view, actor.userId, assignmentId ? `f${assignmentId}` : null);
+        perList.push(and(eq(records.listId, l.id), scope, or(...refs))!);
+    }
+
+    const conds: SQL[] = [sql`${attachments.createdBy} = ${actor.userId}`];
+    if (perList.length > 0) {
+        conds.push(sql`EXISTS (
+            SELECT 1 FROM ${records}
+            WHERE ${records.tenantId} = ${tenantId} AND ${records.deletedAt} IS NULL AND (${or(...perList)})
+        )`);
+    }
+    if (visibleLists.length > 0) {
+        // Imágenes y galerías del diseño de la ficha (record_layout_v3 y
+        // compañía): viven en `settings` con `file_id` / `image_file_id`.
+        conds.push(sql`EXISTS (
+            SELECT 1 FROM ${lists}
+            WHERE ${lists.tenantId} = ${tenantId} AND ${inArray(lists.id, visibleLists)}
+              AND (jsonb_path_exists(${lists.settings}, 'lax $.**.file_id ? (@ == $x)', ${vars}, true)
+                OR jsonb_path_exists(${lists.settings}, 'lax $.**.image_file_id ? (@ == $x)', ${vars}, true))
+        )`);
+    }
+    // Bloques de imagen de los tableros que puede abrir (misma regla que el
+    // listado de tableros: del workspace, privados suyos o de su rol).
+    conds.push(sql`EXISTS (
+        SELECT 1 FROM ${dashboards}
+        WHERE ${dashboards.tenantId} = ${tenantId}
+          AND (${dashboards.visibility} = 'workspace'
+            OR (${dashboards.visibility} = 'private' AND ${dashboards.createdBy} = ${actor.userId})
+            OR (${dashboards.visibility} = 'roles' AND ${dashboards.allowedRoles} ? ${actor.role}))
+          AND (jsonb_path_exists(${dashboards.widgets}, 'lax $.**.file_id ? (@ == $x)', ${vars}, true)
+            OR jsonb_path_exists(${dashboards.widgets}, 'lax $.**.image_file_id ? (@ == $x)', ${vars}, true))
+    )`);
+    return or(...conds);
 }
 
 /**
@@ -146,11 +210,11 @@ export class FilesService {
             MAX_BATCH,
         );
         if (unique.length === 0) return [];
-        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique), readableBy(tenantId, actor)))
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique), await readableBy(tx, tenantId, actor)))
                 .orderBy(desc(attachments.id)),
         );
         // v0.1.252 — URL FIRMADA: la descarga con sesión exige el header
@@ -165,11 +229,11 @@ export class FilesService {
         id: number,
         actor?: FileActor,
     ): Promise<{ stream: Readable; filename: string; mime: string; size: number }> {
-        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+        const [row] = await this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), readableBy(tenantId, actor)))
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), await readableBy(tx, tenantId, actor)))
                 .limit(1),
         );
         if (!row) throw fileNotFound(id);
@@ -193,7 +257,7 @@ export class FilesService {
             const [found] = await tx
                 .select()
                 .from(attachments)
-                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), readableBy(tenantId, actor)))
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), await readableBy(tx, tenantId, actor)))
                 .limit(1);
             if (!found) return null;
             // SEC-25: borrar un archivo es irreversible (se van los bytes). Lo

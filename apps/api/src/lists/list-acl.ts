@@ -8,7 +8,7 @@ import {
     type Role,
     type Scope,
 } from '@imagina-base/shared';
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, eq, or, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
 
 /**
@@ -58,9 +58,20 @@ export function effectivePermissions(
     const doc = resolvePermissions(settings);
     if (userId !== undefined) {
         const own = doc.users[String(userId)];
-        if (own) return own;
+        if (own) return creatorSeesOwn(own);
     }
-    return doc.permissions[role] ?? defaultRolePermissions(role as ConfigurableRole);
+    return creatorSeesOwn(doc.permissions[role] ?? defaultRolePermissions(role as ConfigurableRole));
+}
+
+/**
+ * v0.1.253 — Quien puede CREAR registros en una lista ve, como mínimo, los
+ * que creó. El ajuste fino permitía guardar "Ver: nada" con "Crear: sí": la
+ * persona creaba un registro y desaparecía al instante de su vista (reporte
+ * de un cliente con el rol agente).
+ */
+function creatorSeesOwn(p: RolePermissions): RolePermissions {
+    if (p.create && p.view === 'none') return { ...p, view: 'own' };
+    return p;
 }
 
 /** Scope efectivo del rol para una acción. */
@@ -85,8 +96,14 @@ export function hiddenFieldsFor(
 /**
  * Condición SQL para el scope de LECTURA. Devuelve:
  *  - `undefined` → sin filtro (scope `all`).
- *  - `sql\`false\`` → deniega todo (scope `none` o `assigned` sin campo).
- *  - una condición → `own` (created_by) o `assigned` (campo = userId).
+ *  - `sql\`false\`` → deniega todo (scope `none`).
+ *  - una condición → `own` (created_by) o `assigned` (campo = userId O
+ *    created_by).
+ *
+ * v0.1.253 — `assigned` incluye además los que la persona CREÓ: un agente
+ * con "los que tiene asignados" daba de alta un registro sin ponerse de
+ * responsable y lo perdía en el acto (el admin sí lo veía). Y sin campo de
+ * asignación elegido ya no deniega todo: queda en "los que creó".
  */
 export function scopeWhere(
     scope: Scope,
@@ -96,9 +113,13 @@ export function scopeWhere(
     if (scope === 'all') return undefined;
     if (scope === 'own') return eq(records.createdBy, actorUserId);
     if (scope === 'assigned') {
-        if (!assignmentKey) return sql`false`; // assigned sin campo → nada
+        const created = eq(records.createdBy, actorUserId);
+        if (!assignmentKey) return created;
         // El campo user guarda un id numérico en JSONB.
-        return sql`(${records.data} ->> ${sql.raw(`'${assignmentKey}'`)}) = ${String(actorUserId)}`;
+        return or(
+            created,
+            sql`(${records.data} ->> ${sql.raw(`'${assignmentKey}'`)}) = ${String(actorUserId)}`,
+        );
     }
     return sql`false`; // none
 }
@@ -112,8 +133,8 @@ export function rowInScope(
     if (scope === 'all') return true;
     if (scope === 'none') return false;
     if (scope === 'own') return row.createdBy === actorUserId;
-    // assigned
-    return String(row.assignmentValue) === String(actorUserId);
+    // assigned (v0.1.253: o creado por la persona)
+    return row.createdBy === actorUserId || String(row.assignmentValue) === String(actorUserId);
 }
 
 /** Combina un scopeWhere con un where existente. */

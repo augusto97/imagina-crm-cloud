@@ -6839,6 +6839,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         celular (formulario largo) y los textos de Actividad para porcentaje y
         duración.
 
+  - [x] **El agente ve lo que crea (v0.1.253, reporte de un cliente: "un
+        agente crea registros en una lista y después no los ve; el admin
+        sí")**. Con el acceso por defecto del agente («Solo lo suyo» = los
+        que creó) funcionaba —verificado por API y en navegador, con alta
+        desde la interfaz—; el fallo aparecía con el **ajuste fino** del
+        panel de Permisos: (a) **«Los que tiene asignados»** filtraba SÓLO
+        por el campo responsable, así que el registro que el agente cargaba
+        sin ponerse de responsable desaparecía en el acto (tampoco podía
+        abrirlo ni corregirlo), y si no se había elegido el campo responsable
+        el agente no veía NADA; (b) **«Ver: nada» con «Crear: sí»** se podía
+        guardar y el agente creaba a ciegas. Regla nueva en `list-acl.ts`,
+        que usan TODOS los caminos (listado, ficha, editar/borrar, agrupada,
+        pie, tableros, actividad, autocompletado, recurrencias, cobros):
+        **quien crea un registro siempre lo ve** — `assigned` = asignados a
+        la persona **o** creados por ella (sin campo responsable queda en
+        "los que creó", no en nada) y `create` con `view: none` se lee como
+        `own` (el panel también lo corrige al tocarlo). El selector dice ahora
+        «Los asignados a la persona (y los que creó)». De paso, **archivos**:
+        la regla de SEC-25 miraba el rol GLOBAL (el agente sólo bajaba lo que
+        subió o lo de registros que creó), así que con «Colaborar» en una
+        lista —o un registro asignado— veía el registro pero el adjunto daba
+        404. Ahora sigue el ACL de CADA lista: lo que subió, los campos de
+        archivo NO ocultos de los registros que alcanza, los bloques de la
+        descripción, las imágenes del diseño de las listas que ve y las de los
+        tableros que puede abrir; una lista sin acceso o un campo oculto
+        siguen cerrados. 3 tests de ACL (fallan con el código anterior) + 1 de
+        archivos (contrato ajeno visible, nómina oculta y otra lista cerradas,
+        imagen del diseño y adjunto de la descripción visibles) — 977 API en
+        verde — y verificación en vivo con un agente real («Los asignados»:
+        crea sin asignarse → lo ve, lo abre y lo edita; el registro ajeno
+        sigue oculto).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
