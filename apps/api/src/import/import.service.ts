@@ -256,7 +256,7 @@ export class ImportService {
             }
         }
 
-        let listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
+        const listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
         for (const [colIdx, slug] of [...mapping]) {
             if (hidden.has(slug)) {
                 mapping.delete(colIdx);
@@ -264,23 +264,28 @@ export class ImportService {
             }
         }
 
-        // 2. Auto-expandir opciones de selects/multi_selects — es cambiar el
-        //    esquema, así que sólo con `manage_fields` (igual que el «Crear»
-        //    del selector de opciones). Sin ese permiso, un valor que no es
-        //    opción queda como error de la fila.
-        const expandedOptions = canManageFields
-            ? await this.expandSelectOptions(tenantId, list.id, rows, mapping, listFields)
-            : {};
-        if (Object.keys(expandedOptions).length > 0) {
-            listFields = (await this.importableFields(tenantId, list.id)).filter((f) => !hidden.has(f.slug));
-        }
-        const bySlug = new Map(listFields.map((f) => [f.slug, f]));
-
         let truncated = false;
         if (rows.length > ImportService.MAX_ROWS_PER_RUN) {
             rows = rows.slice(0, ImportService.MAX_ROWS_PER_RUN);
             truncated = true;
         }
+
+        // 2. Opciones de selects/multi_selects que el archivo trae y el campo
+        //    no tiene. Es cambiar el esquema, así que sólo con `manage_fields`
+        //    (igual que el «Crear» del selector de opciones); sin ese permiso,
+        //    un valor que no es opción queda como error de la fila.
+        //    Se PLANIFICAN en memoria y se validan las filas contra el campo
+        //    ya ampliado; recién después se guardan las que usa alguna fila
+        //    que entra — antes se creaban con TODO el archivo y una fila
+        //    rechazada (otro campo inválido, más allá del tope) dejaba su
+        //    opción colgada en el campo para siempre.
+        const plannedOptions = canManageFields ? planOptionExpansions(rows, mapping, listFields) : new Map<string, SelectOption[]>();
+        const bySlug = new Map(
+            listFields.map((f) => {
+                const extra = plannedOptions.get(f.slug);
+                return [f.slug, extra ? withOptions(f, [...readOptions(f), ...extra]) : f] as const;
+            }),
+        );
 
         // 3. Columnas con datos que quedaron SIN mapping — visibilidad de
         //    pérdida de datos (0.36.5 del plugin).
@@ -365,6 +370,10 @@ export class ImportService {
 
         // 5. Límite de plan sobre el LOTE completo (SEC-09) + bulk insert.
         await this.billing.assertCanCreateRecords(tenantId, staged.length);
+
+        // Las opciones planificadas se guardan SÓLO si alguna fila que entra
+        // las usa (y recién ahora: si el plan rebotó, el campo no se tocó).
+        const expandedOptions = await this.persistUsedOptions(tenantId, list.id, plannedOptions, staged, bySlug);
 
         const CHUNK = 500;
         for (let i = 0; i < staged.length; i += CHUNK) {
@@ -530,40 +539,94 @@ export class ImportService {
         mapping: Map<number, string>,
         listFields: Field[],
     ): Promise<Record<string, SelectOption[]>> {
+        const planned = planOptionExpansions(rows, mapping, listFields);
         const bySlug = new Map(listFields.map((f) => [f.slug, f]));
         const result: Record<string, SelectOption[]> = {};
-
-        for (const [csvIdx, slug] of mapping) {
+        for (const [slug, newOptions] of planned) {
             const field = bySlug.get(slug);
-            if (!field || (field.type !== 'select' && field.type !== 'multi_select')) continue;
-
-            const rawValues = new Set<string>();
-            for (const row of rows) {
-                const cell = (row[csvIdx] ?? '').trim();
-                if (cell === '') continue;
-                if (field.type === 'multi_select') {
-                    for (const item of cell.split(/[,;]/)) {
-                        const v = item.trim();
-                        if (v !== '') rawValues.add(v);
-                    }
-                } else {
-                    rawValues.add(cell);
-                }
-            }
-            if (rawValues.size === 0) continue;
-
-            const existing = readOptions(field);
-            const newOptions = planSelectExpansion(field, rawValues);
-            if (newOptions.length === 0) continue;
-
+            if (!field) continue;
             await this.fields.update(tenantId, String(listId), String(field.id), {
-                config: { ...field.config, options: [...existing, ...newOptions] },
+                config: { ...field.config, options: [...readOptions(field), ...newOptions] },
             });
             result[slug] = newOptions;
         }
-
         return result;
     }
+
+    /**
+     * Guarda, de las opciones planificadas, sólo las que aparecen en alguna
+     * fila que se va a insertar. Un write por campo.
+     */
+    private async persistUsedOptions(
+        tenantId: number,
+        listId: number,
+        planned: Map<string, SelectOption[]>,
+        staged: StagedRow[],
+        bySlug: Map<string, Field>,
+    ): Promise<Record<string, SelectOption[]>> {
+        const result: Record<string, SelectOption[]> = {};
+        for (const [slug, candidates] of planned) {
+            const field = bySlug.get(slug);
+            if (!field) continue;
+            const key = jsonbKeyForField(field.id);
+            const used = new Set<string>();
+            for (const row of staged) {
+                const v = row.data[key];
+                if (Array.isArray(v)) for (const item of v) used.add(String(item));
+                else if (v !== undefined && v !== null) used.add(String(v));
+            }
+            const keep = candidates.filter((o) => used.has(o.value));
+            if (keep.length === 0) continue;
+            // `field` es la versión ampliada en memoria: se parte de las
+            // opciones que ya tenía guardadas (las planificadas van al final).
+            const saved = readOptions(field).filter((o) => !candidates.some((c) => c.value === o.value));
+            await this.fields.update(tenantId, String(listId), String(field.id), {
+                config: { ...field.config, options: [...saved, ...keep] },
+            });
+            result[slug] = keep;
+        }
+        return result;
+    }
+}
+
+/**
+ * Para cada columna mapeada a `select`/`multi_select`, las etiquetas del CSV
+ * que no existen como opción (match sin distinguir mayúsculas contra etiqueta
+ * y valor). Puro: no escribe nada.
+ */
+export function planOptionExpansions(
+    rows: string[][],
+    mapping: Map<number, string>,
+    listFields: Field[],
+): Map<string, SelectOption[]> {
+    const bySlug = new Map(listFields.map((f) => [f.slug, f]));
+    const out = new Map<string, SelectOption[]>();
+    for (const [csvIdx, slug] of mapping) {
+        const field = bySlug.get(slug);
+        if (!field || (field.type !== 'select' && field.type !== 'multi_select')) continue;
+        const rawValues = new Set<string>();
+        for (const row of rows) {
+            const cell = (row[csvIdx] ?? '').trim();
+            if (cell === '') continue;
+            if (field.type === 'multi_select') {
+                for (const item of cell.split(/[,;]/)) {
+                    const v = item.trim();
+                    if (v !== '') rawValues.add(v);
+                }
+            } else {
+                rawValues.add(cell);
+            }
+        }
+        if (rawValues.size === 0) continue;
+        const newOptions = planSelectExpansion(field, rawValues);
+        if (newOptions.length > 0) out.set(slug, newOptions);
+    }
+    return out;
+}
+
+/** Copia del campo con otras opciones (para validar contra el campo ampliado). */
+function withOptions(field: Field, options: SelectOption[]): Field {
+    return { ...field, config: { ...field.config, options } };
 }
 
 /**

@@ -3,7 +3,8 @@ import { Activity, Loader2 } from 'lucide-react';
 import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useFields } from '@/hooks/useFields';
 import { useRecordActivity } from '@/hooks/useActivity';
-import { __ } from '@/lib/i18n';
+import { useWpUser } from '@/hooks/useWpUsers';
+import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -203,16 +204,19 @@ export function ActivityValue({
             </span>
         );
     }
-    return (
-        <span
-            className={cn(
-                'imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-text-[12px]',
-                old ? 'imcrm-text-muted-foreground imcrm-line-through' : 'imcrm-text-foreground',
-            )}
-        >
-            {text}
-        </span>
-    );
+    if (field !== undefined && field.type === 'user') {
+        const ids = (Array.isArray(raw) ? raw : [raw]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+        if (ids.length > 0) {
+            return (
+                <span className="imcrm-inline-flex imcrm-flex-wrap imcrm-gap-1 imcrm-align-middle">
+                    {ids.map((id) => (
+                        <UserValue key={id} id={id} old={old} />
+                    ))}
+                </span>
+            );
+        }
+    }
+    return <ValueText text={text} old={old} />;
 }
 
 function OptionPill({
@@ -263,4 +267,24 @@ function Initials({ name, system }: { name: string; system: boolean }): JSX.Elem
             {system ? <Activity className="imcrm-h-3 imcrm-w-3" /> : initials}
         </span>
     );
+}
+
+function ValueText({ text, old }: { text: string; old?: boolean }): JSX.Element {
+    return (
+        <span
+            className={cn(
+                'imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-text-[12px]',
+                old ? 'imcrm-text-muted-foreground imcrm-line-through' : 'imcrm-text-foreground',
+            )}
+        >
+            {text}
+        </span>
+    );
+}
+
+/** Un campo persona se lee por NOMBRE (el log guarda el id). */
+function UserValue({ id, old }: { id: number; old?: boolean }): JSX.Element {
+    const user = useWpUser(id);
+    const name = user.data?.display_name ?? sprintf(__('Usuario #%d'), id);
+    return <ValueText text={name} old={old} />;
 }

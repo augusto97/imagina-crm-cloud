@@ -33,7 +33,7 @@ import {
     type UpdateFieldInput,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
-import { lists, records } from '../db/schema';
+import { lists, memberships, records, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -427,16 +427,35 @@ export class FieldsService {
                 // A select/multi_select sin opciones: se generan de los
                 // valores DISTINTOS existentes (mismo espíritu que la
                 // auto-expansión del import) — así nada se pierde.
+                const fromType = current.type as FieldType;
+                const bridge: BridgeContext = {
+                    fromConfig: current.config,
+                    userNames: fromType === 'user' ? await memberNames(tx, tenantId) : new Map(),
+                };
                 if (
                     (toType === 'select' || toType === 'multi_select')
                     && !(Array.isArray((newConfig as { options?: unknown[] }).options) && (newConfig as { options: unknown[] }).options.length > 0)
                 ) {
-                    const distinct = await collectDistinctValues(tx, tenantId, listId, current.id, current.type as FieldType);
-                    newConfig = { ...newConfig, options: distinct.map((v) => ({ value: v, label: v })) };
+                    const oldOptions = (current.config as { options?: unknown }).options;
+                    if ((fromType === 'select' || fromType === 'multi_select') && Array.isArray(oldOptions)) {
+                        // Entre selects las opciones (con sus etiquetas y
+                        // colores) son las mismas: generarlas de los valores
+                        // perdería las etiquetas.
+                        newConfig = { ...newConfig, options: oldOptions };
+                    } else {
+                        // Las opciones nacen del TEXTO que la persona leía
+                        // (una casilla da Sí/No, una persona su nombre), no
+                        // del valor crudo guardado.
+                        const distinct = await collectDistinctValues(tx, tenantId, listId, current.id, fromType);
+                        const texts = [...new Set(distinct.map((v) => bridgeValue(fromType, 'text', v, bridge)).filter(
+                            (v): v is string => typeof v === 'string' && v !== '',
+                        ))];
+                        newConfig = { ...newConfig, options: texts.map((v) => ({ value: v, label: v })) };
+                    }
                 }
                 changes.type = toType;
                 changes.config = newConfig;
-                await migrateFieldData(tx, tenantId, listId, current.id, current.type as FieldType, toType, newConfig);
+                await migrateFieldData(tx, tenantId, listId, current.id, fromType, toType, newConfig, bridge);
                 typeChanged = true;
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
@@ -825,6 +844,7 @@ async function migrateFieldData(
     fromType: FieldType,
     toType: FieldType,
     config: Record<string, unknown>,
+    bridge: BridgeContext,
 ): Promise<void> {
     const key = jsonbKeyForField(fieldId);
     const spec = { type: toType, config, is_required: false };
@@ -849,7 +869,7 @@ async function migrateFieldData(
             cursor = row.id;
             const raw = (row.data as Record<string, unknown>)[key];
             if (raw === null || raw === undefined) continue;
-            const bridged = bridgeValue(fromType, toType, raw);
+            const bridged = bridgeValue(fromType, toType, raw, bridge);
             const result = validateFieldValue(spec, bridged);
             const next = result.ok ? result.value : null;
             // Solo escribimos si el valor CAMBIA (la mayoría de conversiones
@@ -879,7 +899,55 @@ async function migrateFieldData(
  * Puente de coerción entre tipos ANTES del validador destino: cubre los
  * saltos razonables que el validador (estricto por diseño) rechazaría.
  */
-function bridgeValue(from: FieldType, to: FieldType, raw: unknown): unknown {
+export interface BridgeContext {
+    /** Config del campo ANTES de convertir (las etiquetas de sus opciones). */
+    fromConfig: Record<string, unknown>;
+    /** id → nombre de los miembros (sólo al convertir un campo persona). */
+    userNames: Map<number, string>;
+}
+
+/** Nombre (o email) de cada miembro de la empresa, por id. */
+async function memberNames(tx: Tx, tenantId: number): Promise<Map<number, string>> {
+    const rows = await tx
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(eq(memberships.tenantId, tenantId));
+    return new Map(rows.map((u) => [u.id, (u.name ?? '').trim() || u.email]));
+}
+
+function optionLabel(config: Record<string, unknown>, value: unknown): string {
+    const options = (config as { options?: unknown }).options;
+    if (Array.isArray(options)) {
+        for (const o of options) {
+            if (o && typeof o === 'object' && String((o as { value?: unknown }).value) === String(value)) {
+                const label = (o as { label?: unknown }).label;
+                if (typeof label === 'string' && label !== '') return label;
+            }
+        }
+    }
+    return String(value);
+}
+
+export function bridgeValue(from: FieldType, to: FieldType, raw: unknown, ctx?: BridgeContext): unknown {
+    const toText = to === 'text' || to === 'long_text';
+    // v0.1.255 — a texto se escribe lo que la persona LEÍA, no el valor
+    // guardado: la etiqueta de la opción (no `pendiente_pago`), el nombre de
+    // la persona (no `3`) y Sí/No (no `true`/`false`).
+    if (from === 'checkbox' && TEXTUAL_TARGETS.includes(to)) {
+        const on = raw === true || raw === 1 || raw === 'true' || raw === '1';
+        const text = on ? 'Sí' : 'No';
+        return to === 'multi_select' ? [text] : text;
+    }
+    if (from === 'user' && TEXTUAL_TARGETS.includes(to)) {
+        const id = Number(raw);
+        const text = (Number.isInteger(id) && ctx?.userNames.get(id)) || String(raw);
+        return to === 'multi_select' ? [text] : text;
+    }
+    if ((from === 'select' || from === 'multi_select') && toText && ctx) {
+        const items = Array.isArray(raw) ? raw : [raw];
+        return items.map((v) => optionLabel(ctx.fromConfig, v)).join(', ');
+    }
     // multi_select destino: un escalar se envuelve en lista.
     if (to === 'multi_select' && !Array.isArray(raw)) {
         return raw === '' ? null : [String(raw)];

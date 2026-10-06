@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldEntity } from '@/types/field';
 import type { ActivityEntity } from '@/types/activity';
 
-import { actorOf, changeSentence, changesOf, summarizeActivity } from './activityText';
+import { actorOf, changeSentence, changesOf, formatActivityValue, summarizeActivity } from './activityText';
 
 const field = (over: Partial<FieldEntity> & { id: number; slug: string }): FieldEntity =>
     ({
@@ -104,5 +104,12 @@ describe('activityText', () => {
         );
         expect(c!.label).toBe('Estado');
         expect(changeSentence(c!).to).toBe('Pausado');
+    });
+    it('porcentaje, duración, calificación y teléfono se leen como en la ficha (v0.1.255)', () => {
+        expect(formatActivityValue(field({ id: 1, slug: 'avance', type: 'percent' }), 100)).toBe('100 %');
+        expect(formatActivityValue(field({ id: 2, slug: 'tiempo', type: 'duration' }), 90)).toBe('1h 30m');
+        expect(formatActivityValue(field({ id: 3, slug: 'tiempo2', type: 'duration', config: { format: 'clock' } }), 90)).toBe('1:30');
+        expect(formatActivityValue(field({ id: 4, slug: 'nota', type: 'rating', config: { max: 5 } }), 4)).toBe('4 de 5');
+        expect(formatActivityValue(field({ id: 5, slug: 'tel', type: 'phone' }), '+573001112233')).not.toBe('+573001112233');
     });
 });

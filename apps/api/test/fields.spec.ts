@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fields, lists, records, tenants } from '../src/db/schema';
+import { fields, lists, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -272,6 +272,39 @@ describe('FieldsService (Postgres real + RLS)', () => {
         await expect(
             service.update(tenantA, 'clientes', String(ciudad.id), { type: 'relation' }),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('conversión a texto: escribe lo que la persona leía (etiqueta, nombre, Sí/No)', async () => {
+        const [u] = await pg.db.insert(users).values({ email: `ana${Date.now()}@x.test`, name: 'Ana Gómez', passwordHash: 'x' }).returning();
+        await pg.db.insert(memberships).values({ tenantId: tenantA, userId: u!.id, role: 'agent' });
+        const resp = await service.create(tenantA, 'clientes', { label: 'Resp', type: 'user' });
+        const vip = await service.create(tenantA, 'clientes', { label: 'VIP', type: 'checkbox' });
+        const estado = await service.create(tenantA, 'clientes', {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'pendiente_pago', label: 'Pendiente de pago' }] },
+        });
+        const vip2 = await service.create(tenantA, 'clientes', { label: 'VIP2', type: 'checkbox' });
+        await withTenant(pg.db, tenantA, (tx) =>
+            tx.insert(records).values([
+                { tenantId: tenantA, listId: listA, data: { [`f${resp.id}`]: u!.id, [`f${vip.id}`]: true, [`f${estado.id}`]: 'pendiente_pago', [`f${vip2.id}`]: false }, createdBy: 1 },
+            ]),
+        );
+        await service.update(tenantA, 'clientes', String(resp.id), { type: 'text' });
+        await service.update(tenantA, 'clientes', String(vip.id), { type: 'text' });
+        await service.update(tenantA, 'clientes', String(estado.id), { type: 'long_text' });
+        // A select: las opciones nacen de Sí/No, no de true/false.
+        const asSelect = await service.update(tenantA, 'clientes', String(vip2.id), { type: 'select' });
+        expect((asSelect.config.options as Array<{ value: string }>).map((o) => o.value)).toEqual(['No']);
+
+        const [row] = await withTenant(pg.db, tenantA, (tx) =>
+            tx.select({ data: records.data }).from(records).where(eq(records.listId, listA)),
+        );
+        const data = row!.data as Record<string, unknown>;
+        expect(data[`f${resp.id}`]).toBe('Ana Gómez');
+        expect(data[`f${vip.id}`]).toBe('Sí');
+        expect(data[`f${estado.id}`]).toBe('Pendiente de pago');
+        expect(data[`f${vip2.id}`]).toBe('No');
     });
 
     it('aislamiento RLS: no se pueden ver/tocar campos de otra lista/tenant', async () => {

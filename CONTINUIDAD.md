@@ -349,8 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
-`main`.
+versión publicada: **v0.1.255** (fallas chicas de la auditoría), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -366,11 +365,6 @@ versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
   transacciones), `search_text` indexado para la búsqueda, `next_fire_at` en
   recurrencias, `findById` que no traiga la descripción si no hace falta.
-- Import que crea opciones de select de filas que después se rechazan.
-- Actividad: porcentaje y duración salen crudos («Avance en 100»).
-- Conversión de tipo usuario→texto escribe el id; casilla→texto «true/false».
-- Dos `<main>` anidados en la página del registro; `<button>` dentro de
-  `<button>` en el selector de usuario.
 
 **Pendientes técnicos conocidos (no urgentes)**
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
@@ -388,6 +382,14 @@ versión publicada: **v0.1.254** (fix de la impersonación del superadmin), en
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.255** — El usuario pidió seguir con los pendientes de la
+  auditoría. Plan en cuatro entregas: (1) fallas chicas, (2) rendimiento del
+  front (bundle inicial + virtualizar la agrupada), (3) rendimiento del
+  servidor, (4) modal del registro en celular. Esta es la (1): el import ya no
+  deja opciones colgadas de filas rechazadas (y «actualizar desde archivo» exige
+  `manage_fields` para crear opciones), Actividad legible (%, duración,
+  calificación, teléfono y nombre de la persona), conversiones de tipo a texto
+  con lo que la persona leía, y HTML sin `<main>` ni `<button>` anidados.
 - **2026-10-06 · conversación** — El usuario confirmó que la impersonación ya
   funciona (v0.1.254) y **descartó el PSE propio** (ACH Colombia): "ya no lo
   planeo implementar". Se quitó de los hilos abiertos; los pagos por PSE siguen
