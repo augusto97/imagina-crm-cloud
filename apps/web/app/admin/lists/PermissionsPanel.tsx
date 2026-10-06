@@ -18,7 +18,7 @@ interface Props {
 
 const SCOPE_OPTIONS: Array<{ value: Scope; label: string }> = [
     { value: 'all', label: __('Todos los registros') },
-    { value: 'assigned', label: __('Los que tiene asignados') },
+    { value: 'assigned', label: __('Los asignados a la persona (y los que creó)') },
     { value: 'own', label: __('Los que creó') },
     { value: 'none', label: __('Ninguno') },
 ];
@@ -68,7 +68,14 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
     );
 
     const patchRole = (role: string, patch: Partial<RolePermissions>): void => {
-        setPerms((prev) => ({ ...prev, [role]: { ...(prev[role] ?? blankRolePermissions()), ...patch } }));
+        setPerms((prev) => {
+            const next = { ...(prev[role] ?? blankRolePermissions()), ...patch };
+            // v0.1.253 — quien crea ve, como mínimo, lo que creó (el backend
+            // aplica la misma regla): "Ver: nada" con "Crear: sí" dejaba al
+            // registro recién creado invisible para quien lo creó.
+            if (next.create && next.view === 'none') next.view = 'own';
+            return { ...prev, [role]: next };
+        });
         setDirty(true);
     };
 
@@ -252,7 +259,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                     </label>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__(
-                            'Algún rol tiene acceso a "los que tiene asignados". Elegí el campo de tipo Usuario que marca al responsable del registro.',
+                            'Algún rol ve "los asignados a la persona". Elegí el campo de tipo Usuario que marca al responsable del registro. Sin campo elegido, esa persona ve sólo los que creó.',
                         )}
                     </p>
                     <Select

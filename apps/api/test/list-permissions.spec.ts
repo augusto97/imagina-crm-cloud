@@ -138,6 +138,47 @@ describe('ACL por lista (permisos por rol)', () => {
         expect(asAgent.data.map((r) => r.data[key('nombre')])).toEqual(['mío']);
     });
 
+    // v0.1.253 — reporte de un cliente: el agente creaba un registro y no lo
+    // veía (el admin sí). Con "los asignados" el registro que no lo tenía de
+    // responsable desaparecía en el acto.
+    it('scope=assigned: el agent sigue viendo (y editando) lo que CREÓ sin ser responsable', async () => {
+        await recs.create(tenantId, admin, 'clientes', { data: { [key('nombre')]: 'ajeno', [key('responsable')]: admin.userId } });
+        await lists_.updatePermissions(tenantId, 'clientes', {
+            assignment_field_id: f.responsable!.id,
+            permissions: { agent: { view: 'assigned', create: true, edit: 'assigned', delete: 'assigned', fields_hidden: [] } },
+        });
+        const creado = await recs.create(tenantId, agent, 'clientes', { data: { [key('nombre')]: 'lo cargué yo' } });
+        const asAgent = await recs.list(tenantId, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(asAgent.data.map((r) => r.data[key('nombre')])).toEqual(['lo cargué yo']);
+        expect((await recs.get(tenantId, agent, 'clientes', creado.id)).id).toBe(creado.id);
+        const editado = await recs.update(tenantId, agent, 'clientes', creado.id, { data: { [key('nombre')]: 'corregido' } });
+        expect(editado.data[key('nombre')]).toBe('corregido');
+    });
+
+    it('scope=assigned sin campo de responsable: ve lo que creó, no nada', async () => {
+        await seed();
+        await lists_.updatePermissions(tenantId, 'clientes', {
+            assignment_field_id: null,
+            permissions: { agent: { view: 'assigned', create: true, edit: 'assigned', delete: 'none', fields_hidden: [] } },
+        });
+        const asAgent = await recs.list(tenantId, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(asAgent.data.map((r) => r.data[key('nombre')])).toEqual(['C']);
+    });
+
+    it('"Ver: nada" con "Crear: sí": quien crea ve, como mínimo, lo que creó', async () => {
+        await seed();
+        await lists_.updatePermissions(tenantId, 'clientes', {
+            permissions: { agent: { view: 'none', create: true, edit: 'none', delete: 'none', fields_hidden: [] } },
+        });
+        const asAgent = await recs.list(tenantId, agent, 'clientes', { limit: 50, sort_dir: 'asc' });
+        expect(asAgent.data.map((r) => r.data[key('nombre')])).toEqual(['C']);
+        // Y sin poder crear, "nada" sigue siendo nada.
+        await lists_.updatePermissions(tenantId, 'clientes', {
+            permissions: { agent: { view: 'none', create: false, edit: 'none', delete: 'none', fields_hidden: [] } },
+        });
+        expect((await recs.list(tenantId, agent, 'clientes', { limit: 50, sort_dir: 'asc' })).data).toHaveLength(0);
+    });
+
     it('getPermissions devuelve el doc con roles configurables', async () => {
         const doc = await lists_.getPermissions(tenantId, 'clientes');
         expect(doc.roles.map((r) => r.slug).sort()).toEqual(['agent', 'manager', 'viewer']);

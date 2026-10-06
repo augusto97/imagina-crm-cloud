@@ -2826,7 +2826,7 @@ function describeActions(
 function describeScope(p: RolePermissions): string {
     if (p.view === 'none') return 'sin acceso';
     const word = (sc: string): string =>
-        sc === 'all' ? 'todo' : sc === 'assigned' ? 'lo asignado' : sc === 'own' ? 'lo propio' : 'nada';
+        sc === 'all' ? 'todo' : sc === 'assigned' ? 'lo asignado o creado' : sc === 'own' ? 'lo propio' : 'nada';
     const bits = [`ve ${word(p.view)}`];
     if (p.create) bits.push('puede crear');
     if (p.edit !== 'none') bits.push(`edita ${word(p.edit)}`);
