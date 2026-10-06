@@ -6930,6 +6930,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         nombre, un solo `<main>`, cero botones anidados, la × quita sin abrir
         el popover, conversiones por API, cero avisos de anidamiento).
 
+  - [x] **Carga inicial más liviana + vista agrupada virtualizada (v0.1.256,
+        pendientes de rendimiento de la auditoría v0.1.252)**: medido sobre el
+        build de producción. (a) **`packages/shared` desde el FUENTE**: el
+        front lo consumía compilado a CommonJS (el `dist` que usa NestJS), sin
+        tree-shaking — viajaban enteros los catálogos de plantillas, guías de
+        integraciones, etc. (~560 KB sin minificar). Ahora vite lo resuelve
+        con un alias a `packages/shared/src/index.ts` (ESM): el chunk común
+        baja de 233 a 65 KB gz junto con lo de abajo, y en desarrollo un
+        cambio en shared se ve sin recompilarlo ni borrar el pre-bundle de
+        vite (la trampa de v0.1.167/v0.1.176/v0.1.198 deja de existir para el
+        front; el API sigue usando el `dist`). (b) **La app se carga después
+        del gate de sesión**: el login, el reset y la verificación ya no bajan
+        el shell, la tabla ni socket.io — el chunk se pide en paralelo con
+        `/auth/me`, así quien ya tiene sesión no espera un viaje de más; el
+        realtime pasó al componente `App`. (c) **Rutas a pedido**: la página
+        del registro (motor de la ficha + gráficos), carpetas, favoritos y
+        ajustes. (d) **Diálogos a pedido**: importar, compartir, edición
+        masiva, estructura, actualizar desde archivo, edición/variaciones de la
+        tienda e historial — se montaban sólo abiertos pero viajaban en la
+        carga inicial (~250 KB sin minificar); cada uno con su `<Suspense>`
+        local (la nota de 0.57.11 sobre lazy + vistas sigue vigente: las
+        VISTAS quedan eager). (e) **Calendario a pedido**: react-day-picker +
+        date-fns (~300 KB sin minificar) en `CalendarPicker`, precargado
+        cuando la pestaña queda libre. Resultado: el login baja ~217 KB gz (antes
+        ~630) y la entrada a una lista ~430 KB gz. (f) **Vista agrupada
+        virtualizada**: con 40 grupos abiertos de 50 filas dibujaba 2.000
+        filas; ahora cada grupo tiene su virtualizer contra el scroll del
+        `<main>` (`useMainVirtualRows`, `scrollMargin` re-medido cuando el
+        contenido cambia de alto) — con 600 registros en 12 grupos se dibujan
+        ~150 filas y el alto total se conserva. **Bug encontrado en la prueba**:
+        si un chunk que se pide al arrancar no llega (deploy viejo, red caída),
+        la página entraba en un **bucle de recargas infinito** — el guard de
+        `vite:preloadError` se rearmaba en el evento `load`, que dispara en cada
+        recarga. Ahora se rearma tras 15 s sanos (app y portal). E2E contra el
+        build de producción 18/18 (login sin el chunk de la app, HTML crítico
+        sin la app, 600 filas → ~150 dibujadas arriba y al fondo, calendario,
+        diálogos a pedido, rutas, cero errores) + portal sin errores.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

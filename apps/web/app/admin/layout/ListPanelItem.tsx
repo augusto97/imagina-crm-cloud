@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, Suspense, useState } from 'react';
 import { readStoreListMarker } from '@imagina-base/shared';
 import {
     Check,
@@ -38,11 +38,13 @@ import type { ListSummary } from '@/types/list';
 
 import { DuplicateListDialog } from '@/admin/lists/DuplicateListDialog';
 import { SaveAsTemplateDialog } from '@/admin/lists/SaveAsTemplateDialog';
-import { ShareDialog } from '@/admin/records/ShareDialog';
 
 import { IconColorSubmenu } from './IconColorSubmenu';
 import { currentPathname, goTo } from './activePath';
 import { PanelListLink } from './PanelListLink';
+import { lazyWithReload } from '@/lib/lazyWithReload';
+
+const ShareDialog = lazyWithReload(() => import('@/admin/records/ShareDialog').then((m) => ({ default: m.ShareDialog })));
 
 type ListDialog = 'share' | 'duplicate' | 'template' | null;
 
@@ -276,15 +278,17 @@ export const ListPanelItem = memo(function ListPanelItem({
             />
 
             {dialog === 'share' && (
-                <ShareDialog
-                    open
-                    onOpenChange={(o) => {
-                        if (!o) setDialog(null);
-                    }}
-                    listId={list.id}
-                    listName={list.name}
-                    canPublish={canManage}
-                />
+                <Suspense fallback={null}>
+                    <ShareDialog
+                        open
+                        onOpenChange={(o) => {
+                            if (!o) setDialog(null);
+                        }}
+                        listId={list.id}
+                        listName={list.name}
+                        canPublish={canManage}
+                    />
+                </Suspense>
             )}
             {dialog === 'duplicate' && (
                 <DuplicateListDialog

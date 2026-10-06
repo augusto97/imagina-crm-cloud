@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { readStoreListMarker, type BulkStructureAction } from '@imagina-base/shared';
 import {
@@ -95,15 +95,21 @@ import {
     stateToViewConfig,
     viewConfigToState,
 } from './views/savedViewMapping';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 
-import { BulkEditDialog } from './bulk/BulkEditDialog';
-import { BulkStructureDialog } from './bulk/BulkStructureDialog';
-import { BulkHistorySheet } from './bulk/BulkHistorySheet';
-import { CsvUpdateDialog } from './bulk/CsvUpdateDialog';
-import { StoreBulkDialog } from './bulk/StoreBulkDialog';
-import { StoreVariationsDialog } from './bulk/StoreVariationsDialog';
-import { ImportDialog } from './ImportDialog';
-import { ShareDialog } from './ShareDialog';
+// v0.1.256 — los diálogos que se abren a pedido viajan en su propio chunk
+// (antes ~250 KB sin minificar iban en la carga inicial de la tabla). Cada
+// uno tiene su propio <Suspense> local y se monta sólo abierto, así que no
+// toca el cambio de vistas (ver la nota de arriba sobre lazy + vistas).
+const BulkEditDialog = lazyWithReload(() => import('./bulk/BulkEditDialog').then((m) => ({ default: m.BulkEditDialog })));
+const BulkHistorySheet = lazyWithReload(() => import('./bulk/BulkHistorySheet').then((m) => ({ default: m.BulkHistorySheet })));
+const BulkStructureDialog = lazyWithReload(() => import('./bulk/BulkStructureDialog').then((m) => ({ default: m.BulkStructureDialog })));
+const CsvUpdateDialog = lazyWithReload(() => import('./bulk/CsvUpdateDialog').then((m) => ({ default: m.CsvUpdateDialog })));
+const StoreBulkDialog = lazyWithReload(() => import('./bulk/StoreBulkDialog').then((m) => ({ default: m.StoreBulkDialog })));
+const StoreVariationsDialog = lazyWithReload(() => import('./bulk/StoreVariationsDialog').then((m) => ({ default: m.StoreVariationsDialog })));
+const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => ({ default: m.ImportDialog })));
+const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
+
 
 
 /** Tipos que no aportan en el cuerpo de una tarjeta (texto largo, archivos, vínculos). */
@@ -929,25 +935,29 @@ const applyView = (view: SavedViewEntity | null): void => {
                 CSV/Excel a una lista recién creada (sin campos) es el caso
                 típico — el diálogo crea los campos on-the-fly. */}
             {importOpen && (
-                <ImportDialog
-                    listId={list.data.id}
-                    listSlug={list.data.slug}
-                    open={importOpen}
-                    onOpenChange={setImportOpen}
-                    onUpdateInstead={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
-                />
+                <Suspense fallback={null}>
+                    <ImportDialog
+                        listId={list.data.id}
+                        listSlug={list.data.slug}
+                        open={importOpen}
+                        onOpenChange={setImportOpen}
+                        onUpdateInstead={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
+                    />
+                </Suspense>
             )}
 
             {/* v0.1.253 — montado SÓLO abierto: cerrado igual pedía la
                 publicación, los campos y las vistas de la lista en cada visita. */}
             {shareOpen && (
-                <ShareDialog
-                    open={shareOpen}
-                    onOpenChange={setShareOpen}
-                    listId={list.data.id}
-                    listName={list.data.name}
-                    canPublish={canManageList}
-                />
+                <Suspense fallback={null}>
+                    <ShareDialog
+                        open={shareOpen}
+                        onOpenChange={setShareOpen}
+                        listId={list.data.id}
+                        listName={list.data.name}
+                        canPublish={canManageList}
+                    />
+                </Suspense>
             )}
 
             {fields.data && fields.data.length > 0 && (
@@ -1003,77 +1013,89 @@ const applyView = (view: SavedViewEntity | null): void => {
             )}
 
             {canCsvUpdate && list.data && csvUpdateOpen && (
-                <CsvUpdateDialog
-                    open={csvUpdateOpen}
-                    onOpenChange={setCsvUpdateOpen}
-                    listId={list.data.id}
-                    storeManaged={!!storeMarker}
-                    isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked'}
-                />
+                <Suspense fallback={null}>
+                    <CsvUpdateDialog
+                        open={csvUpdateOpen}
+                        onOpenChange={setCsvUpdateOpen}
+                        listId={list.data.id}
+                        storeManaged={!!storeMarker}
+                        isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked'}
+                    />
+                </Suspense>
             )}
 
             {canSeeBulkHistory && list.data && bulkHistoryOpen && (
-                <BulkHistorySheet open={bulkHistoryOpen} onOpenChange={setBulkHistoryOpen} listId={list.data.id} />
+                <Suspense fallback={null}>
+                    <BulkHistorySheet open={bulkHistoryOpen} onOpenChange={setBulkHistoryOpen} listId={list.data.id} />
+                </Suspense>
             )}
 
             {storeMarker && canStoreBulk && storeBulkOpen && (
-                <StoreBulkDialog
-                    open={storeBulkOpen}
-                    onOpenChange={setStoreBulkOpen}
-                    listId={list.data.id}
-                    marker={storeMarker}
-                    selectedIds={selectedIds}
-                    filterTree={state.filterTree}
-                    search={debouncedSearch}
-                    matchingCount={matchingCount}
-                    onDone={() => setSelectedIds([])}
-                />
+                <Suspense fallback={null}>
+                    <StoreBulkDialog
+                        open={storeBulkOpen}
+                        onOpenChange={setStoreBulkOpen}
+                        listId={list.data.id}
+                        marker={storeMarker}
+                        selectedIds={selectedIds}
+                        filterTree={state.filterTree}
+                        search={debouncedSearch}
+                        matchingCount={matchingCount}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
             )}
 
             {storeMarker && canStoreBulk && variationsOpen && (
-                <StoreVariationsDialog
-                    open={variationsOpen}
-                    onOpenChange={setVariationsOpen}
-                    listId={list.data.id}
-                    selectedIds={selectedIds}
-                    filterTree={state.filterTree}
-                    search={debouncedSearch}
-                    matchingCount={matchingCount}
-                    onDone={() => setSelectedIds([])}
-                />
+                <Suspense fallback={null}>
+                    <StoreVariationsDialog
+                        open={variationsOpen}
+                        onOpenChange={setVariationsOpen}
+                        listId={list.data.id}
+                        selectedIds={selectedIds}
+                        filterTree={state.filterTree}
+                        search={debouncedSearch}
+                        matchingCount={matchingCount}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
             )}
 
             {fields.data && fields.data.length > 0 && bulkEditOpen && (
-                <BulkEditDialog
-                    open={bulkEditOpen}
-                    onOpenChange={setBulkEditOpen}
-                    listId={list.data.id}
-                    fields={fields.data}
-                    selectedIds={selectedIds}
-                    filterTree={state.filterTree}
-                    search={debouncedSearch}
-                    matchingCount={matchingCount}
-                    canEditMatching={canBulkEdit}
-                    isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
-                    initialDrafts={bulkEditPreset?.drafts}
-                    title={bulkEditPreset?.title}
-                    onDone={() => setSelectedIds([])}
-                />
+                <Suspense fallback={null}>
+                    <BulkEditDialog
+                        open={bulkEditOpen}
+                        onOpenChange={setBulkEditOpen}
+                        listId={list.data.id}
+                        fields={fields.data}
+                        selectedIds={selectedIds}
+                        filterTree={state.filterTree}
+                        search={debouncedSearch}
+                        matchingCount={matchingCount}
+                        canEditMatching={canBulkEdit}
+                        isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
+                        initialDrafts={bulkEditPreset?.drafts}
+                        title={bulkEditPreset?.title}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
             )}
 
             {list.data && structure !== null && (
-                <BulkStructureDialog
-                    action={structure?.action ?? null}
-                    preferMatching={structure?.matching}
-                    onClose={() => setStructure(null)}
-                    listId={list.data.id}
-                    selectedIds={selectedIds}
-                    filterTree={state.filterTree}
-                    search={debouncedSearch}
-                    matchingCount={matchingCount}
-                    canActMatching={canBulkEdit}
-                    onDone={() => setSelectedIds([])}
-                />
+                <Suspense fallback={null}>
+                    <BulkStructureDialog
+                        action={structure?.action ?? null}
+                        preferMatching={structure?.matching}
+                        onClose={() => setStructure(null)}
+                        listId={list.data.id}
+                        selectedIds={selectedIds}
+                        filterTree={state.filterTree}
+                        search={debouncedSearch}
+                        matchingCount={matchingCount}
+                        canActMatching={canBulkEdit}
+                        onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
             )}
 
             {fields.data && fields.data.length === 0 && (

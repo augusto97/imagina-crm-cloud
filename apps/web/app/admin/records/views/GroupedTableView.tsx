@@ -43,6 +43,7 @@ import { StickyHScrollbar } from './StickyHScrollbar';
 import { createHScrollGroup, type HScrollGroup } from './hscrollGroup';
 import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
 import { isImageUrlField } from '@/lib/imageProxy';
+import { useMainVirtualRows } from './useMainVirtualRows';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -798,6 +799,25 @@ function GroupBucketSection({
     const bodyScrollRef = useRef<HTMLDivElement>(null);
     const headScrollRef = useRef<HTMLDivElement>(null);
     const tableMounted = isOpen && !records.isLoading && !records.isError;
+    // Filas del bucket aplanadas (con las subtareas abiertas debajo de su
+    // padre) y la ventana de las que se ven (v0.1.256): con muchos grupos
+    // abiertos ya no se dibujan miles de filas fuera de pantalla.
+    const flatRows = useMemo(
+        () => (records.data?.data ?? []).flatMap((r) => [
+            { record: r, depth: 0 },
+            ...(expandedIds.includes(r.id)
+                ? (subtasksByParent[r.id] ?? []).map((c) => ({ record: c, depth: 1 }))
+                : []),
+        ]),
+        [records.data, expandedIds, subtasksByParent],
+    );
+    const windowed = useMainVirtualRows(bodyScrollRef, tableMounted ? flatRows.length : 0, { density });
+    const visibleRows = windowed.active
+        ? windowed.items.flatMap((it) => {
+            const row = flatRows[it.index];
+            return row ? [{ ...row, index: it.index }] : [];
+        })
+        : flatRows.map((row, index) => ({ ...row, index }));
     useEffect(() => {
         if (!hScrollSync || !tableMounted) return;
         const body = bodyScrollRef.current;
@@ -1059,16 +1079,18 @@ function GroupBucketSection({
                         <table className={tableClassName} style={tableStyle} aria-label={labelText}>
                             {colGroup}
                             <tbody>
-                                {(records.data?.data ?? []).flatMap((r) => [
-                                    { record: r, depth: 0 },
-                                    ...(expandedIds.includes(r.id)
-                                        ? (subtasksByParent[r.id] ?? []).map((c) => ({ record: c, depth: 1 }))
-                                        : []),
-                                ]).map(({ record, depth }) => {
+                                {windowed.paddingTop > 0 && (
+                                    <tr aria-hidden style={{ height: `${windowed.paddingTop}px` }}>
+                                        <td colSpan={columns.length + (onAddColumn ? 2 : 1)} />
+                                    </tr>
+                                )}
+                                {visibleRows.map(({ record, depth, index }) => {
                                     const isSelected = selectedSet.has(record.id);
                                     return (
                                         <tr
                                             key={record.id}
+                                            data-index={index}
+                                            ref={windowed.active ? windowed.measureElement : undefined}
                                             onContextMenu={(e) => {
                                                 e.preventDefault();
                                                 setRowMenu({ record, x: e.clientX, y: e.clientY });
@@ -1151,6 +1173,11 @@ function GroupBucketSection({
                                         </tr>
                                     );
                                 })}
+                                {windowed.paddingBottom > 0 && (
+                                    <tr aria-hidden style={{ height: `${windowed.paddingBottom}px` }}>
+                                        <td colSpan={columns.length + (onAddColumn ? 2 : 1)} />
+                                    </tr>
+                                )}
                             </tbody>
                             {/* Footer unificado: "+ Agregar tarea" en la
                                 primera columna dinámica + Calcular en

@@ -33,8 +33,12 @@ window.addEventListener('vite:preloadError', (event) => {
     window.location.reload();
 });
 window.addEventListener('load', () => {
-    // Boot exitoso → rearmamos el guard para el próximo deploy.
-    window.sessionStorage.removeItem('imcrm-chunk-reload');
+    // Boot exitoso → rearmamos el guard para el próximo deploy. v0.1.256 —
+    // NO en el `load` mismo: si el chunk que falla se pide al arrancar (la app
+    // se carga a pedido desde esta versión), `load` dispara en CADA recarga y
+    // el guard se rearmaba antes del siguiente fallo → recargas infinitas.
+    // Rearmado tras un rato sano, un fallo persistente recarga UNA vez.
+    window.setTimeout(() => window.sessionStorage.removeItem('imcrm-chunk-reload'), 15_000);
 });
 
 

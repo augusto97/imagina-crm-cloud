@@ -1,7 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-import { DayPicker } from 'react-day-picker';
-import { es } from 'react-day-picker/locale';
-import 'react-day-picker/style.css';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -59,6 +56,17 @@ interface DateCellEditorProps {
  * confirma vía `onCommit` y la recurrencia se persiste por su
  * cuenta (vía hooks de useRecurrences).
  */
+const loadCalendar = () => import('./CalendarPicker');
+const CalendarPicker = lazy(loadCalendar);
+// Se pide cuando la pestaña queda libre, así el primer click en una fecha
+// ya lo tiene (y la carga inicial de la tabla no lo paga).
+if (typeof window !== 'undefined') {
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const warm = () => void loadCalendar().catch(() => undefined);
+    if (idle) idle(warm);
+    else window.setTimeout(warm, 2000);
+}
+
 export function DateCellEditor({
     listId,
     recordId,
@@ -207,16 +215,11 @@ export function DateCellEditor({
                                 manualError && 'imcrm-border-destructive focus-visible:imcrm-ring-destructive',
                             )}
                         />
-                        <DayPicker
+                        <Suspense fallback={<div className="imcrm-h-[296px] imcrm-w-[252px]" aria-hidden />}>
+                        <CalendarPicker
                             mode="single"
                             selected={pickedDate}
                             onSelect={handleSelect}
-                            // v0.1.192 — meses y días en español y la semana
-                            // arranca en lunes (como la vista Calendario,
-                            // v0.1.125). Antes salía "September 2026 / su mo
-                            // tu" del locale por defecto, en inglés.
-                            locale={es}
-                            weekStartsOn={1}
                             // El calendario abre en el MES de la fecha del
                             // registro (antes: el mes de hoy — con 30/07 en la
                             // celda se veía "September 2026", justo la captura
@@ -240,6 +243,7 @@ export function DateCellEditor({
                             }}
                             className="imcrm-rdp-imagina"
                         />
+                        </Suspense>
 
                         {isDateTime && (
                             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
