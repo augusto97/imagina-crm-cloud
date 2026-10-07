@@ -85,7 +85,10 @@ export function AdminShell(): JSX.Element {
                     className="imcrm-flex-1 imcrm-overflow-auto imcrm-px-3 imcrm-py-2 focus:imcrm-outline-none focus-visible:imcrm-outline-none sm:imcrm-px-4 sm:imcrm-py-2"
                     tabIndex={-1}
                 >
-                    <div className="imcrm-mx-auto imcrm-w-full imcrm-max-w-screen-2xl">
+                    {/* v0.1.261 — sin ancho máximo: el área de trabajo ocupa toda
+                        la ventana, como ClickUp (las páginas de formularios
+                        —Ajustes, sincronizaciones— ponen su propio tope). */}
+                    <div className="imcrm-w-full">
                         <Outlet />
                     </div>
                 </main>

@@ -45,6 +45,7 @@ import { createHScrollGroup, type HScrollGroup } from './hscrollGroup';
 import { useElementHeight, usePageStickyTop, useStuckSentinel } from './stickyTop';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { useMainVirtualRows } from './useMainVirtualRows';
+import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 
 /**
  * v0.1.193 — scroll horizontal SINCRONIZADO entre grupos. Antes había un
@@ -312,9 +313,8 @@ function GroupedTableViewImpl({
         for (const c of visibleColumns) {
             total += sizing[c.id] ?? defaultSizeForColumn(c);
         }
-        if (onAddColumn !== undefined) total += 48; // add-col
         return total;
-    }, [visibleColumns, columnSizing, onAddColumn]);
+    }, [visibleColumns, columnSizing]);
 
     // OJO: este `useMemo` TIENE que estar ANTES de los early returns de
     // loading/error/empty (fix 0.57.32). Antes vivía después y violaba
@@ -815,6 +815,8 @@ function GroupBucketSection({
         [records.data, expandedIds, subtasksByParent],
     );
     const windowed = useMainVirtualRows(bodyScrollRef, tableMounted ? flatRows.length : 0, { density, measure: wrapText });
+    // v0.1.261 — desvanecido del borde derecho mientras haya columnas por ver.
+    const overflowRight = useOverflowsRight(bodyScrollRef, [tableMounted]);
     const visibleRows = windowed.active
         ? windowed.items.flatMap((it) => {
             const row = flatRows[it.index];
@@ -929,6 +931,7 @@ function GroupBucketSection({
                         </p>
                     ) : (
                         <div className="imcrm-relative">
+                        <RightEdgeFade show={overflowRight} />
                         <div
                             data-testid="imcrm-table-head"
                             className="imcrm-sticky imcrm-z-20 imcrm-bg-background"
@@ -1055,28 +1058,13 @@ function GroupBucketSection({
                                             </th>
                                         );
                                     })}
-                                    {onAddColumn && (
-                                        <th
-                                            scope="col"
-                                            // v0.1.160 — el "+" queda FIJO a la
-                                            // derecha, no al final del scroll.
-                                            className="imcrm-sticky imcrm-right-0 imcrm-z-20 imcrm-w-12 imcrm-bg-background imcrm-px-2 imcrm-py-2"
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={onAddColumn}
-                                                className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-border imcrm-border-dashed imcrm-border-border imcrm-text-muted-foreground hover:imcrm-border-primary hover:imcrm-bg-primary/10 hover:imcrm-text-primary"
-                                                title={__('Agregar columna')}
-                                                aria-label={__('Agregar columna')}
-                                            >
-                                                <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            </button>
-                                        </th>
-                                    )}
+                                    {/* v0.1.261 — relleno invisible; el "+" flota encima. */}
+                                    {onAddColumn && <th aria-hidden className="imcrm-p-0" />}
                                 </tr>
                             </thead>
                         </table>
                         </div>
+                        {onAddColumn && <FloatingAddColumn onClick={onAddColumn} />}
                         </div>
                         <div ref={bodyScrollRef} className="imcrm-overflow-x-auto imcrm-native-hscroll-hidden">
                         <table className={tableClassName} style={tableStyle} aria-label={labelText}>
@@ -1171,7 +1159,7 @@ function GroupBucketSection({
                                                 );
                                             })}
                                             {onAddColumn && (
-                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                        <td aria-hidden className="imcrm-p-0" />
                                     )}
                                         </tr>
                                     );
@@ -1263,7 +1251,7 @@ function GroupBucketSection({
                                             );
                                         })}
                                         {onAddColumn && (
-                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                        <td aria-hidden className="imcrm-p-0" />
                                     )}
                                     </tr>
                                 </tfoot>

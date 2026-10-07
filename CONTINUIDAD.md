@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.260** (menú contextual completo de las vistas), en `main`.
+versión publicada: **v0.1.261** («+» de columna flotante y área de trabajo sin tope), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -378,6 +378,10 @@ versión publicada: **v0.1.260** (menú contextual completo de las vistas), en `
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.261** — Pedido del usuario con capturas de ClickUp: el
+  «+» de columna era una columna casi vacía que desperdiciaba espacio → ahora
+  flota sobre la cabecera con degradado, y el área de trabajo ya no tiene ancho
+  máximo (la tabla usa toda la ventana).
 - **2026-10-07 · v0.1.260** — Pedido del usuario con captura de ClickUp: el
   menú de las vistas tiene muchas más opciones allá. Ahora: favorito (aparece
   en Favoritos y abre la lista en esa vista), copiar vínculo (`?view=` en la

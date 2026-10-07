@@ -21,6 +21,7 @@ import type { RowDensity, RowFontSize } from '../recordsState';
 import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
 import { useMainVirtualRows } from './useMainVirtualRows';
+import { FloatingAddColumn, RightEdgeFade, useOverflowsRight } from './FloatingAddColumn';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
@@ -432,6 +433,8 @@ export function TableView({
         overscan: 12,
         measure: wrapText,
     });
+    // v0.1.261 — desvanecido del borde derecho mientras haya columnas por ver.
+    const overflowRight = useOverflowsRight(tableContainerRef, [rows.length > 0]);
     const virtualActive = windowed.active;
     const virtualRows = windowed.items;
     const { paddingTop, paddingBottom } = windowed;
@@ -556,6 +559,7 @@ export function TableView({
             aria-label={__('Tabla de registros')}
         >
             <div ref={setHeadSentinelEl} aria-hidden className="imcrm-h-px imcrm--mb-px" />
+            <RightEdgeFade show={overflowRight} />
             <div
                 data-testid="imcrm-table-head"
                 className={cn(
@@ -789,31 +793,15 @@ export function TableView({
                                     </th>
                                 );
                             })}
-                            {onAddColumn && (
-                                <th
-                                    scope="col"
-                                    // v0.1.160 — FIJA a la derecha (como
-                                    // ClickUp): con muchas columnas el "+"
-                                    // quedaba al final del scroll horizontal
-                                    // y había que arrastrar para encontrarlo.
-                                    className="imcrm-sticky imcrm-right-0 imcrm-z-20 imcrm-w-12 imcrm-bg-background imcrm-px-2 imcrm-py-2 imcrm-text-left"
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={onAddColumn}
-                                        className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-border imcrm-border-dashed imcrm-border-border imcrm-text-muted-foreground hover:imcrm-border-primary hover:imcrm-bg-primary/10 hover:imcrm-text-primary"
-                                        title={__('Agregar columna')}
-                                        aria-label={__('Agregar columna')}
-                                    >
-                                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                </th>
-                            )}
+                            {/* v0.1.261 — columna de relleno invisible: toma el ancho
+                                que sobra (si no sobra, mide 0). El "+" flota encima. */}
+                            {onAddColumn && <th aria-hidden className="imcrm-p-0" />}
                         </tr>
                     ))}
                 </thead>
             </table>
             </div>
+            {onAddColumn && <FloatingAddColumn onClick={onAddColumn} />}
             </div>
             <div
                 // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
@@ -965,7 +953,7 @@ export function TableView({
                                         );
                                     })}
                                     {onAddColumn && (
-                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                        <td aria-hidden className="imcrm-p-0" />
                                     )}
                                 </tr>
                             );
@@ -1080,7 +1068,7 @@ export function TableView({
                                 );
                             })}
                             {onAddColumn && (
-                                        <td className="imcrm-sticky imcrm-right-0 imcrm-z-10 imcrm-w-12 imcrm-bg-background" />
+                                        <td aria-hidden className="imcrm-p-0" />
                                     )}
                         </tr>
                     </tfoot>

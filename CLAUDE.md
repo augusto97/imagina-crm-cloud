@@ -7088,6 +7088,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         «Plantillas» (las plantillas son por lista). 3 tests de API nuevos
         (privada, protegida, favoritas) + E2E navegador 20/20.
 
+  - [x] **«+» de columna flotante + área de trabajo sin tope (v0.1.261,
+        pedido del usuario con capturas de ClickUp)**: (a) el «+» de agregar
+        columna dejó de ser una columna de 48px con celda de fondo en CADA
+        fila (un carril casi vacío que le comía ancho a la tabla): ahora es un
+        botón redondo que FLOTA sobre el borde derecho de la cabecera sticky,
+        con un degradado que funde lo que pasa por debajo
+        (`FloatingAddColumn`, tabla plana y cada grupo de la agrupada); en su
+        lugar queda una columna de relleno invisible que sólo toma el ancho
+        sobrante (con overflow mide 0). (b) Desvanecido del borde derecho
+        mientras haya más columnas por scrollear (`useOverflowsRight` +
+        `RightEdgeFade`); al llegar al final desaparece. (c) El `<main>` ya no
+        tiene `max-w-screen-2xl`: la tabla usa todo el ancho de la ventana;
+        las páginas de formularios (Ajustes, sincronizaciones) mantienen su
+        propio tope. E2E navegador 9/9 a 1900px (ancho completo, «+» pegado
+        al borde, degradado, cero celdas sticky vacías, fade que aparece y se
+        va, el «+» abre el alta de campo, agrupada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
