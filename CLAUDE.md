@@ -7105,6 +7105,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         al borde, degradado, cero celdas sticky vacías, fade que aparece y se
         va, el «+» abre el alta de campo, agrupada).
 
+  - [x] **Deslizar las pestañas de vistas en celular ya no abre menús
+        (v0.1.262, reporte del usuario: "cuando sólo estoy deslizando las
+        vistas se abre el menú contextual de la pestaña, sin haberlo
+        sostenido")**. Reproducido con toques reales por CDP en 390×844
+        táctil: con el código anterior 5 de 6 deslizamientos abrían un menú y,
+        si el dedo arrancaba sobre un «···», la tira ni siquiera scrolleaba.
+        Tres causas: (a) **el trigger de Radix abre en `pointerdown`** —con
+        mouse es lo correcto, pero en táctil es el INICIO de cualquier gesto—;
+        el wrapper `DropdownMenu`/`DropdownMenuTrigger` (`components/ui`) ahora
+        lleva el estado y, para punteros que no son mouse, anula esa apertura
+        (`preventDefault`, que `composeEventHandlers` respeta) y abre en
+        `click`, que el navegador no dispara si el gesto terminó en scroll; si
+        el menú estaba abierto, el toque afuera ya lo cerró y no se reabre.
+        Vale para TODOS los «···» de la app (panel lateral en el drawer,
+        cabeceras, tarjetas); mouse y teclado sin cambios. (b) **El
+        mantener-presionado** de la pestaña sólo abre el menú si el dedo quedó
+        quieto (≤8 px, sin `pointercancel`) 450 ms. (c) **En táctil la pestaña
+        no es `draggable`** (`(hover: none) and (pointer: coarse)`): el drag
+        HTML5 por long-press peleaba con el deslizamiento; ahí se reordena con
+        **«Mover a la izquierda / a la derecha»** en su menú (mismo endpoint de
+        reorden). E2E 14/14 en celular emulado (deslizar desde «···» y sobre
+        pestañas sin menús, la tira se mueve, long-press corto no abre y uno
+        real sí, tap abre, mover persiste tras recargar) + regresión de
+        escritorio 20/20 del menú de vistas y arrastre con mouse.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.261** («+» de columna flotante y área de trabajo sin tope), en `main`.
+versión publicada: **v0.1.262** (deslizar las pestañas de vistas en celular ya no abre menús), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -378,6 +378,15 @@ versión publicada: **v0.1.261** («+» de columna flotante y área de trabajo s
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.262** — Reporte del usuario: en celular, al DESLIZAR la
+  tira de pestañas de vistas se abría el menú de alguna pestaña sin haberla
+  mantenido presionada. Causa: el «···» de Radix abre en `pointerdown`, que en
+  táctil es el inicio de cualquier gesto (y la pestaña `draggable` encima
+  peleaba con el scroll). Arreglado para TODOS los menús «···» de la app (en
+  táctil abren con el tap, que no existe si el gesto fue scroll), el
+  mantener-presionado de la pestaña exige dedo quieto 450 ms, y en táctil las
+  pestañas no se arrastran: se reordenan con «Mover a la izquierda/derecha»
+  del menú. Mouse y escritorio sin cambios.
 - **2026-10-07 · v0.1.261** — Pedido del usuario con capturas de ClickUp: el
   «+» de columna era una columna casi vacía que desperdiciaba espacio → ahora
   flota sobre la cabecera con degradado, y el área de trabajo ya no tiene ancho
