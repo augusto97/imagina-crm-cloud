@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.257** (servidor: sin índices por campo — ADR-S32), en `main`.
+versión publicada: **v0.1.258** (registro y alta en celular — cierra la auditoría v0.1.252), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -357,8 +357,6 @@ versión publicada: **v0.1.257** (servidor: sin índices por campo — ADR-S32),
 - Google OAuth: grabar el video y enviar a verificación.
 
 **Pendientes de la auditoría v0.1.252 (por valor)**
-- Modal del registro y formulario de alta en celular: siguen siendo largos
-  (se arregló lo que se salía de pantalla, no el diseño).
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
   transacciones). Baja prioridad desde v0.1.257: con la planificación en
   ~1 ms, cada transacción extra cuesta poco. (El índice del buscador se midió
@@ -380,6 +378,12 @@ versión publicada: **v0.1.257** (servidor: sin índices por campo — ADR-S32),
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.258** — Cuarta y última entrega de los pendientes de la
+  auditoría: el registro en celular es pantalla completa con pestañas Detalles /
+  Comentarios / Actividad (antes la Actividad apilada le robaba media pantalla y
+  Guardar quedaba en el medio); el alta también a pantalla completa y las filas
+  de campos con la etiqueta arriba bajo 640 px. Queda sólo el «contexto por
+  request» del servidor, de baja prioridad.
 - **2026-10-07 · v0.1.257** — Tercera entrega de la auditoría (servidor).
   Midiendo apareció lo importante: los índices por campo («Indexar» y los que
   marcaban las tiendas WooCommerce) hacían que CADA consulta de `records`, de
