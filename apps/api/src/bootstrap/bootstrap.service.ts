@@ -111,7 +111,8 @@ export class BootstrapService {
                     created_at: f.createdAt.toISOString(),
                     description: f.description ?? null,
                 })),
-                views: viewRows.map((v) => ({
+                // v0.1.260 — las privadas sólo para quien las creó.
+                views: viewRows.filter((v) => !v.isPrivate || v.createdBy === userId).map((v) => ({
                     id: v.id,
                     list_id: v.listId,
                     name: v.name,
@@ -121,6 +122,10 @@ export class BootstrapService {
                     position: v.position,
                     icon: v.icon ?? null,
                     color: v.color ?? null,
+                    created_by: v.createdBy ?? null,
+                    is_private: v.isPrivate,
+                    is_locked: v.isLocked,
+                    autosave: v.autosave,
                 })),
             };
         });

@@ -26,7 +26,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { ViewsService } from './views.service';
+import { ViewsService, type ViewViewer } from './views.service';
 
 /** Saved views por lista (CONTRACT.md §7). Mutaciones exigen manage_views. */
 @Controller('lists/:list/views')
@@ -36,7 +36,7 @@ export class ViewsController {
 
     @Get()
     all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: View[] }> {
-        return this.views.list(tenantId(req), list).then((data) => ({ data }));
+        return this.views.list(tenantId(req), list, viewer(req)).then((data) => ({ data }));
     }
 
     @Get(':id')
@@ -45,7 +45,7 @@ export class ViewsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<View> {
-        return this.views.get(tenantId(req), list, id);
+        return this.views.get(tenantId(req), list, id, viewer(req));
     }
 
     @Post()
@@ -56,7 +56,7 @@ export class ViewsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createViewSchema)) input: CreateViewInput,
     ): Promise<View> {
-        return this.views.create(tenantId(req), list, input);
+        return this.views.create(tenantId(req), list, input, viewer(req));
     }
 
     /** v0.1.259 — orden de las pestañas (declarada antes de `:id`). */
@@ -67,7 +67,7 @@ export class ViewsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(reorderViewsSchema)) input: ReorderViewsInput,
     ): Promise<{ data: View[] }> {
-        return this.views.reorder(tenantId(req), list, input.view_ids).then((data) => ({ data }));
+        return this.views.reorder(tenantId(req), list, input.view_ids, viewer(req)).then((data) => ({ data }));
     }
 
     @Patch(':id')
@@ -78,7 +78,7 @@ export class ViewsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateViewSchema)) patch: UpdateViewInput,
     ): Promise<View> {
-        return this.views.update(tenantId(req), list, id, patch);
+        return this.views.update(tenantId(req), list, id, patch, viewer(req));
     }
 
     @Delete(':id')
@@ -89,10 +89,14 @@ export class ViewsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<void> {
-        await this.views.remove(tenantId(req), list, id);
+        await this.views.remove(tenantId(req), list, id, viewer(req));
     }
 }
 
 function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
+}
+
+function viewer(req: FastifyRequest): ViewViewer {
+    return { userId: req.authUserId!, role: req.tenant!.role };
 }

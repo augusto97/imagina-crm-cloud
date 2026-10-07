@@ -9,6 +9,7 @@ import {
     varchar,
 } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
+import { users } from './users';
 import { tenants } from './tenants';
 
 /**
@@ -32,6 +33,11 @@ export const savedViews = pgTable('saved_views', {
     /** v0.1.259 — icono y color de la pestaña (catálogo de las listas). */
     icon: text('icon'),
     color: text('color'),
+    /** v0.1.260 — quién la creó (privada/protegida se deciden contra esto). */
+    createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+    isPrivate: boolean('is_private').notNull().default(false),
+    isLocked: boolean('is_locked').notNull().default(false),
+    autosave: boolean('autosave').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

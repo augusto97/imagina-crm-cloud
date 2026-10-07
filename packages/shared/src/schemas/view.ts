@@ -108,6 +108,16 @@ export const viewSchema = z.object({
      */
     icon: z.string().max(64).nullable(),
     color: z.string().max(32).nullable(),
+    /**
+     * v0.1.260 — opciones del menú de la pestaña (estilo ClickUp):
+     * - `is_private`: sólo la ve quien la creó (nunca puede ser la por defecto).
+     * - `is_locked`: protegida — sólo quien la creó o un admin la cambia o borra.
+     * - `autosave`: los cambios de filtros/columnas se guardan solos.
+     */
+    created_by: z.number().int().nullable(),
+    is_private: z.boolean(),
+    is_locked: z.boolean(),
+    autosave: z.boolean(),
 });
 export type View = z.infer<typeof viewSchema>;
 
@@ -118,6 +128,9 @@ export const createViewSchema = z.object({
     is_default: z.boolean().optional(),
     icon: z.string().max(64).nullable().optional(),
     color: z.string().max(32).nullable().optional(),
+    is_private: z.boolean().optional(),
+    is_locked: z.boolean().optional(),
+    autosave: z.boolean().optional(),
 });
 export type CreateViewInput = z.infer<typeof createViewSchema>;
 
@@ -129,6 +142,9 @@ export const updateViewSchema = z
         position: z.number().int().nonnegative(),
         icon: z.string().max(64).nullable(),
         color: z.string().max(32).nullable(),
+        is_private: z.boolean(),
+        is_locked: z.boolean(),
+        autosave: z.boolean(),
     })
     .partial()
     .refine((patch) => Object.keys(patch).length > 0, {

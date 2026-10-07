@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Columns3, Grid3x3, LayoutGrid, MoreHorizontal, Pencil, Plus, Save, Settings2, Star, Table, Trash2, Undo2 } from 'lucide-react';
+import { Calendar, Columns3, Copy, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -10,8 +10,11 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { useDeleteSavedView, useReorderSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { useCreateSavedView, useDeleteSavedView, useReorderSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
+import { canWriteView, isViewOwner } from './viewAccess';
 import { listColor, listIcon } from '@/lib/listIcons';
 import { CAP, useCan } from '@/lib/permissions';
 import { IconColorSubmenu } from '@/admin/layout/IconColorSubmenu';
@@ -30,6 +33,10 @@ interface ViewsTabsProps {
     isDirty: boolean;
     currentConfig: SavedViewConfig;
     onAskCreateView: () => void;
+    /** v0.1.260 — acciones del menú que viven en la página. */
+    onCustomize?: (view: SavedViewEntity) => void;
+    onExport?: (view: SavedViewEntity) => void;
+    onShare?: () => void;
 }
 
 /**
@@ -54,6 +61,9 @@ export function ViewsTabs({
     isDirty,
     currentConfig,
     onAskCreateView,
+    onCustomize,
+    onExport,
+    onShare,
 }: ViewsTabsProps): JSX.Element {
     const update = useUpdateSavedView(listId);
     const remove = useDeleteSavedView(listId);
@@ -61,6 +71,11 @@ export function ViewsTabs({
     const [editingKanbanView, setEditingKanbanView] = useState<SavedViewEntity | null>(null);
 
     const reorder = useReorderSavedViews(listId);
+    const toast = useToast();
+    const create = useCreateSavedView(listId);
+    const favorites = useFavorites();
+    const updateFavorites = useUpdateFavorites();
+    const favs = favorites.data ?? EMPTY_FAVORITES;
     const confirm = useConfirm();
     const canManage = useCan(CAP.MANAGE_VIEWS);
     const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -114,6 +129,41 @@ export function ViewsTabs({
         if (activeViewId === view.id) onSelectView(null);
     };
 
+    const copyLink = async (view: SavedViewEntity): Promise<void> => {
+        // Rutas en el hash: el vínculo es esta lista con `?view=<id>`.
+        const [path] = window.location.hash.slice(1).split('?');
+        const url = `${window.location.origin}${window.location.pathname}#${path}?view=${view.id}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            toast.success(__('Vínculo de la vista copiado'));
+        } catch {
+            toast.error(__('No se pudo copiar el vínculo'));
+        }
+    };
+
+    const duplicate = async (view: SavedViewEntity): Promise<void> => {
+        const copy = await create.mutateAsync({
+            name: sprintf(/* translators: %s: view name */ __('%s (copia)'), view.name).slice(0, 190),
+            type: view.type,
+            config: view.config,
+            icon: view.icon ?? null,
+            color: view.color ?? null,
+            // La copia nace compartida aunque el original fuera privado: se
+            // duplica para cambiarla, y la decide quien la copia.
+        });
+        onSelectView(copy);
+        setRenamingId(copy.id);
+    };
+
+    const patchFlag = (view: SavedViewEntity, patch: { is_private?: boolean; is_locked?: boolean; autosave?: boolean }): void => {
+        update.mutate(
+            { id: view.id, ...patch },
+            {
+                onError: (err) => toast.error(err instanceof Error ? err.message : __('No se pudo cambiar la vista')),
+            },
+        );
+    };
+
     return (
         // `overflow-x-auto` a secas NO deja el eje Y en `visible`: el CSS lo
         // convierte a `auto`, y como el contenido mide 1px más que la caja el
@@ -148,10 +198,18 @@ export function ViewsTabs({
                     <ViewTab
                         key={view.id}
                         label={view.name}
+                        badges={
+                            view.is_private || view.is_locked ? (
+                                <span className="imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-text-muted-foreground" aria-hidden>
+                                    {view.is_private && <Lock className="imcrm-h-3 imcrm-w-3" data-testid="view-private-badge" />}
+                                    {view.is_locked && <ShieldCheck className="imcrm-h-3 imcrm-w-3" data-testid="view-locked-badge" />}
+                                </span>
+                            ) : undefined
+                        }
                         active={isActive}
                         onClick={() => onSelectView(view)}
                         isDefault={view.is_default}
-                        onRename={canManage ? () => setRenamingId(view.id) : undefined}
+                        onRename={canManage && canWriteView(view) ? () => setRenamingId(view.id) : undefined}
                         draggable={canManage}
                         dragging={dragId === view.id}
                         dropHint={dropAt?.id === view.id ? (dropAt.after ? 'after' : 'before') : null}
@@ -186,52 +244,151 @@ export function ViewsTabs({
                                 <Table className="imcrm-h-3.5 imcrm-w-3.5" />
                             )
                         }
-                        renderMenu={
-                            canManage
-                                ? (close) => (
-                                      <>
-                                          <DropdownMenuItem
-                                              data-testid="view-rename-item"
-                                              onSelect={() => {
-                                                  close();
-                                                  setRenamingId(view.id);
-                                              }}
-                                          >
-                                              <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
-                                              {__('Cambiar el nombre')}
-                                          </DropdownMenuItem>
-                                          <IconColorSubmenu
-                                              icon={view.icon ?? null}
-                                              color={view.color ?? null}
-                                              onChange={(n) => update.mutate({ id: view.id, ...n })}
-                                          />
-                                          {view.type === 'cards' && (
-                                              <DropdownMenuItem onSelect={() => setEditingCardsView(view)}>
-                                                  <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                  {__('Editar configuración')}
-                                              </DropdownMenuItem>
-                                          )}
-                                          {view.type === 'kanban' && (
-                                              <DropdownMenuItem onSelect={() => setEditingKanbanView(view)}>
-                                                  <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                  {__('Editar configuración')}
-                                              </DropdownMenuItem>
-                                          )}
-                                          {!view.is_default && (
-                                              <DropdownMenuItem onSelect={() => void handleSetDefault(view)}>
-                                                  <Star className="imcrm-h-3.5 imcrm-w-3.5" />
-                                                  {__('Establecer por defecto')}
-                                              </DropdownMenuItem>
-                                          )}
-                                          <DropdownMenuSeparator />
-                                          <DropdownMenuItem danger onSelect={() => void handleDelete(view)}>
-                                              <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                              {__('Eliminar vista')}
-                                          </DropdownMenuItem>
-                                      </>
-                                  )
-                                : undefined
-                        }
+                        renderMenu={(close) => {
+                            const writable = canManage && canWriteView(view);
+                            const owner = canManage && isViewOwner(view);
+                            const pinned = favs.views.includes(view.id);
+                            return (
+                                <>
+                                    <DropdownMenuItem
+                                        data-testid="view-fav-item"
+                                        onSelect={() => updateFavorites.mutate(toggledFavorites(favs, 'views', view.id))}
+                                    >
+                                        {pinned ? <PinOff className="imcrm-h-3.5 imcrm-w-3.5" /> : <Pin className="imcrm-h-3.5 imcrm-w-3.5" />}
+                                        {pinned ? __('Quitar de favoritos') : __('Marcar como favorito')}
+                                    </DropdownMenuItem>
+                                    {writable && (
+                                        <DropdownMenuItem
+                                            data-testid="view-rename-item"
+                                            onSelect={() => {
+                                                close();
+                                                setRenamingId(view.id);
+                                            }}
+                                        >
+                                            <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Cambiar el nombre')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem data-testid="view-link-item" onSelect={() => void copyLink(view)}>
+                                        <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        {__('Copiar vínculo a la vista')}
+                                    </DropdownMenuItem>
+                                    {onCustomize && (
+                                        <DropdownMenuItem data-testid="view-customize-item" onSelect={() => onCustomize(view)}>
+                                            <SlidersHorizontal className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Personalizar vista')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {writable && (
+                                        <IconColorSubmenu
+                                            icon={view.icon ?? null}
+                                            color={view.color ?? null}
+                                            onChange={(n) => update.mutate({ id: view.id, ...n })}
+                                        />
+                                    )}
+                                    {writable && view.type === 'cards' && (
+                                        <DropdownMenuItem onSelect={() => setEditingCardsView(view)}>
+                                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Editar configuración')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {writable && view.type === 'kanban' && (
+                                        <DropdownMenuItem onSelect={() => setEditingKanbanView(view)}>
+                                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Editar configuración')}
+                                        </DropdownMenuItem>
+                                    )}
+
+                                    {canManage && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <ToggleItem
+                                                testId="view-private-toggle"
+                                                icon={Lock}
+                                                label={__('Vista privada')}
+                                                hint={
+                                                    owner
+                                                        ? view.is_default
+                                                            ? __('La vista por defecto la ven todos: elegí otra por defecto primero.')
+                                                            : __('Sólo vos la ves.')
+                                                        : __('Sólo quien creó la vista puede cambiar esto.')
+                                                }
+                                                checked={view.is_private === true}
+                                                disabled={!owner || (view.is_default && view.is_private !== true)}
+                                                onToggle={() => patchFlag(view, { is_private: !view.is_private })}
+                                            />
+                                            <ToggleItem
+                                                testId="view-locked-toggle"
+                                                icon={ShieldCheck}
+                                                label={__('Proteger vista')}
+                                                hint={
+                                                    writable
+                                                        ? __('Sólo vos (o un admin) pueden cambiarla o borrarla.')
+                                                        : __('Protegida: sólo quien la creó o un admin la cambia.')
+                                                }
+                                                checked={view.is_locked === true}
+                                                disabled={!writable}
+                                                onToggle={() => patchFlag(view, { is_locked: !view.is_locked })}
+                                            />
+                                            <ToggleItem
+                                                testId="view-autosave-toggle"
+                                                icon={Save}
+                                                label={__('Guardar automáticamente')}
+                                                hint={__('Los cambios de filtros, orden y columnas se guardan solos.')}
+                                                checked={view.autosave === true}
+                                                disabled={!writable}
+                                                onToggle={() => patchFlag(view, { autosave: !view.autosave })}
+                                            />
+                                            <ToggleItem
+                                                testId="view-default-toggle"
+                                                icon={Star}
+                                                label={__('Vista por defecto')}
+                                                hint={view.is_private ? __('Una vista privada no puede ser la por defecto.') : __('La lista se abre en esta vista.')}
+                                                checked={view.is_default}
+                                                disabled={view.is_private === true || view.is_default}
+                                                onToggle={() => void handleSetDefault(view)}
+                                            />
+                                        </>
+                                    )}
+
+                                    <DropdownMenuSeparator />
+                                    {onExport && (
+                                        <DropdownMenuItem data-testid="view-export-item" onSelect={() => onExport(view)}>
+                                            <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Exportar vista')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {canManage && (
+                                        <DropdownMenuItem data-testid="view-duplicate-item" onSelect={() => void duplicate(view)}>
+                                            <CopyPlus className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Duplicar vista')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {writable && (
+                                        <DropdownMenuItem danger onSelect={() => void handleDelete(view)}>
+                                            <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            {__('Eliminar vista')}
+                                        </DropdownMenuItem>
+                                    )}
+                                    {onShare && (
+                                        <div className="imcrm-p-1 imcrm-pt-1.5">
+                                            <button
+                                                type="button"
+                                                data-testid="view-share-item"
+                                                onClick={() => {
+                                                    close();
+                                                    onShare();
+                                                }}
+                                                className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-primary imcrm-px-3 imcrm-py-1.5 imcrm-text-[13px] imcrm-font-medium imcrm-text-primary-foreground hover:imcrm-bg-primary/90"
+                                            >
+                                                <Share2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                {__('Uso compartido y permisos')}
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            );
+                        }}
                     />
                 );
             })}
@@ -252,7 +409,34 @@ export function ViewsTabs({
                 {__('Vista')}
             </button>
 
-            {isDirty && activeView !== null && (
+            {isDirty && activeView !== null && !(canManage && canWriteView(activeView)) && (
+                <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
+                    <span className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-muted-foreground">
+                        <ShieldCheck className="imcrm-h-3 imcrm-w-3" />
+                        {__('Vista protegida: tus cambios no se guardan')}
+                    </span>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleDiscardChanges}
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
+                    >
+                        <Undo2 className="imcrm-h-3 imcrm-w-3" />
+                        {__('Descartar')}
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onAskCreateView}
+                        className="imcrm-h-7 imcrm-gap-1 imcrm-px-2 imcrm-text-xs"
+                    >
+                        <Copy className="imcrm-h-3 imcrm-w-3" />
+                        {__('Guardar como vista…')}
+                    </Button>
+                </div>
+            )}
+
+            {isDirty && activeView !== null && canManage && canWriteView(activeView) && (
                 <div className="imcrm-ml-auto imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-whitespace-nowrap imcrm-pl-3">
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cambios sin guardar')}</span>
                     <Button
@@ -326,6 +510,8 @@ interface ViewTabProps {
     renderMenu?: (close: () => void) => React.ReactNode;
     /** Doble click en el nombre = cambiarlo (como ClickUp). */
     onRename?: () => void;
+    /** Candado (privada) / escudo (protegida) junto al nombre. */
+    badges?: React.ReactNode;
     draggable?: boolean;
     dragging?: boolean;
     dropHint?: 'before' | 'after' | null;
@@ -349,6 +535,7 @@ function ViewTab({
     typeIcon,
     renderMenu,
     onRename,
+    badges,
     draggable = false,
     dragging = false,
     dropHint = null,
@@ -428,6 +615,7 @@ function ViewTab({
                     </span>
                 )}
                 <span>{label}</span>
+                {badges}
             </button>
             {renderMenu && (
                 <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -483,5 +671,59 @@ function RenameTab({ name, onDone }: { name: string; onDone: (next: string | nul
                 className="imcrm-h-6 imcrm-w-40 imcrm-text-[13px]"
             />
         </div>
+    );
+}
+
+/**
+ * Ítem con interruptor (estilo ClickUp): togglear NO cierra el menú, así se
+ * pueden cambiar varias opciones seguidas. La línea de ayuda explica qué hace
+ * o por qué está deshabilitado.
+ */
+function ToggleItem({
+    icon: Icon,
+    label,
+    hint,
+    checked,
+    disabled = false,
+    onToggle,
+    testId,
+}: {
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    hint?: string;
+    checked: boolean;
+    disabled?: boolean;
+    onToggle: () => void;
+    testId?: string;
+}): JSX.Element {
+    return (
+        <DropdownMenuItem
+            data-testid={testId}
+            data-checked={checked ? 'true' : 'false'}
+            disabled={disabled}
+            title={hint}
+            onSelect={(e) => {
+                e.preventDefault();
+                if (!disabled) onToggle();
+            }}
+        >
+            <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+            <span className="imcrm-flex-1">{label}</span>
+            <span
+                role="switch"
+                aria-checked={checked}
+                className={cn(
+                    'imcrm-relative imcrm-ml-3 imcrm-inline-flex imcrm-h-4 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-rounded-full imcrm-transition-colors',
+                    checked ? 'imcrm-bg-primary' : 'imcrm-bg-muted-foreground/30',
+                )}
+            >
+                <span
+                    className={cn(
+                        'imcrm-inline-block imcrm-h-3 imcrm-w-3 imcrm-rounded-full imcrm-bg-white imcrm-shadow imcrm-transition-transform',
+                        checked ? 'imcrm-translate-x-3.5' : 'imcrm-translate-x-0.5',
+                    )}
+                />
+            </span>
+        </DropdownMenuItem>
     );
 }

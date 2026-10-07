@@ -30,6 +30,8 @@ export type UpdateEmailSignatureInput = z.infer<typeof updateEmailSignatureSchem
 export const favoritesSchema = z.object({
     lists: z.array(idSchema).max(100).default([]),
     dashboards: z.array(idSchema).max(100).default([]),
+    /** v0.1.260 — vistas guardadas ancladas (abren la lista en esa vista). */
+    views: z.array(idSchema).max(100).default([]),
 });
 export type Favorites = z.infer<typeof favoritesSchema>;
 
@@ -37,6 +39,7 @@ export const updateFavoritesSchema = z
     .object({
         lists: z.array(idSchema).max(100),
         dashboards: z.array(idSchema).max(100),
+        views: z.array(idSchema).max(100),
     })
     .partial();
 export type UpdateFavoritesInput = z.infer<typeof updateFavoritesSchema>;
@@ -98,3 +101,19 @@ export const accountExportSchema = z.object({
     ),
 });
 export type AccountExportDto = z.infer<typeof accountExportSchema>;
+
+/**
+ * v0.1.260 — una vista anclada en favoritos, con lo necesario para mostrarla
+ * y abrirla (la lista a la que pertenece). Sólo vuelven las que la persona ve.
+ */
+export const favoriteViewSchema = z.object({
+    id: idSchema,
+    name: z.string(),
+    type: z.string(),
+    icon: z.string().nullable(),
+    color: z.string().nullable(),
+    list_id: idSchema,
+    list_slug: z.string(),
+    list_name: z.string(),
+});
+export type FavoriteView = z.infer<typeof favoriteViewSchema>;

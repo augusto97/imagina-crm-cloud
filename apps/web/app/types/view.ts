@@ -113,6 +113,11 @@ export interface SavedViewEntity {
     /** v0.1.259 — icono y color de la pestaña (catálogo de las listas). */
     icon?: string | null;
     color?: string | null;
+    /** v0.1.260 — opciones de la pestaña (estilo ClickUp). */
+    created_by?: number | null;
+    is_private?: boolean;
+    is_locked?: boolean;
+    autosave?: boolean;
     created_at: string;
     updated_at: string;
 }

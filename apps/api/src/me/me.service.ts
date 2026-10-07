@@ -1,13 +1,14 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
     favoritesSchema,
+    type FavoriteView,
     type Favorites,
     type MeUserSummary,
     type UpdateFavoritesInput,
 } from '@imagina-base/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { memberships, mentions } from '../db/schema';
+import { lists, memberships, mentions, savedViews } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MeRepository, type MeUserRow } from './me.repository';
 
@@ -117,6 +118,41 @@ export class MeService {
                 .limit(1),
         );
         return parseFavorites(row?.settings);
+    }
+
+    async favoriteViews(tenantId: number, userId: number): Promise<FavoriteView[]> {
+        const ids = (await this.getFavorites(tenantId, userId)).views;
+        if (ids.length === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    id: savedViews.id,
+                    name: savedViews.name,
+                    type: savedViews.type,
+                    icon: savedViews.icon,
+                    color: savedViews.color,
+                    listId: lists.id,
+                    listSlug: lists.slug,
+                    listName: lists.name,
+                })
+                .from(savedViews)
+                .innerJoin(lists, eq(lists.id, savedViews.listId))
+                .where(
+                    and(
+                        eq(savedViews.tenantId, tenantId),
+                        inArray(savedViews.id, ids),
+                        or(eq(savedViews.isPrivate, false), eq(savedViews.createdBy, userId)),
+                    ),
+                ),
+        );
+        // En el orden en que se anclaron (los borrados no vuelven).
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        return ids.flatMap((id) => {
+            const r = byId.get(id);
+            return r
+                ? [{ id: r.id, name: r.name, type: r.type, icon: r.icon ?? null, color: r.color ?? null, list_id: r.listId, list_slug: r.listSlug, list_name: r.listName }]
+                : [];
+        });
     }
 
     async setFavorites(tenantId: number, userId: number, patch: UpdateFavoritesInput): Promise<Favorites> {

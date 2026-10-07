@@ -463,6 +463,13 @@
       "when": 1784200000035,
       "tag": "0065_view_icon_order",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1784200000036,
+      "tag": "0066_view_options",
+      "breakpoints": true
     }
   ]
 }
