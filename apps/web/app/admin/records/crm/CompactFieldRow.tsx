@@ -180,7 +180,11 @@ export function CompactFieldRow({
     return (
         <div
             className={cn(
-                'imcrm-group imcrm-flex imcrm-items-start imcrm-gap-3 imcrm-py-2 imcrm-px-3 imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0',
+                // v0.1.258 — bajo 640px la etiqueta va ARRIBA del valor: al
+                // lado le dejaba al control ~160px y los selects y el
+                // selector de persona se partían en dos renglones.
+                'imcrm-group imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-py-2 imcrm-px-3 imcrm-border-b imcrm-border-border/60 last:imcrm-border-b-0',
+                'sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-gap-3',
                 'hover:imcrm-bg-accent/30 imcrm-transition-colors',
                 editing && 'imcrm-bg-accent/20',
             )}
@@ -188,12 +192,13 @@ export function CompactFieldRow({
             <label
                 htmlFor={`field-${field.id}`}
                 className={cn(
-                    'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-pt-1 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
+                    'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground',
                     // Con icono de tipo (drawer/página, estilo ClickUp) el
                     // label ocupa ~200px; sin icono (layout CRM) queda 120px.
                     // v0.1.252 — en el celular el label se achica para que el
                     // control tenga lugar (antes los selects se aplastaban).
-                    showTypeIcon ? 'imcrm-w-[112px] sm:imcrm-w-[200px]' : 'imcrm-w-[104px] sm:imcrm-w-[120px]',
+                    showTypeIcon ? 'imcrm-w-full sm:imcrm-w-[200px]' : 'imcrm-w-full sm:imcrm-w-[120px]',
+                    'imcrm-pt-0 sm:imcrm-pt-1',
                 )}
             >
                 {showTypeIcon && (

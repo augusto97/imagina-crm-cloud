@@ -6998,6 +6998,28 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         borrada), `is_indexed` sin índice físico y sin tope, pack sin la marca —
         y suites API/front en verde.
 
+  - [x] **El registro y el alta en celular (v0.1.258, última entrega de los
+        pendientes de la auditoría v0.1.252)**: en un teléfono el modal del
+        registro flotaba con márgenes y apilaba tres cosas en 844 px — los
+        datos en una franja que scrolleaba por dentro, los botones de guardar
+        en el MEDIO y el panel de Comentarios/Actividad en la mitad de abajo
+        (dos scrolls). Ahora, bajo 1024 px, el registro usa **una vista por
+        vez** con pestañas **Detalles · Comentarios · Actividad**
+        (`useMediaQuery`; el aside de escritorio no se monta) y en celular
+        ocupa **toda la pantalla** (`100dvh`), con Guardar fijo abajo sólo en
+        Detalles. El **alta** también va a pantalla completa en celular, y las
+        filas de campos (`CompactFieldRow`, compartidas por el alta, el modal y
+        la página) ponen la **etiqueta arriba del valor** bajo 640 px: al lado
+        le dejaban ~160 px al control y los selects y el selector de persona se
+        partían en dos renglones. Escritorio sin cambios. E2E navegador 12/13
+        en 390×844 táctil y 1400×950 (pantalla completa, tres pestañas, Guardar
+        sólo en Detalles, cero aside apilado, composer en Comentarios, etiqueta
+        arriba en celular y al lado en escritorio, modal flotante en escritorio;
+        el ✗ es un registro de prueba sin historial, que muestra el estado
+        vacío).
+
+        **Con esto quedan cerrados los pendientes de la auditoría v0.1.252.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

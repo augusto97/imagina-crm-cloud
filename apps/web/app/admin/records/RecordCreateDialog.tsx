@@ -109,8 +109,11 @@ export function RecordCreateDialog({
                 <div className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <DialogPrimitive.Content
                         className={cn(
-                            'imcrm-flex imcrm-max-h-[88vh] imcrm-w-[min(900px,92vw)] imcrm-flex-col imcrm-overflow-hidden',
-                            'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
+                            // v0.1.258 — celular: pantalla completa (antes flotaba con
+                            // márgenes y el formulario quedaba angosto).
+                            'imcrm-flex imcrm-h-[100dvh] imcrm-w-screen imcrm-flex-col imcrm-overflow-hidden',
+                            'sm:imcrm-h-auto sm:imcrm-max-h-[88vh] sm:imcrm-w-[min(900px,92vw)] sm:imcrm-rounded-lg sm:imcrm-border',
+                            'imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                             'imcrm-animate-imcrm-scale-in',
                         )}
                     >
@@ -130,7 +133,7 @@ export function RecordCreateDialog({
 
                         <form onSubmit={handleSubmit} className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col">
                             {/* ——— Contenido con scroll propio ——— */}
-                            <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-6 imcrm-py-5">
+                            <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-4 imcrm-py-4 sm:imcrm-px-6 sm:imcrm-py-5">
                                 {/* Chip de tipo de entidad (como el chip "Tarea" de ClickUp). */}
                                 <span className="imcrm-inline-flex imcrm-w-fit imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
                                     {__('Registro')}

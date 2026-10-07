@@ -8,6 +8,7 @@ import {
     ChevronsLeft,
     ChevronsRight,
     ExternalLink,
+    FileText,
     MessageSquare,
     Save,
     Trash2,
@@ -24,6 +25,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { useDeleteRecord, useUpdateRecord } from '@/hooks/useRecords';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { ApiError } from '@/lib/api';
 import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
@@ -133,6 +135,11 @@ export function RecordDetailDrawer({
     const [fieldsOpen, setFieldsOpen] = useState(true);
     // Aside de Actividad colapsable (persistido en localStorage).
     const [asideOpen, setAsideOpen] = useState<boolean>(readAsidePref);
+    // v0.1.258 — En pantallas angostas el aside apilado le robaba media
+    // pantalla al formulario (con Guardar en el medio y dos scrolls): ahí se
+    // usa UNA vista por vez con pestañas Detalles / Comentarios / Actividad.
+    const narrow = useMediaQuery('(max-width: 1023px)');
+    const [mobileTab, setMobileTab] = useState<'details' | 'comments' | 'activity'>('details');
     const boot = getBootData();
 
     const toggleAside = (): void => {
@@ -240,8 +247,11 @@ export function RecordDetailDrawer({
                 <div className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <DialogPrimitive.Content
                         className={cn(
-                            'imcrm-flex imcrm-h-[88vh] imcrm-w-[min(1150px,94vw)] imcrm-flex-col imcrm-overflow-hidden',
-                            'imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
+                            // Celular: pantalla completa (la tarjeta flotante dejaba
+                            // márgenes y un formulario de media altura).
+                            'imcrm-flex imcrm-h-[100dvh] imcrm-w-screen imcrm-flex-col imcrm-overflow-hidden',
+                            'sm:imcrm-h-[88vh] sm:imcrm-w-[min(1150px,94vw)] sm:imcrm-rounded-lg sm:imcrm-border',
+                            'imcrm-border-border imcrm-bg-card imcrm-text-card-foreground imcrm-shadow-imcrm-xl',
                             'imcrm-animate-imcrm-scale-in',
                         )}
                     >
@@ -286,11 +296,38 @@ export function RecordDetailDrawer({
                             <SheetCloseButton />
                         </div>
 
+                        {narrow && (
+                            <div
+                                role="tablist"
+                                aria-label={__('Vista del registro')}
+                                className="imcrm-flex imcrm-shrink-0 imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-3"
+                                data-testid="imcrm-record-mobile-tabs"
+                            >
+                                <TabButton active={mobileTab === 'details'} onClick={() => setMobileTab('details')}>
+                                    <FileText className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Detalles')}
+                                </TabButton>
+                                <TabButton active={mobileTab === 'comments'} onClick={() => setMobileTab('comments')}>
+                                    <MessageSquare className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Comentarios')}
+                                </TabButton>
+                                <TabButton active={mobileTab === 'activity'} onClick={() => setMobileTab('activity')}>
+                                    <Activity className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    {__('Actividad')}
+                                </TabButton>
+                            </div>
+                        )}
+
                         {/* ——— Fila: contenido + aside colapsable ——— */}
                         <div className="imcrm-relative imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col lg:imcrm-flex-row">
                             {/* ——— Columna de contenido con scroll propio ——— */}
-                            <div className="imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-6 imcrm-py-5 sm:imcrm-px-8">
+                            <div
+                                className={cn(
+                                    'imcrm-flex imcrm-min-h-0 imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col',
+                                    narrow && mobileTab !== 'details' && 'imcrm-hidden',
+                                )}
+                            >
+                                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-px-4 imcrm-py-4 sm:imcrm-px-8 sm:imcrm-py-5">
                                     {/* Chip de tipo de entidad (como el chip "Tarea" de ClickUp). */}
                                     <span className="imcrm-inline-flex imcrm-w-fit imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
                                         {__('Registro')}
@@ -423,8 +460,25 @@ export function RecordDetailDrawer({
                                 </SheetFooter>
                             </div>
 
+                            {narrow && mobileTab !== 'details' && (
+                                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-px-4 imcrm-py-3">
+                                    {mobileTab === 'comments' ? (
+                                        <CommentsPanel
+                                            listId={listId}
+                                            recordId={record.id}
+                                            currentUserId={boot.user.id}
+                                            isAdmin={boot.user.capabilities.workspace_admin === true}
+                                        />
+                                    ) : (
+                                        <div className="imcrm-h-full imcrm-overflow-y-auto imcrm-pr-1">
+                                            <ActivityPanel listId={listId} recordId={record.id} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Botón flotante para re-expandir el aside colapsado. */}
-                            {!asideOpen && (
+                            {!narrow && !asideOpen && (
                                 <button
                                     type="button"
                                     onClick={toggleAside}
@@ -438,6 +492,7 @@ export function RecordDetailDrawer({
                             )}
 
                             {/* ——— Aside derecho colapsable: Comentarios / Actividad ——— */}
+                            {!narrow && (
                             <aside
                                 aria-hidden={!asideOpen}
                                 className={cn(
@@ -500,6 +555,7 @@ export function RecordDetailDrawer({
                                     </div>
                                 </div>
                             </aside>
+                            )}
                         </div>
                     </DialogPrimitive.Content>
                 </div>
