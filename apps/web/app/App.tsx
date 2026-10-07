@@ -3,17 +3,14 @@ import { Navigate, Route, Routes } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
-import { SettingsPage as CloudSettingsPage } from '@/cloud/pages/SettingsPage';
-import { FavoritesPage } from '@/admin/favorites/FavoritesPage';
 // Records views se cargan eagerly — son la pantalla home del SPA
 // y casi cualquier flujo aterriza ahí. Lazy-load las pantallas
 // secundarias (dashboards, automations, builder, settings) para que
 // el first-paint no descargue su código si el user nunca las visita.
 import { ListsIndexPage } from '@/admin/lists/ListsIndexPage';
-import { FolderPage } from '@/admin/lists/FolderPage';
-import { RecordPage } from '@/admin/records/RecordPage';
 import { RecordsPage } from '@/admin/records/RecordsPage';
 import { lazyWithReload } from '@/lib/lazyWithReload';
+import { useRealtime } from '@/cloud/useRealtime';
 
 // Lazy-loaded pages. React.lazy + Vite produce un chunk por cada
 // import — esos chunks viven en `dist/assets/*-<hash>.js` y se
@@ -24,6 +21,13 @@ import { lazyWithReload } from '@/lib/lazyWithReload';
 // porque el plugin se actualizó y los content-hashes cambiaron (deploy
 // stale), recarga la página automáticamente. Previene la pantalla en
 // blanco que pasaba con `Failed to fetch dynamically imported module`.
+// v0.1.256 — también la página del registro (trae el motor de la ficha
+// diseñada y sus gráficos), carpetas, favoritos y ajustes: el tronco que se
+// baja al entrar es el shell + el índice de listas + la tabla de registros.
+const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').then(m => ({ default: m.RecordPage })));
+const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
+const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
+const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
 const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
 const PortalLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/PortalLayoutEditorPage').then(m => ({ default: m.PortalLayoutEditorPage })));
@@ -51,6 +55,9 @@ function RouteFallback(): JSX.Element {
 }
 
 export function App(): JSX.Element {
+    // Invalidación push del workspace activo. Vive acá (y no en el gate de
+    // sesión) para que socket.io viaje en el chunk de la app, no en el login.
+    useRealtime();
     return (
         <Routes>
             <Route element={<AdminShell />}>
@@ -66,7 +73,9 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><PortalLayoutEditorPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/records" element={<RecordsPage />} />
-                <Route path="lists/:listSlug/records/:recordId" element={<RecordPage />} />
+                <Route path="lists/:listSlug/records/:recordId" element={
+                    <Suspense fallback={<RouteFallback />}><RecordPage /></Suspense>
+                } />
                 <Route path="lists/:listSlug/automations" element={
                     <Suspense fallback={<RouteFallback />}><AutomationsPage /></Suspense>
                 } />
@@ -76,15 +85,21 @@ export function App(): JSX.Element {
                 <Route path="lists/:listSlug/automations/:automationId" element={
                     <Suspense fallback={<RouteFallback />}><AutomationEditorPage /></Suspense>
                 } />
-                <Route path="folders/:folderId" element={<FolderPage />} />
-                <Route path="favorites" element={<FavoritesPage />} />
+                <Route path="folders/:folderId" element={
+                    <Suspense fallback={<RouteFallback />}><FolderPage /></Suspense>
+                } />
+                <Route path="favorites" element={
+                    <Suspense fallback={<RouteFallback />}><FavoritesPage /></Suspense>
+                } />
                 <Route path="dashboards" element={
                     <Suspense fallback={<RouteFallback />}><DashboardsIndexPage /></Suspense>
                 } />
                 <Route path="dashboards/:dashboardId" element={
                     <Suspense fallback={<RouteFallback />}><DashboardPage /></Suspense>
                 } />
-                <Route path="settings" element={<CloudSettingsPage />} />
+                <Route path="settings" element={
+                    <Suspense fallback={<RouteFallback />}><CloudSettingsPage /></Suspense>
+                } />
                 <Route path="settings/stores/:connectionId" element={
                     <Suspense fallback={<RouteFallback />}><StoreSyncPage /></Suspense>
                 } />

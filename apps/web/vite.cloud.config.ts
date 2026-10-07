@@ -135,15 +135,17 @@ export default defineConfig({
     root: __dirname,
     plugins: [react(), spaFallback(), cspMeta()],
     resolve: {
-        alias: {
-            '@': path.resolve(__dirname, './app'),
-        },
+        alias: [
+            { find: '@', replacement: path.resolve(__dirname, './app') },
+            // v0.1.256 — el front consume `shared` desde el FUENTE (ESM), no
+            // desde el `dist` CommonJS que usa NestJS: así Rollup hace
+            // tree-shaking (antes viajaba entero — catálogos de plantillas,
+            // guías de integraciones, ~560 KB sin minificar — en el bundle
+            // inicial) y en dev un cambio en shared se ve sin recompilarlo
+            // ni borrar el pre-bundle de vite.
+            { find: /^@imagina-base\/shared$/, replacement: path.resolve(__dirname, '../../packages/shared/src/index.ts') },
+        ],
         dedupe: ['react', 'react-dom', '@tanstack/react-query'],
-    },
-    optimizeDeps: {
-        // shared compila a CommonJS (lo consume el backend NestJS). Forzamos
-        // el pre-bundle con esbuild para exponer sus named exports al browser.
-        include: ['@imagina-base/shared'],
     },
     css: {
         // No hay postcss.config en el repo; configuramos Tailwind + autoprefixer
@@ -157,14 +159,6 @@ export default defineConfig({
         target: 'es2020',
         outDir: path.resolve(__dirname, 'dist-cloud'),
         emptyOutDir: true,
-        // `@imagina-base/shared` compila a CommonJS (lo consume NestJS). En dev
-        // lo resuelve optimizeDeps (esbuild); en build de producción Rollup no
-        // puede analizar estáticamente sus re-exports `__exportStar`, así que le
-        // pedimos al plugin commonjs que transforme también el paquete workspace.
-        commonjsOptions: {
-            include: [/packages[/\\]shared/, /node_modules/],
-            transformMixedEsModules: true,
-        },
         rollupOptions: {
             input: {
                 cloud: path.resolve(__dirname, 'cloud/index.html'),

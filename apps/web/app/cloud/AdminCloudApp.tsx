@@ -1,15 +1,26 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { HashRouter } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
-import { App } from '@/App';
 import { activeMembership, api as cloudApi, useSession } from '@/cloud/session';
 import { hydrateAdminBoot } from '@/cloud/adminBoot';
-import { useRealtime } from '@/cloud/useRealtime';
 import { useBranding } from '@/hooks/useBranding';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { LoginPage } from '@/cloud/pages/LoginPage';
 import { Button } from '@/components/ui/button';
+
+/**
+ * v0.1.256 — La app (shell, listas, registros, realtime) se carga DESPUÉS del
+ * gate: el login, el reset de contraseña y la verificación de email ya no
+ * bajan todo el código de la app para mostrar un formulario. El chunk se pide
+ * apenas carga este módulo (en paralelo con `/auth/me`), así quien ya tiene
+ * sesión no espera un viaje extra y quien está en el login lo tiene listo
+ * cuando entra.
+ */
+const loadApp = () => import('@/App').then((m) => ({ default: m.App }));
+const App = lazyWithReload(loadApp);
+void loadApp().catch(() => undefined);
 
 /**
  * Gate de sesión de Imagina Base que monta la UI REAL del admin
@@ -75,9 +86,6 @@ export function AdminCloudApp(): JSX.Element {
     const markReady = useSession((s) => s.markReady);
     const [booted, setBooted] = useState(false);
 
-    // Invalidación push del workspace activo (no-op hasta tener sesión+tenant).
-    useRealtime();
-
     // Branding white-label del tenant: aplica `primary_color` a los tokens del
     // tema (una sola vez acá; el Sidebar lee del mismo query cache).
     useBranding();
@@ -112,7 +120,9 @@ export function AdminCloudApp(): JSX.Element {
 
     return (
         <HashRouter>
-            <App />
+            <Suspense fallback={<LoadingScreen />}>
+                <App />
+            </Suspense>
         </HashRouter>
     );
 }

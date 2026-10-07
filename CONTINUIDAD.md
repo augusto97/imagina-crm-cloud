@@ -265,9 +265,9 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 - Logs: `/tmp/imagina-dev/{api,vite,dockerd}.log`
 - Después de cambiar el API: `pnpm --filter @imagina-base/api build && sh scripts/dev/restart.sh`
 - Después de tocar `packages/shared`: `pnpm --filter @imagina-base/shared build`
-  y **reiniciar vite** (`restart.sh` borra `node_modules/.vite`; si no, el
-  navegador sigue con el shared viejo y las claves nuevas se descartan en
-  silencio — pasó en v0.1.167, 176, 198).
+  para el **API** (usa el `dist`) y reiniciarlo. El **front** lo lee del
+  fuente desde v0.1.256 (alias en `vite.cloud.config.ts`): vite lo recarga
+  solo, ya no hace falta borrar `.vite` (la trampa de v0.1.167/176/198).
 - **El API NO migra al arrancar**: tras una migración nueva, `pnpm db:migrate`.
 - Base de dev: `docker exec -it imagina-base-postgres-1 psql -U imagina -d imagina_base`.
 - El tenant de dev arranca en plan `trial` (500 registros): para pruebas
@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.255** (fallas chicas de la auditoría), en `main`.
+versión publicada: **v0.1.256** (carga inicial + agrupada virtualizada), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -359,9 +359,6 @@ versión publicada: **v0.1.255** (fallas chicas de la auditoría), en `main`.
 **Pendientes de la auditoría v0.1.252 (por valor)**
 - Modal del registro y formulario de alta en celular: siguen siendo largos
   (se arregló lo que se salía de pantalla, no el diseño).
-- Virtualizar la vista AGRUPADA (la plana ya lo está).
-- Bundle inicial ~600 KB gz: `packages/shared` compilado a CommonJS (no hace
-  tree-shaking), rutas y diálogos eager, `icon-catalog` precargado en el login.
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
   transacciones), `search_text` indexado para la búsqueda, `next_fire_at` en
   recurrencias, `findById` que no traiga la descripción si no hace falta.
@@ -382,6 +379,13 @@ versión publicada: **v0.1.255** (fallas chicas de la auditoría), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-06 · v0.1.256** — Segunda entrega de los pendientes de la auditoría:
+  rendimiento del front. `shared` desde el fuente (tree-shaking), la app y las
+  rutas/diálogos/calendario a pedido → el login baja ~217 KB gz (antes ~630) y
+  entrar a una lista ~430. Vista agrupada virtualizada (600 filas → ~150
+  dibujadas). Se encontró y arregló un bucle de recargas infinito si un chunk
+  falla al arrancar. Nota de desarrollo: el front ya NO necesita recompilar
+  `shared` ni borrar `.vite`; el API sí sigue usando su `dist`.
 - **2026-10-06 · v0.1.255** — El usuario pidió seguir con los pendientes de la
   auditoría. Plan en cuatro entregas: (1) fallas chicas, (2) rendimiento del
   front (bundle inicial + virtualizar la agrupada), (3) rendimiento del
