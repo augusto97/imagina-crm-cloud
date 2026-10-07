@@ -1,4 +1,4 @@
-import { forwardRef, memo, useEffect, useRef, useState } from 'react';
+import { createContext, forwardRef, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { DurationFormat } from '@imagina-base/shared';
 
@@ -72,7 +72,10 @@ function EditableCellInner({
     lockedReason = null,
 }: EditableCellProps): JSX.Element {
     const canEditByUser = canEditByCaps && lockedReason === null;
-    const update = useUpdateRecord(listId);
+    // v0.1.259 — UNA mutación por tabla (contexto), no una por celda: con
+    // decenas de filas visibles eran cientos de observers montados por nada.
+    const updateRecord = useContext(RecordUpdaterContext)!;
+    const [pending, setPending] = useState(false);
     const wrapText = useWrapText();
     const relationTitles = useRelationTitlesFor(field.id);
     const [editing, setEditing] = useState(false);
@@ -111,7 +114,8 @@ function EditableCellInner({
         }
         setError(null);
         try {
-            await update.mutateAsync({ id: recordId, values: { [field.slug]: next } });
+            setPending(true);
+            await updateRecord({ id: recordId, values: { [field.slug]: next } });
             setEditing(false);
         } catch (err) {
             const msg = err instanceof ApiError
@@ -121,6 +125,8 @@ function EditableCellInner({
                     : __('Error');
             setError(msg);
             // Mantenemos el modo edición para que el usuario corrija.
+        } finally {
+            setPending(false);
         }
     };
 
@@ -141,7 +147,7 @@ function EditableCellInner({
                         type="checkbox"
                         className="imcrm-h-4 imcrm-w-4 imcrm-cursor-pointer imcrm-accent-[hsl(var(--imcrm-primary))]"
                         checked={Boolean(value)}
-                        disabled={update.isPending}
+                        disabled={pending}
                         aria-label={field.label}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => void commit(e.target.checked)}
@@ -262,7 +268,7 @@ function EditableCellInner({
                 onChange={setDraft}
                 onCommit={(v) => void commit(v)}
                 onCancel={cancel}
-                isPending={update.isPending}
+                isPending={pending}
             />
             {error !== null && (
                 <div className="imcrm-absolute imcrm-left-0 imcrm-top-full imcrm-z-10 imcrm-mt-1 imcrm-rounded-md imcrm-border imcrm-border-destructive imcrm-bg-destructive imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-destructive-foreground imcrm-shadow-imcrm-md">
@@ -291,7 +297,27 @@ function EditableCellInner({
  * el TableView dispara un re-mount via key — no necesitamos
  * comparar `field` por deep equality.
  */
-export const EditableCell = memo(EditableCellInner, (prev, next) => {
+type RecordUpdater = ReturnType<typeof useUpdateRecord>['mutateAsync'];
+const RecordUpdaterContext = createContext<RecordUpdater | null>(null);
+
+/** La mutación de edición que comparten todas las celdas de una tabla. */
+export function RecordUpdaterProvider({ listId, children }: { listId: number; children: ReactNode }): JSX.Element {
+    const update = useUpdateRecord(listId);
+    return <RecordUpdaterContext.Provider value={update.mutateAsync}>{children}</RecordUpdaterContext.Provider>;
+}
+
+/** Fuera de una tabla con proveedor, la celda trae el suyo. */
+function EditableCellWithUpdater(props: EditableCellProps): JSX.Element {
+    const shared = useContext(RecordUpdaterContext);
+    if (shared) return <EditableCellInner {...props} />;
+    return (
+        <RecordUpdaterProvider listId={props.listId}>
+            <EditableCellInner {...props} />
+        </RecordUpdaterProvider>
+    );
+}
+
+export const EditableCell = memo(EditableCellWithUpdater, (prev, next) => {
     return (
         prev.recordId === next.recordId
         && prev.listId === next.listId

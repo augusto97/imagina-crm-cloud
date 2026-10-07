@@ -53,6 +53,8 @@ export class ViewsService {
                 config,
                 isDefault,
                 position,
+                icon: input.icon ?? null,
+                color: input.color ?? null,
             });
         });
         this.realtime.views(tenantId, listId);
@@ -74,6 +76,8 @@ export class ViewsService {
             const changes: Partial<typeof import('../db/schema').savedViews.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
             if (patch.position !== undefined) changes.position = patch.position;
+            if (patch.icon !== undefined) changes.icon = patch.icon;
+            if (patch.color !== undefined) changes.color = patch.color;
             if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as ViewType, patch.config);
             }
@@ -90,6 +94,35 @@ export class ViewsService {
         });
         this.realtime.views(tenantId, listId);
         return toView(row);
+    }
+
+    /**
+     * v0.1.259 — orden de las pestañas. Los ids deben ser vistas de ESTA lista
+     * y únicos; las que no vengan quedan después, en el orden que tenían.
+     */
+    async reorder(tenantId: number, listIdOrSlug: string, viewIds: number[]): Promise<View[]> {
+        const listId = await this.resolveListId(tenantId, listIdOrSlug);
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const existing = await this.repo.listByList(tx, tenantId, listId);
+            const valid = new Set(existing.map((v) => v.id));
+            if (new Set(viewIds).size !== viewIds.length || viewIds.some((id) => !valid.has(id))) {
+                throw new BadRequestException({
+                    code: 'invalid_reorder',
+                    message: 'view_ids debe contener ids únicos de vistas de esta lista',
+                    data: { status: 400 },
+                });
+            }
+            const wanted = new Set(viewIds);
+            const order = [...viewIds, ...existing.filter((v) => !wanted.has(v.id)).map((v) => v.id)];
+            for (let i = 0; i < order.length; i++) {
+                const id = order[i]!;
+                if (existing.find((v) => v.id === id)?.position === i) continue;
+                await this.repo.update(tx, tenantId, listId, id, { position: i });
+            }
+            return this.repo.listByList(tx, tenantId, listId);
+        });
+        this.realtime.views(tenantId, listId);
+        return rows.map(toView);
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<void> {
@@ -116,6 +149,8 @@ function toView(row: ViewRow): View {
         config: row.config,
         is_default: row.isDefault,
         position: row.position,
+        icon: row.icon ?? null,
+        color: row.color ?? null,
     };
 }
 

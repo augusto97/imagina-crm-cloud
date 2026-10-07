@@ -50,6 +50,9 @@ export const blueprintViewSchema = z.object({
     type: viewTypeSchema,
     config: z.record(z.unknown()).default({}),
     is_default: z.boolean().default(false),
+    /** v0.1.259 — icono y color de la pestaña. */
+    icon: z.string().max(64).optional(),
+    color: z.string().max(32).optional(),
 });
 export type BlueprintView = z.infer<typeof blueprintViewSchema>;
 

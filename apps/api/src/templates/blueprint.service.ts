@@ -146,6 +146,8 @@ export class BlueprintService {
                     type: v.type,
                     config: tokenize(v.config) as Record<string, unknown>,
                     is_default: v.is_default,
+                    ...(v.icon ? { icon: v.icon } : {}),
+                    ...(v.color ? { color: v.color } : {}),
                 }));
             }
 
@@ -339,6 +341,8 @@ export class BlueprintService {
                         type: v.type,
                         config: resolve(v.config) as Record<string, unknown>,
                         is_default: v.is_default,
+                        icon: v.icon ?? null,
+                        color: v.color ?? null,
                     });
                 } catch (err) {
                     warnings.push(`Vista «${v.name}» de «${bl.name}»: ${message(err)}`);
@@ -520,6 +524,8 @@ export class BlueprintService {
                         type: v.type,
                         config: resolveLists(resolveFieldRefs(v.config, slugToId, slugMaps)) as Record<string, unknown>,
                         is_default: v.is_default,
+                        icon: v.icon ?? null,
+                        color: v.color ?? null,
                     });
                 } catch (err) {
                     warnings.push(`Vista «${v.name}» de «${bl.name}»: ${message(err)}`);

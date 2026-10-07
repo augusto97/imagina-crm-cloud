@@ -29,6 +29,9 @@ export const savedViews = pgTable('saved_views', {
     config: jsonb('config').$type<Record<string, unknown>>().notNull().default({}),
     isDefault: boolean('is_default').notNull().default(false),
     position: integer('position').notNull().default(0),
+    /** v0.1.259 — icono y color de la pestaña (catálogo de las listas). */
+    icon: text('icon'),
+    color: text('color'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

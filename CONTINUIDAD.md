@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.258** (registro y alta en celular — cierra la auditoría v0.1.252), en `main`.
+versión publicada: **v0.1.259** (vistas más rápidas + pestañas de vistas editables), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -378,6 +378,20 @@ versión publicada: **v0.1.258** (registro y alta en celular — cierra la audit
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.259** — Dos reportes del usuario: «las listas y
+  agrupaciones cargan mucho más lento» y «las pestañas de vistas no permiten
+  cambiar nombre, icono ni reordenarse». La lentitud se MIDIÓ con una réplica
+  de su «Anualidades LIC» (2.173 registros, leída por el MCP) contra el build de
+  v0.1.255: el servidor contesta en 20-60 ms y todo el costo era del navegador
+  (v0.1.255 ya era lenta; la agrupada de v0.1.256 sumó). Arreglado: ventana de
+  filas desde el primer render y sin medir fila por fila, popovers de celda que
+  se montan al primer click y una mutación por tabla → «Todos» 1,1 s → 0,35 s y
+  agrupada 1,2 s → 0,66 s en escritorio (con CPU de celular 4,7 → 1,9 s y 4,6 →
+  3,0 s). Pestañas: doble click renombra, click derecho/«···» con «Color e
+  ícono», arrastrar para reordenar (migración 0065, conserva el orden que se
+  veía). Ojo: la réplica de prueba tiene un panel lateral de ~300 listas que
+  infla el layout; en la instancia del usuario (12 listas) debería sentirse
+  todavía mejor.
 - **2026-10-07 · v0.1.258** — Cuarta y última entrega de los pendientes de la
   auditoría: el registro en celular es pantalla completa con pestañas Detalles /
   Comentarios / Actividad (antes la Actividad apilada le robaba media pantalla y

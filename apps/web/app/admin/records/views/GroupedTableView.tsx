@@ -12,6 +12,7 @@ import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
 import type { RowDensity, RowFontSize } from '../recordsState';
+import { RecordUpdaterProvider } from '../EditableCell';
 import { useWrapText, WrapTextContext } from '../wrapText';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
@@ -366,7 +367,8 @@ function GroupedTableViewImpl({
 
     return (
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
-        <WrapTextContext.Provider value={wrapText}>
+        <RecordUpdaterProvider listId={listId}>
+       <WrapTextContext.Provider value={wrapText}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {/* Scroll horizontal único compartido entre todos los
                 buckets — sin esto cada bucket tenía su propio
@@ -479,6 +481,7 @@ function GroupedTableViewImpl({
             </div>
         </div>
         </WrapTextContext.Provider>
+       </RecordUpdaterProvider>
         </RecurrencesBatchProvider>
     );
 }
@@ -811,7 +814,7 @@ function GroupBucketSection({
         ]),
         [records.data, expandedIds, subtasksByParent],
     );
-    const windowed = useMainVirtualRows(bodyScrollRef, tableMounted ? flatRows.length : 0, { density });
+    const windowed = useMainVirtualRows(bodyScrollRef, tableMounted ? flatRows.length : 0, { density, measure: wrapText });
     const visibleRows = windowed.active
         ? windowed.items.flatMap((it) => {
             const row = flatRows[it.index];

@@ -13,8 +13,10 @@ import {
 } from '@nestjs/common';
 import {
     createViewSchema,
+    reorderViewsSchema,
     updateViewSchema,
     type CreateViewInput,
+    type ReorderViewsInput,
     type UpdateViewInput,
     type View,
 } from '@imagina-base/shared';
@@ -55,6 +57,17 @@ export class ViewsController {
         @Body(new ZodValidationPipe(createViewSchema)) input: CreateViewInput,
     ): Promise<View> {
         return this.views.create(tenantId(req), list, input);
+    }
+
+    /** v0.1.259 — orden de las pestañas (declarada antes de `:id`). */
+    @Patch('reorder')
+    @RequireCapability('manage_views')
+    reorder(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(reorderViewsSchema)) input: ReorderViewsInput,
+    ): Promise<{ data: View[] }> {
+        return this.views.reorder(tenantId(req), list, input.view_ids).then((data) => ({ data }));
     }
 
     @Patch(':id')

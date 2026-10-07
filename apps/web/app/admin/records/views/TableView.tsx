@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     flexRender,
     getCoreRowModel,
@@ -10,7 +10,6 @@ import {
     type ColumnSizingState,
     type VisibilityState,
 } from '@tanstack/react-table';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown, ArrowUp, ArrowUpDown, GripVertical, Inbox, KeyRound, Plus } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/empty-state';
@@ -19,7 +18,9 @@ import { RecordRowMenu, type RowMenuTarget } from '../RecordRowMenu';
 import { SubtaskFetcher } from '../SubtaskFetcher';
 import { RecordNameCell } from './RecordNameCell';
 import type { RowDensity, RowFontSize } from '../recordsState';
+import { RecordUpdaterProvider } from '../EditableCell';
 import { WrapTextContext } from '../wrapText';
+import { useMainVirtualRows } from './useMainVirtualRows';
 import { RelationTitlesContext } from '../relationTitlesContext';
 import { useRelationTitlesForRows } from '@/hooks/useRelationTitles';
 import { RecurrencesBatchProvider } from '@/hooks/useRecurrences';
@@ -418,60 +419,22 @@ export function TableView({
     const tableContainerRef = useRef<HTMLDivElement>(null);
     const rows = table.getRowModel().rows;
     const VIRTUALIZATION_THRESHOLD = 100;
-    const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
-
+    
     // v0.1.253 — el scroll vertical es el del `<main>` (desde v0.1.70), no el
-    // del wrapper de la tabla (que sólo scrollea en horizontal y mide lo mismo
-    // que su contenido). Apuntado al wrapper, el virtualizer creía que TODO
-    // era visible y dibujaba las 200 filas (~17.000 elementos): el modal, la
-    // búsqueda y el cambio de vista recalculaban estilos sobre todo eso.
-    // Ahora mira al `<main>` y descuenta con `scrollMargin` lo que hay arriba
-    // de la tabla (cabecera de la página, pestañas, toolbar).
-    const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
-    const [scrollMargin, setScrollMargin] = useState(0);
-    useLayoutEffect(() => {
-        const body = tableContainerRef.current;
-        if (!body || !shouldVirtualize) return;
-        const main = body.closest<HTMLElement>('#imcrm-main');
-        setScrollEl(main);
-        if (!main) return;
-        const measure = (): void => {
-            const m = body.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
-            setScrollMargin((prev) => (Math.abs(prev - m) > 1 ? m : prev));
-        };
-        measure();
-        const ro = new ResizeObserver(measure);
-        ro.observe(main.firstElementChild ?? main);
-        return () => ro.disconnect();
-    }, [shouldVirtualize]);
-
-    const rowVirtualizer = useVirtualizer({
-        count: rows.length,
-        getScrollElement: () => scrollEl,
-        // Alto estimado por densidad (25 / 37 / 49 px); el virtualizer mide
-        // cada fila al dibujarla (`measureElement`), así "Ajustar texto" y las
-        // subtareas no descuadran el scroll.
-        estimateSize: () =>
-            (density ?? (spreadsheet ? 'compact' : 'normal')) === 'compact'
-                ? 25
-                : (density ?? 'normal') === 'comfortable'
-                  ? 49
-                  : 37,
-        scrollMargin,
-        // Buffer: rows extra renderizadas arriba/abajo del viewport
-        // para que el scroll fluido no muestre "huecos blancos"
-        // mientras los nuevos rows pintan.
+    // del wrapper de la tabla. v0.1.259 — la ventana sale del hook compartido
+    // con la agrupada: el primer render ya es una ventana y, sin "Ajustar
+    // texto", las filas no se miden una por una (forzaba un layout por fila).
+    const windowed = useMainVirtualRows(tableContainerRef, rows.length, {
+        density: density ?? (spreadsheet ? 'compact' : 'normal'),
+        threshold: VIRTUALIZATION_THRESHOLD,
+        // Buffer: filas extra arriba/abajo del viewport para que el scroll
+        // fluido no muestre huecos blancos mientras pintan las nuevas.
         overscan: 12,
-        enabled: shouldVirtualize && scrollEl !== null,
+        measure: wrapText,
     });
-
-    const virtualActive = shouldVirtualize && scrollEl !== null;
-    const virtualRows = virtualActive ? rowVirtualizer.getVirtualItems() : [];
-    const virtualTotalSize = virtualActive ? rowVirtualizer.getTotalSize() : 0;
-    const paddingTop = virtualRows.length > 0 ? Math.max(0, (virtualRows[0]?.start ?? 0) - scrollMargin) : 0;
-    const paddingBottom = virtualRows.length > 0
-        ? Math.max(0, virtualTotalSize - ((virtualRows[virtualRows.length - 1]?.end ?? 0) - scrollMargin))
-        : 0;
+    const virtualActive = windowed.active;
+    const virtualRows = windowed.items;
+    const { paddingTop, paddingBottom } = windowed;
 
     /**
      * Reordena `columnOrder` insertando `dragged` justo antes de
@@ -582,6 +545,7 @@ export function TableView({
 
     return (
       <RecurrencesBatchProvider listId={listId} recordIds={visibleRecordIds}>
+       <RecordUpdaterProvider listId={listId}>
        <WrapTextContext.Provider value={wrapText}>
        <RelationTitlesContext.Provider value={relationTitles}>
         <div
@@ -901,7 +865,7 @@ export function TableView({
                                 <tr
                                     key={row.id}
                                     data-index={virtualActive ? virtualRows[visualIndex]?.index : undefined}
-                                    ref={virtualActive ? rowVirtualizer.measureElement : undefined}
+                                    ref={virtualActive ? windowed.measureElement : undefined}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setRowMenu({ record: row.original, x: e.clientX, y: e.clientY });
@@ -1154,6 +1118,7 @@ export function TableView({
         />
        </RelationTitlesContext.Provider>
        </WrapTextContext.Provider>
+       </RecordUpdaterProvider>
       </RecurrencesBatchProvider>
     );
 }

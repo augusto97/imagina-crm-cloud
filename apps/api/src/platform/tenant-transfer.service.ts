@@ -740,6 +740,8 @@ export class TenantTransferService {
                 config: remapJson((v.config as Row | null) ?? {}, maps) as Row,
                 isDefault: Boolean(v.isDefault),
                 position: Number(v.position ?? 0),
+                icon: typeof v.icon === 'string' ? v.icon : null,
+                color: typeof v.color === 'string' ? v.color : null,
             }),
             (v) => maps.list.has(Number(v.listId)),
         );
