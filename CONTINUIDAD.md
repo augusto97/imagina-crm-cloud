@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.263** (zona horaria por empresa: automatizaciones, vencimientos, recurrencias y «hoy»), en `main`.
+versión publicada: **v0.1.264** (vista previa del formato regional con la hora real de la zona + filtro de rollups en la zona de la empresa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -359,8 +359,6 @@ versión publicada: **v0.1.263** (zona horaria por empresa: automatizaciones, ve
   queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
   se propone desde su navegador y el horario sin zona la sigue). Si nadie
   entra, ponerla a mano en Ajustes → Formato regional de esa empresa.
-- Pendiente menor de zona horaria: el sub-filtro de un rollup
-  (`through-fields.ts`) todavía calcula «hoy» en UTC.
 
 **Pendientes de la auditoría v0.1.252 (por valor)**
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
@@ -384,6 +382,11 @@ versión publicada: **v0.1.263** (zona horaria por empresa: automatizaciones, ve
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.264** — Feedback del usuario con captura: la vista
+  previa de Formato regional mostraba un ejemplo fijo (31/12/2026 · 2:30 p. m.)
+  y confundía, parecía la hora actual. Ahora muestra la fecha y la hora REALES
+  de la zona elegida, rotuladas. Y «arreglá también eso»: el filtro de los
+  rollups ya usa la zona de la empresa (era el pendiente de v0.1.263).
 - **2026-10-07 · v0.1.263** — Reporte del usuario: un cliente en Colombia
   programó una automatización para las 8 am y salió a las 3 am. Causa: no había
   zona horaria por empresa y los horarios creados sin zona (asistente, MCP,

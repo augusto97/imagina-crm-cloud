@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UpdateTenantFormatInput } from '@imagina-base/shared';
+import { timeZoneLabel, type UpdateTenantFormatInput } from '@imagina-base/shared';
 import { Globe } from 'lucide-react';
 
 import { brandingQueryKey, useBrandingData } from '@/hooks/useBranding';
 import { CloudApiError } from '@/lib/cloud/client';
 import {
     browserTimeZone,
-    formatDateStr,
     formatNumber,
-    formatTimeOfDay,
+    formatZonedNow,
     type TenantFormat as TF,
 } from '@/lib/tenantFormat';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
@@ -76,22 +75,15 @@ export function RegionalFormatPanel(): JSX.Element {
 
     const draft: TF = { number_format: numberFormat, date_format: dateFormat, time_format: timeFormat, timezone: timeZone };
     const browserTz = browserTimeZone();
-    // "Ahora" en la zona elegida, para que se vea qué reloj manda.
-    const zonedNow = (() => {
-        try {
-            return new Intl.DateTimeFormat(draft.time_format === 'h12' ? 'es-CO' : 'es-ES', {
-                timeZone: timeZone ?? 'UTC',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: draft.time_format === 'h12',
-            }).format(new Date());
-        } catch {
-            return '';
-        }
-    })();
-    const previewTime = new Date();
-    previewTime.setHours(14, 30, 0, 0);
-    const preview = `${formatNumber(1234567.89, { minFrac: 2, maxFrac: 2 }, draft)} · ${formatDateStr('2026-12-31', draft)} · ${formatTimeOfDay(previewTime, draft)}`;
+    // La vista previa muestra la fecha y la hora REALES de la zona elegida (un
+    // ejemplo fijo se leía como si fuera la hora de ahora). Se refresca sola.
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const id = window.setInterval(() => setNow(new Date()), 15_000);
+        return () => window.clearInterval(id);
+    }, []);
+    const zoned = formatZonedNow(timeZone, draft, now);
+    const zoneName = timeZone ? timeZoneLabel(timeZone) : 'UTC';
 
     const dirty =
         saved !== undefined &&
@@ -162,8 +154,7 @@ export function RegionalFormatPanel(): JSX.Element {
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         Manda en los horarios de las automatizaciones («todos los días a las 8»), en
                         las fechas sin hora (vencimientos y recurrencias) y en «hoy» o «esta semana» de
-                        filtros y tableros.{' '}
-                        {timeZone ? `Ahora son las ${zonedNow} en esa zona.` : 'Sin zona, todo corre en UTC.'}
+                        filtros y tableros.{timeZone ? '' : ' Sin zona, todo corre en UTC.'}
                     </p>
                     {browserTz && browserTz !== timeZone && (
                         <button
@@ -176,11 +167,23 @@ export function RegionalFormatPanel(): JSX.Element {
                     )}
                 </FormatRow>
 
-                <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-sm">
-                    <span className="imcrm-mr-2 imcrm-text-xs imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                        Vista previa
-                    </span>
-                    <span data-testid="format-preview" data-loaded={saved !== undefined ? '1' : '0'} className="imcrm-font-medium imcrm-tabular-nums">{preview}</span>
+                <div
+                    className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2.5"
+                    data-testid="format-preview"
+                    data-loaded={saved !== undefined ? '1' : '0'}
+                >
+                    <p className="imcrm-text-xs imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                        Vista previa · ahora en {zoneName}
+                    </p>
+                    <dl className="imcrm-mt-1.5 imcrm-grid imcrm-grid-cols-1 imcrm-gap-x-6 imcrm-gap-y-1 sm:imcrm-grid-cols-3">
+                        <PreviewItem label="Fecha de hoy" value={zoned.date} testId="format-preview-date" />
+                        <PreviewItem label="Hora actual" value={zoned.time} testId="format-preview-time" />
+                        <PreviewItem
+                            label="Un número de ejemplo"
+                            value={formatNumber(1234567.89, { minFrac: 2, maxFrac: 2 }, draft)}
+                            testId="format-preview-number"
+                        />
+                    </dl>
                 </div>
 
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
@@ -220,3 +223,15 @@ function FormatRow({
         </div>
     );
 }
+
+function PreviewItem({ label, value, testId }: { label: string; value: string; testId: string }): JSX.Element {
+    return (
+        <div className="imcrm-flex imcrm-items-baseline imcrm-justify-between imcrm-gap-2 sm:imcrm-block">
+            <dt className="imcrm-text-xs imcrm-text-muted-foreground">{label}</dt>
+            <dd className="imcrm-text-sm imcrm-font-medium imcrm-tabular-nums" data-testid={testId}>
+                {value}
+            </dd>
+        </div>
+    );
+}
+

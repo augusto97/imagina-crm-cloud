@@ -5,6 +5,7 @@ import {
     formatDateTimeStr,
     formatNumber,
     formatTimeOfDay,
+    formatZonedNow,
     numberFormatLocale,
     setTenantFormat,
     type TenantFormat,
@@ -79,3 +80,19 @@ describe('numberFormatLocale', () => {
         expect(numberFormatLocale({ ...DOT_COMMA, number_format: 'space_comma' })).toBe('fr-FR');
     });
 });
+
+describe('formatZonedNow (vista previa con la hora real de la zona)', () => {
+    const at = new Date('2026-10-07T21:58:00Z');
+    it('usa la fecha y la hora de la zona elegida, con el formato elegido', () => {
+        expect(formatZonedNow('America/Bogota', { ...DOT_COMMA, time_format: 'h12' }, at)).toEqual({
+            date: '07/10/2026',
+            time: '4:58 p. m.',
+        });
+        // Del otro lado de la medianoche: otro día.
+        expect(formatZonedNow('Asia/Tokyo', DOT_COMMA, at)).toEqual({ date: '08/10/2026', time: '06:58' });
+    });
+    it('sin zona elegida muestra UTC', () => {
+        expect(formatZonedNow(null, DOT_COMMA, at)).toEqual({ date: '07/10/2026', time: '21:58' });
+    });
+});
+
