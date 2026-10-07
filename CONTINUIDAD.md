@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.259** (vistas más rápidas + pestañas de vistas editables), en `main`.
+versión publicada: **v0.1.260** (menú contextual completo de las vistas), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -378,6 +378,14 @@ versión publicada: **v0.1.259** (vistas más rápidas + pestañas de vistas edi
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.260** — Pedido del usuario con captura de ClickUp: el
+  menú de las vistas tiene muchas más opciones allá. Ahora: favorito (aparece
+  en Favoritos y abre la lista en esa vista), copiar vínculo (`?view=` en la
+  URL — antes el enlace abría la vista por defecto), personalizar, color e
+  ícono, vista privada, proteger vista, guardar automáticamente, por defecto,
+  exportar, duplicar y «Uso compartido y permisos». No se copiaron «Fijar
+  vista» ni «Modo de carga rápida» (sin equivalente) ni «Plantillas» (son por
+  lista).
 - **2026-10-07 · v0.1.259** — Dos reportes del usuario: «las listas y
   agrupaciones cargan mucho más lento» y «las pestañas de vistas no permiten
   cambiar nombre, icono ni reordenarse». La lentitud se MIDIÓ con una réplica

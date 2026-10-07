@@ -1,7 +1,7 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { lists, savedViews, tenants } from '../src/db/schema';
+import { lists, savedViews, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -20,6 +20,8 @@ describe('ViewsService (Postgres real + RLS)', () => {
     let service: ViewsService;
     let tenantA: number;
     let tenantB: number;
+    // Usuarios reales (saved_views.created_by referencia a users).
+    const uid: Record<string, number> = {};
 
     beforeAll(async () => {
         pg = await startPostgres();
@@ -31,6 +33,10 @@ describe('ViewsService (Postgres real + RLS)', () => {
         const [tb] = await pg.db.insert(tenants).values({ slug: 'globex', name: 'Globex' }).returning();
         tenantA = ta!.id;
         tenantB = tb!.id;
+        for (const n of ['ana', 'beto', 'carla', 'admin']) {
+            const [u] = await pg.db.insert(users).values({ email: `${n}@views.test`, name: n, passwordHash: 'x' }).returning();
+            uid[n] = u!.id;
+        }
     });
 
     afterAll(async () => {
@@ -141,5 +147,46 @@ describe('ViewsService (Postgres real + RLS)', () => {
         // Otra empresa no ve (ni reordena) estas vistas.
         await listsService.create(tenantB, { name: 'Clientes' });
         await expect(service.reorder(tenantB, 'clientes', [a.id])).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('v0.1.260 — privada: sólo la ve quien la creó; no puede ser la por defecto', async () => {
+        const ana = { userId: uid.ana!, role: 'agent' };
+        const beto = { userId: uid.beto!, role: 'admin' };
+        const priv = await service.create(tenantA, 'clientes', { name: 'Mía', type: 'table', is_private: true }, ana);
+        expect(priv).toMatchObject({ is_private: true, created_by: uid.ana });
+        expect((await service.list(tenantA, 'clientes', ana)).map((v) => v.name)).toContain('Mía');
+        // Ni otro miembro (aunque sea admin) ni un proceso interno la ven.
+        expect((await service.list(tenantA, 'clientes', beto)).map((v) => v.name)).not.toContain('Mía');
+        expect((await service.list(tenantA, 'clientes')).map((v) => v.name)).not.toContain('Mía');
+        await expect(service.get(tenantA, 'clientes', priv.id, beto)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.update(tenantA, 'clientes', priv.id, { name: 'X' }, beto)).rejects.toBeInstanceOf(NotFoundException);
+        await expect(service.remove(tenantA, 'clientes', priv.id, beto)).rejects.toBeInstanceOf(NotFoundException);
+        // No puede ser la por defecto.
+        await expect(service.update(tenantA, 'clientes', priv.id, { is_default: true }, ana)).rejects.toBeInstanceOf(BadRequestException);
+        // Sólo su autor la comparte.
+        const pub = await service.create(tenantA, 'clientes', { name: 'Equipo', type: 'table' }, ana);
+        await expect(service.update(tenantA, 'clientes', pub.id, { is_private: true }, beto)).rejects.toBeInstanceOf(ForbiddenException);
+        const shared = await service.update(tenantA, 'clientes', priv.id, { is_private: false }, ana);
+        expect(shared.is_private).toBe(false);
+        expect((await service.list(tenantA, 'clientes', beto)).map((v) => v.name)).toContain('Mía');
+    });
+
+    it('v0.1.260 — protegida: sólo su autor o un admin la cambia o la borra', async () => {
+        const ana = { userId: uid.ana!, role: 'agent' };
+        const carla = { userId: uid.carla!, role: 'manager' };
+        const admin = { userId: uid.admin!, role: 'admin' };
+        const v = await service.create(tenantA, 'clientes', { name: 'Oficial', type: 'table' }, ana);
+        const locked = await service.update(tenantA, 'clientes', v.id, { is_locked: true }, ana);
+        expect(locked.is_locked).toBe(true);
+        await expect(service.update(tenantA, 'clientes', v.id, { config: { search: 'x' } }, carla)).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(service.update(tenantA, 'clientes', v.id, { name: 'Otra' }, carla)).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(service.update(tenantA, 'clientes', v.id, { is_locked: false }, carla)).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(service.remove(tenantA, 'clientes', v.id, carla)).rejects.toBeInstanceOf(ForbiddenException);
+        // Marcarla por defecto o reordenar no tocan su contenido.
+        expect((await service.update(tenantA, 'clientes', v.id, { is_default: true }, carla)).is_default).toBe(true);
+        expect((await service.update(tenantA, 'clientes', v.id, { autosave: true }, admin)).autosave).toBe(true);
+        expect((await service.update(tenantA, 'clientes', v.id, { name: 'Oficial 2' }, admin)).name).toBe('Oficial 2');
+        await service.remove(tenantA, 'clientes', v.id, ana);
+        await expect(service.get(tenantA, 'clientes', v.id, ana)).rejects.toBeInstanceOf(NotFoundException);
     });
 });

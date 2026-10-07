@@ -27,6 +27,9 @@ interface CreateViewVars {
     type?: SavedViewType;
     config: SavedViewConfig;
     is_default?: boolean;
+    icon?: string | null;
+    color?: string | null;
+    is_private?: boolean;
 }
 
 export function useCreateSavedView(listId: string | number) {
@@ -52,6 +55,10 @@ interface UpdateViewVars {
     /** v0.1.259 — icono/color de la pestaña (`null` = el del tipo de vista). */
     icon?: string | null;
     color?: string | null;
+    /** v0.1.260 — privada / protegida / guardado automático. */
+    is_private?: boolean;
+    is_locked?: boolean;
+    autosave?: boolean;
 }
 
 export function useUpdateSavedView(listId: string | number) {

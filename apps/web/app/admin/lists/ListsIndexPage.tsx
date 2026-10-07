@@ -20,7 +20,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { StatTile } from '@/components/ui/stat-tile';
 import { ViewSwitch } from '@/components/ui/view-switch';
-import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
+import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
 import { matchesListQuery, sectionsByFolder } from '@/lib/folderSections';
@@ -72,7 +72,7 @@ export function ListsIndexPage(): JSX.Element {
     const allLists = useMemo(() => lists.data ?? [], [lists.data]);
     const allGroups = useMemo(() => groups.data ?? [], [groups.data]);
     const groupById = useMemo(() => new Map(allGroups.map((g) => [g.id, g])), [allGroups]);
-    const favs = favorites.data ?? { lists: [], dashboards: [] };
+    const favs = favorites.data ?? EMPTY_FAVORITES;
     const hasFolders = allGroups.length > 0;
     const grouped = view === 'folders' && hasFolders;
 

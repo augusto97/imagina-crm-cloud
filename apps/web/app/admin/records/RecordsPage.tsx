@@ -28,7 +28,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useFields } from '@/hooks/useFields';
 import { useList } from '@/hooks/useLists';
 import { useRecord, useRecords } from '@/hooks/useRecords';
-import { useSavedViews } from '@/hooks/useSavedViews';
+import { useSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
 import { canSearchClientSide, clientSideSearch } from '@/lib/clientSearch';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { parseMultiBucket } from '@/lib/multiBucket';
@@ -89,6 +89,7 @@ import { TableView } from './views/TableView';
 import { SaveViewDialog } from './views/SaveViewDialog';
 import { ViewSettingsSheet } from './views/ViewSettingsSheet';
 import { ViewsTabs } from './views/ViewsTabs';
+import { canWriteView } from './views/viewAccess';
 import { MAIN_SCROLLER_ID, PageStickyTopContext, useElementHeight, useStuckSentinel } from './views/stickyTop';
 import {
     hasChangesVsView,
@@ -450,9 +451,13 @@ const applyView = (view: SavedViewEntity | null): void => {
         if (initialViewAppliedRef.current === list.data.id) return;
         initialViewAppliedRef.current = list.data.id;
 
-        const def = views.data.find((v) => v.is_default);
-        if (def) {
-            applyView(def);
+        // v0.1.260 — `?view=<id>` (el vínculo copiado del menú de la pestaña o
+        // un favorito) gana sobre la vista por defecto.
+        const linked = Number(searchParams.get('view'));
+        const target = (Number.isInteger(linked) && linked > 0 ? views.data.find((v) => v.id === linked) : undefined)
+            ?? views.data.find((v) => v.is_default);
+        if (target) {
+            applyView(target);
         }
         setViewApplied(true);
     }, [views.data, list.data?.id]);
@@ -502,6 +507,33 @@ const applyView = (view: SavedViewEntity | null): void => {
         setSearchParams(next, { replace: true });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [viewApplied, list.data?.id, searchParams]);
+
+    // v0.1.260 — la URL refleja la vista abierta (`?view=<id>`), así copiar
+    // el vínculo, recargar o volver atrás abren la misma pestaña.
+    // `lastViewParamRef` es lo último que ESTA página escribió: un `?view=`
+    // distinto llegó de afuera (un vínculo pegado, un favorito, atrás/adelante)
+    // y se aplica aunque la lista ya esté abierta.
+    const lastViewParamRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!viewApplied || !views.data) return;
+        const param = searchParams.get('view');
+        if (param !== null && param !== lastViewParamRef.current && param !== String(activeViewId)) {
+            const linked = views.data.find((v) => String(v.id) === param);
+            if (linked) {
+                lastViewParamRef.current = param;
+                applyView(linked);
+                return;
+            }
+        }
+        const wanted = activeViewId !== null ? String(activeViewId) : null;
+        lastViewParamRef.current = wanted;
+        if (param === wanted) return;
+        const next = new URLSearchParams(searchParams);
+        if (wanted === null) next.delete('view');
+        else next.set('view', wanted);
+        setSearchParams(next, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewApplied, activeViewId, searchParams, views.data]);
 
     // v0.1.172 — deep links del menú contextual del panel: `?new=1` abre el
     // alta y `?import=1` el importador, y el param se limpia para que no se
@@ -585,6 +617,22 @@ const applyView = (view: SavedViewEntity | null): void => {
         : activeView !== null
           ? hasChangesVsView(state, activeView.config)
           : state.filterTree.children.length > 0 || state.sort.length > 0 || state.search.trim() !== '';
+
+    // v0.1.260 — guardado automático: si la vista lo tiene activado y la
+    // persona puede escribirla (protegida = sólo autor/admin), los cambios de
+    // filtros/columnas/orden se guardan solos a los ~0,8 s.
+    const canManageViews = useCan(CAP.MANAGE_VIEWS);
+    const autosaveView = useUpdateSavedView(list.data?.id ?? '');
+    const autosaving = activeView !== null && activeView.autosave === true && canManageViews && canWriteView(activeView);
+    const autosaveConfigKey = autosaving && isDirty ? JSON.stringify(stateToViewConfig(state)) : null;
+    useEffect(() => {
+        if (autosaveConfigKey === null || activeView === null) return;
+        const id = activeView.id;
+        const config = JSON.parse(autosaveConfigKey) as ReturnType<typeof stateToViewConfig>;
+        const t = setTimeout(() => autosaveView.mutate({ id, config }), 800);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autosaveConfigKey]);
 
     // Resolver el campo de agrupación de la vista kanban activa.
     const groupByField = useMemo(() => {
@@ -820,9 +868,22 @@ const applyView = (view: SavedViewEntity | null): void => {
                         views={views.data ?? []}
                         activeViewId={activeViewId}
                         onSelectView={applyView}
-                        isDirty={isDirty}
+                        isDirty={isDirty && !autosaving}
                         currentConfig={stateToViewConfig(state)}
                         onAskCreateView={() => setSaveViewOpen(true)}
+                        onCustomize={(v) => {
+                            if (v.id !== activeViewId) applyView(v);
+                            setViewSettingsOpen(true);
+                        }}
+                        onExport={
+                            canExportRecords
+                                ? (v) => {
+                                      if (v.id !== activeViewId) applyView(v);
+                                      setExportOpen(true);
+                                  }
+                                : undefined
+                        }
+                        onShare={() => setShareOpen(true)}
                     />
 
                     {/*

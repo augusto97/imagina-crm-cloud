@@ -7058,6 +7058,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de pestañas (doble click, Escape, click derecho, icono, arrastrar,
         persistencia tras recargar, eliminar con confirmación).
 
+  - [x] **Menú contextual completo de las vistas (v0.1.260, pedido del usuario
+        con captura del menú de ClickUp)**: el menú de cada pestaña (click
+        derecho o «···») pasa a tener todo lo que tiene sentido acá:
+        **marcar como favorito** (la vista aparece en Favoritos —página y
+        panel— y abre la lista directamente en ella; `favorites.views` +
+        `GET /me/favorites/views`, que resuelve nombre, icono y lista en UN
+        request y nunca devuelve privadas ajenas), **copiar vínculo a la
+        vista** (la URL ahora lleva `?view=<id>` y la refleja siempre — antes
+        «Copiar enlace» copiaba la lista y abría la vista por defecto; un
+        `?view=` que llega de afuera se aplica aunque la lista ya esté
+        abierta), **personalizar vista** (abre el panel sobre esa vista),
+        **color e ícono**, **vista privada** (sólo la ve quien la creó;
+        nunca puede ser la por defecto), **proteger vista** (sólo su autor o
+        un admin la cambia o borra; a los demás la barra les dice «tus cambios
+        no se guardan» y ofrece guardarlos como vista nueva), **guardar
+        automáticamente** (los cambios de filtros/orden/columnas se guardan
+        solos a los ~0,8 s), **vista por defecto**, **exportar vista** (con
+        sus filtros), **duplicar** (la copia nace en modo renombrar) y el
+        botón **Uso compartido y permisos**. Los interruptores no cierran el
+        menú, como en ClickUp, y la pestaña muestra candado (privada) o escudo
+        (protegida). Migración 0066: `saved_views.created_by`/`is_private`/
+        `is_locked`/`autosave`; las reglas viven en `ViewsService` (viewer
+        opcional: sin viewer —plantillas, export, duplicar lista— las privadas
+        no existen) y el front las espeja en `viewAccess.ts`. Bootstrap, el
+        asistente/MCP y migrar empresa respetan la privacidad (una privada
+        cuyo autor no viajó vuelve a ser compartida). Quedan fuera, a
+        propósito, «Fijar vista» y «Modo de carga rápida» (sin equivalente) y
+        «Plantillas» (las plantillas son por lista). 3 tests de API nuevos
+        (privada, protegida, favoritas) + E2E navegador 20/20.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

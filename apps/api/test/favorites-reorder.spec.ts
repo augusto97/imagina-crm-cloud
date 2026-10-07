@@ -6,6 +6,8 @@ import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { memberships, tenants, users } from '../src/db/schema';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { ViewsRepository } from '../src/views/views.repository';
+import { ViewsService } from '../src/views/views.service';
 import { startPostgres, type TestPg } from './helpers/containers';
 
 /** v0.1.107 — favoritos por usuario+tenant y reorden del menú de listas. */
@@ -42,18 +44,18 @@ describe('Favoritos + reorden de listas (Postgres real)', () => {
     });
 
     it('favoritos: default vacío, PATCH parcial persiste y es POR USUARIO', async () => {
-        expect(await me.getFavorites(tenantId, userA)).toEqual({ lists: [], dashboards: [] });
+        expect(await me.getFavorites(tenantId, userA)).toEqual({ lists: [], dashboards: [], views: [] });
 
         const set = await me.setFavorites(tenantId, userA, { lists: [10, 20] });
-        expect(set).toEqual({ lists: [10, 20], dashboards: [] });
+        expect(set).toEqual({ lists: [10, 20], dashboards: [], views: [] });
 
         // Parcial: dashboards no pisa lists.
         const set2 = await me.setFavorites(tenantId, userA, { dashboards: [5] });
-        expect(set2).toEqual({ lists: [10, 20], dashboards: [5] });
+        expect(set2).toEqual({ lists: [10, 20], dashboards: [5], views: [] });
         expect(await me.getFavorites(tenantId, userA)).toEqual(set2);
 
         // Otro usuario del MISMO tenant: sus favoritos son independientes.
-        expect(await me.getFavorites(tenantId, userB)).toEqual({ lists: [], dashboards: [] });
+        expect(await me.getFavorites(tenantId, userB)).toEqual({ lists: [], dashboards: [], views: [] });
     });
 
     it('reorder: aplica position por índice y valida ids del workspace', async () => {
@@ -73,5 +75,19 @@ describe('Favoritos + reorden de listas (Postgres real)', () => {
         // Ids duplicados o ajenos → 400.
         await expect(lists.reorder(tenantId, [c.id, c.id, a.id])).rejects.toThrow();
         await expect(lists.reorder(tenantId, [c.id, a.id, 999_999])).rejects.toThrow();
+    });
+
+    it('v0.1.260 — vistas favoritas: en orden, con su lista, sin privadas ajenas', async () => {
+        const views = new ViewsService(new TenantDb(pg.db), new ViewsRepository(), lists, new RealtimeService());
+        const l = await lists.create(tenantId, { name: 'Contratos' });
+        const v1 = await views.create(tenantId, String(l.id), { name: 'Vencen', type: 'table' }, { userId: userA, role: 'admin' });
+        const v2 = await views.create(tenantId, String(l.id), { name: 'Mía', type: 'table', is_private: true }, { userId: userB, role: 'admin' });
+        await me.setFavorites(tenantId, userA, { views: [v2.id, v1.id, 999999] });
+        const favA = await me.favoriteViews(tenantId, userA);
+        // La privada de B no vuelve para A; el id inexistente tampoco.
+        expect(favA.map((v) => v.name)).toEqual(['Vencen']);
+        expect(favA[0]).toMatchObject({ list_id: l.id, list_slug: l.slug, list_name: 'Contratos', type: 'table' });
+        await me.setFavorites(tenantId, userB, { views: [v2.id, v1.id] });
+        expect((await me.favoriteViews(tenantId, userB)).map((v) => v.name)).toEqual(['Mía', 'Vencen']);
     });
 });

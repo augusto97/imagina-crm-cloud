@@ -2,7 +2,8 @@ import { Link } from 'react-router';
 import { Folder, LayoutGrid, Pin, PinOff } from 'lucide-react';
 
 import { ViewSwitch } from '@/components/ui/view-switch';
-import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
+import { EMPTY_FAVORITES, favoriteViewPath, toggledFavorites, useFavoriteViews, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
+import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
 import { useDashboards } from '@/hooks/useDashboards';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
@@ -40,9 +41,12 @@ export function FavoritesPage(): JSX.Element {
         'folders',
     );
 
-    const favs = favorites.data ?? { lists: [], dashboards: [] };
+    const favs = favorites.data ?? EMPTY_FAVORITES;
     const sections = favoriteSections(favs, lists.data ?? [], dashboards.data ?? [], groups.data ?? [], grouping);
     const hasFolders = (groups.data ?? []).length > 0;
+    // v0.1.260 — vistas ancladas desde el menú de su pestaña.
+    const views = useFavoriteViews(favs.views.length > 0);
+    const favViews = favs.views.length > 0 ? views.data ?? [] : [];
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-5">
@@ -62,14 +66,14 @@ export function FavoritesPage(): JSX.Element {
                 )}
             </header>
 
-            {sections.length === 0 ? (
+            {sections.length === 0 && favViews.length === 0 ? (
                 <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-card imcrm-p-12 imcrm-text-center">
                     <span className="imcrm-flex imcrm-h-12 imcrm-w-12 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
                         <Pin className="imcrm-h-6 imcrm-w-6" />
                     </span>
                     <h2 className="imcrm-text-base imcrm-font-medium">{__('Todavía no anclaste nada')}</h2>
                     <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Pasá el mouse sobre una lista o un dashboard en el menú lateral (o en la página de Listas) y tocá el pin para anclarlo acá.')}
+                        {__('Pasá el mouse sobre una lista o un dashboard en el menú lateral (o en la página de Listas) y tocá el pin para anclarlo acá. Las vistas se anclan desde el menú de su pestaña.')}
                     </p>
                 </div>
             ) : (
@@ -124,6 +128,30 @@ export function FavoritesPage(): JSX.Element {
                         </section>
                     );
                 })
+            )}
+
+            {favViews.length > 0 && (
+                <section className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="favorites-section" data-kind="views">
+                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-pb-2">
+                        <h2 className="imcrm-truncate imcrm-text-sm imcrm-font-semibold imcrm-text-foreground">{__('Vistas')}</h2>
+                        <span className="imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-text-[11px] imcrm-font-medium imcrm-tabular-nums imcrm-text-muted-foreground">
+                            {formatNumber(favViews.length)}
+                        </span>
+                    </div>
+                    <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2 lg:imcrm-grid-cols-3">
+                        {favViews.map((v) => (
+                            <FavoriteCard
+                                key={`v-${v.id}`}
+                                to={favoriteViewPath(v)}
+                                name={v.name}
+                                kindLabel={v.list_name}
+                                icon={listIcon(v.icon) ?? viewTypeIcon(v.type)}
+                                color={listColor(v.color)}
+                                onUnpin={() => update.mutate(toggledFavorites(favs, 'views', v.id))}
+                            />
+                        ))}
+                    </div>
+                </section>
             )}
         </div>
     );

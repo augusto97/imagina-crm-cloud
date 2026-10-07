@@ -674,7 +674,7 @@ export class StructureTools implements AiProposalApplier {
         const list = await this.resolveList(ctx, input.list);
         const [fields, views, autos, count, connections] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
-            this.views.list(ctx.tenantId, String(list.id)),
+            this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role }),
             this.automations.list(ctx.tenantId, String(list.id)),
             this.countRecords(ctx.tenantId, list.id),
             // Las conexiones son del WORKSPACE, no de la lista, pero el
@@ -1610,7 +1610,7 @@ export class StructureTools implements AiProposalApplier {
     }
 
     private async resolveView(ctx: AiToolContext, list: List, ref: number | string): Promise<{ id: number; name: string; type: string; is_default: boolean; config: Record<string, unknown> }> {
-        const views = await this.views.list(ctx.tenantId, String(list.id));
+        const views = await this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role });
         const hit = typeof ref === 'number' ? views.find((v) => v.id === ref) : views.find((v) => v.name.trim().toLowerCase() === ref.trim().toLowerCase());
         if (!hit) throw new AiToolError(`La vista «${ref}» no existe en «${list.name}». Vistas: ${views.map((v) => `#${v.id} ${v.name} (${v.type})`).join(', ') || 'ninguna'}.`);
         return hit as unknown as { id: number; name: string; type: string; is_default: boolean; config: Record<string, unknown> };
@@ -1682,7 +1682,7 @@ export class StructureTools implements AiProposalApplier {
         const list = await this.resolveList(ctx, input.list);
         const [fields, views, autos, count] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
-            this.views.list(ctx.tenantId, String(list.id)),
+            this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role }),
             this.automations.list(ctx.tenantId, String(list.id)),
             this.countRecords(ctx.tenantId, list.id),
         ]);
@@ -1782,7 +1782,7 @@ export class StructureTools implements AiProposalApplier {
                 return { message: 'Campo eliminado.', links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }], warnings: [] };
             }
             case 'create_view': {
-                const view = await this.views.create(ctx.tenantId, String(payload.listId), payload.input);
+                const view = await this.views.create(ctx.tenantId, String(payload.listId), payload.input, { userId: ctx.userId, role: ctx.role });
                 return {
                     message: `Vista «${view.name}» creada.`,
                     links: [{ label: `Abrir la vista`, href: `/lists/${payload.listSlug}/records` }],
@@ -1861,11 +1861,11 @@ export class StructureTools implements AiProposalApplier {
                 return { message: 'Automatización eliminada.', links: [{ label: 'Ver las automatizaciones', href: `/lists/${payload.listSlug}/automations` }], warnings: [] };
             }
             case 'update_view': {
-                const view = await this.views.update(ctx.tenantId, String(payload.listId), payload.viewId, payload.patch);
+                const view = await this.views.update(ctx.tenantId, String(payload.listId), payload.viewId, payload.patch, { userId: ctx.userId, role: ctx.role });
                 return { message: `Vista «${view.name}» actualizada.`, links: [{ label: 'Abrir la vista', href: `/lists/${payload.listSlug}/records` }], warnings: [] };
             }
             case 'delete_view': {
-                await this.views.remove(ctx.tenantId, String(payload.listId), payload.viewId);
+                await this.views.remove(ctx.tenantId, String(payload.listId), payload.viewId, { userId: ctx.userId, role: ctx.role });
                 return { message: 'Vista eliminada.', links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }], warnings: [] };
             }
             case 'set_list_permissions': {
@@ -2094,7 +2094,7 @@ export class StructureTools implements AiProposalApplier {
         if (input.view !== undefined) {
             let viewId: number | null = null;
             if (input.view !== null) {
-                const views = await this.views.list(ctx.tenantId, String(list.id));
+                const views = await this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role });
                 const hit = views.find((v) => v.name === input.view);
                 if (!hit) throw new AiToolError(`No hay una vista llamada «${input.view}» en «${list.name}». Vistas: ${views.map((v) => v.name).join(', ') || '(ninguna)'}.`);
                 viewId = hit.id;

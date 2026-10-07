@@ -5,7 +5,7 @@ import { ChevronRight, FolderX, Loader2, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
-import { toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
+import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
 import { matchesListQuery } from '@/lib/folderSections';
@@ -41,7 +41,7 @@ export function FolderPage(): JSX.Element {
     const inside = useMemo(() => (lists.data ?? []).filter((l) => l.group_id === id), [lists.data, id]);
     const visible = useMemo(() => inside.filter((l) => matchesListQuery(l, query)), [inside, query]);
     const recent = inside.filter((l) => Date.now() - parseUtcDate(l.updated_at).getTime() < WEEK_MS).length;
-    const favs = favorites.data ?? { lists: [], dashboards: [] };
+    const favs = favorites.data ?? EMPTY_FAVORITES;
 
     if (groups.isLoading || lists.isLoading) {
         return (

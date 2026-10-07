@@ -16,6 +16,7 @@ import {
     updateEmailSignatureSchema,
     updateFavoritesSchema,
     type DeleteAccountInput,
+    type FavoriteView,
     type Favorites,
     type MeUserSummary,
     type UpdateEmailSignatureInput,
@@ -92,6 +93,16 @@ export class MeController {
     @UseGuards(SessionGuard, TenantGuard)
     getFavorites(@Req() req: FastifyRequest): Promise<Favorites> {
         return this.me.getFavorites(tenantId(req), req.authUserId!);
+    }
+
+    /**
+     * v0.1.260 — las vistas ancladas, resueltas en UN request (nombre, tipo,
+     * icono y la lista a la que pertenecen). Las privadas ajenas no vuelven.
+     */
+    @Get('favorites/views')
+    @UseGuards(SessionGuard, TenantGuard)
+    favoriteViews(@Req() req: FastifyRequest): Promise<{ data: FavoriteView[] }> {
+        return this.me.favoriteViews(tenantId(req), req.authUserId!).then((data) => ({ data }));
     }
 
     @Patch('favorites')

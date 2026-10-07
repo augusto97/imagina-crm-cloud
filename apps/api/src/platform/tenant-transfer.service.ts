@@ -742,6 +742,11 @@ export class TenantTransferService {
                 position: Number(v.position ?? 0),
                 icon: typeof v.icon === 'string' ? v.icon : null,
                 color: typeof v.color === 'string' ? v.color : null,
+                createdBy: mapId(maps.user, v.createdBy),
+                // Una privada cuyo autor no viajó quedaría invisible para todos.
+                isPrivate: Boolean(v.isPrivate) && mapId(maps.user, v.createdBy) !== null,
+                isLocked: Boolean(v.isLocked),
+                autosave: Boolean(v.autosave),
             }),
             (v) => maps.list.has(Number(v.listId)),
         );

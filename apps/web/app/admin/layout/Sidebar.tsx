@@ -11,16 +11,19 @@ import {
     Settings,
     ShieldAlert,
     Pin,
+    PinOff,
     Sparkles,
     X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 import { useSession } from '@/cloud/session';
+import { listColor, listIcon } from '@/lib/listIcons';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useDashboards } from '@/hooks/useDashboards';
-import { toggledFavorites, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
+import { EMPTY_FAVORITES, favoriteViewPath, toggledFavorites, useFavoriteViews, useFavorites, useUpdateFavorites, type Favorites } from '@/hooks/useFavorites';
+import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useListGroups } from '@/hooks/useListGroups';
@@ -109,7 +112,7 @@ export function Sidebar({
     const favorites = useFavorites();
     const updateFavorites = useUpdateFavorites();
     const reorderLists = useReorderLists();
-    const favs: Favorites = favorites.data ?? { lists: [], dashboards: [] };
+    const favs: Favorites = favorites.data ?? EMPTY_FAVORITES;
     const toggleFav = (kind: keyof Favorites, id: number): void => {
         updateFavorites.mutate(toggledFavorites(favs, kind, id));
     };
@@ -732,10 +735,13 @@ function FavoritesSection({
         'folders',
     );
     const sections = favoriteSections(favs, lists, dashboards, groups.data ?? [], grouping);
-    if (sections.length === 0) {
+    // v0.1.260 — vistas ancladas desde el menú de su pestaña.
+    const viewsQ = useFavoriteViews(favs.views.length > 0);
+    const favViews = favs.views.length > 0 ? viewsQ.data ?? [] : [];
+    if (sections.length === 0 && favViews.length === 0) {
         return (
             <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Tocá el pin de una lista o un dashboard en su menú para anclarlo acá.')}
+                {__('Tocá el pin de una lista o un dashboard en su menú para anclarlo acá. Las vistas se anclan desde el menú de su pestaña.')}
             </p>
         );
     }
@@ -784,6 +790,38 @@ function FavoritesSection({
                     </ul>
                 </PanelSection>
             ))}
+            {favViews.length > 0 && (
+                <PanelSection label={__('Vistas')}>
+                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="favorites-panel-views">
+                        {favViews.map((v) => {
+                            const Icon = listIcon(v.icon) ?? viewTypeIcon(v.type);
+                            const color = listColor(v.color);
+                            return (
+                                <li key={`v-${v.id}`} className="imcrm-group/fv imcrm-flex imcrm-items-center">
+                                    <Link
+                                        to={favoriteViewPath(v)}
+                                        title={`${v.name} · ${v.list_name}`}
+                                        className="imcrm-flex imcrm-min-h-10 imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[14px] imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-min-h-0 lg:imcrm-text-[13px]"
+                                    >
+                                        <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" style={color ? { color } : undefined} aria-hidden />
+                                        <span className="imcrm-min-w-0 imcrm-truncate">{v.name}</span>
+                                        <span className="imcrm-ml-auto imcrm-max-w-[45%] imcrm-shrink-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground/80">{v.list_name}</span>
+                                    </Link>
+                                    <button
+                                        type="button"
+                                        onClick={() => onToggle('views', v.id)}
+                                        aria-label={__('Quitar de favoritos')}
+                                        title={__('Quitar de favoritos')}
+                                        className="imcrm-shrink-0 imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground imcrm-opacity-50 hover:imcrm-bg-accent hover:imcrm-text-foreground group-hover/fv:imcrm-opacity-100 lg:imcrm-opacity-0"
+                                    >
+                                        <PinOff className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </PanelSection>
+            )}
         </div>
     );
 }
