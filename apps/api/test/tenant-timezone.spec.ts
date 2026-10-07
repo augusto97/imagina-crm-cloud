@@ -275,4 +275,34 @@ describe('Zona horaria de la empresa (v0.1.263)', () => {
         await setTz(null);
         expect(await due('2026-10-07 03:00:00')).toContain(rec.id);
     });
+    it('el filtro de un rollup usa el "hoy" de la empresa', async () => {
+        await lists.create(tenantId, { name: 'Proyectos', slug: 'proyectos' });
+        const proyectos = await lists.get(tenantId, 'proyectos');
+        const nombreP = await fieldsSvc.create(tenantId, 'proyectos', { label: 'Nombre', slug: 'nombre_p', type: 'text' });
+        const rel = await fieldsSvc.create(tenantId, 'tareas', {
+            label: 'Proyecto', slug: 'proyecto', type: 'relation', config: { target_list_id: proyectos.id },
+        });
+        const p = await recordsSvc.create(tenantId, admin, 'proyectos', { data: { [`f${nombreP.id}`]: 'Alfa' } });
+        const ahead = zonedToday('Pacific/Kiritimati');
+        await recordsSvc.create(tenantId, admin, 'tareas', {
+            data: { [key('nombre')]: 'Vence hoy allá', [key('vence')]: ahead, [`f${rel.id}`]: [p.id] },
+        });
+        const hoy = await fieldsSvc.create(tenantId, 'proyectos', {
+            label: 'Vencen hoy', slug: 'vencen_hoy', type: 'rollup',
+            config: {
+                relation_field_id: rel.id,
+                operation: 'count',
+                filter_tree: {
+                    type: 'group', logic: 'and',
+                    children: [{ type: 'condition', field_id: f.vence!.id, op: 'between_relative', value: 'today' }],
+                },
+            },
+        });
+        const count = async () => (await recordsSvc.get(tenantId, admin, 'proyectos', p.id)).data[`f${hoy.id}`];
+
+        await setTz('Pacific/Kiritimati');
+        expect(await count()).toBe(1);
+        await setTz('Pacific/Pago_Pago');
+        expect(await count()).toBe(0);
+    });
 });

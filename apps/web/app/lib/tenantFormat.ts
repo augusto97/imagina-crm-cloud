@@ -1,3 +1,4 @@
+import { FALLBACK_TIME_ZONE, zonedNowNaive } from '@imagina-base/shared';
 import { parseUtcDate } from './utcDate';
 /**
  * Formato regional por workspace (v0.1.104): separadores de número, orden
@@ -124,8 +125,12 @@ function pad2(n: number): string {
 
 /** Hora local de un Date según el reloj configurado (24h → 14:30; 12h → 2:30 p.m.). */
 export function formatTimeOfDay(date: Date, format: TenantFormat = current): string {
-    const h = date.getHours();
-    const mm = pad2(date.getMinutes());
+    return formatClock(date.getHours(), date.getMinutes(), format);
+}
+
+/** Hora y minuto ya resueltos (en la zona que sea) con el reloj de la empresa. */
+function formatClock(h: number, minutes: number, format: TenantFormat): string {
+    const mm = pad2(minutes);
     if (format.time_format === 'h12') {
         const suffix = h < 12 ? 'a. m.' : 'p. m.';
         const h12 = h % 12 === 0 ? 12 : h % 12;
@@ -176,4 +181,21 @@ const MONTHS_ES = [
 export function formatLongDate(date: Date): string {
     if (Number.isNaN(date.getTime())) return '—';
     return `${date.getDate()} de ${MONTHS_ES[date.getMonth()]} de ${date.getFullYear()}`;
+}
+
+/**
+ * v0.1.264 — La fecha y la hora de AHORA en la zona `tz` (null = la de
+ * respaldo, UTC), con el formato elegido. Para la vista previa de Ajustes →
+ * Formato regional: un ejemplo fijo ("31/12/2026 · 2:30 p. m.") se leía como
+ * si fuera la hora actual.
+ */
+export function formatZonedNow(
+    tz: string | null,
+    format: TenantFormat = current,
+    now: Date = new Date(),
+): { date: string; time: string } {
+    const naive = zonedNowNaive(tz ?? FALLBACK_TIME_ZONE, now);
+    const [day = '', clock = ''] = naive.split(' ');
+    const [h = '0', m = '0'] = clock.split(':');
+    return { date: formatDateStr(day, format), time: formatClock(Number(h), Number(m), format) };
 }

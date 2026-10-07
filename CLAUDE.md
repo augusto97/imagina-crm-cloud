@@ -7169,6 +7169,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Redis; zona propia y vuelta a la de la empresa; cambiarla en Ajustes
         mueve el horario; zona inválida → 400).
 
+  - [x] **Vista previa con la hora REAL + filtro de rollups en la zona de la
+        empresa (v0.1.264, feedback del usuario con captura)**: (a) la vista
+        previa de Ajustes → Formato regional mostraba un ejemplo FIJO
+        («1.234.567,89 · 31/12/2026 · 2:30 p. m.») debajo de la zona elegida, y
+        se leía como si fuera la fecha y hora actuales. Ahora dice «Vista
+        previa · ahora en Colombia (Bogotá)» y muestra **la fecha de hoy y la
+        hora actual de esa zona** (`formatZonedNow`, se refresca cada 15 s y
+        cambia en vivo al elegir otra zona), cada dato con su etiqueta, y el
+        número queda rotulado como ejemplo; se quitó el «Ahora son las…» suelto
+        (con un reloj distinto al de la vista previa). (b) El pendiente que dejó
+        v0.1.263: el **filtro de un rollup** («cuántas tareas vencen hoy»)
+        calculaba «hoy» en UTC; ahora usa la zona de la empresa (el plan del
+        rollup la lee una vez por lista y sólo si algún rollup filtra). 1 test
+        de integración (rollup con «hoy» en Kiritimati vs Pago Pago) + 3
+        unitarios — 235 front en verde — + E2E navegador 13/13 (navegador en
+        Madrid y la vista previa con la fecha y hora de Bogotá, cambio de zona
+        en vivo, claro/oscuro, celular sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

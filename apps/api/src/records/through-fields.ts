@@ -9,7 +9,8 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { lists, records } from '../db/schema';
+import { lists, records, tenants } from '../db/schema';
+import { parseTenantTimeZone } from '../tenancy/tenant-time-zone.service';
 import { effectivePermissions } from '../lists/list-acl';
 import type { Role } from '@imagina-base/shared';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query-builder';
@@ -49,6 +50,12 @@ export interface ThroughPlan {
     filter: FilterGroup | undefined;
     /** Cómo se compara el resultado (min/max de fecha son texto ISO). */
     valueKind: 'numeric' | 'text';
+    /**
+     * Zona de la empresa para los rangos relativos del filtro ("hoy", "este
+     * mes"): la misma regla que el listado (v0.1.263). Sólo importa si hay
+     * filtro; sin zona elegida, UTC.
+     */
+    timeZone: string;
 }
 
 /** Lo que el motor necesita de FieldsService (interfaz mínima, testeable). */
@@ -85,6 +92,7 @@ export class ThroughEngine {
         const relCache = new Map<number, Field | null>();
         const listFields = new Map<number, Field[]>([[listId, fields]]);
         const out: ThroughPlan[] = [];
+        let timeZone: string | null = null;
         for (const field of through) {
             const cfg = field.config as {
                 relation_field_id?: unknown;
@@ -127,6 +135,11 @@ export class ThroughEngine {
             if (field.type === 'lookup' && !targetField) continue;
             if (field.type === 'rollup' && (!operation || (operation !== 'count' && !targetField))) continue;
             const isDateTarget = targetField?.type === 'date' || targetField?.type === 'datetime';
+            const filter = field.type === 'rollup' && cfg.filter_tree && typeof cfg.filter_tree === 'object'
+                ? (cfg.filter_tree as FilterGroup)
+                : undefined;
+            // La zona se lee UNA vez por lista y sólo si algún rollup filtra.
+            if (filter && timeZone === null) timeZone = await this.tenantTimeZone(tx, tenantId);
             out.push({
                 field,
                 relationField: rel,
@@ -135,13 +148,21 @@ export class ThroughEngine {
                 otherFields,
                 targetField,
                 operation,
-                filter: field.type === 'rollup' && cfg.filter_tree && typeof cfg.filter_tree === 'object'
-                    ? (cfg.filter_tree as FilterGroup)
-                    : undefined,
+                filter,
                 valueKind: isDateTarget && (operation === 'min' || operation === 'max') ? 'text' : 'numeric',
+                timeZone: timeZone ?? 'UTC',
             });
         }
         return out;
+    }
+
+    private async tenantTimeZone(tx: Tx, tenantId: number): Promise<string> {
+        const [row] = await tx
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        return parseTenantTimeZone(row?.settings) ?? 'UTC';
     }
 
     /** Info derivada para el DTO de campos (lo que la UI necesita para formatear). */
@@ -392,7 +413,7 @@ export class ThroughEngine {
         const byId = new Map<number, FilterableField>(
             p.otherFields.map((f) => [f.id, { id: f.id, type: f.type }]),
         );
-        const filter = compileFilterTree(byId, p.filter, new Date(), RR_DATA);
+        const filter = compileFilterTree(byId, p.filter, { now: new Date(), timeZone: p.timeZone }, RR_DATA);
         const base = sql`rel.tenant_id = ${tenantId} AND rel.field_id = ${p.relationField.id} AND ${anchorCond}`;
         return filter ? sql`${base} AND (${filter})` : base;
     }
