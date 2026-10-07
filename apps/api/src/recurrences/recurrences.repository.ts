@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db, Tx } from '../db/client';
-import { records, recurrences } from '../db/schema';
+import { records, recurrences, tenants } from '../db/schema';
 
 export type RecurrenceRow = typeof recurrences.$inferSelect;
 
@@ -144,9 +144,12 @@ export class RecurrencesRepository {
      */
     async dueScheduled(db: Db, now: string): Promise<RecurrenceRow[]> {
         const value = sql<string>`(${records.data} ->> ('f' || ${recurrences.dateFieldId}))`;
+        const rawTz = sql<string>`(${tenants.settings} -> 'format' ->> 'timezone')`;
+        const tenantTz = sql<string>`(CASE WHEN ${rawTz} = ANY (ARRAY(SELECT name FROM pg_timezone_names)) THEN ${rawTz} ELSE 'UTC' END)`;
         const rows = await db
             .select({ rec: recurrences })
             .from(recurrences)
+            .innerJoin(tenants, eq(tenants.id, recurrences.tenantId))
             .innerJoin(
                 records,
                 and(
@@ -161,7 +164,18 @@ export class RecurrencesRepository {
                     eq(recurrences.triggerType, 'schedule'),
                     sql`jsonb_typeof(${records.data} -> ('f' || ${recurrences.dateFieldId})) = 'string'`,
                     sql`${value} <> ''`,
-                    sql`regexp_replace(replace(trim(${value}), 'T', ' '), '(\.\d+)?(Z|[+-]\d{2}:?\d{2})$', '') <= ${now}`,
+                    // v0.1.263 — una fecha SIN hora vence cuando empieza ese día en
+                    // el reloj de la EMPRESA (no a la medianoche UTC: en Colombia
+                    // eso es el día anterior a las 7 pm). Con hora es un instante
+                    // y se compara contra el ahora UTC, como siempre. La zona
+                    // pasa por la lista de Postgres: una inválida cae a UTC en
+                    // vez de romper el barrido de todas las empresas.
+                    // OJO: en un template de JS `\d` se "cocina" a `d`; las
+                    // barras del regex van dobles para que lleguen a Postgres.
+                    sql`(CASE WHEN trim(${value}) ~ '^\\d{4}-\\d{2}-\\d{2}$'
+                        THEN trim(${value}) <= to_char((${now}::timestamp AT TIME ZONE 'UTC') AT TIME ZONE ${tenantTz}, 'YYYY-MM-DD')
+                        ELSE regexp_replace(replace(trim(${value}), 'T', ' '), '(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})$', '') <= ${now}
+                    END)`,
                 ),
             )
             .orderBy(asc(recurrences.tenantId), asc(recurrences.id));

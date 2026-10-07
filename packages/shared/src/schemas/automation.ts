@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FALLBACK_TIME_ZONE, isValidTimeZone } from './timezone';
 import { idSchema, isoDateTimeSchema } from './common';
 import { filterOperatorSchema } from './filter';
 
@@ -272,6 +273,21 @@ export function scheduleParts(cfg: Record<string, unknown>): ScheduleParts {
         weekday: schedInt(cfg.weekday, 0, 6, 1),
         day: schedInt(cfg.day, 1, 28, 1),
     };
+}
+
+/**
+ * v0.1.263 — En qué reloj corre una automatización programada: la zona propia
+ * (`trigger_config.tz`, si alguien la eligió) o, si no, la de la EMPRESA. Sin
+ * ninguna de las dos, UTC — y `source: 'fallback'` para que la interfaz lo
+ * avise en vez de mostrar una zona que no es la real.
+ */
+export function scheduleTimeZone(
+    cfg: Record<string, unknown>,
+    tenantTimeZone: string | null | undefined,
+): { tz: string; source: 'own' | 'tenant' | 'fallback' } {
+    if (isValidTimeZone(cfg.tz)) return { tz: cfg.tz.trim(), source: 'own' };
+    if (isValidTimeZone(tenantTimeZone)) return { tz: tenantTimeZone.trim(), source: 'tenant' };
+    return { tz: FALLBACK_TIME_ZONE, source: 'fallback' };
 }
 
 /** El cron de una automatización programada (en su zona horaria `tz`). */

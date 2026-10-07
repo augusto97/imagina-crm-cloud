@@ -7130,6 +7130,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         real sí, tap abre, mover persiste tras recargar) + regresión de
         escritorio 20/20 del menú de vistas y arrastre con mouse.
 
+  - [x] **Zona horaria por empresa (v0.1.263, ADR-S33, reporte de un cliente
+        en Colombia: "programé una automatización para las 8am y se envió a las
+        3am")**. No había zona por empresa: el editor guardaba la del navegador,
+        pero lo creado por el asistente, el MCP, la API o una plantilla quedaba
+        SIN zona y BullMQ lo corría en UTC (8:00 UTC = 3:00 en Bogotá). Ahora
+        (a) cada empresa tiene su zona en **Ajustes → Formato regional**
+        (`tenants.settings.format.timezone`, sin migración; validada contra
+        `Intl` y `pg_timezone_names`, 400 `invalid_timezone`), con «Usar la de
+        este equipo» y la hora actual en esa zona; un admin de una empresa sin
+        zona la ve **propuesta sola desde su navegador** al entrar (una vez por
+        empresa, nunca impersonando ni con UTC). (b) La zona se **resuelve al
+        ejecutar**, nunca se copia: propia del horario → la de la empresa → UTC
+        explícito (`scheduleTimeZone` en shared) — los horarios ya guardados sin
+        zona pasan a la de la empresa sin migrar datos, y cambiar la zona de la
+        empresa **re-registra los schedulers** de sus automatizaciones
+        (`TenantTimeZones`, global, cache 30 s + listeners). (c) La misma zona
+        manda en: vencimientos (`due_date_reached` compara una fecha sin hora
+        contra la medianoche LOCAL), el tick de recurrencias, «hoy/esta semana/
+        este mes» de filtros, vistas públicas y tableros (`QueryClock` en el
+        QueryBuilder; los rangos de fecha-hora se convierten a instantes de esa
+        zona), los buckets por día/mes y los deltas de los tableros,
+        `{{date.today}}` del motor y del probador, la semilla de `days_after`, y
+        el «hoy» del asistente/MCP (el prompt le dice la zona de la empresa, o
+        que pregunte si no hay). (d) Editor: el horario dice «Corre a la hora de
+        Colombia (Bogotá)», el selector ofrece «La de la empresa (…)» como
+        primera opción (guardar NO le pega una zona propia: sigue a la empresa)
+        y, sin zona, avisa que corre en UTC con el enlace a Ajustes.
+        **Bug latente de paso**: en el tick de recurrencias la regex de
+        `regexp_replace` estaba dentro de un template `sql` (tagged template) de JS y `\d` se
+        "cocinaba" a `d` — nunca matcheaba; ahora va con la barra doblada.
+        5 tests de integración (horario sin zona sigue a la empresa y se
+        re-registra al cambiarla, vencimiento por medianoche local, recurrencia
+        con fecha sin hora, «hoy» relativo en Kiritimati vs Pago Pago, zona
+        inválida rechazada) + 5 de shared — 233 front y 134 shared en verde — +
+        994 API en verde — E2E navegador 16/16 (sin zona → Redis en UTC y aviso en el editor; al
+        entrar el admin la empresa toma Bogotá y el horario pasa a Bogotá en
+        Redis; zona propia y vuelta a la de la empresa; cambiarla en Ajustes
+        mueve el horario; zona inválida → 400).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

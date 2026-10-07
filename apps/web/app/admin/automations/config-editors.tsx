@@ -20,7 +20,9 @@ import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
-import { scheduleParts, type Connection, type ConnectorParam } from '@imagina-base/shared';
+import { scheduleParts, scheduleTimeZone, timeZoneLabel, type Connection, type ConnectorParam } from '@imagina-base/shared';
+import { TimeZoneSelect } from '@/components/TimeZoneSelect';
+import { browserTimeZone, getTenantTimeZone } from '@/lib/tenantFormat';
 import type {
     ActionMeta,
     ActionSpec,
@@ -507,8 +509,14 @@ function ScheduledConfig({
     // frecuencia y el servidor nunca la registraba (leía un `cron` que nadie
     // escribía). `scheduleParts` (shared) es la misma lectura que usa el motor.
     const p = scheduleParts(config);
-    const set = (patch: Record<string, unknown>): void =>
-        onChange({ ...config, ...patch, tz: typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone() });
+    // v0.1.263 — sin zona propia, el horario corre en la de la EMPRESA (la
+    // misma regla que el servidor: `scheduleTimeZone`). Ya no se le pega la
+    // del navegador a cada horario: así cambiar la zona de la empresa los
+    // mueve a todos juntos.
+    const tenantTz = getTenantTimeZone();
+    const zone = scheduleTimeZone(config, tenantTz);
+    const ownTz = zone.source === 'own' ? zone.tz : null;
+    const set = (patch: Record<string, unknown>): void => onChange({ ...config, ...patch });
     const time = `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
     const hasCron = typeof config.cron === 'string' && config.cron.trim() !== '';
     return (
@@ -571,10 +579,40 @@ function ScheduledConfig({
                     </label>
                 )}
             </div>
-            <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {sprintf(__('Hora de %s.'), typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone())}{' '}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                <span className="imcrm-text-muted-foreground">{__('Zona horaria')}</span>
+                <TimeZoneSelect
+                    className="imcrm-h-8 imcrm-w-auto imcrm-max-w-full"
+                    testId="imcrm-schedule-tz"
+                    value={ownTz}
+                    emptyLabel={
+                        tenantTz
+                            ? sprintf(__('La de la empresa (%s)'), timeZoneLabel(tenantTz))
+                            : __('Sin elegir (UTC)')
+                    }
+                    onChange={(tz) => {
+                        const next: TriggerConfig = { ...config };
+                        if (tz) next.tz = tz;
+                        else delete next.tz;
+                        onChange(next);
+                    }}
+                />
+            </div>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-schedule-zone-note">
+                {zone.source === 'fallback'
+                    ? null
+                    : sprintf(__('Corre a la hora de %s.'), timeZoneLabel(zone.tz))}{' '}
                 {p.frequency === 'twicedaily' ? sprintf(__('Corre a las %1$s y 12 horas después.'), time) : ''}
             </p>
+            {zone.source === 'fallback' && (
+                <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-schedule-utc-warning">
+                    {__('La empresa todavía no tiene zona horaria: este horario corre en UTC (en Colombia, 5 horas antes). Elegila en ')}
+                    <a className="imcrm-font-medium imcrm-underline" href="#/settings?s=formato">
+                        {__('Ajustes → Formato regional')}
+                    </a>
+                    {__(' o elegí una arriba.')}
+                </p>
+            )}
             {hasCron && (
                 <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
                     {__('Este horario usa una expresión cron (abajo). Borrala para elegir la frecuencia de la lista.')}
@@ -586,7 +624,7 @@ function ScheduledConfig({
                     <Input
                         value={typeof config.cron === 'string' ? config.cron : ''}
                         placeholder="0 9 * * 1-5"
-                        onChange={(e) => onChange({ ...config, cron: e.target.value, tz: typeof config.tz === 'string' && config.tz !== '' ? config.tz : browserTimeZone() })}
+                        onChange={(e) => onChange({ ...config, cron: e.target.value })}
                         data-testid="imcrm-schedule-cron"
                     />
                     <span className="imcrm-text-muted-foreground">{__('Si la completás, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
@@ -598,13 +636,16 @@ function ScheduledConfig({
 
 const WEEKDAYS = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
 
-/** La zona horaria del navegador (la de quien configura el horario). */
-export function browserTimeZone(): string {
-    try {
-        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    } catch {
-        return 'UTC';
-    }
+/**
+ * v0.1.263 — Al guardar un horario sin zona propia: si la empresa tiene zona,
+ * se deja así (corre en la de la empresa y la sigue si cambia); si no tiene,
+ * se le pone la del navegador de quien lo guarda — nunca queda en UTC por
+ * descuido.
+ */
+export function withScheduleZone(config: TriggerConfig): TriggerConfig {
+    if (scheduleTimeZone(config, getTenantTimeZone()).source !== 'fallback') return config;
+    const tz = browserTimeZone();
+    return tz ? { ...config, tz } : config;
 }
 
 /**

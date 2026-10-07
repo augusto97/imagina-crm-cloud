@@ -349,12 +349,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.262** (deslizar las pestañas de vistas en celular ya no abre menús), en `main`.
+versión publicada: **v0.1.263** (zona horaria por empresa: automatizaciones, vencimientos, recurrencias y «hoy»), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
+- v0.1.263: el cliente de Colombia con la automatización de las 8 → 3 am
+  queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
+  se propone desde su navegador y el horario sin zona la sigue). Si nadie
+  entra, ponerla a mano en Ajustes → Formato regional de esa empresa.
+- Pendiente menor de zona horaria: el sub-filtro de un rollup
+  (`through-fields.ts`) todavía calcula «hoy» en UTC.
 
 **Pendientes de la auditoría v0.1.252 (por valor)**
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
@@ -378,6 +384,16 @@ versión publicada: **v0.1.262** (deslizar las pestañas de vistas en celular ya
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.263** — Reporte del usuario: un cliente en Colombia
+  programó una automatización para las 8 am y salió a las 3 am. Causa: no había
+  zona horaria por empresa y los horarios creados sin zona (asistente, MCP,
+  API, plantillas) corrían en UTC. Decisión aprobada por el usuario ("Sí,
+  hazlo así"): zona por empresa en Ajustes → Formato regional, propuesta sola
+  desde el navegador del admin; se usa como respaldo en todo lo que no tenga
+  zona (automatizaciones, vencimientos, recurrencias, «hoy» de filtros y
+  tableros, asistente); el editor muestra la zona real y avisa si corre en UTC;
+  los horarios existentes sin zona siguen a la de la empresa sin migrar nada.
+  ADR-S33.
 - **2026-10-07 · v0.1.262** — Reporte del usuario: en celular, al DESLIZAR la
   tira de pestañas de vistas se abría el menú de alguna pestaña sin haberla
   mantenido presionada. Causa: el «···» de Radix abre en `pointerdown`, que en

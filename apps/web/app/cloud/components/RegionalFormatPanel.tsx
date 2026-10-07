@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { TenantFormat } from '@imagina-base/shared';
+import type { UpdateTenantFormatInput } from '@imagina-base/shared';
 import { Globe } from 'lucide-react';
 
 import { brandingQueryKey, useBrandingData } from '@/hooks/useBranding';
 import { CloudApiError } from '@/lib/cloud/client';
 import {
+    browserTimeZone,
     formatDateStr,
     formatNumber,
     formatTimeOfDay,
     type TenantFormat as TF,
 } from '@/lib/tenantFormat';
+import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { api, useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +48,7 @@ export function RegionalFormatPanel(): JSX.Element {
     const [numberFormat, setNumberFormat] = useState<TF['number_format']>('comma_dot');
     const [dateFormat, setDateFormat] = useState<TF['date_format']>('ymd');
     const [timeFormat, setTimeFormat] = useState<TF['time_format']>('h24');
+    const [timeZone, setTimeZone] = useState<string | null>(null);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
     // Rehidratar cuando llega el formato del tenant — pero NUNCA pisar una
@@ -57,10 +60,11 @@ export function RegionalFormatPanel(): JSX.Element {
         setNumberFormat(saved.number_format);
         setDateFormat(saved.date_format);
         setTimeFormat(saved.time_format);
+        setTimeZone(saved.timezone ?? null);
     }, [saved]);
 
     const save = useMutation({
-        mutationFn: (patch: TenantFormat) => api.updateTenantFormat(patch),
+        mutationFn: (patch: UpdateTenantFormatInput) => api.updateTenantFormat(patch),
         onSuccess: () => {
             setNotice({ kind: 'ok', text: 'Formato guardado. Se aplica en toda la app.' });
             // useBranding re-publica el formato al refetchear el branding.
@@ -70,7 +74,21 @@ export function RegionalFormatPanel(): JSX.Element {
             setNotice({ kind: 'err', text: e instanceof CloudApiError ? e.message : 'No se pudo guardar.' }),
     });
 
-    const draft: TF = { number_format: numberFormat, date_format: dateFormat, time_format: timeFormat };
+    const draft: TF = { number_format: numberFormat, date_format: dateFormat, time_format: timeFormat, timezone: timeZone };
+    const browserTz = browserTimeZone();
+    // "Ahora" en la zona elegida, para que se vea qué reloj manda.
+    const zonedNow = (() => {
+        try {
+            return new Intl.DateTimeFormat(draft.time_format === 'h12' ? 'es-CO' : 'es-ES', {
+                timeZone: timeZone ?? 'UTC',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: draft.time_format === 'h12',
+            }).format(new Date());
+        } catch {
+            return '';
+        }
+    })();
     const previewTime = new Date();
     previewTime.setHours(14, 30, 0, 0);
     const preview = `${formatNumber(1234567.89, { minFrac: 2, maxFrac: 2 }, draft)} · ${formatDateStr('2026-12-31', draft)} · ${formatTimeOfDay(previewTime, draft)}`;
@@ -79,7 +97,8 @@ export function RegionalFormatPanel(): JSX.Element {
         saved !== undefined &&
         (saved.number_format !== numberFormat ||
             saved.date_format !== dateFormat ||
-            saved.time_format !== timeFormat);
+            saved.time_format !== timeFormat ||
+            (saved.timezone ?? null) !== timeZone);
 
     return (
         <Card>
@@ -90,8 +109,8 @@ export function RegionalFormatPanel(): JSX.Element {
                 </CardTitle>
                 <CardDescription>
                     Cómo se muestran números, fechas y horas en todo el workspace (tablas, fichas,
-                    dashboards y el portal del cliente). En Latinoamérica y Europa se suele usar punto
-                    para los miles y coma para los decimales.
+                    dashboards y el portal del cliente), y en qué zona horaria trabaja la empresa. En
+                    Latinoamérica y Europa se suele usar punto para los miles y coma para los decimales.
                 </CardDescription>
             </CardHeader>
             <CardContent className="imcrm-space-y-4">
@@ -130,6 +149,31 @@ export function RegionalFormatPanel(): JSX.Element {
                             <option key={o.value} value={o.value}>{o.label}</option>
                         ))}
                     </select>
+                </FormatRow>
+
+                <FormatRow label="Zona horaria" htmlFor="fmt-tz">
+                    <TimeZoneSelect
+                        id="fmt-tz"
+                        testId="fmt-timezone"
+                        value={timeZone}
+                        emptyLabel="Sin elegir (se usa UTC)"
+                        onChange={(tz) => { touched.current = true; setTimeZone(tz); }}
+                    />
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        Manda en los horarios de las automatizaciones («todos los días a las 8»), en
+                        las fechas sin hora (vencimientos y recurrencias) y en «hoy» o «esta semana» de
+                        filtros y tableros.{' '}
+                        {timeZone ? `Ahora son las ${zonedNow} en esa zona.` : 'Sin zona, todo corre en UTC.'}
+                    </p>
+                    {browserTz && browserTz !== timeZone && (
+                        <button
+                            type="button"
+                            className="imcrm-justify-self-start imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                            onClick={() => { touched.current = true; setTimeZone(browserTz); }}
+                        >
+                            Usar la de este equipo ({browserTz.replace(/_/g, ' ')})
+                        </button>
+                    )}
                 </FormatRow>
 
                 <div className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-sm">

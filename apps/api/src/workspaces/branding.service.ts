@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import {
     brandingSchema,
     stylePresetsSchema,
@@ -10,10 +10,11 @@ import {
     type UpdateBrandingInput,
     type UpdateTenantFormatInput,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { attachments, tenants } from '../db/schema';
 import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /**
  * Branding white-label por workspace (color primario + logo + nombre).
@@ -28,6 +29,7 @@ export class BrandingService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly files: FilesService,
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     async get(tenantId: number): Promise<BrandingResponse> {
@@ -90,14 +92,29 @@ export class BrandingService {
     }
 
     async setFormat(tenantId: number, patch: UpdateTenantFormatInput): Promise<TenantFormat> {
-        return this.tenantDb.withTenant(tenantId, async (tx) => {
+        let tzChanged = false;
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // v0.1.263 — la zona también se usa en SQL (`AT TIME ZONE`): tiene
+            // que existir en la base de Postgres, no sólo en el runtime de Node.
+            if (patch.timezone) {
+                const known = await tx.execute(sql`select 1 from pg_timezone_names where name = ${patch.timezone} limit 1`);
+                if (known.rows.length === 0) {
+                    throw new BadRequestException({
+                        code: 'invalid_timezone',
+                        message: `La zona horaria "${patch.timezone}" no está disponible en este servidor`,
+                        data: { status: 400 },
+                    });
+                }
+            }
             const [row] = await tx
                 .select({ settings: tenants.settings })
                 .from(tenants)
                 .where(eq(tenants.id, tenantId))
                 .limit(1);
             const settings = { ...(row?.settings ?? {}) };
-            const merged: TenantFormat = { ...parseFormat(settings), ...patch };
+            const before = parseFormat(settings);
+            const merged: TenantFormat = { ...before, ...patch };
+            tzChanged = merged.timezone !== before.timezone;
             settings.format = merged;
             await tx
                 .update(tenants)
@@ -105,6 +122,9 @@ export class BrandingService {
                 .where(eq(tenants.id, tenantId));
             return merged;
         });
+        // v0.1.263 — la zona manda en los horarios ya registrados: re-registrarlos.
+        if (tzChanged) await this.timeZones?.changed(tenantId);
+        return result;
     }
 
     /**

@@ -58,7 +58,7 @@ import {
     ActionConfigEditor,
     AutomationEditorAutomationContext,
     AutomationEditorListContext,
-    browserTimeZone,
+    withScheduleZone,
     cleanTriggerConfig,
     EMPTY_AUTOMATION_STATE,
     fromAutomation,
@@ -377,10 +377,11 @@ function EditorBody({
             name: state.name.trim(),
             description: state.description.trim() === '' ? null : state.description.trim(),
             trigger_type: state.triggerType,
-            // v0.1.221 — un horario sin zona horaria corre en la del navegador de quien lo guarda.
+            // v0.1.263 — sin zona propia corre en la de la empresa; sólo si la
+            // empresa todavía no eligió, se usa la del navegador (nunca UTC).
             trigger_config:
-                state.triggerType === 'scheduled' && !state.triggerConfig.tz
-                    ? cleanTriggerConfig({ ...state.triggerConfig, tz: browserTimeZone() })
+                state.triggerType === 'scheduled'
+                    ? cleanTriggerConfig(withScheduleZone(state.triggerConfig))
                     : cleanTriggerConfig(state.triggerConfig),
             actions: state.actions,
             is_active: state.isActive,

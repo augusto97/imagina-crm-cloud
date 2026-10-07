@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -10,7 +10,7 @@ import type {
     WebhookTestInput,
     WebhookTestResult,
 } from '@imagina-base/shared';
-import { isEffectivelyReadOnly, type BillingStatus } from '@imagina-base/shared';
+import { FALLBACK_TIME_ZONE, isEffectivelyReadOnly, zonedToday, type BillingStatus } from '@imagina-base/shared';
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
@@ -20,6 +20,7 @@ import { automationHooks, automations, fields, records, tenants } from '../db/sc
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
 import { compileConnectorCall } from '../connectors/connector-actions';
@@ -60,6 +61,8 @@ export class AutomationsService {
         private readonly scheduler: AutomationScheduler,
         @Inject(REDIS) private readonly captures: HookCaptureStore,
         private readonly connectors: ConnectorsService,
+        // v0.1.263 — para que el probador resuelva {{date.today}} como el motor.
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     /**
@@ -129,6 +132,19 @@ export class AutomationsService {
             .select()
             .from(automations)
             .where(and(eq(automations.isActive, true), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
+        for (const row of rows) await this.scheduler.sync(row.tenantId, row);
+        return rows.length;
+    }
+
+    /**
+     * v0.1.263 — La empresa cambió su zona horaria: re-registra sus horarios
+     * (los que no tienen zona propia pasan a correr en la nueva).
+     */
+    async resyncTenantSchedules(tenantId: number): Promise<number> {
+        const rows = await this.db
+            .select()
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true), eq(automations.triggerType, 'scheduled')));
         for (const row of rows) await this.scheduler.sync(row.tenantId, row);
         return rows.length;
     }
@@ -260,9 +276,10 @@ export class AutomationsService {
         });
 
         const data = (sample.record?.data ?? {}) as Record<string, unknown>;
+        const tz = this.timeZones ? await this.timeZones.orUtc(tenantId) : FALLBACK_TIME_ZONE;
         const accessor = (token: string): unknown => {
             if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
-            if (token === 'date.today') return new Date().toISOString().slice(0, 10);
+            if (token === 'date.today') return zonedToday(tz);
             const key = sample.slugToKey.get(token.replace(/^before\./, ''));
             return key !== undefined ? data[key] : undefined;
         };

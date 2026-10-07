@@ -16,6 +16,8 @@ export interface TenantFormat {
     number_format: NumberFormatId;
     date_format: DateFormatId;
     time_format: TimeFormatId;
+    /** v0.1.263 — zona horaria de la empresa (IANA) o null si no eligió. */
+    timezone?: string | null;
 }
 
 /** Los defaults reproducen el comportamiento histórico de la app. */
@@ -33,6 +35,21 @@ export function setTenantFormat(format: Partial<TenantFormat> | null | undefined
 
 export function getTenantFormat(): TenantFormat {
     return current;
+}
+
+/** v0.1.263 — la zona horaria de la empresa (null = todavía no eligió). */
+export function getTenantTimeZone(): string | null {
+    return current.timezone ?? null;
+}
+
+/** La zona del navegador de quien mira (null si el runtime no la sabe). */
+export function browserTimeZone(): string | null {
+    try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        return typeof tz === 'string' && tz !== '' ? tz : null;
+    } catch {
+        return null;
+    }
 }
 
 /**

@@ -11,6 +11,8 @@ import {
     jsonbKeyForField,
     readStoreListMarker,
     validateFieldValue,
+    zonedToday,
+    FALLBACK_TIME_ZONE,
     type Field,
     type RecurrenceDto,
     type RecurrenceUpsertInput,
@@ -26,6 +28,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository } from '../records/records.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { comparableDate, hasTimeComponent, nextOccurrence, nowUtc } from './date-roller';
 import { RecurrencesRepository, type RecurrenceRow } from './recurrences.repository';
 import { BillingService } from '../billing/billing.service';
@@ -74,6 +77,8 @@ export class RecurrencesService {
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
         // v0.1.228 (SEC-31) — el clon cuenta contra el límite de registros del plan.
         @Optional() private readonly billing?: BillingService,
+        // v0.1.263 — "hoy" de la empresa para `days_after` con fechas sin hora.
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     /**
@@ -335,7 +340,7 @@ export class RecurrencesService {
                 ? currentValue.includes('T')
                     ? new Date().toISOString().replace(/\.\d+Z$/, 'Z')
                     : nowUtc()
-                : nowUtc().slice(0, 10);
+                : zonedToday(this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE);
         }
 
         const nextDate = nextOccurrence(seed, {
