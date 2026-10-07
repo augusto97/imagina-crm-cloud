@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
     collectMentionedUserIds,
+    FALLBACK_TIME_ZONE,
     type BulkEditTarget,
     evaluateComputed,
     isDataField,
@@ -47,7 +48,8 @@ import { ListsService } from '../lists/lists.service';
 import { assertNotStoreManaged } from '../lists/store-guard';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField } from './query-builder';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField, type QueryClock } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
@@ -95,7 +97,13 @@ export class RecordsService {
         // controller: el asistente IA/MCP, "actualizar desde archivo" y otros
         // caminos internos crean por este método y se salteaban el tope.
         @Optional() private readonly billing?: BillingService,
+        // v0.1.263 — "hoy/esta semana" de los filtros en el reloj de la empresa.
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
+
+    private async clock(tenantId: number, tx?: Tx): Promise<QueryClock> {
+        return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE };
+    }
 
     async create(
         tenantId: number,
@@ -265,7 +273,7 @@ export class RecordsService {
                 ),
                 fields,
             );
-            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, new Date());
+            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, await this.clock(tenantId));
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
             // ILIKE sobre los campos searchables, AND con filtros y scope.
             const searchWhere = compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), query.search);
@@ -508,7 +516,7 @@ export class RecordsService {
                     fields,
                 );
                 where = andWhere(
-                    compileFilterTree(fieldsById, target.filter_tree, new Date()),
+                    compileFilterTree(fieldsById, target.filter_tree, await this.clock(tenantId)),
                     compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), target.search),
                 );
                 parent = target.include_subtasks ? 'any' : 'roots';

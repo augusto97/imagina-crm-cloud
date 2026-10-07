@@ -900,9 +900,10 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
             actions: [{ type: 'update_field', config: { values: {} } }],
         });
         expect(upserts.at(-1)).toEqual({ id: `sched:${auto.id}`, repeat: { pattern: '30 7 * * 1', tz: 'America/Bogota' } });
-        // Una zona inválida no rompe: corre en UTC.
+        // Una zona inválida no rompe: corre en UTC (explícito desde v0.1.263,
+        // no la hora del servidor).
         await svc.update(tenantId, 'deals', auto.id, { trigger_config: { frequency: 'daily', tz: 'Marte/Olimpo' } });
-        expect(upserts.at(-1)!.repeat).toEqual({ pattern: '0 9 * * *' });
+        expect(upserts.at(-1)!.repeat).toEqual({ pattern: '0 9 * * *', tz: 'UTC' });
         // El resync de arranque re-registra las activas de todas las empresas.
         upserts.length = 0;
         expect(await svc.resyncSchedules()).toBeGreaterThanOrEqual(1);

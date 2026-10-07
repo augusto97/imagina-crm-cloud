@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { scheduleCron } from '@imagina-base/shared';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { scheduleCron, scheduleTimeZone } from '@imagina-base/shared';
 import type { Queue } from 'bullmq';
 import type { AutomationRow } from './automations.repository';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /** Cada N minutos se re-escanean los records vencidos (due_date_reached). */
 const DUE_SCAN_PATTERN = '*/5 * * * *';
@@ -20,6 +21,8 @@ export class AutomationScheduler {
     private readonly logger = new Logger(AutomationScheduler.name);
     private queue: Queue | null = null;
 
+    constructor(@Optional() private readonly timeZones?: TenantTimeZones) {}
+
     setQueue(queue: Queue): void {
         this.queue = queue;
     }
@@ -35,13 +38,18 @@ export class AutomationScheduler {
                 // v0.1.221 — la UI guarda frecuencia + hora + zona horaria y el
                 // scheduler sólo leía `cron`: una automatización programada
                 // desde el editor NUNCA corría. `scheduleCron` (shared) es la
-                // única traducción; la zona horaria es la del navegador de
-                // quien la configuró (sin ella, UTC).
+                // única traducción.
+                // v0.1.263 — la zona: la propia de la automatización o, si no
+                // tiene (asistente/MCP, API, plantillas, guardadas antes de
+                // v0.1.221), la de la EMPRESA. Antes caía a UTC y «las 8» en
+                // Colombia salía a las 3 de la mañana. UTC queda sólo como
+                // último recurso, y explícito (no la hora del servidor).
                 const cron = scheduleCron(auto.triggerConfig);
-                const tz = validTimeZone(auto.triggerConfig.tz);
+                const tenantTz = this.timeZones ? await this.timeZones.get(tenantId) : null;
+                const { tz } = scheduleTimeZone(auto.triggerConfig, tenantTz);
                 await this.queue.upsertJobScheduler(
                     schedId(auto.id),
-                    tz ? { pattern: cron, tz } : { pattern: cron },
+                    { pattern: cron, tz },
                     { name: 'scheduled', data: { tenantId, automationId: auto.id } },
                 );
             } else if (auto.triggerType === 'due_date_reached') {
@@ -72,16 +80,5 @@ export class AutomationScheduler {
             this.queue.removeJobScheduler(schedId(automationId)).catch(() => undefined),
             this.queue.removeJobScheduler(dueId(automationId)).catch(() => undefined),
         ]);
-    }
-}
-
-/** Una zona horaria IANA que el runtime reconoce, o null. */
-function validTimeZone(v: unknown): string | null {
-    if (typeof v !== 'string' || v.trim() === '') return null;
-    try {
-        new Intl.DateTimeFormat('en-US', { timeZone: v });
-        return v;
-    } catch {
-        return null;
     }
 }

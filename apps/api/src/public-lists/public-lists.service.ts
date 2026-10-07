@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
+    FALLBACK_TIME_ZONE,
     brandingSchema,
     jsonbKeyForField,
     publicListSettingsSchema,
@@ -20,6 +21,7 @@ import { ListsService } from '../lists/lists.service';
 import { compileFilterTree, type FilterableField } from '../records/query-builder';
 import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /**
  * ¿El enlace ya venció? La fecha es un día calendario (`YYYY-MM-DD`) y
@@ -41,6 +43,7 @@ export class PublicListsService {
         private readonly tenantDb: TenantDb,
         private readonly lists: ListsService,
         private readonly files: FilesService,
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     // ─────────────────────────── Admin ───────────────────────────
@@ -150,6 +153,7 @@ export class PublicListsService {
      */
     private async viewFilterSql(
         tx: Parameters<Parameters<TenantDb['withTenant']>[1]>[0],
+        tenantId: number,
         listId: number,
         viewId: number | null,
         fieldRows: Array<{ id: number; type: string }>,
@@ -172,7 +176,9 @@ export class PublicListsService {
         );
         if (conditionFieldIds(tree).some((id) => !byId.has(id))) return { sql: sql`false`, name: view.name };
         try {
-            return { sql: compileFilterTree(byId, tree as never, new Date()), name: view.name };
+            // v0.1.263 — "hoy/esta semana" de la vista en el reloj de la empresa.
+            const timeZone = this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
+            return { sql: compileFilterTree(byId, tree as never, { now: new Date(), timeZone }), name: view.name };
         } catch {
             return { sql: sql`false`, name: view.name };
         }
@@ -207,7 +213,7 @@ export class PublicListsService {
             );
             const b = parsed.success ? parsed.data : brandingSchema.parse({});
 
-            const publishedView = await this.viewFilterSql(tx, listId, cfg.view_id, fieldRows);
+            const publishedView = await this.viewFilterSql(tx, tenantId, listId, cfg.view_id, fieldRows);
 
             return {
                 name: l?.name ?? 'Lista',
@@ -244,7 +250,7 @@ export class PublicListsService {
             // WHERE: no borrados + filtros de la vista publicada + búsqueda
             // (si está habilitada) sobre los campos de texto visibles.
             const conds: SQL[] = [eq(records.listId, listId), isNull(records.deletedAt)];
-            const viewCond = (await this.viewFilterSql(tx, listId, cfg.view_id, fieldRows)).sql;
+            const viewCond = (await this.viewFilterSql(tx, tenantId, listId, cfg.view_id, fieldRows)).sql;
             if (viewCond) conds.push(viewCond);
             if (cfg.search_enabled && query.search && query.search.trim() !== '') {
                 const term = `%${query.search.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%`;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidTimeZone } from './timezone';
 import { idSchema } from './common';
 import { tenantSlugSchema } from './slug';
 
@@ -75,6 +76,17 @@ export const tenantFormatSchema = z.object({
     date_format: z.enum(DATE_FORMATS).default('ymd'),
     /** h24 → 14:30 · h12 → 2:30 p. m. */
     time_format: z.enum(TIME_FORMATS).default('h24'),
+    /**
+     * v0.1.263 — zona horaria de la empresa (IANA: `America/Bogota`). Manda
+     * en los horarios de automatizaciones sin zona propia, en las fechas sin
+     * hora (vencimientos, recurrencias) y en "hoy/esta semana" de filtros y
+     * tableros. `null` = todavía no elegida (se usa UTC).
+     */
+    timezone: z
+        .string()
+        .nullable()
+        .default(null)
+        .transform((v) => (isValidTimeZone(v) ? v.trim() : null)),
 });
 export type TenantFormat = z.infer<typeof tenantFormatSchema>;
 
@@ -83,6 +95,12 @@ export const updateTenantFormatSchema = z
         number_format: z.enum(NUMBER_FORMATS),
         date_format: z.enum(DATE_FORMATS),
         time_format: z.enum(TIME_FORMATS),
+        timezone: z
+            .string()
+            .trim()
+            .max(64)
+            .refine((v) => isValidTimeZone(v), { message: 'Zona horaria desconocida' })
+            .nullable(),
     })
     .partial();
 export type UpdateTenantFormatInput = z.infer<typeof updateTenantFormatSchema>;

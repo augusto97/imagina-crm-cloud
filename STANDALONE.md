@@ -2361,6 +2361,39 @@ problema que se resuelve sin índices). Si alguna empresa llega a listas de
 millones de registros, la respuesta es particionar, no volver a los índices por
 campo.
 
+### ADR-S33 — Zona horaria por empresa (v0.1.263)
+
+**Contexto.** Un cliente en Colombia programó una automatización «todos los
+días a las 8» y salió a las 3 de la mañana. No existía una zona horaria por
+empresa: el editor guardaba la del navegador de quien la armaba, pero lo que
+se creaba por el asistente, el MCP, la API o una plantilla quedaba SIN zona, y
+el scheduler de BullMQ corría eso en UTC (8:00 UTC = 3:00 en Bogotá). Lo mismo
+pasaba, más callado, con las fechas sin hora: un vencimiento «hoy» o una
+recurrencia se evaluaban contra la medianoche de Greenwich, y «hoy» / «esta
+semana» de filtros y tableros cambiaban de día a las 19:00 en Colombia.
+
+**Decisión.** Cada empresa tiene UNA zona IANA en
+`tenants.settings.format.timezone` (viaja con el formato regional, sin
+migración; validada contra `Intl` y contra `pg_timezone_names` porque el SQL usa
+`AT TIME ZONE`). La zona se RESUELVE en tiempo de ejecución, nunca se copia:
+propia del horario → la de la empresa → UTC (`scheduleTimeZone` en shared).
+Así los horarios guardados sin zona pasan a la de la empresa sin migrar datos,
+y cambiar la zona de la empresa re-registra los schedulers de BullMQ de sus
+automatizaciones (`TenantTimeZones.onChange`). La misma zona manda en: el
+escaneo de `due_date_reached` y el tick de recurrencias (las fechas sin hora se
+comparan contra la medianoche LOCAL), los rangos relativos del QueryBuilder
+(`QueryClock`), los buckets temporales y deltas de los tableros, el merge tag
+`{{date.today}}` y el «hoy» del asistente/MCP. Al entrar, un admin de una
+empresa sin zona la ve propuesta desde su navegador (una vez por empresa); el
+editor de automatizaciones muestra la zona efectiva y avisa si corre en UTC.
+
+**Alternativas descartadas.** Guardar la zona en cada horario al crearlo (los
+ya creados sin zona seguirían rotos, y cambiar la zona de la empresa obligaría
+a reescribirlos todos); zona por usuario (dos personas de la misma empresa
+verían «hoy» distinto en el mismo tablero, y una automatización no tiene
+usuario); seguir en UTC y convertir sólo en la interfaz (el error real es del
+servidor, que es el que dispara).
+
 ---
 
-**Versión del documento:** 1.63.0 (sin índices físicos por campo — ADR-S32)
+**Versión del documento:** 1.64.0 (zona horaria por empresa — ADR-S33)

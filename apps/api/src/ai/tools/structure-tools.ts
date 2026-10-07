@@ -228,7 +228,8 @@ const automationSpec = z.object({
         .describe(
             'record_updated: {changed_fields: [slugs], field_filters: [{field, op, value}]}. ' +
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
-                'scheduled: {cron: "0 9 * * 1"}. record_created/incoming_webhook: {field_filters?}. ' +
+                'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo poné tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
+                'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}.',
         ),
     actions: z

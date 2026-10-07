@@ -7,6 +7,8 @@ import {
     storeCellAccess,
     storeValueError,
     validateFieldValue,
+    zonedToday,
+    FALLBACK_TIME_ZONE,
     type ActionLogEntry,
     type ActionSpec,
     type AutomationRunStatus,
@@ -37,6 +39,7 @@ import { RecordsRepository } from '../records/records.repository';
 import { RecordChangeHub } from '../records/record-change-hub';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
@@ -76,6 +79,8 @@ interface RunContext {
      * `payment_received`) o el link que creó una acción anterior. `{{pago.x}}`.
      */
     pago?: Record<string, unknown>;
+    /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
+    timeZone?: string;
 }
 
 /**
@@ -103,6 +108,8 @@ export class AutomationEngine {
         @Optional() private readonly billing?: BillingService,
         // v0.1.251 — la acción «Crear link de pago» (Mercado Pago / Wompi).
         @Optional() private readonly collections?: CollectionsService,
+        // v0.1.263 — zona horaria de la empresa (vencimientos, {{date.today}}).
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -210,7 +217,12 @@ export class AutomationEngine {
             const field = fieldRows.find((f) => f.id === fieldId);
             if (!field) return;
 
-            const dueExpr = fieldTypedExpr({ id: field.id, type: field.type as FilterableField['type'] });
+            // v0.1.263 — una fecha SIN hora («vence el 7») vence a la medianoche
+            // del reloj de la empresa, no a la de UTC (que en Colombia es el 6 a
+            // las 7 pm). Un datetime ya es un instante y se compara tal cual.
+            const typed = fieldTypedExpr({ id: field.id, type: field.type as FilterableField['type'] });
+            const tz = await this.tenantTimeZone(tx, tenantId);
+            const dueExpr = field.type === 'date' ? sql`((${typed})::timestamp AT TIME ZONE ${tz})` : typed;
             const threshold = sql`now() - make_interval(mins => ${offset})`;
             const alreadyRan = sql`exists (select 1 from ${automationRuns} ar
                 where ar.tenant_id = ${tenantId} and ar.automation_id = ${auto.id}
@@ -249,6 +261,7 @@ export class AutomationEngine {
                         data: rec.data,
                         slugToKey,
                         fieldsBySlug,
+                        timeZone: tz,
                     };
                     // Los field_filters del trigger se evalúan AL DISPARAR (no
                     // solo en process()): "recordar a los 20 días SI la factura
@@ -270,12 +283,18 @@ export class AutomationEngine {
         tx: Tx,
         tenantId: number,
         listId: number,
-    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug'>> {
+    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone'>> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
         return {
             slugToKey: new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)])),
             fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }])),
+            timeZone: await this.tenantTimeZone(tx, tenantId),
         };
+    }
+
+    /** v0.1.263 — la zona de la empresa (UTC si todavía no eligió). */
+    private async tenantTimeZone(tx: Tx, tenantId: number): Promise<string> {
+        return this.timeZones ? this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
     }
 
     /** ¿La automatización matchea el trigger? (field_filters + changed_fields). */
@@ -304,13 +323,15 @@ export class AutomationEngine {
      * - `{{before.slug}}`: valor ANTERIOR al cambio (triggers de update —
      *   ej. la fecha de cobro que acaba de vencer ANTES de que la
      *   recurrencia la ruede al mes siguiente = el período facturado).
-     * - `{{date.now}}` / `{{date.today}}`: timestamp/fecha del disparo
-     *   (naive UTC, el formato de los campos datetime/date).
+     * - `{{date.now}}` / `{{date.today}}`: timestamp/fecha del disparo.
+     *   `date.now` es el instante (naive UTC, como guardan los datetime) y
+     *   `date.today` la fecha de HOY en el reloj de la empresa (v0.1.263:
+     *   antes era la de UTC, y de 7 pm a medianoche en Colombia daba mañana).
      */
     private accessor(ctx: RunContext): (slug: string) => unknown {
         return (token: string) => {
             if (token === 'date.now') return new Date().toISOString().slice(0, 19).replace('T', ' ');
-            if (token === 'date.today') return new Date().toISOString().slice(0, 10);
+            if (token === 'date.today') return zonedToday(ctx.timeZone ?? FALLBACK_TIME_ZONE);
             if (token.startsWith('before.')) {
                 const key = ctx.slugToKey.get(token.slice('before.'.length));
                 return key !== undefined && ctx.before ? ctx.before[key] : undefined;

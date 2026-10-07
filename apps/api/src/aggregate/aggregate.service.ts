@@ -1,5 +1,5 @@
 import { relatedScopeSql, type RelatedScope } from '../records/related-scope';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import {
     type AggregateMetric,
     type AggregateRequest,
@@ -11,6 +11,10 @@ import {
     type TimeBucket,
     isThroughField,
     jsonbKeyForField,
+    addDaysYmd,
+    zonedInstant,
+    zonedToday,
+    FALLBACK_TIME_ZONE,
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { records } from '../db/schema';
@@ -24,8 +28,10 @@ import {
     fieldTextExpr,
     fieldTypedExpr,
     type FilterableField,
+    type QueryClock,
 } from '../records/query-builder';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 const NUMERIC_TYPES: readonly FieldType[] = ['number', 'currency', 'rating', 'percent', 'duration'];
 const MINMAX_TYPES: readonly FieldType[] = [
@@ -54,7 +60,14 @@ export class AggregateService {
         private readonly tenantDb: TenantDb,
         private readonly lists: ListsService,
         private readonly fields: FieldsService,
+        // v0.1.263 — "hoy/esta semana" y los buckets por día en el reloj de la empresa.
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
+
+    /** v0.1.263 — "ahora" + la zona de la empresa para compilar filtros. */
+    private async clock(tenantId: number): Promise<QueryClock> {
+        return { now: new Date(), timeZone: this.timeZones ? await this.timeZones.orUtc(tenantId) : FALLBACK_TIME_ZONE };
+    }
 
     /**
      * `aclFor` + SEC-36 (v0.1.239): los lookup/rollup hacia una lista que el
@@ -104,8 +117,9 @@ export class AggregateService {
         }
         const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
         this.assertMetricCompat(req.metric, field, fieldsById);
+        const clock = await this.clock(tenantId);
 
-        const filterWhere = compileFilterTree(fieldsById, req.filter_tree, new Date());
+        const filterWhere = compileFilterTree(fieldsById, req.filter_tree, clock);
         const baseWhere = and(
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
@@ -143,7 +157,7 @@ export class AggregateService {
             const groupExpr =
                 req.time_bucket !== undefined
                     && (groupField.type === 'date' || groupField.type === 'datetime')
-                    ? timeBucketExpr(groupField, req.time_bucket)
+                    ? timeBucketExpr(groupField, req.time_bucket, clock.timeZone)
                     : groupField.type === 'multi_select'
                         ? multiSelectSetExpr(groupField.id)
                         : isThroughField(groupField.type) || groupField.type === 'computed'
@@ -208,11 +222,15 @@ export class AggregateService {
         }
         const days = Math.max(1, Math.min(365, Math.floor(opts.periodDays) || 30));
 
+        // v0.1.263 — las ventanas se cuentan en días del reloj de la empresa.
+        const { timeZone } = await this.clock(tenantId);
+        const today = zonedToday(timeZone);
         const boundary = (daysAgo: number, edge: 'start' | 'end'): string => {
-            const d = new Date(Date.now() - daysAgo * 86_400_000);
-            const ymd = d.toISOString().slice(0, 10);
+            const ymd = addDaysYmd(today, -daysAgo);
             if (dateField.type === 'date') return ymd;
-            return edge === 'start' ? `${ymd}T00:00:00` : `${ymd}T23:59:59`;
+            return edge === 'start'
+                ? zonedInstant(ymd, timeZone).toISOString()
+                : new Date(zonedInstant(addDaysYmd(ymd, 1), timeZone).getTime() - 1000).toISOString();
         };
         const windowTree = (fromDaysAgo: number, toDaysAgo: number): AggregateRequest['filter_tree'] => {
             const children: FilterNode[] = [];
@@ -258,7 +276,7 @@ export class AggregateService {
         const targets = opts.fieldIds.map((id) => byId.get(id)).filter((f): f is Field => Boolean(f));
 
         const fieldsById = withComputedExprs(acl.strip(await this.filterableFields(tenantId, list.id, fields)), fields);
-        const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, new Date());
+        const filterWhere = compileFilterTree(fieldsById, opts.filter_tree, await this.clock(tenantId));
         const baseWhere = and(
             eq(records.tenantId, tenantId),
             eq(records.listId, list.id),
@@ -469,8 +487,11 @@ function metricsFor(type: FieldType, ff?: FilterableField): AggregateMetric[] {
  * (así el ORDER BY del group sigue siendo correcto) y son los labels que
  * muestra el chart: 2026-07-21 / 2026-W30 / 2026-07 / 2026-Q3 / 2026.
  */
-function timeBucketExpr(field: Field, bucket: TimeBucket): SQL {
-    const typed = fieldTypedExpr({ id: field.id, type: field.type });
+function timeBucketExpr(field: Field, bucket: TimeBucket, timeZone: string): SQL {
+    // v0.1.263 — un datetime cae en el día/mes del reloj de la EMPRESA (una
+    // venta a las 9 pm del 31 en Colombia es de ese mes, no del siguiente).
+    const raw = fieldTypedExpr({ id: field.id, type: field.type });
+    const typed = field.type === 'datetime' ? sql`(${raw} AT TIME ZONE ${timeZone})` : raw;
     switch (bucket) {
         case 'day':
             return sql`to_char(date_trunc('day', ${typed}), 'YYYY-MM-DD')`;

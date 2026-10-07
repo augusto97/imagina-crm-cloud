@@ -3,6 +3,7 @@ export * from './schemas/slug';
 export * from './schemas/membership';
 export * from './schemas/member';
 export * from './schemas/me';
+export * from './schemas/timezone';
 export * from './schemas/tenant';
 export * from './schemas/auth';
 export * from './schemas/field';

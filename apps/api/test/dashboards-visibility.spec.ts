@@ -164,16 +164,17 @@ describe('Dashboards: visibilidad + Branding (Postgres real)', () => {
             number_format: 'comma_dot',
             date_format: 'ymd',
             time_format: 'h24',
+            timezone: null,
         });
         // El branding (que todo miembro trae al bootear) lo incluye.
         expect((await branding.get(tenantId)).format.number_format).toBe('comma_dot');
 
         // PATCH parcial: sólo números → fecha/hora conservan su valor.
         const set = await branding.setFormat(tenantId, { number_format: 'dot_comma' });
-        expect(set).toEqual({ number_format: 'dot_comma', date_format: 'ymd', time_format: 'h24' });
+        expect(set).toEqual({ number_format: 'dot_comma', date_format: 'ymd', time_format: 'h24', timezone: null });
 
         const set2 = await branding.setFormat(tenantId, { date_format: 'dmy', time_format: 'h12' });
-        expect(set2).toEqual({ number_format: 'dot_comma', date_format: 'dmy', time_format: 'h12' });
+        expect(set2).toEqual({ number_format: 'dot_comma', date_format: 'dmy', time_format: 'h12', timezone: null });
 
         // Persistido de verdad + presente en el branding completo.
         expect(await branding.getFormat(tenantId)).toEqual(set2);

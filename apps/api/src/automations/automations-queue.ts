@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
@@ -9,6 +9,7 @@ import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from './aut
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { AutomationsService } from './automations.service';
+import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 interface SchedulerJobData {
     tenantId: number;
@@ -41,6 +42,7 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
         private readonly recurrences: RecurrencesService,
         private readonly bulkRunner: AutomationBulkRunner,
         private readonly automations: AutomationsService,
+        @Optional() private readonly timeZones?: TenantTimeZones,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -96,6 +98,10 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                 .resyncSchedules()
                 .then((n) => n > 0 && this.logger.log(`Horarios de automatizaciones sincronizados: ${n}`))
                 .catch((err) => this.logger.warn(`No se pudieron sincronizar los horarios: ${String(err)}`));
+            // v0.1.263 — cambiar la zona de la empresa re-registra sus horarios.
+            this.timeZones?.onChange((tenantId) =>
+                this.automations.resyncTenantSchedules(tenantId).then(() => undefined),
+            );
             this.logger.log('Cola de automatizaciones lista');
         } catch (err) {
             this.logger.warn(`Automatizaciones deshabilitadas (sin Redis): ${String(err)}`);

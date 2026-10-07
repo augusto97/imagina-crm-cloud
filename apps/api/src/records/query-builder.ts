@@ -1,9 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+    addDaysYmd,
     dateRangePresetSchema,
+    FALLBACK_TIME_ZONE,
     isDataField,
     isThroughField,
     jsonbKeyForField,
+    zonedInstant,
+    zonedToday,
     type DateRangePreset,
     type FieldType,
     type FilterCondition,
@@ -59,17 +63,27 @@ function keyLit(key: string): SQL {
 export function compileFilterTree(
     fieldsById: Map<number, FilterableField>,
     tree: FilterNode | undefined,
-    now: Date,
+    clock: Date | QueryClock,
     dataRef: DataRef = records.data,
 ): SQL | undefined {
     if (!tree) return undefined;
-    return compileNode(fieldsById, tree, now, dataRef);
+    const c: QueryClock = clock instanceof Date ? { now: clock, timeZone: FALLBACK_TIME_ZONE } : clock;
+    return compileNode(fieldsById, tree, c, dataRef);
+}
+
+/**
+ * v0.1.263 — "Ahora" y la zona de la EMPRESA: "hoy", "esta semana" y los
+ * rangos de fechas se cuentan en su reloj. Con un `Date` suelto se usa UTC.
+ */
+export interface QueryClock {
+    now: Date;
+    timeZone: string;
 }
 
 function compileNode(
     fieldsById: Map<number, FilterableField>,
     node: FilterNode,
-    now: Date,
+    now: QueryClock,
     dataRef: DataRef,
 ): SQL | undefined {
     if (node.type === 'group') {
@@ -85,7 +99,7 @@ function compileNode(
 function compileCondition(
     fieldsById: Map<number, FilterableField>,
     cond: FilterCondition,
-    now: Date,
+    now: QueryClock,
     dataRef: DataRef,
 ): SQL | undefined {
     const field = fieldsById.get(cond.field_id);
@@ -166,9 +180,10 @@ function compileCondition(
             // 23:59:59 (mismo criterio que computePresetRange).
             const custom = asCustomRange(cond.value);
             if (custom !== null) {
-                const from = field.type === 'datetime' ? `${custom.from} 00:00:00` : custom.from;
-                const to = field.type === 'datetime' ? `${custom.to} 23:59:59` : custom.to;
-                return sql`(${expr} >= ${from} AND ${expr} <= ${to})`;
+                // v0.1.263 — para un datetime, el día empieza y termina en el
+                // reloj de la empresa (antes, a la medianoche UTC).
+                const range = field.type === 'datetime' ? dayRangeInstants(custom.from, custom.to, now.timeZone) : custom;
+                return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
             }
             const range = computePresetRange(asPreset(cond.value), field.type, now);
             return sql`(${expr} >= ${range.from} AND ${expr} <= ${range.to})`;
@@ -434,80 +449,76 @@ interface Range {
     to: string;
 }
 
-function computePresetRange(preset: DateRangePreset, type: FieldType, now: Date): Range {
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const addDays = (d: Date, n: number) => {
-        const x = new Date(d);
-        x.setDate(x.getDate() + n);
-        return x;
-    };
-    const today = startOfDay(now);
+function computePresetRange(preset: DateRangePreset, type: FieldType, clock: QueryClock): Range {
+    // v0.1.263 — "hoy" es el de la EMPRESA (antes, el del servidor: en
+    // Colombia, de 7 pm a medianoche "hoy" ya era mañana). La aritmética se
+    // hace sobre fechas de calendario puras (YYYY-MM-DD), sin zona.
+    const today = zonedToday(clock.timeZone, clock.now);
+    const [y, m] = today.split('-').map(Number) as [number, number];
+    const ymd = (yy: number, mm: number, dd: number) => new Date(Date.UTC(yy, mm - 1, dd)).toISOString().slice(0, 10);
     // Semana ISO: lunes como primer día.
-    const dow = (today.getDay() + 6) % 7;
-    const startOfWeek = addDays(today, -dow);
+    const dow = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
+    const startOfWeek = addDaysYmd(today, -dow);
 
-    let from: Date;
-    let to: Date;
+    let from: string;
+    let to: string;
     switch (preset) {
         case 'today':
             from = today;
             to = today;
             break;
         case 'yesterday':
-            from = addDays(today, -1);
-            to = addDays(today, -1);
+            from = addDaysYmd(today, -1);
+            to = from;
             break;
         case 'this_week':
             from = startOfWeek;
-            to = addDays(startOfWeek, 6);
+            to = addDaysYmd(startOfWeek, 6);
             break;
         case 'last_week':
-            from = addDays(startOfWeek, -7);
-            to = addDays(startOfWeek, -1);
+            from = addDaysYmd(startOfWeek, -7);
+            to = addDaysYmd(startOfWeek, -1);
             break;
         case 'this_month':
-            from = new Date(today.getFullYear(), today.getMonth(), 1);
-            to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            from = ymd(y, m, 1);
+            to = ymd(y, m + 1, 0);
             break;
         case 'last_month':
-            from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            to = new Date(today.getFullYear(), today.getMonth(), 0);
+            from = ymd(y, m - 1, 1);
+            to = ymd(y, m, 0);
             break;
         case 'last_7_days':
-            from = addDays(today, -6);
+            from = addDaysYmd(today, -6);
             to = today;
             break;
         case 'last_15_days':
-            from = addDays(today, -14);
+            from = addDaysYmd(today, -14);
             to = today;
             break;
         case 'last_30_days':
-            from = addDays(today, -29);
+            from = addDaysYmd(today, -29);
             to = today;
             break;
         case 'this_year':
-            from = new Date(today.getFullYear(), 0, 1);
-            to = new Date(today.getFullYear(), 11, 31);
+            from = ymd(y, 1, 1);
+            to = ymd(y, 12, 31);
             break;
         case 'last_year':
-            from = new Date(today.getFullYear() - 1, 0, 1);
-            to = new Date(today.getFullYear() - 1, 11, 31);
+            from = ymd(y - 1, 1, 1);
+            to = ymd(y - 1, 12, 31);
             break;
     }
 
-    if (type === 'datetime') {
-        // Cubre el día completo: 00:00:00 del `from` a 23:59:59.999 del `to`.
-        const endOfDay = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
-        return { from: from.toISOString(), to: endOfDay.toISOString() };
-    }
-    return { from: fmtDate(from), to: fmtDate(to) };
+    // Un datetime cubre los días completos en el reloj de la empresa.
+    if (type === 'datetime') return dayRangeInstants(from, to, clock.timeZone);
+    return { from, to };
 }
 
-function fmtDate(d: Date): string {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+/** De las 00:00 de `from` a las 23:59:59.999 de `to`, en `tz`, como instantes ISO. */
+function dayRangeInstants(from: string, to: string, tz: string): Range {
+    const start = zonedInstant(from, tz);
+    const end = new Date(zonedInstant(addDaysYmd(to, 1), tz).getTime() - 1);
+    return { from: start.toISOString(), to: end.toISOString() };
 }
 
 // --- helpers ---
