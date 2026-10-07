@@ -70,95 +70,17 @@ export function OptionPicker({
     allowCreate = true,
 }: OptionPickerProps): JSX.Element {
     const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const [highlight, setHighlight] = useState(0);
-    const [error, setError] = useState<string | null>(null);
-
-    const append = useAppendFieldOption(listId);
+    // v0.1.259 — el Popover (Radix: ~10 componentes por instancia) se monta
+    // recién en el primer click. En una tabla hay una celda de selección por
+    // fila y columna, y montar todos esos popovers cerrados era buena parte
+    // del costo de cambiar de vista. Una vez abierto queda montado (el foco
+    // vuelve al disparador al cerrar, como siempre).
+    const [armed, setArmed] = useState(false);
     const options = extractFieldOptions(field);
-
-    const norm = (s: string): string => s.trim().toLowerCase();
-    const q = norm(search);
-    const filtered = q === ''
-        ? options
-        : options.filter(
-              (o) => norm(o.value).includes(q) || norm(o.label ?? o.value).includes(q),
-          );
-
-    // Detect exact match para decidir si mostrar el botón "+ Crear".
-    // Match por label O por value (case-insensitive).
-    const hasExactMatch = options.some(
-        (o) => norm(o.value) === q || norm(o.label ?? o.value) === q,
-    );
-    const canCreate = allowCreate && q !== '' && ! hasExactMatch;
-
-    // Reset highlight cuando el search cambia.
-    useEffect(() => {
-        setHighlight(0);
-    }, [search]);
-
-    // Reset state al cerrar.
-    useEffect(() => {
-        if (! open) {
-            setSearch('');
-            setHighlight(0);
-            setError(null);
-        }
-    }, [open]);
-
     const currentSet = new Set<string>(
         mode === 'multi' ? (Array.isArray(value) ? value.map(String) : []) : [],
     );
     const currentSingle = mode === 'single' && typeof value === 'string' ? value : null;
-
-    const pickOption = (opt: FieldOption): void => {
-        if (mode === 'single') {
-            // Toggle: clickear la opción YA seleccionada la des-selecciona
-            // (estilo ClickUp) — así el trigger de celda no necesita la ×.
-            onChange(currentSingle === opt.value ? null : opt.value);
-            setOpen(false);
-        } else {
-            const next = currentSet.has(opt.value)
-                ? Array.from(currentSet).filter((v) => v !== opt.value)
-                : [...currentSet, opt.value];
-            onChange(next);
-            // Para multi no cerramos — el user puede querer marcar varios.
-        }
-    };
-
-    const createOption = (): void => {
-        if (! canCreate) return;
-        setError(null);
-        const value = search.trim();
-        append.mutate(
-            { fieldId: field.id, value, label: value },
-            {
-                onSuccess: (updated) => {
-                    // Auto-selecciona la opción recién creada. El valor lo decide el
-                    // servidor (v0.1.214: una etiqueta de la tienda nace con el slug
-                    // que le va a dar WordPress), así que se toma de la respuesta.
-                    const options = ((updated?.config as { options?: FieldOption[] } | undefined)?.options ?? []) as FieldOption[];
-                    const created = options.find((o) => o.value === value) ?? [...options].reverse().find((o) => o.label === value);
-                    const picked = created?.value ?? value;
-                    if (mode === 'single') {
-                        onChange(picked);
-                        setOpen(false);
-                    } else {
-                        const next = [...Array.from(currentSet), picked];
-                        onChange(next);
-                        setSearch('');
-                    }
-                },
-                onError: (err) => {
-                    setError(
-                        err instanceof Error
-                            ? err.message
-                            : __('No se pudo crear la opción.'),
-                    );
-                },
-            },
-        );
-    };
 
     const isCell = variant === 'cell';
 
@@ -215,6 +137,41 @@ export function OptionPicker({
         );
     })();
 
+    if (!armed) {
+        return (
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        // En celdas, que el click no burbujee a la fila (que
+                        // en la columna primaria abre el modal del registro).
+                        onClick={(e) => {
+                            if (isCell) e.stopPropagation();
+                            if (disabled) return;
+                            setArmed(true);
+                            setOpen(true);
+                        }}
+                        className={cn(
+                            isCell
+                                ? cn(
+                                    'imcrm-flex imcrm-w-full imcrm-min-h-[1.5rem] imcrm-rounded imcrm-text-left imcrm-text-sm imcrm--mx-1 imcrm-px-1 hover:imcrm-bg-accent/40',
+                                    wrap ? 'imcrm-items-start' : 'imcrm-items-center',
+                                )
+                                : cn(
+                                    'imcrm-inline-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-text-left imcrm-text-sm imcrm-transition-colors',
+                                    compact ? 'imcrm-min-h-8 imcrm-px-2 imcrm-py-1' : 'imcrm-min-h-9 imcrm-px-3 imcrm-py-1.5',
+                                    !disabled && 'hover:imcrm-border-primary/40',
+                                ),
+                            disabled && 'imcrm-cursor-not-allowed imcrm-opacity-60',
+                        )}
+                    >
+                        {triggerContent}
+                        {!isCell && (
+                            <ChevronDown className="imcrm-ml-auto imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                        )}
+                    </button>
+        );
+    }
+
     return (
         <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
             <PopoverTrigger asChild>
@@ -246,6 +203,123 @@ export function OptionPicker({
             </PopoverTrigger>
 
             <PopoverContent align="start" sideOffset={4} className="imcrm-w-64 imcrm-p-0">
+                <OptionPickerPanel
+                    field={field}
+                    listId={listId}
+                    mode={mode}
+                    options={options}
+                    currentSet={currentSet}
+                    currentSingle={currentSingle}
+                    onChange={onChange}
+                    onClose={() => setOpen(false)}
+                    allowCreate={allowCreate}
+                />
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+interface OptionPickerPanelProps {
+    field: FieldEntity;
+    listId: number | string;
+    mode: 'single' | 'multi';
+    options: FieldOption[];
+    currentSet: Set<string>;
+    currentSingle: string | null;
+    onChange: (next: string | string[] | null) => void;
+    onClose: () => void;
+    allowCreate: boolean;
+}
+
+/** Buscador + lista + "Crear": sólo existe mientras el popover está abierto. */
+function OptionPickerPanel({
+    field,
+    listId,
+    mode,
+    options,
+    currentSet,
+    currentSingle,
+    onChange,
+    onClose,
+    allowCreate,
+}: OptionPickerPanelProps): JSX.Element {
+    const [search, setSearch] = useState('');
+    const [highlight, setHighlight] = useState(0);
+    const [error, setError] = useState<string | null>(null);
+
+    const append = useAppendFieldOption(listId);
+
+    const norm = (s: string): string => s.trim().toLowerCase();
+    const q = norm(search);
+    const filtered = q === ''
+        ? options
+        : options.filter(
+              (o) => norm(o.value).includes(q) || norm(o.label ?? o.value).includes(q),
+          );
+
+    // Detect exact match para decidir si mostrar el botón "+ Crear".
+    // Match por label O por value (case-insensitive).
+    const hasExactMatch = options.some(
+        (o) => norm(o.value) === q || norm(o.label ?? o.value) === q,
+    );
+    const canCreate = allowCreate && q !== '' && ! hasExactMatch;
+
+    // Reset highlight cuando el search cambia.
+    useEffect(() => {
+        setHighlight(0);
+    }, [search]);
+
+    const pickOption = (opt: FieldOption): void => {
+        if (mode === 'single') {
+            // Toggle: clickear la opción YA seleccionada la des-selecciona
+            // (estilo ClickUp) — así el trigger de celda no necesita la ×.
+            onChange(currentSingle === opt.value ? null : opt.value);
+            onClose();
+        } else {
+            const next = currentSet.has(opt.value)
+                ? Array.from(currentSet).filter((v) => v !== opt.value)
+                : [...currentSet, opt.value];
+            onChange(next);
+            // Para multi no cerramos — el user puede querer marcar varios.
+        }
+    };
+
+    const createOption = (): void => {
+        if (! canCreate) return;
+        setError(null);
+        const value = search.trim();
+        append.mutate(
+            { fieldId: field.id, value, label: value },
+            {
+                onSuccess: (updated) => {
+                    // Auto-selecciona la opción recién creada. El valor lo decide el
+                    // servidor (v0.1.214: una etiqueta de la tienda nace con el slug
+                    // que le va a dar WordPress), así que se toma de la respuesta.
+                    const options = ((updated?.config as { options?: FieldOption[] } | undefined)?.options ?? []) as FieldOption[];
+                    const created = options.find((o) => o.value === value) ?? [...options].reverse().find((o) => o.label === value);
+                    const picked = created?.value ?? value;
+                    if (mode === 'single') {
+                        onChange(picked);
+                        onClose();
+                    } else {
+                        const next = [...Array.from(currentSet), picked];
+                        onChange(next);
+                        setSearch('');
+                    }
+                },
+                onError: (err) => {
+                    setError(
+                        err instanceof Error
+                            ? err.message
+                            : __('No se pudo crear la opción.'),
+                    );
+                },
+            },
+        );
+    };
+
+    return (
+        <>
                 <div className="imcrm-border-b imcrm-border-border imcrm-p-2">
                     <Input
                         autoFocus
@@ -270,7 +344,7 @@ export function OptionPicker({
                                 }
                             } else if (e.key === 'Escape') {
                                 e.preventDefault();
-                                setOpen(false);
+                                onClose();
                             }
                         }}
                         placeholder={__('Buscar o crear…')}
@@ -359,8 +433,7 @@ export function OptionPicker({
                         </button>
                     </div>
                 )}
-            </PopoverContent>
-        </Popover>
+        </>
     );
 }
 

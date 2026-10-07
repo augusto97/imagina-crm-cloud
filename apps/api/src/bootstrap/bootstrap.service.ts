@@ -119,6 +119,8 @@ export class BootstrapService {
                     config: v.config,
                     is_default: v.isDefault,
                     position: v.position,
+                    icon: v.icon ?? null,
+                    color: v.color ?? null,
                 })),
             };
         });

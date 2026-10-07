@@ -49,6 +49,9 @@ interface UpdateViewVars {
     name?: string;
     config?: SavedViewConfig;
     is_default?: boolean;
+    /** v0.1.259 — icono/color de la pestaña (`null` = el del tipo de vista). */
+    icon?: string | null;
+    color?: string | null;
 }
 
 export function useUpdateSavedView(listId: string | number) {
@@ -75,6 +78,38 @@ export function useDeleteSavedView(listId: string | number) {
         onSuccess: () => {
             // 0.57.41 — scope a id+slug de la lista actual (ver
             // `invalidateForList` en useRecords.ts).
+            invalidateForList(qc, viewsKeys.all, listId);
+        },
+    });
+}
+
+/**
+ * v0.1.259 — orden de las pestañas (arrastrar en la barra). Optimista: se
+ * reordena el cache de la lista al instante (por id Y por slug, regla de oro
+ * nº 7) y se vuelve atrás si el servidor rechaza.
+ */
+export function useReorderSavedViews(listId: number) {
+    const qc = useQueryClient();
+    const matches = (data: unknown): data is SavedViewEntity[] =>
+        Array.isArray(data) && data.length > 0 && (data[0] as SavedViewEntity).list_id === listId;
+    return useMutation({
+        mutationFn: async (viewIds: number[]) => {
+            const res = await api.patch<SavedViewEntity[]>(`/lists/${listId}/views/reorder`, { view_ids: viewIds });
+            return res.data;
+        },
+        onMutate: (viewIds: number[]) => {
+            const snapshots = qc.getQueriesData<SavedViewEntity[]>({ queryKey: viewsKeys.all });
+            for (const [key, data] of snapshots) {
+                if (!matches(data)) continue;
+                const pos = new Map(viewIds.map((id, i) => [id, i]));
+                qc.setQueryData(key, data.map((v) => ({ ...v, position: pos.get(v.id) ?? viewIds.length + v.position })));
+            }
+            return { snapshots };
+        },
+        onError: (_err, _vars, ctx) => {
+            for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
+        },
+        onSettled: () => {
             invalidateForList(qc, viewsKeys.all, listId);
         },
     });

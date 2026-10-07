@@ -7020,6 +7020,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
 
         **Con esto quedan cerrados los pendientes de la auditoría v0.1.252.**
 
+  - [x] **Vistas más rápidas + pestañas de vistas editables (v0.1.259,
+        reporte del usuario: "las listas y agrupaciones cargan mucho más lento"
+        y "las pestañas no permiten cambiar nombre, icono ni reordenarse")**.
+        (a) **Lentitud — medida, no supuesta**: réplica de su lista «Anualidades
+        LIC» (2.173 registros, mismos 15 campos y vistas) servida con el build
+        de v0.1.255 y el actual lado a lado. El servidor contestaba en 20-60 ms;
+        el tiempo se iba en el NAVEGADOR, y v0.1.255 ya era lenta (la agrupada
+        de v0.1.256 sumó encima). Tres causas: el virtualizador dibujaba TODAS
+        las filas en el primer render (la ventana se activaba recién en el
+        layout effect) y después medía CADA `<tr>` con `getBoundingClientRect`
+        —un layout forzado por fila—; cada celda de fecha o selección montaba
+        su popover completo (Radix, ~10 componentes) y sus consultas aunque
+        sólo se mirara; y cada celda creaba su propia mutación. Ahora
+        `useMainVirtualRows` es el hook ÚNICO de la tabla plana y la agrupada:
+        el primer render ya es una ventana (30 filas), y sin «Ajustar texto»
+        se mide UNA fila (alto fijo); `OptionPicker` y `DateCellEditor`
+        montan el popover recién en el primer click (el disparador se ve
+        igual); y una sola mutación por tabla (`RecordUpdaterProvider`).
+        Medido: «Todos» 1,1-1,3 s → 0,3-0,4 s en escritorio y 4,6 → 1,9 s con
+        CPU de celular; agrupada 1,0-1,3 s → 0,66 s y 4,4-4,9 → 2,7-3,3 s.
+        (b) **Pestañas de vistas** (estilo ClickUp): **doble click** en el
+        nombre lo cambia en el lugar (Enter guarda, Escape cancela), **click
+        derecho** o «···» (al pasar el mouse) abre el menú de CUALQUIER
+        pestaña —cambiar el nombre, **Color e ícono** (el mismo catálogo de 324
+        iconos de las listas), editar configuración, por defecto y eliminar con
+        confirmación de la app (antes `confirm()` nativo)— y se **reordenan
+        arrastrando** (marca de dónde cae, optimista, `PATCH
+        /lists/:l/views/reorder` con ids de ESA lista). Migración 0065:
+        `saved_views.icon`/`color` (columnas propias, no en `config`: guardar
+        los cambios de la vista reemplaza el config entero) y la posición pasa
+        a mandar sola — se fijó como posición el orden que se veía (la por
+        defecto primero), así nadie ve sus pestañas moverse. Icono y color
+        viajan en plantillas, duplicar y migrar empresa. 2 tests de API (10 del
+        spec de vistas) + E2E navegador 15/15 de celdas (un click abre
+        selección/multi/fecha y guardan, ventana al fondo, agrupada) y 13/13
+        de pestañas (doble click, Escape, click derecho, icono, arrastrar,
+        persistencia tras recargar, eliminar con confirmación).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

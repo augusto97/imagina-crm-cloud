@@ -110,6 +110,9 @@ export interface SavedViewEntity {
     config: SavedViewConfig;
     is_default: boolean;
     position: number;
+    /** v0.1.259 — icono y color de la pestaña (catálogo de las listas). */
+    icon?: string | null;
+    color?: string | null;
     created_at: string;
     updated_at: string;
 }

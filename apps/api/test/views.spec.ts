@@ -112,4 +112,34 @@ describe('ViewsService (Postgres real + RLS)', () => {
         await listsService.create(tenantB, { name: 'Clientes' });
         expect(await service.list(tenantB, 'clientes')).toHaveLength(0);
     });
+
+    it('v0.1.259 — icono/color de la pestaña: se guardan, se cambian y se quitan', async () => {
+        const v = await service.create(tenantA, 'clientes', { name: 'Con icono', type: 'table', icon: 'star', color: '#ef4444' });
+        expect(v).toMatchObject({ icon: 'star', color: '#ef4444' });
+        const u = await service.update(tenantA, 'clientes', v.id, { icon: 'rocket' });
+        expect(u).toMatchObject({ icon: 'rocket', color: '#ef4444' });
+        // Guardar los cambios de la vista (config entero) no toca el icono.
+        const c = await service.update(tenantA, 'clientes', v.id, { config: { search: 'x' } });
+        expect(c.icon).toBe('rocket');
+        const n = await service.update(tenantA, 'clientes', v.id, { icon: null, color: null });
+        expect(n).toMatchObject({ icon: null, color: null });
+    });
+
+    it('v0.1.259 — reordenar: manda la posición; ids ajenos o repetidos → 400', async () => {
+        const a = await service.create(tenantA, 'clientes', { name: 'A', type: 'table', is_default: true });
+        const b = await service.create(tenantA, 'clientes', { name: 'B', type: 'table' });
+        const c = await service.create(tenantA, 'clientes', { name: 'C', type: 'table' });
+        const out = await service.reorder(tenantA, 'clientes', [c.id, a.id]);
+        // Los que no vienen quedan después, en su orden.
+        expect(out.map((v) => v.name)).toEqual(['C', 'A', 'B']);
+        expect((await service.list(tenantA, 'clientes')).map((v) => v.position)).toEqual([0, 1, 2]);
+
+        await expect(service.reorder(tenantA, 'clientes', [a.id, a.id])).rejects.toBeInstanceOf(BadRequestException);
+        await listsService.create(tenantA, { name: 'Otra' });
+        const ajena = await service.create(tenantA, 'otra', { name: 'Z', type: 'table' });
+        await expect(service.reorder(tenantA, 'clientes', [ajena.id, a.id])).rejects.toBeInstanceOf(BadRequestException);
+        // Otra empresa no ve (ni reordena) estas vistas.
+        await listsService.create(tenantB, { name: 'Clientes' });
+        await expect(service.reorder(tenantB, 'clientes', [a.id])).rejects.toBeInstanceOf(BadRequestException);
+    });
 });

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Slot } from '@radix-ui/react-slot';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -67,7 +68,22 @@ if (typeof window !== 'undefined') {
     else window.setTimeout(warm, 2000);
 }
 
-export function DateCellEditor({
+/**
+ * v0.1.259 — el popover (calendario + atajos + recurrencia, con sus hooks)
+ * se monta recién en el primer click: una tabla tiene una celda de fecha por
+ * fila y columna, y montarlas todas cerradas pesaba al cambiar de vista. El
+ * disparador (`children`) se dibuja igual; el click lo arma ya abierto, y
+ * después queda montado como siempre.
+ */
+export function DateCellEditor(props: DateCellEditorProps): JSX.Element {
+    const [armed, setArmed] = useState(false);
+    if (!armed) {
+        return <Slot onClick={() => setArmed(true)}>{props.children}</Slot>;
+    }
+    return <DateCellEditorPopover {...props} />;
+}
+
+function DateCellEditorPopover({
     listId,
     recordId,
     field,
@@ -75,7 +91,7 @@ export function DateCellEditor({
     onCommit,
     children,
 }: DateCellEditorProps): JSX.Element {
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(true);
 
     const isDateTime = field.type === 'datetime';
     const parsed = useMemo(() => parseDateValue(value), [value]);

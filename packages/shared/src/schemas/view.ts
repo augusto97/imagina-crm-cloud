@@ -101,6 +101,13 @@ export const viewSchema = z.object({
     config: z.record(z.unknown()),
     is_default: z.boolean(),
     position: z.number().int().nonnegative(),
+    /**
+     * v0.1.259 — icono y color de la PESTAÑA (mismo catálogo que las listas).
+     * `null` = el icono del tipo de vista. Viven en columnas propias y no en
+     * `config`: guardar los cambios de la vista reemplaza el config entero.
+     */
+    icon: z.string().max(64).nullable(),
+    color: z.string().max(32).nullable(),
 });
 export type View = z.infer<typeof viewSchema>;
 
@@ -109,6 +116,8 @@ export const createViewSchema = z.object({
     type: viewTypeSchema,
     config: z.record(z.unknown()).optional(),
     is_default: z.boolean().optional(),
+    icon: z.string().max(64).nullable().optional(),
+    color: z.string().max(32).nullable().optional(),
 });
 export type CreateViewInput = z.infer<typeof createViewSchema>;
 
@@ -118,9 +127,20 @@ export const updateViewSchema = z
         config: z.record(z.unknown()),
         is_default: z.boolean(),
         position: z.number().int().nonnegative(),
+        icon: z.string().max(64).nullable(),
+        color: z.string().max(32).nullable(),
     })
     .partial()
     .refine((patch) => Object.keys(patch).length > 0, {
         message: 'El patch no puede estar vacío',
     });
 export type UpdateViewInput = z.infer<typeof updateViewSchema>;
+
+/**
+ * v0.1.259 — orden de las pestañas de vistas de una lista (arrastrar en la
+ * barra). Los ids que no vengan quedan después, en su orden actual.
+ */
+export const reorderViewsSchema = z.object({
+    view_ids: z.array(idSchema).min(1).max(500),
+});
+export type ReorderViewsInput = z.infer<typeof reorderViewsSchema>;
