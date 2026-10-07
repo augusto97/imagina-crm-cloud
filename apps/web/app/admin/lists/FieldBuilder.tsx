@@ -268,7 +268,6 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     };
 
     const requiredCount = all.filter((f) => f.is_required).length;
-    const indexedCount = all.filter((f) => f.is_indexed).length;
     const otherLists = (lists.data ?? []).filter((l) => l.id !== listId);
 
     return (
@@ -366,12 +365,6 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                     /* translators: %d: cantidad de campos obligatorios */
                                     __('%d obligatorios'),
                                     requiredCount,
-                                )}
-                                {requiredCount > 0 && indexedCount > 0 && ' · '}
-                                {indexedCount > 0 && sprintf(
-                                    /* translators: %d: cantidad de campos indexados */
-                                    __('%d indexados'),
-                                    indexedCount,
                                 )}
                             </p>
                         </div>
@@ -762,7 +755,6 @@ function FieldRow({
             <span className={cn(CELL_PROPS, 'imcrm-flex-wrap imcrm-gap-1')}>
                 {field.is_required && <Badge variant="outline">{__('Obligatorio')}</Badge>}
                 {field.is_unique && <Badge variant="outline">{__('Sin repetidos')}</Badge>}
-                {field.is_indexed && <Badge variant="outline">{__('Indexado')}</Badge>}
             </span>
 
             <span className={cn(CELL_CREATED, 'imcrm-truncate imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground')}>

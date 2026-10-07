@@ -120,7 +120,6 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
         f(label, slug, 'phone', { config: o.phoneCountry ? { default_country: o.phoneCountry } : {} });
     const wooId = () =>
         f('ID WooCommerce', 'woo_id', 'text', {
-            is_indexed: true,
             description: 'El número del registro en la tienda. Lo usan las acciones de WooCommerce ({{woo_id}}).',
         });
     const editLink = (what: string) =>
@@ -141,7 +140,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 '#7F54B3',
                 [
                     f('Nombre', 'nombre', 'text'),
-                    f('Email', 'email', 'email', { is_indexed: true }),
+                    f('Email', 'email', 'email'),
                     phone('Teléfono', 'telefono'),
                     f('Empresa', 'empresa', 'text'),
                     f('Ciudad', 'ciudad', 'text'),
@@ -175,7 +174,7 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                     f('Imagen', 'imagen', 'url', { config: { display: 'image' } }),
                     select('Tipo', 'tipo', PRODUCT_TYPE),
                     f('Atributos', 'atributos', 'text', { description: 'La talla, el color… de cada variación.' }),
-                    f('SKU', 'sku', 'text', { is_indexed: true }),
+                    f('SKU', 'sku', 'text'),
                     f('Slug', 'slug_url', 'text', {
                         description: 'La última parte de la dirección del producto en la tienda (…/producto/<slug>/).',
                     }),
@@ -225,7 +224,6 @@ export function buildWooPack(o: WooPackOptions): ListBlueprint {
                 '#7F54B3',
                 [
                     f('Pedido', 'numero', 'text', {
-                        is_indexed: true,
                         description: 'El número del pedido; en cada línea, lo que se compró.',
                     }),
                     select('Tipo', 'tipo', ORDER_KIND),

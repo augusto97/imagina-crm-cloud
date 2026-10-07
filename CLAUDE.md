@@ -6968,6 +6968,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         sin la app, 600 filas → ~150 dibujadas arriba y al fondo, calendario,
         diálogos a pedido, rutas, cero errores) + portal sin errores.
 
+  - [x] **Servidor: sin índices por campo + recurrencias en una consulta +
+        lecturas sin la descripción (v0.1.257, ADR-S32, tercera entrega de los
+        pendientes de la auditoría v0.1.252)**. (a) **Índices por campo
+        eliminados** (decisión del usuario con los números a la vista): cada
+        campo con «Indexar» —y las tiendas WooCommerce marcaban varios por
+        defecto— sumaba 1-2 índices por expresión a la tabla COMPARTIDA
+        `records`, y el planificador los evalúa a todos en cada consulta de
+        cualquier empresa: con 890, planificar el listado tardaba ~70 ms (0,6
+        sin ellos), mientras que un filtro en una lista de 100k tardaba lo mismo
+        con o sin índice (33 ms; el de `(tenant_id, list_id, id)` ya acota a la
+        lista). Migración 0064 borra los `imcrm_ix_*`; `fields.is_indexed` queda
+        como dato sin efecto (API/MCP/plantillas no se rompen), la interfaz ya
+        no lo ofrece, se fue el tope de 8 por lista y los packs de WooCommerce
+        dejaron de marcarlo. Benchmark §13 sin índices: GET con 2 filtros sobre
+        100k p95 10,6 ms (presupuesto 100) y PATCH p95 14 ms (60). (b) **Tick de
+        recurrencias en UNA consulta**: traía TODAS las recurrencias programadas
+        y abría una transacción por cada una para leer la fecha; ahora
+        `dueScheduled` hace el JOIN contra el valor real del registro y devuelve
+        sólo las vencidas (misma normalización que `comparableDate`). Sin
+        columna `next_fire_at` que mantener: la fecha del registro sigue siendo
+        la única verdad. (c) **`findById` sin la descripción**: se llama en cada
+        edición, automatización, recurrencia y comentario y traía el documento
+        completo (hasta 512 KB); ahora usa las columnas del listado y la
+        descripción se pide aparte sólo donde hace falta. **Descartado con
+        medición**: un índice trigram global para el buscador — una búsqueda
+        específica bajaba de 178 a 112 ms pero un término presente en todos los
+        registros subía de 127 a 483 ms. Tests: tick (vencida, futura,
+        borrada), `is_indexed` sin índice físico y sin tope, pack sin la marca —
+        y suites API/front en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

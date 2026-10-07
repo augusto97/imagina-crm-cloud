@@ -470,27 +470,13 @@ export class RecurrencesService {
      */
     async tick(): Promise<void> {
         if (!this.db) return;
-        const recs = await this.repo.allScheduled(this.db);
-        if (recs.length === 0) return;
-        const now = comparableDate(nowUtc());
-
-        for (const rec of recs) {
+        // v0.1.257 — la base devuelve sólo las vencidas (ver `dueScheduled`);
+        // `fire` vuelve a leer todo dentro del tenant y conserva la
+        // idempotencia por last_fired_at y el corte por repeat_until.
+        const due = await this.repo.dueScheduled(this.db, comparableDate(nowUtc()));
+        for (const rec of due) {
             try {
-                const currentValue = await this.tenantDb.withTenant(rec.tenantId, async (tx) => {
-                    const record = await this.recordsRepo.findById(
-                        tx,
-                        rec.tenantId,
-                        rec.listId,
-                        rec.recordId,
-                    );
-                    const v = record
-                        ? (record.data as Record<string, unknown>)[jsonbKeyForField(rec.dateFieldId)]
-                        : null;
-                    return typeof v === 'string' && v !== '' ? v : null;
-                });
-                if (currentValue !== null && comparableDate(currentValue) <= now) {
-                    await this.fire(rec);
-                }
+                await this.fire(rec);
             } catch (err) {
                 this.logger.error(
                     `Tick de recurrencia ${rec.id} (tenant ${rec.tenantId}) falló: ${String(err)}`,

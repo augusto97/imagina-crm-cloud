@@ -219,6 +219,30 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('tick: sólo dispara las vencidas, resueltas en una consulta (v0.1.257)', async () => {
+        const due = await newRecord({ [key('nombre')]: 'Vencida', [key('vence')]: '2020-01-15' });
+        const future = await newRecord({ [key('nombre')]: 'Futura', [key('vence')]: '2099-01-15' });
+        const deleted = await newRecord({ [key('nombre')]: 'Borrada', [key('vence')]: '2020-01-15' });
+        for (const recordId of [due, future, deleted]) {
+            await service.upsert(tenantA, 'tareas', recordId, {
+                date_field_id: f.vence!.id,
+                frequency: 'monthly',
+                interval_n: 1,
+                trigger_type: 'schedule',
+                action_type: 'update',
+            });
+        }
+        await recordsService.remove(tenantA, admin, 'tareas', deleted);
+
+        const listed = await repo.dueScheduled(pg.db, '2026-10-06 12:00:00');
+        const ids = listed.filter((r) => r.tenantId === tenantA).map((r) => r.recordId);
+        expect(ids).toEqual([due]);
+
+        await service.tick();
+        expect(await dateValue(due)).toBe('2020-02-15');
+        expect(await dateValue(future)).toBe('2099-01-15');
+    });
+
     it('upsert reemplaza por (record, date_field) conservando el id', async () => {
         const recordId = await newRecord({ [key('nombre')]: 'X', [key('vence')]: '2030-01-15' });
         const created = await service.upsert(tenantA, 'tareas', recordId, {

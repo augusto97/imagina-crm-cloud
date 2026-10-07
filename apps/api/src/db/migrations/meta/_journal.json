@@ -449,6 +449,13 @@
       "when": 1784200000032,
       "tag": "0063_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1784200000034,
+      "tag": "0064_drop_field_indexes",
+      "breakpoints": true
     }
   ]
 }
