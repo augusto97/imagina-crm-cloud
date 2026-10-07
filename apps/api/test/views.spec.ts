@@ -127,7 +127,7 @@ describe('ViewsService (Postgres real + RLS)', () => {
 
     it('v0.1.259 — reordenar: manda la posición; ids ajenos o repetidos → 400', async () => {
         const a = await service.create(tenantA, 'clientes', { name: 'A', type: 'table', is_default: true });
-        const b = await service.create(tenantA, 'clientes', { name: 'B', type: 'table' });
+        await service.create(tenantA, 'clientes', { name: 'B', type: 'table' });
         const c = await service.create(tenantA, 'clientes', { name: 'C', type: 'table' });
         const out = await service.reorder(tenantA, 'clientes', [c.id, a.id]);
         // Los que no vienen quedan después, en su orden.
