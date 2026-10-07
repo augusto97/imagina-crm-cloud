@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db, Tx } from '../db/client';
-import { recurrences } from '../db/schema';
+import { records, recurrences } from '../db/schema';
 
 export type RecurrenceRow = typeof recurrences.$inferSelect;
 
@@ -131,17 +131,40 @@ export class RecurrencesRepository {
     }
 
     /**
-     * TODAS las recurrencias trigger=schedule, cross-tenant, para el tick
-     * global. Usa la conexión BASE (owner → bypass RLS) porque un job de
-     * plataforma no tiene tenant: sólo enumera (id + tenant_id); las lecturas
-     * y mutaciones de records que siguen SIEMPRE van dentro de
-     * `withTenant(rec.tenantId)` (mismo patrón que el módulo platform).
+     * v0.1.257 — Las recurrencias trigger=schedule cuya fecha YA venció,
+     * resuelto en UNA consulta contra el valor real del registro. Antes el
+     * tick traía TODAS y abría una transacción por cada una para leer la
+     * fecha (con miles de recurrencias, miles de transacciones cada 5 min).
+     * Se compara igual que `comparableDate` (T→espacio, sin fracción ni zona,
+     * orden de texto `YYYY-MM-DD HH:MM:SS`). No hace falta una columna
+     * `next_fire_at` que mantener: la fecha del registro sigue siendo la única
+     * verdad. Usa la conexión BASE (owner → bypass RLS) porque un job de
+     * plataforma no tiene tenant: sólo enumera; lo que sigue va SIEMPRE dentro
+     * de `withTenant(rec.tenantId)`.
      */
-    async allScheduled(db: Db): Promise<RecurrenceRow[]> {
-        return db
-            .select()
+    async dueScheduled(db: Db, now: string): Promise<RecurrenceRow[]> {
+        const value = sql<string>`(${records.data} ->> ('f' || ${recurrences.dateFieldId}))`;
+        const rows = await db
+            .select({ rec: recurrences })
             .from(recurrences)
-            .where(eq(recurrences.triggerType, 'schedule'))
+            .innerJoin(
+                records,
+                and(
+                    eq(records.id, recurrences.recordId),
+                    eq(records.tenantId, recurrences.tenantId),
+                    eq(records.listId, recurrences.listId),
+                    sql`${records.deletedAt} IS NULL`,
+                ),
+            )
+            .where(
+                and(
+                    eq(recurrences.triggerType, 'schedule'),
+                    sql`jsonb_typeof(${records.data} -> ('f' || ${recurrences.dateFieldId})) = 'string'`,
+                    sql`${value} <> ''`,
+                    sql`regexp_replace(replace(trim(${value}), 'T', ' '), '(\.\d+)?(Z|[+-]\d{2}:?\d{2})$', '') <= ${now}`,
+                ),
+            )
             .orderBy(asc(recurrences.tenantId), asc(recurrences.id));
+        return rows.map((r) => r.rec);
     }
 }

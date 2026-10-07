@@ -212,9 +212,8 @@ describe('Pack de la tienda (v0.1.213)', () => {
         expect(bp.lists.map((l) => l.key)).toEqual(['clientes', 'productos', 'pedidos']);
         expect(new Set(Object.values(WOO_LIST_KEYS))).toEqual(new Set(['clientes', 'productos', 'pedidos']));
         for (const l of bp.lists) {
-            // Cada lista tiene su woo_id indexado: es por donde se busca al sincronizar.
-            const woo = l.fields.find((f) => f.slug === 'woo_id');
-            expect(woo?.is_indexed, l.key).toBe(true);
+            // Cada lista tiene su woo_id (el vínculo real va por `sync_links`).
+            expect(l.fields.some((f) => f.slug === 'woo_id'), l.key).toBe(true);
         }
         expect(bp.dashboards?.map((d) => d.name)).toEqual(['Ventas · Tienda', 'Inventario · Tienda']);
         const productos = bp.lists.find((l) => l.key === 'productos')!;

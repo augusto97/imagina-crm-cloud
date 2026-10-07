@@ -1,12 +1,4 @@
-import {
-    BadRequestException,
-    ConflictException,
-    Inject,
-    Injectable,
-    Logger,
-    NotFoundException,
-    Optional,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
     fieldSlugSchema,
     formatDuration,
@@ -35,13 +27,12 @@ import {
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { lists, memberships, records, users } from '../db/schema';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
-import { DRIZZLE, type Db, type Tx } from '../db/client';
+import type { Tx } from '../db/client';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ListsService } from '../lists/lists.service';
 import { ThroughEngine, type ThroughPlan } from '../records/through-fields';
 import { FieldsRepository, type FieldRow } from './fields.repository';
-import { createIndexStatements, dropIndexStatements } from './record-indexes';
 
 /** Un camino posible para un lookup/rollup de una lista (v0.1.170). */
 export interface RelationPath {
@@ -58,7 +49,6 @@ export interface RelationPath {
 
 @Injectable()
 export class FieldsService {
-    private readonly logger = new Logger(FieldsService.name);
     /** Motor de lookup/rollup (v0.1.170): plain class, sin DI, así los specs
      *  que instancian este service a mano no cambian. */
     readonly through = new ThroughEngine(this);
@@ -68,10 +58,6 @@ export class FieldsService {
         private readonly repo: FieldsRepository,
         private readonly lists: ListsService,
         private readonly realtime: RealtimeService,
-        // Conexión base (rol owner, fuera de scope de tenant) para el DDL de
-        // índices por campo (PERF-01). Opcional: en tests que instancian el
-        // service a mano queda undefined → el DDL es no-op.
-        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
 
     /** Campo por id en cualquier lista del tenant (para resolver relaciones cruzadas). */
@@ -174,64 +160,6 @@ export class FieldsService {
             if ((operation === 'min' || operation === 'max') && !ROLLUP_MINMAX_TYPES.includes(tType)) {
                 return fail('target_field_id', 'Mínimo y máximo requieren un campo numérico o de fecha');
             }
-        }
-    }
-
-    /**
-     * Sincroniza los índices de expresión de un campo (PERF-01). `CREATE/DROP
-     * INDEX CONCURRENTLY` NO puede correr dentro de una transacción, así que se
-     * ejecuta en la conexión base fuera del scope de tenant. Best-effort: un
-     * fallo del DDL se loguea pero no rompe la request (el flag ya se guardó).
-     */
-    private async syncFieldIndexes(
-        fieldId: number,
-        type: FieldType,
-        enable: boolean,
-        listId = 0,
-    ): Promise<void> {
-        if (!this.db) return;
-        const statements = enable
-            ? createIndexStatements(fieldId, type, listId)
-            : dropIndexStatements(fieldId);
-        for (const stmt of statements) {
-            try {
-                await this.db.execute(sql.raw(stmt));
-            } catch (err) {
-                this.logger.warn(
-                    `Índice de campo f${fieldId} (${enable ? 'create' : 'drop'}) falló: ${
-                        err instanceof Error ? err.message : String(err)
-                    }`,
-                );
-            }
-        }
-    }
-
-    /**
-     * v0.1.115 — Techo de campos indexados POR LISTA.
-     *
-     * Cada campo con `is_indexed` crea 1-2 índices de expresión sobre la tabla
-     * COMPARTIDA `records`. Sin tope, N empresas × M campos terminan en miles
-     * de índices sobre una sola tabla: cada INSERT/UPDATE los actualiza todos
-     * y el bloat se come el disco. El tope es por lista (no global) para que
-     * una empresa no consuma el presupuesto de las demás.
-     */
-    private static readonly MAX_INDEXED_FIELDS_PER_LIST = 8;
-
-    private async assertIndexBudget(
-        tenantId: number,
-        listId: number,
-        excludeFieldId?: number,
-    ): Promise<void> {
-        const all = await this.tenantDb.withTenant(tenantId, (tx) =>
-            this.repo.listByList(tx, tenantId, listId),
-        );
-        const used = all.filter((f) => f.isIndexed && f.id !== excludeFieldId).length;
-        if (used >= FieldsService.MAX_INDEXED_FIELDS_PER_LIST) {
-            throw new BadRequestException({
-                code: 'index_budget_exceeded',
-                message: `Ya hay ${used} campos indexados en esta lista (máximo ${FieldsService.MAX_INDEXED_FIELDS_PER_LIST}). Quitá el índice de alguno antes de agregar otro.`,
-                data: { status: 400, errors: { is_indexed: 'Máximo alcanzado' } },
-            });
         }
     }
 
@@ -356,9 +284,6 @@ export class FieldsService {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const config = safeConfig(input.type, input.config);
 
-        // Techo de índices (v0.1.115): se valida ANTES de insertar.
-        if (input.is_indexed === true) await this.assertIndexBudget(tenantId, listId);
-
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             await this.assertThroughConfig(tx, tenantId, listId, input.type, config);
             const slug = await this.resolveNewSlug(tx, tenantId, listId, input.label, input.slug);
@@ -377,9 +302,6 @@ export class FieldsService {
                 position,
             });
         });
-        // v0.1.252 — un campo creado YA indexado no creaba su índice (sólo
-        // el toggle posterior lo hacía): el flag quedaba prendido sin efecto.
-        if (row.isIndexed) await this.syncFieldIndexes(row.id, row.type as FieldType, true, listId);
         this.realtime.fields(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
         // cómo se leen los records: sin esto la tabla mostraba "—" en la
@@ -399,16 +321,6 @@ export class FieldsService {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         if (!opts.internal) await this.assertStoreFieldPatch(tenantId, listId, fieldIdOrSlug, patch);
 
-        // Techo de índices (v0.1.115): sólo al ENCENDERLO. El campo actual se
-        // excluye del conteo para que re-guardar uno ya indexado no rebote.
-        if (patch.is_indexed === true) {
-            const target = await this.tenantDb.withTenant(tenantId, (tx) =>
-                this.resolveField(tx, tenantId, listId, fieldIdOrSlug),
-            );
-            await this.assertIndexBudget(tenantId, listId, target.id);
-        }
-
-        let typeChanged = false;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
 
@@ -456,7 +368,6 @@ export class FieldsService {
                 changes.type = toType;
                 changes.config = newConfig;
                 await migrateFieldData(tx, tenantId, listId, current.id, fromType, toType, newConfig, bridge);
-                typeChanged = true;
             } else if (patch.config !== undefined) {
                 changes.config = safeConfig(current.type as FieldType, patch.config);
                 await this.assertThroughConfig(tx, tenantId, listId, current.type as FieldType, changes.config);
@@ -478,18 +389,6 @@ export class FieldsService {
             if (!updated) throw fieldNotFound(fieldIdOrSlug);
             return updated;
         });
-        // PERF-01: crear/soltar el índice de expresión FUERA de la transacción
-        // (CONCURRENTLY no puede correr en un tx). Idempotente (IF [NOT] EXISTS).
-        if (typeChanged) {
-            // El índice viejo indexa la expresión del tipo ANTERIOR — se
-            // suelta siempre y se recrea con la del nuevo si estaba activo.
-            await this.syncFieldIndexes(row.id, row.type as FieldType, false);
-            if (row.isIndexed) {
-                await this.syncFieldIndexes(row.id, row.type as FieldType, true, listId);
-            }
-        } else if (patch.is_indexed !== undefined) {
-            await this.syncFieldIndexes(row.id, row.type as FieldType, patch.is_indexed, listId);
-        }
         // Un cambio de schema (config/slug/required) afecta cómo se leen los
         // records → invalidamos fields Y records de la lista.
         this.realtime.fields(tenantId, listId);
@@ -505,7 +404,7 @@ export class FieldsService {
     ): Promise<void> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const marker = opts.internal ? null : await this.storeMarker(tenantId, listId);
-        const removedId = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
             if (marker && isStoreField(marker, current.id)) {
                 throw new BadRequestException({
@@ -515,10 +414,7 @@ export class FieldsService {
                 });
             }
             await this.repo.remove(tx, tenantId, listId, current.id);
-            return current.id;
         });
-        // PERF-01: soltar los índices de expresión del campo borrado (best-effort).
-        await this.syncFieldIndexes(removedId, 'text', false);
         this.realtime.fields(tenantId, listId);
         this.realtime.records(tenantId, listId);
     }

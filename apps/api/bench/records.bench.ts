@@ -50,10 +50,9 @@ describe(`Perf §13 (seed ${SEED})`, () => {
         pg = await startPostgres();
         const tenantDb = new TenantDb(pg.db);
         const lists = new ListsService(tenantDb, new ListsRepository(), rt);
-        // Con la conexión base para que is_indexed:true cree los índices REALES
-        // (PERF-01) — el benchmark ejercita el código de producción, no solo los
-        // índices espejo manuales de `seed`.
-        const fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt, pg.db);
+        // v0.1.257 — sin índices por campo: el presupuesto se mide con lo que
+        // hay en producción (índice de la lista + escaneo de sus filas).
+        const fields = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         const activity = new ActivityService(tenantDb, new ActivityRepository(), lists);
         records = new RecordsService(
             tenantDb,
@@ -70,12 +69,11 @@ describe(`Perf §13 (seed ${SEED})`, () => {
         tenantId = t!.id;
         await lists.create(tenantId, { name: 'Deals' });
         const defs: CreateFieldInput[] = [
-            { label: 'Monto', type: 'number', slug: 'monto', is_indexed: true },
+            { label: 'Monto', type: 'number', slug: 'monto' },
             {
                 label: 'Estado',
                 type: 'select',
                 slug: 'estado',
-                is_indexed: true,
                 config: {
                     options: ['a', 'b', 'c', 'd', 'e'].map((v) => ({ value: v, label: v.toUpperCase() })),
                 },
@@ -144,14 +142,6 @@ async function seed(pg: TestPg, tenantId: number, numId: number, selId: number, 
            ), now(), now()
          FROM generate_series(1, $4)`,
         [tenantId, numKey, selKey, n],
-    );
-    // Índices de expresión que espeja lo que `is_indexed` debe crear (matchean
-    // las expresiones tipadas del QueryBuilder). Parciales por deleted_at.
-    await pg.pool.query(
-        `CREATE INDEX IF NOT EXISTS bench_num ON records (((data ->> '${numKey}')::numeric)) WHERE deleted_at IS NULL`,
-    );
-    await pg.pool.query(
-        `CREATE INDEX IF NOT EXISTS bench_sel ON records (list_id, (data ->> '${selKey}'), id DESC) WHERE deleted_at IS NULL`,
     );
     await pg.pool.query('ANALYZE records');
 }

@@ -577,10 +577,11 @@ export class RecordsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.repo.findById(tx, tenantId, list.id, id);
-            return row;
+            if (!row || !this.aclCanReach(list, actor, 'view', row)) return null;
+            return this.repo.findDescription(tx, tenantId, list.id, id);
         });
-        if (!result || !this.aclCanReach(list, actor, 'view', result)) throw recordNotFound(id);
-        return result.description ?? null;
+        if (!result) throw recordNotFound(id);
+        return result.description;
     }
 
     /**
@@ -615,7 +616,7 @@ export class RecordsService {
                 action: 'record_updated',
                 diff: {
                     description: {
-                        old: (row.description ?? null) === null ? '' : '…',
+                        old: row.hasDescription ? '…' : '',
                         new: clean === null ? '' : richDocToPlainText(clean, 120),
                     },
                 },

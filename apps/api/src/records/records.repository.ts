@@ -56,9 +56,15 @@ export class RecordsRepository {
         return row;
     }
 
-    async findById(tx: Tx, tenantId: number, listId: number, id: number): Promise<RecordRow | null> {
+    /**
+     * Una fila SIN el documento de descripción (v0.1.257): se llama en cada
+     * edición, recurrencia, automatización y comentario, y la descripción
+     * puede pesar cientos de KB — casi nadie la necesita. El que sí, usa
+     * `findDescription`.
+     */
+    async findById(tx: Tx, tenantId: number, listId: number, id: number): Promise<RecordListRow | null> {
         const [row] = await tx
-            .select()
+            .select(LIST_COLUMNS)
             .from(records)
             .where(
                 and(

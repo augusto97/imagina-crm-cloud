@@ -60,7 +60,6 @@ export function FieldDialog({
     const [slugDirty, setSlugDirty] = useState(false);
     const [isRequired, setIsRequired] = useState(false);
     const [isUnique, setIsUnique] = useState(false);
-    const [isIndexed, setIsIndexed] = useState(false);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -81,7 +80,6 @@ export function FieldDialog({
             setSlugDirty(true);
             setIsRequired(field.is_required);
             setIsUnique(field.is_unique);
-            setIsIndexed(field.is_indexed);
             setConfig(field.config ?? {});
         } else {
             setLabel('');
@@ -90,7 +88,6 @@ export function FieldDialog({
             setSlugDirty(false);
             setIsRequired(false);
             setIsUnique(false);
-            setIsIndexed(false);
             setConfig({});
         }
         setSubmitError(null);
@@ -152,7 +149,6 @@ export function FieldDialog({
                         ...(type !== field.type ? { type } : {}),
                         is_required: isRequired,
                         is_unique: isUnique,
-                        is_indexed: isIndexed,
                         config,
                     },
                 });
@@ -163,7 +159,6 @@ export function FieldDialog({
                     slug: slug || undefined,
                     is_required: isRequired,
                     is_unique: isUnique,
-                    is_indexed: isIndexed,
                     config,
                 });
             }
@@ -300,29 +295,6 @@ export function FieldDialog({
                                                 />
                                                 {__('Sin repetidos')}
                                                 {!supportsUnique && type !== '' && ' ' + __('(no aplica a este tipo)')}
-                                            </label>
-                                            {/* `is_indexed`: el usuario marca los campos
-                                                por los que filtra/ordena seguido para que
-                                                se cree el índice. Vital a 50k+ filas.
-                                                UNIQUE ya provee índice, así que con
-                                                "sin repetidos" activo este se deshabilita. */}
-                                            <label
-                                                className={cn(
-                                                    'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                                                    isUnique && 'imcrm-opacity-50',
-                                                )}
-                                                title={__('Crea un índice sobre la columna: acelera filtros y orden en listas grandes (50k+ registros), a cambio de algo más de espacio y escrituras un poco más lentas. Activalo sólo en los campos por los que filtrás a menudo.')}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isIndexed}
-                                                    onChange={(e) => setIsIndexed(e.target.checked)}
-                                                    disabled={isUnique}
-                                                />
-                                                {__('Indexar')}
-                                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                                    {__('(rápido a gran escala)')}
-                                                </span>
                                             </label>
                                         </div>
                                     </>

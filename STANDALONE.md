@@ -23,7 +23,7 @@
 | **Modelo** | SaaS multi-tenant, suscripción por workspace |
 | **Backend** | Node 22 + TypeScript + NestJS (adapter Fastify) |
 | **Base de datos** | PostgreSQL 16 — schema compartido + `tenant_id` + RLS |
-| **Datos dinámicos** | JSONB con índices GIN + índices por expresión (reemplaza tablas físicas del plugin — ver ADR-S02) |
+| **Datos dinámicos** | JSONB con índices fijos por lista, sin índices por campo (reemplaza tablas físicas del plugin — ver ADR-S02 y ADR-S32) |
 | **Cache / colas** | Redis 7 + BullMQ |
 | **Realtime** | WebSockets (invalidación push) — fase 2 |
 | **Frontend** | El SPA React del plugin, adaptado (fork) |
@@ -129,21 +129,18 @@ sigue siendo editable y NUNCA toca los datos.
 Renombrar un slug = un UPDATE en `fields`. Cero migración de datos. Igual que
 el plugin, misma regla de oro: *el slug es etiqueta humana, el ID es la verdad*.
 
-### 3.3 Campos "indexados" (el `is_indexed` del plugin, versión Postgres)
+### 3.3 Campos "indexados" — sin índices físicos por campo (ADR-S32)
 
-Cuando el usuario marca un campo como indexado, se crea un índice por
-expresión **sin lock** (via cola, no en el request):
+Hasta v0.1.256, marcar un campo como indexado creaba uno o dos índices por
+expresión sobre la tabla compartida `records` (parciales por `list_id`). Desde
+v0.1.257 **no se crean índices por campo** y la migración 0064 borró los que
+había: el flag `fields.is_indexed` se conserva por compatibilidad (API, MCP,
+plantillas guardadas) pero no tiene efecto físico, y la interfaz ya no lo
+ofrece. El motivo, con números, está en ADR-S32.
 
-```sql
--- number/currency:
-CREATE INDEX CONCURRENTLY idx_f102 ON records (((data->>'f102')::numeric))
-    WHERE list_id = 42 AND deleted_at IS NULL;
--- select/text/date:
-CREATE INDEX CONCURRENTLY idx_f103 ON records ((data->>'f103'))
-    WHERE list_id = 42 AND deleted_at IS NULL;
-```
-
-El `QueryBuilder` conserva su diseño del plugin (slug → field → expresión SQL
+El rendimiento del listado sale de los índices FIJOS de la tabla —
+`(tenant_id, list_id, id)` acota el recorrido a las filas de la lista— y del
+`QueryBuilder`, que conserva su diseño del plugin (slug → field → expresión SQL
 con whitelist estricta) compilando a expresiones JSONB tipadas
 (`(data->>'fN')::numeric`, `::date`, etc.).
 
@@ -2329,6 +2326,41 @@ responsabilidad que el usuario no quiere); suscripciones recurrentes de las
 empresas a sus clientes (otra pieza: hoy se arma con una recurrencia + la
 acción «Crear link de pago»).
 
+
+### ADR-S32 — Sin índices físicos por campo (v0.1.257)
+
+**Contexto.** `is_indexed` (PERF-01) creaba 1-2 índices por expresión por campo
+sobre `records`, la tabla que comparten todas las empresas. Las tiendas
+WooCommerce marcaban varios por defecto (ID, SKU, número de pedido, email), así
+que la cantidad crecía sola con cada tienda conectada.
+
+**Medición (auditoría de pendientes, v0.1.257).** El planificador de Postgres
+evalúa CADA índice de la tabla en CADA consulta, de cualquier empresa: con 890
+índices por campo, planificar una consulta del listado tardaba **~70 ms**; sin
+ellos, **0,6 ms**. Y no aceleraban lo que prometían: en una lista de 100k
+registros un filtro por igualdad tardaba 33-34 ms con o sin el índice (el
+planificador ni lo elegía, porque el índice `(tenant_id, list_id, id)` ya acota
+el recorrido a la lista), y un filtro poco selectivo, 20 ms. El benchmark §13
+sin índices por campo: GET con 2 filtros sobre 100k p95 **10,6 ms** (presupuesto
+100), PATCH p95 **14 ms** (presupuesto 60).
+
+**Decisión.** No se crean índices por campo. La migración 0064 borra los
+existentes (`imcrm_ix_*`). `fields.is_indexed` queda como dato sin efecto (no se
+rompe el API, el MCP ni las plantillas guardadas); la interfaz ya no lo muestra,
+el tope de 8 por lista (v0.1.115) desaparece y los packs de WooCommerce dejan de
+marcarlo. Decidido con el usuario.
+
+**Alternativas descartadas.** Un tope global de índices (el costo vuelve a
+crecer hasta el tope y una empresa consume el de las demás); frenar sólo los de
+WooCommerce (arregla el origen más grande, no el problema); un índice trigram
+global sobre todos los valores para el buscador (medido: una búsqueda específica
+bajaba de 178 a 112 ms, pero un término presente en todos los registros subía de
+127 a **483 ms** — el escaneo en paralelo de la lista es más rápido que el mapa
+de bits del índice); particionar `records` por lista (cambio enorme para un
+problema que se resuelve sin índices). Si alguna empresa llega a listas de
+millones de registros, la respuesta es particionar, no volver a los índices por
+campo.
+
 ---
 
-**Versión del documento:** 1.62.0 (cobros de las empresas con Mercado Pago y Wompi)
+**Versión del documento:** 1.63.0 (sin índices físicos por campo — ADR-S32)

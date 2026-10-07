@@ -169,34 +169,24 @@ describe('FieldsService (Postgres real + RLS)', () => {
         await expect(service.get(tenantA, 'clientes', 'temp')).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    // PERF-01: el toggle is_indexed crea/suelta el índice de expresión real.
-    it('is_indexed crea y suelta el índice de expresión en Postgres', async () => {
-        const indexed = new FieldsService(
-            new TenantDb(pg.db),
-            new FieldsRepository(),
-            listsService,
-            rt,
-            pg.db, // conexión base → habilita el DDL de índices
-        );
-        const monto = await indexed.create(tenantA, 'clientes', {
+    // v0.1.257 — `is_indexed` ya no crea índices físicos: cada uno se sumaba
+    // a la tabla COMPARTIDA `records` y le agregaba tiempo de planificación a
+    // todas las consultas de todas las empresas, sin acelerar los filtros.
+    it('is_indexed se guarda pero no crea ningún índice en Postgres', async () => {
+        const monto = await service.create(tenantA, 'clientes', {
             label: 'Monto Indexado',
             type: 'currency',
             slug: 'monto_ix',
+            is_indexed: true,
         });
-        const idxName = `imcrm_ix_f${monto.id}`;
-
-        const exists = async (): Promise<boolean> => {
-            const r = await pg.db.execute(
-                sql`select 1 from pg_indexes where indexname = ${idxName}`,
-            );
-            return r.rows.length === 1;
-        };
-
-        await indexed.update(tenantA, 'clientes', 'monto_ix', { is_indexed: true });
-        expect(await exists()).toBe(true);
-
-        await indexed.update(tenantA, 'clientes', 'monto_ix', { is_indexed: false });
-        expect(await exists()).toBe(false);
+        expect(monto.is_indexed).toBe(true);
+        const r = await pg.db.execute(sql`select 1 from pg_indexes where indexname like ${`imcrm_ix_f${monto.id}%`}`);
+        expect(r.rows).toHaveLength(0);
+        // Sin tope: ya no hay índices que contar.
+        const list = await listsService.create(tenantA, { name: 'Muchos' });
+        for (let i = 0; i < 10; i++) {
+            await service.create(tenantA, String(list.id), { label: `C${i}`, type: 'text', is_indexed: true });
+        }
     });
 
     it('distinctValues: frecuencia desc, search bindeado y tipos sin autocomplete', async () => {
@@ -321,60 +311,6 @@ describe('FieldsService (Postgres real + RLS)', () => {
         );
     });
 
-    describe('techo de campos indexados por lista (v0.1.115)', () => {
-        // Cada campo indexado crea 1-2 índices de expresión sobre la tabla
-        // COMPARTIDA `records`. Sin tope, N empresas × M campos = miles de
-        // índices en una sola tabla y cada escritura los actualiza todos.
-        it('rechaza el noveno campo indexado de la lista', async () => {
-            const list = await listsService.create(tenantA, { name: 'Indexada' });
-            for (let i = 0; i < 8; i++) {
-                await service.create(tenantA, String(list.id), {
-                    label: `Campo ${i}`,
-                    type: 'text',
-                    is_indexed: true,
-                });
-            }
-            await expect(
-                service.create(tenantA, String(list.id), {
-                    label: 'Uno de más',
-                    type: 'text',
-                    is_indexed: true,
-                }),
-            ).rejects.toThrow(/máximo/i);
-
-            // Sin índice entra sin problema (el tope es sólo de índices).
-            const plain = await service.create(tenantA, String(list.id), {
-                label: 'Sin índice',
-                type: 'text',
-            });
-            expect(plain.is_indexed).toBe(false);
-
-            // Y encenderlo por update también rebota.
-            await expect(
-                service.update(tenantA, String(list.id), String(plain.id), { is_indexed: true }),
-            ).rejects.toThrow(/máximo/i);
-        });
-
-        it('re-guardar un campo YA indexado no rebota (no se cuenta a sí mismo)', async () => {
-            const list = await listsService.create(tenantA, { name: 'Indexada2' });
-            const fields = [];
-            for (let i = 0; i < 8; i++) {
-                fields.push(
-                    await service.create(tenantA, String(list.id), {
-                        label: `C${i}`,
-                        type: 'text',
-                        is_indexed: true,
-                    }),
-                );
-            }
-            const again = await service.update(tenantA, String(list.id), String(fields[0]!.id), {
-                is_indexed: true,
-                label: 'C0 renombrado',
-            });
-            expect(again.is_indexed).toBe(true);
-            expect(again.label).toBe('C0 renombrado');
-        });
-    });
     describe('campo de título del registro (v0.1.136)', () => {
         it('sin elección, el primer campo de texto viene marcado is_primary', async () => {
             await service.create(tenantA, 'clientes', { label: 'Monto', type: 'currency' });

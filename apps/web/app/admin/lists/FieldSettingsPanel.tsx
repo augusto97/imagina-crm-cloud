@@ -63,7 +63,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
     const [slugDirty, setSlugDirty] = useState(true);
     const [isRequired, setIsRequired] = useState(field.is_required);
     const [isUnique, setIsUnique] = useState(field.is_unique);
-    const [isIndexed, setIsIndexed] = useState(field.is_indexed);
     const [config, setConfig] = useState<Record<string, unknown>>(field.config ?? {});
     const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +76,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
         setSlug(field.slug);
         setIsRequired(field.is_required);
         setIsUnique(field.is_unique);
-        setIsIndexed(field.is_indexed);
         setConfig(field.config ?? {});
     }, [field]);
 
@@ -93,7 +91,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
         || slug !== field.slug
         || isRequired !== field.is_required
         || isUnique !== field.is_unique
-        || isIndexed !== field.is_indexed
         || JSON.stringify(config) !== JSON.stringify(field.config ?? {});
 
     const save = async (e: React.FormEvent): Promise<void> => {
@@ -113,7 +110,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                     input: {
                         label: label.trim(),
                         description: description.trim() === '' ? null : description.trim(),
-                        is_indexed: isIndexed,
                     },
                 });
                 return;
@@ -127,7 +123,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                     ...(type !== field.type ? { type } : {}),
                     is_required: isRequired,
                     is_unique: supportsUnique ? isUnique : false,
-                    is_indexed: isIndexed,
                     config,
                 },
             });
@@ -236,24 +231,6 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                         </label>
                     </>
                 )}
-                <label
-                    className={cn(
-                        'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm',
-                        isUnique && 'imcrm-opacity-50',
-                    )}
-                    title={__('Crea un índice sobre la columna: acelera filtros y orden en listas grandes, a cambio de algo más de espacio y escrituras un poco más lentas.')}
-                >
-                    <input
-                        type="checkbox"
-                        checked={isIndexed}
-                        disabled={isUnique}
-                        onChange={(e) => setIsIndexed(e.target.checked)}
-                    />
-                    {__('Indexar')}
-                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('(rápido a gran escala)')}
-                    </span>
-                </label>
                 {onMakeTitle && (
                     <Button type="button" variant="outline" size="sm" className="imcrm-gap-1.5" onClick={onMakeTitle}>
                         <Heading1 className="imcrm-h-3.5 imcrm-w-3.5" />

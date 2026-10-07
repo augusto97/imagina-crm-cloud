@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.256** (carga inicial + agrupada virtualizada), en `main`.
+versión publicada: **v0.1.257** (servidor: sin índices por campo — ADR-S32), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -360,8 +360,9 @@ versión publicada: **v0.1.256** (carga inicial + agrupada virtualizada), en `ma
 - Modal del registro y formulario de alta en celular: siguen siendo largos
   (se arregló lo que se salía de pantalla, no el diseño).
 - Servidor: un contexto por request (hoy se re-leen lista/campos en varias
-  transacciones), `search_text` indexado para la búsqueda, `next_fire_at` en
-  recurrencias, `findById` que no traiga la descripción si no hace falta.
+  transacciones). Baja prioridad desde v0.1.257: con la planificación en
+  ~1 ms, cada transacción extra cuesta poco. (El índice del buscador se midió
+  y se descartó — ver ADR-S32.)
 
 **Pendientes técnicos conocidos (no urgentes)**
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
@@ -379,6 +380,15 @@ versión publicada: **v0.1.256** (carga inicial + agrupada virtualizada), en `ma
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-07 · v0.1.257** — Tercera entrega de la auditoría (servidor).
+  Midiendo apareció lo importante: los índices por campo («Indexar» y los que
+  marcaban las tiendas WooCommerce) hacían que CADA consulta de `records`, de
+  todas las empresas, tardara ~70 ms en planificarse (890 índices en dev) sin
+  acelerar los filtros. Se le preguntó al usuario y eligió **dejar de crearlos**
+  (ADR-S32): migración 0064, flag sin efecto, fuera de la interfaz. Además: tick
+  de recurrencias en una consulta y `findById` sin la descripción. El índice
+  global del buscador se midió y se descartó (empeoraba 4× los términos comunes).
+  Queda la 4.ª entrega: modal del registro y alta en celular.
 - **2026-10-06 · v0.1.256** — Segunda entrega de los pendientes de la auditoría:
   rendimiento del front. `shared` desde el fuente (tree-shaking), la app y las
   rutas/diálogos/calendario a pedido → el login baja ~217 KB gz (antes ~630) y
