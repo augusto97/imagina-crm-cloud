@@ -4,8 +4,84 @@ import { Check } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-export const DropdownMenu = DropdownMenuPrimitive.Root;
-export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
+/**
+ * v0.1.262 — menús que no se abren solos al deslizar en el celular.
+ *
+ * El trigger de Radix abre en `pointerdown` (para el mouse es lo correcto: el
+ * menú aparece al apretar). Pero en táctil el `pointerdown` es el INICIO de
+ * cualquier gesto: deslizar la tira de pestañas de vistas (o el árbol del
+ * panel) apoyando el dedo sobre un "···" abría su menú aunque la intención
+ * fuera scrollear. Acá, para punteros que no son mouse, se anula la apertura
+ * en `pointerdown` y se abre en `click` — que el navegador NO dispara si el
+ * gesto terminó en scroll. Mouse y teclado no cambian.
+ *
+ * Para eso el Root lleva su estado (controlado o no) y se lo pasa al Trigger.
+ */
+interface TouchToggle {
+    open: boolean;
+    setOpen: (open: boolean) => void;
+}
+const TouchToggleContext = React.createContext<TouchToggle | null>(null);
+
+export function DropdownMenu({
+    open: openProp,
+    defaultOpen,
+    onOpenChange,
+    ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>): JSX.Element {
+    const [inner, setInner] = React.useState(defaultOpen ?? false);
+    const open = openProp ?? inner;
+    const setOpen = React.useCallback(
+        (next: boolean) => {
+            if (openProp === undefined) setInner(next);
+            onOpenChange?.(next);
+        },
+        [openProp, onOpenChange],
+    );
+    const ctx = React.useMemo(() => ({ open, setOpen }), [open, setOpen]);
+    return (
+        <TouchToggleContext.Provider value={ctx}>
+            <DropdownMenuPrimitive.Root open={open} onOpenChange={setOpen} {...props} />
+        </TouchToggleContext.Provider>
+    );
+}
+
+export const DropdownMenuTrigger = React.forwardRef<
+    React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
+    React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
+>(({ onPointerDown, onClick, ...props }, ref) => {
+    const ctx = React.useContext(TouchToggleContext);
+    // null = el último pointerdown fue de mouse (o no hubo: teclado).
+    const touchDown = React.useRef<{ wasOpen: boolean } | null>(null);
+    return (
+        <DropdownMenuPrimitive.Trigger
+            ref={ref}
+            onPointerDown={(e) => {
+                onPointerDown?.(e);
+                if (e.defaultPrevented) return;
+                if (e.pointerType === 'mouse' || !ctx) {
+                    touchDown.current = null;
+                    return;
+                }
+                // `composeEventHandlers` de Radix saltea su apertura si el
+                // evento ya viene con preventDefault. No frena el scroll (eso
+                // lo decide `touch-action`) ni el `click` posterior.
+                e.preventDefault();
+                touchDown.current = { wasOpen: ctx.open };
+            }}
+            onClick={(e) => {
+                onClick?.(e);
+                const down = touchDown.current;
+                touchDown.current = null;
+                if (!down || !ctx || e.defaultPrevented) return;
+                // Si estaba abierto, el toque "afuera" ya lo cerró: no reabrir.
+                ctx.setOpen(!down.wasOpen);
+            }}
+            {...props}
+        />
+    );
+});
+DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 
 export const DropdownMenuContent = React.forwardRef<
     React.ElementRef<typeof DropdownMenuPrimitive.Content>,

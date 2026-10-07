@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Calendar, Columns3, Copy, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ArrowLeft, ArrowRight, Calendar, Columns3, Copy, CopyPlus, Download, Grid3x3, LayoutGrid, Link2, Lock, MoreHorizontal, Pencil, Pin, PinOff, Plus, Save, Settings2, Share2, ShieldCheck, SlidersHorizontal, Star, Table, Trash2, Undo2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useCreateSavedView, useDeleteSavedView, useReorderSavedViews, useUpdateSavedView } from '@/hooks/useSavedViews';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { EMPTY_FAVORITES, toggledFavorites, useFavorites, useUpdateFavorites } from '@/hooks/useFavorites';
 import { canWriteView, isViewOwner } from './viewAccess';
 import { listColor, listIcon } from '@/lib/listIcons';
@@ -81,6 +82,10 @@ export function ViewsTabs({
     const [renamingId, setRenamingId] = useState<number | null>(null);
     const [dragId, setDragId] = useState<number | null>(null);
     const [dropAt, setDropAt] = useState<{ id: number; after: boolean } | null>(null);
+    // v0.1.262 — en táctil la pestaña NO es arrastrable: el long-press de un
+    // `draggable` arranca un drag HTML5 que pelea con el deslizamiento de la
+    // tira. Ahí se reordena desde el menú ("Mover a la izquierda/derecha").
+    const touchOnly = useMediaQuery('(hover: none) and (pointer: coarse)');
 
     // v0.1.259 — manda la posición (se reordena arrastrando). Antes la vista
     // por defecto iba siempre primero; la migración 0065 fijó ese orden como
@@ -94,6 +99,16 @@ export function ViewsTabs({
         if (at < 0) return;
         ids.splice(after ? at + 1 : at, 0, dragId);
         if (ids.join(',') !== sortedViews.map((v) => v.id).join(',')) reorder.mutate(ids);
+    };
+
+    const moveBy = (viewId: number, delta: -1 | 1): void => {
+        const ids = sortedViews.map((v) => v.id);
+        const at = ids.indexOf(viewId);
+        const to = at + delta;
+        if (at < 0 || to < 0 || to >= ids.length) return;
+        ids.splice(at, 1);
+        ids.splice(to, 0, viewId);
+        reorder.mutate(ids);
     };
 
     const activeView = activeViewId !== null ? views.find((v) => v.id === activeViewId) ?? null : null;
@@ -210,7 +225,7 @@ export function ViewsTabs({
                         onClick={() => onSelectView(view)}
                         isDefault={view.is_default}
                         onRename={canManage && canWriteView(view) ? () => setRenamingId(view.id) : undefined}
-                        draggable={canManage}
+                        draggable={canManage && !touchOnly}
                         dragging={dragId === view.id}
                         dropHint={dropAt?.id === view.id ? (dropAt.after ? 'after' : 'before') : null}
                         onDragStart={() => setDragId(view.id)}
@@ -248,6 +263,7 @@ export function ViewsTabs({
                             const writable = canManage && canWriteView(view);
                             const owner = canManage && isViewOwner(view);
                             const pinned = favs.views.includes(view.id);
+                            const pos = sortedViews.findIndex((v) => v.id === view.id);
                             return (
                                 <>
                                     <DropdownMenuItem
@@ -278,6 +294,26 @@ export function ViewsTabs({
                                             <SlidersHorizontal className="imcrm-h-3.5 imcrm-w-3.5" />
                                             {__('Personalizar vista')}
                                         </DropdownMenuItem>
+                                    )}
+                                    {canManage && touchOnly && sortedViews.length > 1 && (
+                                        <>
+                                            <DropdownMenuItem
+                                                data-testid="view-move-left"
+                                                disabled={pos <= 0}
+                                                onSelect={() => moveBy(view.id, -1)}
+                                            >
+                                                <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                {__('Mover a la izquierda')}
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                data-testid="view-move-right"
+                                                disabled={pos < 0 || pos >= sortedViews.length - 1}
+                                                onSelect={() => moveBy(view.id, 1)}
+                                            >
+                                                <ArrowRight className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                {__('Mover a la derecha')}
+                                            </DropdownMenuItem>
+                                        </>
                                     )}
                                     {writable && (
                                         <IconColorSubmenu
@@ -521,6 +557,9 @@ interface ViewTabProps {
     onDropTab?: (after: boolean) => void;
 }
 
+/** Lo que tiene que durar un "mantener presionado" para abrir el menú. */
+const LONG_PRESS_MS = 450;
+
 /** ¿El puntero está en la mitad derecha de la pestaña? */
 function isAfter(e: React.DragEvent<HTMLElement>): boolean {
     const r = e.currentTarget.getBoundingClientRect();
@@ -545,6 +584,7 @@ function ViewTab({
     onDropTab,
 }: ViewTabProps): JSX.Element {
     const [menuOpen, setMenuOpen] = useState(false);
+    const touch = useRef<{ at: number; x: number; y: number; cancelled: boolean } | null>(null);
     return (
         <div
             draggable={draggable}
@@ -571,10 +611,28 @@ function ViewTab({
                       }
                     : undefined
             }
+            onPointerDown={(e) => {
+                touch.current =
+                    e.pointerType === 'mouse' ? null : { at: e.timeStamp, x: e.clientX, y: e.clientY, cancelled: false };
+            }}
+            onPointerMove={(e) => {
+                const t = touch.current;
+                if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 8) t.cancelled = true;
+            }}
+            onPointerCancel={() => {
+                // El navegador tomó el gesto (scroll de la tira).
+                if (touch.current) touch.current.cancelled = true;
+            }}
             onContextMenu={
                 renderMenu
                     ? (e) => {
                           e.preventDefault();
+                          // v0.1.262 — en táctil el menú por "mantener
+                          // presionado" sólo vale si el dedo quedó QUIETO el
+                          // tiempo de un long-press de verdad: deslizando la
+                          // tira se abría solo.
+                          const t = touch.current;
+                          if (t && (t.cancelled || e.timeStamp - t.at < LONG_PRESS_MS)) return;
                           setMenuOpen(true);
                       }
                     : undefined
@@ -605,7 +663,7 @@ function ViewTab({
                 type="button"
                 onClick={onClick}
                 onDoubleClick={onRename}
-                title={onRename ? __('Doble click para cambiar el nombre · arrastrá para reordenar') : undefined}
+                title={onRename && draggable ? __('Doble click para cambiar el nombre · arrastrá para reordenar') : undefined}
                 className="imcrm-flex imcrm-items-center imcrm-gap-1.5"
             >
                 {isDefault && <Star className="imcrm-h-3 imcrm-w-3 imcrm-text-warning" aria-label={__('Vista por defecto')} />}
