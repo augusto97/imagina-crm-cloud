@@ -32,6 +32,7 @@ export * from './schemas/automation';
 export * from './schemas/dashboard';
 export * from './schemas/system';
 export * from './schemas/mail-account';
+export * from './schemas/tenant-storage';
 export * from './schemas/domains';
 export * from './schemas/portal';
 export * from './schemas/billing';

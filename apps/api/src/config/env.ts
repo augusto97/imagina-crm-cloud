@@ -34,6 +34,12 @@ const envSchema = z.object({
      * instalación propia necesite llegar a una base de su red interna.
      */
     SQL_ALLOW_PRIVATE_HOSTS: boolFromString,
+    /**
+     * v0.1.268 (ADR-S36) — y para el almacenamiento propio de las empresas
+     * (bucket S3-compatible): sólo direcciones públicas, salvo un MinIO de la
+     * red interna en una instalación propia.
+     */
+    STORAGE_ALLOW_PRIVATE_HOSTS: boolFromString,
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),

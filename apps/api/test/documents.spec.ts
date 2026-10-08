@@ -137,7 +137,7 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         const storage = new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-docs-')));
         const files = new FilesService(tenantDb, storage, env);
         const audit = new AuditService(tenantDb);
-        docs = new DocumentsService(tenantDb, lists, fieldsSvc, recs, files, storage, audit);
+        docs = new DocumentsService(tenantDb, lists, fieldsSvc, recs, files, audit);
         const connectors = new ConnectorsService(tenantDb, pg.db, env, memoryOAuthStore(), audit, memoryIntegrationApps());
         automations = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), lists, new AutomationScheduler(), noHooks, connectors);
         mailbox = new CapturingMailTransport();
@@ -405,6 +405,54 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         expect(h.q3 ?? 0).toBeLessThan(30);
         const tags = await docs.preview(tenantId, admin, 'cobros', { design: qrDesign, mode: 'tags' });
         expect(tags.pages).toBe(1);
+    });
+
+    it('enlace sin guardar: {{pdf.link}} arma el PDF al abrirlo, firmado y acotado a su registro', async () => {
+        const tpl = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Enlace vivo', filename: 'Cuenta {{cliente}}', design });
+        const auto = await automations.create(tenantId, 'cobros', {
+            name: 'Mandar enlace',
+            trigger_type: 'record_created',
+            actions: [
+                { type: 'generate_pdf', config: { document_template_id: tpl.id } },
+                { type: 'send_email', config: { to: 'cliente@beta.test', subject: 'Tu cuenta', body: 'Bajala: {{pdf.link}}' } },
+            ],
+        });
+        const nuevo = await recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: 'Zeta' } });
+        mailbox.sent.length = 0;
+        const filesBefore = await withTenant(pg.db, tenantId, (tx) => tx.select().from(attachments));
+        await engine.process({ tenantId, listId: cobrosId, recordId: nuevo.id, trigger: 'record_created', after: { [`f${f.cliente!.id}`]: 'Zeta' } });
+        // No se guardó ningún archivo.
+        expect((await withTenant(pg.db, tenantId, (tx) => tx.select().from(attachments))).length).toBe(filesBefore.length);
+        const body = String(mailbox.sent[0]!.html ?? mailbox.sent[0]!.text ?? '');
+        const raw = /\/api\/v1\/public\/documents\/[^\s"'<]+/.exec(body)?.[0] ?? '';
+        expect(raw).not.toBe('');
+        const u = new URL(raw.replace(/&amp;/g, '&'), 'http://x');
+        const [, , , , , tplS, recS] = u.pathname.split('/');
+        const [tplId, recId, ten, exp, sig] = [Number(tplS), Number(recS), Number(u.searchParams.get('tenant')), Number(u.searchParams.get('exp')), u.searchParams.get('sig')!];
+        expect([tplId, recId, ten]).toEqual([tpl.id, nuevo.id, tenantId]);
+        // Vence en ~30 días.
+        expect(exp - Date.now() / 1000).toBeGreaterThan(29 * 24 * 3600);
+
+        const pdf = await docs.renderLiveLink(tplId, recId, ten, exp, sig);
+        expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+        expect(pdf.filename).toBe('Cuenta Zeta.pdf');
+        // Firma alterada, otro registro, otra empresa o vencido: el mismo 404.
+        await expect(docs.renderLiveLink(tplId, recId, ten, exp, sig.replace(/^./, sig[0] === 'a' ? 'b' : 'a'))).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderLiveLink(tplId, cobroId, ten, exp, sig)).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderLiveLink(tplId, recId, otherTenant, exp, sig)).rejects.toMatchObject({ status: 404 });
+        const old = docs.liveLink(tenantId, tpl.id, nuevo.id, -7200);
+        const q = new URL(old, 'http://x').searchParams;
+        await expect(docs.renderLiveLink(tpl.id, nuevo.id, tenantId, Number(q.get('exp')), q.get('sig')!)).rejects.toMatchObject({ status: 404 });
+        // Un registro de OTRA lista con un enlace bien firmado: tampoco.
+        const [item] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, itemsId)).limit(1));
+        const cross = new URL(docs.liveLink(tenantId, tpl.id, item!.id), 'http://x').searchParams;
+        await expect(docs.renderLiveLink(tpl.id, item!.id, tenantId, Number(cross.get('exp')), cross.get('sig')!)).rejects.toMatchObject({ status: 404 });
+
+        // «Copiar enlace» de la ficha.
+        const link = await docs.linkForRecord(tenantId, admin, 'cobros', nuevo.id, tpl.id);
+        expect(link.url).toContain(`/api/v1/public/documents/${tpl.id}/${nuevo.id}?`);
+        await expect(docs.linkForRecord(tenantId, admin, 'items', item!.id, tpl.id)).rejects.toMatchObject({ status: 404 });
+        await automations.remove(tenantId, 'cobros', auto.id);
     });
 
     it('portal: sólo plantillas publicadas, de su lista y con su registro', async () => {

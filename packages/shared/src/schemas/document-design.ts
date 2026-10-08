@@ -481,6 +481,18 @@ export interface GenerateDocumentResult {
     url: string | null;
 }
 
+/**
+ * v0.1.268 — «Copiar enlace»: un enlace firmado (30 días) que ARMA el PDF al
+ * abrirlo. No guarda ningún archivo; muestra los datos del momento.
+ */
+export const documentLinkInputSchema = z.object({ record_id: idSchema });
+export type DocumentLinkInput = z.infer<typeof documentLinkInputSchema>;
+
+export interface DocumentLinkResult {
+    url: string;
+    expires_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Etiquetas
 // ---------------------------------------------------------------------------

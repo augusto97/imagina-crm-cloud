@@ -484,6 +484,13 @@
       "when": 1784200000038,
       "tag": "0068_document_numbering",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1784200000039,
+      "tag": "0069_attachments_storage_connection",
+      "breakpoints": true
     }
   ]
 }

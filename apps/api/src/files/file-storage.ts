@@ -71,3 +71,47 @@ export class LocalFileStorage implements FileStorage {
 }
 
 export const FILE_STORAGE = Symbol('FILE_STORAGE');
+
+/** Lo que se pide al armar un enlace temporal de descarga. */
+export interface PresignOptions {
+    ttlSeconds: number;
+    contentType: string;
+    contentDisposition: string;
+}
+
+/**
+ * Un storage que puede entregar el archivo DIRECTO (v0.1.268): un enlace
+ * temporal del proveedor, así la descarga no pasa por el servidor.
+ */
+export interface PresignableStorage extends FileStorage {
+    presignedGet?(key: string, opts: PresignOptions): Promise<string>;
+}
+
+/**
+ * v0.1.268 (ADR-S36) — almacenamiento propio de la empresa. Lo provee el
+ * módulo de conectores (las credenciales viven en una conexión de
+ * Integraciones); el de archivos sólo conoce esta interfaz, así no hay ciclo.
+ */
+export interface TenantStorageResolver {
+    /** La conexión elegida en Ajustes → Almacenamiento, o null (= la plataforma). */
+    choice(tenantId: number): Promise<number | null>;
+    /** La elegida con su driver listo. Lanza con el motivo si no se puede usar. */
+    active(tenantId: number): Promise<{ connectionId: number; storage: PresignableStorage } | null>;
+    /** La de una conexión puntual (donde quedó un archivo). Lanza con el motivo si no se puede usar. */
+    forConnection(tenantId: number, connectionId: number): Promise<PresignableStorage>;
+    /** Las conexiones que se pueden elegir. */
+    candidates(tenantId: number): Promise<StorageChoiceCandidate[]>;
+    set(tenantId: number, connectionId: number): Promise<{ name: string }>;
+    clear(tenantId: number): Promise<void>;
+    names(tenantId: number, ids: number[]): Promise<Map<number, string>>;
+}
+
+export interface StorageChoiceCandidate {
+    id: number;
+    name: string;
+    integration: string;
+    detail: string | null;
+    problem: string | null;
+}
+
+export const TENANT_STORAGE = Symbol('TENANT_STORAGE');

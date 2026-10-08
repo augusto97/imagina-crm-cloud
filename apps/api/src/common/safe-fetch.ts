@@ -207,7 +207,7 @@ type LookupCb = (err: NodeJS.ErrnoException | null, address: string | LookupAddr
  * si alguna es privada, y devuelve al llamador en la forma que pidió
  * (`options.all` array o dirección única).
  */
-function guardedLookup(hostname: string, options: unknown, callback: LookupCb): void {
+export function guardedLookup(hostname: string, options: unknown, callback: LookupCb): void {
     const opts =
         typeof options === 'number'
             ? { family: options }

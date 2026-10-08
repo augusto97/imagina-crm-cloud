@@ -834,10 +834,18 @@ export class AutomationEngine {
                 if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elegí la plantilla del documento.');
                 const doc = await this.pdfFor(tx, ctx, templateId, typeof cfg.filename === 'string' ? merge(cfg.filename) : '');
                 const kb = Math.max(1, Math.round(doc.buffer.length / 1024));
-                ctx.pdf = { nombre: doc.filename, link: '', kb, numero: doc.number ?? '' };
+                // v0.1.268 — sin guardarlo, `{{pdf.link}}` es un enlace firmado
+                // (30 días) que ARMA el PDF al abrirlo: no ocupa espacio en
+                // ningún lado. Muestra los datos del registro de ese momento.
+                ctx.pdf = {
+                    nombre: doc.filename,
+                    link: this.documents.liveLink(ctx.tenantId, templateId, ctx.recordId),
+                    kb,
+                    numero: doc.number ?? '',
+                };
                 const saveSlug = typeof cfg.save_field === 'string' ? cfg.save_field : '';
                 if (!saveSlug) {
-                    return ok('generate_pdf', `Generó «${doc.filename}»${doc.number ? `, N.º ${doc.number}` : ''} (${kb} KB).`, { filename: doc.filename, bytes: doc.buffer.length });
+                    return ok('generate_pdf', `Generó «${doc.filename}»${doc.number ? `, N.º ${doc.number}` : ''} (${kb} KB). Enlace sin guardar: se arma al abrirlo.`, { filename: doc.filename, bytes: doc.buffer.length });
                 }
                 const field = ctx.fieldsBySlug.get(saveSlug);
                 const key = ctx.slugToKey.get(saveSlug);

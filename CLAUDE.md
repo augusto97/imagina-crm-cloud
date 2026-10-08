@@ -7339,6 +7339,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         automatización numerada, QR, portal) + 1 del front + E2E navegador
         18/18.
 
+  - [x] **Almacenamiento propio por empresa + enlace del PDF sin guardarlo
+        (v0.1.268, ADR-S36, pedido del usuario: "que estos PDF no gasten
+        espacio en el servidor… que se guarden en Google Drive o algún S3 y
+        ahí no cuenten para el plan" → "hacé las dos juntas, S3 primero y
+        después Drive")**: (a) **`{{pdf.link}}` sin archivo**: sin «Guardar
+        en», la acción «Generar un PDF» deja un enlace firmado de 30 días
+        (`/api/v1/public/documents/:plantilla/:registro`, HMAC con scope
+        `doc`) que ARMA el PDF al abrirlo — cero bytes en disco; muestra los
+        datos del momento (el número emitido no cambia). La ficha gana
+        **«Copiar enlace (30 días)»** en el menú «Generar PDF». Firma
+        alterada, vencido, otra empresa o registro de otra lista → el mismo
+        404 opaco. (b) **«Almacenamiento S3»** en la galería de
+        Integraciones (una sola integración para AWS, Backblaze B2, Cloudflare
+        R2, Wasabi, DigitalOcean Spaces, MinIO): conectar sube, lee y borra
+        un archivo de prueba — una credencial que no sirve no se guarda.
+        (c) **Ajustes → Almacenamiento** (admin): servidor de la plataforma
+        o el bucket propio (conexión del EQUIPO; `tenants.settings.storage`),
+        uso por lugar, y **mudanza por tandas** en los dos sentidos con
+        progreso (volver al servidor respeta el espacio del plan; lo que
+        falla queda donde estaba y se lista). (d) **Cada archivo recuerda
+        dónde quedó** (`attachments.storage_connection_id`, migración 0069):
+        cambiar de elección no rompe nada; la URL firmada propia redirige
+        (302) a un enlace prefirmado de 15 min del bucket — ni disco ni ancho
+        de banda del servidor; las lecturas internas (imágenes del PDF,
+        exportar empresa) van por la conexión de cada fila. (e) **Fuera del
+        plan**: cupo, Plan y uso y la consola cuentan sólo lo de la
+        plataforma. (f) **Nada en silencio**: bucket caído → la subida FALLA
+        (503) en vez de caer al servidor; la conexión elegida o con archivos
+        no se borra ni desconecta (409) y no se le cambia bucket/dirección/
+        carpeta; borrar la empresa no toca su bucket; migrar la empresa trae
+        los bytes y avisa. (g) SSRF: https obligatorio, literal privado
+        rechazado y `guardedLookup` (`STORAGE_ALLOW_PRIVATE_HOSTS` para un
+        MinIO interno); checksums del SDK sólo `WHEN_REQUIRED` (Backblaze y
+        otros rechazan los CRC32 por defecto desde la 3.729). **Bugs de paso**:
+        `deleteTenant` borraba conexiones antes que adjuntos (la FK nueva lo
+        habría trabado) y el estado del panel se quedaba cacheado tras
+        conectar el bucket en otra pantalla (lo atrapó el E2E). 7 tests
+        (1 puro + 6 de integración contra un S3 en proceso: en CI no hay
+        MinIO) + 1 del enlace en documentos + 2 del front, y E2E navegador 24/24 contra
+        **moto** (emulador real de la API de S3): conectar, bucket inexistente
+        rechazado, elegir, mover 15 archivos al bucket, PDF guardado en el
+        bucket y bajado sin sesión por redirección, logo servido desde el
+        bucket, «Copiar enlace» sin archivo, desconectar rechazado, volver al
+        servidor y borrar, celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

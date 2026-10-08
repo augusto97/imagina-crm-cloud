@@ -169,6 +169,8 @@ import {
     smtpConfigSchema,
     smtpConfigPublicSchema,
     tenantMailStatusSchema,
+    tenantStorageStatusSchema,
+    moveTenantFilesResultSchema,
     platformDiagnosticsSchema,
     platformDomainSchema,
     platformDomainsSchema,
@@ -247,6 +249,8 @@ import {
     type SmtpConfig,
     type SmtpConfigPublic,
     type TenantMailStatus,
+    type TenantStorageStatus,
+    type MoveTenantFilesResult,
     type PlatformDiagnostics,
     type PlatformDomain,
     type PlatformDomains,
@@ -661,6 +665,26 @@ export class CloudClient {
     }
     tenantMailClearAccount(): Promise<TenantMailStatus> {
         return this.request('DELETE', '/workspaces/current/mail/account', { schema: tenantMailStatusSchema });
+    }
+    // --- Almacenamiento propio de la empresa (v0.1.268, ADR-S36, sólo admin) ---
+    tenantStorageGet(): Promise<TenantStorageStatus> {
+        return this.request('GET', '/workspaces/current/storage', { schema: tenantStorageStatusSchema });
+    }
+    tenantStorageSet(connectionId: number): Promise<TenantStorageStatus> {
+        return this.request('PUT', '/workspaces/current/storage', {
+            body: { connection_id: connectionId },
+            schema: tenantStorageStatusSchema,
+        });
+    }
+    tenantStorageClear(): Promise<TenantStorageStatus> {
+        return this.request('DELETE', '/workspaces/current/storage', { schema: tenantStorageStatusSchema });
+    }
+    /** Una tanda de la mudanza de archivos (la interfaz repite hasta `remaining` 0). */
+    tenantStorageMove(to: 'connection' | 'platform'): Promise<MoveTenantFilesResult> {
+        return this.request('POST', '/workspaces/current/storage/move', {
+            body: { to },
+            schema: moveTenantFilesResultSchema,
+        });
     }
     tenantSmtpGet(): Promise<SmtpConfigPublic> {
         return this.request('GET', '/workspaces/current/smtp', { schema: smtpConfigPublicSchema });

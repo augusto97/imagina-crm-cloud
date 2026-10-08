@@ -2,6 +2,7 @@ import {
     CreditCard,
     Gauge,
     Globe,
+    HardDrive,
     Mail,
     History,
     Palette,
@@ -30,6 +31,7 @@ export type SettingsSectionId =
     | 'marca'
     | 'formato'
     | 'correo'
+    | 'almacenamiento'
     | 'conectores'
     | 'asistente'
     | 'firma'
@@ -61,6 +63,8 @@ export function settingsSectionGroups({
                           { id: 'marca', label: 'Marca', icon: Palette },
                           { id: 'formato', label: 'Formato regional', icon: Globe },
                           { id: 'correo', label: 'Correo', icon: Mail },
+                          // v0.1.268 (ADR-S36) — archivos en el bucket propio de la empresa.
+                          { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive },
                           // v0.1.181 — asistente IA (ADR-S21): opt-in, clave propia, modelo.
                           { id: 'asistente', label: 'Asistente IA', icon: Sparkles },
                           // v0.1.114 — quién cambió qué en el workspace.

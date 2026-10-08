@@ -37,6 +37,8 @@ export type AuditAction =
     | 'billing.plan_change'
     | 'workspace.smtp_change'
     | 'workspace.mail_account_change'
+    | 'workspace.storage_change'
+    | 'workspace.storage_move'
     | 'workspace.domain_change'
     | 'workspace.domain_verified'
     | 'workspace.portal_domain_change'

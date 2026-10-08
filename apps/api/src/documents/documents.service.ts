@@ -1,7 +1,6 @@
 import {
     BadRequestException,
     ConflictException,
-    Inject,
     Injectable,
     Logger,
     NotFoundException,
@@ -51,7 +50,6 @@ import type { Tx } from '../db/client';
 import { attachments, automations, documentNumbers, documentTemplates, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
 import { FilesService } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import type { ThroughPlan } from '../records/through-fields';
@@ -132,7 +130,6 @@ export class DocumentsService {
         private readonly fields: FieldsService,
         private readonly records: RecordsService,
         private readonly files: FilesService,
-        @Inject(FILE_STORAGE) private readonly storage: FileStorage,
         private readonly audit: AuditService,
         @Optional() private readonly billing?: BillingService,
         @Optional() private readonly timeZones?: TenantTimeZones,
@@ -477,6 +474,68 @@ export class DocumentsService {
         });
     }
 
+    /**
+     * v0.1.268 — enlace absoluto y firmado (30 días) que ARMA el PDF al
+     * abrirlo, sin guardarlo en ningún lado: `{{pdf.link}}` cuando la acción
+     * no lo guarda en un campo, y «Copiar enlace» de la ficha. Cada apertura
+     * muestra los datos ACTUALES del registro (el número, una vez emitido,
+     * no cambia).
+     */
+    liveLink(tenantId: number, templateId: number, recordId: number, ttlSeconds = LIVE_LINK_TTL): string {
+        const now = Math.floor(Date.now() / 1000);
+        // Redondeado a la hora: el mismo registro da el mismo enlace un rato.
+        const exp = Math.ceil((now + ttlSeconds) / 3600) * 3600;
+        const sig = this.files.signParts('doc', tenantId, templateId, recordId, exp);
+        return `${this.files.baseUrl}/api/v1/public/documents/${templateId}/${recordId}?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
+    }
+
+    /** El PDF de un enlace de `liveLink` (sin sesión). 404 opaco si no cuadra. */
+    async renderLiveLink(templateId: number, recordId: number, tenantId: number, exp: number, sig: string): Promise<RenderedDocument> {
+        const now = Math.floor(Date.now() / 1000);
+        if (
+            !Number.isInteger(tenantId) ||
+            tenantId <= 0 ||
+            !Number.isFinite(exp) ||
+            exp < now ||
+            !this.files.verifyParts(sig, 'doc', tenantId, templateId, recordId, exp)
+        ) {
+            throw templateNotFound(templateId);
+        }
+        const rendered = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const tpl = await this.findAnyInTx(tx, tenantId, templateId);
+            if (!tpl) throw templateNotFound(templateId);
+            const design = this.validDesign(tpl.design);
+            return this.renderInTx(tx, {
+                tenantId,
+                // Como sistema: el enlace lo emitió alguien con acceso (una
+                // automatización o la ficha) y la firma es la autorización.
+                actor: PORTAL_RENDER_ACTOR,
+                listId: tpl.listId,
+                recordId,
+                design,
+                filename: tpl.filename || tpl.name,
+                mode: 'real',
+                template: { id: tpl.id, assign: true },
+            });
+        });
+        if (rendered.recordId === null) throw templateNotFound(templateId);
+        return rendered;
+    }
+
+    /** «Copiar enlace» de la ficha: quien lo pide tiene que poder ver el registro. */
+    async linkForRecord(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number, templateId: number): Promise<{ url: string; expires_at: string }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const tpl = await this.findInTx(tx, tenantId, list.id, templateId);
+            if (!tpl) throw templateNotFound(templateId);
+        });
+        // ACL: 404 si no lo alcanza (mismo camino que abrir la ficha).
+        await this.records.get(tenantId, actor, String(list.id), recordId);
+        const url = this.liveLink(tenantId, templateId, recordId);
+        const exp = Number(new URL(url, 'http://x').searchParams.get('exp'));
+        return { url, expires_at: new Date(exp * 1000).toISOString() };
+    }
+
     /** Enlace absoluto y firmado (30 días) a un PDF guardado: `{{pdf.link}}`. */
     fileLink(tenantId: number, fileId: number): string {
         return this.files.absoluteSignedUrl(tenantId, fileId, 30 * 24 * 3600);
@@ -487,7 +546,10 @@ export class DocumentsService {
      * almacenamiento del plan (si no entra, no se guarda nada).
      */
     async storePdf(tenantId: number, userId: number, filename: string, buffer: Buffer): Promise<{ id: number; url: string }> {
-        if (this.billing) await this.billing.assertCanUpload(tenantId, buffer.length);
+        // v0.1.268 (ADR-S36) — con almacenamiento propio no hay cupo del plan.
+        if (this.billing && !(await this.files.uploadsExternally(tenantId))) {
+            await this.billing.assertCanUpload(tenantId, buffer.length);
+        }
         const dto = await this.files.upload(tenantId, userId, filename, 'application/pdf', Readable.from(buffer));
         return { id: dto.id, url: dto.url };
     }
@@ -892,7 +954,13 @@ export class DocumentsService {
         if (brandLogo) readable.add(brandLogo);
         const rows = readable.size
             ? await tx
-                  .select({ id: attachments.id, key: attachments.storageKey, mime: attachments.mime, name: attachments.filename })
+                  .select({
+                      id: attachments.id,
+                      key: attachments.storageKey,
+                      conn: attachments.storageConnectionId,
+                      mime: attachments.mime,
+                      name: attachments.filename,
+                  })
                   .from(attachments)
                   .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, [...readable])))
             : [];
@@ -916,7 +984,10 @@ export class DocumentsService {
                         if (img.kind === 'file') warnings.push('Una imagen del documento ya no existe o no tenés acceso a ella.');
                         continue;
                     }
-                    const bytes = await readAll(this.storage.read(row.key), MAX_IMAGE_BYTES);
+                    const bytes = await readAll(
+                        await this.files.readStream(tenantId, { storageKey: row.key, storageConnectionId: row.conn }),
+                        MAX_IMAGE_BYTES,
+                    );
                     if (!bytes) {
                         warnings.push(`La imagen «${row.name}» pesa más de 3 MB.`);
                         continue;
@@ -1003,6 +1074,8 @@ function nextOf(next: number, numbering: Pick<DocNumbering, 'start'>): number {
  * de una persona del equipo).
  */
 const PORTAL_RENDER_ACTOR: Actor = { userId: 0, role: 'admin' };
+/** Vida del enlace que arma el PDF al abrirlo (v0.1.268). */
+const LIVE_LINK_TTL = 30 * 24 * 3600;
 
 function toDto(row: DocumentTemplateRow): DocumentTemplate {
     return {

@@ -285,9 +285,12 @@ sobre infraestructura real:
 
 ## 10. Archivos
 
-- Object storage S3-compatible (Hetzner Object Storage / Cloudflare R2).
-- Upload directo browser → storage con URLs prefirmadas (el API nunca
-  proxy-ea bytes).
+- Object storage S3-compatible (Hetzner Object Storage / Cloudflare R2) para
+  la plataforma (`STORAGE_DRIVER=s3`), o disco local.
+- Cada empresa puede guardar en SU bucket (ADR-S36): no cuenta para el plan y
+  se descarga directo de ahí con un enlace prefirmado. Cada archivo recuerda
+  dónde quedó (`attachments.storage_connection_id`).
+- La subida pasa por el API (streaming); la descarga de un bucket, no.
 - `attachments` guarda metadata; antivirus scan en cola (fase 4).
 
 ---
@@ -2516,6 +2519,67 @@ de otra lista o de otra empresa da 404. Bajarlo emite el número igual que
 generarlo desde la ficha. `document_numbers`, `next_number` y `portal_visible`
 viajan en la migración de empresa.
 
+### ADR-S36 — Almacenamiento propio de cada empresa + enlace del PDF sin guardarlo (v0.1.268)
+
+**Contexto.** El usuario preguntó cómo evitar que miles de PDF generados por
+los clientes llenen el disco del servidor, y propuso que cada empresa pueda
+guardar sus archivos en su propio Google Drive o almacenamiento S3-compatible
+(Amazon S3, Backblaze, R2…) — y que eso NO cuente para el límite del plan.
+Eligió hacer las dos cosas juntas: S3 primero, Drive después.
+
+**Decisión.** (a) **El PDF no necesita archivo**: sin «Guardar en», la acción
+«Generar un PDF» deja `{{pdf.link}}` como un enlace firmado de 30 días
+(`/api/v1/public/documents/:plantilla/:registro?tenant&exp&sig`, HMAC con
+`FILES_SIGNING_SECRET` y un scope propio `doc`, distinto del de archivos) que
+ARMA el PDF al abrirlo — cero bytes en disco. Contrapartida aceptada: muestra
+los datos del momento en que se abre (el número, una vez emitido, no cambia).
+La ficha gana «Copiar enlace (30 días)» (exige poder ver el registro). Firma
+alterada, vencido, otra empresa o un registro de otra lista: el mismo 404
+opaco. (b) **Almacenamiento por empresa como integración**: «Almacenamiento
+S3» es una app por clave de la galería (endpoint, región, bucket, clave de
+acceso, carpeta, path-style) — una sola integración cubre AWS, Backblaze B2,
+Cloudflare R2, Wasabi, DigitalOcean Spaces y MinIO. Conectar SUBE, LEE y
+BORRA un archivo de prueba: una credencial que no sirve para guardar no se
+guarda. La elección vive en `tenants.settings.storage = { connection_id }`
+(mismo patrón que la cuenta de correo, ADR-S29) y sólo puede ser una conexión
+del EQUIPO. (c) **Cada archivo recuerda dónde quedó**
+(`attachments.storage_connection_id`, migración 0069, null = la plataforma):
+cambiar de elección no rompe nada, lo viejo se sigue sirviendo desde donde
+está. La mudanza es explícita y por tandas de 20 (leer → escribir en destino →
+cambiar la fila de forma condicional → borrar el origen), en los dos sentidos;
+volver al servidor respeta el espacio del plan. (d) **Fuera del plan**: el
+cupo (`assertCanUpload`, el uso de Plan y uso y la consola) cuenta SÓLO lo
+guardado en la plataforma. (e) **Descarga directa**: la URL propia firmada
+(`/files/:id/signed`) sigue siendo la que viaja en la app, el portal y
+`{{pdf.link}}`; para un archivo en el bucket responde 302 a un enlace
+prefirmado de 15 minutos con el mismo tipo y disposición seguros de SEC-21 —
+ni disco ni ancho de banda del servidor. Las lecturas internas (imágenes de un
+PDF, exportar una empresa) leen por la conexión de cada fila. (f) **Nada se
+pierde en silencio**: con un almacenamiento elegido que no responde, subir
+FALLA con el motivo (503 `storage_unavailable`) en vez de caer al servidor y
+comerse el cupo. La conexión elegida, o que todavía guarda archivos, no se
+borra ni se desconecta (409), y con archivos no se le puede cambiar el bucket,
+la dirección ni la carpeta (la clave sí se rota). Borrar una empresa NO toca
+su bucket (son sus datos). Migrar una empresa trae los bytes al servidor de
+destino y avisa que hay que volver a elegir el almacenamiento. (g) **SSRF**:
+la dirección la escribe la empresa → https obligatorio, un literal IP privado
+se rechaza y los nombres pasan por el `guardedLookup` del driver
+(`STORAGE_ALLOW_PRIVATE_HOSTS=true` para un MinIO interno a propósito). (h)
+Con un endpoint propio el SDK manda checksums sólo cuando la operación los
+exige (`WHEN_REQUIRED`): desde la 3.729 los manda siempre y varios proveedores
+compatibles los rechazan.
+
+**Alternativas descartadas.** Subir directo del navegador al bucket con URLs
+prefirmadas de PUT (cada proveedor exige configurar CORS en el bucket: un paso
+más para el cliente y un error difícil de diagnosticar; los archivos de la app
+son chicos y el servidor ya hace streaming); un solo bucket de la plataforma
+con "carpetas por empresa" fuera del plan (lo paga el operador, que es justo lo
+que se quería evitar); migrar automáticamente al elegir (miles de archivos en
+una request: mejor explícito, por tandas y con progreso).
+
+**Pendiente.** Google Drive como segundo proveedor (v0.1.269, scope
+`drive.file`); retención opcional (borrar PDF guardados después de N días).
+
 ---
 
-**Versión del documento:** 1.67.0 (documentos PDF fase 2 — ADR-S35)
+**Versión del documento:** 1.68.0 (almacenamiento propio por empresa — ADR-S36)

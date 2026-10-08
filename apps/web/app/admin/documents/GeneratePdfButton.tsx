@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, FileDown, FileText, Loader2, Paperclip, Settings2 } from 'lucide-react';
+import { Download, FileDown, FileText, Link2, Loader2, Paperclip, Settings2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 
@@ -21,7 +21,9 @@ import { __ } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import type { FieldEntity } from '@/types/field';
 
-import { downloadPdf, generateDocument, useDocumentTemplates } from './useDocuments';
+import { formatDate } from '@/lib/tenantFormat';
+
+import { documentLink, downloadPdf, generateDocument, useDocumentTemplates } from './useDocuments';
 
 /**
  * v0.1.266 — «Generar PDF» en la ficha del registro (ADR-S35): las
@@ -80,6 +82,23 @@ export function GeneratePdfButton({
         }
     };
 
+    // v0.1.268 — enlace que arma el PDF al abrirlo: no ocupa espacio.
+    const copyLink = async (templateId: number): Promise<void> => {
+        setBusy(templateId);
+        try {
+            const res = await documentLink(listId, templateId, recordId);
+            await navigator.clipboard.writeText(res.url).catch(() => undefined);
+            toast.success(
+                __('Enlace copiado'),
+                `${__('Arma el PDF con los datos del momento en que se abre. Vence el')} ${formatDate(new Date(res.expires_at))}.`,
+            );
+        } catch (err) {
+            toast.error(__('No se pudo crear el enlace'), err instanceof Error ? err.message : String(err));
+        } finally {
+            setBusy(null);
+        }
+    };
+
     const icon = busy !== null ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <FileDown className="imcrm-h-4 imcrm-w-4" />;
 
     return (
@@ -103,36 +122,35 @@ export function GeneratePdfButton({
                         {__('Todavía no hay plantillas. Armá la primera (cuenta de cobro, recibo…).')}
                     </p>
                 )}
-                {list.map((t) =>
-                    fileFields.length === 0 ? (
-                        <DropdownMenuItem key={t.id} disabled={busy !== null} onSelect={() => void run(t.id)} data-doc-generate={t.id}>
+                {list.map((t) => (
+                    <DropdownMenuSub key={t.id}>
+                        <DropdownMenuSubTrigger data-doc-generate={t.id}>
                             <FileText className="imcrm-h-4 imcrm-w-4" />
                             <span className="imcrm-flex-1 imcrm-truncate">{t.name}</span>
-                            <Download className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                        </DropdownMenuItem>
-                    ) : (
-                        <DropdownMenuSub key={t.id}>
-                            <DropdownMenuSubTrigger data-doc-generate={t.id}>
-                                <FileText className="imcrm-h-4 imcrm-w-4" />
-                                <span className="imcrm-flex-1 imcrm-truncate">{t.name}</span>
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="imcrm-w-60">
-                                <DropdownMenuItem disabled={busy !== null} onSelect={() => void run(t.id)} data-doc-download>
-                                    <Download className="imcrm-h-4 imcrm-w-4" />
-                                    {__('Descargar')}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="imcrm-w-64">
+                            <DropdownMenuItem disabled={busy !== null} onSelect={() => void run(t.id)} data-doc-download>
+                                <Download className="imcrm-h-4 imcrm-w-4" />
+                                {__('Descargar')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy !== null} onSelect={() => void copyLink(t.id)} data-doc-link>
+                                <Link2 className="imcrm-h-4 imcrm-w-4" />
+                                <span className="imcrm-flex imcrm-flex-col">
+                                    <span>{__('Copiar enlace (30 días)')}</span>
+                                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Sin guardar archivo: se arma al abrirlo')}</span>
+                                </span>
+                            </DropdownMenuItem>
+                            {fileFields.map((f) => (
+                                <DropdownMenuItem key={f.id} disabled={busy !== null} onSelect={() => void run(t.id, f)} data-doc-save={f.slug}>
+                                    <Paperclip className="imcrm-h-4 imcrm-w-4" />
+                                    <span className="imcrm-truncate">
+                                        {__('Guardar en')} «{f.label}»
+                                    </span>
                                 </DropdownMenuItem>
-                                {fileFields.map((f) => (
-                                    <DropdownMenuItem key={f.id} disabled={busy !== null} onSelect={() => void run(t.id, f)} data-doc-save={f.slug}>
-                                        <Paperclip className="imcrm-h-4 imcrm-w-4" />
-                                        <span className="imcrm-truncate">
-                                            {__('Guardar en')} «{f.label}»
-                                        </span>
-                                    </DropdownMenuItem>
-                                ))}
-                            </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                    ),
-                )}
+                            ))}
+                        </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                ))}
                 {canDesign && listSlug && (
                     <>
                         <DropdownMenuSeparator />

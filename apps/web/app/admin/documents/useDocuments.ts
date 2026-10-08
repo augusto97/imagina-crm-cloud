@@ -4,6 +4,7 @@ import type {
     DocumentPreviewInput,
     DocumentPreviewResult,
     DocumentTemplate,
+    DocumentLinkResult,
     DocumentTemplateSummary,
     GenerateDocumentResult,
     UpdateDocumentTemplateInput,
@@ -65,6 +66,14 @@ export async function generateDocument(
     input: { record_id: number; save_field?: string | null; save_mode?: 'append' | 'replace' },
 ): Promise<GenerateDocumentResult & { pdf: string }> {
     return (await api.post<GenerateDocumentResult & { pdf: string }>(`/lists/${listId}/documents/${templateId}/generate`, input)).data;
+}
+
+/**
+ * v0.1.268 — enlace de 30 días que arma el PDF al abrirlo (no guarda ningún
+ * archivo): para pegarlo en un WhatsApp o un correo.
+ */
+export async function documentLink(listId: number, templateId: number, recordId: number): Promise<DocumentLinkResult> {
+    return (await api.post<DocumentLinkResult>(`/lists/${listId}/documents/${templateId}/link`, { record_id: recordId })).data;
 }
 
 /** base64 → Blob de PDF. */

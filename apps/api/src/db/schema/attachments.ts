@@ -1,6 +1,7 @@
 import { bigint, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants';
 import { users } from './users';
+import { connections } from './connections';
 
 /**
  * Metadata de archivos (ADR-S16). Los bytes viven detrás de `FileStorage`
@@ -19,4 +20,7 @@ export const attachments = pgTable('attachments', {
     // v0.1.266 — NULL = lo creó el sistema (un PDF de una automatización).
     createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // v0.1.268 (ADR-S36) — NULL = servidor de la plataforma; id = la conexión
+    // (bucket propio de la empresa) donde quedaron los bytes.
+    storageConnectionId: bigint('storage_connection_id', { mode: 'number' }).references(() => connections.id),
 });
