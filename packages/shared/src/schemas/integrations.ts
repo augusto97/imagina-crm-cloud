@@ -113,6 +113,7 @@ export const INTEGRATION_KEYS = [
     'gmail',
     'google_calendar',
     'google_sheets',
+    'google_drive',
     'outlook',
     'woocommerce',
     'sqlserver',
@@ -546,6 +547,24 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 ],
             }),
         ],
+    },
+    {
+        // v0.1.269 (ADR-S36) — almacenamiento propio en Google Drive. Pide
+        // `drive.file`: la app SÓLO ve lo que ella misma crea (una carpeta
+        // «Imagina Base»), nunca el resto del Drive. Es un permiso NO sensible.
+        key: 'google_drive',
+        name: 'Google Drive',
+        tagline: 'Guardá los archivos de tu empresa en tu Google Drive.',
+        description:
+            'Conectá la cuenta de Google de la empresa y elegila en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van a una carpeta de tu Drive y no ocupan el espacio de tu plan. La app sólo ve los archivos que ella misma crea ahí.',
+        category: 'almacenamiento',
+        color: '#1FA463',
+        auth: {
+            kind: 'oauth',
+            provider: 'google',
+            scopes: 'https://www.googleapis.com/auth/drive.file',
+        },
+        actions: [],
     },
     {
         key: 'outlook',

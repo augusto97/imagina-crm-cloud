@@ -2577,9 +2577,26 @@ con "carpetas por empresa" fuera del plan (lo paga el operador, que es justo lo
 que se quería evitar); migrar automáticamente al elegir (miles de archivos en
 una request: mejor explícito, por tandas y con progreso).
 
-**Pendiente.** Google Drive como segundo proveedor (v0.1.269, scope
-`drive.file`); retención opcional (borrar PDF guardados después de N días).
+**Google Drive (v0.1.269).** Segundo proveedor, sobre la app de Google del
+operador: integración `google_drive` con el permiso **`drive.file`** (NO
+sensible: la app sólo ve los archivos que ella misma crea, nunca el resto del
+Drive). Los archivos van a una carpeta «Imagina Base» que se busca o se crea la
+primera vez y se recuerda en la conexión (`config.storage_folder_id`); si
+alguien la borra desde el Drive, se crea de nuevo. Drive asigna su propio id,
+así que la interfaz de storage ganó `writeKeyed` (el proveedor elige la clave:
+`gdrive:<id>`) y en el Drive cada archivo se ve con su NOMBRE real. Drive no
+tiene enlaces prefirmados: la descarga pasa por el servidor con el token de la
+empresa (streaming, sin tocar el disco). Elegir un almacenamiento (Drive o S3)
+sube, lee y borra un archivo de prueba antes de aceptarlo. Un Drive con
+archivos no se re-autoriza con OTRA cuenta de Google (los archivos quedarían en
+el Drive anterior). Errores de Google traducidos (token rechazado → reconectar;
+Drive lleno; límite de pedidos). La guía de verificación de Google suma la
+Drive API, la justificación de `drive.file` y el paso del video; la política
+de privacidad sugerida lo menciona.
+
+**Pendiente.** Retención opcional (borrar PDF guardados después de N días,
+conservando número y datos).
 
 ---
 
-**Versión del documento:** 1.68.0 (almacenamiento propio por empresa — ADR-S36)
+**Versión del documento:** 1.69.0 (Google Drive como almacenamiento — ADR-S36)

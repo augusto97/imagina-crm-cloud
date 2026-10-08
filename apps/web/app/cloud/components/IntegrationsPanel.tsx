@@ -402,7 +402,7 @@ function ConnectedRow({
                     </Link>
                 </Button>
             )}
-            {c.integration_key === 's3' && c.can_edit && (
+            {(c.integration_key === 's3' || c.integration_key === 'google_drive') && c.can_edit && (
                 <Button size="sm" variant="outline" asChild>
                     <Link to="/settings?s=almacenamiento" data-testid="imcrm-storage-open">
                         <HardDrive className="imcrm-h-3.5 imcrm-w-3.5" />

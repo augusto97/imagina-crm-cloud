@@ -7384,6 +7384,32 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         bucket, «Copiar enlace» sin archivo, desconectar rechazado, volver al
         servidor y borrar, celular.
 
+  - [x] **Google Drive como almacenamiento propio (v0.1.269, ADR-S36, segunda
+        mitad del pedido "S3 primero y después Drive")**: integración
+        **Google Drive** en la galería (OAuth con la app de Google del
+        operador, permiso **`drive.file`** — no sensible: la app sólo ve los
+        archivos que ella crea). Se elige en Ajustes → Almacenamiento como el
+        bucket: los archivos van a una carpeta **«Imagina Base»** del Drive de
+        la empresa (se busca o se crea y se recuerda en la conexión; si la
+        borran, se crea de nuevo), con su **nombre real** (no la clave
+        interna), y no cuentan para el plan. Como Drive no tiene enlaces
+        prefirmados, la descarga pasa por el servidor con el token de la
+        empresa (streaming). La interfaz de storage ganó `writeKeyed` (Drive
+        asigna su propio id: clave `gdrive:<id>`) y la mudanza reescribe la
+        clave al pasar entre lugares. **Elegir un almacenamiento ahora sube,
+        lee y borra un archivo de prueba** (Drive o S3) antes de aceptarlo.
+        Un Drive con archivos **no se re-autoriza con otra cuenta de Google**
+        (quedarían en el Drive anterior). Errores de Google en criollo (token
+        rechazado → reconectar, Drive lleno, límite de pedidos). La guía de
+        verificación de Google suma la Drive API, la justificación de
+        `drive.file` y el paso del video; la política de privacidad sugerida
+        lo menciona. Env `GOOGLE_DRIVE_API_URL` (sólo para tests). 5 tests de
+        integración contra un Drive falso en proceso (token rechazado, carpeta
+        creada y recordada, subida/descarga con nombre real, carpeta borrada
+        que se recrea, Drive lleno, mudanza en los dos sentidos, borrar y
+        desconectar bloqueados) + E2E navegador 12/12 contra un Drive falso
+        (la conexión real con Google no alcanza el sandbox).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

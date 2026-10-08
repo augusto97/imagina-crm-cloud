@@ -87,6 +87,7 @@ Si una empresa conecta su cuenta de Google, {{app_name}} recibe sólo los permis
 - **Gmail (gmail.send)**: enviar correos desde esa cuenta. No leemos, buscamos ni guardamos los correos de la casilla.
 - **Google Calendar (calendar.events)**: crear eventos en su calendario.
 - **Google Sheets (spreadsheets)**: agregar filas a las hojas de cálculo que la empresa indica.
+- **Google Drive (drive.file)**: guardar los archivos de la empresa en una carpeta de su Drive y volver a leerlos. Sólo vemos los archivos que la propia app creó ahí.
 
 Los tokens de acceso se guardan cifrados y se borran al desconectar la integración. No transferimos los datos de Google a terceros, no los usamos para publicidad ni para entrenar modelos de inteligencia artificial, y ninguna persona los lee salvo que la empresa lo pida para soporte, por seguridad o por obligación legal.
 

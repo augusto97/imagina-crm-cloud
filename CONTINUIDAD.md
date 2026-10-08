@@ -349,15 +349,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.268** (almacenamiento propio por empresa en un bucket S3-compatible, fuera del límite del plan, + enlace del PDF que se arma al abrirlo sin guardar archivo), en `main`.
+versión publicada: **v0.1.269** (Google Drive como almacenamiento propio de la empresa, después del bucket S3 de v0.1.268), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- **Almacenamiento propio — falta Google Drive (v0.1.269)**: el usuario eligió
-  "las dos juntas, S3 primero y después Drive". v0.1.268 hizo el enlace del PDF
-  sin guardarlo + el bucket S3-compatible por empresa (ADR-S36). Sigue Drive
-  como segundo proveedor (scope `drive.file` sobre la integración de Google,
-  una carpeta de la app; descarga por la API con el token de la empresa, no
-  hay URL prefirmada) y, opcional, retención de PDF guardados.
+- **Almacenamiento propio**: S3 (v0.1.268) y Google Drive (v0.1.269) hechos
+  (ADR-S36). Opcional y sin pedir todavía: retención de PDF guardados.
+- v0.1.269: para que las empresas conecten Drive, el operador tiene que
+  **habilitar la Drive API** en el proyecto de Google y sumar el permiso
+  `drive.file` en la pantalla de consentimiento (la guía de Plataforma →
+  Integraciones ya lo dice). Si la app ya estaba en verificación, agregar el
+  permiso nuevo la vuelve a revisar (drive.file es no sensible).
 - v0.1.268: probar en el servidor con un bucket real (Backblaze B2 o R2):
   conectar, elegir, mover y bajar un archivo — en el sandbox se probó contra
   moto (emulador de S3).
@@ -405,6 +406,15 @@ versión publicada: **v0.1.268** (almacenamiento propio por empresa en un bucket
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.269** — Segunda mitad de "S3 primero y después
+  Drive": integración Google Drive (permiso `drive.file`, no sensible) como
+  almacenamiento de la empresa — carpeta «Imagina Base» con los nombres reales,
+  fuera del plan, descarga por el servidor (Drive no tiene enlaces
+  prefirmados). Elegir cualquier almacenamiento ahora prueba subir/leer/borrar
+  antes de aceptarlo; un Drive con archivos no se re-autoriza con otra cuenta.
+  Guía de Google y política de privacidad actualizadas. **Para el operador**:
+  habilitar la Drive API y sumar `drive.file` en la pantalla de consentimiento.
+  5 tests nuevos + E2E 12/12 contra un Drive falso.
 - **2026-10-08 · v0.1.268** — Pregunta del usuario: "que estos PDF no gasten
   espacio en el servidor… Google Drive o S3, y ahí no cuenten para el plan" →
   propuesta en 4 piezas → "Hacé las dos juntas, S3 primero y después Drive".

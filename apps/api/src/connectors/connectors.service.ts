@@ -564,6 +564,40 @@ export class ConnectorsService {
         };
     }
 
+    /**
+     * v0.1.269 — token OAuth VIGENTE de una conexión (lo renueva si hace
+     * falta). Lo usa el almacenamiento en Google Drive. Lanza con el motivo
+     * legible si no se puede usar.
+     */
+    async oauthAccessToken(tenantId: number, id: number): Promise<string> {
+        const found = await this.row(tenantId, id);
+        if (!found) throw new Error('La conexión ya no existe.');
+        const row = (await this.ensureFreshToken(tenantId, found)) ?? found;
+        const secrets = this.readSecrets(row);
+        if (secrets === null) throw new ConnectionUnusableError(row.name);
+        const token = secrets.access_token ?? '';
+        if (token === '') {
+            throw new Error(`«${row.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones.`);
+        }
+        return token;
+    }
+
+    /** v0.1.269 — guarda claves sueltas en `config` (la carpeta de Drive). */
+    async rememberConfig(tenantId: number, id: number, patch: Record<string, unknown>): Promise<void> {
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ config: connections.config })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)))
+                .limit(1);
+            if (!row) return;
+            await tx
+                .update(connections)
+                .set({ config: { ...(row.config as Record<string, unknown>), ...patch } })
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)));
+        });
+    }
+
     /** Si la conexión es la cuenta de envío de la empresa, no se borra ni desconecta. */
     private async assertNotMailAccount(tenantId: number, id: number, name: string, verb: string): Promise<void> {
         const [row] = await this.db
@@ -846,6 +880,18 @@ export class ConnectorsService {
         try {
             const app = await this.oauthAppFor(row, secrets);
             const token = await this.exchangeCode(app, code, pending.verifier);
+            // v0.1.269 (ADR-S36) — un Google Drive con archivos guardados no
+            // se re-autoriza con OTRA cuenta: los archivos quedarían en el
+            // Drive anterior, inalcanzables.
+            if (row.provider === 'google_drive') {
+                const before = typeof row.config.account_label === 'string' ? row.config.account_label : null;
+                const after = await this.fetchIdentity('google', token.accessToken);
+                if (before && after && before.toLowerCase() !== after.toLowerCase() && (await this.filesIn(pending.tenantId, row.id)) > 0) {
+                    const error = `Autorizaste con ${after}, pero los archivos de la empresa están en el Drive de ${before}. Reconectá con esa cuenta (o mové los archivos al servidor antes de cambiarla).`;
+                    await this.setOAuthError(pending.tenantId, row.id, error);
+                    return { ok: false, error };
+                }
+            }
             await this.storeTokens(pending.tenantId, row, token, {
                 // Un proveedor que no rota el refresh no lo reenvía en el canje;
                 // conservar el anterior evita romper una re-autorización.

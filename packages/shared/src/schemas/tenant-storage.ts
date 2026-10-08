@@ -16,7 +16,7 @@ import { z } from 'zod';
  */
 
 /** Las apps de Integraciones que pueden guardar los archivos de la empresa. */
-export const STORAGE_INTEGRATIONS = ['s3'] as const;
+export const STORAGE_INTEGRATIONS = ['s3', 'google_drive'] as const;
 export type StorageIntegration = (typeof STORAGE_INTEGRATIONS)[number];
 
 export function isStorageIntegration(v: unknown): v is StorageIntegration {
