@@ -350,7 +350,7 @@ function AddBlockMenu({ sectionId, col, index, compact }: { sectionId: string; c
                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Bloque')}
                 </button>
             </PopoverTrigger>
-            <PopoverContent align="center" className="imcrm-max-h-[380px] imcrm-w-[280px] imcrm-overflow-y-auto imcrm-p-1.5">
+            <PopoverContent align="center" className="imcrm-max-h-[min(380px,var(--radix-popover-content-available-height))] imcrm-w-[280px] imcrm-overflow-y-auto imcrm-p-1.5">
                 {categories.map((cat) => (
                     <div key={cat} className="imcrm-mb-1">
                         <p className="imcrm-px-2 imcrm-pb-1 imcrm-pt-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{CATEGORY_LABEL[cat]}</p>

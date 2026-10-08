@@ -52,7 +52,7 @@ export function GroupSelector({ fields, value, onChange }: GroupSelectorProps): 
                         )}
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="imcrm-min-w-[220px] imcrm-max-h-[60vh] imcrm-overflow-y-auto">
+                <DropdownMenuContent className="imcrm-min-w-[220px] imcrm-max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] imcrm-overflow-y-auto">
                     <div className="imcrm-px-2 imcrm-pt-1.5 imcrm-pb-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                         {__('Campos agrupables')}
                     </div>

@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.270** (editor de correos revisado: arrastrar y soltar, vista de celular real, modo oscuro), en `main`.
+versión publicada: **v0.1.271** (el menú de acciones de las automatizaciones ya no se sale de la pantalla + botón claro/oscuro de la app dentro de los editores a pantalla completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - v0.1.270 (editor de correos): mandarse una prueba con «Modo oscuro»
@@ -412,6 +412,19 @@ versión publicada: **v0.1.270** (editor de correos revisado: arrastrar y soltar
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.271** — Reporte del usuario con captura: el menú de
+  tipos de acción del lienzo se abría hacia arriba y su parte superior quedaba
+  fuera de la pantalla. Causa: un `max-h-[70vh]` propio que pisaba el tope de
+  «espacio disponible» del menú compartido; ahora es el menor de los dos (y lo
+  mismo en columnas, agrupar y «+ Bloque» de la ficha). E2E 9/9 en tres
+  tamaños; el código anterior daba 3/9.
+  En el mismo release, aclaración del usuario sobre v0.1.270: "del modo
+  oscuro no me refería al correo sino a la interfaz de la app" — el sol/luna
+  de la cabecera del editor oscurecía la vista previa del correo. Ahora es el
+  botón claro/oscuro de la APP (`components/ThemeToggle.tsx`, el mismo de la
+  barra superior) y está en los tres editores a pantalla completa (correos,
+  PDF, ficha/portal), que tapan la barra. La simulación del correo oscuro quedó
+  en Estilo general → Modo oscuro. E2E 18/18.
 - **2026-10-08 · v0.1.270** — Pedido del usuario: "el editor de correos no
   es drag and drop, la vista responsive no funciona y no hay cómo ver modo
   oscuro; hacele una revisión completa". (1) **Arrastrar y soltar** de verdad:

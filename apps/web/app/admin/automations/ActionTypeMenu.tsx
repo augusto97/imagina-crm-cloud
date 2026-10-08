@@ -93,7 +93,7 @@ export function ActionTypeMenu({
             <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
             <DropdownMenuContent
                 align={align}
-                className={contentClassName ?? 'imcrm-max-h-[70vh] imcrm-w-[300px] imcrm-overflow-y-auto'}
+                className={contentClassName ?? 'imcrm-max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] imcrm-w-[300px] imcrm-overflow-y-auto'}
             >
                 {builtins.map((a) => {
                     const meta = actionMetaFor(a.slug);

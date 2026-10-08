@@ -58,7 +58,7 @@ export function ActionTypeSelect({
             exclude={exclude}
             selectedValue={value}
             align="start"
-            contentClassName="imcrm-max-h-[70vh] imcrm-w-[var(--radix-dropdown-menu-trigger-width)] imcrm-min-w-[280px] imcrm-overflow-y-auto"
+            contentClassName="imcrm-max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] imcrm-w-[var(--radix-dropdown-menu-trigger-width)] imcrm-min-w-[280px] imcrm-overflow-y-auto"
             onPick={(type, config) =>
                 onChange(type === 'connector_action' && config ? { type, config } : specForOption(type))
             }
