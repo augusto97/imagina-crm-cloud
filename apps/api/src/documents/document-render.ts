@@ -1,10 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import {
+    DESIGN_FONT_DEFS,
     DOC_MARGINS,
+    applyTextTransform,
+    hasBoxStyle,
+    isBoldWeight,
     readableInk,
+    type BlockStyle,
+    type DesignFont,
+    type TextTransform,
     type DocBlock,
     type DocBlockRegion,
     type DocDesign,
@@ -41,6 +48,38 @@ interface PdfMakeLike {
 }
 
 let pdfmakeInstance: PdfMakeLike | null = null;
+/** Familias registradas (las que tienen sus cuatro archivos). */
+const registered = new Set<string>(['Roboto']);
+
+/**
+ * v0.1.272 (ADR-S37) — Tipografías embebidas: `apps/api/assets/fonts`
+ * (`scripts/vendor-fonts.mjs`). WOFF y no WOFF2: fontkit no abre WOFF2. Una
+ * familia cuyos archivos faltan no se registra y el texto cae a Roboto (un
+ * PDF con otra letra es mejor que un PDF que no sale).
+ */
+const PDF_FONT_FILES: Record<string, string> = {
+    Arimo: 'arimo',
+    Tinos: 'tinos',
+    Cousine: 'cousine',
+    Gelasio: 'gelasio',
+    Inter: 'inter',
+    OpenSans: 'open_sans',
+    Lato: 'lato',
+    Montserrat: 'montserrat',
+    Poppins: 'poppins',
+    Nunito: 'nunito',
+    Raleway: 'raleway',
+    Playfair: 'playfair',
+    Merriweather: 'merriweather',
+    Lora: 'lora',
+};
+
+function fontsDir(): string | null {
+    for (const dir of [path.resolve(__dirname, '../../assets/fonts'), path.resolve(process.cwd(), 'assets/fonts')]) {
+        if (existsSync(dir)) return dir;
+    }
+    return null;
+}
 
 function pdfmake(): PdfMakeLike {
     if (pdfmakeInstance) return pdfmakeInstance;
@@ -50,18 +89,37 @@ function pdfmake(): PdfMakeLike {
     for (const f of ['Regular', 'Medium', 'Italic', 'MediumItalic']) {
         pm.virtualfs.writeFileSync(`Roboto-${f}.ttf`, readFileSync(path.join(fontDir, `Roboto-${f}.ttf`)));
     }
-    pm.setFonts({
+    const fonts: Record<string, Record<string, string>> = {
         Roboto: {
             normal: 'Roboto-Regular.ttf',
             bold: 'Roboto-Medium.ttf',
             italics: 'Roboto-Italic.ttf',
             bolditalics: 'Roboto-MediumItalic.ttf',
         },
-    });
+    };
+    const dir = fontsDir();
+    if (dir) {
+        for (const [family, key] of Object.entries(PDF_FONT_FILES)) {
+            const files = { normal: `${key}-400-normal.woff`, bold: `${key}-700-normal.woff`, italics: `${key}-400-italic.woff`, bolditalics: `${key}-700-italic.woff` };
+            const paths = Object.values(files).map((f) => path.join(dir, f));
+            if (!paths.every((f) => existsSync(f))) continue;
+            for (const f of Object.values(files)) pm.virtualfs.writeFileSync(f, readFileSync(path.join(dir, f)));
+            fonts[family] = files;
+            registered.add(family);
+        }
+    }
+    pm.setFonts(fonts);
     pm.setUrlAccessPolicy(() => false);
     pm.setLocalAccessPolicy(() => false);
     pdfmakeInstance = pm;
     return pm;
+}
+
+/** La familia del PDF para una tipografía del diseño (Roboto si no está). */
+export function pdfFontFamily(font: DesignFont | null | undefined): string {
+    pdfmake();
+    const fam = font ? DESIGN_FONT_DEFS[font]?.pdf : undefined;
+    return fam && registered.has(fam) ? fam : 'Roboto';
 }
 
 // --- Datos ya resueltos ----------------------------------------------------
@@ -136,6 +194,12 @@ interface Ctx {
     base: number;
     t: DocDesign['theme'];
     contentW: number;
+    /** v0.1.272 — Familias del PDF (texto y títulos) e interlineado. */
+    font: string;
+    headingFont: string;
+    lh: number;
+    /** Mayúsculas del bloque en curso (el PDF no tiene `text-transform`). */
+    transform?: TextTransform;
 }
 
 // --- Texto -----------------------------------------------------------------
@@ -143,17 +207,18 @@ interface Ctx {
 /** Un template → runs de pdfmake (en modo variables, las pinta como pastillas). */
 function runs(ctx: Ctx, template: string, style: Node = {}): Node[] {
     if (!template) return [];
-    if (!ctx.input.tagsMode) return [{ text: ctx.input.resolve(template), ...style }];
+    const tx = (s: string): string => applyTextTransform(s, ctx.transform);
+    if (!ctx.input.tagsMode) return [{ text: tx(ctx.input.resolve(template)), ...style }];
     const out: Node[] = [];
     let last = 0;
     TAG_RE.lastIndex = 0;
     for (let m = TAG_RE.exec(template); m; m = TAG_RE.exec(template)) {
-        if (m.index > last) out.push({ text: template.slice(last, m.index), ...style });
+        if (m.index > last) out.push({ text: tx(template.slice(last, m.index)), ...style });
         out.push({ text: m[0], ...style, color: '#075985', background: '#e0f2fe' });
         last = m.index + m[0].length;
     }
     TAG_RE.lastIndex = 0;
-    if (last < template.length) out.push({ text: template.slice(last), ...style });
+    if (last < template.length) out.push({ text: tx(template.slice(last)), ...style });
     return out;
 }
 
@@ -200,13 +265,16 @@ interface TextStyle {
     size: number;
     color: string;
     align: string;
+    /** v0.1.272 — Interlineado y espacio entre párrafos (pt). */
+    lh?: number;
+    gap?: number | null;
 }
 
 function richBlocks(ctx: Ctx, nodes: RichNode[] | undefined, st: TextStyle): Node[] {
     const list = nodes ?? [];
     return list.map((n, i) => {
-        const mb = i === list.length - 1 ? 0 : Math.round(st.size * 0.55);
-        const base = { fontSize: st.size, color: st.color, alignment: st.align, lineHeight: 1.25 };
+        const mb = i === list.length - 1 ? 0 : (st.gap ?? Math.round(st.size * 0.55));
+        const base = { fontSize: st.size, color: st.color, alignment: st.align, lineHeight: st.lh ?? ctx.lh };
         switch (n.type) {
             case 'paragraph': {
                 const r = inlineRuns(ctx, n.content);
@@ -343,6 +411,72 @@ function alignBox(node: Node, align: string, width: number, boxW: number): Node 
     };
 }
 
+// --- Estilo por bloque (v0.1.272, ADR-S37) ----------------------------------
+
+const ALL_SIDES = ['top', 'right', 'bottom', 'left'] as const;
+
+/** Letra del bloque: pdfmake HEREDA estas propiedades a todo lo de adentro. */
+function faceProps(st: BlockStyle | undefined): Node {
+    if (!st) return {};
+    const out: Node = {};
+    if (st.font) out.font = pdfFontFamily(st.font);
+    if (st.italic) out.italics = true;
+    if (st.font_weight != null) out.bold = isBoldWeight(st.font_weight);
+    if (st.letter_spacing != null) out.characterSpacing = st.letter_spacing;
+    if (st.line_height != null) out.lineHeight = st.line_height;
+    return out;
+}
+
+function dashFor(style: string | undefined, thickness = 1): { length: number; space: number } | undefined {
+    if (style === 'dotted') return { length: Math.max(1, thickness), space: Math.max(2, thickness * 2) };
+    if (style === 'dashed') return { length: Math.max(4, thickness * 4), space: Math.max(3, thickness * 2) };
+    return undefined;
+}
+
+function borderOn(st: { border_width?: number | null; border_sides?: readonly string[] } | undefined, side: string): number {
+    const w = st?.border_width ?? 0;
+    if (w <= 0) return 0;
+    const sides = st?.border_sides && st.border_sides.length > 0 ? st.border_sides : ALL_SIDES;
+    return sides.includes(side) ? w : 0;
+}
+
+/**
+ * Recuadro con fondo, relleno y borde por lado (una tabla de una celda: lo
+ * único de pdfmake que dibuja fondo + bordes alrededor de cualquier cosa).
+ * Las esquinas redondeadas y la sombra no existen en pdfmake: el editor del
+ * PDF ni las ofrece.
+ */
+function boxNode(content: Node, st: BlockStyle, bg: string | null, pad: [number, number, number, number], fallbackBorder: string): Node {
+    const color = st.border_color ?? fallbackBorder;
+    const dash = dashFor(st.border_style, st.border_width ?? 1);
+    return {
+        table: { widths: ['*'], body: [[{ stack: [content], margin: [pad[3], pad[0], pad[1], pad[2]] }]] },
+        layout: {
+            hLineWidth: (i: number) => (i === 0 ? borderOn(st, 'top') : borderOn(st, 'bottom')),
+            vLineWidth: (i: number) => (i === 0 ? borderOn(st, 'left') : borderOn(st, 'right')),
+            hLineColor: () => color,
+            vLineColor: () => color,
+            ...(dash ? { hLineStyle: () => ({ dash }), vLineStyle: () => ({ dash }) } : {}),
+            fillColor: () => bg,
+            paddingLeft: () => 0,
+            paddingRight: () => 0,
+            paddingTop: () => 0,
+            paddingBottom: () => 0,
+        },
+    };
+}
+
+/** Anchos de las columnas según su proporción («1-2») y la separación. */
+export function docColumnWidths(b: Extract<DocBlock, { type: 'columns' }>, width: number): number[] {
+    const n = b.columns.length;
+    const gap = b.gap ?? COLUMN_GAP;
+    let parts = (b.ratio ?? '').split('-').map(Number);
+    if (parts.length !== n || parts.some((p) => !Number.isFinite(p) || p <= 0)) parts = Array.from({ length: n }, () => 1);
+    const total = parts.reduce((a, x) => a + x, 0);
+    const free = width - gap * (n - 1);
+    return parts.map((p) => (free * p) / total);
+}
+
 function headerNode(ctx: Ctx, b: Extract<DocBlock, { type: 'header' }>): Node {
     const t = ctx.t;
     const lines = b.company.split(/\r?\n/).filter((l) => l.trim() !== '');
@@ -354,7 +488,7 @@ function headerNode(ctx: Ctx, b: Extract<DocBlock, { type: 'header' }>): Node {
         margin: [0, i === 0 ? 0 : 1, 0, 0],
     }));
     const logo = imageNode(ctx, b.logo, b.logo_width, Math.round(b.logo_width * 0.5), 'left');
-    const titleNode = { text: runs(ctx, b.title), fontSize: ctx.base + 9, bold: true, color: t.accent, characterSpacing: 0.4 };
+    const titleNode = { text: runs(ctx, b.title), fontSize: ctx.base + 9, bold: true, color: t.accent, characterSpacing: 0.4, font: ctx.headingFont };
     const meta: Node[] = [];
     if (b.number.trim()) meta.push({ text: runs(ctx, b.number), fontSize: ctx.base + 1, bold: true, color: t.text, margin: [0, 3, 0, 0] });
     if (b.date.trim()) meta.push({ text: runs(ctx, b.date), fontSize: ctx.base - 0.5, color: t.muted, margin: [0, 2, 0, 0] });
@@ -385,7 +519,7 @@ function headerNode(ctx: Ctx, b: Extract<DocBlock, { type: 'header' }>): Node {
                         widths: ['*', 'auto'],
                         body: [
                             [
-                                { text: runs(ctx, b.title), fontSize: ctx.base + 8, bold: true, color: ink, margin: [10, 8, 0, 8], characterSpacing: 0.4 },
+                                { text: runs(ctx, b.title), fontSize: ctx.base + 8, bold: true, color: ink, margin: [10, 8, 0, 8], characterSpacing: 0.4, font: ctx.headingFont },
                                 { stack: meta.map((m) => ({ ...m, color: ink })), alignment: 'right', margin: [0, 6, 10, 6] },
                             ],
                         ],
@@ -415,9 +549,11 @@ function fieldsNode(ctx: Ctx, b: Extract<DocBlock, { type: 'fields' }>, width: n
     }
     const value = (slug: string): Node[] =>
         ctx.input.tagsMode ? runs(ctx, `{{${slug}}}`) : [{ text: ctx.input.fieldValue(slug) || '—' }];
+    const lc = b.label_color ?? t.muted;
+    const vc = b.value_color ?? t.text;
     const cell = (slug: string): Node[] => [
-        { text: ctx.input.fieldLabel(slug), color: t.muted, fontSize: ctx.base - 1 },
-        { text: value(slug), color: t.text, fontSize: ctx.base },
+        { text: ctx.input.fieldLabel(slug), color: lc, fontSize: ctx.base - 1 },
+        { text: value(slug), color: vc, fontSize: ctx.base },
     ];
     if (b.layout === 'stacked') {
         const per = b.columns;
@@ -439,20 +575,21 @@ function fieldsNode(ctx: Ctx, b: Extract<DocBlock, { type: 'fields' }>, width: n
         for (let k = 0; k < per; k++) {
             const slug = b.slugs[i + k];
             if (slug) {
-                row.push({ text: ctx.input.fieldLabel(slug), color: t.muted, fontSize: ctx.base - 0.5 });
-                row.push({ text: value(slug), color: t.text, fontSize: ctx.base });
+                row.push({ text: ctx.input.fieldLabel(slug), color: lc, fontSize: ctx.base - 0.5 });
+                row.push({ text: value(slug), color: vc, fontSize: ctx.base });
             } else row.push({ text: '' }, { text: '' });
         }
         body.push(row);
     }
-    const labelW = Math.round((width / per) * 0.36);
+    const labelW = Math.round((width / per) * ((b.label_width ?? 36) / 100));
+    const lines = b.lines !== false;
     return {
         stack: [
             ...title,
             {
                 table: { widths: Array.from({ length: per }, () => [labelW, '*']).flat(), body },
                 layout: {
-                    hLineWidth: (i: number, node: { table: { body: unknown[] } }) => (i === 0 || i === node.table.body.length ? 0 : 0.5),
+                    hLineWidth: (i: number, node: { table: { body: unknown[] } }) => (!lines || i === 0 || i === node.table.body.length ? 0 : 0.5),
                     vLineWidth: () => 0,
                     hLineColor: () => t.border,
                     paddingLeft: (i: number) => (i % 2 === 0 ? 0 : 6),
@@ -580,23 +717,29 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
         case 'header':
             return headerNode(ctx, b);
         case 'heading': {
-            const size = b.level === 1 ? ctx.base + 10 : b.level === 2 ? ctx.base + 5 : ctx.base + 0.5;
+            const st = b.style;
+            const size = st?.font_size ?? (b.level === 1 ? ctx.base + 10 : b.level === 2 ? ctx.base + 5 : ctx.base + 0.5);
             const color = b.color ?? (b.level === 3 ? t.accent : t.text);
             const text = runs(ctx, b.text);
+            const spacing = st?.letter_spacing ?? (b.level === 3 ? 0.6 : null);
             return {
                 text: text.length ? text : ctx.input.tagsMode ? 'Título' : ' ',
                 fontSize: size,
-                bold: true,
+                font: st?.font ? pdfFontFamily(st.font) : ctx.headingFont,
+                bold: st?.font_weight != null ? isBoldWeight(st.font_weight) : true,
                 color,
                 alignment: b.align,
-                ...(b.level === 3 ? { characterSpacing: 0.6 } : {}),
+                ...(spacing != null ? { characterSpacing: spacing } : {}),
+                ...(st?.line_height != null ? { lineHeight: st.line_height } : {}),
                 margin: [0, 0, 0, b.level === 3 ? 4 : 2],
             };
         }
         case 'text': {
-            const size = ctx.base + TEXT_SIZE[b.size];
+            const size = b.style?.font_size ?? ctx.base + TEXT_SIZE[b.size];
             const color = b.color ?? t.text;
-            const nodes = b.doc ? richBlocks(ctx, b.doc.content, { size, color, align: b.align }) : [];
+            const nodes = b.doc
+                ? richBlocks(ctx, b.doc.content, { size, color, align: b.align, lh: b.style?.line_height ?? ctx.lh, gap: b.paragraph_spacing ?? null })
+                : [];
             if (nodes.length === 0) return { text: ctx.input.tagsMode ? 'Escribí el texto…' : ' ', color: t.muted, fontSize: size };
             return { stack: nodes };
         }
@@ -608,10 +751,43 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
             return totalsNode(ctx, b);
         case 'image': {
             const w = Math.max(10, Math.round((width * b.width) / 100));
+            const bw = b.frame?.border_width ?? 0;
+            if (bw > 0) {
+                const img = imageNode(ctx, b.src, Math.max(10, w - bw * 2), null, 'left');
+                if (!img) return { text: '' };
+                const color = b.frame?.border_color ?? t.border;
+                const dash = dashFor(b.frame?.border_style, bw);
+                const framed: Node = {
+                    table: { widths: [Math.max(10, w - bw * 2)], body: [[img]] },
+                    layout: {
+                        hLineWidth: () => bw,
+                        vLineWidth: () => bw,
+                        hLineColor: () => color,
+                        vLineColor: () => color,
+                        ...(dash ? { hLineStyle: () => ({ dash }), vLineStyle: () => ({ dash }) } : {}),
+                        paddingLeft: () => 0,
+                        paddingRight: () => 0,
+                        paddingTop: () => 0,
+                        paddingBottom: () => 0,
+                    },
+                };
+                return alignBox(framed, b.align, width, w);
+            }
             return imageNode(ctx, b.src, w, null, b.align) ?? { text: '' };
         }
-        case 'divider':
-            return { ...hrule(width, b.color ?? t.border, b.thickness), margin: [0, 4, 0, 4] };
+        case 'divider': {
+            const len = Math.max(5, Math.min(100, b.length ?? 100));
+            const color = b.color ?? t.border;
+            if (len >= 100 && !b.line_style) return { ...hrule(width, color, b.thickness), margin: [0, 4, 0, 4] };
+            const lw = (width * len) / 100;
+            const al = b.align ?? 'center';
+            const x1 = al === 'center' ? (width - lw) / 2 : al === 'right' ? width - lw : 0;
+            const dash = dashFor(b.line_style, b.thickness);
+            return {
+                canvas: [{ type: 'line', x1, y1: 0, x2: x1 + lw, y2: 0, lineWidth: b.thickness, lineColor: color, ...(dash ? { dash } : {}) }],
+                margin: [0, 4, 0, 4],
+            };
+        }
         case 'spacer':
             // Texto vacío de 1 pt + margen: la altura exacta (con el tamaño de
             // letra normal, la línea vacía sumaba ~12 pt de más).
@@ -625,14 +801,20 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
         case 'qr':
             return qrNode(ctx, b, width);
         case 'columns': {
-            const n = b.columns.length;
-            const colW = (width - COLUMN_GAP * (n - 1)) / n;
+            const ws = docColumnWidths(b, width);
             return {
-                columns: b.columns.map((c) => ({
-                    width: '*',
-                    stack: c.blocks.map((ib) => wrap(ctx, ib, colW, true)),
-                })),
-                columnGap: COLUMN_GAP,
+                columns: b.columns.map((c, ci) => {
+                    const colW = ws[ci] ?? width / b.columns.length;
+                    const st = c.style ?? {};
+                    const boxed = !!c.background || hasBoxStyle(st);
+                    if (!boxed) return { width: colW, stack: c.blocks.map((ib) => wrap(ctx, ib, colW, true)) };
+                    const d = c.background || (st.border_width ?? 0) > 0 ? 8 : 0;
+                    const pad: [number, number, number, number] = [st.padding_top ?? d, st.padding_right ?? d, st.padding_bottom ?? d, st.padding_left ?? d];
+                    const innerW = colW - pad[1] - pad[3] - borderOn(st, 'left') - borderOn(st, 'right');
+                    const stack = { stack: c.blocks.map((ib) => wrap(ctx, ib, innerW, true)) };
+                    return { width: colW, ...boxNode(stack, st, c.background ?? null, pad, t.border), margin: [0, st.margin_top ?? 0, 0, st.margin_bottom ?? 0] };
+                }),
+                columnGap: b.gap ?? COLUMN_GAP,
             };
         }
         default:
@@ -642,20 +824,46 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
 
 /** El bloque con su recuadro de color (si tiene) y el aire de abajo. */
 function wrap(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number, inner: boolean): Node {
-    const pad = PAD[b.padding ?? (b.background ? 'md' : 'none')];
-    const node = innerOrBlock(ctx, b, b.background ? width - pad * 2 : width);
+    const st = b.style;
+    // El tamaño del bloque es la base de sus partes (etiquetas, filas de la
+    // tabla, firmantes); el título y el texto lo usan directo.
+    const cctx: Ctx = st
+        ? {
+              ...ctx,
+              base: st.font_size != null && b.type !== 'heading' && b.type !== 'text' ? st.font_size : ctx.base,
+              transform: st.text_transform && st.text_transform !== 'none' ? st.text_transform : ctx.transform,
+          }
+        : ctx;
+    const face = faceProps(st);
     const gap = b.type === 'spacer' || b.type === 'page_break' || b.type === 'divider' ? 0 : inner ? 6 : 8;
+    // La firma, los totales y el encabezado no se parten entre dos páginas.
+    const whole = b.type === 'signature' || b.type === 'totals' || b.type === 'header';
+    if (st && hasBoxStyle(st)) {
+        const legacy = PAD[b.padding ?? (b.background ? 'md' : 'none')];
+        const d = b.background || (st.border_width ?? 0) > 0 ? Math.max(legacy, 8) : 0;
+        const pad: [number, number, number, number] = [st.padding_top ?? d, st.padding_right ?? d, st.padding_bottom ?? d, st.padding_left ?? d];
+        const innerW = width - pad[1] - pad[3] - borderOn(st, 'left') - borderOn(st, 'right');
+        const node = innerOrBlock(cctx, b, innerW);
+        return {
+            id: `blk:${b.id}`,
+            ...face,
+            ...boxNode(node, st, b.background ?? null, pad, ctx.t.border),
+            margin: [0, st.margin_top ?? 0, 0, st.margin_bottom ?? gap],
+            ...(whole ? { unbreakable: true } : {}),
+        };
+    }
+    const pad = PAD[b.padding ?? (b.background ? 'md' : 'none')];
+    const node = innerOrBlock(cctx, b, b.background ? width - pad * 2 : width);
     if (b.background) {
         return {
             id: `blk:${b.id}`,
+            ...face,
             table: { widths: ['*'], body: [[{ ...node, margin: [pad, pad, pad, pad] }]] },
             layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => b.background, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 },
             margin: [0, 0, 0, gap],
         };
     }
-    // La firma, los totales y el encabezado no se parten entre dos páginas.
-    const whole = b.type === 'signature' || b.type === 'totals' || b.type === 'header';
-    return { stack: [node], id: `blk:${b.id}`, margin: [0, 0, 0, gap], ...(whole ? { unbreakable: true } : {}) };
+    return { stack: [node], id: `blk:${b.id}`, ...face, margin: [0, 0, 0, gap], ...(whole ? { unbreakable: true } : {}) };
 }
 
 // --- Documento -------------------------------------------------------------
@@ -674,7 +882,16 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
     const margin = DOC_MARGINS[t.margin];
     const footerH = 30;
     const contentW = pageWidth - margin * 2;
-    const ctx: Ctx = { input, base: t.font_size, t, contentW };
+    const font = pdfFontFamily(t.font ?? 'modern');
+    const ctx: Ctx = {
+        input,
+        base: t.font_size,
+        t,
+        contentW,
+        font,
+        headingFont: t.heading_font ? pdfFontFamily(t.heading_font) : font,
+        lh: t.line_height ?? 1.25,
+    };
 
     const content: Node[] = design.blocks.map((b) => wrap(ctx, b, contentW, false));
     // Marca de fin, de alto CERO: dice dónde termina el último bloque (si no,
@@ -691,7 +908,7 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
     const def: Node = {
         pageSize: { width: pageWidth, height: pageHeight },
         pageMargins: [margin, margin, margin, margin + (footer.page_numbers || footer.text ? footerH - 10 : 0)],
-        defaultStyle: { font: 'Roboto', fontSize: t.font_size, color: t.text, lineHeight: 1.15 },
+        defaultStyle: { font, fontSize: t.font_size, color: t.text, lineHeight: 1.15 },
         info: { title: input.title, author: input.author, creator: input.author, producer: input.author },
         content,
         footer:
@@ -763,9 +980,9 @@ function computeRegions(
             : (pos.get(END_ID) ?? { pageNumber: page.pages, left: page.margin, top: page.bottom });
         span(b.id, from, to, page.margin, page.contentW);
         if (b.type === 'columns') {
-            const n = b.columns.length;
-            const colW = (page.contentW - COLUMN_GAP * (n - 1)) / n;
-            b.columns.forEach((c) => {
+            const ws = docColumnWidths(b, page.contentW);
+            b.columns.forEach((c, ci) => {
+                const colW = ws[ci] ?? page.contentW / b.columns.length;
                 c.blocks.forEach((ib, k) => {
                     const s = pos.get(`blk:${ib.id}`);
                     if (!s) return;

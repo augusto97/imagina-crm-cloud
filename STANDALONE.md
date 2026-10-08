@@ -2615,6 +2615,65 @@ de privacidad sugerida lo menciona.
 **Pendiente.** Retención opcional (borrar PDF guardados después de N días,
 conservando número y datos).
 
+
+### ADR-S37 — Estilo por bloque compartido por correos y PDF + tipografías incluidas (v0.1.272)
+
+**Contexto.** El usuario pidió que el editor de correos tenga controles de
+diseño "de verdad" —tamaño, margen y relleno, borde, grosor de letra, varias
+tipografías, esquinas y sombras de los botones— en casi todos los bloques, y
+que se revisara qué es compatible con los programas de correo y con el
+generador de PDF.
+
+**Decisión.** (a) **Una sola capa de estilo** (`design-style.ts` en shared,
+`blockStyleSchema`) para los dos editores: tipografía (familia, tamaño, peso
+400/600/700/800, itálica, interlineado, espaciado entre letras, mayúsculas),
+margen arriba/abajo, relleno por lado, borde (grosor, tipo, color, lados),
+esquinas y sombra, y en el correo si el fondo es banda o recuadro. Todo
+OPCIONAL: un bloque sin `style` sale exactamente como antes. Lo propio de un
+elemento va aparte (`elementStyleSchema`: el botón —relleno, ancho fijo,
+borde, esquinas, sombra— y el marco de la imagen). Cada bloque suma lo que le
+corresponde (espacio entre párrafos, tipo/largo de línea del separador,
+colores y ancho de nombres de «Datos del registro», proporción/separación/
+alineación y "no apilar" de las columnas, recuadro por columna) y el tema gana
+fuente de títulos, tamaño base, interlineado, color de títulos y enlaces,
+márgenes de la hoja, y borde/sombra de la hoja.
+(b) **Lo que un medio no sabe dibujar no se ofrece** (`STYLE_SUPPORT`): el PDF
+no tiene esquinas redondeadas ni sombras (pdfmake), así que su editor no las
+muestra; lo que se ve distinto en algún programa de correo lleva su aviso
+(`STYLE_CAVEATS`: Outlook de Windows dibuja esquinas rectas y no muestra
+sombras; Outlook y el PDF sólo distinguen normal y negrita).
+(c) **Correo compatible**: borde, fondo, relleno y esquinas en la CELDA
+(`border-collapse:separate`, que Outlook respeta), el relleno del botón en la
+celda (`mso-padding-alt`), interlineado en px con `mso-line-height-rule`, y
+los títulos con tamaño propio ≥26 px se achican en el celular con una clase
+generada. **Fuentes**: del sistema (se ven igual en todos lados) y **web**
+(Google Fonts: Apple Mail, iPhone, Outlook de Mac, Samsung y Thunderbird las
+cargan; Gmail y Outlook de Windows muestran la de respaldo). El `<link>` va
+dentro de `<!--[if !mso]>` y Outlook de Windows recibe una regla que fuerza la
+de respaldo por clase (`ib-wf-*`): sin eso cae a Times New Roman.
+(d) **Tipografías incluidas en el repo** (`scripts/vendor-fonts.mjs` desde
+`@fontsource/*`, licencias OFL/Apache): WOFF en `apps/api/assets/fonts` para
+el PDF —fontkit NO abre WOFF2— y WOFF2 en `apps/web/public/email-fonts` para la
+vista previa del editor, que reemplaza el `<link>` de Google por esas mismas
+fuentes (`localizeGoogleFonts`) porque la CSP de la app no deja cargar fuentes
+de otro dominio. En el PDF TODAS se embeben: las del sistema con su
+equivalente libre de mismas medidas (Arial→Arimo, Times→Tinos,
+Courier→Cousine, Georgia→Gelasio), así el texto ocupa lo mismo que en el
+correo. El release copia `apps/api/assets` al bundle.
+(e) **Interfaz** (`components/design/DesignStyleControls.tsx`): números
+tipeables con su unidad (px en el correo, pt en el PDF; vacío = automático con
+el valor por defecto como pista; ↑/↓ y Shift), selector de tipografía con cada
+fuente escrita en sí misma, secciones plegables con "restablecer", relleno con
+candado de 4 lados, y **copiar/pegar diseño** entre bloques (también entre el
+correo y el PDF: es el mismo formato).
+
+**Alternativas descartadas.** Fuentes web propias servidas desde nuestro
+dominio en los correos (los programas de correo no las cargan sin CORS y
+Gmail las ignora igual); un `<style>` con clases por bloque en vez de estilos
+en línea (Gmail recorta `<style>` en varios casos y Outlook ignora la mitad);
+ofrecer esquinas y sombras en el PDF dibujándolas con canvas (pdfmake no lo
+soporta en tablas y el resultado no se imprime bien).
+
 ---
 
-**Versión del documento:** 1.70.0 (correos: modo oscuro e imágenes fluidas — addendum ADR-S34)
+**Versión del documento:** 1.71.0 (estilo por bloque compartido por correos y PDF + tipografías — ADR-S37)

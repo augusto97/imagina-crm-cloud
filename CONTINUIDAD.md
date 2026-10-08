@@ -349,9 +349,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.271** (el menú de acciones de las automatizaciones ya no se sale de la pantalla + botón claro/oscuro de la app dentro de los editores a pantalla completa), en `main`.
+versión publicada: **v0.1.272** (diseño por bloque en el editor de correos y en el de PDF: tipografías, tamaños, márgenes, rellenos, bordes, esquinas y sombras — ADR-S37), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- v0.1.272 (diseño por bloque): mandarse un correo con una fuente WEB
+  (p. ej. Montserrat) y esquinas/sombra, y abrirlo en Apple Mail o el iPhone
+  (se ve la fuente) y en Gmail y Outlook de Windows (se ve la de respaldo,
+  esquinas rectas en Outlook). En el sandbox el correo sale por el transporte
+  de log.
 - v0.1.270 (editor de correos): mandarse una prueba con «Modo oscuro»
   encendido y abrirla en Apple Mail / Outlook con el sistema en oscuro (los
   colores propios) y en Gmail del celular (su propio oscurecimiento). El
@@ -412,6 +417,23 @@ versión publicada: **v0.1.271** (el menú de acciones de las automatizaciones y
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.272** — Pedido del usuario con captura del editor de
+  correos: "le faltan muchas opciones: tipografía con campos numéricos
+  (tamaño, margin y padding), borde, grosor de la letra, varias tipografías, a
+  los botones radio y sombra… revisá qué campos debería tener cada bloque, que
+  sean compatibles con los correos y con el PDF, y qué más le podés poner".
+  Hecho: capa de estilo común a los dos editores (ADR-S37) con números
+  tipeables; forma del botón, marco de la imagen, columnas con proporción y
+  recuadro por columna, separador con tipo/largo, «Datos del registro» con
+  colores; estilo general con fuente de títulos, tamaño base, interlineado y
+  hoja con borde/sombra; 19 tipografías (8 del sistema + 11 de Google Fonts)
+  incluidas en el repo para que el PDF las embeba y la vista previa las
+  muestre sin tocar la CSP. Lo que el PDF no dibuja (esquinas, sombras) no se
+  ofrece ahí, y lo que Outlook/Gmail muestran distinto lleva su aviso. Sumado
+  por iniciativa: copiar/pegar el diseño entre bloques. Trampa de dev: el API
+  de desarrollo corre `dist/` — tras tocar el render del PDF hay que hacer
+  `npm run build` en `apps/api` antes de `scripts/dev/restart.sh` (si no, sale
+  con Roboto).
 - **2026-10-08 · v0.1.271** — Reporte del usuario con captura: el menú de
   tipos de acción del lienzo se abría hacia arriba y su parte superior quedaba
   fuera de la pantalla. Causa: un `max-h-[70vh]` propio que pisaba el tope de

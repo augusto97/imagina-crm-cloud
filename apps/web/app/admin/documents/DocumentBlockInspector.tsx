@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Plus, Trash2, X } from 'lucide-react';
 import {
+    COLUMN_RATIOS,
     DOC_BLOCK_LABELS,
     DOC_INNER_BLOCK_TYPES,
+    type BlockStyle,
+    type BorderStyle,
     type DocAlign,
     type DocBlock,
     type DocDesign,
@@ -25,6 +28,8 @@ import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+
+import { BlockStylePanel, Choice, ColorField, ImageFramePanel, NumberField, StyleSection } from '@/components/design/DesignStyleControls';
 
 import { ColorRow } from '../template-editor-core/BlockStyleEditor';
 import { MergeTagInput, type MergeTagSection } from '../automations/MergeTagInput';
@@ -96,8 +101,44 @@ export function DocumentBlockInspector(p: DocInspectorProps): JSX.Element {
                     )}
                 </Section>
             )}
+
+            {block.type === 'image' && (
+                <ImageFramePanel medium="pdf" value={block.frame} onChange={(frame) => p.onPatch({ frame })} />
+            )}
+
+            {block.type !== 'spacer' && block.type !== 'page_break' && (
+                <BlockStylePanel
+                    medium="pdf"
+                    value={block.style}
+                    onChange={(style) => p.onPatch({ style })}
+                    typography={DOC_TYPO_BLOCKS.has(block.type)}
+                    box
+                    defaults={docStyleDefaults(block, p.design)}
+                    inheritFontLabel={block.type === 'heading' ? __('La de los títulos') : __('La del documento')}
+                />
+            )}
         </div>
     );
+}
+
+/** Bloques con texto: muestran la sección Tipografía. */
+const DOC_TYPO_BLOCKS = new Set<string>(['header', 'heading', 'text', 'fields', 'items', 'totals', 'signature', 'qr']);
+
+const DOC_TEXT_SIZE = { sm: -1.5, md: 0, lg: 2 } as const;
+
+/** Lo que el generador usa si el campo queda vacío (para las pistas). */
+function docStyleDefaults(block: DocBlock | DocInnerBlock, design: DocDesign): { size?: number; lineHeight?: number; padding?: number } {
+    const base = design.theme.font_size;
+    const lh = design.theme.line_height ?? 1.25;
+    const padding = block.background ? { none: 0, sm: 4, md: 8, lg: 14 }[block.padding ?? 'md'] : 0;
+    switch (block.type) {
+        case 'heading':
+            return { size: block.level === 1 ? base + 10 : block.level === 2 ? base + 5 : base + 0.5, lineHeight: 1.2, padding };
+        case 'text':
+            return { size: base + DOC_TEXT_SIZE[block.size], lineHeight: lh, padding };
+        default:
+            return { size: base, lineHeight: lh, padding };
+    }
 }
 
 function tagInput(p: DocInspectorProps, value: string, onChange: (v: string) => void, opts: { placeholder?: string; autoGrow?: boolean } = {}): JSX.Element {
@@ -208,6 +249,15 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                         onChange={(v) => onPatch({ align: v })}
                     />
                     <ColorRow label={__('Color del texto')} value={block.color ?? undefined} onChange={(v) => onPatch({ color: v ?? null })} />
+                    <NumberField
+                        label={__('Espacio entre párrafos')}
+                        unit="pt"
+                        min={0}
+                        max={48}
+                        value={block.paragraph_spacing}
+                        onChange={(v) => onPatch({ paragraph_spacing: v })}
+                        placeholder="auto"
+                    />
                 </>
             );
         case 'fields':
@@ -276,6 +326,29 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                         options={[0.5, 1, 2, 3].map((n) => ({ value: String(n), label: `${n}` }))}
                         onChange={(v) => onPatch({ thickness: Number(v) })}
                     />
+                    <Choice<BorderStyle>
+                        label={__('Tipo de línea')}
+                        value={block.line_style ?? 'solid'}
+                        options={[
+                            { value: 'solid', label: __('Continua') },
+                            { value: 'dashed', label: __('Rayada') },
+                            { value: 'dotted', label: __('Punteada') },
+                        ]}
+                        onChange={(v) => onPatch({ line_style: v === 'solid' ? undefined : v })}
+                    />
+                    <Field label={`${__('Largo')}: ${block.length ?? 100}%`}>
+                        <input
+                            type="range"
+                            min={5}
+                            max={100}
+                            step={5}
+                            value={block.length ?? 100}
+                            onChange={(e) => onPatch({ length: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Largo de la línea')}
+                        />
+                    </Field>
+                    {(block.length ?? 100) < 100 && <AlignControl value={block.align ?? 'center'} onChange={(v) => onPatch({ align: v })} />}
                 </>
             );
         case 'spacer':
@@ -309,6 +382,15 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                         ]}
                         onChange={(v) => p.onSetColumns(Number(v) as 2 | 3)}
                     />
+                    <div className="imcrm-grid imcrm-grid-cols-[1fr_auto] imcrm-gap-2">
+                        <Choice<string>
+                            label={__('Proporción')}
+                            value={block.ratio && block.ratio.split('-').length === block.columns.length ? block.ratio : block.columns.length === 2 ? '1-1' : '1-1-1'}
+                            options={COLUMN_RATIOS[block.columns.length as 2 | 3].map((r) => ({ value: r, label: r.split('-').join(':') }))}
+                            onChange={(v) => onPatch({ ratio: v === '1-1' || v === '1-1-1' ? undefined : v })}
+                        />
+                        <NumberField className="imcrm-w-20" label={__('Separación')} unit="pt" min={0} max={48} value={block.gap} onChange={(v) => onPatch({ gap: v == null ? undefined : Math.round(v) })} placeholder="16" />
+                    </div>
                     {block.columns.map((col, ci) => (
                         <div key={ci} className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
                             <p className="imcrm-mb-1.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
@@ -328,6 +410,11 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                                 ))}
                                 <AddInner onAdd={(t) => p.onAppendToColumn(ci, makeDocInner(t))} />
                             </div>
+                            <DocColumnBoxEditor
+                                background={col.background ?? null}
+                                style={col.style}
+                                onChange={(patch) => onPatch({ columns: block.columns.map((c, i) => (i === ci ? { ...c, ...patch } : c)) })}
+                            />
                         </div>
                     ))}
                 </>
@@ -335,6 +422,24 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
         default:
             return null;
     }
+}
+
+/** Fondo y recuadro de UNA columna del PDF (plegado). */
+function DocColumnBoxEditor({
+    background,
+    style,
+    onChange,
+}: {
+    background: string | null;
+    style: BlockStyle | undefined;
+    onChange: (patch: { background?: string | null; style?: BlockStyle }) => void;
+}): JSX.Element {
+    return (
+        <StyleSection title={__('Fondo y recuadro')} modified={!!background || !!style}>
+            <ColorField label={__('Color de fondo')} value={background} onChange={(v) => onChange({ background: v })} />
+            <BlockStylePanel medium="pdf" value={style} onChange={(st) => onChange({ style: st })} box />
+        </StyleSection>
+    );
 }
 
 function AddInner({ onAdd }: { onAdd: (type: DocInnerBlockType) => void }): JSX.Element {
@@ -503,6 +608,27 @@ function FieldsBlockFields(p: DocInspectorProps): JSX.Element {
                 ]}
                 onChange={(v) => p.onPatch({ columns: Number(v) })}
             />
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                <ColorField label={__('Color de los nombres')} value={block.label_color} onChange={(v) => p.onPatch({ label_color: v })} placeholder={p.design.theme.muted} />
+                <ColorField label={__('Color de los valores')} value={block.value_color} onChange={(v) => p.onPatch({ value_color: v })} placeholder={p.design.theme.text} />
+            </div>
+            {block.layout === 'table' && (
+                <>
+                    <Field label={`${__('Ancho de los nombres')}: ${block.label_width ?? 40}%`}>
+                        <input
+                            type="range"
+                            min={15}
+                            max={70}
+                            step={5}
+                            value={block.label_width ?? 40}
+                            onChange={(e) => p.onPatch({ label_width: Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Ancho de la columna de nombres')}
+                        />
+                    </Field>
+                    <Check label={__('Línea entre filas')} checked={block.lines !== false} onChange={(v) => p.onPatch({ lines: v ? undefined : false })} />
+                </>
+            )}
         </>
     );
 }
