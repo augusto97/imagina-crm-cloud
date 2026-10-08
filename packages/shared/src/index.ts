@@ -64,6 +64,7 @@ export * from './schemas/record-layout';
 export * from './templates/record-layout-builders';
 export * from './templates/portal-layout';
 export * from './templates/portal-templates';
+export * from './schemas/design-style';
 export * from './schemas/email-design';
 export * from './templates/email-templates';
 export * from './schemas/document-design';

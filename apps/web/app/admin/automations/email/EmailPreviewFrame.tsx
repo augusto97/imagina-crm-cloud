@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { EMAIL_DARK_MEDIA } from '@imagina-base/shared';
+import { EMAIL_DARK_MEDIA, localizeGoogleFonts } from '@imagina-base/shared';
 
 import { cn } from '@/lib/utils';
 
@@ -74,7 +74,10 @@ export interface ToolbarInfo {
 }
 
 /** Aplica el modo de color de la vista previa al HTML del correo. */
-export function previewHtmlFor(html: string, dark: boolean): string {
+export function previewHtmlFor(source: string, dark: boolean): string {
+    // v0.1.272 — Las fuentes web, servidas por la app (la CSP no deja pedirlas
+    // a Google Fonts): se ve exactamente la letra que verá quien lo reciba.
+    const html = source ? localizeGoogleFonts(source, typeof window === 'undefined' ? '' : window.location.origin) : source;
     if (!dark || !html) return html;
     if (html.includes(EMAIL_DARK_MEDIA)) return html.split(EMAIL_DARK_MEDIA).join('@media all');
     return html.replace('</head>', `<style data-ib-sim>${SIMULATED_DARK_CSS}</style></head>`);
@@ -333,7 +336,7 @@ export function EmailThumbnail({ html, width = 220, height = 150 }: { html: stri
             <iframe
                 title="Miniatura"
                 sandbox=""
-                srcDoc={html}
+                srcDoc={localizeGoogleFonts(html, window.location.origin)}
                 tabIndex={-1}
                 className="imcrm-pointer-events-none imcrm-absolute imcrm-left-0 imcrm-top-0 imcrm-origin-top-left imcrm-border-0"
                 style={{ width: 660, height: height / scale, transform: `scale(${scale})` }}

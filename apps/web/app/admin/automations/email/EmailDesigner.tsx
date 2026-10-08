@@ -23,22 +23,19 @@ import {
     X,
 } from 'lucide-react';
 import {
-    EMAIL_FONT_LABELS,
-    EMAIL_FONTS,
     EMAIL_TEMPLATES,
     emailTemplateDesign,
     renderEmailHtml,
     type EmailBlock,
     type EmailBlockType,
     type EmailDesign,
-    type EmailFont,
+    type Shadow,
     type EmailInnerBlock,
     type EmailTestResult,
 } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -47,8 +44,10 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { Choice, ColorField, FontSelect, NumberField } from '@/components/design/DesignStyleControls';
+
 import { ColorRow } from '../../template-editor-core/BlockStyleEditor';
-import { EmailBlockInspector, Field, Section, Segmented } from './EmailBlockInspector';
+import { EmailBlockInspector, Section } from './EmailBlockInspector';
 import {
     EMAIL_BLOCK_HINTS,
     EMAIL_BLOCK_LABELS,
@@ -910,43 +909,115 @@ function ThemePanel({
     const setDark = (patch: Partial<typeof dark>, key: string): void => onChange({ dark: { ...dark, ...patch } }, key);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="email-theme">
-            <Field label={__('Tipografía')} hint={__('Fuentes del sistema: las únicas que se ven igual en Gmail y Outlook.')}>
-                <Select value={t.font} onChange={(e) => onChange({ font: e.target.value as EmailFont }, 'font')}>
-                    {EMAIL_FONTS.map((f) => (
-                        <option key={f} value={f}>
-                            {EMAIL_FONT_LABELS[f]}
-                        </option>
-                    ))}
-                </Select>
-            </Field>
-            <Segmented<string>
-                label={__('Ancho del correo')}
-                value={String(t.width)}
-                options={[
-                    { value: '520', label: '520' },
-                    { value: '600', label: '600' },
-                    { value: '660', label: '660' },
-                    { value: '720', label: '720' },
-                ]}
-                onChange={(v) => onChange({ width: Number(v) }, 'width')}
-            />
-            <Segmented<string>
-                label={__('Esquinas')}
-                value={String(t.radius)}
-                options={[
-                    { value: '0', label: __('Rectas') },
-                    { value: '4', label: '4' },
-                    { value: '8', label: '8' },
-                    { value: '12', label: '12' },
-                ]}
-                onChange={(v) => onChange({ radius: Number(v) }, 'radius')}
-            />
+            <Section title={__('Tipografía')}>
+                <FontSelect label={__('Fuente del texto')} value={t.font} onChange={(f) => f && onChange({ font: f }, 'font')} medium="email" />
+                <FontSelect
+                    label={__('Fuente de los títulos')}
+                    value={t.heading_font ?? null}
+                    onChange={(f) => onChange({ heading_font: f }, 'heading_font')}
+                    medium="email"
+                    inheritLabel={__('La misma del texto')}
+                />
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <NumberField
+                        label={__('Tamaño del texto')}
+                        unit="px"
+                        min={11}
+                        max={22}
+                        value={t.font_size}
+                        onChange={(v) => onChange({ font_size: v == null ? null : Math.round(v) }, 'font_size')}
+                        placeholder="15"
+                    />
+                    <NumberField
+                        label={__('Interlineado')}
+                        min={1}
+                        max={2.4}
+                        step={0.1}
+                        value={t.line_height}
+                        onChange={(v) => onChange({ line_height: v }, 'line_height')}
+                        placeholder="1,6"
+                    />
+                </div>
+            </Section>
+            <Section title={__('Hoja')}>
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <NumberField
+                        label={__('Ancho del correo')}
+                        unit="px"
+                        min={480}
+                        max={720}
+                        step={10}
+                        value={t.width}
+                        onChange={(v) => onChange({ width: v == null ? 600 : Math.round(v) }, 'width')}
+                        placeholder="600"
+                    />
+                    <NumberField
+                        label={__('Esquinas')}
+                        unit="px"
+                        min={0}
+                        max={16}
+                        value={t.radius}
+                        onChange={(v) => onChange({ radius: v == null ? 0 : Math.round(v) }, 'radius')}
+                        placeholder="8"
+                    />
+                    <NumberField
+                        label={__('Margen lateral')}
+                        unit="px"
+                        min={8}
+                        max={64}
+                        value={t.content_pad}
+                        onChange={(v) => onChange({ content_pad: v == null ? null : Math.round(v) }, 'content_pad')}
+                        placeholder="32"
+                    />
+                    <NumberField
+                        label={__('Aire alrededor')}
+                        unit="px"
+                        min={0}
+                        max={80}
+                        value={t.outer_pad}
+                        onChange={(v) => onChange({ outer_pad: v == null ? null : Math.round(v) }, 'outer_pad')}
+                        placeholder="24"
+                    />
+                    <NumberField
+                        label={__('Borde de la hoja')}
+                        unit="px"
+                        min={0}
+                        max={8}
+                        value={t.sheet_border_width}
+                        onChange={(v) => onChange({ sheet_border_width: v == null ? null : Math.round(v) }, 'sheet_border_width')}
+                        placeholder="0"
+                    />
+                    {(t.sheet_border_width ?? 0) > 0 && (
+                        <ColorField
+                            label={__('Color del borde')}
+                            value={t.sheet_border_color}
+                            onChange={(v) => onChange({ sheet_border_color: v }, 'sheet_border_color')}
+                            placeholder="#e5e7eb"
+                        />
+                    )}
+                </div>
+                <Choice<Shadow>
+                    label={__('Sombra de la hoja')}
+                    value={t.sheet_shadow ?? 'none'}
+                    options={[
+                        { value: 'none', label: __('Sin') },
+                        { value: 'sm', label: __('Suave') },
+                        { value: 'md', label: __('Media') },
+                        { value: 'lg', label: __('Fuerte') },
+                    ]}
+                    onChange={(v) => onChange({ sheet_shadow: v === 'none' ? undefined : v }, 'sheet_shadow')}
+                />
+            </Section>
             <Section title={__('Colores')}>
                 <ColorRow label={__('Acento (botones y enlaces)')} value={t.accent} onChange={(v) => v && onChange({ accent: v }, 'accent')} />
                 <ColorRow label={__('Fondo de afuera')} value={t.background} onChange={(v) => v && onChange({ background: v }, 'background')} />
                 <ColorRow label={__('Fondo del correo')} value={t.surface} onChange={(v) => v && onChange({ surface: v }, 'surface')} />
                 <ColorRow label={__('Texto')} value={t.text} onChange={(v) => v && onChange({ text: v }, 'text')} />
                 <ColorRow label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onChange({ muted: v }, 'muted')} />
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <ColorField label={__('Títulos')} value={t.heading_color} onChange={(v) => onChange({ heading_color: v }, 'heading_color')} placeholder={t.text} />
+                    <ColorField label={__('Enlaces del texto')} value={t.link_color} onChange={(v) => onChange({ link_color: v }, 'link_color')} placeholder={t.accent} />
+                </div>
             </Section>
             <Section title={__('Modo oscuro')}>
                 <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-xs" data-testid="email-dark-toggle">

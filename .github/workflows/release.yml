@@ -89,6 +89,8 @@ jobs:
           pnpm --filter @imagina-base/api deploy --prod --config.inject-workspace-packages=true "$OUT/apps/api"
           # el build (dist) está gitignored → pnpm deploy no lo copia; lo agregamos
           cp -r apps/api/dist "$OUT/apps/api/dist"
+          # v0.1.272 — las tipografías que el PDF embebe (ADR-S37).
+          [ -d "$OUT/apps/api/assets/fonts" ] || cp -r apps/api/assets "$OUT/apps/api/assets"
 
           # SPA (cloud + portal + assets)
           cp -r apps/web/dist-cloud "$OUT/web"

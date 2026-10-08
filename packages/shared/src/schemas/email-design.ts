@@ -1,6 +1,21 @@
 import { z } from 'zod';
 
 import { formatDuration } from '../field-types/duration';
+import {
+    BORDER_STYLES,
+    DESIGN_FONT_DEFS,
+    DESIGN_FONTS,
+    SHADOWS,
+    SHADOW_CSS,
+    blockStyleSchema,
+    elementStyleSchema,
+    fontStack,
+    googleFontsHref,
+    hasBoxStyle,
+    type BlockStyle,
+    type DesignFont,
+    type ElementStyle,
+} from './design-style';
 import { formatPhone } from '../field-types/phone';
 import type { RichDoc, RichMark, RichNode } from './rich-text';
 import { richDocSchema, sanitizeRichDoc } from './rich-text';
@@ -46,25 +61,19 @@ const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const hex = z.string().regex(HEX);
 const optionalHex = hex.nullable().optional();
 
-export const EMAIL_FONTS = ['sans', 'modern', 'serif', 'humanist', 'trebuchet'] as const;
-export type EmailFont = (typeof EMAIL_FONTS)[number];
+/**
+ * v0.1.272 — El catálogo de tipografías es el compartido con los PDF
+ * (`DESIGN_FONTS`): las del sistema de siempre (mismas claves: `sans`,
+ * `modern`, `serif`, `humanist`, `trebuchet`) más Tahoma, Times, Courier y
+ * fuentes web de Google con su respaldo del sistema.
+ */
+export const EMAIL_FONTS = DESIGN_FONTS;
+export type EmailFont = DesignFont;
 
-/** Tipografías del sistema: las web fonts no cargan en Outlook ni en Gmail. */
-export const EMAIL_FONT_STACKS: Record<EmailFont, string> = {
-    sans: 'Arial, Helvetica, sans-serif',
-    modern: "'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', Times, serif",
-    humanist: 'Verdana, Geneva, Tahoma, sans-serif',
-    trebuchet: "'Trebuchet MS', 'Lucida Grande', 'Lucida Sans Unicode', sans-serif",
-};
+/** Pila CSS de cada tipografía (la web primero y su respaldo detrás). */
+export const EMAIL_FONT_STACKS = Object.fromEntries(DESIGN_FONTS.map((f) => [f, fontStack(f)])) as Record<EmailFont, string>;
 
-export const EMAIL_FONT_LABELS: Record<EmailFont, string> = {
-    sans: 'Arial',
-    modern: 'Moderna (Segoe UI / Roboto)',
-    serif: 'Georgia (con serifa)',
-    humanist: 'Verdana',
-    trebuchet: 'Trebuchet',
-};
+export const EMAIL_FONT_LABELS = Object.fromEntries(DESIGN_FONTS.map((f) => [f, DESIGN_FONT_DEFS[f].label])) as Record<EmailFont, string>;
 
 const align = z.enum(['left', 'center', 'right']);
 export type EmailAlign = z.infer<typeof align>;
@@ -85,6 +94,23 @@ export const emailThemeSchema = z.object({
     width: z.number().int().min(480).max(720).default(600),
     /** Esquinas de la hoja y de los botones (Outlook de Windows las ignora). */
     radius: z.number().int().min(0).max(16).default(8),
+    /** v0.1.272 — Tipografía de los títulos (vacío = la del texto). */
+    heading_font: z.enum(DESIGN_FONTS).nullable().optional(),
+    /** Color de los títulos (vacío = el del texto). */
+    heading_color: optionalHex,
+    /** Tamaño base del texto en px (el «Normal» de los bloques de texto). */
+    font_size: z.number().int().min(11).max(22).nullable().optional(),
+    /** Interlineado del texto (multiplicador). */
+    line_height: z.number().min(1).max(2.4).nullable().optional(),
+    /** Color de los enlaces dentro del texto (vacío = el de acento). */
+    link_color: optionalHex,
+    /** Margen lateral de la hoja en px (32 = lo de siempre). */
+    content_pad: z.number().int().min(8).max(64).nullable().optional(),
+    /** Aire alrededor de la hoja en px. */
+    outer_pad: z.number().int().min(0).max(80).nullable().optional(),
+    sheet_border_width: z.number().int().min(0).max(8).nullable().optional(),
+    sheet_border_color: optionalHex,
+    sheet_shadow: z.enum(SHADOWS).optional(),
     /**
      * v0.1.270 — Colores para cuando el programa de correo está en modo
      * oscuro. Apagado (lo de siempre): el correo se declara sólo-claro y cada
@@ -110,6 +136,8 @@ const blockBase = {
     /** Banda de color detrás del bloque (de borde a borde de la hoja). */
     background: optionalHex,
     padding: padding.optional(),
+    /** v0.1.272 — Tipografía, espaciado, borde, esquinas y sombra (ADR-S37). */
+    style: blockStyleSchema.optional(),
 };
 
 const headingBlock = z.object({
@@ -129,6 +157,8 @@ const textBlock = z.object({
     align: align.default('left'),
     size: z.enum(['sm', 'md', 'lg']).default('md'),
     color: optionalHex,
+    /** Espacio entre párrafos en px (vacío = proporcional al tamaño). */
+    paragraph_spacing: z.number().min(0).max(48).nullable().optional(),
 });
 
 const buttonBlock = z.object({
@@ -140,6 +170,8 @@ const buttonBlock = z.object({
     color: optionalHex,
     text_color: optionalHex,
     full_width: z.boolean().default(false),
+    /** Esquinas, borde, sombra, relleno y ancho del botón. */
+    btn: elementStyleSchema.optional(),
 });
 
 const imageBlock = z.object({
@@ -154,6 +186,8 @@ const imageBlock = z.object({
     link: z.string().max(2048).default(''),
     /** Sin márgenes laterales: de borde a borde (cabeceras). */
     bleed: z.boolean().default(false),
+    /** Marco de la imagen: esquinas, borde, sombra. */
+    frame: elementStyleSchema.optional(),
 });
 
 const dividerBlock = z.object({
@@ -161,6 +195,10 @@ const dividerBlock = z.object({
     type: z.literal('divider'),
     color: optionalHex,
     thickness: z.number().int().min(1).max(4).default(1),
+    line_style: z.enum(BORDER_STYLES).optional(),
+    /** Largo de la línea en % del ancho. */
+    length: z.number().int().min(5).max(100).optional(),
+    align: align.optional(),
 });
 
 const spacerBlock = z.object({
@@ -176,6 +214,12 @@ const fieldsBlock = z.object({
     /** Slugs de los campos del registro (etiqueta + valor legible). */
     slugs: z.array(z.string().min(1).max(80)).max(30).default([]),
     layout: z.enum(['table', 'stacked']).default('table'),
+    label_color: optionalHex,
+    value_color: optionalHex,
+    /** Ancho de la columna de etiquetas en % (forma tabla). */
+    label_width: z.number().int().min(15).max(70).optional(),
+    /** Línea entre filas (forma tabla). */
+    lines: z.boolean().optional(),
 });
 
 const signatureBlock = z.object({
@@ -200,13 +244,27 @@ const innerBlockSchema = z.discriminatedUnion('type', [
 ]);
 export type EmailInnerBlock = z.infer<typeof innerBlockSchema>;
 
+/** v0.1.272 — Proporciones de las columnas: «1-2» = la segunda el doble. */
+export const COLUMN_RATIOS = { 2: ['1-1', '1-2', '2-1', '1-3', '3-1'], 3: ['1-1-1', '2-1-1', '1-2-1', '1-1-2'] } as const;
+const ratio = z.string().regex(/^[1-4](-[1-4]){1,2}$/);
+
+/** Una columna: sus bloques y, opcionalmente, su propio recuadro. */
+const columnSchema = z.object({
+    blocks: z.array(innerBlockSchema).max(EMAIL_COLUMN_MAX_BLOCKS).default([]),
+    background: optionalHex,
+    style: blockStyleSchema.optional(),
+});
+
 const columnsBlock = z.object({
     ...blockBase,
     type: z.literal('columns'),
-    columns: z
-        .array(z.object({ blocks: z.array(innerBlockSchema).max(EMAIL_COLUMN_MAX_BLOCKS).default([]) }))
-        .min(2)
-        .max(3),
+    columns: z.array(columnSchema).min(2).max(3),
+    ratio: ratio.optional(),
+    /** Separación entre columnas en px. */
+    gap: z.number().int().min(0).max(64).optional(),
+    valign: z.enum(['top', 'middle', 'bottom']).optional(),
+    /** En el celular, una debajo de la otra (lo de siempre) o siempre lado a lado. */
+    stack: z.boolean().optional(),
 });
 
 export const emailBlockSchema = z.discriminatedUnion('type', [
@@ -346,21 +404,58 @@ export interface EmailRenderOptions {
     preview?: boolean;
     /** Bloque seleccionado en el editor (se resalta). */
     selectedId?: string | null;
+    /**
+     * v0.1.272 — `@font-face` de las fuentes web usadas, servidas por la app
+     * (vista previa: la CSP del editor no deja cargar Google Fonts). Sin esto,
+     * el correo pide las fuentes a Google Fonts (lo que sale de verdad).
+     */
+    webFontCss?: (fonts: DesignFont[]) => string;
 }
 
 const PAD_V: Record<EmailPadding, number> = { none: 0, sm: 6, md: 12, lg: 24 };
-const SIDE = 32;
+const DEFAULT_SIDE = 32;
 
 interface Ctx {
     o: EmailRenderOptions;
     t: EmailTheme;
+    /** Pila CSS del texto del cuerpo. */
     font: string;
+    /** v0.1.272 — Tipografías del tema (texto y títulos). */
+    fontKey: DesignFont;
+    headingFont: DesignFont;
+    /** Tamaño base del texto y su interlineado. */
+    base: number;
+    lh: number;
+    /** Margen lateral de la hoja. */
+    side: number;
     /**
      * v0.1.270 — Dentro de una banda de color: los colores del tema NO llevan
      * las clases de modo oscuro (la banda conserva sus colores claros, y un
      * texto claro sobre una banda clara sería ilegible).
      */
     band?: boolean;
+    /** Tipografías usadas (para pedir las fuentes web en el `<head>`). */
+    used: Set<DesignFont>;
+    /** Clases de tamaño en el celular: `ib-mNN` → px. */
+    mobile: Map<string, number>;
+}
+
+function makeCtx(design: EmailDesign, opts: EmailRenderOptions): Ctx {
+    const t = design.theme;
+    const fontKey = (DESIGN_FONTS as readonly string[]).includes(t.font) ? t.font : 'sans';
+    const ctx: Ctx = {
+        o: opts,
+        t,
+        font: fontStack(fontKey),
+        fontKey,
+        headingFont: t.heading_font ?? fontKey,
+        base: t.font_size ?? 15,
+        lh: t.line_height ?? 1.6,
+        side: t.content_pad ?? DEFAULT_SIDE,
+        used: new Set([fontKey]),
+        mobile: new Map(),
+    };
+    return ctx;
 }
 
 /**
@@ -370,9 +465,19 @@ interface Ctx {
  */
 export const EMAIL_DARK_MEDIA = '@media (prefers-color-scheme: dark)';
 
+/** ` class="a b"` (o nada) con las clases que no estén vacías. */
+function klass(...names: Array<string | false | null | undefined>): string {
+    const list = names.filter((n): n is string => typeof n === 'string' && n !== '');
+    return list.length ? ` class="${list.join(' ')}"` : '';
+}
+
 /** Clase de un color del tema (texto, secundario, borde) para el modo oscuro. */
+function themeCls(ctx: Ctx, kind: 'ib-tx' | 'ib-mu' | 'ib-bd'): string | null {
+    return ctx.band ? null : kind;
+}
+
 function cls(ctx: Ctx, kind: 'ib-tx' | 'ib-mu' | 'ib-bd'): string {
-    return ctx.band ? '' : ` class="${kind}"`;
+    return klass(themeCls(ctx, kind));
 }
 
 /** Texto "inline": template → HTML seguro (o pastillas en la vista previa). */
@@ -405,6 +510,7 @@ const attr = (s: string): string => escapeEmailHtml(s);
 
 function marked(ctx: Ctx, html: string, marks: RichMark[] | undefined): string {
     let out = html;
+    const link = ctx.t.link_color ?? ctx.t.accent;
     for (const m of marks ?? []) {
         const a = m.attrs ?? {};
         switch (m.type) {
@@ -426,8 +532,8 @@ function marked(ctx: Ctx, html: string, marks: RichMark[] | undefined): string {
             case 'link': {
                 const href = typeof a.href === 'string' ? url(ctx, a.href, 'link') : null;
                 out = href
-                    ? `<a href="${attr(href)}" target="_blank" style="color:${ctx.t.accent};text-decoration:underline;">${out}</a>`
-                    : `<span style="color:${ctx.t.accent};text-decoration:underline;">${out}</span>`;
+                    ? `<a href="${attr(href)}" target="_blank" style="color:${link};text-decoration:underline;">${out}</a>`
+                    : `<span style="color:${link};text-decoration:underline;">${out}</span>`;
                 break;
             }
             case 'textStyle': {
@@ -451,12 +557,70 @@ function marked(ctx: Ctx, html: string, marks: RichMark[] | undefined): string {
     return out;
 }
 
+// --- Tipografía (v0.1.272) ---------------------------------------------------
+
+interface Typo {
+    /** Familia, peso, itálica, letras y mayúsculas (sin tamaño ni interlineado). */
+    face: string;
+    size: number;
+    lh: number;
+    /** Clase para que Outlook de Windows use la de respaldo de una fuente web. */
+    wf: string | null;
+}
+
+interface TypoDefaults {
+    font: DesignFont;
+    size: number;
+    lh: number;
+    weight?: 'bold' | 'normal' | null;
+}
+
+function weightCss(w: number): string {
+    return w === 400 ? 'normal' : w === 700 ? 'bold' : String(w);
+}
+
+function typo(ctx: Ctx, st: BlockStyle | null | undefined, d: TypoDefaults): Typo {
+    const font = st?.font ?? d.font;
+    ctx.used.add(font);
+    const def = DESIGN_FONT_DEFS[font];
+    let face = `font-family:${fontStack(font)};`;
+    if (st?.font_weight != null) face += `font-weight:${weightCss(st.font_weight)};`;
+    else if (d.weight) face += `font-weight:${d.weight};`;
+    if (st?.italic) face += 'font-style:italic;';
+    if (st?.letter_spacing != null) face += `letter-spacing:${st.letter_spacing}px;`;
+    if (st?.text_transform && st.text_transform !== 'none') face += `text-transform:${st.text_transform};`;
+    return {
+        face,
+        size: st?.font_size ?? d.size,
+        lh: st?.line_height ?? d.lh,
+        wf: def?.kind === 'web' ? `ib-wf-${def.category}` : null,
+    };
+}
+
+/** Tamaño + interlineado en px (Outlook interpreta mal el interlineado sin unidad). */
+function sizeCss(size: number, lh: number): string {
+    return `font-size:${size}px;mso-line-height-rule:exactly;line-height:${Math.round(size * lh)}px;`;
+}
+
+/** Un título grande con tamaño propio: en el celular se achica (`ib-mNN`). */
+function mobileClass(ctx: Ctx, size: number): string | null {
+    if (size < 26) return null;
+    const name = `ib-m${Math.round(size)}`;
+    ctx.mobile.set(name, Math.round(size * 0.82));
+    return name;
+}
+
 interface TextStyle {
     size: number;
     color: string;
     align: EmailAlign;
-    /** ` class="…"` de modo oscuro (vacío si el color lo eligió el autor). */
-    cls?: string;
+    /** Clases de modo oscuro (vacío si el color lo eligió el autor). */
+    cls: string[];
+    face: string;
+    lh: number;
+    wf: string | null;
+    /** Espacio entre párrafos (px). */
+    gap: number | null;
 }
 
 function richInline(ctx: Ctx, nodes: RichNode[] | undefined): string {
@@ -474,22 +638,22 @@ function richInline(ctx: Ctx, nodes: RichNode[] | undefined): string {
 
 function richBlocks(ctx: Ctx, nodes: RichNode[] | undefined, st: TextStyle): string {
     const list = nodes ?? [];
-    const base = `font-family:${ctx.font};color:${st.color};text-align:${st.align};`;
-    const c = st.cls ?? '';
+    const base = `${st.face}color:${st.color};text-align:${st.align};`;
+    const c = klass(...st.cls, st.wf);
     return list
         .map((n, i) => {
             const last = i === list.length - 1;
-            const mb = last ? 0 : Math.round(st.size * 0.8);
+            const mb = last ? 0 : (st.gap ?? Math.round(st.size * 0.8));
             switch (n.type) {
                 case 'paragraph': {
                     const inner = richInline(ctx, n.content);
-                    return `<p${c} style="margin:0 0 ${mb}px 0;${base}font-size:${st.size}px;line-height:1.6;">${inner || '&nbsp;'}</p>`;
+                    return `<p${c} style="margin:0 0 ${mb}px 0;${base}${sizeCss(st.size, st.lh)}">${inner || '&nbsp;'}</p>`;
                 }
                 case 'heading': {
                     const level = Number(n.attrs?.level) || 2;
                     const size = level <= 1 ? Math.round(st.size * 1.6) : level === 2 ? Math.round(st.size * 1.35) : Math.round(st.size * 1.15);
                     const tag = `h${Math.min(3, Math.max(1, level))}`;
-                    return `<${tag}${c} style="margin:0 0 ${Math.max(mb, 8)}px 0;${base}font-size:${size}px;line-height:1.3;font-weight:bold;">${richInline(ctx, n.content)}</${tag}>`;
+                    return `<${tag}${c} style="margin:0 0 ${Math.max(mb, 8)}px 0;${base}${sizeCss(size, 1.3)}font-weight:bold;">${richInline(ctx, n.content)}</${tag}>`;
                 }
                 case 'bulletList':
                 case 'orderedList':
@@ -500,20 +664,20 @@ function richBlocks(ctx: Ctx, nodes: RichNode[] | undefined, st: TextStyle): str
                             const check =
                                 n.type === 'taskList' ? (li.attrs?.checked ? '&#9745;&nbsp;' : '&#9744;&nbsp;') : '';
                             const inner = (li.content ?? [])
-                                .map((c) =>
-                                    c.type === 'paragraph'
-                                        ? richInline(ctx, c.content)
-                                        : richBlocks(ctx, [c], { ...st }),
+                                .map((x) =>
+                                    x.type === 'paragraph'
+                                        ? richInline(ctx, x.content)
+                                        : richBlocks(ctx, [x], { ...st }),
                                 )
                                 .join('<br>');
-                            return `<li${c} style="margin:0 0 4px 0;${base}font-size:${st.size}px;line-height:1.6;">${check}${inner}</li>`;
+                            return `<li${c} style="margin:0 0 4px 0;${base}${sizeCss(st.size, st.lh)}">${check}${inner}</li>`;
                         })
                         .join('');
                     const listStyle = n.type === 'taskList' ? 'list-style:none;padding-left:4px;' : 'padding-left:24px;';
                     return `<${tag} style="margin:0 0 ${mb}px 0;${listStyle}">${items}</${tag}>`;
                 }
                 case 'blockquote':
-                    return `<blockquote style="margin:0 0 ${mb}px 0;padding:2px 0 2px 14px;border-left:3px solid ${ctx.t.accent};">${richBlocks(ctx, n.content, { ...st, color: ctx.t.muted, cls: st.cls ? cls(ctx, 'ib-mu') : '' })}</blockquote>`;
+                    return `<blockquote style="margin:0 0 ${mb}px 0;padding:2px 0 2px 14px;border-left:3px solid ${ctx.t.accent};">${richBlocks(ctx, n.content, { ...st, color: ctx.t.muted, cls: st.cls.length ? [themeCls(ctx, 'ib-mu') ?? ''] : [] })}</blockquote>`;
                 case 'codeBlock':
                     return `<pre style="margin:0 0 ${mb}px 0;padding:12px;background-color:#f3f4f6;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:${st.color};white-space:pre-wrap;word-break:break-word;">${richInline(ctx, n.content)}</pre>`;
                 case 'horizontalRule':
@@ -533,7 +697,7 @@ function richBlocks(ctx: Ctx, nodes: RichNode[] | undefined, st: TextStyle): str
                     return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;margin:0 0 ${mb}px 0;">${rows}</table>`;
                 }
                 case 'columnsBlock':
-                    return (n.content ?? []).map((c) => richBlocks(ctx, c.content, st)).join('');
+                    return (n.content ?? []).map((x) => richBlocks(ctx, x.content, st)).join('');
                 default:
                     return n.content ? richBlocks(ctx, n.content, st) : '';
             }
@@ -541,42 +705,83 @@ function richBlocks(ctx: Ctx, nodes: RichNode[] | undefined, st: TextStyle): str
         .join('');
 }
 
-function dividerTable(color: string, thickness: number, marginBottom = 0, klass = ''): string {
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 ${marginBottom}px 0;"><tr><td${klass} style="border-top:${thickness}px solid ${color};font-size:1px;line-height:1px;">&nbsp;</td></tr></table>`;
+function dividerTable(color: string, thickness: number, marginBottom = 0, klassAttr = '', lineStyle = 'solid'): string {
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 ${marginBottom}px 0;"><tr><td${klassAttr} style="border-top:${thickness}px ${lineStyle} ${color};font-size:1px;line-height:1px;">&nbsp;</td></tr></table>`;
 }
 
-const TEXT_SIZES: Record<'sm' | 'md' | 'lg', number> = { sm: 13, md: 15, lg: 17 };
 const HEADING_SIZES: Record<1 | 2 | 3, number> = { 1: 28, 2: 22, 3: 18 };
+
+/** Bordes por lado: `border-top:…;border-left:…` (Outlook entiende los cuatro). */
+function borderCss(width: number | null | undefined, style: string | undefined, color: string, sides?: readonly string[]): string {
+    const w = width ?? 0;
+    if (w <= 0) return '';
+    const list = sides && sides.length > 0 ? sides : ['top', 'right', 'bottom', 'left'];
+    return list.map((s) => `border-${s}:${w}px ${style ?? 'solid'} ${color};`).join('');
+}
+
+function shadowCss(sh: string | undefined): string {
+    return sh && sh !== 'none' ? `box-shadow:${SHADOW_CSS[sh as keyof typeof SHADOW_CSS]};` : '';
+}
+
+/** Lado con borde → cuánto le resta al ancho del contenido. */
+function borderInset(st: { border_width?: number | null; border_sides?: readonly string[] } | null | undefined, side: 'left' | 'right'): number {
+    const w = st?.border_width ?? 0;
+    if (w <= 0) return 0;
+    const sides = st?.border_sides && st.border_sides.length > 0 ? st.border_sides : ['top', 'right', 'bottom', 'left'];
+    return sides.includes(side) ? w : 0;
+}
 
 /** El contenido de un bloque (sin la fila que lo envuelve). */
 function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number): string {
     const t = ctx.t;
+    const st = b.style;
     switch (b.type) {
         case 'heading': {
-            const size = HEADING_SIZES[b.level];
+            const ty = typo(ctx, st, { font: ctx.headingFont, size: HEADING_SIZES[b.level], lh: 1.25, weight: 'bold' });
             const tag = `h${b.level}`;
             const text = inline(ctx, b.text) || (ctx.o.preview ? '<span style="opacity:.45;">Título</span>' : '');
-            const hc = b.color ? '' : ctx.band ? '' : ' ib-tx';
-            return `<${tag} class="ib-h${b.level}${hc}" style="margin:0;font-family:${ctx.font};font-size:${size}px;line-height:1.25;font-weight:bold;color:${b.color ?? t.text};text-align:${b.align};">${text}</${tag}>`;
+            const own = b.color ?? t.heading_color;
+            // Con tamaño propio, la clase del nivel (que achica en el celular)
+            // se reemplaza por una proporcional a ESE tamaño.
+            const sizeClass = st?.font_size != null ? mobileClass(ctx, ty.size) : `ib-h${b.level}`;
+            return `<${tag}${klass(sizeClass, own || ctx.band ? null : 'ib-tx', ty.wf)} style="margin:0;${ty.face}${sizeCss(ty.size, ty.lh)}color:${own ?? t.text};text-align:${b.align};">${text}</${tag}>`;
         }
         case 'text': {
+            const size = { sm: ctx.base - 2, md: ctx.base, lg: ctx.base + 2 }[b.size];
+            const ty = typo(ctx, st, { font: ctx.fontKey, size, lh: ctx.lh });
             const color = b.color ?? t.text;
             const html = b.doc
-                ? richBlocks(ctx, b.doc.content, { size: TEXT_SIZES[b.size], color, align: b.align, cls: b.color ? '' : cls(ctx, 'ib-tx') })
+                ? richBlocks(ctx, b.doc.content, {
+                      size: ty.size,
+                      color,
+                      align: b.align,
+                      cls: b.color ? [] : [themeCls(ctx, 'ib-tx') ?? ''],
+                      face: ty.face,
+                      lh: ty.lh,
+                      wf: ty.wf,
+                      gap: b.paragraph_spacing ?? null,
+                  })
                 : '';
             if (html) return html;
             return ctx.o.preview
-                ? `<p style="margin:0;font-family:${ctx.font};font-size:${TEXT_SIZES[b.size]}px;color:${t.muted};text-align:${b.align};">Escribí el texto…</p>`
+                ? `<p style="margin:0;${ty.face}font-size:${ty.size}px;color:${t.muted};text-align:${b.align};">Escribí el texto…</p>`
                 : '';
         }
         case 'button': {
+            const e: ElementStyle = b.btn ?? {};
             const bg = b.color ?? t.accent;
             const fg = b.text_color ?? readableInk(bg);
             const href = url(ctx, b.url, 'link');
             const label = inline(ctx, b.label) || 'Botón';
-            const link = `<a href="${attr(href ?? '#')}" target="_blank" style="display:inline-block;font-family:${ctx.font};font-size:15px;line-height:20px;font-weight:bold;color:${fg};text-decoration:none;${b.full_width ? 'width:100%;' : ''}">${label}</a>`;
+            const ty = typo(ctx, st, { font: ctx.fontKey, size: 15, lh: 20 / 15, weight: 'bold' });
+            const py = e.pad_y ?? 12;
+            const px = e.pad_x ?? 26;
+            const fixed = !b.full_width && e.width ? e.width : null;
+            const link = `<a href="${attr(href ?? '#')}" target="_blank"${klass(ty.wf)} style="display:inline-block;${ty.face}${sizeCss(ty.size, ty.lh)}color:${fg};text-decoration:none;${b.full_width || fixed ? 'width:100%;' : ''}">${label}</a>`;
+            const border = borderCss(e.border_width, e.border_style, e.border_color ?? fg);
+            const width = b.full_width ? ' width="100%"' : fixed ? ` width="${fixed}"` : '';
             // bgcolor + padding en la CELDA: en Outlook el padding de un <a> no existe.
-            return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${b.align}" ${b.full_width ? 'width="100%"' : ''} style="margin:0 ${b.align === 'center' ? 'auto' : b.align === 'right' ? '0 0 auto' : '0'};"><tr><td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:${t.radius}px;padding:12px 26px;mso-padding-alt:12px 26px;">${link}</td></tr></table>`;
+            return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${b.align}"${width} style="margin:0 ${b.align === 'center' ? 'auto' : b.align === 'right' ? '0 0 auto' : '0'};${fixed ? `width:${fixed}px;` : ''}border-collapse:separate;"><tr><td align="center" bgcolor="${bg}" style="background-color:${bg};border-radius:${e.radius ?? t.radius}px;padding:${py}px ${px}px;mso-padding-alt:${py}px ${px}px;${border}${shadowCss(e.shadow)}">${link}</td></tr></table>`;
         }
         case 'image': {
             const src = url(ctx, b.src, 'image');
@@ -592,17 +797,36 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
                     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="${b.align}"><div style="${margin}width:100%;max-width:${w}px;height:120px;line-height:120px;background-color:#eef0f3;border:1px dashed #c4c9d2;box-sizing:border-box;text-align:center;font-family:${ctx.font};font-size:13px;color:#6b7280;overflow:hidden;">${b.src ? inline(ctx, b.src) : 'Imagen'}</div></td></tr></table>`
                     : '';
             }
-            const img = `<img src="${attr(src)}" alt="${attr(ctx.o.preview ? b.alt : ctx.o.resolve(b.alt))}" width="${w}" style="display:block;${margin}width:100%;max-width:${w}px;height:auto;border:0;outline:none;text-decoration:none;${b.bleed ? '' : `border-radius:${Math.min(t.radius, 8)}px;`}">`;
+            const f: ElementStyle = b.frame ?? {};
+            const radius = f.radius != null ? f.radius : b.bleed ? null : Math.min(t.radius, 8);
+            const border = (f.border_width ?? 0) > 0 ? borderCss(f.border_width, f.border_style, f.border_color ?? '#e5e7eb') : 'border:0;';
+            const img = `<img src="${attr(src)}" alt="${attr(ctx.o.preview ? b.alt : ctx.o.resolve(b.alt))}" width="${w}" style="display:block;${margin}width:100%;max-width:${w}px;height:auto;${border}outline:none;text-decoration:none;${radius != null ? `border-radius:${radius}px;` : ''}${shadowCss(f.shadow)}">`;
             const href = url(ctx, b.link, 'link');
             const linked = href ? `<a href="${attr(href)}" target="_blank" style="display:block;">${img}</a>` : img;
             return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="${b.align}">${linked}</td></tr></table>`;
         }
-        case 'divider':
-            return dividerTable(b.color ?? '#e5e7eb', b.thickness, 0, b.color ? '' : cls(ctx, 'ib-bd'));
+        case 'divider': {
+            const color = b.color ?? '#e5e7eb';
+            const k = b.color ? '' : cls(ctx, 'ib-bd');
+            const len = b.length ?? 100;
+            if (len >= 100) return dividerTable(color, b.thickness, 0, k, b.line_style);
+            const al = b.align ?? 'center';
+            return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="${al}"><table role="presentation" width="${len}%" align="${al}" cellpadding="0" cellspacing="0" border="0" style="width:${len}%;margin:0 ${al === 'center' ? 'auto' : al === 'right' ? '0 0 auto' : '0'};"><tr><td${k} style="border-top:${b.thickness}px ${b.line_style ?? 'solid'} ${color};font-size:1px;line-height:1px;">&nbsp;</td></tr></table></td></tr></table>`;
+        }
         case 'spacer':
             return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="${b.height}" style="height:${b.height}px;font-size:1px;line-height:${b.height}px;">&nbsp;</td></tr></table>`;
         case 'fields': {
             const label = ctx.o.fieldLabel ?? (() => null);
+            const ty = typo(ctx, st, { font: ctx.fontKey, size: 15, lh: 1.4 });
+            const lsize = Math.max(9, Math.round(ty.size * 0.87));
+            const lc = b.label_color ?? t.muted;
+            const vc = b.value_color ?? t.text;
+            const lcls = b.label_color ? null : themeCls(ctx, 'ib-mu');
+            const vcls = b.value_color ? null : themeCls(ctx, 'ib-tx');
+            const lines = b.lines !== false;
+            const lw = b.label_width ?? 40;
+            const rowBorder = lines ? 'border-bottom:1px solid #eceef2;' : '';
+            const bd = lines ? themeCls(ctx, 'ib-bd') : null;
             const rows = b.slugs
                 .map((slug) => {
                     const name = label(slug) ?? slug;
@@ -610,13 +834,13 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
                         ? inline(ctx, `{{${slug}}}`)
                         : escapeEmailHtml(ctx.o.fieldValue?.(slug) ?? '').replace(/\r?\n/g, '<br>') || '&mdash;';
                     if (b.layout === 'stacked') {
-                        return `<tr><td style="padding:0 0 12px 0;font-family:${ctx.font};"><div${cls(ctx, 'ib-mu')} style="font-size:12px;line-height:1.4;color:${t.muted};">${escapeEmailHtml(name)}</div><div${cls(ctx, 'ib-tx')} style="font-size:15px;line-height:1.5;color:${t.text};">${value}</div></td></tr>`;
+                        return `<tr><td${klass(ty.wf)} style="padding:0 0 12px 0;${ty.face}"><div${klass(lcls)} style="font-size:${Math.max(9, Math.round(ty.size * 0.8))}px;line-height:1.4;color:${lc};">${escapeEmailHtml(name)}</div><div${klass(vcls)} style="${sizeCss(ty.size, 1.5)}color:${vc};">${value}</div></td></tr>`;
                     }
-                    return `<tr><td width="40%" valign="top"${ctx.band ? '' : ' class="ib-mu ib-bd"'} style="padding:8px 12px 8px 0;border-bottom:1px solid #eceef2;font-family:${ctx.font};font-size:13px;line-height:1.4;color:${t.muted};">${escapeEmailHtml(name)}</td><td valign="top"${ctx.band ? '' : ' class="ib-tx ib-bd"'} style="padding:8px 0;border-bottom:1px solid #eceef2;font-family:${ctx.font};font-size:15px;line-height:1.4;color:${t.text};">${value}</td></tr>`;
+                    return `<tr><td width="${lw}%" valign="top"${klass(lcls, bd, ty.wf)} style="padding:8px 12px 8px 0;${rowBorder}${ty.face}${sizeCss(lsize, ty.lh)}color:${lc};">${escapeEmailHtml(name)}</td><td valign="top"${klass(vcls, bd, ty.wf)} style="padding:8px 0;${rowBorder}${ty.face}${sizeCss(ty.size, ty.lh)}color:${vc};">${value}</td></tr>`;
                 })
                 .join('');
             const title = b.title
-                ? `<p${cls(ctx, 'ib-tx')} style="margin:0 0 8px 0;font-family:${ctx.font};font-size:13px;font-weight:bold;letter-spacing:0.02em;color:${t.text};">${inline(ctx, b.title)}</p>`
+                ? `<p${klass(themeCls(ctx, 'ib-tx'), ty.wf)} style="margin:0 0 8px 0;${ty.face}font-size:${lsize}px;font-weight:bold;letter-spacing:0.02em;color:${t.text};">${inline(ctx, b.title)}</p>`
                 : '';
             if (!rows) {
                 return ctx.o.preview
@@ -626,7 +850,11 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
             return `${title}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">${rows}</table>`;
         }
         case 'signature': {
-            const sig = ctx.o.signatureHtml ? emailSignatureHtml(ctx.o.signatureHtml, ctx.font, t, ctx.band ? '' : 'ib-tx') : '';
+            const ty = typo(ctx, st, { font: ctx.fontKey, size: 14, lh: 1.5 });
+            const wrap = `${ty.face}${sizeCss(ty.size, ty.lh)}color:${t.text};`;
+            const sig = ctx.o.signatureHtml
+                ? emailSignatureHtml(ctx.o.signatureHtml, ctx.font, t, [ctx.band ? '' : 'ib-tx', ty.wf ?? ''].filter(Boolean).join(' '), st ? wrap : undefined)
+                : '';
             if (sig) return sig;
             return ctx.o.preview
                 ? `<p style="margin:0;font-family:${ctx.font};font-size:13px;color:${t.muted};font-style:italic;">Acá va la firma (todavía no hay una cargada).</p>`
@@ -656,31 +884,113 @@ function resolveHtmlTemplate(html: string, resolve: (t: string) => string): stri
 }
 
 /**
+ * v0.1.272 — Un bloque con CAJA (margen, relleno, borde, esquinas, sombra):
+ * una tabla por fuera con el margen y otra por dentro con la caja. El borde,
+ * el fondo y las esquinas van en la CELDA: Outlook dibuja bordes y fondos de
+ * `<td>` (no siempre los de `<table>`), y `border-collapse:separate` hace
+ * falta para que las esquinas redondeadas se vean con borde.
+ */
+interface BoxOut {
+    /** Lo que va dentro de la celda exterior. */
+    html: string;
+    /** Padding de la celda exterior (el margen). */
+    outerPad: string;
+}
+
+function boxInner(
+    ctx: Ctx,
+    b: { style?: BlockStyle; background?: string | null },
+    content: (inner: Ctx, innerW: number) => string,
+    avail: number,
+    d: { pad: [number, number, number, number]; padClass?: string | null; extraTd?: string },
+): string {
+    const st = b.style ?? {};
+    const bg = b.background ?? null;
+    const [pt, pr, pb, pl] = [
+        st.padding_top ?? d.pad[0],
+        st.padding_right ?? d.pad[1],
+        st.padding_bottom ?? d.pad[2],
+        st.padding_left ?? d.pad[3],
+    ];
+    const bw = (st.border_width ?? 0) > 0;
+    const innerW = Math.max(40, avail - pl - pr - borderInset(st, 'left') - borderInset(st, 'right'));
+    const child: Ctx = bg ? { ...ctx, band: true } : ctx;
+    const html = content(child, innerW);
+    const borderColor = st.border_color ?? '#e5e7eb';
+    const bdClass = bw && !st.border_color && !bg && !ctx.band ? 'ib-bd' : null;
+    const radius = st.radius ?? null;
+    const padClass = st.padding_left == null && st.padding_right == null ? d.padClass : null;
+    const tdStyle = `padding:${pt}px ${pr}px ${pb}px ${pl}px;${bg ? `background-color:${bg};` : ''}${borderCss(st.border_width, st.border_style, borderColor, st.border_sides)}${radius ? `border-radius:${radius}px;` : ''}${shadowCss(st.shadow)}${d.extraTd ?? ''}`;
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;"><tr><td${bg ? ` bgcolor="${bg}"` : ''}${klass(padClass, bdClass)} style="${tdStyle}">${html}</td></tr></table>`;
+}
+
+/**
  * Columnas "híbridas": divs inline-block (se apilan solos cuando no entran,
  * sin media queries — Gmail de Android las ignora a veces) + una tabla
  * condicional para Outlook de Windows, que no entiende inline-block.
+ * v0.1.272: proporciones, separación, alineación vertical, recuadro por
+ * columna y la opción de NO apilarlas en el celular (tabla común).
  */
 function columnsHtml(ctx: Ctx, b: Extract<EmailBlock, { type: 'columns' }>, width: number): string {
     const n = b.columns.length;
-    const gap = 8;
-    const colW = Math.floor((width + gap * 2) / n);
-    const innerW = colW - gap * 2;
+    const parts = parseRatio(b.ratio, n);
+    const total = parts.reduce((a, x) => a + x, 0);
+    const gap = b.gap ?? 16;
+    const half = gap / 2;
+    const valign = b.valign ?? 'top';
+    const widths = parts.map((p) => Math.floor(((width + gap) * p) / total));
     const cols = b.columns.map((c, ci) => {
-        const inner = c.blocks
-            .map((ib) => {
-                const sel = selectAttrs(ctx, ib.id);
-                const pv = PAD_V[ib.padding ?? 'sm'];
-                const bg = ib.background ? `background-color:${ib.background};` : '';
-                const child: Ctx = ib.background ? { ...ctx, band: true } : ctx;
-                return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td${sel} style="padding:${pv}px ${ib.background ? 12 : 0}px;${bg}">${blockContent(child, ib, ib.background ? innerW - 24 : innerW)}</td></tr></table>`;
-            })
-            .join('');
-        return `<div class="ib-col" style="display:inline-block;width:100%;max-width:${colW}px;vertical-align:top;font-size:15px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td${ctx.o.preview ? ` data-ib-col="${attr(b.id)}:${ci}"` : ''} style="padding:0 ${gap}px;">${inner || (ctx.o.preview ? `<p style="margin:0;padding:16px 0;font-family:${ctx.font};font-size:12px;color:${ctx.t.muted};text-align:center;border:1px dashed #c4c9d2;border-radius:4px;">Columna vacía: arrastrá un bloque acá</p>` : '&nbsp;')}</td></tr></table></div>`;
+        const colW = widths[ci] ?? Math.floor((width + gap) / n);
+        const innerW = colW - gap;
+        const blocks = (cctx: Ctx, w: number): string =>
+            c.blocks
+                .map((ib) => {
+                    const sel = selectAttrs(ctx, ib.id);
+                    if (hasBoxStyle(ib.style)) {
+                        const st = ib.style ?? {};
+                        const pv = PAD_V[ib.padding ?? 'sm'];
+                        const inner = boxInner(cctx, ib, (x, iw) => blockContent(x, ib, iw), w, {
+                            pad: ib.background ? [pv, 12, pv, 12] : [0, 0, 0, 0],
+                        });
+                        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td${sel} style="padding:${st.margin_top ?? pv}px 0 ${st.margin_bottom ?? pv}px 0;">${inner}</td></tr></table>`;
+                    }
+                    const pv = PAD_V[ib.padding ?? 'sm'];
+                    const bg = ib.background ? `background-color:${ib.background};` : '';
+                    const child: Ctx = ib.background ? { ...cctx, band: true } : cctx;
+                    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td${sel} style="padding:${pv}px ${ib.background ? 12 : 0}px;${bg}">${blockContent(child, ib, ib.background ? w - 24 : w)}</td></tr></table>`;
+                })
+                .join('');
+        const empty = ctx.o.preview
+            ? `<p style="margin:0;padding:16px 0;font-family:${ctx.font};font-size:12px;color:${ctx.t.muted};text-align:center;border:1px dashed #c4c9d2;border-radius:4px;">Columna vacía: arrastrá un bloque acá</p>`
+            : '&nbsp;';
+        const boxed = c.background || hasBoxStyle(c.style);
+        const body = boxed
+            ? boxInner(ctx, c, (x, iw) => blocks(x, iw) || empty, innerW, { pad: c.background || (c.style?.border_width ?? 0) > 0 ? [12, 12, 12, 12] : [0, 0, 0, 0] })
+            : blocks(ctx, innerW) || empty;
+        const colAttr = ctx.o.preview ? ` data-ib-col="${attr(b.id)}:${ci}"` : '';
+        return { colW, html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td${colAttr} style="padding:0 ${half}px;">${body}</td></tr></table>` };
     });
-    const msoOpen = `<!--[if mso]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="${colW}" valign="top"><![endif]-->`;
-    const msoMid = `<!--[if mso]></td><td width="${colW}" valign="top"><![endif]-->`;
+    if (b.stack === false) {
+        // Siempre lado a lado (también en el celular): una tabla común.
+        const cells = cols
+            .map((c, ci) => `<td width="${Math.round(((parts[ci] ?? 1) / total) * 100)}%" valign="${valign}" style="vertical-align:${valign};">${c.html}</td>`)
+            .join('');
+        return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 -${half}px;width:calc(100% + ${gap}px);"><tr>${cells}</tr></table>`;
+    }
+    const divs = cols.map((c) => `<div class="ib-col" style="display:inline-block;width:100%;max-width:${c.colW}px;vertical-align:${valign};font-size:15px;">${c.html}</div>`);
+    const msoOpen = `<!--[if mso]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="${cols[0]?.colW ?? 0}" valign="${valign}"><![endif]-->`;
+    const msoMids = cols.slice(1).map((c) => `<!--[if mso]></td><td width="${c.colW}" valign="${valign}"><![endif]-->`);
     const msoClose = `<!--[if mso]></td></tr></table><![endif]-->`;
-    return `<div style="font-size:0;text-align:left;margin:0 -${gap}px;">${msoOpen}${cols.join(msoMid)}${msoClose}</div>`;
+    let joined = divs[0] ?? '';
+    for (let i = 1; i < divs.length; i++) joined += (msoMids[i - 1] ?? '') + divs[i];
+    return `<div style="font-size:0;text-align:left;margin:0 -${half}px;">${msoOpen}${joined}${msoClose}</div>`;
+}
+
+/** «1-2» → [1, 2] (si no corresponde a la cantidad de columnas, partes iguales). */
+function parseRatio(ratio: string | undefined, n: number): number[] {
+    const parts = (ratio ?? '').split('-').map(Number);
+    if (parts.length !== n || parts.some((p) => !Number.isFinite(p) || p <= 0)) return Array.from({ length: n }, () => 1);
+    return parts;
 }
 
 function selectAttrs(ctx: Ctx, id: string): string {
@@ -712,7 +1022,13 @@ export function readableInk(bg: string): string {
  * `javascript:`, y con estilos por defecto inline en párrafos y enlaces
  * (Outlook le pone márgenes grandes a un `<p>` sin estilo).
  */
-export function emailSignatureHtml(html: string, font: string, theme: Pick<EmailTheme, 'text' | 'accent'>, klass = ''): string {
+export function emailSignatureHtml(
+    html: string,
+    font: string,
+    theme: Pick<EmailTheme, 'text' | 'accent'>,
+    klassName = '',
+    wrapCss?: string,
+): string {
     let h = html.slice(0, 20_000);
     h = h.replace(/<(script|style|iframe|object|embed|form|textarea|select|button|svg|math|template|noscript|head|title|meta|link|base)\b[\s\S]*?(<\/\1\s*>|$)/gi, '');
     h = h.replace(/<(script|style|iframe|object|embed|form|input|meta|link|base)\b[^>]*>/gi, '');
@@ -723,7 +1039,7 @@ export function emailSignatureHtml(html: string, font: string, theme: Pick<Email
     h = h.replace(/<a(\s(?![^>]*\bstyle=)[^>]*)?>/gi, (_m, rest: string | undefined) => `<a${rest ?? ''} style="color:${theme.accent};">`);
     h = h.replace(/<img(\s[^>]*)?>/gi, (m) => (/\bstyle=/.test(m) ? m : m.replace(/^<img/i, '<img style="border:0;outline:none;"')));
     if (!h.trim()) return '';
-    return `<div${klass ? ` class="${klass}"` : ''} style="font-family:${font};font-size:14px;line-height:1.5;color:${theme.text};">${h}</div>`;
+    return `<div${klassName ? ` class="${klassName}"` : ''} style="${wrapCss ?? `font-family:${font};font-size:14px;line-height:1.5;color:${theme.text};`}">${h}</div>`;
 }
 
 /**
@@ -753,40 +1069,73 @@ function mix(a: string, b: string, k: number): string {
     return `#${ch(ra!, rb!)}${ch(ga!, gb!)}${ch(ba!, bb!)}`;
 }
 
+/** Una fila de la hoja (un bloque de primer nivel). */
+function rowHtml(ctx: Ctx, b: EmailBlock, i: number, count: number): string {
+    const t = ctx.t;
+    const opts = ctx.o;
+    const contentW = t.width - ctx.side * 2;
+    const pad = PAD_V[b.padding ?? (b.background ? 'lg' : 'sm')];
+    const bleed = b.type === 'image' && b.bleed;
+    const side = bleed ? 0 : ctx.side;
+    const first = i === 0;
+    const last = i === count - 1;
+    // La primera y la última fila respiran un poco más (la hoja no arranca
+    // pegada al borde).
+    const top = pad + (first && !bleed && !b.background ? 16 : 0);
+    const bottom = pad + (last && !bleed && !b.background ? 16 : 0);
+    const sheetCorners = (first || last)
+        ? `${first ? `border-top-left-radius:${t.radius}px;border-top-right-radius:${t.radius}px;` : ''}${last ? `border-bottom-left-radius:${t.radius}px;border-bottom-right-radius:${t.radius}px;` : ''}overflow:hidden;`
+        : '';
+    const st = b.style;
+
+    if (!hasBoxStyle(st)) {
+        const bg = b.background ? ` bgcolor="${b.background}"` : '';
+        const bgStyle = b.background ? `background-color:${b.background};` : '';
+        const radius = b.background || bleed ? sheetCorners : '';
+        const content = blockContent(b.background ? { ...ctx, band: true } : ctx, b, bleed ? t.width : contentW);
+        if (!content && !opts.preview) return '';
+        return `<tr><td${selectAttrs(ctx, b.id)}${bg} class="${bleed ? '' : 'ib-pad'}" style="padding:${top}px ${side}px ${bottom}px ${side}px;${bgStyle}${radius}">${content}</td></tr>`;
+    }
+
+    const s = st ?? {};
+    const box =
+        s.bg_mode === 'box' ||
+        (s.bg_mode !== 'band' && ((s.border_width ?? 0) > 0 || (s.radius ?? 0) > 0 || (s.shadow != null && s.shadow !== 'none')));
+    if (box) {
+        // Recuadro (tarjeta) dentro de los márgenes de la hoja.
+        const filled = !!b.background || (s.border_width ?? 0) > 0;
+        const inner = boxInner(ctx, b, (x, iw) => blockContent(x, b, iw), bleed ? t.width : contentW, {
+            pad: filled ? [16, 16, 16, 16] : [0, 0, 0, 0],
+        });
+        const mt = s.margin_top ?? PAD_V[b.padding ?? 'sm'] + (first ? 16 : 0);
+        const mb = s.margin_bottom ?? PAD_V[b.padding ?? 'sm'] + (last ? 16 : 0);
+        return `<tr><td${selectAttrs(ctx, b.id)} class="${bleed ? '' : 'ib-pad'}" style="padding:${mt}px ${side}px ${mb}px ${side}px;">${inner}</td></tr>`;
+    }
+    // Banda de borde a borde (lo de siempre) con su espacio y borde propios.
+    // Las esquinas de la hoja, si la banda es la primera o la última y no
+    // tiene margen propio que la separe del borde.
+    const corners =
+        b.background && s.radius == null && ((first && !s.margin_top) || (last && !s.margin_bottom)) ? sheetCorners : '';
+    const inner = boxInner(ctx, b, (x, iw) => blockContent(x, b, iw), t.width, {
+        pad: [top, side, bottom, side],
+        padClass: bleed ? null : 'ib-pad',
+        extraTd: corners,
+    });
+    return `<tr><td${selectAttrs(ctx, b.id)} style="padding:${s.margin_top ?? 0}px 0 ${s.margin_bottom ?? 0}px 0;">${inner}</td></tr>`;
+}
+
 /**
  * HTML completo del correo. Mismo resultado en el servidor (envío) y en el
  * navegador (vista previa del editor).
  */
 export function renderEmailHtml(design: EmailDesign, opts: EmailRenderOptions): string {
     const t = design.theme;
-    const ctx: Ctx = { o: opts, t, font: EMAIL_FONT_STACKS[t.font] ?? EMAIL_FONT_STACKS.sans };
-    const contentW = t.width - SIDE * 2;
+    const ctx = makeCtx(design, opts);
     const blocks: Array<EmailBlock> = [...design.blocks];
     if (opts.appendSignature && opts.signatureHtml && !blocks.some((b) => b.type === 'signature')) {
         blocks.push({ id: '__signature', type: 'signature' });
     }
-    const rows = blocks
-        .map((b, i) => {
-            const pad = PAD_V[b.padding ?? (b.background ? 'lg' : 'sm')];
-            const bleed = b.type === 'image' && b.bleed;
-            const side = bleed ? 0 : SIDE;
-            const first = i === 0;
-            const last = i === blocks.length - 1;
-            // La primera y la última fila respiran un poco más (la hoja no
-            // arranca pegada al borde).
-            const top = pad + (first && !bleed && !b.background ? 16 : 0);
-            const bottom = pad + (last && !bleed && !b.background ? 16 : 0);
-            const bg = b.background ? ` bgcolor="${b.background}"` : '';
-            const bgStyle = b.background ? `background-color:${b.background};` : '';
-            const radius =
-                (first || last) && (b.background || bleed)
-                    ? `${first ? `border-top-left-radius:${t.radius}px;border-top-right-radius:${t.radius}px;` : ''}${last ? `border-bottom-left-radius:${t.radius}px;border-bottom-right-radius:${t.radius}px;` : ''}overflow:hidden;`
-                    : '';
-            const content = blockContent(b.background ? { ...ctx, band: true } : ctx, b, bleed ? t.width : contentW);
-            if (!content && !opts.preview) return '';
-            return `<tr><td${selectAttrs(ctx, b.id)}${bg} class="${bleed ? '' : 'ib-pad'}" style="padding:${top}px ${side}px ${bottom}px ${side}px;${bgStyle}${radius}">${content}</td></tr>`;
-        })
-        .join('');
+    const rows = blocks.map((b, i) => rowHtml(ctx, b, i, blocks.length)).join('');
     const preheaderText = opts.preheader ? (opts.preview ? opts.preheader : opts.resolve(opts.preheader)) : '';
     const preheader = preheaderText
         ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${escapeEmailHtml(preheaderText)}${'&#847;&zwnj;&nbsp;'.repeat(40)}</div>`
@@ -797,6 +1146,25 @@ export function renderEmailHtml(design: EmailDesign, opts: EmailRenderOptions): 
         opts.preview && rows === ''
             ? `<tr><td style="padding:48px 32px;text-align:center;font-family:${ctx.font};font-size:14px;color:${t.muted};">Arrastrá bloques desde el panel de la izquierda (o tocalos para agregarlos).</td></tr>`
             : '';
+    // v0.1.272 — Fuentes web: en el correo, Google Fonts escondido de
+    // Outlook de Windows (si lo ve, ignora la pila y cae a Times New Roman) +
+    // una regla sólo para Outlook que fuerza la de respaldo; en la vista
+    // previa, las mismas fuentes servidas por la app.
+    const used = [...ctx.used];
+    const webUsed = used.filter((f) => DESIGN_FONT_DEFS[f]?.kind === 'web');
+    let fontHead = '';
+    let fontCss = '';
+    if (webUsed.length > 0) {
+        if (opts.webFontCss) fontCss = opts.webFontCss(webUsed);
+        else {
+            const href = googleFontsHref(webUsed);
+            if (href) fontHead = `<!--[if !mso]><!--><link href="${attr(href)}" rel="stylesheet" type="text/css"><!--<![endif]-->`;
+        }
+        fontHead += `<!--[if mso]><style>.ib-wf-sans{font-family:Arial,Helvetica,sans-serif!important;}.ib-wf-serif{font-family:Georgia,'Times New Roman',serif!important;}.ib-wf-mono{font-family:'Courier New',Courier,monospace!important;}</style><![endif]-->`;
+    }
+    const mobileCss = [...ctx.mobile].map(([k, px]) => `.${k}{font-size:${px}px!important;line-height:${Math.round(px * 1.25)}px!important;}`).join('');
+    const outer = t.outer_pad ?? 24;
+    const sheetBorder = (t.sheet_border_width ?? 0) > 0 ? `border:${t.sheet_border_width}px solid ${t.sheet_border_color ?? '#e5e7eb'};` : '';
     return [
         '<!DOCTYPE html>',
         '<html lang="es" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">',
@@ -810,13 +1178,14 @@ export function renderEmailHtml(design: EmailDesign, opts: EmailRenderOptions): 
         `<meta name="supported-color-schemes" content="${scheme}">`,
         `<title>${title}</title>`,
         '<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->',
-        `<style>body{margin:0;padding:0;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}table{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}img{border:0;line-height:100%;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;}@media only screen and (max-width:${t.width + 20}px){.ib-container{width:100%!important;}.ib-pad{padding-left:20px!important;padding-right:20px!important;}.ib-col{max-width:100%!important;}.ib-h1{font-size:24px!important;}.ib-h2{font-size:20px!important;}}${darkCss(design.theme)}</style>`,
+        fontHead,
+        `<style>${fontCss}body{margin:0;padding:0;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}table{border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;}img{border:0;line-height:100%;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;}a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;}@media only screen and (max-width:${t.width + 20}px){.ib-container{width:100%!important;}.ib-pad{padding-left:20px!important;padding-right:20px!important;}.ib-col{max-width:100%!important;}.ib-h1{font-size:24px!important;}.ib-h2{font-size:20px!important;}${mobileCss}}${darkCss(design.theme)}</style>`,
         '</head>',
         `<body class="ib-bg" style="margin:0;padding:0;background-color:${t.background};">`,
         preheader,
-        `<table role="presentation" class="ib-bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.background}" style="background-color:${t.background};"><tr><td align="center" style="padding:24px 10px;">`,
+        `<table role="presentation" class="ib-bg" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.background}" style="background-color:${t.background};"><tr><td align="center" style="padding:${outer}px 10px;">`,
         `<!--[if mso]><table role="presentation" width="${t.width}" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->`,
-        `<table role="presentation" class="ib-container ib-surface" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.surface}" style="width:100%;max-width:${t.width}px;margin:0 auto;background-color:${t.surface};border-radius:${t.radius}px;">`,
+        `<table role="presentation" class="ib-container ib-surface" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${t.surface}" style="width:100%;max-width:${t.width}px;margin:0 auto;background-color:${t.surface};border-radius:${t.radius}px;${sheetBorder}${shadowCss(t.sheet_shadow)}${sheetBorder || t.sheet_shadow ? 'border-collapse:separate;' : ''}">`,
         rows || empty,
         '</table>',
         '<!--[if mso]></td></tr></table><![endif]-->',
@@ -949,7 +1318,7 @@ function blockText(ctx: Ctx, b: EmailBlock | EmailInnerBlock): string {
 
 /** Texto plano del diseño (la parte `text/plain` del multipart/alternative). */
 export function renderEmailText(design: EmailDesign, opts: EmailRenderOptions): string {
-    const ctx: Ctx = { o: opts, t: design.theme, font: '' };
+    const ctx = makeCtx(design, opts);
     const parts = design.blocks.map((b) => blockText(ctx, b));
     if (opts.appendSignature && opts.signatureHtml && !design.blocks.some((b) => b.type === 'signature')) {
         parts.push(`-- \n${htmlToPlainText(opts.signatureHtml)}`);

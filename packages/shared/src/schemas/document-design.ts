@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { idSchema, isoDateTimeSchema } from './common';
+import { BORDER_STYLES, DESIGN_FONTS, blockStyleSchema, elementStyleSchema } from './design-style';
 import { richDocSchema, sanitizeRichDoc } from './rich-text';
 
 /**
@@ -60,6 +61,14 @@ export const docThemeSchema = z.object({
     accent: hex.default('#0e7490'),
     /** Líneas de tablas y recuadros. */
     border: hex.default('#e5e7eb'),
+    /**
+     * v0.1.272 — Tipografía del documento (embebida en el PDF) y la de los
+     * títulos (vacío = la misma). `modern` es Roboto: lo de siempre.
+     */
+    font: z.enum(DESIGN_FONTS).default('modern'),
+    heading_font: z.enum(DESIGN_FONTS).nullable().optional(),
+    /** Interlineado del texto (vacío = 1,25). */
+    line_height: z.number().min(1).max(2.4).nullable().optional(),
 });
 export type DocTheme = z.infer<typeof docThemeSchema>;
 
@@ -88,6 +97,8 @@ const blockBase = {
     /** Recuadro de color detrás del bloque. */
     background: optionalHex,
     padding: padding.optional(),
+    /** v0.1.272 — Tipografía, espaciado y borde (ADR-S37). */
+    style: blockStyleSchema.optional(),
 };
 
 const headerBlock = z.object({
@@ -122,6 +133,7 @@ const textBlock = z.object({
     align: z.enum(['left', 'center', 'right', 'justify']).default('left'),
     size: z.enum(['sm', 'md', 'lg']).default('md'),
     color: optionalHex,
+    paragraph_spacing: z.number().min(0).max(48).nullable().optional(),
 });
 
 const fieldsBlock = z.object({
@@ -132,6 +144,11 @@ const fieldsBlock = z.object({
     /** table: etiqueta | valor; stacked: etiqueta arriba del valor. */
     layout: z.enum(['table', 'stacked']).default('table'),
     columns: z.union([z.literal(1), z.literal(2)]).default(1),
+    label_color: optionalHex,
+    value_color: optionalHex,
+    /** Ancho de la columna de etiquetas en % (forma tabla). */
+    label_width: z.number().int().min(15).max(70).optional(),
+    lines: z.boolean().optional(),
 });
 
 export const docItemsColumnSchema = z.object({
@@ -211,6 +228,8 @@ const imageBlock = z.object({
     /** Ancho en % del área de contenido. */
     width: z.number().int().min(5).max(100).default(40),
     align: align.default('center'),
+    /** Borde de la imagen (en el PDF no hay esquinas redondeadas ni sombra). */
+    frame: elementStyleSchema.optional(),
 });
 
 const dividerBlock = z.object({
@@ -218,6 +237,9 @@ const dividerBlock = z.object({
     type: z.literal('divider'),
     color: optionalHex,
     thickness: z.number().min(0.5).max(4).default(1),
+    line_style: z.enum(BORDER_STYLES).optional(),
+    length: z.number().int().min(5).max(100).optional(),
+    align: align.optional(),
 });
 
 const spacerBlock = z.object({
@@ -281,9 +303,18 @@ const columnsBlock = z.object({
     ...blockBase,
     type: z.literal('columns'),
     columns: z
-        .array(z.object({ blocks: z.array(innerBlockSchema).max(DOC_COLUMN_MAX_BLOCKS).default([]) }))
+        .array(
+            z.object({
+                blocks: z.array(innerBlockSchema).max(DOC_COLUMN_MAX_BLOCKS).default([]),
+                background: optionalHex,
+                style: blockStyleSchema.optional(),
+            }),
+        )
         .min(2)
         .max(3),
+    /** v0.1.272 — Proporciones («1-2»), separación en pt. */
+    ratio: z.string().regex(/^[1-4](-[1-4]){1,2}$/).optional(),
+    gap: z.number().int().min(0).max(48).optional(),
 });
 
 export const docBlockSchema = z.discriminatedUnion('type', [

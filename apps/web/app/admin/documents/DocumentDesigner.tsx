@@ -48,6 +48,8 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { FontSelect, NumberField } from '@/components/design/DesignStyleControls';
+
 import { ColorRow } from '../template-editor-core/BlockStyleEditor';
 import { MergeTagInput, type MergeTagSection } from '../automations/MergeTagInput';
 import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
@@ -643,12 +645,39 @@ function PagePanel({
                 ]}
                 onChange={(v) => onTheme({ margin: v }, 'margin')}
             />
-            <Segmented<string>
-                label={__('Tamaño del texto')}
-                value={String(t.font_size)}
-                options={[9, 10, 11, 12].map((n) => ({ value: String(n), label: `${n} pt` }))}
-                onChange={(v) => onTheme({ font_size: Number(v) }, 'font_size')}
-            />
+            <Section title={__('Tipografía')}>
+                <FontSelect label={__('Fuente del documento')} value={t.font} onChange={(f) => f && onTheme({ font: f }, 'font')} medium="pdf" />
+                <FontSelect
+                    label={__('Fuente de los títulos')}
+                    value={t.heading_font ?? null}
+                    onChange={(f) => onTheme({ heading_font: f }, 'heading_font')}
+                    medium="pdf"
+                    inheritLabel={__('La misma del documento')}
+                />
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <NumberField
+                        label={__('Tamaño del texto')}
+                        unit="pt"
+                        min={8}
+                        max={13}
+                        value={t.font_size}
+                        onChange={(v) => onTheme({ font_size: v == null ? 10 : Math.round(v) }, 'font_size')}
+                        placeholder="10"
+                    />
+                    <NumberField
+                        label={__('Interlineado')}
+                        min={1}
+                        max={2.4}
+                        step={0.1}
+                        value={t.line_height}
+                        onChange={(v) => onTheme({ line_height: v }, 'line_height')}
+                        placeholder="1,25"
+                    />
+                </div>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Las fuentes van incluidas dentro del PDF: se ve igual en cualquier computador o celular, y al imprimirlo.')}
+                </p>
+            </Section>
             <Section title={__('Colores')}>
                 <ColorRow label={__('Acento (títulos, tabla, total)')} value={t.accent} onChange={(v) => v && onTheme({ accent: v }, 'accent')} />
                 <ColorRow label={__('Texto')} value={t.text} onChange={(v) => v && onTheme({ text: v }, 'text')} />

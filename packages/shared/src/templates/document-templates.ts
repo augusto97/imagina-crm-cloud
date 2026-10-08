@@ -157,6 +157,7 @@ function theme(accent: string | null | undefined): DocTheme {
         muted: '#6b7280',
         accent: accent && /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#0e7490',
         border: '#e5e7eb',
+        font: 'modern',
     };
 }
 

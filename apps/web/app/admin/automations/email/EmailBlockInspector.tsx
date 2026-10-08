@@ -12,7 +12,10 @@ import {
     Trash2,
 } from 'lucide-react';
 import {
+    COLUMN_RATIOS,
     EMAIL_FIELDS_BLOCK_TYPES,
+    type BlockStyle,
+    type BorderStyle,
     type EmailAlign,
     type EmailBlock,
     type EmailDesign,
@@ -31,6 +34,16 @@ import { api as restApi } from '@/lib/api';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
+
+import {
+    BlockStylePanel,
+    ButtonStylePanel,
+    Choice,
+    ColorField,
+    ImageFramePanel,
+    NumberField,
+    StyleSection,
+} from '@/components/design/DesignStyleControls';
 
 import { ColorRow } from '../../template-editor-core/BlockStyleEditor';
 import { MergeTagInput } from '../MergeTagInput';
@@ -84,7 +97,7 @@ export function EmailBlockInspector(p: InspectorProps): JSX.Element {
             {block.type !== 'spacer' && (
                 <Section title={__('Fondo y espacio')}>
                     <ColorRow
-                        label={__('Banda de color')}
+                        label={block.style?.bg_mode === 'box' ? __('Color de fondo') : __('Banda de color')}
                         value={block.background ?? undefined}
                         onChange={(v) => p.onPatch({ background: v ?? null })}
                     />
@@ -101,8 +114,63 @@ export function EmailBlockInspector(p: InspectorProps): JSX.Element {
                     />
                 </Section>
             )}
+
+            {block.type === 'button' && (
+                <ButtonStylePanel
+                    value={block.btn}
+                    onChange={(btn) => p.onPatch({ btn })}
+                    fullWidth={block.full_width}
+                    defaultRadius={p.design.theme.radius}
+                />
+            )}
+            {block.type === 'image' && (
+                <ImageFramePanel
+                    medium="email"
+                    value={block.frame}
+                    onChange={(frame) => p.onPatch({ frame })}
+                    defaultRadius={block.bleed ? 0 : Math.min(p.design.theme.radius, 8)}
+                />
+            )}
+
+            {block.type !== 'spacer' && (
+                <BlockStylePanel
+                    medium="email"
+                    value={block.style}
+                    onChange={(style) => p.onPatch({ style })}
+                    typography={TYPO_BLOCKS.has(block.type)}
+                    box
+                    hasBackground={!!block.background}
+                    defaults={styleDefaults(block, p.design)}
+                    inheritFontLabel={block.type === 'heading' ? __('La de los títulos') : __('La del estilo general')}
+                />
+            )}
         </div>
     );
+}
+
+/** Bloques con texto propio: muestran la sección Tipografía. */
+const TYPO_BLOCKS = new Set<string>(['heading', 'text', 'button', 'fields', 'signature']);
+
+const HEADING_SIZES: Record<1 | 2 | 3, number> = { 1: 28, 2: 22, 3: 18 };
+
+/** Lo que el renderizador usa si el campo queda vacío (para las pistas). */
+function styleDefaults(block: EmailBlock | EmailInnerBlock, design: EmailDesign): { size?: number; lineHeight?: number; padding?: number } {
+    const base = design.theme.font_size ?? 15;
+    const lh = design.theme.line_height ?? 1.6;
+    switch (block.type) {
+        case 'heading':
+            return { size: HEADING_SIZES[block.level], lineHeight: 1.25 };
+        case 'text':
+            return { size: { sm: base - 2, md: base, lg: base + 2 }[block.size], lineHeight: lh };
+        case 'button':
+            return { size: 15, lineHeight: 1.33 };
+        case 'fields':
+            return { size: 15, lineHeight: 1.4 };
+        case 'signature':
+            return { size: 14, lineHeight: 1.5 };
+        default:
+            return {};
+    }
 }
 
 function BlockFields(p: InspectorProps): JSX.Element | null {
@@ -144,6 +212,15 @@ function BlockFields(p: InspectorProps): JSX.Element | null {
                     />
                     <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
                     <ColorRow label={__('Color del texto')} value={block.color ?? undefined} onChange={(v) => onPatch({ color: v ?? null })} />
+                    <NumberField
+                        label={__('Espacio entre párrafos')}
+                        unit="px"
+                        min={0}
+                        max={48}
+                        value={block.paragraph_spacing}
+                        onChange={(v) => onPatch({ paragraph_spacing: v })}
+                        placeholder={String(Math.round((p.design.theme.font_size ?? 15) * 0.8))}
+                    />
                 </>
             );
         case 'button':
@@ -173,6 +250,29 @@ function BlockFields(p: InspectorProps): JSX.Element | null {
                         options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: `${n}px` }))}
                         onChange={(v) => onPatch({ thickness: Number(v) })}
                     />
+                    <Choice<BorderStyle>
+                        label={__('Tipo de línea')}
+                        value={block.line_style ?? 'solid'}
+                        options={[
+                            { value: 'solid', label: __('Continua') },
+                            { value: 'dashed', label: __('Rayada') },
+                            { value: 'dotted', label: __('Punteada') },
+                        ]}
+                        onChange={(v) => onPatch({ line_style: v === 'solid' ? undefined : v })}
+                    />
+                    <Field label={`${__('Largo')}: ${block.length ?? 100}%`}>
+                        <input
+                            type="range"
+                            min={5}
+                            max={100}
+                            step={5}
+                            value={block.length ?? 100}
+                            onChange={(e) => onPatch({ length: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Largo de la línea')}
+                        />
+                    </Field>
+                    {(block.length ?? 100) < 100 && <AlignControl value={block.align ?? 'center'} onChange={(v) => onPatch({ align: v })} />}
                 </>
             );
         case 'spacer':
@@ -225,8 +325,34 @@ function BlockFields(p: InspectorProps): JSX.Element | null {
                         ]}
                         onChange={(v) => p.onSetColumns(Number(v) as 2 | 3)}
                     />
+                    <Choice<string>
+                        label={__('Proporción')}
+                        value={block.ratio && block.ratio.split('-').length === block.columns.length ? block.ratio : block.columns.length === 2 ? '1-1' : '1-1-1'}
+                        options={COLUMN_RATIOS[block.columns.length as 2 | 3].map((r) => ({ value: r, label: ratioLabel(r) }))}
+                        onChange={(v) => onPatch({ ratio: v === '1-1' || v === '1-1-1' ? undefined : v })}
+                    />
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                        <NumberField label={__('Separación')} unit="px" min={0} max={64} value={block.gap} onChange={(v) => onPatch({ gap: v ?? undefined })} placeholder="16" />
+                        <Choice<'top' | 'middle' | 'bottom'>
+                            label={__('Alinear')}
+                            value={block.valign ?? 'top'}
+                            options={[
+                                { value: 'top', label: __('Arriba') },
+                                { value: 'middle', label: __('Centro') },
+                                { value: 'bottom', label: __('Abajo') },
+                            ]}
+                            onChange={(v) => onPatch({ valign: v === 'top' ? undefined : v })}
+                        />
+                    </div>
+                    <Check
+                        label={__('En el celular, una debajo de la otra')}
+                        checked={block.stack !== false}
+                        onChange={(v) => onPatch({ stack: v ? undefined : false })}
+                    />
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                        {__('En el celular las columnas se apilan solas. Tocá un bloque de una columna en la vista previa para editarlo.')}
+                        {block.stack === false
+                            ? __('Quedan lado a lado también en el teléfono: usalo sólo con contenido corto (íconos, cifras).')
+                            : __('En el celular las columnas se apilan solas. Tocá un bloque de una columna en la vista previa para editarlo.')}
                     </p>
                     {block.columns.map((col, ci) => (
                         <div key={ci} className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
@@ -247,6 +373,13 @@ function BlockFields(p: InspectorProps): JSX.Element | null {
                                 ))}
                                 <AddInner onAdd={(t) => p.onAppendToColumn(ci, makeInner(t))} />
                             </div>
+                            <ColumnBoxEditor
+                                background={col.background ?? null}
+                                style={col.style}
+                                onChange={(patch) =>
+                                    onPatch({ columns: block.columns.map((c, i) => (i === ci ? { ...c, ...patch } : c)) })
+                                }
+                            />
                         </div>
                     ))}
                 </>
@@ -254,6 +387,29 @@ function BlockFields(p: InspectorProps): JSX.Element | null {
         default:
             return null;
     }
+}
+
+/** «1-2» → «1 : 2». */
+function ratioLabel(r: string): string {
+    return r.split('-').join(' : ');
+}
+
+/** Fondo y recuadro de UNA columna (plegado). */
+function ColumnBoxEditor({
+    background,
+    style,
+    onChange,
+}: {
+    background: string | null;
+    style: BlockStyle | undefined;
+    onChange: (patch: { background?: string | null; style?: BlockStyle }) => void;
+}): JSX.Element {
+    return (
+        <StyleSection title={__('Fondo y recuadro')} modified={!!background || !!style}>
+            <ColorField label={__('Color de fondo')} value={background} onChange={(v) => onChange({ background: v })} />
+            <BlockStylePanel medium="email" value={style} onChange={(st) => onChange({ style: st })} box />
+        </StyleSection>
+    );
 }
 
 function sprintfHeight(h: number): string {
@@ -398,6 +554,27 @@ function FieldsFields(p: InspectorProps): JSX.Element {
                 ]}
                 onChange={(v) => p.onPatch({ layout: v })}
             />
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                <ColorField label={__('Color de los nombres')} value={block.label_color} onChange={(v) => p.onPatch({ label_color: v })} placeholder={p.design.theme.muted} />
+                <ColorField label={__('Color de los valores')} value={block.value_color} onChange={(v) => p.onPatch({ value_color: v })} placeholder={p.design.theme.text} />
+            </div>
+            {block.layout === 'table' && (
+                <>
+                    <Field label={`${__('Ancho de los nombres')}: ${block.label_width ?? 40}%`}>
+                        <input
+                            type="range"
+                            min={15}
+                            max={70}
+                            step={5}
+                            value={block.label_width ?? 40}
+                            onChange={(e) => p.onPatch({ label_width: Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Ancho de la columna de nombres')}
+                        />
+                    </Field>
+                    <Check label={__('Línea entre filas')} checked={block.lines !== false} onChange={(v) => p.onPatch({ lines: v ? undefined : false })} />
+                </>
+            )}
         </>
     );
 }

@@ -7494,6 +7494,55 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         conserva su tono, la simulación del correo es independiente del tema
         de la app).
 
+  - [x] **Diseño por bloque en correos y PDF: tipografía, espaciado, bordes y
+        fuentes (v0.1.272, ADR-S37, pedido del usuario: "al editor de correos le
+        faltan opciones de tipografía con campos numéricos, margin y padding,
+        borde, grosor de letra, varias tipografías, radio y sombra en los
+        botones… revisá qué es compatible con los correos y con el PDF")**.
+        (a) **Una capa de estilo común** a los dos editores (`blockStyleSchema`
+        en shared): fuente, tamaño, peso (normal/semi/negrita/extra), itálica,
+        interlineado, espaciado entre letras y mayúsculas; margen arriba/abajo y
+        relleno por lado; borde con grosor, tipo (continua/rayada/punteada),
+        color y lados; esquinas y sombra; y en el correo si el fondo es banda de
+        borde a borde o recuadro. Opcional: un bloque sin estilo sale igual que
+        antes. (b) **Por bloque**: el botón gana su forma (relleno, ancho fijo,
+        esquinas, borde, sombra), la imagen su marco, el texto el espacio entre
+        párrafos, el separador tipo y largo de línea con alineación, «Datos del
+        registro» colores y ancho de los nombres y línea entre filas, y las
+        columnas proporción (1:2, 2:1, 1:3…), separación, alineación vertical,
+        "no apilar en el celular" y fondo/recuadro por columna. (c) **Estilo
+        general**: fuente del texto y de los títulos, tamaño base, interlineado,
+        color de títulos y enlaces, margen lateral, aire alrededor, y borde y
+        sombra de la hoja; en el PDF, fuente del documento y de títulos +
+        interlineado. (d) **Compatibilidad, revisada control por control**: lo
+        que el medio no dibuja no se ofrece (el PDF no tiene esquinas
+        redondeadas ni sombras) y lo que se ve distinto lleva su aviso en el
+        panel (Outlook de Windows: esquinas rectas, sin sombra, seminegrita como
+        negrita). En el correo todo va en estilos en línea sobre la celda,
+        interlineado en px para Outlook y títulos grandes que se achican en el
+        teléfono. (e) **19 tipografías**: 8 del sistema (se ven igual en todos
+        lados) y 11 web de Google Fonts (Inter, Roboto, Open Sans, Lato,
+        Montserrat, Poppins, Nunito, Raleway, Playfair, Merriweather, Lora) —
+        Apple Mail, iPhone, Outlook de Mac, Samsung y Thunderbird las cargan;
+        Gmail y Outlook de Windows muestran la de respaldo (forzada para Outlook,
+        que si no cae a Times). **Van incluidas en el repo**
+        (`scripts/vendor-fonts.mjs`, licencias libres): WOFF para el PDF —que
+        las EMBEBE todas, las del sistema con su equivalente de mismas medidas
+        (Arial→Arimo, Times→Tinos…)— y WOFF2 para la vista previa del editor,
+        que muestra exactamente la fuente que verá quien lo reciba sin tocar la
+        CSP. (f) **Interfaz** compartida (`components/design/
+        DesignStyleControls.tsx`): números tipeables con unidad (px en el
+        correo, pt en el PDF; vacío = automático, ↑/↓), selector de fuentes con
+        cada una escrita en sí misma, secciones plegables con "restablecer",
+        relleno con candado de 4 lados, y **copiar/pegar el diseño** de un
+        bloque a otro (también entre correo y PDF). El release copia las fuentes
+        del PDF al bundle. Tests: 14 en shared (schema, caja, borde por lado,
+        tipografía, fuente web con respaldo de Outlook, columnas, tema), 4 del
+        PDF (fuentes embebidas, caja/columnas, proporciones) y 2 del front —
+        190 shared y 257 front en verde — + E2E navegador 23/23 del correo (también
+        contra el build de producción con su CSP: fuente cargada, cero
+        violaciones), 10/10 del PDF y 4/4 en el celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
