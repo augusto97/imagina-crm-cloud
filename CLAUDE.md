@@ -7187,6 +7187,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Madrid y la vista previa con la fecha y hora de Bogotá, cambio de zona
         en vivo, claro/oscuro, celular sin desborde).
 
+  - [x] **Editor de correos + firma visible (v0.1.265, ADR-S34, pedido del
+        usuario: "el email es un campo de texto muy básico; quiero diseños más
+        elaborados, totalmente compatibles con Gmail y Outlook, y no vi dónde
+        incluir la firma")**. (a) **Diseño visual por bloques** en la acción
+        «Enviar email»: el contenido pasa a tener tres formatos —**Diseño
+        visual** (recomendado), Texto y HTML— y el diseño se arma en un editor a
+        pantalla completa: bloques a la izquierda (título, texto con formato,
+        botón, imagen, datos del registro, columnas, separador, espacio, firma,
+        HTML propio) más el **estilo general** (colores, tipografía del sistema,
+        ancho, esquinas); al centro **el correo real** —el mismo HTML que sale—
+        en escritorio o celular, con las variables como pastillas o **resueltas
+        contra un registro de la lista** («Ver con datos de un registro»); a la
+        derecha los ajustes del bloque elegido (click en la vista previa lo
+        selecciona). Deshacer/rehacer, 7 plantillas de arranque (simple, aviso
+        con botón, notificación con datos, recordatorio de pago con
+        `{{pago.link}}`, bienvenida, novedades) que adoptan el color de la
+        marca, y en celular pestañas Bloques/Vista previa/Editar. El texto se
+        escribe como en Gmail (negrita, cursiva, subrayado, listas, cita,
+        enlaces, color) con un botón «Variable». El bloque **Datos del
+        registro** muestra los campos elegidos con el valor como se lee en la
+        ficha (montos con los separadores de la empresa, fechas en su formato y
+        zona, etiquetas de opciones, Sí/No, nombres de personas). (b)
+        **Compatibilidad** (`renderEmailHtml`, shared, misma función en la
+        vista previa y en el envío): tablas `role="presentation"`, estilos
+        inline, ancho fijo con condicional `<!--[if mso]>` para Outlook,
+        columnas híbridas que se apilan solas en el teléfono, botones con
+        `bgcolor` en la celda, fuentes del sistema, preheader oculto y la parte
+        de **texto plano** del multipart (`renderEmailText`). Todo se escapa
+        (texto y valores) y las URLs se validan después de resolver las
+        variables. Se guarda el MODELO, no el HTML; un diseño inválido se
+        rechaza al guardar (400 `invalid_email_design`). (c) **Firma visible**:
+        casilla «Agregar la firma al final del correo» + «Firma de» (cualquier
+        persona del equipo; leída al enviar, así si la cambia se actualiza), con
+        su vista previa y el enlace para editarla; en diseño se ubica con el
+        bloque «Firma». Si la persona ya no es del equipo o no tiene firma, el
+        correo sale igual y el run lo dice. Se fue el botón que pegaba HTML en
+        el cuerpo. (d) **La firma se edita en VISUAL** en Ajustes → Firma de
+        email (negrita, color, enlaces, imagen/logo), con modo HTML para quien
+        la tenía armada a mano (una firma con tablas abre directo en HTML para
+        no simplificarla). (e) **Enviarme una prueba**: el correo armado con el
+        mismo compositor del motor y el último registro de la lista llega a la
+        casilla de quien prueba (sólo a esa). (f) Imágenes subidas con **URL
+        pública de 5 años** (`POST /files/:id/public-url`, sólo PNG/JPG/GIF/
+        WebP): un correo se relee mucho después. (g) Plantillas de
+        automatizaciones y migrar una empresa traducen los campos del bloque
+        de datos y la persona de la firma. **Bug de paso**: el lockfile tenía
+        DOS `prosemirror-model` (1.25.11 y 1.25.12, desde v0.1.202 vía
+        prosemirror-view) y el editor de texto tiraba "multiple versions of
+        prosemirror-model were loaded" al escribir; override a una sola versión.
+        13 tests en shared (escape, URLs, estructura Outlook/Gmail, texto plano,
+        firma limpia, formato regional, plantillas), 5 del editor y 2 de
+        integración del motor (correo diseñado con datos/firma/texto; diseño
+        inválido, prueba sin enviar, firma de alguien que no es del equipo) +
+        E2E navegador 24/24 (galería, vista en vivo, click para elegir,
+        deshacer, negrita, tipografía, celular, datos reales, firma, guardado,
+        prueba enviada, firma visual en Ajustes, teléfono sin desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -349,12 +349,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.264** (vista previa del formato regional con la hora real de la zona + filtro de rollups en la zona de la empresa), en `main`.
+versión publicada: **v0.1.265** (editor de correos por bloques compatible con Gmail/Outlook + firma visible en la acción y editable en visual), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
+- v0.1.265: mandarse una prueba del correo diseñado desde el servidor y
+  abrirla en Gmail (web y celular) y Outlook (Windows) — en el sandbox el
+  correo sale por el transporte de log.
 - v0.1.263: el cliente de Colombia con la automatización de las 8 → 3 am
   queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
   se propone desde su navegador y el horario sin zona la sigue). Si nadie
@@ -382,6 +385,18 @@ versión publicada: **v0.1.264** (vista previa del formato regional con la hora 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.265** — Pedido del usuario: "en la acción enviar email
+  quiero un editor de correos, el actual es un campo de texto muy básico;
+  diseños más elaborados y editables, totalmente compatibles con Gmail y
+  Outlook; y no vi dónde incluir la firma". Hecho (ADR-S34): contenido en tres
+  formatos (Diseño visual / Texto / HTML); editor a pantalla completa por
+  bloques con vista previa real, datos de un registro, plantillas, celular;
+  HTML de tablas + estilos inline + condicionales de Outlook + texto plano; la
+  firma es una casilla visible de la acción («Firma de» una persona del
+  equipo) y se edita en visual en Ajustes; «Enviarme una prueba» a la propia
+  casilla. Bug de paso: dos versiones de prosemirror-model en el lockfile
+  (override). Queda: probar el correo real en Gmail y Outlook desde el
+  servidor (en el sandbox el correo sale por el transporte de log).
 - **2026-10-07 · v0.1.264** — Feedback del usuario con captura: la vista
   previa de Formato regional mostraba un ejemplo fijo (31/12/2026 · 2:30 p. m.)
   y confundía, parecía la hora actual. Ahora muestra la fecha y la hora REALES

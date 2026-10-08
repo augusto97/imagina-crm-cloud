@@ -204,7 +204,7 @@ interface MergeTagPickerProps {
     onPick: (tag: string) => void;
 }
 
-function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
+export function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
     const [search, setSearch] = useState('');
 
     const matches = (s: string): boolean =>

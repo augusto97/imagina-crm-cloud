@@ -43,6 +43,7 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import { AutomationDispatcher, type TriggerEvent } from './automation-dispatcher.service';
 import { evaluateCondition } from './condition-evaluator';
+import { EmailComposer } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor, type LabelFieldLike } from './merge-tags';
 
 const SYSTEM_USER = 0;
@@ -91,6 +92,8 @@ interface RunContext {
 @Injectable()
 export class AutomationEngine {
     private readonly logger = new Logger(AutomationEngine.name);
+    /** v0.1.265 — arma el correo (diseño / texto / HTML + firma). Sin dependencias. */
+    private readonly composer = new EmailComposer();
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -287,7 +290,7 @@ export class AutomationEngine {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
         return {
             slugToKey: new Map(fieldRows.map((f) => [f.slug, jsonbKeyForField(f.id)])),
-            fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }])),
+            fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config, label: f.label }])),
             timeZone: await this.tenantTimeZone(tx, tenantId),
         };
     }
@@ -812,10 +815,18 @@ export class AutomationEngine {
                 if (!to) return skip('send_email', 'Destinatario vacío o inválido.');
                 const cc = cfg.cc ? limitRecipients(merge(cfg.cc)) : undefined;
                 const bcc = cfg.bcc ? limitRecipients(merge(cfg.bcc)) : undefined;
-                const subject = merge(cfg.subject);
-                const isHtml = Boolean(cfg.is_html);
-                // En HTML, los valores interpolados se escapan (no el template).
-                const body = isHtml ? mergeHtml(cfg.body) : merge(cfg.body);
+                // v0.1.265 — diseño por bloques / texto / HTML propio + firma
+                // (ADR-S34). Un diseño inválido FALLA la acción con el motivo.
+                const composed = await this.composer.compose(tx, {
+                    tenantId: ctx.tenantId,
+                    cfg,
+                    merge,
+                    mergeHtml,
+                    fieldsBySlug: ctx.fieldsBySlug,
+                    fieldValue: (slug) => fv(slug),
+                    timeZone: ctx.timeZone,
+                });
+                const subject = composed.subject;
                 // v0.1.150 — se envía EN EL ACTO (no por la cola de correo). El
                 // motor ya corre dentro de su propio worker BullMQ, así que no
                 // se pierde nada de resiliencia; a cambio, si el SMTP rechaza
@@ -827,12 +838,16 @@ export class AutomationEngine {
                     tenantId: ctx.tenantId,
                     to,
                     subject,
-                    ...(isHtml ? { html: body } : { text: body }),
+                    ...(composed.html !== undefined ? { html: composed.html } : {}),
+                    ...(composed.text !== undefined ? { text: composed.text } : {}),
                     cc: cc || undefined,
                     bcc: bcc || undefined,
                     from: cfg.from_email ? merge(cfg.from_email) : undefined,
                     fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
                 });
+                if (composed.signatureNote) {
+                    return ok('send_email', `Enviado a ${to}: "${subject}". ${composed.signatureNote}`, { to, subject });
+                }
                 return ok('send_email', `Enviado a ${to}: "${subject}"`, { to, subject });
             }
             default:

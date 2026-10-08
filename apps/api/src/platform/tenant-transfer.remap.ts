@@ -60,6 +60,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     connection_id: 'connection',
     default_template_id: 'template',
     view_id: 'view',
+    // v0.1.265 — la firma del correo de una automatización (send_email).
+    signature_user_id: 'user',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);

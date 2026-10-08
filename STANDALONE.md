@@ -2396,4 +2396,50 @@ servidor, que es el que dispara).
 
 ---
 
-**Versión del documento:** 1.64.0 (zona horaria por empresa — ADR-S33)
+### ADR-S34 — Correos diseñados por bloques, compatibles con Gmail y Outlook (v0.1.265)
+
+**Contexto.** La acción «Enviar email» de las automatizaciones era un cuadro de
+texto con una casilla «Enviar como HTML». Para un correo con formato había que
+escribir HTML a mano, y el HTML que se escribe "normal" (divs, flex, márgenes,
+`<style>`) se rompe en Outlook de Windows (motor de Word) y Gmail descarta
+parte de los estilos. La firma tampoco se veía: era un botón que pegaba el HTML
+de la firma DENTRO del cuerpo (en modo texto salía con las etiquetas a la
+vista) y el merge tag `{{signature}}` que prometía Ajustes nunca se resolvió.
+
+**Decisión.** El cuerpo puede ser un DISEÑO por bloques
+(`config.body_mode: 'design'` + `config.design`, schema `emailDesignSchema` en
+shared): título, texto con formato (árbol ProseMirror, la misma whitelist que
+la descripción del registro), botón, imagen, datos del registro, columnas,
+separador, espacio, firma y HTML propio, más un tema (colores, tipografía del
+sistema, ancho, esquinas). Se guarda el MODELO, nunca el HTML: el HTML lo arma
+`renderEmailHtml` al enviar, y es la misma función que dibuja la vista previa
+del editor (WYSIWYG por construcción). El renderizador usa sólo lo que funciona
+en todos los clientes: tablas `role="presentation"`, estilos inline, ancho fijo
+con condicional `<!--[if mso]>`, columnas híbridas (inline-block + tabla MSO,
+se apilan solas en el celular), botones con `bgcolor` + padding en la celda,
+imágenes con `width` en atributo, preheader oculto y la parte `text/plain`
+(`renderEmailText`) del multipart. Todo lo que sale del diseño se escapa —
+texto literal y valores de las variables— y las URLs se validan después de
+resolver las variables. La FIRMA es una opción explícita de la acción
+(`include_signature` + `signature_user_id`): la de una persona del EQUIPO
+(un cliente del portal o una cuenta desactivada no firman), leída al enviar,
+ubicable con el bloque «Firma» o al final; si no hay firma el correo sale igual
+y el run lo dice. Las imágenes subidas usan una URL pública firmada de 5 años
+(`POST /files/:id/public-url`, sólo PNG/JPG/GIF/WebP) con el dominio de la
+plataforma: un correo se relee mucho después de enviado. «Enviarme una prueba»
+(`POST /lists/:l/automations/test-email`) arma el correo con el MISMO
+compositor del motor contra un registro real y lo manda SÓLO a la casilla de
+quien prueba. Los modos texto y HTML de siempre siguen (las acciones viejas no
+cambian: sin `body_mode`, `is_html` decide).
+
+**Alternativas descartadas.** Guardar HTML generado por el editor (el diseño
+quedaría congelado: cada mejora del renderizador sólo valdría para correos
+nuevos, y editar sería re-parsear HTML); un editor de terceros tipo
+Unlayer/GrapesJS (dependencia pesada, HTML propio que no controlamos y que no
+conoce nuestras variables ni la firma); MJML en el servidor (otra toolchain y
+otro lenguaje, cuando el subconjunto que necesitamos es chico y testeable a
+mano); web fonts (no cargan en Outlook ni en Gmail).
+
+---
+
+**Versión del documento:** 1.65.0 (correos diseñados — ADR-S34)
