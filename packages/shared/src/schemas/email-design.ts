@@ -890,13 +890,6 @@ function resolveHtmlTemplate(html: string, resolve: (t: string) => string): stri
  * `<td>` (no siempre los de `<table>`), y `border-collapse:separate` hace
  * falta para que las esquinas redondeadas se vean con borde.
  */
-interface BoxOut {
-    /** Lo que va dentro de la celda exterior. */
-    html: string;
-    /** Padding de la celda exterior (el margen). */
-    outerPad: string;
-}
-
 function boxInner(
     ctx: Ctx,
     b: { style?: BlockStyle; background?: string | null },
