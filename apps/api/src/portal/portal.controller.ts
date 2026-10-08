@@ -46,6 +46,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
+import { contentDispositionHeader } from '../files/safe-content-type';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PortalService, type PortalActor } from './portal.service';
 
@@ -301,6 +302,24 @@ export class PortalController {
         @Query('limit') limit?: string,
     ): Promise<{ data: ActivityDto[] }> {
         return { data: await this.portal.myActivity(portalActor(req), Number(limit ?? 50)) };
+    }
+
+    /** v0.1.267 — PDF publicado en el portal, del registro del cliente. */
+    @Get('portal/me/documents/:id')
+    @UseGuards(SessionGuard)
+    async myDocument(
+        @Req() req: FastifyRequest,
+        @Res() reply: FastifyReply,
+        @Param('id') id: string,
+    ): Promise<void> {
+        const doc = await this.portal.myDocument(portalActor(req), Number(id));
+        const name = doc.filename.toLowerCase().endsWith('.pdf') ? doc.filename : `${doc.filename}.pdf`;
+        void reply
+            .header('content-type', 'application/pdf')
+            .header('content-disposition', contentDispositionHeader('attachment', name))
+            .header('x-content-type-options', 'nosniff')
+            .header('cache-control', 'private, no-store')
+            .send(doc.buffer);
     }
 
     /** Records de otra lista visibles bajo el scope del portal. */

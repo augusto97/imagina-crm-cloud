@@ -81,6 +81,12 @@ export const portalBootSchema = z.object({
     account_id: idSchema.nullable().default(null),
     /** v0.1.241 — nombre de la empresa (para el selector de cuentas). */
     tenant_name: z.string().default(''),
+    /**
+     * v0.1.267 (ADR-S35 fase 2) — documentos PDF que la empresa publicó en el
+     * portal (plantillas marcadas «disponible en el portal»). Se bajan con
+     * `GET /portal/me/documents/:id`, siempre del registro del cliente.
+     */
+    documents: z.array(z.object({ id: idSchema, name: z.string() })).default([]),
 });
 export type PortalBoot = z.infer<typeof portalBootSchema>;
 

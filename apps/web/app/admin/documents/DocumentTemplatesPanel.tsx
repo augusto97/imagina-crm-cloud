@@ -67,7 +67,27 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
                                     <FileText className="imcrm-h-4 imcrm-w-4" />
                                 </span>
                                 <div className="imcrm-min-w-0 imcrm-flex-1">
-                                    <p className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{t.name}</p>
+                                    <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
+                                        <span className="imcrm-truncate">{t.name}</span>
+                                        {t.next_label && (
+                                            <span
+                                                className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-muted-foreground"
+                                                title={__('Próximo número a emitir')}
+                                                data-doc-next
+                                            >
+                                                {__('Próximo')} {t.next_label}
+                                            </span>
+                                        )}
+                                        {t.portal_visible && (
+                                            <span
+                                                className="imcrm-shrink-0 imcrm-rounded imcrm-bg-primary/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-medium imcrm-text-primary"
+                                                title={__('El cliente lo descarga desde su portal')}
+                                                data-doc-portal
+                                            >
+                                                {__('Portal')}
+                                            </span>
+                                        )}
+                                    </p>
                                     <p className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
                                         {__(DOC_PAGE_SIZE_LABELS[t.page_size])} · {t.blocks} {__('bloques')} · {__('Editada')} {formatDateTimeStr(t.updated_at)}
                                     </p>

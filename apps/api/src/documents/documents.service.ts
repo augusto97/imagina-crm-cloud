@@ -13,6 +13,7 @@ import {
     applyWordModifiers,
     docAllBlocks,
     docDesignFileIds,
+    formatDocNumber,
     formatEmailFieldValue,
     groupNumber,
     jsonbKeyForField,
@@ -26,6 +27,7 @@ import {
     type DocBlock,
     type DocDesign,
     type DocImage,
+    type DocNumbering,
     type DocumentPreviewInput,
     type DocumentPreviewResult,
     type DocumentTemplate,
@@ -39,14 +41,14 @@ import {
     type UpdateDocumentTemplateInput,
 } from '@imagina-base/shared';
 import { Readable } from 'node:stream';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import { AuditService } from '../audit/audit.service';
 import { applyDateModifiers, labelForFieldValue } from '../automations/merge-tags';
 import { BillingService } from '../billing/billing.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { Tx } from '../db/client';
-import { attachments, automations, documentTemplates, memberships, tenants, users } from '../db/schema';
+import { attachments, automations, documentNumbers, documentTemplates, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
@@ -79,6 +81,16 @@ export interface RenderedDocument {
      * tests (el texto del PDF va en glifos de la fuente embebida).
      */
     content: { items: Record<string, string[][]>; totals: Record<string, string> };
+    /** v0.1.267 — El número del documento ("CC-0042"), si la plantilla numera. */
+    number: string | null;
+    /** Si el número se EMITIÓ en esta generación (no existía). */
+    numberIssued: boolean;
+    /**
+     * Si el número se escribió además en un campo de texto del registro: la
+     * clave (`f{id}`) y el valor. El motor de automatizaciones lo vuelca en su
+     * copia del registro para que una acción posterior no lo pise.
+     */
+    numberField: { key: string; value: string } | null;
 }
 
 export interface RenderRequest {
@@ -91,6 +103,12 @@ export interface RenderRequest {
     mode: 'real' | 'tags';
     /** Variables extra (`{{pago.link}}` dentro de una automatización). */
     extra?: (token: string) => unknown;
+    /**
+     * v0.1.267 — La plantilla guardada (para la numeración). `assign`: emitir
+     * el número si el registro todavía no tiene (generar de verdad); sin él,
+     * sólo se MIRA el que tiene o el próximo (vista previa).
+     */
+    template?: { id: number; assign: boolean };
 }
 
 /**
@@ -141,6 +159,9 @@ export class DocumentsService {
                 updated_at: r.updatedAt.toISOString(),
                 page_size: d?.theme.page_size ?? 'letter',
                 blocks: d?.blocks.length ?? 0,
+                portal_visible: r.portalVisible,
+                next_number: r.nextNumber,
+                next_label: d?.numbering.enabled ? formatDocNumber(nextOf(r.nextNumber, d.numbering), d.numbering) : null,
             };
         });
     }
@@ -175,6 +196,7 @@ export class DocumentsService {
                     name: input.name.trim(),
                     filename: (input.filename ?? '').trim(),
                     design: design as never,
+                    portalVisible: input.portal_visible ?? false,
                     createdBy: userId || null,
                 })
                 .returning();
@@ -204,6 +226,7 @@ export class DocumentsService {
         if (input.name !== undefined) patch.name = input.name.trim();
         if (input.filename !== undefined) patch.filename = input.filename.trim();
         if (input.design !== undefined) patch.design = this.validDesign(input.design) as never;
+        if (input.portal_visible !== undefined) patch.portalVisible = input.portal_visible;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [upd] = await tx
                 .update(documentTemplates)
@@ -333,6 +356,9 @@ export class DocumentsService {
                 design,
                 filename: '',
                 mode: input.mode ?? 'real',
+                // El editor manda la plantilla que edita: así la vista previa
+                // muestra el número de verdad (sin consumirlo).
+                template: input.template_id ? { id: input.template_id, assign: false } : undefined,
             });
         });
         return {
@@ -373,6 +399,7 @@ export class DocumentsService {
                 design,
                 filename: tpl.filename || tpl.name,
                 mode: 'real',
+                template: { id: tpl.id, assign: true },
             });
         });
         if (rendered.recordId === null) throw new NotFoundException({ code: 'record_not_found', message: 'Registro no encontrado', data: { status: 404 } });
@@ -407,6 +434,7 @@ export class DocumentsService {
         return {
             filename: rendered.filename,
             bytes: rendered.buffer.length,
+            number: rendered.number,
             file_id: fileId,
             url,
             pdf: rendered.buffer.toString('base64'),
@@ -445,6 +473,7 @@ export class DocumentsService {
             filename: opts.filename?.trim() || tpl.filename || tpl.name,
             mode: 'real',
             extra: opts.extra,
+            template: { id: tpl.id, assign: true },
         });
     }
 
@@ -477,12 +506,22 @@ export class DocumentsService {
         const tenant = await this.tenantInfo(tx, tenantId);
         const format: FormatOpts = { ...tenant.format, timezone: await this.zone(tenantId, tx) };
 
-        const record: RecordDto | null =
+        let record: RecordDto | null =
             !tagsMode && req.recordId !== null
                 ? await this.records.get(tenantId, actor, String(list.id), req.recordId, tx).catch(() => null)
                 : null;
         if (!tagsMode && req.recordId !== null && !record) {
             throw new NotFoundException({ code: 'record_not_found', message: 'Registro no encontrado', data: { status: 404 } });
+        }
+
+        // v0.1.267 — El número del documento: el que ya tiene el registro, o
+        // se EMITE ahora (generar de verdad) o se mira el próximo (vista previa).
+        const numbering = await this.documentNumber(tx, tenantId, design.numbering, req.template, record, fields, warnings);
+        // Si el número se acaba de escribir en un campo, el documento lo
+        // muestra ya (el registro se leyó antes de emitirlo).
+        if (record && numbering.field) record = { ...record, data: { ...record.data, [numbering.field.key]: numbering.field.value } };
+        if (!design.numbering.enabled && JSON.stringify(design).includes('documento.numero')) {
+            warnings.push('El documento usa {{documento.numero}} pero la numeración está apagada: encendela en «Hoja y estilo».');
         }
 
         // Ítems (tablas de registros vinculados).
@@ -538,6 +577,7 @@ export class DocumentsService {
                     return `${m.prefix}${groupNumber(n, m.decimals, format.number_format)}`;
                 },
                 dateFormat: (ymd) => formatValue({ type: 'date' }, ymd, format, userName),
+                docNumber: numbering.label,
                 extra: req.extra,
             });
         const totals = computeDesignTotals(design, {
@@ -602,7 +642,124 @@ export class DocumentsService {
                 items: Object.fromEntries([...itemsTables].map(([id, t]) => [id, t.rows])),
                 totals: Object.fromEntries([...totalsResolved.values()].flat().map((r) => [r.id, r.value])),
             },
+            number: numbering.label,
+            numberIssued: numbering.issued,
+            numberField: numbering.field,
         };
+    }
+
+    /**
+     * v0.1.267 — Numeración consecutiva. Un registro recibe UN número por
+     * plantilla, la primera vez que su documento se genera de verdad, y lo
+     * conserva: volver a bajarlo da el mismo. La plantilla se BLOQUEA (`FOR
+     * UPDATE`) mientras se emite: dos generaciones a la vez esperan su turno y
+     * no se repite ni se salta ningún número; si la transacción revierte (una
+     * automatización que falla después), el número tampoco queda gastado.
+     */
+    private async documentNumber(
+        tx: Tx,
+        tenantId: number,
+        numbering: DocNumbering,
+        template: RenderRequest['template'],
+        record: RecordDto | null,
+        fields: Field[],
+        warnings: string[],
+    ): Promise<{ label: string | null; issued: boolean; field: { key: string; value: string } | null }> {
+        if (!numbering.enabled) return { label: null, issued: false, field: null };
+        // Sin plantilla guardada (un diseño nuevo en el editor): el primero.
+        if (!template) return { label: formatDocNumber(numbering.start, numbering), issued: false, field: null };
+        const existing = async (): Promise<string | null> => {
+            if (!record) return null;
+            const [row] = await tx
+                .select({ label: documentNumbers.label })
+                .from(documentNumbers)
+                .where(and(eq(documentNumbers.templateId, template.id), eq(documentNumbers.recordId, record.id)))
+                .limit(1);
+            return row?.label ?? null;
+        };
+        const already = await existing();
+        if (already !== null) return { label: already, issued: false, field: null };
+        if (!record || !template.assign) {
+            const [tpl] = await tx
+                .select({ next: documentTemplates.nextNumber })
+                .from(documentTemplates)
+                .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, template.id)))
+                .limit(1);
+            return { label: formatDocNumber(nextOf(tpl?.next ?? 1, numbering), numbering), issued: false, field: null };
+        }
+        // Emitir: bloquear la plantilla y volver a mirar (otra generación pudo
+        // emitirlo mientras esperábamos el bloqueo).
+        const [locked] = await tx
+            .select({ next: documentTemplates.nextNumber })
+            .from(documentTemplates)
+            .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, template.id)))
+            .for('update');
+        if (!locked) return { label: null, issued: false, field: null };
+        const raced = await existing();
+        if (raced !== null) return { label: raced, issued: false, field: null };
+        const n = nextOf(locked.next, numbering);
+        const label = formatDocNumber(n, numbering);
+        await tx.insert(documentNumbers).values({ tenantId, templateId: template.id, recordId: record.id, number: n, label });
+        await tx
+            .update(documentTemplates)
+            .set({ nextNumber: n + 1 })
+            .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.id, template.id)));
+        // Además, en un campo de texto del registro (para verlo y filtrarlo en
+        // la lista). En la MISMA transacción: el número queda guardado si y
+        // sólo si se emitió.
+        let field: { key: string; value: string } | null = null;
+        if (numbering.save_field) {
+            const f = fields.find((x) => x.slug === numbering.save_field);
+            if (!f || (f.type !== 'text' && f.type !== 'long_text')) {
+                warnings.push(`El número no se guardó en «${numbering.save_field}»: elegí un campo de texto de esta lista.`);
+            } else {
+                await tx
+                    .update(recordsTable)
+                    .set({
+                        data: sql`jsonb_set(coalesce(${recordsTable.data}, '{}'::jsonb), ${`{${jsonbKeyForField(f.id)}}`}::text[], to_jsonb(${label}::text))`,
+                        updatedAt: new Date(),
+                    })
+                    .where(and(eq(recordsTable.tenantId, tenantId), eq(recordsTable.id, record.id)));
+                field = { key: jsonbKeyForField(f.id), value: label };
+            }
+        }
+        return { label, issued: true, field };
+    }
+
+    // ── Portal del cliente ───────────────────────────────────────────────
+
+    /** v0.1.267 — Los documentos que el cliente puede bajar desde su portal. */
+    async portalDocumentsInTx(tx: Tx, tenantId: number, listId: number): Promise<Array<{ id: number; name: string }>> {
+        return tx
+            .select({ id: documentTemplates.id, name: documentTemplates.name })
+            .from(documentTemplates)
+            .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.listId, listId), eq(documentTemplates.portalVisible, true)))
+            .orderBy(asc(documentTemplates.name), asc(documentTemplates.id));
+    }
+
+    /**
+     * v0.1.267 — El PDF que baja el cliente desde su portal: SÓLO de su
+     * registro y SÓLO de una plantilla que la empresa marcó como visible en el
+     * portal. Se arma como sistema (igual que una automatización): lo que
+     * muestra lo decidió la empresa al diseñarla y publicarla. Bajarlo emite
+     * el número si todavía no tenía (es el documento de verdad).
+     */
+    async renderForPortal(tenantId: number, listId: number, recordId: number, templateId: number): Promise<RenderedDocument> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const tpl = await this.findInTx(tx, tenantId, listId, templateId);
+            if (!tpl || !tpl.portalVisible) throw templateNotFound(templateId);
+            const design = this.validDesign(tpl.design);
+            return this.renderInTx(tx, {
+                tenantId,
+                actor: PORTAL_RENDER_ACTOR,
+                listId,
+                recordId,
+                design,
+                filename: tpl.filename || tpl.name,
+                mode: 'real',
+                template: { id: tpl.id, assign: true },
+            });
+        });
     }
 
     // ── Datos ─────────────────────────────────────────────────────────────
@@ -835,13 +992,27 @@ function templateNotFound(id: number): NotFoundException {
     return new NotFoundException({ code: 'document_template_not_found', message: `Plantilla #${id} no encontrada`, data: { status: 404 } });
 }
 
+/** El próximo número: nunca por debajo del inicio elegido. */
+function nextOf(next: number, numbering: Pick<DocNumbering, 'start'>): number {
+    return Math.max(next, numbering.start);
+}
+
+/**
+ * Quien "genera" el PDF que baja el cliente del portal: el sistema, como en
+ * una automatización (userId 0 → los archivos y vínculos se leen sin el ACL
+ * de una persona del equipo).
+ */
+const PORTAL_RENDER_ACTOR: Actor = { userId: 0, role: 'admin' };
+
 function toDto(row: DocumentTemplateRow): DocumentTemplate {
     return {
         id: row.id,
         list_id: row.listId,
         name: row.name,
         filename: row.filename,
-        design: (parseDocDesign(row.design) ?? { version: 1, theme: {}, footer: {}, blocks: [] }) as DocumentTemplate['design'],
+        design: (parseDocDesign(row.design) ?? { version: 1, theme: {}, footer: {}, numbering: {}, blocks: [] }) as DocumentTemplate['design'],
+        portal_visible: row.portalVisible,
+        next_number: row.nextNumber,
         created_by: row.createdBy,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
@@ -957,6 +1128,8 @@ export interface DocTagContext {
     totals: (rowId: string) => number | null | undefined;
     money: (n: number, rowId?: string) => string;
     dateFormat: (ymd: string) => string;
+    /** v0.1.267 — `{{documento.numero}}` ("CC-0042"); null si no numera. */
+    docNumber?: string | null;
     extra?: (token: string) => unknown;
 }
 
@@ -983,6 +1156,7 @@ export function resolveDocTemplate(template: string, ctx: DocTagContext): string
             readable = () => ctx.dateFormat(String(raw));
         } else if (token === 'date.now') raw = new Date().toISOString().slice(0, 16).replace('T', ' ');
         else if (token === 'empresa.nombre') raw = ctx.tenantName;
+        else if (token === 'documento.numero') raw = ctx.docNumber ?? '';
         else if (token.startsWith('totales.')) {
             const id = token.slice('totales.'.length);
             const n = ctx.totals(id);

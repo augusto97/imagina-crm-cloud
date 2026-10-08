@@ -226,6 +226,23 @@ const spacerBlock = z.object({
     height: z.number().int().min(2).max(200).default(16),
 });
 
+/**
+ * v0.1.267 — Un código QR: el enlace de pago (`{{pago.link}}`), la
+ * dirección de la factura, un texto. Lo dibuja el propio pdfmake (sin
+ * imágenes ni servicios externos).
+ */
+const qrBlock = z.object({
+    ...blockBase,
+    type: z.literal('qr'),
+    /** Lo que codifica, con variables. Vacío = no se dibuja. */
+    value: z.string().max(1000).default(''),
+    /** Lado del cuadrado en puntos (72 pt = 2,54 cm). */
+    size: z.number().int().min(40).max(240).default(96),
+    align: align.default('left'),
+    /** Una línea debajo: "Escaneá para pagar". */
+    caption: z.string().max(200).default(''),
+});
+
 const pageBreakBlock = z.object({
     ...blockBase,
     type: z.literal('page_break'),
@@ -254,10 +271,11 @@ const innerBlockSchema = z.discriminatedUnion('type', [
     fieldsBlock,
     dividerBlock,
     spacerBlock,
+    qrBlock,
 ]);
 export type DocInnerBlock = z.infer<typeof innerBlockSchema>;
 export type DocInnerBlockType = DocInnerBlock['type'];
-export const DOC_INNER_BLOCK_TYPES: readonly DocInnerBlockType[] = ['heading', 'text', 'image', 'fields', 'divider', 'spacer'];
+export const DOC_INNER_BLOCK_TYPES: readonly DocInnerBlockType[] = ['heading', 'text', 'image', 'fields', 'qr', 'divider', 'spacer'];
 
 const columnsBlock = z.object({
     ...blockBase,
@@ -281,14 +299,40 @@ export const docBlockSchema = z.discriminatedUnion('type', [
     pageBreakBlock,
     signatureBlock,
     columnsBlock,
+    qrBlock,
 ]);
 export type DocBlock = z.infer<typeof docBlockSchema>;
 export type DocBlockType = DocBlock['type'];
+
+/**
+ * v0.1.267 — Numeración consecutiva de la plantilla: cada registro recibe UN
+ * número la primera vez que se genera su documento de verdad (la vista
+ * previa no consume números) y lo conserva para siempre: volver a generarlo
+ * da el mismo número. `{{documento.numero}}` lo muestra con su formato.
+ */
+export const docNumberingSchema = z.object({
+    enabled: z.boolean().default(false),
+    /** Lo que va adelante: "CC-", "2026-". */
+    prefix: z.string().max(20).default(''),
+    /** Ceros a la izquierda: 4 → 0042. */
+    padding: z.number().int().min(0).max(8).default(4),
+    /** Primer número (para seguir una numeración que ya venía de antes). */
+    start: z.number().int().min(1).max(999_999_999).default(1),
+    /** Además, guardarlo en un campo de texto del registro (slug). */
+    save_field: z.string().min(1).max(80).nullable().default(null),
+});
+export type DocNumbering = z.infer<typeof docNumberingSchema>;
+
+/** "CC-0042". */
+export function formatDocNumber(n: number, numbering: Pick<DocNumbering, 'prefix' | 'padding'>): string {
+    return `${numbering.prefix}${String(Math.trunc(n)).padStart(numbering.padding, '0')}`;
+}
 
 export const docDesignSchema = z.object({
     version: z.literal(DOC_DESIGN_VERSION).default(DOC_DESIGN_VERSION),
     theme: docThemeSchema.default({}),
     footer: docFooterSchema.default({}),
+    numbering: docNumberingSchema.default({}),
     blocks: z.array(docBlockSchema).max(DOC_MAX_BLOCKS).default([]),
 });
 export type DocDesign = z.infer<typeof docDesignSchema>;
@@ -344,6 +388,10 @@ export const documentTemplateSchema = z.object({
     /** Nombre del archivo (con variables), sin ".pdf". */
     filename: z.string(),
     design: docDesignSchema,
+    /** v0.1.267 — El cliente lo puede descargar desde su portal. */
+    portal_visible: z.boolean(),
+    /** El próximo número a asignar (si la numeración está encendida). */
+    next_number: z.number().int(),
     created_by: z.number().int().nullable(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
@@ -351,18 +399,29 @@ export const documentTemplateSchema = z.object({
 export type DocumentTemplate = z.infer<typeof documentTemplateSchema>;
 
 export const documentTemplateSummarySchema = documentTemplateSchema
-    .pick({ id: true, list_id: true, name: true, filename: true, updated_at: true })
-    .extend({ page_size: z.enum(DOC_PAGE_SIZES), blocks: z.number().int() });
+    .pick({ id: true, list_id: true, name: true, filename: true, updated_at: true, portal_visible: true, next_number: true })
+    .extend({
+        page_size: z.enum(DOC_PAGE_SIZES),
+        blocks: z.number().int(),
+        /** "CC-0042" si numera; null si no. */
+        next_label: z.string().nullable(),
+    });
 export type DocumentTemplateSummary = z.infer<typeof documentTemplateSummarySchema>;
 
 export const createDocumentTemplateSchema = z.object({
     name: z.string().trim().min(1).max(120),
     filename: z.string().trim().max(200).default(''),
     design: docDesignSchema,
+    portal_visible: z.boolean().default(false),
 });
 export type CreateDocumentTemplateInput = z.input<typeof createDocumentTemplateSchema>;
 
-export const updateDocumentTemplateSchema = createDocumentTemplateSchema.partial();
+export const updateDocumentTemplateSchema = z.object({
+    name: z.string().trim().min(1).max(120).optional(),
+    filename: z.string().trim().max(200).optional(),
+    design: docDesignSchema.optional(),
+    portal_visible: z.boolean().optional(),
+});
 export type UpdateDocumentTemplateInput = z.input<typeof updateDocumentTemplateSchema>;
 
 /** Vista previa del editor: el diseño EN EDICIÓN (sin guardar). */
@@ -372,6 +431,8 @@ export const documentPreviewInputSchema = z.object({
     record_id: z.number().int().positive().nullable().optional(),
     /** tags: las variables a la vista ({{campo}}) en vez de los datos. */
     mode: z.enum(['real', 'tags']).default('real'),
+    /** v0.1.267 — La plantilla que se edita: muestra su número real (sin consumirlo). */
+    template_id: z.number().int().positive().nullable().optional(),
 });
 export type DocumentPreviewInput = z.input<typeof documentPreviewInputSchema>;
 
@@ -413,6 +474,8 @@ export type GenerateDocumentInput = z.input<typeof generateDocumentInputSchema>;
 export interface GenerateDocumentResult {
     filename: string;
     bytes: number;
+    /** El número del documento ("CC-0042"), si la plantilla numera. */
+    number: string | null;
     /** Si se guardó en el registro: el archivo y su enlace firmado. */
     file_id: number | null;
     url: string | null;
@@ -435,6 +498,7 @@ export const DOC_BLOCK_LABELS: Record<DocBlockType, string> = {
     page_break: 'Salto de página',
     signature: 'Firma',
     columns: 'Columnas',
+    qr: 'Código QR',
 };
 
 export const DOC_BLOCK_HINTS: Record<DocBlockType, string> = {
@@ -450,4 +514,11 @@ export const DOC_BLOCK_HINTS: Record<DocBlockType, string> = {
     page_break: 'Lo que sigue arranca en una página nueva.',
     signature: 'Línea de firma con nombre y documento.',
     columns: 'Dos o tres columnas lado a lado.',
+    qr: 'Un código para escanear: el link de pago, una dirección o un texto.',
 };
+
+/** v0.1.267 — Un documento que el cliente puede bajar desde su portal. */
+export interface PortalDocument {
+    id: number;
+    name: string;
+}

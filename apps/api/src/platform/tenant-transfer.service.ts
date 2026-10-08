@@ -62,6 +62,7 @@ import {
     relations,
     savedFilters,
     savedViews,
+    documentNumbers,
     documentTemplates,
     templates,
     tenants,
@@ -269,6 +270,8 @@ export class TenantTransferService {
             await dump('saved_views', await this.byTenant(savedViews, tenantId));
             // v0.1.266 — plantillas de documentos PDF.
             await dump('document_templates', await this.byTenant(documentTemplates, tenantId));
+            // v0.1.267 — números ya emitidos (el consecutivo sigue donde iba).
+            await dump('document_numbers', await this.byTenant(documentNumbers, tenantId));
             await dump('saved_filters', await this.byTenant(savedFilters, tenantId));
             await dump('automations', await this.byTenant(automations, tenantId));
             await dump('dashboards', await this.byTenant(dashboards, tenantId));
@@ -858,6 +861,8 @@ export class TenantTransferService {
                 name: String(d.name),
                 filename: String(d.filename ?? ''),
                 design: remapJson((d.design as Row | null) ?? {}, maps) as Row,
+                nextNumber: Number(d.nextNumber ?? 1),
+                portalVisible: d.portalVisible === true,
                 createdBy: mapId(maps.user, d.createdBy),
             }),
             (d) => maps.list.has(Number(d.listId)),
@@ -952,6 +957,21 @@ export class TenantTransferService {
                 updateStatusValue: (r.updateStatusValue as string | null) ?? null,
                 repeatUntil: (r.repeatUntil as string | null) ?? null,
                 lastFiredAt: (r.lastFiredAt as string | null) ?? null,
+            };
+        });
+
+        // v0.1.267 — números de documento emitidos (plantilla + registro nuevos).
+        counts.document_numbers = await this.insertPlain(tx, rows('document_numbers'), documentNumbers, (n) => {
+            const templateId = mapId(maps.document, n.templateId);
+            const recordId = mapId(maps.record, n.recordId);
+            if (templateId === null || recordId === null) return null;
+            return {
+                tenantId,
+                templateId,
+                recordId,
+                number: Number(n.number),
+                label: String(n.label ?? ''),
+                createdAt: this.date(n.createdAt) ?? new Date(),
             };
         });
 

@@ -14,7 +14,7 @@ import { AutomationsRepository } from '../src/automations/automations.repository
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
-import { attachments, documentTemplates, records, tenants, users } from '../src/db/schema';
+import { attachments, documentNumbers, documentTemplates, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { computeTotalRows } from '../src/documents/document-totals';
 import { DocumentsService, resolveDocTemplate, sanitizeFilename, type DocTagContext } from '../src/documents/documents.service';
@@ -307,4 +307,123 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         const count = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, itemsId)));
         expect(count.length).toBe(4);
     });
+    // ── v0.1.267 (ADR-S35 fase 2) ────────────────────────────────────────
+    it('numeración: un número por registro, la vista previa no lo consume, arranca donde se dice y queda en un campo', async () => {
+        f.consecutivo = await fieldsSvc.create(tenantId, 'cobros', { label: 'Consecutivo', type: 'text', slug: 'consecutivo' });
+        const numbered: DocDesign = { ...design, numbering: { enabled: true, prefix: 'CC-', padding: 4, start: 7, save_field: 'consecutivo' } };
+        const tpl = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Numerada', filename: 'Cuenta {{documento.numero}}', design: numbered });
+        expect((await docs.list(tenantId, 'cobros')).find((t) => t.id === tpl.id)).toMatchObject({ next_label: 'CC-0007' });
+
+        // Mirar no gasta: la vista previa con la plantilla muestra el próximo.
+        const peek = await tenantDb.withTenant(tenantId, (tx) =>
+            docs.renderInTx(tx, { tenantId, actor: admin, listId: cobrosId, recordId: cobroId, design: numbered, filename: 'x', mode: 'real', template: { id: tpl.id, assign: false } }),
+        );
+        expect(peek).toMatchObject({ number: 'CC-0007', numberIssued: false });
+        await docs.preview(tenantId, admin, 'cobros', { design: numbered, record_id: cobroId, mode: 'real', template_id: tpl.id });
+        expect((await docs.list(tenantId, 'cobros')).find((t) => t.id === tpl.id)?.next_label).toBe('CC-0007');
+
+        const first = await docs.generateForRecord(tenantId, admin, 'cobros', cobroId, tpl.id, { record_id: cobroId });
+        expect(first.number).toBe('CC-0007');
+        expect(first.filename).toBe('Cuenta CC-0007.pdf');
+        const again = await docs.generateForRecord(tenantId, admin, 'cobros', cobroId, tpl.id, { record_id: cobroId });
+        expect(again.number).toBe('CC-0007');
+        const rec = await recs.get(tenantId, admin, 'cobros', cobroId);
+        expect(rec.data[`f${f.consecutivo.id}`]).toBe('CC-0007');
+
+        // Varios a la vez: números distintos y seguidos, sin huecos ni repetidos.
+        const nuevos = await Promise.all([1, 2, 3].map((i) => recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: `Cliente ${i}` } })));
+        const nums = await Promise.all(nuevos.map((r) => docs.generateForRecord(tenantId, admin, 'cobros', r.id, tpl.id, { record_id: r.id })));
+        expect(nums.map((n) => n.number).sort()).toEqual(['CC-0008', 'CC-0009', 'CC-0010']);
+        expect((await docs.list(tenantId, 'cobros')).find((t) => t.id === tpl.id)?.next_label).toBe('CC-0011');
+
+        // Si la transacción revierte, el número vuelve a quedar libre.
+        const extra = await recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: 'Revierte' } });
+        await expect(
+            tenantDb.withTenant(tenantId, async (tx) => {
+                const r = await docs.renderInTx(tx, { tenantId, actor: admin, listId: cobrosId, recordId: extra.id, design: numbered, filename: 'x', mode: 'real', template: { id: tpl.id, assign: true } });
+                expect(r.number).toBe('CC-0011');
+                throw new Error('boom');
+            }),
+        ).rejects.toThrow('boom');
+        expect((await docs.list(tenantId, 'cobros')).find((t) => t.id === tpl.id)?.next_label).toBe('CC-0011');
+        const issued = await withTenant(pg.db, tenantId, (tx) => tx.select().from(documentNumbers).where(eq(documentNumbers.templateId, tpl.id)));
+        expect(issued).toHaveLength(4);
+
+        // El número guardado en un campo ya se ve en el MISMO documento que lo emite.
+        const tpl2 = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Por campo', filename: 'Doc {{consecutivo}}', design: { ...numbered, numbering: { ...numbered.numbering, prefix: 'RC-' } } });
+        const fresh = await recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: 'Nuevo' } });
+        expect((await docs.generateForRecord(tenantId, admin, 'cobros', fresh.id, tpl2.id, { record_id: fresh.id })).filename).toBe('Doc RC-0007.pdf');
+
+        // Usar {{documento.numero}} con la numeración apagada avisa.
+        const off = await docs.preview(tenantId, admin, 'cobros', {
+            design: { ...design, numbering: { ...numbered.numbering, enabled: false }, blocks: [{ id: 'n', type: 'heading', text: 'N.º {{documento.numero}}', level: 2, align: 'left' }] } as DocDesign,
+            record_id: cobroId,
+            mode: 'real',
+        });
+        expect(off.warnings.join(' ')).toMatch(/numeraci/i);
+    });
+
+    it('automatización numerada: {{pdf.numero}} y el número no lo pisa una acción posterior', async () => {
+        const numbered: DocDesign = { ...design, numbering: { enabled: true, prefix: 'AU-', padding: 3, start: 1, save_field: 'consecutivo' } };
+        const tpl = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Auto numerada', filename: 'Cuenta {{documento.numero}}', design: numbered });
+        const auto = await automations.create(tenantId, 'cobros', {
+            name: 'Numerar',
+            trigger_type: 'record_created',
+            actions: [
+                { type: 'generate_pdf', config: { document_template_id: tpl.id } },
+                { type: 'update_field', config: { values: { nit: '800.000.000-1' } } },
+                { type: 'send_email', config: { to: 'cliente@beta.test', subject: 'Cuenta {{pdf.numero}}', body: 'Adjunta.', pdf_templates: [tpl.id] } },
+            ],
+        });
+        const nuevo = await recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: 'Épsilon' } });
+        mailbox.sent.length = 0;
+        await engine.process({ tenantId, listId: cobrosId, recordId: nuevo.id, trigger: 'record_created', after: { [`f${f.cliente!.id}`]: 'Épsilon' } });
+        expect(mailbox.sent).toHaveLength(1);
+        expect(mailbox.sent[0]!.subject).toBe('Cuenta AU-001');
+        expect(mailbox.sent[0]!.attachments?.[0]?.filename).toBe('Cuenta AU-001.pdf');
+        const after = await recs.get(tenantId, admin, 'cobros', nuevo.id);
+        expect(after.data[`f${f.consecutivo!.id}`]).toBe('AU-001');
+        expect(after.data[`f${f.nit!.id}`]).toBe('800.000.000-1');
+        await automations.remove(tenantId, 'cobros', auto.id);
+    });
+
+    it('bloque QR: se dibuja con el valor del registro y sin configurar se ve el hueco', async () => {
+        const qrDesign: DocDesign = {
+            ...design,
+            blocks: [
+                { id: 'q1', type: 'qr', value: 'https://pagar.test/{{record.id}}', size: 96, align: 'center', caption: 'Escaneá para pagar' },
+                { id: 'q2', type: 'qr', value: '', size: 64, align: 'left', caption: '' },
+                { id: 'q3', type: 'qr', value: '{{no_existe}}', size: 64, align: 'right', caption: '' },
+            ],
+        } as DocDesign;
+        const prev = await docs.preview(tenantId, admin, 'cobros', { design: qrDesign, record_id: cobroId, mode: 'real' });
+        expect(prev.pages).toBe(1);
+        const h = Object.fromEntries(prev.regions.map((r) => [r.id, r.h]));
+        expect(h.q1).toBeGreaterThan(90);
+        expect(h.q2).toBeGreaterThan(40);
+        // Configurado pero vacío para este registro: sólo el renglón vacío y el aire entre bloques.
+        expect(h.q3 ?? 0).toBeLessThan(30);
+        const tags = await docs.preview(tenantId, admin, 'cobros', { design: qrDesign, mode: 'tags' });
+        expect(tags.pages).toBe(1);
+    });
+
+    it('portal: sólo plantillas publicadas, de su lista y con su registro', async () => {
+        const hidden = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Interna', filename: 'Interna', design });
+        const shown = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Para el cliente', filename: 'Cuenta {{cliente}}', design, portal_visible: true });
+        const items = await docs.create(tenantId, admin.userId, 'items', { name: 'De ítems', filename: 'x', design, portal_visible: true });
+
+        const listed = await tenantDb.withTenant(tenantId, (tx) => docs.portalDocumentsInTx(tx, tenantId, cobrosId));
+        expect(listed.map((d) => d.id)).toEqual([shown.id]);
+
+        const pdf = await docs.renderForPortal(tenantId, cobrosId, cobroId, shown.id);
+        expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
+        expect(pdf.filename).toBe('Cuenta Beta Ltda.pdf');
+        await expect(docs.renderForPortal(tenantId, cobrosId, cobroId, hidden.id)).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderForPortal(tenantId, cobrosId, cobroId, items.id)).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderForPortal(otherTenant, cobrosId, cobroId, shown.id)).rejects.toThrow();
+
+        await docs.update(tenantId, admin.userId, 'cobros', shown.id, { portal_visible: false });
+        await expect(docs.renderForPortal(tenantId, cobrosId, cobroId, shown.id)).rejects.toMatchObject({ status: 404 });
+    });
 });
+

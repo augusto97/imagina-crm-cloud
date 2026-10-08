@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.266** (documentos PDF: cuentas de cobro con editor visual, botón en la ficha y acción + adjunto en las automatizaciones), en `main`.
+versión publicada: **v0.1.267** (documentos PDF fase 2: numeración consecutiva por plantilla, bloque QR y descarga desde el portal del cliente), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -358,10 +358,12 @@ versión publicada: **v0.1.266** (documentos PDF: cuentas de cobro con editor vi
 - v0.1.265: mandarse una prueba del correo diseñado desde el servidor y
   abrirla en Gmail (web y celular) y Outlook (Windows) — en el sandbox el
   correo sale por el transporte de log.
-- v0.1.266: generar una cuenta de cobro real desde el servidor y abrir el PDF
-  adjunto en Gmail (web y celular) y Outlook; confirmar con el usuario si la
-  fase 2 (consecutivo atómico por plantilla, QR, descarga desde el portal) va
-  ahora o más adelante.
+- v0.1.266/267: generar una cuenta de cobro real desde el servidor y abrir el
+  PDF adjunto en Gmail (web y celular) y Outlook; escanear el QR con el
+  teléfono; bajar una plantilla publicada desde el portal de un cliente real.
+  Ideas que quedaron afuera de la fase 2 (si el usuario las pide): numeración
+  que reinicia por año (`CC-2026-0001`), anular/re-emitir un número, y QR que
+  apunte a una versión pública verificable del documento.
 - v0.1.263: el cliente de Colombia con la automatización de las 8 → 3 am
   queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
   se propone desde su navegador y el horario sin zona la sigue). Si nadie
@@ -394,6 +396,25 @@ versión publicada: **v0.1.266** (documentos PDF: cuentas de cobro con editor vi
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.267** — "Continúa con lo que falta" → fase 2 de los
+  PDF (ADR-S35): (1) **consecutivo por plantilla** — prefijo/dígitos/desde,
+  un número por registro emitido al generar de verdad (ficha, automatización o
+  portal) con bloqueo de la plantilla, reusado al regenerar, la vista previa
+  no lo consume y un rollback lo libera; opcionalmente guardado en un campo de
+  texto (el mismo PDF ya lo muestra y una acción posterior no lo pisa).
+  `{{documento.numero}}` en el documento y `{{pdf.numero}}` en la
+  automatización; la cuenta de cobro de la galería lo trae encendido salvo que
+  la lista ya tenga su propio campo de número. (2) **Bloque QR** con
+  variables. (3) **«Tus documentos» en el portal del cliente** para las
+  plantillas marcadas «Disponible en el portal» — el cliente sólo elige la
+  plantilla, el registro es siempre el suyo. Insignias «Próximo CC-0100» y
+  «Portal» en el panel de plantillas. Migración 0068 (`document_numbers` +
+  `next_number`/`portal_visible`), viaja en la migración de empresa. **Bug
+  atrapado en el E2E**: con el número guardado en un campo que el documento
+  también muestra, el PRIMER PDF salía sin número (el registro se leía antes de
+  emitirlo); arreglado y con test. 5 tests de integración nuevos (12 en el spec
+  de documentos) + 1 del front; E2E navegador 18/18 (editor, ficha, portal,
+  404 de plantilla no publicada, 401 sin sesión, celular).
 - **2026-10-08 · v0.1.266** — Pedido del usuario: "una opción en
   automatizaciones para crear un PDF y enviarlo adjunto… con editor y
   plantillas" → recomendación aceptada ("Dale, arrancá con la fase 1, primero

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { docDesignSchema, parseDocDesign } from '../schemas/document-design';
+import { docDesignSchema, formatDocNumber, parseDocDesign } from '../schemas/document-design';
 import { DOCUMENT_STARTERS, buildDocumentStarter, emptyIssuer } from './document-templates';
 
 describe('plantillas de documentos (v0.1.266)', () => {
@@ -26,7 +26,12 @@ describe('plantillas de documentos (v0.1.266)', () => {
         expect(json).toContain('{{totales.total|pesos|mayusculas}}');
         const totals = design.blocks.find((b) => b.type === 'totals');
         expect(totals && totals.type === 'totals' && totals.rows[0]!.source).toEqual({ kind: 'field', slug: 'monto' });
-        expect(r.filename).toBe('Cuenta de cobro {{record.id}} - {{razon_social}}');
+        expect(r.filename).toBe('Cuenta de cobro {{documento.numero}} - {{razon_social}}');
+        // Sin un campo "número" propio, numera sola.
+        expect(design.numbering).toMatchObject({ enabled: true, padding: 4 });
+        const own = parseDocDesign(buildDocumentStarter('cuenta_cobro', { fields: { numero: 'consecutivo' } }).design)!;
+        expect(own.numbering.enabled).toBe(false);
+        expect(JSON.stringify(own)).toContain('N.º {{consecutivo}}');
     });
 
     it('lo que no se mapea queda como un marcador visible', () => {
@@ -47,5 +52,18 @@ describe('plantillas de documentos (v0.1.266)', () => {
         expect(items && items.type === 'items' && items.columns.map((c) => c.slug)).toEqual(['detalle', 'valor']);
         const totals = r.design.blocks.find((b) => b.type === 'totals');
         expect(totals && totals.type === 'totals' && totals.rows[0]!.source).toEqual({ kind: 'items_sum', block_id: 'items', slug: 'valor' });
+    });
+
+    it('v0.1.267 — número con prefijo y ceros, y el bloque QR valida (también en columnas)', () => {
+        expect(formatDocNumber(42, { prefix: 'CC-', padding: 4 })).toBe('CC-0042');
+        expect(formatDocNumber(12345, { prefix: '', padding: 3 })).toBe('12345');
+        const d = parseDocDesign({
+            blocks: [
+                { id: 'q', type: 'qr', value: '{{pago.link}}', caption: 'Escaneá para pagar' },
+                { id: 'c', type: 'columns', columns: [{ blocks: [{ id: 'q2', type: 'qr', value: 'x' }] }, { blocks: [] }] },
+            ],
+        })!;
+        expect(d.blocks[0]).toMatchObject({ type: 'qr', size: 96, align: 'left' });
+        expect(d.numbering).toEqual({ enabled: false, prefix: '', padding: 4, start: 1, save_field: null });
     });
 });

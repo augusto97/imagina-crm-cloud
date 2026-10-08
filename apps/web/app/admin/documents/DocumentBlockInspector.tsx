@@ -236,6 +236,36 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                 </>
             );
         }
+        case 'qr':
+            return (
+                <>
+                    <Field
+                        label={__('Contenido del código')}
+                        hint={__('Un enlace o un texto, con variables: el link de pago, la web de la empresa, el número del documento…')}
+                    >
+                        {tagInput(p, block.value, (v) => onPatch({ value: v }), { placeholder: 'https://…  o  {{link_de_pago}}' })}
+                    </Field>
+                    <Field label={`${__('Tamaño')}: ${block.size} pt`}>
+                        <input
+                            type="range"
+                            min={40}
+                            max={240}
+                            step={8}
+                            value={block.size}
+                            onChange={(e) => onPatch({ size: Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Tamaño del código QR')}
+                        />
+                    </Field>
+                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
+                    <Field label={__('Texto debajo (opcional)')}>
+                        {tagInput(p, block.caption, (v) => onPatch({ caption: v }), { placeholder: __('Escaneá para pagar') })}
+                    </Field>
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {__('Si el contenido queda vacío para un registro (por ejemplo, sin link de pago), el código no se dibuja.')}
+                    </p>
+                </>
+            );
         case 'divider':
             return (
                 <>
