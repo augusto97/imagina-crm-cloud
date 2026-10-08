@@ -118,6 +118,7 @@ export const INTEGRATION_KEYS = [
     'sqlserver',
     'mercadopago',
     'wompi',
+    's3',
 ] as const;
 export const integrationKeySchema = z.enum(INTEGRATION_KEYS);
 export type IntegrationKey = z.infer<typeof integrationKeySchema>;
@@ -134,6 +135,7 @@ export const INTEGRATION_CATEGORY_LABEL = {
     comercio: 'Tiendas online',
     bases_datos: 'Bases de datos',
     pagos: 'Cobros y pagos',
+    almacenamiento: 'Almacenamiento',
 } as const;
 export type IntegrationCategory = keyof typeof INTEGRATION_CATEGORY_LABEL;
 
@@ -909,6 +911,73 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 'Si es Azure SQL: en el portal de Azure → tu servidor SQL → Redes, agregá la IP de este servidor a las reglas del firewall.',
                 'Si es un servidor propio: tiene que aceptar conexiones en el puerto 1433 desde la IP de este servidor (o por una VPN).',
                 'Después de conectar, armá la sincronización con «Sincronizaciones».',
+            ],
+        },
+        actions: [],
+    },
+    {
+        // v0.1.268 (ADR-S36) — almacenamiento propio de la empresa. Una sola
+        // integración cubre a todos los que hablan S3: Amazon, Backblaze B2,
+        // Cloudflare R2, Wasabi, DigitalOcean Spaces, MinIO…
+        key: 's3',
+        name: 'Almacenamiento S3',
+        tagline: 'Guardá los archivos de tu empresa en tu propio bucket (Amazon S3, Backblaze, Cloudflare R2…).',
+        description:
+            'Conectá un bucket compatible con S3 y elegilo en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van ahí, no ocupan el espacio de tu plan y se descargan directo desde tu bucket.',
+        category: 'almacenamiento',
+        color: '#E25444',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'endpoint',
+                    label: 'Dirección del servicio (endpoint)',
+                    placeholder: 'https://s3.us-east-005.backblazeb2.com',
+                    help: 'Vacío = Amazon S3. Backblaze: https://s3.<región>.backblazeb2.com · Cloudflare R2: https://<cuenta>.r2.cloudflarestorage.com · Wasabi: https://s3.<región>.wasabisys.com · DigitalOcean: https://<región>.digitaloceanspaces.com',
+                }),
+                field({
+                    key: 'region',
+                    label: 'Región',
+                    placeholder: 'us-east-1',
+                    default: 'us-east-1',
+                    help: 'La del bucket (us-east-005, eu-central-1…). En Cloudflare R2 poné «auto».',
+                }),
+                field({ key: 'bucket', label: 'Bucket', required: true, placeholder: 'mi-empresa-archivos' }),
+                field({
+                    key: 'access_key_id',
+                    label: 'ID de la clave de acceso',
+                    required: true,
+                    placeholder: 'AKIA… / 005a1b2c…',
+                    help: 'En Backblaze se llama keyID; en R2, Access Key ID.',
+                }),
+                field({
+                    key: 'secret_access_key',
+                    label: 'Clave secreta',
+                    secret: true,
+                    required: true,
+                    help: 'En Backblaze se llama applicationKey. Se guarda cifrada.',
+                }),
+                field({
+                    key: 'prefix',
+                    label: 'Carpeta dentro del bucket',
+                    advanced: true,
+                    placeholder: 'imagina/',
+                    help: 'Opcional: los archivos se guardan bajo esta carpeta.',
+                }),
+                field({
+                    key: 'path_style',
+                    label: 'Estilo de ruta (path-style)',
+                    advanced: true,
+                    type: 'boolean',
+                    default: 'false',
+                    help: 'Encendelo para MinIO o servidores propios. Amazon, Backblaze, R2 y Wasabi funcionan apagado.',
+                }),
+            ],
+            how_to: [
+                'Creá un bucket PRIVADO en tu proveedor (no hace falta que sea público: los archivos se entregan con enlaces temporales).',
+                'Creá una clave de acceso que pueda leer, escribir y borrar en ese bucket (en Backblaze: «Application Key» con acceso a ese bucket; en R2: un token de API «Object Read & Write»).',
+                'Pegá acá la dirección, la región, el bucket y la clave. Al conectar probamos subir, leer y borrar un archivo chiquito.',
+                'Después elegilo en Ajustes → Almacenamiento y, si querés, mové ahí los archivos que ya tenés.',
             ],
         },
         actions: [],

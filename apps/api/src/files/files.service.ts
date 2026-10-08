@@ -1,14 +1,30 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    ForbiddenException,
+    Inject,
+    Injectable,
+    NotFoundException,
+    Optional,
+    ServiceUnavailableException,
+} from '@nestjs/common';
 import { roleHasCapability, type Role } from '@imagina-base/shared';
-import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { attachments, dashboards, fields, lists, records } from '../db/schema';
 import type { Tx } from '../db/client';
 import { effectivePermissions, resolvePermissions, scopeWhere } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { FILE_STORAGE, type FileStorage } from './file-storage';
+import {
+    FILE_STORAGE,
+    TENANT_STORAGE,
+    type FileStorage,
+    type PresignableStorage,
+    type TenantStorageResolver,
+} from './file-storage';
+import { describeS3Error } from './s3-file-storage';
+import { safeDisposition, contentDispositionHeader } from './safe-content-type';
 
 export interface AttachmentDto {
     id: number;
@@ -19,7 +35,28 @@ export interface AttachmentDto {
     mime_type: string;
     size_bytes: number;
     created_at: string;
+    /**
+     * v0.1.268 (ADR-S36) — quedó en el almacenamiento propio de la empresa:
+     * no cuenta para el límite del plan.
+     */
+    external?: boolean;
 }
+
+/** Lo que devuelve abrir un archivo: los bytes, o un enlace directo al bucket. */
+export type OpenedFile =
+    | { kind: 'stream'; stream: Readable; filename: string; mime: string; size: number }
+    | { kind: 'redirect'; url: string; filename: string; mime: string; size: number };
+
+/** Dónde está guardado un archivo (para leerlo desde otro módulo). */
+export interface StoredFileRef {
+    storageKey: string;
+    storageConnectionId: number | null;
+}
+
+/** El enlace directo al bucket dura poco: la URL propia es la que se comparte. */
+const PRESIGN_TTL = 15 * 60;
+/** Archivos por tanda al mover entre almacenamientos. */
+const MOVE_BATCH = 20;
 
 const MAX_BATCH = 100;
 
@@ -125,6 +162,9 @@ export class FilesService {
         private readonly tenantDb: TenantDb,
         @Inject(FILE_STORAGE) private readonly storage: FileStorage,
         @Inject(ENV) env: Env,
+        // v0.1.268 (ADR-S36) — lo provee el módulo de conectores (@Global).
+        // Opcional: los specs que arman el service a mano no lo necesitan.
+        @Optional() @Inject(TENANT_STORAGE) private readonly tenantStorage?: TenantStorageResolver,
     ) {
         // Vacío = secreto efímero por proceso (las URLs firmadas mueren al
         // reiniciar). En producción se fija FILES_SIGNING_SECRET.
@@ -191,7 +231,7 @@ export class FilesService {
         tenantId: number,
         exp: number,
         sig: string,
-    ): Promise<{ stream: ReturnType<FileStorage['read']>; filename: string; mime: string; size: number }> {
+    ): Promise<OpenedFile> {
         const now = Math.floor(Date.now() / 1000);
         const expected = this.sign(tenantId, id, exp);
         const a = Buffer.from(sig, 'utf8');
@@ -206,6 +246,67 @@ export class FilesService {
         return createHmac('sha256', this.signingSecret)
             .update(`${tenantId}.${id}.${exp}`)
             .digest('hex');
+    }
+
+    /**
+     * v0.1.268 — firma genérica con el MISMO secreto, para otros enlaces sin
+     * sesión (el PDF que se arma al abrirlo). El `scope` separa los usos: una
+     * firma de un documento nunca vale como la de un archivo.
+     */
+    signParts(scope: string, ...parts: Array<string | number>): string {
+        return createHmac('sha256', this.signingSecret).update([scope, ...parts].join('.')).digest('hex');
+    }
+
+    verifyParts(sig: string, scope: string, ...parts: Array<string | number>): boolean {
+        const a = Buffer.from(sig, 'utf8');
+        const b = Buffer.from(this.signParts(scope, ...parts), 'utf8');
+        return a.length === b.length && timingSafeEqual(a, b);
+    }
+
+    /** El dominio de la plataforma (sin barra final); vacío si no está configurado. */
+    get baseUrl(): string {
+        return this.publicBase;
+    }
+
+    // --- Dónde se guardan los bytes (v0.1.268, ADR-S36) ---------------------
+
+    /** El storage de un archivo ya guardado: la plataforma o la conexión donde quedó. */
+    private async storageOf(tenantId: number, connectionId: number | null): Promise<PresignableStorage> {
+        if (connectionId === null || connectionId === undefined) return this.storage;
+        if (!this.tenantStorage) throw storageUnavailable('El almacenamiento propio no está disponible en este servidor.');
+        try {
+            return await this.tenantStorage.forConnection(tenantId, connectionId);
+        } catch (err) {
+            throw storageUnavailable(err instanceof Error ? err.message : String(err));
+        }
+    }
+
+    /**
+     * Dónde va lo que se sube ahora. Con un almacenamiento propio elegido que
+     * no se puede usar, FALLA con el motivo: subirlo en silencio al servidor
+     * de la plataforma se comería el cupo del plan sin que nadie lo sepa.
+     */
+    async uploadTarget(tenantId: number): Promise<{ connectionId: number | null; storage: PresignableStorage }> {
+        if (!this.tenantStorage) return { connectionId: null, storage: this.storage };
+        let active;
+        try {
+            active = await this.tenantStorage.active(tenantId);
+        } catch (err) {
+            throw storageUnavailable(err instanceof Error ? err.message : String(err));
+        }
+        return active ? { connectionId: active.connectionId, storage: active.storage } : { connectionId: null, storage: this.storage };
+    }
+
+    /** ¿Lo próximo que se suba va a un almacenamiento propio? (no cuenta para el plan). */
+    async uploadsExternally(tenantId: number): Promise<boolean> {
+        if (!this.tenantStorage) return false;
+        return (await this.tenantStorage.choice(tenantId)) !== null;
+    }
+
+    /** Los bytes de un archivo, esté donde esté (lecturas internas: PDF, exportar empresa). */
+    async readStream(tenantId: number, ref: StoredFileRef): Promise<Readable> {
+        const storage = await this.storageOf(tenantId, ref.storageConnectionId);
+        return storage.read(ref.storageKey) as Readable;
     }
 
     /** Sube un archivo: bytes al storage + metadata en el mismo flujo. */
@@ -227,7 +328,14 @@ export class FilesService {
         // Clave opaca por tenant — el nombre humano vive solo en la metadata.
         const ext = extOf(clean);
         const key = `t${tenantId}/${randomBytes(16).toString('hex')}${ext}`;
-        const size = await this.storage.write(key, source);
+        const target = await this.uploadTarget(tenantId);
+        let size: number;
+        try {
+            size = await target.storage.write(key, source);
+        } catch (err) {
+            if (target.connectionId === null) throw err;
+            throw storageUnavailable(`No se pudo guardar el archivo en el almacenamiento de la empresa: ${describeS3Error(err)}`);
+        }
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [inserted] = await tx
@@ -238,11 +346,16 @@ export class FilesService {
                     mime: mime || 'application/octet-stream',
                     sizeBytes: size,
                     storageKey: key,
+                    storageConnectionId: target.connectionId,
                     // v0.1.266 — 0 = el sistema (un PDF de una automatización): sin autor.
                     createdBy: userId > 0 ? userId : null,
                 })
                 .returning();
             return inserted!;
+        }).catch(async (err: unknown) => {
+            // Sin metadata los bytes quedarían huérfanos en el bucket.
+            await target.storage.delete(key).catch(() => undefined);
+            throw err;
         });
         return toDto(row, this.signedUrl(tenantId, row.id, 4 * 3600));
     }
@@ -272,7 +385,7 @@ export class FilesService {
         tenantId: number,
         id: number,
         actor?: FileActor,
-    ): Promise<{ stream: Readable; filename: string; mime: string; size: number }> {
+    ): Promise<OpenedFile> {
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
                 .select()
@@ -281,19 +394,28 @@ export class FilesService {
                 .limit(1),
         );
         if (!row) throw fileNotFound(id);
+        const meta = { filename: row.filename, mime: row.mime, size: row.sizeBytes };
+        const storage = await this.storageOf(tenantId, row.storageConnectionId);
+        // v0.1.268 — en el bucket de la empresa el archivo sale DIRECTO de ahí
+        // con un enlace de pocos minutos: ni disco ni ancho de banda del
+        // servidor. Mismo tipo y disposición que si lo sirviera el API.
+        if (row.storageConnectionId !== null && storage.presignedGet) {
+            const { contentType, disposition } = safeDisposition(row.mime);
+            const url = await storage.presignedGet(row.storageKey, {
+                ttlSeconds: PRESIGN_TTL,
+                contentType,
+                contentDisposition: contentDispositionHeader(disposition, row.filename),
+            });
+            return { kind: 'redirect', url, ...meta };
+        }
         // Bytes perdidos (ej. uploads huérfanos de un release viejo,
         // pre-fix de shared/uploads): 404 rápido — dejar que el stream
         // falle a mitad de respuesta colgaba la request hasta el 504
         // del proxy (el logo "roto" que nunca cargaba).
-        if (this.storage.probe && !(await this.storage.probe(row.storageKey))) {
+        if (storage.probe && !(await storage.probe(row.storageKey))) {
             throw fileNotFound(id);
         }
-        return {
-            stream: this.storage.read(row.storageKey),
-            filename: row.filename,
-            mime: row.mime,
-            size: row.sizeBytes,
-        };
+        return { kind: 'stream', stream: storage.read(row.storageKey) as Readable, ...meta };
     }
 
     async remove(tenantId: number, id: number, actor?: FileActor): Promise<void> {
@@ -320,8 +442,134 @@ export class FilesService {
         });
         if (!row) throw fileNotFound(id);
         // Bytes después del commit de la metadata (best-effort).
-        await this.storage.delete(row.storageKey).catch(() => undefined);
+        try {
+            const storage = await this.storageOf(tenantId, row.storageConnectionId);
+            await storage.delete(row.storageKey);
+        } catch {
+            // Un bucket caído no impide borrar el archivo de la app.
+        }
     }
+
+    // --- Almacenamiento de la empresa: estado y mudanza (ADR-S36) -----------
+
+    /** Archivos y bytes por lugar: `null` = el servidor de la plataforma. */
+    async usageByLocation(tenantId: number): Promise<Map<number | null, { files: number; bytes: number }>> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    conn: attachments.storageConnectionId,
+                    files: sql<number>`count(*)::int`,
+                    bytes: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint`,
+                })
+                .from(attachments)
+                .where(eq(attachments.tenantId, tenantId))
+                .groupBy(attachments.storageConnectionId),
+        );
+        return new Map(rows.map((r) => [r.conn, { files: Number(r.files), bytes: Number(r.bytes) }]));
+    }
+
+    /**
+     * Una TANDA de la mudanza: a la conexión elegida (todo lo que no esté ahí)
+     * o de vuelta a la plataforma (todo lo que esté afuera). Por archivo: leer
+     * del origen → escribir en el destino → cambiar la fila (condicional: si
+     * otro proceso ya lo movió, no se pisa) → borrar del origen. Un archivo
+     * que falla queda donde estaba y se informa; la interfaz llama tanda tras
+     * tanda hasta `remaining` 0 o una tanda sin avances.
+     *
+     * `roomBytes`: lo que todavía entra en el plan (sólo al volver a la
+     * plataforma; null = ilimitado).
+     */
+    async moveBatch(
+        tenantId: number,
+        to: 'connection' | 'platform',
+        roomBytes: number | null,
+    ): Promise<{ moved: number; bytes: number; failed: Array<{ id: number; name: string; error: string }>; remaining: number }> {
+        let destId: number | null = null;
+        let dest: PresignableStorage = this.storage;
+        if (to === 'connection') {
+            const active = await this.uploadTarget(tenantId);
+            if (active.connectionId === null) {
+                throw new BadRequestException({
+                    code: 'storage_not_chosen',
+                    message: 'Primero elegí dónde guardar los archivos.',
+                    data: { status: 400 },
+                });
+            }
+            destId = active.connectionId;
+            dest = active.storage;
+        }
+        const pending = (): SQL =>
+            destId === null
+                ? isNotNull(attachments.storageConnectionId)
+                : or(isNull(attachments.storageConnectionId), ne(attachments.storageConnectionId, destId))!;
+        const batch = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), pending()))
+                .orderBy(asc(attachments.id))
+                .limit(MOVE_BATCH),
+        );
+        let moved = 0;
+        let bytes = 0;
+        let room = roomBytes;
+        const failed: Array<{ id: number; name: string; error: string }> = [];
+        for (const row of batch) {
+            if (room !== null && row.sizeBytes > room) {
+                failed.push({
+                    id: row.id,
+                    name: row.filename,
+                    error: 'No entra en el espacio de tu plan en el servidor.',
+                });
+                continue;
+            }
+            try {
+                const source = await this.storageOf(tenantId, row.storageConnectionId);
+                if (source.probe && !(await source.probe(row.storageKey))) {
+                    throw new Error('El archivo ya no estaba donde se guardó.');
+                }
+                await dest.write(row.storageKey, source.read(row.storageKey) as Readable);
+                const updated = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .update(attachments)
+                        .set({ storageConnectionId: destId })
+                        .where(
+                            and(
+                                eq(attachments.tenantId, tenantId),
+                                eq(attachments.id, row.id),
+                                row.storageConnectionId === null
+                                    ? isNull(attachments.storageConnectionId)
+                                    : eq(attachments.storageConnectionId, row.storageConnectionId),
+                            ),
+                        )
+                        .returning({ id: attachments.id }),
+                );
+                if (updated.length === 0) continue; // ya lo movió otro: lo escrito queda como copia inofensiva
+                await source.delete(row.storageKey).catch(() => undefined);
+                moved += 1;
+                bytes += row.sizeBytes;
+                if (room !== null) room -= row.sizeBytes;
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                failed.push({ id: row.id, name: row.filename, error: /S3|bucket|Access|Signature|ENOTFOUND|ECONN/i.test(msg) ? describeS3Error(err) : msg });
+            }
+        }
+        const [left] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ n: sql<number>`count(*)::int` })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), pending())),
+        );
+        return { moved, bytes, failed, remaining: Number(left?.n ?? 0) };
+    }
+}
+
+function storageUnavailable(reason: string): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+        code: 'storage_unavailable',
+        message: reason,
+        data: { status: 503 },
+    });
 }
 
 function toDto(row: typeof attachments.$inferSelect, url: string): AttachmentDto {
@@ -332,6 +580,7 @@ function toDto(row: typeof attachments.$inferSelect, url: string): AttachmentDto
         mime_type: row.mime,
         size_bytes: row.sizeBytes,
         created_at: row.createdAt.toISOString(),
+        external: row.storageConnectionId !== null,
     };
 }
 

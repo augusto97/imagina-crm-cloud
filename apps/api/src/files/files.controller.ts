@@ -18,7 +18,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { BillingService } from '../billing/billing.service';
-import { type FileActor, FilesService, type AttachmentDto } from './files.service';
+import { type FileActor, FilesService, type AttachmentDto, type OpenedFile } from './files.service';
 import { contentDispositionHeader, safeDisposition } from './safe-content-type';
 
 /**
@@ -57,11 +57,19 @@ export class SignedFilesController {
  * respuesta (bytes corruptos/perdidos), se DESTRUYE la conexión — sin esto
  * la request quedaba colgada hasta el timeout del proxy (504).
  */
-async function streamFile(
-    file: { stream: NodeJS.ReadableStream; filename: string; mime: string; size: number },
-    reply: FastifyReply,
-    cacheControl?: string,
-): Promise<void> {
+async function streamFile(file: OpenedFile, reply: FastifyReply, cacheControl?: string): Promise<void> {
+    // v0.1.268 (ADR-S36) — en el bucket de la empresa: al enlace temporal
+    // del proveedor. Ese enlace vence en minutos, así que no se cachea la
+    // redirección (la URL propia, firmada, es la que dura).
+    if (file.kind === 'redirect') {
+        reply.raw.writeHead(302, {
+            location: file.url,
+            'cache-control': 'no-store',
+            'referrer-policy': 'no-referrer',
+        });
+        reply.raw.end();
+        return;
+    }
     // SEC-21 (v0.1.113): el mime lo eligió quien subió el archivo. Sólo los
     // tipos de la whitelist se sirven inline; el resto baja como binario
     // (`attachment`) para que un `.html`/`.svg` no ejecute script en nuestro
@@ -124,7 +132,9 @@ export class FilesController {
             });
         }
         // Cuota del plan (ADR-S16): el uso YA incluye este archivo — si con él
-        // se pasa del tope, lo revertimos y rechazamos.
+        // se pasa del tope, lo revertimos y rechazamos. Lo que va al
+        // almacenamiento propio de la empresa no cuenta (ADR-S36).
+        if (dto.external) return dto;
         try {
             await this.billing.assertCanUpload(req.tenant!.tenantId, 0);
         } catch (err) {

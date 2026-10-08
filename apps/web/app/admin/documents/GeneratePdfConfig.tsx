@@ -57,6 +57,7 @@ function useDesignerLauncher(listId: number | undefined, fields: FieldEntity[], 
  * v0.1.266 — Acción «Generar un PDF» (ADR-S35): elige la plantilla de
  * documento de la lista, opcionalmente la guarda en un campo Archivo del
  * registro y deja `{{pdf.link}}` / `{{pdf.nombre}}` para lo que sigue
+ * (v0.1.268: sin guardarlo, el enlace arma el PDF al abrirlo)
  * (un WhatsApp con el enlace, un correo).
  */
 export function GeneratePdfConfig({
@@ -125,7 +126,7 @@ export function GeneratePdfConfig({
                     </Select>
                 )}
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Guardado ocupa espacio del plan (un PDF pesa entre 30 y 150 KB) y deja el enlace {{pdf.link}} para mandarlo por WhatsApp. Sin guardar, se arma, se usa y se descarta.')}
+                    {__('Sin guardar no ocupa espacio: {{pdf.link}} es un enlace de 30 días que arma el PDF al abrirlo (con los datos de ese momento). Guardado queda como archivo del registro: ocupa espacio del plan, salvo que la empresa use su propio almacenamiento (Ajustes → Almacenamiento).')}
                 </p>
             </div>
 

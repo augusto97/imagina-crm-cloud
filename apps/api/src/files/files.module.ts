@@ -7,10 +7,11 @@ import { FilesController, SignedFilesController } from './files.controller';
 import { FilesService } from './files.service';
 import { ImageProxyController } from './image-proxy.controller';
 import { ImageProxyService } from './image-proxy';
+import { WorkspaceStorageController } from './workspace-storage.controller';
 
 @Module({
     imports: [AuthModule],
-    controllers: [FilesController, SignedFilesController, ImageProxyController],
+    controllers: [FilesController, SignedFilesController, ImageProxyController, WorkspaceStorageController],
     providers: [
         FilesService,
         ImageProxyService,

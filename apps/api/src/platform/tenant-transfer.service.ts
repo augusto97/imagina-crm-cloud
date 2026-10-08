@@ -17,7 +17,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     TENANT_TRANSFER_FORMAT,
     tenantTransferManifestSchema,
@@ -69,7 +69,7 @@ import {
     users,
     syncLinks,
 } from '../db/schema';
-import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
+import { FILE_STORAGE, TENANT_STORAGE, type FileStorage, type TenantStorageResolver } from '../files/file-storage';
 import {
     emptyMaps,
     mapId,
@@ -124,6 +124,9 @@ export class TenantTransferService {
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(ENV) private readonly env: Env,
         @Inject(FILE_STORAGE) private readonly storage: FileStorage,
+        // v0.1.268 (ADR-S36) — para leer los adjuntos que quedaron en el
+        // almacenamiento propio de la empresa (al importar van al servidor).
+        @Optional() @Inject(TENANT_STORAGE) private readonly tenantStorage?: TenantStorageResolver,
     ) {}
 
     // ── Archivos ─────────────────────────────────────────────────────────
@@ -310,7 +313,12 @@ export class TenantTransferService {
                     const key = String(row.storageKey ?? '');
                     const dest = path.join(work, 'files', this.fileEntry(key));
                     try {
-                        await pipeline(this.storage.read(key), createWriteStream(dest));
+                        const conn = row.storageConnectionId == null ? null : Number(row.storageConnectionId);
+                        const source =
+                            conn !== null && this.tenantStorage
+                                ? await this.tenantStorage.forConnection(tenantId, conn)
+                                : this.storage;
+                        await pipeline(source.read(key), createWriteStream(dest));
                         files.count += 1;
                         files.bytes += Number(row.sizeBytes) || 0;
                     } catch {
@@ -445,6 +453,12 @@ export class TenantTransferService {
                 message: 'El archivo no trae la empresa.',
                 data: { status: 400 },
             });
+        }
+        const srcSettings = (tenantRow.settings ?? {}) as Row;
+        if (srcSettings.storage && typeof srcSettings.storage === 'object') {
+            warnings.push(
+                'La empresa guardaba sus archivos en un almacenamiento propio: llegaron al servidor (cuentan para el plan). Elegí de nuevo el almacenamiento en Ajustes → Almacenamiento y mové los archivos.',
+            );
         }
         const slug = await this.freeSlug(tx, input.slug ?? String(tenantRow.slug));
         const name = input.name ?? String(tenantRow.name);
@@ -1348,6 +1362,10 @@ export class TenantTransferService {
     /** Quita del `settings` de la empresa lo que no se puede descifrar acá. */
     private cleanTenantSettings(settings: Row | null, sameKey: boolean): Row {
         const out = { ...(settings ?? {}) };
+        // v0.1.268 (ADR-S36) — los adjuntos llegan al servidor de la
+        // plataforma, y el id de la conexión de almacenamiento cambia al
+        // importar: la empresa vuelve a elegirlo en Ajustes → Almacenamiento.
+        delete out.storage;
         if (sameKey) return out;
         const smtp = out.smtp;
         if (smtp !== null && typeof smtp === 'object') {

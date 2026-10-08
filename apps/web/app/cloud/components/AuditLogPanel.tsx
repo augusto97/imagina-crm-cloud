@@ -43,6 +43,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'billing.plan_change': { text: 'cambió el plan' },
     'workspace.smtp_change': { text: 'cambió el correo (SMTP)' },
     'workspace.mail_account_change': { text: 'cambió la cuenta de envío del correo' },
+    'workspace.storage_change': { text: 'cambió dónde se guardan los archivos' },
+    'workspace.storage_move': { text: 'movió archivos de almacenamiento' },
     'workspace.domain_change': { text: 'cambió el dominio' },
     'workspace.domain_verified': { text: 'verificó el dominio' },
     'workspace.portal_domain_change': { text: 'cambió el dominio del portal' },

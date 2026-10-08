@@ -36,7 +36,7 @@ import {
     type VerifyIntegrationInput,
     type VerifyIntegrationResult,
 } from '@imagina-base/shared';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import {
     collectionVerifyRequest,
@@ -66,6 +66,7 @@ import {
     wooVerifyPlan,
 } from './woocommerce/wc-api';
 import { SQL_RUNNER, sqlConnParams, type SqlRunner } from './sqlserver/sql-runner';
+import { verifyS3 } from './storage-s3';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -78,7 +79,7 @@ import {
 import { REDIS } from '../redis/redis.module';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { automations, connections, lists, tenants, users } from '../db/schema';
+import { attachments, automations, connections, lists, tenants, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { stripStoreMarkers } from '../lists/store-guard';
 import {
@@ -581,6 +582,47 @@ export class ConnectorsService {
         });
     }
 
+    /**
+     * v0.1.268 (ADR-S36) — una conexión que guarda archivos de la empresa no
+     * se borra (ni se desconecta) mientras sea el almacenamiento elegido o
+     * tenga archivos: se perderían sin aviso. Primero se mueven.
+     */
+    private async assertNotStorage(tenantId: number, id: number, name: string, verb: string): Promise<void> {
+        const [row] = await this.db
+            .select({ settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const chosen = (row?.settings as Record<string, unknown> | undefined)?.storage as
+            | { connection_id?: unknown }
+            | undefined;
+        if (Number(chosen?.connection_id) === id) {
+            throw new ConflictException({
+                code: 'connection_storage',
+                message: `«${name}» es donde se guardan los archivos de la empresa. Elegí otro almacenamiento en Ajustes → Almacenamiento antes de ${verb}la.`,
+                data: { status: 409 },
+            });
+        }
+        const files = await this.filesIn(tenantId, id);
+        if (files > 0) {
+            throw new ConflictException({
+                code: 'connection_storage_files',
+                message: `«${name}» tiene ${files} archivo(s) guardado(s). Pasalos al servidor (o a otro almacenamiento) en Ajustes → Almacenamiento antes de ${verb}la.`,
+                data: { status: 409, files },
+            });
+        }
+    }
+
+    private async filesIn(tenantId: number, connectionId: number): Promise<number> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ n: sql<number>`count(*)::int` })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.storageConnectionId, connectionId))),
+        );
+        return Number(row?.n ?? 0);
+    }
+
     private partsFrom(row: ConnectionRow | null): ConnectionParts | null {
         if (!row) return null;
         const secrets = this.readSecrets(row);
@@ -979,6 +1021,7 @@ export class ConnectorsService {
     ): Promise<Connection> {
         const row = await this.requireEditable(tenantId, userId, role, id);
         await this.assertNotMailAccount(tenantId, id, row.name, 'desconectar');
+        await this.assertNotStorage(tenantId, id, row.name, 'desconectar');
         const secrets = { ...row.secrets };
         delete secrets.access_token;
         delete secrets.refresh_token;
@@ -1280,6 +1323,25 @@ export class ConnectorsService {
             }
         }
         if (!row) await this.assertMayUseVisibility(tenantId, role, input.visibility);
+        // v0.1.268 (ADR-S36) — con archivos guardados, cambiar el bucket, el
+        // servicio o la carpeta dejaría esos archivos inalcanzables. La clave
+        // sí se puede rotar.
+        if (row && key === 's3') {
+            const before = readFields(row.config.fields);
+            const moved = ['endpoint', 'bucket', 'prefix'].filter(
+                (k) => (before[k] ?? '').trim().replace(/\/+$/, '') !== (creds.fields[k] ?? '').trim().replace(/\/+$/, ''),
+            );
+            if (moved.length > 0) {
+                const files = await this.filesIn(tenantId, row.id);
+                if (files > 0) {
+                    throw new ConflictException({
+                        code: 'connection_storage_files',
+                        message: `«${row.name}» ya tiene ${files} archivo(s) guardado(s): no se puede cambiar el bucket, la dirección ni la carpeta. Conectá otro almacenamiento y mové los archivos desde Ajustes → Almacenamiento.`,
+                        data: { status: 409, files },
+                    });
+                }
+            }
+        }
 
         const outcome = await this.runVerify(key, creds);
         if (!outcome.ok) {
@@ -1464,6 +1526,8 @@ export class ConnectorsService {
     private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
         if (key === 'woocommerce') return this.runWooVerify(creds);
         if (key === 'sqlserver') return this.runSqlVerify(creds);
+        // v0.1.268 (ADR-S36): sube, lee y borra un archivo de prueba.
+        if (key === 's3') return verifyS3(creds, { allowPrivate: this.env.STORAGE_ALLOW_PRIVATE_HOSTS });
         if (key === 'mercadopago' || key === 'wompi') return this.runCollectionVerify(key, creds);
         const req = verifyRequest(key, creds);
         if (!req) return { ok: true, label: null, error: null, warning: null, options: {} };
@@ -1741,6 +1805,7 @@ export class ConnectorsService {
         const current = await this.requireEditable(tenantId, userId, role, id);
         // v0.1.249 — ni con `force`: borrarla dejaría a la empresa sin correo.
         await this.assertNotMailAccount(tenantId, id, current.name, 'borrar');
+        await this.assertNotStorage(tenantId, id, current.name, 'borrar');
         const usage = await this.usage(tenantId, id);
         if (usage.length > 0 && !force) {
             throw new ConflictException({

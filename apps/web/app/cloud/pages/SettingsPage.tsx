@@ -22,6 +22,7 @@ import { SubscriptionPanel } from '@/cloud/components/SubscriptionPanel';
 import { AiSettingsPanel } from '@/cloud/components/AiSettingsPanel';
 import { IntegrationsPanel } from '@/cloud/components/IntegrationsPanel';
 import { TenantMailPanel } from '@/cloud/components/TenantMailPanel';
+import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
@@ -163,6 +164,9 @@ export function SettingsPage(): JSX.Element {
 
                 {active === 'correo' && isAdmin && <TenantMailPanel />}
 
+                {/* v0.1.268 (ADR-S36) — dónde se guardan los archivos. */}
+                {active === 'almacenamiento' && isAdmin && <TenantStoragePanel />}
+
                 {active === 'asistente' && isAdmin && <AiSettingsPanel />}
 
                 {/* v0.1.196 (ADR-S22) — conectores: el panel se auto-oculta ante 403. */}
@@ -228,6 +232,11 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                     used={Math.round(summary.usage.storage_bytes / (1024 * 1024))}
                     limit={summary.limits.max_storage_mb}
                     suffix=" MB"
+                    note={
+                        summary.limits.max_storage_mb === null
+                            ? undefined
+                            : 'Sólo cuentan los archivos guardados en el servidor. Los que van a tu propio almacenamiento (Ajustes → Almacenamiento) no tienen límite.'
+                    }
                 />
                 {/* Cuota de correo (ADR-S18): sólo cuentan los que salen por el
                     SMTP de la plataforma. Con SMTP propio no hay límite. */}

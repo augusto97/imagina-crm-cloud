@@ -177,10 +177,12 @@ export class BillingService {
             .select({ n: sql<number>`count(*)::int` })
             .from(automations)
             .where(eq(automations.tenantId, tenantId));
+        // v0.1.268 (ADR-S36) — sólo lo guardado en el servidor de la
+        // plataforma: lo del almacenamiento propio de la empresa no cuenta.
         const [st] = await tx
             .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
             .from(attachments)
-            .where(eq(attachments.tenantId, tenantId));
+            .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
         return {
             records: recordCount,
             users: staff,
@@ -198,23 +200,41 @@ export class BillingService {
      * más el archivo nuevo supera `max_storage_mb`. NULL = ilimitado.
      */
     async assertCanUpload(tenantId: number, incomingBytes: number): Promise<void> {
-        const { plan } = await this.planStatus(tenantId);
-        const limits = await this.plans.limits(plan);
-        if (limits.max_storage_mb === null) return;
-        const used = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const [st] = await tx
-                .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
-                .from(attachments)
-                .where(eq(attachments.tenantId, tenantId));
-            return Number(st?.n ?? 0);
-        });
-        if (used + incomingBytes > limits.max_storage_mb * 1024 * 1024) {
+        const room = await this.storageRoomBytes(tenantId);
+        if (room === null) return;
+        if (incomingBytes > room) {
+            const { plan } = await this.planStatus(tenantId);
+            const limits = await this.plans.limits(plan);
             throw new ForbiddenException({
                 code: 'storage_limit_reached',
                 message: `Alcanzaste el límite de almacenamiento de tu plan (${limits.max_storage_mb} MB)`,
                 data: { status: 403 },
             });
         }
+    }
+
+    /** Límite de almacenamiento del plan en MB (null = ilimitado). */
+    async storageLimitMb(tenantId: number): Promise<number | null> {
+        const { plan } = await this.planStatus(tenantId);
+        return (await this.plans.limits(plan)).max_storage_mb;
+    }
+
+    /**
+     * Bytes que todavía entran en el servidor de la plataforma según el plan
+     * (null = ilimitado; puede ser negativo si ya se pasó). Sólo cuenta lo
+     * guardado en la plataforma (ADR-S36).
+     */
+    async storageRoomBytes(tenantId: number): Promise<number | null> {
+        const limit = await this.storageLimitMb(tenantId);
+        if (limit === null) return null;
+        const used = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [st] = await tx
+                .select({ n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), isNull(attachments.storageConnectionId)));
+            return Number(st?.n ?? 0);
+        });
+        return limit * 1024 * 1024 - used;
     }
 
     private async countRecords(tx: Tx, tenantId: number): Promise<number> {

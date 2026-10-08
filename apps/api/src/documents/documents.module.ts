@@ -4,7 +4,7 @@ import { FieldsModule } from '../fields/fields.module';
 import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
-import { DocumentsController } from './documents.controller';
+import { DocumentsController, PublicDocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 
 /**
@@ -15,7 +15,7 @@ import { DocumentsService } from './documents.service';
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule],
-    controllers: [DocumentsController],
+    controllers: [DocumentsController, PublicDocumentsController],
     providers: [DocumentsService],
     exports: [DocumentsService],
 })

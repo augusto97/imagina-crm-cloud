@@ -349,9 +349,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.267** (documentos PDF fase 2: numeración consecutiva por plantilla, bloque QR y descarga desde el portal del cliente), en `main`.
+versión publicada: **v0.1.268** (almacenamiento propio por empresa en un bucket S3-compatible, fuera del límite del plan, + enlace del PDF que se arma al abrirlo sin guardar archivo), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- **Almacenamiento propio — falta Google Drive (v0.1.269)**: el usuario eligió
+  "las dos juntas, S3 primero y después Drive". v0.1.268 hizo el enlace del PDF
+  sin guardarlo + el bucket S3-compatible por empresa (ADR-S36). Sigue Drive
+  como segundo proveedor (scope `drive.file` sobre la integración de Google,
+  una carpeta de la app; descarga por la API con el token de la empresa, no
+  hay URL prefirmada) y, opcional, retención de PDF guardados.
+- v0.1.268: probar en el servidor con un bucket real (Backblaze B2 o R2):
+  conectar, elegir, mover y bajar un archivo — en el sandbox se probó contra
+  moto (emulador de S3).
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
@@ -396,6 +405,18 @@ versión publicada: **v0.1.267** (documentos PDF fase 2: numeración consecutiva
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.268** — Pregunta del usuario: "que estos PDF no gasten
+  espacio en el servidor… Google Drive o S3, y ahí no cuenten para el plan" →
+  propuesta en 4 piezas → "Hacé las dos juntas, S3 primero y después Drive".
+  Hecho (ADR-S36): (1) `{{pdf.link}}` y «Copiar enlace (30 días)» arman el PDF
+  al abrirlo, sin archivo; (2) integración «Almacenamiento S3» (AWS/B2/R2/
+  Wasabi/DO/MinIO) + Ajustes → Almacenamiento: lo que se sube va al bucket de
+  la empresa, no cuenta para el plan, se baja directo del bucket (302 a un
+  enlace prefirmado) y se puede mudar por tandas en los dos sentidos.
+  Migración 0069 (`attachments.storage_connection_id`). Env nuevo
+  `STORAGE_ALLOW_PRIVATE_HOSTS` (opcional). Nada en silencio: bucket caído →
+  la subida falla con el motivo; la conexión con archivos no se borra. E2E
+  24/24 contra moto. Queda: Google Drive (v0.1.269).
 - **2026-10-08 · v0.1.267** — "Continúa con lo que falta" → fase 2 de los
   PDF (ADR-S35): (1) **consecutivo por plantilla** — prefijo/dígitos/desde,
   un número por registro emitido al generar de verdad (ficha, automatización o
