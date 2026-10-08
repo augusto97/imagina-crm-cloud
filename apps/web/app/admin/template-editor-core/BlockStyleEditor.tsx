@@ -242,7 +242,7 @@ export function HexInput({
 }
 
 /** Fila de color: swatches curados + hex libre + limpiar. */
-function ColorRow({
+export function ColorRow({
     label,
     value,
     onChange,

@@ -14,7 +14,6 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
-import { useEmailSignature } from '@/hooks/useEmailSignature';
 import { useFields } from '@/hooks/useFields';
 import { useHookCaptures } from '@/hooks/useAutomations';
 import { useLists } from '@/hooks/useLists';
@@ -32,6 +31,7 @@ import type {
 import type { FieldEntity } from '@/types/field';
 import type { WebhookTestResult } from '@imagina-base/shared';
 import { ActionTypeSelect } from './ActionTypeSelect';
+import { SendEmailConfig } from './email/SendEmailConfig';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -2127,109 +2127,6 @@ function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Eleme
     );
 }
 
-function SendEmailConfig({
-    spec,
-    onChange,
-    fields,
-}: {
-    spec: ActionSpec;
-    onChange: (next: ActionSpec) => void;
-    fields: FieldEntity[];
-}): JSX.Element {
-    const to = typeof spec.config.to === 'string' ? spec.config.to : '';
-    const subject = typeof spec.config.subject === 'string' ? spec.config.subject : '';
-    const body = typeof spec.config.body === 'string' ? spec.config.body : '';
-    const isHtml = Boolean(spec.config.is_html);
-    const fromName = typeof spec.config.from_name === 'string' ? spec.config.from_name : '';
-    const fromEmail = typeof spec.config.from_email === 'string' ? spec.config.from_email : '';
-    const cc = typeof spec.config.cc === 'string' ? spec.config.cc : '';
-    const bcc = typeof spec.config.bcc === 'string' ? spec.config.bcc : '';
-
-    const set = (patch: Record<string, unknown>): void => {
-        onChange({ ...spec, config: { ...spec.config, ...patch } });
-    };
-
-    // La firma se carga vía hook; el callback `onInsertSignature`
-    // resuelve la promesa con el HTML guardado por el usuario.
-    const signature = useEmailSignature();
-
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
-            <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Para (acepta variables y varios correos separados por coma)')}
-            </Label>
-            <MergeTagInput
-                placeholder="{{email}} o user@example.com"
-                value={to}
-                onChange={(next) => set({ to: next })}
-                fields={fields}
-            />
-
-            <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Asunto')}</Label>
-            <MergeTagInput
-                placeholder={__('Hola {{name}}')}
-                value={subject}
-                onChange={(next) => set({ subject: next })}
-                fields={fields}
-            />
-
-            <Label className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cuerpo')}</Label>
-            <MergeTagInput
-                rows={4}
-                placeholder={__('Tu mensaje. Usá los botones de abajo para insertar variables.')}
-                value={body}
-                onChange={(next) => set({ body: next })}
-                fields={fields}
-                showSignatureButton
-                onInsertSignature={() => signature.data ?? ''}
-            />
-
-            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">
-                <input
-                    type="checkbox"
-                    checked={isHtml}
-                    onChange={(e) => set({ is_html: e.target.checked })}
-                />
-                {__('Enviar como HTML')}
-            </label>
-
-            <details className="imcrm-group imcrm-mt-1 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2 [&[open]]:imcrm-bg-card [&[open]]:imcrm-shadow-imcrm-sm">
-                <summary className="imcrm-flex imcrm-cursor-pointer imcrm-list-none imcrm-items-center imcrm-gap-2 imcrm-text-[12px] imcrm-font-medium imcrm-text-foreground/80 [&::-webkit-details-marker]:imcrm-hidden">
-                    <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground imcrm-transition-transform imcrm-duration-150 group-open:imcrm-rotate-90" />
-                    <span>{__('Avanzado: From, Cc, Bcc')}</span>
-                </summary>
-                <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-2">
-                    <div className="imcrm-flex imcrm-gap-2">
-                        <Input
-                            placeholder={__('Nombre remitente')}
-                            value={fromName}
-                            onChange={(e) => set({ from_name: e.target.value })}
-                            className="imcrm-flex-1"
-                        />
-                        <Input
-                            placeholder="noreply@example.com"
-                            value={fromEmail}
-                            onChange={(e) => set({ from_email: e.target.value })}
-                            className="imcrm-flex-1"
-                        />
-                    </div>
-                    <MergeTagInput
-                        placeholder={__('Cc (separados por coma)')}
-                        value={cc}
-                        onChange={(next) => set({ cc: next })}
-                        fields={fields}
-                    />
-                    <MergeTagInput
-                        placeholder={__('Bcc (separados por coma)')}
-                        value={bcc}
-                        onChange={(next) => set({ bcc: next })}
-                        fields={fields}
-                    />
-                </div>
-            </details>
-        </div>
-    );
-}
 
 function JsonConfigFallback({
     spec,

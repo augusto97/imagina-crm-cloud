@@ -9,20 +9,31 @@ import type {
     UpdateAutomationInput,
     WebhookTestInput,
     WebhookTestResult,
+    EmailTestInput,
+    EmailTestResult,
 } from '@imagina-base/shared';
-import { FALLBACK_TIME_ZONE, isEffectivelyReadOnly, zonedToday, type BillingStatus } from '@imagina-base/shared';
+import {
+    emailDesignSchema,
+    FALLBACK_TIME_ZONE,
+    isEffectivelyReadOnly,
+    parseEmailDesign,
+    zonedToday,
+    type BillingStatus,
+} from '@imagina-base/shared';
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
 import { DRIZZLE, type Db } from '../db/client';
-import { automationHooks, automations, fields, records, tenants } from '../db/schema';
+import { automationHooks, automations, fields, records, tenants, users } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { AutomationScheduler } from './automation-scheduler.service';
+import { EmailComposer, type ComposedEmail } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
+import { MailService } from '../mail/mail.service';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     buildIntegrationRequest,
@@ -63,6 +74,8 @@ export class AutomationsService {
         private readonly connectors: ConnectorsService,
         // v0.1.263 — para que el probador resuelva {{date.today}} como el motor.
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.265 — «Enviar prueba» del editor de correos.
+        @Optional() private readonly mail?: MailService,
     ) {}
 
     /**
@@ -175,12 +188,20 @@ export class AutomationsService {
         return { queued: true };
     }
 
+    /** v0.1.265 — email de una cuenta (la prueba del correo sale a su casilla). */
+    async userEmail(userId: number): Promise<string> {
+        const [row] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+        if (!row) throw new NotFoundException({ code: 'user_not_found', message: 'Usuario no encontrado', data: { status: 404 } });
+        return row.email;
+    }
+
     async create(
         tenantId: number,
         listIdOrSlug: string,
         input: CreateAutomationInput,
     ): Promise<Automation> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        normalizeEmailDesigns(input.actions);
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.insert(tx, {
                 tenantId,
@@ -204,6 +225,7 @@ export class AutomationsService {
         patch: UpdateAutomationInput,
     ): Promise<Automation> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        if (patch.actions !== undefined) normalizeEmailDesigns(patch.actions);
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.listId !== list.id) throw notFound(id);
@@ -234,31 +256,23 @@ export class AutomationsService {
     }
 
     /**
-     * Probador de webhooks salientes (v0.1.155). Arma la petición con el MISMO
-     * builder que el motor, resolviendo las variables contra un registro real
-     * de la lista (el indicado o el último), la ejecuta con el guard anti-SSRF
-     * y devuelve lo enviado + lo respondido.
-     *
-     * Configurar una API ajena (un gateway de WhatsApp, un CRM externo) era
-     * escribir a ciegas y esperar a que saltara un registro para ver si
-     * funcionaba; ahora se ve el cuerpo exacto y el error exacto en el acto.
+     * Contexto de PRUEBA de una acción: un registro real de la lista (el
+     * indicado o el último) y las mismas funciones de variables que usa el
+     * motor (`|label`, `{{date.today}}` en la zona de la empresa). Lo usan el
+     * probador de webhooks y el de correos: lo que se prueba es lo que sale.
      */
-    async testWebhook(
-        tenantId: number,
-        listIdOrSlug: string,
-        input: WebhookTestInput,
-    ): Promise<WebhookTestResult> {
+    private async sampleContext(tenantId: number, listIdOrSlug: string, recordId?: number) {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const sample = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const fieldRows = await tx
-                .select({ id: fields.id, slug: fields.slug, type: fields.type, config: fields.config })
+                .select({ id: fields.id, slug: fields.slug, label: fields.label, type: fields.type, config: fields.config })
                 .from(fields)
                 .where(eq(fields.listId, list.id));
-            const where = input.record_id
+            const where = recordId
                 ? and(
                       eq(records.tenantId, tenantId),
                       eq(records.listId, list.id),
-                      eq(records.id, input.record_id),
+                      eq(records.id, recordId),
                       isNull(records.deletedAt),
                   )
                 : and(eq(records.tenantId, tenantId), eq(records.listId, list.id), isNull(records.deletedAt));
@@ -270,7 +284,9 @@ export class AutomationsService {
                 .limit(1);
             return {
                 slugToKey: new Map(fieldRows.map((f) => [f.slug, `f${f.id}`])),
-                fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config }])),
+                fieldsBySlug: new Map(
+                    fieldRows.map((f) => [f.slug, { type: f.type, config: f.config, label: f.label }]),
+                ),
                 record: row ?? null,
             };
         });
@@ -301,6 +317,90 @@ export class AutomationsService {
                 escapeHtml,
                 labelResolverFor(sample.fieldsBySlug),
             );
+        return { ...sample, list, accessor, merge, mergeHtml, timeZone: tz };
+    }
+
+    /**
+     * v0.1.265 — Probador de correos (ADR-S34). Arma el correo con el MISMO
+     * compositor del motor contra un registro real y, si se pide, lo manda a
+     * la casilla de QUIEN prueba (nunca a otra: la prueba no es un canal para
+     * mandar correos arbitrarios). Sin `send` sólo devuelve el HTML resuelto
+     * — la vista «con datos de un registro» del editor.
+     */
+    async testEmail(
+        tenantId: number,
+        listIdOrSlug: string,
+        input: EmailTestInput,
+        user: { id: number; email: string },
+    ): Promise<EmailTestResult> {
+        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id);
+        const cfg = input.config;
+        let composed: ComposedEmail;
+        try {
+            composed = await this.tenantDb.withTenant(tenantId, (tx) =>
+                new EmailComposer().compose(tx, {
+                    tenantId,
+                    cfg,
+                    merge: sample.merge,
+                    mergeHtml: sample.mergeHtml,
+                    fieldsBySlug: sample.fieldsBySlug,
+                    fieldValue: (slug) => sample.accessor(slug),
+                    timeZone: sample.timeZone,
+                }),
+            );
+        } catch (err) {
+            return {
+                subject: '',
+                html: null,
+                text: null,
+                sample_record_id: sample.record?.id ?? null,
+                sent_to: null,
+                error: err instanceof Error ? err.message : String(err),
+                signature_note: null,
+            };
+        }
+        const base = {
+            subject: composed.subject,
+            html: composed.html ?? null,
+            text: composed.text ?? null,
+            sample_record_id: sample.record?.id ?? null,
+            signature_note: composed.signatureNote ?? null,
+        };
+        if (!input.send) return { ...base, sent_to: null, error: null };
+        if (!this.mail) return { ...base, sent_to: null, error: 'El correo no está disponible en este servidor.' };
+        try {
+            await this.mail.sendNow({
+                tenantId,
+                to: user.email,
+                subject: `[Prueba] ${composed.subject || '(sin asunto)'}`,
+                ...(composed.html !== undefined ? { html: composed.html } : {}),
+                ...(composed.text !== undefined ? { text: composed.text } : {}),
+                from: typeof cfg.from_email === 'string' && cfg.from_email ? sample.merge(cfg.from_email) : undefined,
+                fromName: typeof cfg.from_name === 'string' && cfg.from_name ? sample.merge(cfg.from_name) : undefined,
+            });
+            return { ...base, sent_to: user.email, error: null };
+        } catch (err) {
+            return { ...base, sent_to: null, error: err instanceof Error ? err.message : String(err) };
+        }
+    }
+
+    /**
+     * Probador de webhooks salientes (v0.1.155). Arma la petición con el MISMO
+     * builder que el motor, resolviendo las variables contra un registro real
+     * de la lista (el indicado o el último), la ejecuta con el guard anti-SSRF
+     * y devuelve lo enviado + lo respondido.
+     *
+     * Configurar una API ajena (un gateway de WhatsApp, un CRM externo) era
+     * escribir a ciegas y esperar a que saltara un registro para ver si
+     * funcionaba; ahora se ve el cuerpo exacto y el error exacto en el acto.
+     */
+    async testWebhook(
+        tenantId: number,
+        listIdOrSlug: string,
+        input: WebhookTestInput,
+    ): Promise<WebhookTestResult> {
+        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id);
+        const { merge, mergeHtml } = sample;
 
         // v0.1.196 — el probador resuelve la CONEXIÓN igual que el motor: si
         // la acción usa un conector, lo que se prueba lleva su credencial.
@@ -361,7 +461,7 @@ export class AutomationsService {
         const req = buildWebhookRequest(
             cfg,
             mergeForBuild,
-            { recordId: sample.record?.id ?? null, listId: list.id },
+            { recordId: sample.record?.id ?? null, listId: sample.list.id },
             connection,
         );
         // Lo que se MUESTRA no puede volver a filtrar la credencial que
@@ -625,4 +725,37 @@ function notFound(id: number): NotFoundException {
         message: `Automatización ${id} no encontrada`,
         data: { status: 404 },
     });
+}
+
+/**
+ * v0.1.265 (ADR-S34) — Valida y limpia los diseños de correo de las acciones
+ * `send_email` (también dentro de un si/sino): un diseño que no valida se
+ * rechaza al GUARDAR (400 con el motivo), no al primer envío; los documentos
+ * de texto pasan por la whitelist de `sanitizeRichDoc`.
+ */
+function normalizeEmailDesigns(actions: unknown, depth = 0): void {
+    if (!Array.isArray(actions) || depth > 4) return;
+    for (const a of actions) {
+        if (!a || typeof a !== 'object') continue;
+        const spec = a as { type?: unknown; config?: Record<string, unknown> };
+        const cfg = spec.config;
+        if (!cfg || typeof cfg !== 'object') continue;
+        if (spec.type === 'if_else') {
+            normalizeEmailDesigns(cfg.then_actions, depth + 1);
+            normalizeEmailDesigns(cfg.else_actions, depth + 1);
+            continue;
+        }
+        if (spec.type !== 'send_email' || cfg.body_mode !== 'design') continue;
+        const design = parseEmailDesign(cfg.design);
+        if (!design) {
+            const issue = emailDesignSchema.safeParse(cfg.design);
+            const detail = issue.success ? '' : issue.error.issues[0]?.path.join('.') ?? '';
+            throw new BadRequestException({
+                code: 'invalid_email_design',
+                message: `El diseño del correo no es válido${detail ? ` (${detail})` : ''}.`,
+                data: { status: 400 },
+            });
+        }
+        cfg.design = design;
+    }
 }

@@ -60,6 +60,8 @@ export function applyMergeTags(
 export interface LabelFieldLike {
     type: string;
     config: unknown;
+    /** v0.1.265 — nombre visible (bloque «Datos del registro» del correo). */
+    label?: string;
 }
 
 /**

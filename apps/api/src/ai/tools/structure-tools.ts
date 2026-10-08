@@ -237,7 +237,7 @@ const automationSpec = z.object({
         .min(1)
         .max(20)
         .describe(
-            'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?} | ' +
+            'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?, include_signature?, signature_user_id? (id de un miembro: su firma va al final)} | ' +
                 'update_field {values: {slug: valor}} — cambia campos DEL REGISTRO que disparó la automatización (es lo que corresponde a "cambiar/actualizar/marcar un campo") | ' +
                 'create_record {target_list: slug, values: {slug: valor}} | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +

@@ -10,6 +10,9 @@ import {
 } from '@/hooks/useEmailSignature';
 import { __ } from '@/lib/i18n';
 import { sanitizeHtml } from '@/lib/sanitize';
+import { ViewSwitch } from '@/components/ui/view-switch';
+
+import { SignatureEditor } from './SignatureEditor';
 
 /**
  * Card en Settings para que el usuario edite su firma de email.
@@ -18,9 +21,9 @@ import { sanitizeHtml } from '@/lib/sanitize';
  * suya) vía `GET/PATCH /me/email-signature`. Se acepta HTML básico —
  * el preview lo pasa por `sanitizeHtml` y el mail sale como HTML.
  *
- * Insertable en el body de cualquier email automatizado vía:
- *  - El botón "+ Agregar firma" en `MergeTagInput`.
- *  - El merge tag `{{signature}}`.
+ * v0.1.265 (ADR-S34) — se edita en VISUAL (como en Gmail) o en HTML, y se
+ * incluye en los correos de las automatizaciones con la opción «Agregar la
+ * firma al final del correo» de la acción «Enviar email».
  */
 export function EmailSignatureCard(): JSX.Element {
     const query = useEmailSignature();
@@ -29,10 +32,14 @@ export function EmailSignatureCard(): JSX.Element {
 
     const [draft, setDraft] = useState('');
     const [dirty, setDirty] = useState(false);
+    const [mode, setMode] = useState<'visual' | 'html'>('visual');
 
     useEffect(() => {
         if (query.data !== undefined && !dirty) {
             setDraft(query.data);
+            // Una firma armada a mano con tablas o bloques con estilo: el
+            // editor visual la simplificaría al tocarla → abre en HTML.
+            if (/<(table|div|td|font|center)\b/i.test(query.data)) setMode('html');
         }
     }, [query.data, dirty]);
 
@@ -54,7 +61,7 @@ export function EmailSignatureCard(): JSX.Element {
                 </h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Tu firma se inserta automáticamente al usar "+ Agregar firma" en el body de los emails de automatizaciones, o vía el merge tag {{signature}}. Acepta HTML básico (links, negritas, imágenes).',
+                        'Tu firma aparece al final de los correos de las automatizaciones que tengan activada la opción «Agregar la firma al final del correo» (en la acción «Enviar email»). Podés escribirla como en Gmail o pegar HTML.',
                     )}
                 </p>
             </div>
@@ -67,18 +74,40 @@ export function EmailSignatureCard(): JSX.Element {
                     </div>
                 ) : (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-                        <Textarea
-                            rows={6}
-                            value={draft}
-                            onChange={(e) => {
-                                setDraft(e.target.value);
-                                setDirty(true);
-                            }}
-                            placeholder={__(
-                                '<p>Saludos,</p>\n<p><strong>Tu nombre</strong><br/>Empresa · sitio.com</p>',
-                            )}
-                            className="imcrm-font-mono imcrm-text-xs"
-                        />
+                        <div className="imcrm-flex imcrm-justify-end">
+                            <ViewSwitch<'visual' | 'html'>
+                                label={__('Forma de editar la firma')}
+                                value={mode}
+                                options={[
+                                    { value: 'visual', label: __('Visual') },
+                                    { value: 'html', label: __('HTML') },
+                                ]}
+                                onChange={setMode}
+                            />
+                        </div>
+                        {mode === 'visual' ? (
+                            <SignatureEditor
+                                value={draft}
+                                onChange={(html) => {
+                                    if (html === draft) return;
+                                    setDraft(html);
+                                    setDirty(true);
+                                }}
+                            />
+                        ) : (
+                            <Textarea
+                                rows={6}
+                                value={draft}
+                                onChange={(e) => {
+                                    setDraft(e.target.value);
+                                    setDirty(true);
+                                }}
+                                placeholder={__(
+                                    '<p>Saludos,</p>\n<p><strong>Tu nombre</strong><br/>Empresa · sitio.com</p>',
+                                )}
+                                className="imcrm-font-mono imcrm-text-xs"
+                            />
+                        )}
 
                         {draft.trim() !== '' && (
                             <div className="imcrm-rounded imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-p-3">

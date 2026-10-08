@@ -216,6 +216,30 @@ export const webhookTestInputSchema = z.object({
 });
 export type WebhookTestInput = z.infer<typeof webhookTestInputSchema>;
 
+/**
+ * v0.1.265 — «Enviar prueba» / «Ver con datos reales» del editor de correos.
+ * La prueba sale SIEMPRE a la casilla de quien la pide.
+ */
+export const emailTestInputSchema = z.object({
+    /** El `config` de la acción `send_email` tal cual se está editando. */
+    config: z.record(z.unknown()),
+    record_id: z.number().int().positive().optional(),
+    /** false = sólo arma el correo (vista previa con datos reales). */
+    send: z.boolean().default(false),
+});
+export type EmailTestInput = z.infer<typeof emailTestInputSchema>;
+
+export interface EmailTestResult {
+    subject: string;
+    html: string | null;
+    text: string | null;
+    sample_record_id: number | null;
+    /** La casilla a la que salió la prueba (null si no se mandó). */
+    sent_to: string | null;
+    error: string | null;
+    signature_note: string | null;
+}
+
 export const webhookTestResultSchema = z.object({
     /** Lo que se envió, ya con las variables resueltas. */
     request: z.object({

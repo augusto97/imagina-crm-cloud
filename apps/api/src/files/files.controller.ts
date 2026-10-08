@@ -148,6 +148,20 @@ export class FilesController {
         return { data: await this.files.resolve(req.tenant!.tenantId, parsed, fileActor(req)) };
     }
 
+    /**
+     * v0.1.265 — URL pública de larga vida para usar una imagen subida en un
+     * correo o en la firma (ADR-S34).
+     */
+    @Post(':id/public-url')
+    @HttpCode(200)
+    @RequireCapability('create_records', 'edit_records', 'edit_own_records', 'manage_automations')
+    async publicUrl(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+    ): Promise<{ url: string }> {
+        return { url: await this.files.publicImageUrl(req.tenant!.tenantId, id, fileActor(req)) };
+    }
+
     /** Descarga streameada (inline; el browser decide por content-type). */
     @Get(':id/download')
     @RequireCapability('view_records', 'view_own_records')

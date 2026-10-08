@@ -1,7 +1,7 @@
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { automationRuns, automations, fields, lists, records, tenants, users } from '../src/db/schema';
+import { automationRuns, automations, fields, lists, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { AutomationBulkRunner } from '../src/automations/automation-bulk-runner.service';
 import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
@@ -322,6 +322,99 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         expect(html).not.toContain('<script>');
         // El template del admin sí conserva su HTML.
         expect(html).toContain('<p>Hola');
+    });
+
+    // v0.1.265 (ADR-S34) — correo DISEÑADO: tabla compatible con Outlook,
+    // texto alternativo, datos del registro legibles y la firma elegida.
+    it('send_email diseñado: HTML de tablas + texto plano + datos legibles + firma', async () => {
+        mailbox.sent.length = 0;
+        await pg.db.update(users).set({ emailSignature: '<p>Saludos,<br><strong>Auto</strong></p><script>x</script>' }).where(eq(users.id, ownerId));
+        await pg.db.insert(memberships).values({ userId: ownerId, tenantId, role: 'admin' }).onConflictDoNothing();
+        await pg.db
+            .update(tenants)
+            .set({ settings: { format: { number_format: 'dot_comma', date_format: 'dmy', time_format: 'h24' } } })
+            .where(eq(tenants.id, tenantId));
+        const design = {
+            theme: { accent: '#15803d' },
+            blocks: [
+                { id: 'h', type: 'heading', text: 'Deal {{estado|label}}' },
+                {
+                    id: 't',
+                    type: 'text',
+                    doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hola <equipo>' }] }] },
+                },
+                { id: 'f', type: 'fields', slugs: ['monto', 'estado'] },
+                { id: 'b', type: 'button', label: 'Ver', url: 'https://app.test/r/{{record.id}}' },
+            ],
+        };
+        await automationsService.create(tenantId, 'deals', {
+            name: 'Correo diseñado',
+            trigger_type: 'record_created',
+            actions: [
+                {
+                    type: 'send_email',
+                    config: {
+                        to: 'ventas@acme.test',
+                        subject: 'Nuevo deal',
+                        body_mode: 'design',
+                        design,
+                        include_signature: true,
+                        signature_user_id: ownerId,
+                    },
+                },
+            ],
+        });
+        const rec = await recordsService.create(tenantId, admin, 'deals', {
+            data: { [key('monto')]: 1500000, [key('estado')]: 'vip' },
+        });
+        await engine.process({
+            tenantId,
+            listId,
+            recordId: rec.id,
+            trigger: 'record_created',
+            after: { [key('monto')]: 1500000, [key('estado')]: 'vip' },
+        });
+
+        expect(mailbox.sent).toHaveLength(1);
+        const msg = mailbox.sent[0]!;
+        const html = msg.html ?? '';
+        expect(html).toContain('role="presentation"');
+        expect(html).toContain('<!--[if mso]>');
+        expect(html).toContain('Deal VIP');
+        expect(html).toContain('Hola &lt;equipo&gt;');
+        expect(html).toContain('USD 1.500.000,00');
+        expect(html).toContain(`https://app.test/r/${rec.id}`);
+        expect(html).toContain('Saludos');
+        expect(html).not.toContain('<script>');
+        expect(msg.text).toContain('Deal VIP');
+        expect(msg.text).toContain('Monto: USD 1.500.000,00');
+        expect(msg.text).toContain(`Ver: https://app.test/r/${rec.id}`);
+        expect(msg.text).toContain('-- \nSaludos,\nAuto');
+    });
+
+    it('send_email: un diseño inválido se rechaza al guardar; texto + firma; la prueba va a quien prueba', async () => {
+        await expect(
+            automationsService.create(tenantId, 'deals', {
+                name: 'Roto',
+                trigger_type: 'record_created',
+                actions: [{ type: 'send_email', config: { to: 'x@y.test', body_mode: 'design', design: { blocks: [{ id: 'z', type: 'nope' }] } } }],
+            }),
+        ).rejects.toMatchObject({ response: { code: 'invalid_email_design' } });
+
+        await recordsService.create(tenantId, admin, 'deals', { data: { [key('monto')]: 10, [key('estado')]: 'nueva' } });
+        const cfg = { to: 'x@y.test', subject: 'Estado {{estado|label}}', body: 'Hola', include_signature: true, signature_user_id: ownerId };
+        const preview = await automationsService.testEmail(tenantId, 'deals', { config: cfg, send: false }, { id: ownerId, email: 'auto@test.local' });
+        expect(preview).toMatchObject({ subject: 'Estado Nueva', sent_to: null, error: null });
+        expect(preview.text).toContain('Hola\n\n-- \nSaludos,');
+
+        // Una persona que no es del equipo: el correo sale igual, sin firma, y lo dice.
+        const other = await automationsService.testEmail(
+            tenantId,
+            'deals',
+            { config: { ...cfg, signature_user_id: 999999 }, send: false },
+            { id: ownerId, email: 'auto@test.local' },
+        );
+        expect(other.signature_note).toContain('ya no es del equipo');
     });
 
     it('field_filters no cumplido → trigger no matchea, no corre ni loguea', async () => {

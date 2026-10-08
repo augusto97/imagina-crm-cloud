@@ -14,12 +14,15 @@ import {
 import {
     createAutomationSchema,
     updateAutomationSchema,
+    emailTestInputSchema,
     webhookTestInputSchema,
     type Automation,
     type CreateAutomationInput,
     type UpdateAutomationInput,
     type WebhookTestInput,
     type WebhookTestResult,
+    type EmailTestInput,
+    type EmailTestResult,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -64,6 +67,22 @@ export class AutomationsController {
         @Body(new ZodValidationPipe(webhookTestInputSchema)) input: WebhookTestInput,
     ): Promise<WebhookTestResult> {
         return this.automations.testWebhook(req.tenant!.tenantId, list, input);
+    }
+
+    /**
+     * v0.1.265 — Probador del correo (ADR-S34): arma el correo con un registro
+     * real y, con `send`, lo manda a la casilla de quien prueba.
+     */
+    @Post('test-email')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    async testEmail(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(emailTestInputSchema)) input: EmailTestInput,
+    ): Promise<EmailTestResult> {
+        const email = await this.automations.userEmail(req.authUserId!);
+        return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email });
     }
 
     /** v0.1.221 — «Ejecutar ahora» de una automatización programada. */

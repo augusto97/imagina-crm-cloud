@@ -111,9 +111,15 @@ async function readableBy(
  * Archivos propios (ADR-S16). Metadata en `attachments` (RLS); bytes detrás
  * de `FileStorage`. El valor de un campo `file` es el ID del attachment.
  */
+/** Imágenes que pueden ir en un correo (se sirven inline, no ejecutan nada). */
+const EMAIL_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
+/** 5 años: un correo se relee mucho después de enviado. */
+const EMAIL_IMAGE_TTL = 5 * 365 * 24 * 3600;
+
 @Injectable()
 export class FilesService {
     private readonly signingSecret: string;
+    private readonly publicBase: string;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -123,6 +129,7 @@ export class FilesService {
         // Vacío = secreto efímero por proceso (las URLs firmadas mueren al
         // reiniciar). En producción se fija FILES_SIGNING_SECRET.
         this.signingSecret = env.FILES_SIGNING_SECRET || randomBytes(32).toString('hex');
+        this.publicBase = (env.APP_BASE_URL ?? '').replace(/\/+$/, '');
     }
 
     // --- URLs firmadas (portal del cliente — ADR-S16) -----------------------
@@ -140,6 +147,33 @@ export class FilesService {
         const exp = Math.ceil((now + Math.max(60, ttlSeconds)) / 3600) * 3600;
         const sig = this.sign(tenantId, id, exp);
         return `/api/v1/files/${id}/signed?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
+    }
+
+    /**
+     * v0.1.265 (ADR-S34) — URL PÚBLICA y de vida larga para una imagen que va
+     * dentro de un correo o de una firma. Un correo queda años en la bandeja:
+     * una URL de horas se rompería. Sólo imágenes que se sirven inline sin
+     * ejecutar nada (png/jpeg/gif/webp — nada de SVG) y que quien pide puede
+     * ver. Absoluta con el dominio de la PLATAFORMA (el de una empresa puede
+     * cambiar o desaparecer y la imagen quedaría rota en todos los correos).
+     */
+    async publicImageUrl(tenantId: number, id: number, actor?: FileActor): Promise<string> {
+        const [row] = await this.tenantDb.withTenant(tenantId, async (tx) =>
+            tx
+                .select({ id: attachments.id, mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), await readableBy(tx, tenantId, actor)))
+                .limit(1),
+        );
+        if (!row) throw fileNotFound(id);
+        if (!EMAIL_IMAGE_MIMES.has(row.mime.toLowerCase())) {
+            throw new BadRequestException({
+                code: 'not_an_image',
+                message: 'Para un correo sólo sirven imágenes PNG, JPG, GIF o WebP.',
+                data: { status: 400 },
+            });
+        }
+        return `${this.publicBase}${this.signedUrl(tenantId, id, EMAIL_IMAGE_TTL)}`;
     }
 
     /** Valida tenant/exp/sig y abre el stream (para la ruta pública). */

@@ -167,7 +167,7 @@ export function collectFieldTokens(value: unknown): string[] {
  * Dónde vive un slug dentro de una automatización:
  *  - claves `slug` / `field` / `due_field` / `date_field` (condiciones,
  *    trigger field_changed, due_date_reached);
- *  - los ítems de `changed_fields`;
+ *  - los ítems de `changed_fields` y de `slugs` (correo diseñado);
  *  - las CLAVES de `values` (update_field / create_record) y de un
  *    `field_filters` en su forma legacy de objeto plano;
  *  - los merge tags `{{slug}}`, `{{before.slug}}` y `{{slug|+1m}}` en
@@ -175,7 +175,8 @@ export function collectFieldTokens(value: unknown): string[] {
  *    `payload.x`) llevan punto y no se tocan.
  */
 const SLUG_KEYS: ReadonlySet<string> = new Set(['slug', 'field', 'due_field', 'date_field']);
-const SLUG_ARRAY_KEYS: ReadonlySet<string> = new Set(['changed_fields']);
+// v0.1.265 — `slugs`: el bloque «Datos del registro» de un correo diseñado.
+const SLUG_ARRAY_KEYS: ReadonlySet<string> = new Set(['changed_fields', 'slugs']);
 const SLUG_MAP_KEYS: ReadonlySet<string> = new Set(['values', 'field_filters']);
 const MERGE_TAG_RE = /\{\{\s*(before\.)?([A-Za-z0-9_]+)((?:\|[^}]*)?)\s*\}\}/g;
 
