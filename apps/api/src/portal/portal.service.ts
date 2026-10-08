@@ -9,6 +9,7 @@ import {
     Injectable,
     Logger,
     NotFoundException,
+    Optional,
 } from '@nestjs/common';
 import {
     autoPortalLayout,
@@ -54,6 +55,7 @@ import { SessionService } from '../auth/session.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { DocumentsService } from '../documents/documents.service';
 import { DomainsService } from '../domains/domains.service';
 import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
 import { fields, lists, memberships, portalLinks, records, relations, users, tenants } from '../db/schema';
@@ -134,6 +136,7 @@ export class PortalService {
         private readonly files: FilesService,
         private readonly domains: DomainsService,
         private readonly layoutData: RecordLayoutDataService,
+        @Optional() private readonly documents?: DocumentsService,
     ) {}
 
     /**
@@ -689,6 +692,21 @@ export class PortalService {
      * Una sesión vieja (anterior a este fix, sin empresa) sólo sirve si el
      * usuario tiene UN vínculo: con dos es ambiguo y tiene que volver a entrar.
      */
+    /**
+     * v0.1.267 (ADR-S35 fase 2) — PDF de una plantilla publicada en el portal,
+     * SIEMPRE del registro del cliente (el del acceso elegido). El id de la
+     * plantilla es lo único que llega del cliente; si no es de su lista o no
+     * está publicada, 404.
+     */
+    async myDocument(actor: PortalActor, templateId: number): Promise<{ buffer: Buffer; filename: string }> {
+        const link = await this.requireLink(actor);
+        if (!this.documents || !Number.isInteger(templateId) || templateId <= 0) {
+            throw new NotFoundException({ code: 'not_found', message: 'Documento no encontrado', data: { status: 404 } });
+        }
+        const doc = await this.documents.renderForPortal(link.tenantId, link.listId, link.recordId, templateId);
+        return { buffer: doc.buffer, filename: doc.filename };
+    }
+
     private async requireLink(actor: PortalActor) {
         const notLinked = () =>
             new NotFoundException({
@@ -1598,6 +1616,7 @@ export class PortalService {
                 format,
                 tenant_name: tenantRow?.name ?? '',
                 related_lists: relatedLists,
+                documents: this.documents ? await this.documents.portalDocumentsInTx(tx, link.tenantId, list.id) : [],
                 list_id: list.id,
                 list_slug: list.slug,
                 list_name: list.name,

@@ -67,6 +67,9 @@ export function makeDocBlock(type: DocBlockType): DocBlock {
             };
         case 'image':
             return { id, type, src: none, width: 40, align: 'center' };
+        case 'qr':
+            // v0.1.267 — el link de pago o la ficha pública, escaneable.
+            return { id, type, value: '', size: 96, align: 'left', caption: '' };
         case 'divider':
             return { id, type, thickness: 1 };
         case 'spacer':

@@ -15,6 +15,7 @@ import {
     MousePointerClick,
     MoveVertical,
     PenLine,
+    QrCode,
     Redo2,
     ScissorsLineDashed,
     Sigma,
@@ -28,6 +29,7 @@ import {
     DOC_BLOCK_LABELS,
     DOC_PAGE_SIZE_LABELS,
     DOC_PAGE_SIZES,
+    formatDocNumber,
     type DocBlockType,
     type DocDesign,
     type DocPageSize,
@@ -81,12 +83,23 @@ const PALETTE: Array<{ type: DocBlockType; icon: typeof Type }> = [
     { type: 'items', icon: Table2 },
     { type: 'totals', icon: Sigma },
     { type: 'image', icon: ImageIcon },
+    { type: 'qr', icon: QrCode },
     { type: 'signature', icon: PenLine },
     { type: 'columns', icon: Columns2 },
     { type: 'divider', icon: Minus },
     { type: 'spacer', icon: MoveVertical },
     { type: 'page_break', icon: ScissorsLineDashed },
 ];
+
+/** Lo que se edita de una plantilla (además del diseño, el portal y el consecutivo). */
+interface TemplateDraft {
+    name: string;
+    filename: string;
+    design: DocDesign;
+    portal_visible?: boolean;
+    /** Próximo número a emitir (sólo plantillas ya guardadas). */
+    next_number?: number;
+}
 
 interface History {
     past: DocDesign[];
@@ -102,7 +115,7 @@ export interface DocumentDesignerProps {
     listId: number;
     /** null = plantilla nueva (con `initial`). */
     templateId: number | null;
-    initial?: { name: string; filename: string; design: DocDesign };
+    initial?: TemplateDraft;
     fields: FieldEntity[];
     onSaved?: (tpl: DocumentTemplate) => void;
 }
@@ -126,7 +139,7 @@ export default function DocumentDesigner(props: DocumentDesignerProps): JSX.Elem
 }
 
 function Loader(props: DocumentDesignerProps): JSX.Element {
-    const [tpl, setTpl] = useState<{ name: string; filename: string; design: DocDesign } | null>(
+    const [tpl, setTpl] = useState<TemplateDraft | null>(
         props.templateId === null ? props.initial ?? null : null,
     );
     const [error, setError] = useState<string | null>(null);
@@ -134,7 +147,11 @@ function Loader(props: DocumentDesignerProps): JSX.Element {
         if (props.templateId === null) return;
         let alive = true;
         fetchDocumentTemplate(props.listId, props.templateId)
-            .then((t) => alive && setTpl({ name: t.name, filename: t.filename, design: t.design }))
+            .then(
+                (t) =>
+                    alive &&
+                    setTpl({ name: t.name, filename: t.filename, design: t.design, portal_visible: t.portal_visible, next_number: t.next_number }),
+            )
             .catch((err: unknown) => alive && setError(err instanceof Error ? err.message : String(err)));
         return () => {
             alive = false;
@@ -162,7 +179,7 @@ function Loader(props: DocumentDesignerProps): JSX.Element {
     return <DesignerBody {...props} initialTpl={tpl} />;
 }
 
-function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: string; filename: string; design: DocDesign } }): JSX.Element {
+function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft }): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
     const narrow = useMediaQuery('(max-width: 1023px)');
@@ -170,12 +187,16 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
     const [templateId, setTemplateId] = useState<number | null>(props.templateId);
     const [name, setName] = useState(props.initialTpl.name);
     const [filename, setFilename] = useState(props.initialTpl.filename);
+    const [portalVisible, setPortalVisible] = useState(props.initialTpl.portal_visible ?? false);
+    const [nextNumber, setNextNumber] = useState<number | null>(props.initialTpl.next_number ?? null);
     const [hist, setHist] = useState<History>({ past: [], present: props.initialTpl.design, future: [], lastKey: null, lastAt: 0 });
     const design = hist.present;
     const [savedSnapshot, setSavedSnapshot] = useState(() =>
-        props.templateId === null ? '' : JSON.stringify([props.initialTpl.name, props.initialTpl.filename, props.initialTpl.design]),
+        props.templateId === null
+            ? ''
+            : JSON.stringify([props.initialTpl.name, props.initialTpl.filename, props.initialTpl.design, props.initialTpl.portal_visible ?? false]),
     );
-    const dirty = JSON.stringify([name, filename, design]) !== savedSnapshot;
+    const dirty = JSON.stringify([name, filename, design, portalVisible]) !== savedSnapshot;
     const [selected, setSelected] = useState<string | null>(null);
     const [leftTab, setLeftTab] = useState<'blocks' | 'page'>('blocks');
     const [mobileTab, setMobileTab] = useState<'add' | 'preview' | 'edit'>('preview');
@@ -226,7 +247,9 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
             const ctrl = new AbortController();
             reqRef.current = ctrl;
             setLoading(true);
-            previewDocument(props.listId, { design, mode, record_id: recordId }, ctrl.signal)
+            // Con la plantilla guardada, el número de la vista previa es el
+            // que llevaría (sin consumirlo): el ya emitido o el próximo.
+            previewDocument(props.listId, { design, mode, record_id: recordId, template_id: templateId }, ctrl.signal)
                 .then((res) => {
                     if (ctrl.signal.aborted) return;
                     setPreview(res);
@@ -241,7 +264,7 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
                 });
         }, 450);
         return () => window.clearTimeout(timer);
-    }, [design, mode, recordId, props.listId]);
+    }, [design, mode, recordId, props.listId, templateId]);
     useEffect(() => () => reqRef.current?.abort(), []);
 
     const totalTags: MergeTagSection[] = useMemo(() => {
@@ -252,7 +275,11 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
                 { tag: `totales.${r.id}`, label: r.label || r.id, hint: `{{totales.${r.id}}}` },
                 { tag: `totales.${r.id}|pesos|mayusculas`, label: `${r.label || r.id} · ${__('en letras')}`, hint: __('UN MILLÓN DE PESOS') },
             ]);
-        return items.length ? [{ title: __('Totales del documento'), items }] : [];
+        const doc: MergeTagSection = {
+            title: __('Documento'),
+            items: [{ tag: 'documento.numero', label: __('Número del documento'), hint: __('el consecutivo: CC-0001') }],
+        };
+        return items.length ? [doc, { title: __('Totales del documento'), items }] : [doc];
     }, [design.blocks]);
 
     const selectedBlock = findDocBlock(design, selected);
@@ -288,9 +315,13 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
             return;
         }
         try {
-            const saved = await save.mutateAsync({ id: templateId, body: { name: name.trim(), filename: filename.trim(), design } });
+            const saved = await save.mutateAsync({
+                id: templateId,
+                body: { name: name.trim(), filename: filename.trim(), design, portal_visible: portalVisible },
+            });
             setTemplateId(saved.id);
-            setSavedSnapshot(JSON.stringify([name, filename, design]));
+            setNextNumber(saved.next_number);
+            setSavedSnapshot(JSON.stringify([name, filename, design, portalVisible]));
             toast.success(__('Plantilla guardada'));
             props.onSaved?.(saved);
         } catch (err) {
@@ -350,6 +381,10 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: { name: strin
                         extraTags={totalTags}
                         onTheme={(theme, key) => commit((d) => ({ ...d, theme: { ...d.theme, ...theme } }), key)}
                         onFooter={(footer, key) => commit((d) => ({ ...d, footer: { ...d.footer, ...footer } }), key)}
+                        onNumbering={(numbering, key) => commit((d) => ({ ...d, numbering: { ...d.numbering, ...numbering } }), key)}
+                        nextNumber={nextNumber}
+                        portalVisible={portalVisible}
+                        onPortalVisible={setPortalVisible}
                     />
                 )}
             </div>
@@ -555,6 +590,10 @@ function PagePanel({
     extraTags,
     onTheme,
     onFooter,
+    onNumbering,
+    nextNumber,
+    portalVisible,
+    onPortalVisible,
 }: {
     design: DocDesign;
     fields: FieldEntity[];
@@ -563,8 +602,15 @@ function PagePanel({
     extraTags: MergeTagSection[];
     onTheme: (patch: Partial<DocDesign['theme']>, key: string) => void;
     onFooter: (patch: Partial<DocDesign['footer']>, key: string) => void;
+    onNumbering: (patch: Partial<DocDesign['numbering']>, key: string) => void;
+    nextNumber: number | null;
+    portalVisible: boolean;
+    onPortalVisible: (v: boolean) => void;
 }): JSX.Element {
     const t = design.theme;
+    const n = design.numbering;
+    const textFields = fields.filter((f) => f.type === 'text' || f.type === 'long_text');
+    const upcoming = formatDocNumber(Math.max(nextNumber ?? n.start, n.start), n);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="doc-page-panel">
             <Field label={__('Tamaño de la hoja')}>
@@ -612,6 +658,82 @@ function PagePanel({
                 <Field label={__('Texto del pie (opcional)')}>
                     <MergeTagInput value={design.footer.text} onChange={(v) => onFooter({ text: v }, 'footer_text')} fields={fields} tagContext="document" extraTags={extraTags} />
                 </Field>
+            </Section>
+            <Section title={__('Numeración')}>
+                <div data-testid="doc-numbering" className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                    <Check
+                        label={__('Numerar los documentos (consecutivo)')}
+                        checked={n.enabled}
+                        onChange={(v) => onNumbering({ enabled: v }, 'numbering_enabled')}
+                    />
+                    {n.enabled && (
+                        <>
+                            <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
+                                <Field label={__('Prefijo')}>
+                                    <Input
+                                        value={n.prefix}
+                                        maxLength={20}
+                                        placeholder="CC-"
+                                        onChange={(e) => onNumbering({ prefix: e.target.value }, 'numbering_prefix')}
+                                        data-testid="doc-numbering-prefix"
+                                    />
+                                </Field>
+                                <Field label={__('Dígitos')}>
+                                    <Select value={String(n.padding)} onChange={(e) => onNumbering({ padding: Number(e.target.value) }, 'numbering_padding')}>
+                                        {[0, 2, 3, 4, 5, 6, 8].map((d) => (
+                                            <option key={d} value={d}>
+                                                {d === 0 ? __('Sin ceros') : d}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Field>
+                                <Field label={__('Empieza en')}>
+                                    <Input
+                                        type="number"
+                                        min={1}
+                                        value={n.start}
+                                        onChange={(e) => {
+                                            const v = Math.max(1, Math.floor(Number(e.target.value) || 1));
+                                            onNumbering({ start: v }, 'numbering_start');
+                                        }}
+                                        data-testid="doc-numbering-start"
+                                    />
+                                </Field>
+                            </div>
+                            <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2.5 imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground" data-testid="doc-numbering-next">
+                                {__('Próximo número')}: <strong className="imcrm-text-foreground">{upcoming}</strong>.{' '}
+                                {__('Cada registro recibe SU número la primera vez que se genera el documento y lo conserva: volver a generarlo no gasta otro. La vista previa no consume números.')}
+                            </p>
+                            <Field label={__('Guardar el número también en un campo')} hint={__('Para verlo y filtrarlo en la lista. Tiene que ser un campo de texto.')}>
+                                <Select
+                                    value={n.save_field ?? ''}
+                                    onChange={(e) => onNumbering({ save_field: e.target.value || null }, 'numbering_save_field')}
+                                    data-testid="doc-numbering-field"
+                                >
+                                    <option value="">{__('No guardarlo')}</option>
+                                    {textFields.map((f) => (
+                                        <option key={f.id} value={f.slug}>
+                                            {f.label}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </Field>
+                            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                {__('Para mostrarlo en el documento usá la variable')} <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1">{'{{documento.numero}}'}</code>.
+                            </p>
+                        </>
+                    )}
+                </div>
+            </Section>
+            <Section title={__('Portal del cliente')}>
+                <Check
+                    label={__('Disponible en el portal del cliente')}
+                    checked={portalVisible}
+                    onChange={onPortalVisible}
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
+                    {__('El cliente lo descarga desde su portal, siempre con los datos de SU registro. Si numera, bajarlo le asigna el número igual que generarlo acá.')}
+                </p>
             </Section>
             <Section title={__('Archivo')}>
                 <Field label={__('Nombre del archivo')} hint={__('Con variables: «Cuenta de cobro {{record.id}} - {{cliente}}». Se le agrega .pdf solo.')}>

@@ -8,6 +8,7 @@ import { CloudApiError } from '@/lib/cloud/client';
 import { formatValue } from '@/cloud/lib/fieldValue';
 import { portalApi } from '@/cloud-portal/portalClient';
 import { PortalAccountMenu } from '@/cloud-portal/PortalAccountMenu';
+import { PortalDocuments } from '@/cloud-portal/PortalDocuments';
 import { PortalLayout } from '@/cloud-portal/PortalLayout';
 import { setPortalAccount } from '@/portal/portalAccount';
 import { setTenantFormat } from '@/lib/tenantFormat';
@@ -227,6 +228,8 @@ function PortalContent({
                         </dl>
                     </section>
                 )}
+
+                <PortalDocuments documents={boot.documents ?? []} />
 
                 {/* v0.1.153 — "todo lo relacionado a mí": las listas que la
                     empresa habilitó en el panel del portal (sus facturas, sus

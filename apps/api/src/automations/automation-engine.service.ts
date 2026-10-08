@@ -90,7 +90,7 @@ interface RunContext {
      * que adjunta la misma plantilla no la vuelve a dibujar.
      */
     pdf?: Record<string, unknown>;
-    pdfs?: Map<number, { filename: string; buffer: Buffer }>;
+    pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
 }
 
 /**
@@ -834,10 +834,10 @@ export class AutomationEngine {
                 if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elegí la plantilla del documento.');
                 const doc = await this.pdfFor(tx, ctx, templateId, typeof cfg.filename === 'string' ? merge(cfg.filename) : '');
                 const kb = Math.max(1, Math.round(doc.buffer.length / 1024));
-                ctx.pdf = { nombre: doc.filename, link: '', kb };
+                ctx.pdf = { nombre: doc.filename, link: '', kb, numero: doc.number ?? '' };
                 const saveSlug = typeof cfg.save_field === 'string' ? cfg.save_field : '';
                 if (!saveSlug) {
-                    return ok('generate_pdf', `Generó «${doc.filename}» (${kb} KB).`, { filename: doc.filename, bytes: doc.buffer.length });
+                    return ok('generate_pdf', `Generó «${doc.filename}»${doc.number ? `, N.º ${doc.number}` : ''} (${kb} KB).`, { filename: doc.filename, bytes: doc.buffer.length });
                 }
                 const field = ctx.fieldsBySlug.get(saveSlug);
                 const key = ctx.slugToKey.get(saveSlug);
@@ -855,10 +855,10 @@ export class AutomationEngine {
                 await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
                 this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
                 ctx.data = merged;
-                ctx.pdf = { nombre: doc.filename, link: this.documents.fileLink(ctx.tenantId, saved.id), kb };
+                ctx.pdf = { nombre: doc.filename, link: this.documents.fileLink(ctx.tenantId, saved.id), kb, numero: doc.number ?? '' };
                 return ok(
                     'generate_pdf',
-                    `Generó «${doc.filename}» (${kb} KB) y lo guardó en «${field.label ?? saveSlug}».`,
+                    `Generó «${doc.filename}»${doc.number ? `, N.º ${doc.number}` : ''} (${kb} KB) y lo guardó en «${field.label ?? saveSlug}».`,
                     { filename: doc.filename, bytes: doc.buffer.length, file_id: saved.id },
                 );
             }
@@ -932,7 +932,7 @@ export class AutomationEngine {
         ctx: RunContext,
         templateId: number,
         filename = '',
-    ): Promise<{ filename: string; buffer: Buffer }> {
+    ): Promise<{ filename: string; buffer: Buffer; number: string | null }> {
         if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
         if (ctx.recordId === null) throw new Error('Un PDF necesita un registro.');
         ctx.pdfs ??= new Map();
@@ -952,7 +952,10 @@ export class AutomationEngine {
                     ? fv(token)
                     : undefined,
         });
-        const out = { filename: doc.filename, buffer: doc.buffer };
+        // v0.1.267 — el número emitido ya quedó escrito en su campo (mismo tx):
+        // se refleja en la copia del run para que otra acción no lo pise.
+        if (doc.numberField) ctx.data = { ...ctx.data, [doc.numberField.key]: doc.numberField.value };
+        const out = { filename: doc.filename, buffer: doc.buffer, number: doc.number };
         ctx.pdfs.set(templateId, out);
         return out;
     }

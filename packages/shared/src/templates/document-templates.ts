@@ -189,6 +189,7 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
                 version: DOC_DESIGN_VERSION,
                 theme: theme(input.accent),
                 footer: { text: '', page_numbers: true },
+                numbering: { enabled: false, prefix: '', padding: 4, start: 1, save_field: null },
                 blocks: [
                     {
                         id: id('h'),
@@ -217,7 +218,11 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
     ]
         .filter((l) => l.trim() !== '')
         .join('\n');
-    const numero = slug('numero') ? tag('numero') : '{{record.id}}';
+    // v0.1.267 — Sin un campo "número" propio, la plantilla numera sola
+    // (consecutivo de la plantilla: 0001, 0002…), que es lo que espera quien
+    // recibe una cuenta de cobro; el id del registro no es un consecutivo.
+    const ownNumber = slug('numero') !== null;
+    const numero = ownNumber ? tag('numero') : '{{documento.numero}}';
     const fecha = slug('fecha') ? tag('fecha', '|larga') : '{{date.today|larga}}';
     const withItems = starter.item_roles.length > 0;
     const blocks: DocBlock[] = [];
@@ -382,6 +387,7 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
             version: DOC_DESIGN_VERSION,
             theme: theme(input.accent),
             footer: { text: '', page_numbers: withItems },
+            numbering: { enabled: !ownNumber, prefix: '', padding: 4, start: 1, save_field: null },
             blocks,
         },
     };

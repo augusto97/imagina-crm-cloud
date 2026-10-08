@@ -309,6 +309,40 @@ function placeholder(ctx: Ctx, label: string, width: number, height: number): No
     };
 }
 
+/**
+ * v0.1.267 — Código QR (lo dibuja pdfmake, vectorial). En modo variables se
+ * muestra un recuadro con lo que va a codificar: un QR de "{{pago.link}}" no
+ * le sirve a nadie para revisar el diseño.
+ */
+function qrNode(ctx: Ctx, b: Extract<DocBlock, { type: 'qr' }>, width: number): Node {
+    const size = Math.min(b.size, Math.max(40, Math.floor(width)));
+    const caption = runs(ctx, b.caption, { fontSize: ctx.base - 2, color: ctx.t.muted });
+    const captionNode = caption.length ? [{ text: caption, alignment: b.align, margin: [0, 4, 0, 0] }] : [];
+    if (ctx.input.tagsMode) {
+        const label = b.value.trim() ? `QR\n${b.value.trim().slice(0, 80)}` : 'QR\n(sin contenido)';
+        return { stack: [{ ...alignBox(placeholder(ctx, label, size, size - 12), b.align, width, size) }, ...captionNode] };
+    }
+    // Sin configurar: se ve el hueco (como un campo sin mapear), así nadie
+    // cree que el código «no anda». Configurado pero vacío para ESTE registro
+    // (sin link de pago, por ejemplo): no se dibuja.
+    if (!b.value.trim()) {
+        return { stack: [alignBox(placeholder(ctx, 'QR\n(elegí qué contiene)', size, size - 12), b.align, width, size), ...captionNode] };
+    }
+    const value = ctx.input.resolve(b.value).trim();
+    if (!value) return { text: '' };
+    const code: Node = { qr: value.slice(0, 1000), fit: size, foreground: ctx.t.text, eccLevel: 'M' };
+    return { stack: [alignBox(code, b.align, width, size), ...captionNode] };
+}
+
+/** Ubica una caja de ancho fijo a la izquierda, al centro o a la derecha. */
+function alignBox(node: Node, align: string, width: number, boxW: number): Node {
+    if (align === 'left' || boxW >= width) return node;
+    return {
+        columns: align === 'center' ? [{ width: '*', text: '' }, { ...node, width: boxW }, { width: '*', text: '' }] : [{ width: '*', text: '' }, { ...node, width: boxW }],
+        columnGap: 0,
+    };
+}
+
 function headerNode(ctx: Ctx, b: Extract<DocBlock, { type: 'header' }>): Node {
     const t = ctx.t;
     const lines = b.company.split(/\r?\n/).filter((l) => l.trim() !== '');
@@ -588,6 +622,8 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
                 : { text: '', pageBreak: 'after' };
         case 'signature':
             return signatureNode(ctx, b);
+        case 'qr':
+            return qrNode(ctx, b, width);
         case 'columns': {
             const n = b.columns.length;
             const colW = (width - COLUMN_GAP * (n - 1)) / n;

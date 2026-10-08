@@ -7306,6 +7306,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         previa contra el build de producción sin violaciones de CSP.
         Fase 2: consecutivo atómico, QR y descarga desde el portal.
 
+  - [x] **Documentos PDF — fase 2: consecutivo, QR y portal (v0.1.267,
+        ADR-S35, "continuá con lo que falta")**: (a) **numeración por
+        plantilla** («Hoja y estilo» → Numeración: prefijo, dígitos, desde qué
+        número y un campo de texto opcional donde guardarlo). Un número por
+        (plantilla, registro) en `document_numbers` (migración 0068, RLS,
+        únicos por registro y por número): se EMITE la primera vez que el
+        documento se genera de verdad —ficha, automatización o portal—
+        bloqueando la plantilla (`FOR UPDATE` sobre `next_number`) y se REUSA
+        al regenerar; la vista previa sólo mira el próximo (`template_id` en
+        el preview) y si la transacción revierte el número queda libre. El
+        texto formateado («CC-0042») se guarda al emitir. Variables
+        `{{documento.numero}}` (documento) y `{{pdf.numero}}` (acciones que
+        siguen a «Generar un PDF»); la cuenta de cobro de la galería lo trae
+        encendido salvo que la lista ya tenga su campo de número. Guardado en
+        un campo: el MISMO PDF que lo emite ya lo muestra (bug atrapado en el
+        E2E: el registro se leía antes de emitir) y el motor lo refleja en su
+        copia del registro para que una acción posterior no lo pise. (b)
+        **Bloque QR** nativo de pdfmake con variables (link de pago, web,
+        número): configurado pero vacío para un registro no se dibuja, sin
+        configurar se ve el hueco. (c) **«Tus documentos» en el portal del
+        cliente**: casilla «Disponible en el portal del cliente» por plantilla;
+        `portal.me` lista las publicadas y `GET /portal/me/documents/:id` arma
+        el PDF SIEMPRE con el registro del acceso (no publicada, de otra lista
+        o de otra empresa → 404; sin sesión de portal → 401); bajarlo emite el
+        número igual que la ficha. (d) Insignias «Próximo CC-0100» y «Portal»
+        en el panel de plantillas, aviso con el número al generar desde la
+        ficha, `get_list_schema` del asistente/MCP muestra `in_portal` y el
+        próximo número, y `document_numbers`/`next_number`/`portal_visible`
+        viajan en la migración de empresa (y se borran con ella). 5 tests de
+        integración nuevos (numeración con concurrencia y rollback,
+        automatización numerada, QR, portal) + 1 del front + E2E navegador
+        18/18.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

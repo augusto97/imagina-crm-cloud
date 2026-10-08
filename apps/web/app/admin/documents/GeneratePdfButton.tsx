@@ -61,12 +61,17 @@ export function GeneratePdfButton({
                 record_id: recordId,
                 ...(saveField ? { save_field: saveField.slug, save_mode: 'append' as const } : {}),
             });
-            if (saveField) {
+            // Guardarlo en un campo o numerarlo (el número puede quedar en un
+            // campo de texto) cambia el registro: refrescar la ficha y la lista.
+            if (saveField || res.number) {
                 invalidateForList(qc, recordsKeys.all, listId);
                 if (listSlug) invalidateForList(qc, recordsKeys.all, listSlug);
-                toast.success(__('PDF guardado'), `${res.filename} → «${saveField.label}»`);
+            }
+            if (saveField) {
+                toast.success(__('PDF guardado'), `${res.filename}${res.number ? ` (N.º ${res.number})` : ''} → «${saveField.label}»`);
             } else {
                 downloadPdf(res.pdf, res.filename);
+                if (res.number) toast.success(__('PDF generado'), `${__('Número')}: ${res.number}`);
             }
         } catch (err) {
             toast.error(__('No se pudo generar el PDF'), err instanceof Error ? err.message : String(err));

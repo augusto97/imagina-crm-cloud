@@ -2491,9 +2491,31 @@ correos tal cual (los bloques de papel —ítems, totales, salto de página, fir
 no tienen sentido en un correo, y los del correo —botón, preheader— no en
 papel). **No es factura electrónica**: una factura DIAN exige XML UBL firmado
 y validación previa; el documento lo dice y la plantilla trae la nota de no
-responsable de IVA. Fase 2: consecutivo atómico por plantilla, QR y descarga
-desde el portal del cliente.
+responsable de IVA.
+
+**Fase 2 (v0.1.267) — consecutivo, QR y portal.** (g) **Numeración por
+plantilla** (`design.numbering`: prefijo, dígitos, desde qué número, campo de
+texto opcional donde guardarlo): un número por (plantilla, registro) en
+`document_numbers` (migración 0068, RLS, únicos por registro y por número). Se
+EMITE la primera vez que el documento se genera de verdad (ficha, automatización
+o portal) bloqueando la fila de la plantilla (`SELECT … FOR UPDATE` sobre
+`next_number`) y se REUSA después: regenerar no gasta otro. La vista previa sólo
+mira el próximo. Como la emisión va en la transacción del que genera, si ésta
+revierte el número queda libre: no hay huecos por fallas. El texto ya formateado
+(«CC-0042») se guarda al emitir, así cambiar el prefijo no renumera lo emitido.
+Se usa con `{{documento.numero}}` (y `{{pdf.numero}}` en las acciones que siguen
+a «Generar un PDF»); guardado en un campo, el mismo PDF que lo emite ya lo
+muestra y una acción posterior no lo pisa. (h) **Bloque QR** nativo de pdfmake
+(vectorial, sin dependencias), con variables — el link de pago, la web, el
+número —; configurado pero vacío para un registro no se dibuja, sin configurar
+se ve el hueco. (i) **Descarga desde el portal**: la plantilla marcada
+«Disponible en el portal» aparece en «Tus documentos» del cliente
+(`GET /portal/me/documents/:id`); el servidor sólo recibe el id de la plantilla
+y arma SIEMPRE el registro del acceso del cliente — una plantilla no publicada,
+de otra lista o de otra empresa da 404. Bajarlo emite el número igual que
+generarlo desde la ficha. `document_numbers`, `next_number` y `portal_visible`
+viajan en la migración de empresa.
 
 ---
 
-**Versión del documento:** 1.66.0 (documentos PDF — ADR-S35)
+**Versión del documento:** 1.67.0 (documentos PDF fase 2 — ADR-S35)

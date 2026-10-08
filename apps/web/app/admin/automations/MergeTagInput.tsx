@@ -277,6 +277,7 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
             ? [
                   { tag: 'pdf.link', label: __('Enlace al PDF generado'), hint: __('si se guardó en el registro') },
                   { tag: 'pdf.nombre', label: __('Nombre del PDF generado') },
+                  { tag: 'pdf.numero', label: __('Número del PDF generado'), hint: __('si la plantilla numera') },
               ].filter((t) => matches(t.label) || matches(t.tag) || matches('pdf'))
             : [];
 

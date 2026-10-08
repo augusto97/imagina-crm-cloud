@@ -761,7 +761,7 @@ export class StructureTools implements AiProposalApplier {
                 // datos pide.
                 // v0.1.266 — plantillas de documentos PDF de la lista (para
                 // generate_pdf y los adjuntos de send_email).
-                document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name })),
+                document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name, in_portal: d.portal_visible, next_number: d.next_label })),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
