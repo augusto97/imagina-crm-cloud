@@ -16,8 +16,7 @@ export const attachments = pgTable('attachments', {
     mime: text('mime').notNull().default('application/octet-stream'),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
     storageKey: text('storage_key').notNull(),
-    createdBy: bigint('created_by', { mode: 'number' })
-        .notNull()
-        .references(() => users.id),
+    // v0.1.266 — NULL = lo creó el sistema (un PDF de una automatización).
+    createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

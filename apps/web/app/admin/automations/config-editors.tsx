@@ -32,6 +32,7 @@ import type { FieldEntity } from '@/types/field';
 import type { WebhookTestResult } from '@imagina-base/shared';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
+import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -932,6 +933,8 @@ export function ActionConfigEditor({
                 <ConnectorActionConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'send_email' ? (
                 <SendEmailConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'generate_pdf' ? (
+                <GeneratePdfConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'if_else' ? (
                 <IfElseConfig
                     spec={spec}

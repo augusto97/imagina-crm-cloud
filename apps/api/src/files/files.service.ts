@@ -176,6 +176,15 @@ export class FilesService {
         return `${this.publicBase}${this.signedUrl(tenantId, id, EMAIL_IMAGE_TTL)}`;
     }
 
+    /**
+     * v0.1.266 — URL firmada ABSOLUTA (con el dominio de la plataforma) de un
+     * archivo cualquiera: el enlace a un PDF generado que una automatización
+     * manda por WhatsApp (`{{pdf.link}}`). Sin `APP_BASE_URL` queda relativa.
+     */
+    absoluteSignedUrl(tenantId: number, id: number, ttlSeconds: number): string {
+        return `${this.publicBase}${this.signedUrl(tenantId, id, ttlSeconds)}`;
+    }
+
     /** Valida tenant/exp/sig y abre el stream (para la ruta pública). */
     async openSigned(
         id: number,
@@ -229,7 +238,8 @@ export class FilesService {
                     mime: mime || 'application/octet-stream',
                     sizeBytes: size,
                     storageKey: key,
-                    createdBy: userId,
+                    // v0.1.266 — 0 = el sistema (un PDF de una automatización): sin autor.
+                    createdBy: userId > 0 ? userId : null,
                 })
                 .returning();
             return inserted!;

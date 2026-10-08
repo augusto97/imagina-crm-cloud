@@ -30,6 +30,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'update_field', label: 'Actualizar un campo', config_schema: {} },
     { slug: 'create_record', label: 'Crear un registro', config_schema: {} },
     { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
+    // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
+    { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
 ];
 

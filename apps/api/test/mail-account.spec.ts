@@ -44,6 +44,7 @@ import { MailAccountService, type MailAccountCounterStore } from '../src/connect
 import {
     buildAccountMailRequest,
     buildAccountRfc2822,
+    GRAPH_MAX_ATTACHMENT_BASE64,
     readAccountMailResponse,
 } from '../src/connectors/mail-account-request';
 import { connections, tenants, users } from '../src/db/schema';
@@ -113,6 +114,27 @@ describe('armado de la petición (puro)', () => {
         expect(body.message.ccRecipients).toEqual([{ emailAddress: { address: 'jefe@acme.test' } }]);
         expect(body.message.replyTo).toBeUndefined();
         expect(body.message.from).toBeUndefined();
+    });
+
+    it('v0.1.266 — adjuntos: Gmail los envuelve en multipart/mixed y Graph los manda como fileAttachment (con tope)', () => {
+        const pdf = Buffer.from('%PDF-1.7 prueba').toString('base64');
+        const withPdf: MailMessage = { ...msg, attachments: [{ filename: 'Cuenta "1".pdf', contentType: 'application/pdf', contentBase64: pdf }] };
+        const mime = decodeGmail(buildAccountMailRequest('gmail', withPdf, 'tok', 'notificaciones@acme.test').body);
+        expect(mime).toContain('Content-Type: multipart/mixed');
+        expect(mime).toContain('Content-Type: multipart/alternative');
+        expect(mime).toMatch(/Content-Disposition: attachment; filename="Cuenta[^"\r\n]*1[^"\r\n]*\.pdf"/);
+        expect(mime.replace(/\s+/g, '')).toContain(pdf);
+
+        const graph = JSON.parse(buildAccountMailRequest('outlook', withPdf, 'tok', 'n@acme.test').body!) as {
+            message: { attachments?: Array<Record<string, unknown>> };
+        };
+        expect(graph.message.attachments).toEqual([
+            expect.objectContaining({ '@odata.type': '#microsoft.graph.fileAttachment', contentType: 'application/pdf', contentBytes: pdf }),
+        ]);
+        const huge = 'A'.repeat(GRAPH_MAX_ATTACHMENT_BASE64 + 4);
+        expect(() =>
+            buildAccountMailRequest('outlook', { ...msg, attachments: [{ filename: 'g.pdf', contentType: 'application/pdf', contentBase64: huge }] }, 'tok', null),
+        ).toThrow();
     });
 
     it('sin destinatario válido no arma nada', () => {

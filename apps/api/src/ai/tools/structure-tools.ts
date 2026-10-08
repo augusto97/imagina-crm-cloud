@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
     AGGREGATE_METRICS,
@@ -59,6 +59,7 @@ import {
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { DocumentsService } from '../../documents/documents.service';
 import { ConnectorsService } from '../../connectors/connectors.service';
 import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
@@ -243,7 +244,9 @@ const automationSpec = z.object({
                 'call_webhook {url, method?, headers?, body_template?} | ' +
                 'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usá exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
+                'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
+                'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
         ),
     is_active: z.boolean().optional().describe('Default true'),
@@ -367,6 +370,8 @@ export class StructureTools implements AiProposalApplier {
         // v0.1.201 — comentarios (lectura) y publicación al mundo.
         private readonly comments: CommentsService,
         private readonly publicLists: PublicListsService,
+        // v0.1.266 — plantillas de documentos PDF (la acción generate_pdf).
+        @Optional() private readonly documents?: DocumentsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -682,6 +687,9 @@ export class StructureTools implements AiProposalApplier {
             // asistente lee este esquema antes de proponer una automatización.
             this.connectors.list(ctx.tenantId, ctx.userId, ctx.role).catch(() => []),
         ]);
+        const documentTemplates = this.documents
+            ? await this.documents.list(ctx.tenantId, String(list.id)).catch(() => [])
+            : [];
         const allLists = await this.lists.list(ctx.tenantId);
         const listById = new Map(allLists.map((l) => [l.id, l]));
         const fieldById = new Map(fields.map((f) => [f.id, f]));
@@ -751,6 +759,9 @@ export class StructureTools implements AiProposalApplier {
                 // forma de saber que existe un "Enviar WhatsApp" configurado.
                 // Nunca viajan credenciales: sólo qué se puede ejecutar y qué
                 // datos pide.
+                // v0.1.266 — plantillas de documentos PDF de la lista (para
+                // generate_pdf y los adjuntos de send_email).
+                document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name })),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -2528,6 +2539,10 @@ export class StructureTools implements AiProposalApplier {
                     case 'bulk_edit':
                         // Ya traducida a ids por translateBulkEditActions.
                         break;
+                    case 'generate_pdf':
+                        check(cfg.save_field);
+                        checkTags(cfg.filename);
+                        break;
                     case 'if_else':
                         checkCondition(cfg.condition);
                         walk((cfg.then_actions as unknown[]) ?? []);
@@ -2813,6 +2828,8 @@ function describeActions(
             }
             case 'call_webhook':
                 return `Llamar webhook ${String(cfg.url ?? '')}`;
+            case 'generate_pdf':
+                return `Generar PDF (plantilla #${String(cfg.document_template_id ?? '')})`;
             case 'connector_action':
                 return connectorLabel(cfg);
             case 'if_else':

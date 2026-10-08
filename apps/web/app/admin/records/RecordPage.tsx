@@ -16,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
@@ -243,6 +244,7 @@ export function RecordPage(): JSX.Element {
                     </div>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                    <GeneratePdfButton listId={list.data.id} listSlug={list.data.slug} recordId={record.data.id} fields={fields.data ?? []} />
                     {!storeRules && (
                         <Button
                             variant="ghost"

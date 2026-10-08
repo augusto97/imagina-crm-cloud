@@ -2442,4 +2442,58 @@ mano); web fonts (no cargan en Outlook ni en Gmail).
 
 ---
 
-**Versión del documento:** 1.65.0 (correos diseñados — ADR-S34)
+### ADR-S35 — Documentos PDF desde los registros y las automatizaciones (v0.1.266)
+
+**Contexto.** El usuario pidió generar documentos —cuentas de cobro, recibos,
+proformas— con los datos de un registro, diseñarlos en un editor visual con
+plantillas y mandarlos adjuntos por correo desde una automatización. La duda
+era si eso saturaba la app (render pesado) o el disco (un PDF por envío).
+
+**Decisión.** (a) **Modelo, no archivo**: una plantilla es un DISEÑO por bloques
+(`document_templates`, por lista, RLS; schema `docDesignSchema` en shared):
+encabezado (logo + datos de quien emite + título + número + fecha), título,
+texto con formato, datos del registro, **tabla de ítems** (las filas son los
+registros VINCULADOS por una relación, en cualquiera de los dos sentidos, con
+el ACL de quien genera), **totales** (suma de una columna, un campo, porcentaje
+de otra fila, suma con restas o texto; resultado disponible como
+`{{totales.<id>}}`), imagen, separador, espacio, salto de página, firma y
+columnas, más hoja (carta/A4/oficio, orientación, márgenes) y pie con
+«Página x de y». El PDF se arma AL PEDIRLO con la MISMA función en la vista
+previa del editor, el botón de la ficha y la automatización (WYSIWYG por
+construcción). (b) **Render liviano en el proceso**: pdfmake (JS puro, fuentes
+Roboto embebidas, sin red ni disco: `setUrlAccessPolicy`/`setLocalAccessPolicy`
+cerrados, imágenes sólo PNG/JPG como data URL, validadas por magic bytes y
+≤3 MB) — una cuenta de cobro pesa ~30 KB y tarda 100-450 ms. Se descartó
+Chromium/Puppeteer (cientos de MB de RAM por instancia, otro proceso que
+cuidar). Tope de 8 MB por PDF. (c) **El disco sólo se usa si se pide**: por
+defecto el PDF se genera, se usa (descarga o adjunto) y se descarta; guardarlo
+es explícito («Guardar en» un campo Archivo), cuenta contra `max_storage_mb` y
+deja `{{pdf.link}}` (URL firmada absoluta de 30 días) para mandarlo por
+WhatsApp. (d) **Variables legibles**: en un documento `{{campo}}` sale como se
+lee en la ficha (montos con los separadores de la empresa, fechas en su
+formato, etiquetas de opciones); `|value` da el crudo; `|letras`/`|pesos`
+(«un millón de pesos», «con 50/100») y `|larga` («8 de octubre de 2026») son
+modificadores nuevos que también valen en correos y webhooks. (e) **Adjuntos
+de correo** (`MailMessage.attachments`, base64, hasta 5 y 15 MB): SMTP por
+nodemailer, Gmail como `multipart/mixed` y Graph como `fileAttachment` — Graph
+tiene un tope de 3 MB por pedido simple y se rechaza con el motivo en vez de
+truncar. (f) En una automatización, la acción «Generar un PDF» corre DENTRO
+del tx del run (ve lo que escribieron las acciones anteriores) y el correo
+reusa el PDF ya generado de la misma plantilla. Borrar una plantilla que usa
+una automatización se rechaza con la lista (409). La plantilla viaja en la
+migración de empresa (ADR-S23) con sus ids re-mapeados.
+
+**Alternativas descartadas.** Chromium headless con HTML→PDF (pesado; además
+el HTML del editor de correos no sirve para papel: paginar, repetir cabeceras
+de tabla y el pie de página son problemas propios); guardar cada PDF generado
+(el disco crece con cada envío sin que nadie lo pidiera); reusar el diseño de
+correos tal cual (los bloques de papel —ítems, totales, salto de página, firma—
+no tienen sentido en un correo, y los del correo —botón, preheader— no en
+papel). **No es factura electrónica**: una factura DIAN exige XML UBL firmado
+y validación previa; el documento lo dice y la plantilla trae la nota de no
+responsable de IVA. Fase 2: consecutivo atómico por plantilla, QR y descarga
+desde el portal del cliente.
+
+---
+
+**Versión del documento:** 1.66.0 (documentos PDF — ADR-S35)

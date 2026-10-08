@@ -98,26 +98,47 @@ export function buildAccountRfc2822(
     lines.push('MIME-Version: 1.0');
     const html = message.html ?? '';
     const text = message.text ?? (html !== '' ? htmlToText(html) : '');
+    const files = message.attachments ?? [];
+    // v0.1.266 — con adjuntos, el cuerpo va dentro de un multipart/mixed.
+    const mixed = `${boundary}_m`;
+    if (files.length > 0) lines.push(`Content-Type: multipart/mixed; boundary="${mixed}"`, '', `--${mixed}`);
     if (html === '') {
         lines.push('Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', b64Body(text));
-        return lines.join('\r\n');
+    } else {
+        lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`, '');
+        for (const [type, body] of [
+            ['text/plain', text],
+            ['text/html', html],
+        ] as const) {
+            lines.push(
+                `--${boundary}`,
+                `Content-Type: ${type}; charset="UTF-8"`,
+                'Content-Transfer-Encoding: base64',
+                '',
+                b64Body(body),
+            );
+        }
+        lines.push(`--${boundary}--`);
     }
-    lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`, '');
-    for (const [type, body] of [
-        ['text/plain', text],
-        ['text/html', html],
-    ] as const) {
-        lines.push(
-            `--${boundary}`,
-            `Content-Type: ${type}; charset="UTF-8"`,
-            'Content-Transfer-Encoding: base64',
-            '',
-            b64Body(body),
-        );
+    if (files.length > 0) {
+        for (const f of files) {
+            const name = mimeWord(headerSafe(f.filename).replace(/"/g, "'"));
+            lines.push(
+                `--${mixed}`,
+                `Content-Type: ${headerSafe(f.contentType)}; name="${name}"`,
+                `Content-Disposition: attachment; filename="${name}"`,
+                'Content-Transfer-Encoding: base64',
+                '',
+                f.contentBase64.replace(/.{1,76}/g, (chunk) => `${chunk}\r\n`).trimEnd(),
+            );
+        }
+        lines.push(`--${mixed}--`);
     }
-    lines.push(`--${boundary}--`);
     return lines.join('\r\n');
 }
+
+/** Graph envía el mensaje en UN pedido de hasta 4 MB: los adjuntos tienen que entrar. */
+export const GRAPH_MAX_ATTACHMENT_BASE64 = 3 * 1024 * 1024;
 
 export function buildAccountMailRequest(
     integration: MailAccountIntegration,
@@ -140,6 +161,12 @@ export function buildAccountMailRequest(
             body: JSON.stringify({ raw: Buffer.from(raw, 'utf8').toString('base64url') }),
         };
     }
+    const attachedB64 = (message.attachments ?? []).reduce((n, a) => n + a.contentBase64.length, 0);
+    if (attachedB64 > GRAPH_MAX_ATTACHMENT_BASE64) {
+        throw new Error(
+            'Outlook no acepta adjuntos de más de 3 MB por esta vía: achicá el PDF (imágenes más livianas) o enviá desde el SMTP de la empresa.',
+        );
+    }
     const list = (emails: string[]): Array<{ emailAddress: { address: string } }> =>
         emails.map((a) => ({ emailAddress: { address: a } }));
     const html = message.html ?? '';
@@ -155,6 +182,16 @@ export function buildAccountMailRequest(
                 ...(parts.cc.length > 0 ? { ccRecipients: list(parts.cc) } : {}),
                 ...(parts.bcc.length > 0 ? { bccRecipients: list(parts.bcc) } : {}),
                 ...(parts.replyTo ? { replyTo: list([parts.replyTo]) } : {}),
+                ...(message.attachments?.length
+                    ? {
+                          attachments: message.attachments.map((a) => ({
+                              '@odata.type': '#microsoft.graph.fileAttachment',
+                              name: headerSafe(a.filename),
+                              contentType: a.contentType,
+                              contentBytes: a.contentBase64,
+                          })),
+                      }
+                    : {}),
             },
             saveToSentItems: true,
         }),

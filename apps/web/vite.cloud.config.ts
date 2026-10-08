@@ -166,6 +166,17 @@ export default defineConfig({
             },
             output: {
                 /**
+                 * v0.1.266 — El worker de pdf.js viene como `.mjs`, y nginx
+                 * (ServerAvatar) no conoce esa extensión: lo serviría como
+                 * `application/octet-stream` y el navegador se niega a
+                 * cargarlo como módulo. Con `.js` sale como JavaScript en
+                 * cualquier servidor.
+                 */
+                assetFileNames: (info) =>
+                    (info.names?.[0] ?? info.name ?? '').endsWith('.mjs')
+                        ? 'assets/[name]-[hash].js'
+                        : 'assets/[name]-[hash][extname]',
+                /**
                  * v0.1.115 — Vendor chunks estables.
                  *
                  * Sin esto, React + TanStack + Radix viajan DENTRO del bundle

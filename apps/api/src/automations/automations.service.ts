@@ -33,7 +33,9 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { EmailComposer, type ComposedEmail } from './email-composer';
 import { applyMergeTags, escapeHtml, labelResolverFor } from './merge-tags';
+import { DocumentsService } from '../documents/documents.service';
 import { MailService } from '../mail/mail.service';
+import type { MailAttachment } from '../mail/mail.types';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     buildIntegrationRequest,
@@ -76,6 +78,8 @@ export class AutomationsService {
         @Optional() private readonly timeZones?: TenantTimeZones,
         // v0.1.265 — «Enviar prueba» del editor de correos.
         @Optional() private readonly mail?: MailService,
+        // v0.1.266 — los PDF adjuntos de la prueba.
+        @Optional() private readonly documents?: DocumentsService,
     ) {}
 
     /**
@@ -368,8 +372,37 @@ export class AutomationsService {
         };
         if (!input.send) return { ...base, sent_to: null, error: null };
         if (!this.mail) return { ...base, sent_to: null, error: 'El correo no está disponible en este servidor.' };
+        // v0.1.266 — los PDF que adjunta la acción, armados con el registro de
+        // ejemplo (si no hay registro, la prueba sale sin adjuntos y lo dice).
+        const attachments: MailAttachment[] = [];
+        const pdfIds = Array.isArray(cfg.pdf_templates)
+            ? [...new Set((cfg.pdf_templates as unknown[]).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 5)
+            : [];
+        if (pdfIds.length > 0) {
+            if (!this.documents || !sample.record) {
+                return { ...base, sent_to: null, error: 'Para probar los PDF adjuntos la lista necesita al menos un registro.' };
+            }
+            try {
+                for (const id of pdfIds) {
+                    const doc = await this.tenantDb.withTenant(tenantId, (tx) =>
+                        this.documents!.renderTemplateInTx(tx, {
+                            tenantId,
+                            listId: sample.list.id,
+                            recordId: sample.record!.id,
+                            templateId: id,
+                            actor: { userId: 0, role: 'admin' },
+                        }),
+                    );
+                    attachments.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });
+                }
+            } catch (err) {
+                return { ...base, sent_to: null, error: `No se pudo armar el PDF adjunto: ${err instanceof Error ? err.message : String(err)}` };
+            }
+        }
+        const attachedInfo = attachments.map((a) => ({ filename: a.filename, bytes: Math.round((a.contentBase64.length * 3) / 4) }));
         try {
             await this.mail.sendNow({
+                ...(attachments.length > 0 ? { attachments } : {}),
                 tenantId,
                 to: user.email,
                 subject: `[Prueba] ${composed.subject || '(sin asunto)'}`,
@@ -378,7 +411,7 @@ export class AutomationsService {
                 from: typeof cfg.from_email === 'string' && cfg.from_email ? sample.merge(cfg.from_email) : undefined,
                 fromName: typeof cfg.from_name === 'string' && cfg.from_name ? sample.merge(cfg.from_name) : undefined,
             });
-            return { ...base, sent_to: user.email, error: null };
+            return { ...base, sent_to: user.email, error: null, ...(attachedInfo.length > 0 ? { attachments: attachedInfo } : {}) };
         } catch (err) {
             return { ...base, sent_to: null, error: err instanceof Error ? err.message : String(err) };
         }

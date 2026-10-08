@@ -458,7 +458,7 @@ export function Segmented<T extends string>({
     );
 }
 
-function AlignControl({ value, onChange }: { value: EmailAlign; onChange: (v: EmailAlign) => void }): JSX.Element {
+export function AlignControl({ value, onChange }: { value: EmailAlign; onChange: (v: EmailAlign) => void }): JSX.Element {
     return (
         <Segmented<EmailAlign>
             label={__('Alineación')}
@@ -482,7 +482,7 @@ export function Check({ label, checked, onChange }: { label: string; checked: bo
     );
 }
 
-function IconBtn({ label, onClick, icon: Icon, danger }: { label: string; onClick: () => void; icon: typeof Copy; danger?: boolean }): JSX.Element {
+export function IconBtn({ label, onClick, icon: Icon, danger }: { label: string; onClick: () => void; icon: typeof Copy; danger?: boolean }): JSX.Element {
     return (
         <button
             type="button"

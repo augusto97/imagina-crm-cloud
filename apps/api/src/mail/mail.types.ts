@@ -20,7 +20,22 @@ export interface MailMessage {
     fromNameSoft?: boolean;
     /** A dónde van las respuestas (SEC-33: el `from` de una empresa por SMTP compartido). */
     replyTo?: string;
+    /**
+     * v0.1.266 — Adjuntos (un PDF generado: cuenta de cobro, recibo). El
+     * contenido viaja en base64 para que el mensaje siga siendo JSON plano
+     * (la cola de correo lo serializa).
+     */
+    attachments?: MailAttachment[];
 }
+
+export interface MailAttachment {
+    filename: string;
+    contentType: string;
+    contentBase64: string;
+}
+
+/** Tope total de adjuntos de un correo (Gmail admite 25 MB; dejamos margen). */
+export const MAIL_MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
 /**
  * Transporte de correo intercambiable (ADR-S11): `log` para dev/tests y `smtp`

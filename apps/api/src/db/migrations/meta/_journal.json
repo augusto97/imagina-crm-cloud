@@ -470,6 +470,13 @@
       "when": 1784200000036,
       "tag": "0066_view_options",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1784200000037,
+      "tag": "0067_document_templates",
+      "breakpoints": true
     }
   ]
 }

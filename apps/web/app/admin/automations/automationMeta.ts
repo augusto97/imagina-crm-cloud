@@ -1,6 +1,7 @@
 import {
     CalendarClock,
     Clock,
+    FileText,
     FilePlus2,
     GitBranch,
     Mail,
@@ -95,6 +96,12 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: Mail,
         title: 'Enviar un correo',
         description: 'Envía un email con asunto y cuerpo personalizables con variables.',
+    },
+    // v0.1.266 — documentos PDF (ADR-S35).
+    generate_pdf: {
+        icon: FileText,
+        title: 'Generar un PDF',
+        description: 'Arma un documento (cuenta de cobro, recibo…) con los datos del registro y lo guarda o lo deja para el correo.',
     },
     call_webhook: {
         icon: Webhook,
@@ -278,9 +285,18 @@ export function summarizeAction(
         }
         case 'send_email': {
             const to = typeof cfg.to === 'string' ? cfg.to : '';
-            return to === ''
+            const base = to === ''
                 ? __('Envía un correo')
                 : sprintf(__('Envía un correo a %s'), to);
+            const pdfs = Array.isArray(cfg.pdf_templates) ? cfg.pdf_templates.length : 0;
+            return pdfs > 0 ? `${base} · ${pdfs === 1 ? __('con un PDF adjunto') : sprintf(__('con %d PDF adjuntos'), pdfs)}` : base;
+        }
+        case 'generate_pdf': {
+            const save = typeof cfg.save_field === 'string' ? cfg.save_field : '';
+            if (!cfg.document_template_id) return __('Genera un PDF (elegí la plantilla)');
+            return save !== ''
+                ? sprintf(__('Genera un PDF y lo guarda en «%s»'), fieldLabel(fields, save))
+                : __('Genera un PDF');
         }
         case 'connector_action': {
             const key = typeof cfg.action_key === 'string' ? cfg.action_key : '';

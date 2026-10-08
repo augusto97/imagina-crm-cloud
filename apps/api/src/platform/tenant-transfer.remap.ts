@@ -21,6 +21,8 @@ export interface IdMaps {
     connection: Map<number, number>;
     template: Map<number, number>;
     view: Map<number, number>;
+    /** v0.1.266 — plantillas de documentos PDF. */
+    document: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -33,6 +35,7 @@ export function emptyMaps(): IdMaps {
         connection: new Map(),
         template: new Map(),
         view: new Map(),
+        document: new Map(),
     };
 }
 
@@ -62,6 +65,15 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     view_id: 'view',
     // v0.1.265 — la firma del correo de una automatización (send_email).
     signature_user_id: 'user',
+    // v0.1.266 — documentos PDF: la plantilla que usa una acción y las
+    // imágenes subidas del diseño (logo, firma escaneada).
+    document_template_id: 'document',
+    file_id: 'attachment',
+};
+/** Arrays de ids con nombre propio que no son de listas. */
+const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
+    // v0.1.266 — PDFs adjuntos a un send_email.
+    pdf_templates: 'document',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);
@@ -92,6 +104,11 @@ export function remapJson(value: unknown, maps: IdMaps): unknown {
         } else if (LIST_ID_KEYS.has(key)) {
             // 0 = widget de contenido sin lista.
             out[key] = raw === 0 ? 0 : raw === null || raw === undefined ? raw : mapId(maps.list, raw);
+        } else if (EXPLICIT_ARRAYS[key]) {
+            const map = maps[EXPLICIT_ARRAYS[key]!];
+            out[key] = Array.isArray(raw)
+                ? raw.map((v) => mapId(map, v)).filter((v): v is number => v !== null)
+                : raw;
         } else if (LIST_ID_ARRAY_KEYS.has(key)) {
             out[key] = Array.isArray(raw)
                 ? raw.map((v) => mapId(maps.list, v)).filter((v): v is number => v !== null)

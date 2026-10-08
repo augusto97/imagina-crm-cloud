@@ -35,6 +35,16 @@ interface MergeTagInputProps {
     /** Otros HTML props que el input/textarea acepta. */
     className?: string;
     'aria-label'?: string;
+    /** v0.1.266 — dónde se usa (un documento PDF no tiene «valor anterior» ni cobro). */
+    tagContext?: MergeTagContext;
+    /** v0.1.266 — variables propias del lugar (las filas de totales de un documento). */
+    extraTags?: MergeTagSection[];
+}
+
+export type MergeTagContext = 'automation' | 'document';
+export interface MergeTagSection {
+    title: string;
+    items: Array<{ tag: string; label: string; hint?: string }>;
 }
 
 /**
@@ -65,6 +75,8 @@ export function MergeTagInput({
     showSignatureButton = false,
     onInsertSignature,
     className,
+    tagContext,
+    extraTags,
     ...rest
 }: MergeTagInputProps): JSX.Element {
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -164,6 +176,8 @@ export function MergeTagInput({
                         <PopoverContent className="imcrm-w-[360px] imcrm-p-0" align="start">
                             <MergeTagPicker
                                 fields={filterableFields}
+                                context={tagContext}
+                                extra={extraTags}
                                 onPick={(tag) => {
                                     insertTag(tag);
                                     setPickerOpen(false);
@@ -202,9 +216,14 @@ function TagChip({ label, onClick }: { label: string; onClick: () => void }): JS
 interface MergeTagPickerProps {
     fields: FieldEntity[];
     onPick: (tag: string) => void;
+    context?: MergeTagContext;
+    extra?: MergeTagSection[];
 }
 
-export function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Element {
+const NUMBER_TYPES = new Set(['number', 'currency', 'percent', 'rollup', 'computed']);
+const DATE_TYPES = new Set(['date', 'datetime']);
+
+export function MergeTagPicker({ fields, onPick, context = 'automation', extra = [] }: MergeTagPickerProps): JSX.Element {
     const [search, setSearch] = useState('');
 
     const matches = (s: string): boolean =>
@@ -236,6 +255,30 @@ export function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Ele
         { tag: 'date.today', label: __('Fecha de hoy'), hint: 'YYYY-MM-DD' },
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
+
+    // v0.1.266 — montos en palabras y fechas largas (cuentas de cobro, recibos):
+    // {{valor|pesos}} → "un millón quinientos mil pesos", {{fecha|larga}} →
+    // "8 de octubre de 2026". Encadenables con |mayusculas.
+    const wordItems = [
+        ...fields
+            .filter((f) => NUMBER_TYPES.has(f.type))
+            .map((f) => ({ tag: `${f.slug}|pesos`, label: `${f.label} · ${__('en letras')}`, hint: __('un millón quinientos mil pesos') })),
+        ...fields
+            .filter((f) => DATE_TYPES.has(f.type))
+            .map((f) => ({ tag: `${f.slug}|larga`, label: `${f.label} · ${__('fecha larga')}`, hint: __('8 de octubre de 2026') })),
+        { tag: 'date.today|larga', label: __('Hoy · fecha larga'), hint: __('8 de octubre de 2026') },
+    ].filter((t) => matches(t.label) || matches(t.tag) || matches(__('letras')));
+    const extraSections = extra
+        .map((sec) => ({ ...sec, items: sec.items.filter((t) => matches(t.label) || matches(t.tag)) }))
+        .filter((sec) => sec.items.length > 0);
+    // v0.1.266 — el último PDF generado en la automatización (para un WhatsApp).
+    const pdfTags =
+        context === 'automation'
+            ? [
+                  { tag: 'pdf.link', label: __('Enlace al PDF generado'), hint: __('si se guardó en el registro') },
+                  { tag: 'pdf.nombre', label: __('Nombre del PDF generado') },
+              ].filter((t) => matches(t.label) || matches(t.tag) || matches('pdf'))
+            : [];
 
     // v0.1.251 — el cobro en contexto: el link que creó «Crear link de pago»
     // en una acción anterior, o el pago recién recibido (trigger «Cuando se
@@ -279,7 +322,14 @@ export function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Ele
                         onPick={onPick}
                     />
                 )}
-                {visibleBefore.length > 0 && (
+                {extraSections.map((sec) => (
+                    <Section key={sec.title} title={sec.title} items={sec.items} onPick={onPick} />
+                ))}
+                {wordItems.length > 0 && (
+                    <Section title={__('En palabras y fechas largas')} items={wordItems} onPick={onPick} />
+                )}
+                {pdfTags.length > 0 && <Section title={__('Último PDF generado')} items={pdfTags} onPick={onPick} />}
+                {context === 'automation' && visibleBefore.length > 0 && (
                     <Section
                         title={__('Valor anterior (antes del cambio)')}
                         items={visibleBefore.map((f) => ({
@@ -290,7 +340,7 @@ export function MergeTagPicker({ fields, onPick }: MergeTagPickerProps): JSX.Ele
                         onPick={onPick}
                     />
                 )}
-                {visiblePayment.length > 0 && (
+                {context === 'automation' && visiblePayment.length > 0 && (
                     <Section
                         title={__('Cobro (link de pago / pago recibido)')}
                         items={visiblePayment.map((t) => ({ tag: t.tag, label: t.label, hint: `{{${t.tag}}}` }))}

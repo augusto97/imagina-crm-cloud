@@ -7244,6 +7244,68 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         deshacer, negrita, tipografía, celular, datos reales, firma, guardado,
         prueba enviada, firma visual en Ajustes, teléfono sin desborde).
 
+  - [x] **Documentos PDF: cuentas de cobro desde la ficha y las
+        automatizaciones (v0.1.266, ADR-S35, pedido del usuario: "crear PDF en
+        automatizaciones y enviarlo adjunto por correo… con editor y plantillas
+        — arrancá con la fase 1, primero cuenta de cobro")**. (a) **Plantillas
+        por lista** (`document_templates`, migración 0067, RLS) con un modelo
+        por bloques (`docDesignSchema` en shared): encabezado con logo y datos
+        de quien cobra, título, texto con formato, datos del registro, **tabla
+        de ítems** (las filas son los registros VINCULADOS por una relación, en
+        cualquier sentido y con el ACL de quien genera), **totales** (suma de
+        una columna, un campo, porcentaje de otra fila, suma con restas o texto
+        — cada fila queda como `{{totales.<id>}}`), imagen, separador, espacio,
+        salto de página, firma y columnas; hoja carta/A4/oficio, márgenes y pie
+        con «Página x de y». (b) **Render en el servidor con pdfmake** (JS puro,
+        sin Chromium, sin red ni disco; imágenes PNG/JPG ≤3 MB validadas por
+        magic bytes; tope 8 MB): una cuenta de cobro pesa ~30 KB y tarda
+        100-450 ms. La MISMA función arma la vista previa, el botón de la ficha
+        y la automatización. (c) **Editor visual** a pantalla completa
+        (Ajustes de la lista → **Documentos**): bloques a la izquierda, **el
+        PDF real** al centro (pdf.js a canvas, con zonas clickeables que
+        seleccionan el bloque), inspector a la derecha, datos de un registro
+        elegible o las variables a la vista, deshacer/rehacer, «Abrir PDF» y
+        celular por pestañas. (d) **Plantillas de arranque**: «Cuenta de cobro»
+        y «Cuenta de cobro con detalle» (ítems de una lista vinculada) — se
+        eligen los campos por rol (cliente, NIT, concepto, valor…) con
+        sugerencia automática, y los datos de quien cobra (documento, banco,
+        cuenta, ciudad) se recuerdan; traen «Son: … PESOS M/CTE.», forma de
+        pago, la nota de no responsable de IVA y la firma. Lo que no se mapea
+        queda visible como «[Nombre del cliente]». (e) **Variables legibles**
+        por defecto (montos con los separadores de la empresa, fechas en su
+        formato, etiquetas de opción) y modificadores nuevos `|letras`,
+        `|pesos` («un millón doscientos cincuenta mil pesos», «con 50/100»),
+        `|larga` («8 de octubre de 2026») y `|mayusculas`, que también valen en
+        correos y webhooks. (f) **Automatizaciones**: acción **«Generar un
+        PDF»** (plantilla, guardarlo opcional en un campo Archivo —cuenta
+        contra el almacenamiento del plan— y `{{pdf.link}}`/`{{pdf.nombre}}`
+        para el paso siguiente, p. ej. un WhatsApp) y **«Adjuntar PDF»** en
+        «Enviar email» (hasta 5; si una acción anterior ya generó esa
+        plantilla, se reusa); «Enviarme una prueba» manda el correo con los
+        adjuntos. Los adjuntos salen por SMTP, Gmail (multipart/mixed) y
+        Microsoft Graph (fileAttachment, con tope de 3 MB que se avisa en vez
+        de truncar). (g) **«Generar PDF» en la ficha** (página y modal): por
+        plantilla, descargar o «Guardar en «Documento»». (h) Borrar una
+        plantilla que usa una automatización → 409 con la lista; la plantilla
+        viaja en la migración de empresa; el asistente/MCP las ve en
+        `get_list_schema` y conoce la acción. **Fixes en el camino**: el
+        sistema no podía guardar un archivo (`attachments.created_by` era NOT
+        NULL con FK a users y el motor no tiene usuario); la zona del último
+        bloque en la vista previa se estiraba hasta el pie de la hoja (marca de
+        fin de alto cero); el worker de pdf.js sale como `.js` porque nginx no
+        conoce `.mjs`; y pdf.js va en la 6.3 (la 5.7 tenía un aviso high de
+        ejecución de JS al abrir un PDF malicioso). **No es factura electrónica DIAN** (eso exige XML UBL
+        firmado). Tests: 20 de números en letras + 4 de plantillas en shared,
+        8 de documentos en la API (variables, totales con porcentajes/restas/
+        ciclos, RLS, vista previa con ítems sólo de esa cuenta, guardar en un
+        campo, motor con adjunto y `{{pdf.link}}`, 409) + 1 de adjuntos en
+        Gmail/Graph — 1002 API, 240 front y 171 shared en verde — + E2E
+        navegador 17/17 (galería → mapeo sugerido → editor con el PDF real →
+        click en la tabla → guardar → descargar y guardar desde la ficha →
+        acción y adjunto en el editor de automatizaciones → celular) y la vista
+        previa contra el build de producción sin violaciones de CSP.
+        Fase 2: consecutivo atómico, QR y descarga desde el portal.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

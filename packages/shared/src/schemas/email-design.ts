@@ -292,7 +292,7 @@ export function safeEmailUrl(raw: string, kind: 'link' | 'image' = 'link'): stri
     return null;
 }
 
-const TAG_RE = /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value))*)\s*\}\}/g;
+const TAG_RE = /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga))*)\s*\}\}/g;
 
 /** ¿El texto tiene alguna variable `{{…}}`? */
 export function hasMergeTag(s: string): boolean {
@@ -895,7 +895,8 @@ export interface EmailFieldLike {
     config?: unknown;
 }
 
-function groupNumber(n: number, decimals: number | null, format: TenantFormat['number_format']): string {
+/** Número con los separadores de la empresa (v0.1.266: también lo usan los PDF). */
+export function groupNumber(n: number, decimals: number | null, format: TenantFormat['number_format']): string {
     const fixed = decimals === null ? String(Math.round(n * 1e6) / 1e6) : n.toFixed(decimals);
     const negative = fixed.startsWith('-');
     const [int, dec] = (negative ? fixed.slice(1) : fixed).split('.');
@@ -905,7 +906,7 @@ function groupNumber(n: number, decimals: number | null, format: TenantFormat['n
     return `${negative ? '-' : ''}${grouped}${dec ? decimal + dec : ''}`;
 }
 
-function formatYmd(ymd: string, format: TenantFormat['date_format']): string {
+export function formatYmd(ymd: string, format: TenantFormat['date_format']): string {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
     if (!m) return ymd;
     if (format === 'dmy') return `${m[3]}/${m[2]}/${m[1]}`;

@@ -1,3 +1,5 @@
+import { applyWordModifiers } from '@imagina-base/shared';
+
 /**
  * Resuelve merge tags `{{slug}}` en un template contra los valores de un
  * registro. Soporta `{{record.id}}` y `{{slug}}` (valor del campo por slug).
@@ -21,6 +23,11 @@
  * `resolveLabel` (necesita el catálogo de campos); sin él, `|label` pasa
  * el valor tal cual — nunca rompe el template.
  *
+ * Modificadores de PALABRAS (v0.1.266, documentos PDF): `{{valor|letras}}`
+ * ("un millón quinientos mil"), `{{valor|pesos}}` ("un millón de pesos"),
+ * `{{fecha|larga}}` ("8 de octubre de 2026") y `{{x|mayusculas}}`.
+ * Encadenables: `{{valor|pesos|mayusculas}}`.
+ *
  * `escapeValue` (SEC-08): cuando el destino es HTML (email is_html), se pasa un
  * escapador para que los VALORES interpolados (datos del registro, que pueden
  * venir de un cliente del portal o de un import) no inyecten HTML/JS. El
@@ -36,7 +43,7 @@ export function applyMergeTags(
     if (!template) return template;
     const esc = escapeValue ?? ((s: string) => s);
     return template.replace(
-        /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value))*)\s*\}\}/g,
+        /\{\{\s*([a-zA-Z0-9_.]+)((?:\|(?:[+-]\d+[dmy]|label|value|letras|pesos|mayusculas|larga))*)\s*\}\}/g,
         (_m, token: string, mods: string) => {
             let v: unknown;
             if (token === 'record.id') {
@@ -48,9 +55,12 @@ export function applyMergeTags(
                 v = resolveLabel(token, v);
             }
             if (v === null || v === undefined) return '';
-            if (Array.isArray(v)) return esc(v.map((x) => String(x)).join(', '));
+            const list = mods ? mods.split('|').filter(Boolean) : [];
+            if (Array.isArray(v)) return esc(applyWordModifiers(v.map((x) => String(x)).join(', '), v, list));
             let out = String(v);
             if (mods) out = applyDateModifiers(out, mods);
+            // v0.1.266 — `|letras`, `|pesos`, `|larga`, `|mayusculas`.
+            if (list.length > 0) out = applyWordModifiers(out, typeof v === 'number' ? v : out, list);
             return esc(out);
         },
     );
@@ -112,7 +122,7 @@ export function labelResolverFor(
  * valor no parsea como fecha, se devuelve intacto. Los modificadores que
  * no son de fecha (`label`, `value`) se ignoran acá.
  */
-function applyDateModifiers(value: string, mods: string): string {
+export function applyDateModifiers(value: string, mods: string): string {
     const m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(value);
     if (!m) return value;
     let y = Number(m[1]);

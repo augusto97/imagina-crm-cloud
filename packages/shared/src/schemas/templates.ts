@@ -174,7 +174,7 @@ export function collectFieldTokens(value: unknown): string[] {
  *    cualquier cadena. Los tags de sistema (`record.id`, `date.today`,
  *    `payload.x`) llevan punto y no se tocan.
  */
-const SLUG_KEYS: ReadonlySet<string> = new Set(['slug', 'field', 'due_field', 'date_field']);
+const SLUG_KEYS: ReadonlySet<string> = new Set(['slug', 'field', 'due_field', 'date_field', 'save_field']);
 // v0.1.265 — `slugs`: el bloque «Datos del registro» de un correo diseñado.
 const SLUG_ARRAY_KEYS: ReadonlySet<string> = new Set(['changed_fields', 'slugs']);
 const SLUG_MAP_KEYS: ReadonlySet<string> = new Set(['values', 'field_filters']);

@@ -36,6 +36,7 @@ import { useList } from '@/hooks/useLists';
 import type { RecordEntity } from '@/types/record';
 
 import { PortalAccessButton } from './crm/PortalAccessButton';
+import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from './RecordBacklinks';
 import { RecordDescription } from './description/RecordDescription';
@@ -277,6 +278,7 @@ export function RecordDetailDrawer({
                                     formatCreatedDate(record.created_at),
                                 )}
                             </span>
+                            <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
                             {listSlug !== undefined && (
                                 <Button
                                     asChild
