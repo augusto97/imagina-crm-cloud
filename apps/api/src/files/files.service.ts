@@ -19,6 +19,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import {
     FILE_STORAGE,
     TENANT_STORAGE,
+    storeBytes,
     type FileStorage,
     type PresignableStorage,
     type TenantStorageResolver,
@@ -330,11 +331,12 @@ export class FilesService {
         const key = `t${tenantId}/${randomBytes(16).toString('hex')}${ext}`;
         const target = await this.uploadTarget(tenantId);
         let size: number;
+        let storedKey = key;
         try {
-            size = await target.storage.write(key, source);
+            ({ size, key: storedKey } = await storeBytes(target.storage, key, source, clean));
         } catch (err) {
             if (target.connectionId === null) throw err;
-            throw storageUnavailable(`No se pudo guardar el archivo en el almacenamiento de la empresa: ${describeS3Error(err)}`);
+            throw storageUnavailable(`No se pudo guardar el archivo en el almacenamiento de la empresa: ${describeStorageError(err)}`);
         }
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -345,7 +347,7 @@ export class FilesService {
                     filename: clean,
                     mime: mime || 'application/octet-stream',
                     sizeBytes: size,
-                    storageKey: key,
+                    storageKey: storedKey,
                     storageConnectionId: target.connectionId,
                     // v0.1.266 — 0 = el sistema (un PDF de una automatización): sin autor.
                     createdBy: userId > 0 ? userId : null,
@@ -354,7 +356,7 @@ export class FilesService {
             return inserted!;
         }).catch(async (err: unknown) => {
             // Sin metadata los bytes quedarían huérfanos en el bucket.
-            await target.storage.delete(key).catch(() => undefined);
+            await target.storage.delete(storedKey).catch(() => undefined);
             throw err;
         });
         return toDto(row, this.signedUrl(tenantId, row.id, 4 * 3600));
@@ -528,11 +530,14 @@ export class FilesService {
                 if (source.probe && !(await source.probe(row.storageKey))) {
                     throw new Error('El archivo ya no estaba donde se guardó.');
                 }
-                await dest.write(row.storageKey, source.read(row.storageKey) as Readable);
+                // La clave original viaja como nombre: en un bucket queda
+                // igual; Google Drive devuelve su propio id.
+                const baseKey = row.storageKey.startsWith('gdrive:') ? `t${tenantId}/${row.id}${extOf(row.filename)}` : row.storageKey;
+                const stored = await storeBytes(dest, baseKey, source.read(row.storageKey) as Readable, row.filename);
                 const updated = await this.tenantDb.withTenant(tenantId, (tx) =>
                     tx
                         .update(attachments)
-                        .set({ storageConnectionId: destId })
+                        .set({ storageConnectionId: destId, storageKey: stored.key })
                         .where(
                             and(
                                 eq(attachments.tenantId, tenantId),
@@ -544,14 +549,20 @@ export class FilesService {
                         )
                         .returning({ id: attachments.id }),
                 );
-                if (updated.length === 0) continue; // ya lo movió otro: lo escrito queda como copia inofensiva
+                if (updated.length === 0) {
+                    // Ya lo movió otro: se descarta la copia recién escrita.
+                    if (stored.key !== row.storageKey || destId !== row.storageConnectionId) {
+                        await dest.delete(stored.key).catch(() => undefined);
+                    }
+                    continue;
+                }
                 await source.delete(row.storageKey).catch(() => undefined);
                 moved += 1;
                 bytes += row.sizeBytes;
                 if (room !== null) room -= row.sizeBytes;
             } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                failed.push({ id: row.id, name: row.filename, error: /S3|bucket|Access|Signature|ENOTFOUND|ECONN/i.test(msg) ? describeS3Error(err) : msg });
+                failed.push({ id: row.id, name: row.filename, error: /S3|bucket|Access|Signature|ENOTFOUND|ECONN/i.test(msg) ? describeStorageError(err) : msg });
             }
         }
         const [left] = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -562,6 +573,12 @@ export class FilesService {
         );
         return { moved, bytes, failed, remaining: Number(left?.n ?? 0) };
     }
+}
+
+/** Los errores del driver de Drive ya vienen legibles; los de S3 se traducen. */
+function describeStorageError(err: unknown): string {
+    if (err instanceof Error && err.name === 'DriveStorageError') return err.message;
+    return describeS3Error(err);
 }
 
 function storageUnavailable(reason: string): ServiceUnavailableException {

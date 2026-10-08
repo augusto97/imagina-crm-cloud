@@ -40,6 +40,8 @@ const envSchema = z.object({
      * red interna en una instalación propia.
      */
     STORAGE_ALLOW_PRIVATE_HOSTS: boolFromString,
+    /** v0.1.269 — API de Google Drive (los tests apuntan a un falso). */
+    GOOGLE_DRIVE_API_URL: z.string().default('https://www.googleapis.com'),
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),

@@ -23,6 +23,24 @@ export interface FileStorage {
      * el 504 del proxy.
      */
     probe?(key: string): Promise<boolean>;
+    /**
+     * v0.1.269 — guardar dejando que el PROVEEDOR elija la clave (Google
+     * Drive asigna su propio id de archivo). Devuelve la clave con la que se
+     * vuelve a leer. Sin esto, la clave es la que se pidió.
+     */
+    writeKeyed?(key: string, source: Readable, name?: string): Promise<{ size: number; key: string }>;
+}
+
+/** Guarda en cualquier storage y devuelve la clave REAL con la que quedó. */
+export async function storeBytes(
+    storage: FileStorage,
+    key: string,
+    source: Readable,
+    /** El nombre humano (en Drive es lo que ve la empresa en la carpeta). */
+    name?: string,
+): Promise<{ size: number; key: string }> {
+    if (storage.writeKeyed) return storage.writeKeyed(key, source, name);
+    return { size: await storage.write(key, source), key };
 }
 
 /**

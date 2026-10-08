@@ -82,6 +82,10 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         text: 'Habilitá Google Sheets API.',
                         link: { label: 'Sheets API', url: `${G}/apis/library/sheets.googleapis.com` },
                     },
+                    {
+                        text: 'Habilitá Google Drive API (para que las empresas guarden sus archivos en su Drive).',
+                        link: { label: 'Drive API', url: `${G}/apis/library/drive.googleapis.com` },
+                    },
                 ],
             },
             {
@@ -107,7 +111,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         copy: ['domain'],
                     },
                     {
-                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pegá estos permisos en «Agregar permisos manualmente» y guardá. Los tres de Google aparecen como «sensibles»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
+                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pegá estos permisos en «Agregar permisos manualmente» y guardá. gmail.send, calendar.events y spreadsheets aparecen como «sensibles» y drive.file como «no sensible»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
                         link: { label: 'Acceso a los datos', url: `${G}/auth/scopes` },
                         copy: ['scopes_lines'],
                     },
@@ -334,6 +338,8 @@ export const SCOPE_JUSTIFICATIONS: Record<string, string> = {
         'calendar.events: la app crea un evento en el calendario de la cuenta conectada cuando una automatización lo indica (por ejemplo, agendar una cita al registrar una reserva). No lee ni modifica otros eventos del calendario.',
     'https://www.googleapis.com/auth/spreadsheets':
         'spreadsheets: la app agrega una fila a la hoja de cálculo que el usuario elige (pegando su enlace) cuando una automatización lo indica, para exportar registros a Google Sheets. No lista ni abre otras hojas del usuario.',
+    'https://www.googleapis.com/auth/drive.file':
+        'drive.file: si la empresa elige su Google Drive como almacenamiento, la app guarda ahí los archivos que sus usuarios suben y los PDF que generan, dentro de una carpeta que crea la propia app, y los vuelve a leer para mostrarlos o descargarlos. Sólo accede a los archivos que ella misma creó: no lista ni abre ningún otro archivo del Drive.',
 };
 
 export function scopeJustificationText(scopes: string[]): string {
@@ -352,12 +358,13 @@ export function videoScriptText(appName: string, appUrl: string): string {
         '4. Volvé a la app: la conexión aparece como conectada.',
         '5. Abrí una automatización con la acción «Enviar correo con Gmail», tocá «Probar ahora» y mostrá el correo recibido.',
         '6. Igual con «Crear evento en Google Calendar» (mostrá el evento en el calendario) y «Agregar fila en Google Sheets» (mostrá la fila nueva en la hoja).',
-        '7. Explicá en voz alta o con subtítulos para qué se usa cada permiso.',
+        '7. Google Drive: conectalo, elegilo en Ajustes → Almacenamiento, subí un archivo a un registro y mostrá que aparece en la carpeta «Imagina Base» del Drive.',
+        '8. Explicá en voz alta o con subtítulos para qué se usa cada permiso.',
     ].join('\n');
 }
 
 export function appDescriptionText(appName: string): string {
-    return `${appName} es una plataforma para que las empresas armen sus propias bases de datos (clientes, ventas, proyectos, facturación) con vistas, tableros y automatizaciones. Las integraciones con Google permiten que esas automatizaciones manden un correo desde Gmail, creen un evento en Google Calendar o agreguen una fila a Google Sheets cuando ocurre algo en sus datos.`;
+    return `${appName} es una plataforma para que las empresas armen sus propias bases de datos (clientes, ventas, proyectos, facturación) con vistas, tableros y automatizaciones. Las integraciones con Google permiten que esas automatizaciones manden un correo desde Gmail, creen un evento en Google Calendar o agreguen una fila a Google Sheets cuando ocurre algo en sus datos, y cada empresa puede guardar sus archivos en su propio Google Drive.`;
 }
 
 /**

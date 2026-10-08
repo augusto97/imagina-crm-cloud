@@ -13,13 +13,17 @@ import { ConnectorsService } from '../src/connectors/connectors.service';
 import { IntegrationAppsService } from '../src/connectors/integration-apps.service';
 import { s3ConfigFromCreds, verifyS3 } from '../src/connectors/storage-s3';
 import { TenantStorageService } from '../src/connectors/tenant-storage.service';
-import { attachments, tenants, users } from '../src/db/schema';
+import { attachments, connections, tenants, users } from '../src/db/schema';
+import { withTenant } from '../src/db/tenant-tx';
+import { encryptSecret } from '../src/common/secret-box';
+import { DRIVE_FOLDER_NAME } from '../src/connectors/storage-drive';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService, type OpenedFile } from '../src/files/files.service';
 import { EmailQuotaService } from '../src/mail/email-quota.service';
 import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { startPostgres, type TestPg } from './helpers/containers';
+import { startFakeDrive, type FakeDrive } from './helpers/fake-drive';
 import { startFakeS3, type FakeS3 } from './helpers/fake-s3';
 import { memoryOAuthStore } from './helpers/oauth-store';
 
@@ -232,5 +236,142 @@ describe('almacenamiento propio de la empresa', () => {
 
         // Vacía y sin elegir: ahora sí se borra.
         await connectors.remove(tenantId, adminId, 'admin', connId, true);
+    });
+});
+
+describe('almacenamiento en Google Drive (v0.1.269)', () => {
+    let pg: TestPg;
+    let drive: FakeDrive;
+    let connectors: ConnectorsService;
+    let storage: TenantStorageService;
+    let files: FilesService;
+    let billing: BillingService;
+    let tenantId: number;
+    let adminId: number;
+    let driveId: number;
+
+    beforeAll(async () => {
+        pg = await startPostgres();
+        drive = await startFakeDrive();
+        const tenantDb = new TenantDb(pg.db);
+        const env = loadEnv({ SECRETS_KEY: KEY, FILES_SIGNING_SECRET: 'x'.repeat(32), GOOGLE_DRIVE_API_URL: drive.apiBase });
+        const store = memoryOAuthStore();
+        connectors = new ConnectorsService(tenantDb, pg.db, env, store, new AuditService(tenantDb), new IntegrationAppsService(store, env));
+        storage = new TenantStorageService(pg.db, env, tenantDb, connectors);
+        files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-gd-'))), env, storage);
+        const plans = new PlansService(pg.db);
+        billing = new BillingService(tenantDb, plans, new EmailQuotaService(pg.db, plans), new TenantSmtpService(pg.db, env));
+        const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
+        tenantId = t!.id;
+        const [u] = await pg.db.insert(users).values({ email: 'ana@acme.test', passwordHash: 'x', name: 'Ana' }).returning();
+        adminId = u!.id;
+        const [c] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(connections)
+                .values({
+                    tenantId,
+                    provider: 'google_drive',
+                    name: 'Google Drive · ana@acme.test',
+                    authType: 'oauth2',
+                    visibility: 'workspace',
+                    ownerUserId: adminId,
+                    config: { account_label: 'ana@acme.test', oauth_state: { expiresAt: Date.now() + 3600_000, scope: '', error: null } },
+                    secrets: { access_token: encryptSecret(drive.token, KEY), refresh_token: encryptSecret('r', KEY) },
+                })
+                .returning({ id: connections.id }),
+        );
+        driveId = c!.id;
+    }, 120_000);
+
+    afterAll(async () => {
+        await drive?.close();
+        await pg?.stop();
+    });
+
+    async function text(f: OpenedFile): Promise<string> {
+        expect(f.kind).toBe('stream'); // Drive no tiene enlaces prefirmados: pasa por el servidor.
+        if (f.kind !== 'stream') return '';
+        const chunks: Buffer[] = [];
+        for await (const c of f.stream) chunks.push(Buffer.from(c as Buffer));
+        return Buffer.concat(chunks).toString();
+    }
+
+    it('un token que Google rechaza no se puede elegir (y se dice qué hacer)', async () => {
+        const good = drive.token;
+        drive.token = 'otro';
+        try {
+            await expect(storage.set(tenantId, driveId)).rejects.toMatchObject({
+                response: { code: 'storage_not_ready', message: expect.stringMatching(/reconectá/) },
+            });
+        } finally {
+            drive.token = good;
+        }
+    });
+
+    it('elegirlo crea la carpeta «Imagina Base», prueba un archivo y la recuerda', async () => {
+        const cands = await storage.candidates(tenantId);
+        expect(cands).toEqual([expect.objectContaining({ id: driveId, integration: 'google_drive', detail: 'ana@acme.test', problem: null })]);
+        await storage.set(tenantId, driveId);
+        const folders = [...drive.files.entries()].filter(([, f]) => f.folder);
+        expect(folders.map(([, f]) => f.name)).toEqual([DRIVE_FOLDER_NAME]);
+        // El archivo de prueba no quedó.
+        expect([...drive.files.values()].filter((f) => !f.folder)).toEqual([]);
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(connections).where(eq(connections.id, driveId)));
+        expect((row!.config as Record<string, unknown>).storage_folder_id).toBe(folders[0]![0]);
+    });
+
+    it('lo que se sube va a la carpeta del Drive, no cuenta para el plan y se descarga por el servidor', async () => {
+        const dto = await files.upload(tenantId, adminId, 'Contrato.pdf', 'application/pdf', Readable.from(Buffer.from('%PDF-EN-DRIVE')));
+        expect(dto.external).toBe(true);
+        const [att] = await pg.db.select().from(attachments).where(eq(attachments.id, dto.id));
+        expect(att!.storageKey).toMatch(/^gdrive:file_/);
+        const inDrive = drive.files.get(att!.storageKey.slice('gdrive:'.length))!;
+        expect(inDrive.body.toString()).toBe('%PDF-EN-DRIVE');
+        // En la carpeta se ve con su nombre real, no con la clave interna.
+        expect(inDrive.name).toBe('Contrato.pdf');
+        expect(drive.files.get(inDrive.parents[0]!)!.name).toBe(DRIVE_FOLDER_NAME);
+        expect(await text(await files.openDownload(tenantId, dto.id))).toBe('%PDF-EN-DRIVE');
+        expect((await billing.summary(tenantId)).usage.storage_bytes).toBe(0);
+    });
+
+    it('si borraron la carpeta desde el Drive, se crea de nuevo; Drive lleno → falla con el motivo', async () => {
+        for (const [id, f] of drive.files) if (f.folder) drive.files.delete(id);
+        const dto = await files.upload(tenantId, adminId, 'otro.txt', 'text/plain', Readable.from(Buffer.from('DE NUEVO')));
+        expect(await text(await files.openDownload(tenantId, dto.id))).toBe('DE NUEVO');
+        drive.full = true;
+        try {
+            await expect(files.upload(tenantId, adminId, 'x.txt', 'text/plain', Readable.from(Buffer.from('x')))).rejects.toMatchObject({
+                response: { code: 'storage_unavailable', message: expect.stringMatching(/Drive de la empresa está lleno/) },
+            });
+        } finally {
+            drive.full = false;
+        }
+    });
+
+    it('mudanza Drive ↔ servidor con su propia clave, y la conexión con archivos no se borra', async () => {
+        const local = await (async () => {
+            await storage.clear(tenantId);
+            return files.upload(tenantId, adminId, 'local.txt', 'text/plain', Readable.from(Buffer.from('LOCAL')));
+        })();
+        await storage.set(tenantId, driveId);
+        const up = await files.moveBatch(tenantId, 'connection', null);
+        expect(up).toMatchObject({ moved: 1, failed: [], remaining: 0 });
+        const [moved] = await pg.db.select().from(attachments).where(eq(attachments.id, local.id));
+        expect(moved!.storageKey).toMatch(/^gdrive:/);
+        expect(await text(await files.openDownload(tenantId, local.id))).toBe('LOCAL');
+
+        await expect(connectors.remove(tenantId, adminId, 'admin', driveId, true)).rejects.toMatchObject({ response: { code: 'connection_storage' } });
+        await expect(connectors.disconnectOAuth(tenantId, adminId, 'admin', driveId)).rejects.toMatchObject({ response: { code: 'connection_storage' } });
+
+        await storage.clear(tenantId);
+        const back = await files.moveBatch(tenantId, 'platform', null);
+        expect(back).toMatchObject({ moved: 3, remaining: 0 });
+        const rows = await pg.db.select().from(attachments).where(eq(attachments.tenantId, tenantId));
+        for (const r of rows) {
+            expect(r.storageConnectionId).toBeNull();
+            expect(r.storageKey).toMatch(new RegExp(`^t${tenantId}/${r.id}\\.`));
+        }
+        expect([...drive.files.values()].filter((f) => !f.folder)).toEqual([]);
+        await connectors.remove(tenantId, adminId, 'admin', driveId, true);
     });
 });

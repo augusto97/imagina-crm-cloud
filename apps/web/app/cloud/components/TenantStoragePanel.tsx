@@ -77,9 +77,14 @@ export function TenantStoragePanel(): JSX.Element | null {
                             active={status.mode}
                             view={view}
                             onSelect={setView}
-                            icon={<IntegrationLogo integrationKey="s3" size={16} />}
+                            icon={
+                                <span className="imcrm-flex imcrm-gap-0.5">
+                                    <IntegrationLogo integrationKey="google_drive" size={16} />
+                                    <IntegrationLogo integrationKey="s3" size={16} />
+                                </span>
+                            }
                             title="Tu propio almacenamiento"
-                            text="Amazon S3, Backblaze, Cloudflare R2, Wasabi… Sin límite del plan."
+                            text="Google Drive, Amazon S3, Backblaze, Cloudflare R2… Sin límite del plan."
                             recommended
                         />
                     </div>
@@ -443,16 +448,17 @@ function ConnectionSection({ status }: { status: TenantStorageStatus }): JSX.Ele
                     Tu propio almacenamiento
                 </CardTitle>
                 <CardDescription>
-                    Un bucket compatible con S3 de tu empresa (Amazon S3, Backblaze B2, Cloudflare R2, Wasabi, DigitalOcean Spaces…). Los
-                    archivos no ocupan el espacio del plan y se descargan directo desde tu bucket con enlaces temporales: no hace falta que
-                    sea público.
+                    El Google Drive de la empresa o un bucket compatible con S3 (Amazon S3, Backblaze B2, Cloudflare R2, Wasabi,
+                    DigitalOcean Spaces…). Los archivos no ocupan el espacio del plan. En un bucket se descargan directo de ahí con enlaces
+                    temporales (no hace falta que sea público); en Drive quedan en una carpeta «Imagina Base» y la app sólo ve lo que ella
+                    misma crea ahí.
                 </CardDescription>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
                 {current && !changing && (
                     <div className="imcrm-space-y-3" data-testid="storage-current">
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
-                            <IntegrationLogo integrationKey="s3" size={32} />
+                            <IntegrationLogo integrationKey={current.integration} size={32} />
                             <div className="imcrm-min-w-0 imcrm-flex-1">
                                 <p className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{current.name}</p>
                                 <p className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
@@ -596,17 +602,26 @@ function NoConnections(): JSX.Element {
         >
             <p>
                 Todavía no hay un almacenamiento conectado. Conectalo una vez en Integraciones (como conexión del{' '}
-                <span className="imcrm-font-medium">equipo</span>) y volvé acá para elegirlo. Al conectarlo probamos subir, leer y borrar un
-                archivo chiquito.
+                <span className="imcrm-font-medium">equipo</span>) y volvé acá para elegirlo. Antes de usarlo probamos subir, leer y borrar
+                un archivo chiquito.
             </p>
-            <Button size="sm" variant="outline" asChild>
-                <Link to="/settings?s=conectores">
-                    <IntegrationLogo integrationKey="s3" size={16} className="imcrm-mr-1.5" />
-                    Conectar un almacenamiento S3
-                </Link>
-            </Button>
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                <Button size="sm" variant="outline" asChild>
+                    <Link to="/settings?s=conectores">
+                        <IntegrationLogo integrationKey="google_drive" size={16} className="imcrm-mr-1.5" />
+                        Conectar Google Drive
+                    </Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                    <Link to="/settings?s=conectores">
+                        <IntegrationLogo integrationKey="s3" size={16} className="imcrm-mr-1.5" />
+                        Conectar un almacenamiento S3
+                    </Link>
+                </Button>
+            </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                Backblaze B2 y Cloudflare R2 son los más económicos para esto; R2 no cobra la descarga.
+                Google Drive es lo más simple (15 GB gratis por cuenta, compartidos con Gmail; Google Workspace suma más). Para mucho
+                volumen, Backblaze B2 y Cloudflare R2 son los más económicos; R2 no cobra la descarga.
             </p>
         </div>
     );
