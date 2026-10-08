@@ -352,6 +352,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.267** (documentos PDF fase 2: numeración consecutiva por plantilla, bloque QR y descarga desde el portal del cliente), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- **Espacio de los PDF / archivos (2026-10-08, esperando decisión del usuario)**:
+  preguntó cómo evitar que miles de PDF llenen el disco; propuso Google Drive
+  o almacenamiento S3-compatible por empresa (fuera del límite del plan). Se
+  le propuso, en orden: (1) **lo del operador, ya existe**: `STORAGE_DRIVER=s3`
+  (v0.1.55) contra Backblaze B2 / Cloudflare R2 saca TODOS los archivos del
+  disco sin código; (2) **link del PDF sin guardarlo** (`{{pdf.link}}` firmado
+  que regenera al abrir — hoy exige guardarlo en un campo Archivo), con la
+  salvedad de que muestra los datos ACTUALES; (3) **almacenamiento propio por
+  empresa** (Ajustes → Almacenamiento: S3-compatible primero, que cubre AWS/B2/
+  R2/Wasabi/DO/MinIO con un solo conector; Google Drive después, scope
+  `drive.file`, no sensible) — lo de ahí no cuenta para el plan, se sirve por
+  URL prefirmada (ni disco ni ancho de banda nuestro) y aplica a TODO el
+  módulo de archivos, no sólo a PDF; (4) opcional: retención (borrar PDF
+  guardados después de N días, conservando número y datos). Falta que elija.
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
   en el servidor.
 - Google OAuth: grabar el video y enviar a verificación.
