@@ -7410,6 +7410,56 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         desconectar bloqueados) + E2E navegador 12/12 contra un Drive falso
         (la conexión real con Google no alcanza el sandbox).
 
+  - [x] **Editor de correos revisado: arrastrar y soltar, celular y modo oscuro
+        (v0.1.270, reporte del usuario: "no es drag and drop, la vista
+        responsive no funciona, no hay cómo ver el modo oscuro; revisalo
+        completo")**. (a) **Arrastrar y soltar**: los bloques del panel se
+        sueltan donde se quiera en la vista previa (una línea marca dónde caen)
+        o en el esquema; los bloques se reordenan arrastrándolos en cualquiera
+        de los dos, y entran/salen de las columnas (sólo los simples:
+        «Datos del registro», firma o HTML sobre una columna caen al primer
+        nivel). Operaciones puras con tests (`insertAt`/`moveTo`/`canDrop`/
+        `isNoopDrop` — el índice se cuenta sobre la lista original, como lo
+        muestra la línea) y la resolución de la posición también pura
+        (`emailDnd.resolveDrop`, por las cajas de los bloques y las columnas,
+        que el renderizador marca con `data-ib-col` sólo en la vista previa).
+        Los listeners viven en la app y se re-ponen tras cada escritura del
+        iframe (que no ejecuta scripts). En el teléfono sigue el tocar para
+        agregar. (b) **La vista de celular no funcionaba porque el CORREO no
+        era responsive**: la imagen fijaba su tabla con `width="600"` y en un
+        teléfono el correo quedaba más ancho que la pantalla — también los
+        correos reales. Ahora la imagen es fluida (`width:100%;max-width`,
+        conservando el `width` del atributo para Outlook de Windows), el marco
+        del celular mide 375 px reales y los títulos se achican en pantallas
+        chicas. (c) **Modo oscuro**: botón sol/luna en el editor; el tema gana
+        `dark` (apagado = lo de siempre) y, encendido, el correo declara
+        `light dark` y un `@media (prefers-color-scheme: dark)` (+ los
+        selectores de Outlook.com) cambia sólo lo pintado con los colores del
+        tema — lo coloreado a mano y las bandas conservan sus colores. Sin
+        colores propios, la vista previa simula lo que hacen Gmail/Outlook
+        (invierten los claros) con un aviso; con colores propios los muestra.
+        Addendum de ADR-S34. (d) **Revisión**: barra flotante del bloque
+        elegido en la vista previa (subir/bajar/duplicar/eliminar), atajos
+        Supr / Ctrl+D / Alt+↑↓ / Esc / Ctrl+Y, y **los atajos andan con el foco
+        dentro de la vista previa** (es otro documento: antes Ctrl+Z dejaba de
+        funcionar después de tocar un bloque); el enlace del texto se edita en
+        un popover (antes `window.prompt`); el esquema muestra un resumen de
+        cada bloque y las columnas con su contenido; subir/bajar se deshabilitan
+        en los bordes; ayuda de atajos en el panel vacío. Tests: 17 del front
+        (operaciones, resolución de la posición, modo oscuro de la vista
+        previa) y 4 de shared (imagen fluida, modo oscuro con bandas y colores
+        propios, diseño viejo sin `dark`, marcas de columna sólo en la vista
+        previa) — 255 front y 176 shared en verde — + E2E navegador 23/23
+        (soltar del panel debajo del título, reordenar en la vista previa y en
+        el esquema, columnas, «Datos del registro» que no entra en una columna,
+        barra flotante, Supr y Ctrl+Z con el foco en la vista previa, celular
+        375 px sin scroll lateral con columnas apiladas, simulación y colores
+        propios de modo oscuro, enlace por popover, guardado y editor en un
+        teléfono). **Límite de la verificación**: el driver de mouse de
+        Playwright se cuelga si el arrastre arranca DENTRO de un iframe, así
+        que ese caso se probó con eventos de arrastre del navegador; del panel
+        al iframe y en el esquema se arrastró con el mouse.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

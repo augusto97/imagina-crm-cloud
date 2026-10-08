@@ -7,15 +7,18 @@ import {
     Database,
     Heading1,
     Image as ImageIcon,
+    GripVertical,
     LayoutTemplate,
     Loader2,
     Minus,
     Monitor,
+    Moon,
     MousePointerClick,
     MoveVertical,
     PenLine,
     Redo2,
     Smartphone,
+    Sun,
     Type,
     Undo2,
     X,
@@ -26,9 +29,11 @@ import {
     EMAIL_TEMPLATES,
     emailTemplateDesign,
     renderEmailHtml,
+    type EmailBlock,
     type EmailBlockType,
     type EmailDesign,
     type EmailFont,
+    type EmailInnerBlock,
     type EmailTestResult,
 } from '@imagina-base/shared';
 
@@ -48,17 +53,24 @@ import {
     EMAIL_BLOCK_HINTS,
     EMAIL_BLOCK_LABELS,
     appendToColumn,
+    canDrop,
     duplicateBlock,
     findBlock,
+    insertAt,
     insertBlock,
+    isNoopDrop,
     locate,
     makeBlock,
     moveBlock,
+    moveTo,
     removeBlock,
     setColumnCount,
     updateBlock,
+    type DragSource,
+    type DropTarget,
 } from './emailDesignOps';
-import { EmailPreviewFrame, EmailThumbnail } from './EmailPreviewFrame';
+import { resolveDrop } from './emailDnd';
+import { EmailPreviewFrame, EmailThumbnail, type BlockAction, type PreviewDnd } from './EmailPreviewFrame';
 
 /**
  * v0.1.265 — Editor de correos a pantalla completa (ADR-S34).
@@ -68,6 +80,12 @@ import { EmailPreviewFrame, EmailThumbnail } from './EmailPreviewFrame';
  * Gmail/Outlook), en escritorio o celular, con las variables como pastillas
  * o resueltas contra un registro de la lista. Derecha: los ajustes del bloque
  * elegido. Deshacer/rehacer con Ctrl+Z / Ctrl+Shift+Z.
+ *
+ * v0.1.270 — Arrastrar y soltar (del panel al correo, y para reordenar en la
+ * vista previa o en el esquema, también entre columnas), barra flotante del
+ * bloque elegido, vista en modo oscuro (con los colores propios del tema o la
+ * simulación de Gmail/Outlook), celular a 375px reales y atajos de teclado
+ * que funcionan también con el foco dentro de la vista previa.
  */
 
 const PALETTE: Array<{ type: EmailBlockType; icon: typeof Type }> = [
@@ -135,10 +153,12 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     const design = hist.present;
     const [selected, setSelected] = useState<string | null>(null);
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+    const [scheme, setScheme] = useState<'light' | 'dark'>('light');
     const [dataMode, setDataMode] = useState<'tags' | 'real'>('tags');
     const [leftTab, setLeftTab] = useState<'blocks' | 'style'>('blocks');
     const [mobileTab, setMobileTab] = useState<'add' | 'preview' | 'edit'>('preview');
     const [showTemplates, setShowTemplates] = useState(Boolean(props.startWithTemplates));
+    const [dragging, setDragging] = useState<DragSource | null>(null);
     const confirm = useConfirm();
     const dirty = hist.past.length > 0;
 
@@ -172,23 +192,69 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
         );
     }, []);
 
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent): void => {
-            const target = e.target as HTMLElement | null;
-            const typing = target?.closest('input, textarea, [contenteditable="true"]');
-            if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' || typing) return;
-            e.preventDefault();
-            if (e.shiftKey) redo();
-            else undo();
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [undo, redo]);
+    const designRef = useRef(design);
+    designRef.current = design;
+    const selectedRef = useRef(selected);
+    selectedRef.current = selected;
 
     // La selección se limpia si el bloque desaparece (deshacer, borrar).
     useEffect(() => {
         if (selected && !findBlock(design, selected)) setSelected(null);
     }, [design, selected]);
+
+    const blockAction = useCallback(
+        (action: BlockAction, id: string | null = selectedRef.current) => {
+            if (!id || id === '__signature') return;
+            if (action === 'up' || action === 'down') {
+                commit((d) => moveBlock(d, id, action === 'up' ? -1 : 1));
+            } else if (action === 'duplicate') {
+                const r = duplicateBlock(designRef.current, id);
+                commit(r.design);
+                if (r.newId) setSelected(r.newId);
+            } else {
+                commit((d) => removeBlock(d, id));
+                setSelected(null);
+            }
+        },
+        [commit],
+    );
+
+    // Atajos: los mismos con el foco en la app o DENTRO de la vista previa
+    // (un iframe tiene su propio documento: sin reenviar, Ctrl+Z no andaba
+    // después de tocar un bloque).
+    const onKey = useCallback(
+        (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            const typing = Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
+            if (typing) return;
+            const mod = e.ctrlKey || e.metaKey;
+            const key = e.key.toLowerCase();
+            if (mod && key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) redo();
+                else undo();
+            } else if (mod && key === 'y') {
+                e.preventDefault();
+                redo();
+            } else if (mod && key === 'd' && selectedRef.current) {
+                e.preventDefault();
+                blockAction('duplicate');
+            } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
+                e.preventDefault();
+                blockAction('remove');
+            } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && selectedRef.current) {
+                e.preventDefault();
+                blockAction(e.key === 'ArrowUp' ? 'up' : 'down');
+            } else if (e.key === 'Escape' && selectedRef.current) {
+                setSelected(null);
+            }
+        },
+        [undo, redo, blockAction],
+    );
+    useEffect(() => {
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onKey]);
 
     const fieldLabel = useCallback(
         (slug: string) => props.fields.find((f) => f.slug === slug)?.label ?? null,
@@ -214,8 +280,6 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     // MISMO compositor del envío.
     const [real, setReal] = useState<EmailTestResult | null>(null);
     const [realLoading, setRealLoading] = useState(false);
-    const designRef = useRef(design);
-    designRef.current = design;
     useEffect(() => {
         if (dataMode !== 'real') return;
         let alive = true;
@@ -248,6 +312,62 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
 
     const selectedBlock = findBlock(design, selected);
     const selectedLoc = selected ? locate(design, selected) : null;
+    const siblings = selectedLoc ? siblingCount(design, selectedLoc.parentId, selectedLoc.columnIndex) : 0;
+
+    // --- Arrastrar y soltar ---------------------------------------------------
+    const dragRef = useRef<DragSource | null>(null);
+    const startDrag = useCallback((src: DragSource) => {
+        dragRef.current = src;
+        setDragging(src);
+    }, []);
+    const endDrag = useCallback(() => {
+        dragRef.current = null;
+        setDragging(null);
+    }, []);
+    const dropAt = useCallback(
+        (target: DropTarget) => {
+            const src = dragRef.current;
+            if (!src) return;
+            const d = designRef.current;
+            if (src.kind === 'new') {
+                const r = insertAt(d, src.type, target);
+                if (r.id) {
+                    commit(r.design);
+                    setSelected(r.id);
+                }
+            } else {
+                const next = moveTo(d, src.id, target);
+                if (next !== d) {
+                    commit(next);
+                    setSelected(src.id);
+                }
+            }
+            endDrag();
+        },
+        [commit, endDrag],
+    );
+    const dnd = useMemo<PreviewDnd>(
+        () => ({
+            current: () => dragRef.current,
+            start: startDrag,
+            end: endDrag,
+            resolve: (x, y, g) => (dragRef.current ? resolveDrop(designRef.current, dragRef.current, x, y, g) : null),
+            drop: dropAt,
+        }),
+        [startDrag, endDrag, dropAt],
+    );
+    // Un arrastre que termina afuera de todo (o se cancela con Escape) no
+    // deja el estado colgado.
+    useEffect(() => {
+        if (!dragging) return;
+        const clear = (): void => endDrag();
+        window.addEventListener('dragend', clear);
+        window.addEventListener('drop', clear);
+        return () => {
+            window.removeEventListener('dragend', clear);
+            window.removeEventListener('drop', clear);
+        };
+    }, [dragging, endDrag]);
 
     const add = (type: EmailBlockType): void => {
         const block = makeBlock(type);
@@ -257,8 +377,8 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     };
 
     const onSelect = (id: string | null): void => {
-        setSelected(id);
-        if (id && narrow) setMobileTab('edit');
+        setSelected(id === '__signature' ? null : id);
+        if (id && id !== '__signature' && narrow) setMobileTab('edit');
     };
 
     const close = (): void => {
@@ -294,19 +414,32 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                 {leftTab === 'blocks' ? (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {selected
-                                ? __('Se agrega debajo del bloque elegido.')
-                                : __('Tocá un bloque para agregarlo al final del correo.')}
+                            {narrow
+                                ? selected
+                                    ? __('Tocá un bloque: se agrega debajo del elegido.')
+                                    : __('Tocá un bloque para agregarlo al final del correo.')
+                                : __('Arrastrá un bloque al correo y soltalo donde quieras, o hacé clic para agregarlo debajo del elegido.')}
                         </p>
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" data-testid="email-palette">
                             {PALETTE.map(({ type, icon: Icon }) => (
                                 <button
                                     key={type}
                                     type="button"
+                                    draggable={!narrow}
+                                    onDragStart={(e) => {
+                                        e.dataTransfer.setData('text/plain', '');
+                                        e.dataTransfer.effectAllowed = 'copy';
+                                        startDrag({ kind: 'new', type });
+                                    }}
+                                    onDragEnd={endDrag}
                                     onClick={() => add(type)}
                                     title={__(EMAIL_BLOCK_HINTS[type])}
                                     data-block-type={type}
-                                    className="imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2.5 imcrm-text-left hover:imcrm-border-primary/50 hover:imcrm-bg-primary/5"
+                                    className={cn(
+                                        'imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2.5 imcrm-text-left hover:imcrm-border-primary/50 hover:imcrm-bg-primary/5',
+                                        !narrow && 'imcrm-cursor-grab active:imcrm-cursor-grabbing',
+                                        dragging?.kind === 'new' && dragging.type === type && 'imcrm-border-primary imcrm-bg-primary/10',
+                                    )}
                                 >
                                     <Icon className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" />
                                     <span className="imcrm-text-xs imcrm-font-medium">{__(EMAIL_BLOCK_LABELS[type])}</span>
@@ -316,10 +449,23 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                                 </button>
                             ))}
                         </div>
-                        <Outline design={design} selected={selected} onSelect={onSelect} />
+                        <Outline
+                            design={design}
+                            selected={selected}
+                            onSelect={onSelect}
+                            draggable={!narrow}
+                            dragging={dragging}
+                            onDragStart={startDrag}
+                            onDragEnd={endDrag}
+                            onDrop={dropAt}
+                        />
                     </div>
                 ) : (
-                    <ThemePanel design={design} onChange={(theme, key) => commit((d) => ({ ...d, theme: { ...d.theme, ...theme } }), key)} />
+                    <ThemePanel
+                        design={design}
+                        onChange={(theme, key) => commit((d) => ({ ...d, theme: { ...d.theme, ...theme } }), key)}
+                        onPreviewDark={() => setScheme('dark')}
+                    />
                 )}
             </div>
         </div>
@@ -330,20 +476,15 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
             key={selectedBlock.id}
             block={selectedBlock}
             inColumn={selectedLoc?.parentId !== null && selectedLoc?.parentId !== undefined}
+            canMoveUp={(selectedLoc?.index ?? 0) > 0}
+            canMoveDown={(selectedLoc?.index ?? 0) < siblings - 1}
             design={design}
             fields={props.fields}
             signatureHint={props.signatureHint}
             onPatch={(patch) => commit((d) => updateBlock(d, selectedBlock.id, patch), `${selectedBlock.id}:${Object.keys(patch).join(',')}`)}
-            onMove={(delta) => commit((d) => moveBlock(d, selectedBlock.id, delta))}
-            onDuplicate={() => {
-                const r = duplicateBlock(design, selectedBlock.id);
-                commit(r.design);
-                if (r.newId) setSelected(r.newId);
-            }}
-            onRemove={() => {
-                commit((d) => removeBlock(d, selectedBlock.id));
-                setSelected(null);
-            }}
+            onMove={(delta) => blockAction(delta === -1 ? 'up' : 'down', selectedBlock.id)}
+            onDuplicate={() => blockAction('duplicate', selectedBlock.id)}
+            onRemove={() => blockAction('remove', selectedBlock.id)}
             onSelect={onSelect}
             onAppendToColumn={(ci, block) => {
                 commit((d) => appendToColumn(d, selectedBlock.id, ci, block));
@@ -352,39 +493,91 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
             onSetColumns={(n) => commit((d) => setColumnCount(d, selectedBlock.id, n))}
         />
     ) : (
-        <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-p-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
+        <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-p-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
             <MousePointerClick className="imcrm-h-6 imcrm-w-6" />
             {__('Tocá un bloque en la vista previa para editarlo.')}
+            {!narrow && (
+                <ul className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-left imcrm-text-[11px] imcrm-leading-snug">
+                    <li>{__('Arrastrá los bloques para cambiarlos de lugar (también entre columnas).')}</li>
+                    <li>
+                        <Kbd>Supr</Kbd> {__('elimina')} · <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> {__('duplica')} · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> {__('mueve')}
+                    </li>
+                    <li>
+                        <Kbd>Ctrl</Kbd>+<Kbd>Z</Kbd> {__('deshace')} · <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Z</Kbd> {__('rehace')}
+                    </li>
+                </ul>
+            )}
         </div>
     );
 
-    const realBanner =
+    const banner =
         dataMode === 'real' ? (
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-bg-amber-50 imcrm-px-3 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-amber-900 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-200">
                 {realLoading && <Loader2 className="imcrm-h-3 imcrm-w-3 imcrm-animate-spin" />}
                 {real?.error
                     ? real.error
                     : real?.sample_record_id
-                      ? `${__('Con los datos del registro')} #${real.sample_record_id}. ${real.signature_note ?? ''}`
+                      ? `${__('Con los datos del registro')} #${real.sample_record_id}. ${real.signature_note ?? ''} ${__('Para mover o editar bloques, volvé a «Ver las variables».')}`
                       : __('La lista no tiene registros: las variables quedan vacías.')}
             </div>
         ) : null;
+    const darkBanner =
+        scheme === 'dark' ? (
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-border-b imcrm-border-border imcrm-bg-muted/60 imcrm-px-3 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-muted-foreground" data-testid="email-dark-note">
+                <Moon className="imcrm-h-3 imcrm-w-3" />
+                {design.theme.dark?.enabled
+                    ? __('Con tus colores para modo oscuro (Apple Mail, Outlook de Mac, iOS y web). Gmail aplica su propio modo oscuro.')
+                    : __('Simulación: así oscurecen el correo Gmail y Outlook por su cuenta. Para elegir vos los colores, activá «Modo oscuro» en Estilo general.')}
+                {!design.theme.dark?.enabled && (
+                    <button
+                        type="button"
+                        className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                        onClick={() => {
+                            setLeftTab('style');
+                            if (narrow) setMobileTab('add');
+                        }}
+                    >
+                        {__('Elegir colores')}
+                    </button>
+                )}
+            </div>
+        ) : null;
+
+    const toolbarInfo =
+        selectedBlock && dataMode === 'tags'
+            ? {
+                  label: __(EMAIL_BLOCK_LABELS[selectedBlock.type]),
+                  canUp: (selectedLoc?.index ?? 0) > 0,
+                  canDown: (selectedLoc?.index ?? 0) < siblings - 1,
+              }
+            : null;
 
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
-            {realBanner}
-            <div className="imcrm-flex imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
+            {banner}
+            {darkBanner}
+            <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
                 <div
                     className={cn(
-                        'imcrm-h-full imcrm-overflow-hidden imcrm-bg-white imcrm-shadow-imcrm-md',
-                        device === 'mobile' ? 'imcrm-rounded-[22px] imcrm-border-[6px] imcrm-border-neutral-800' : 'imcrm-w-full imcrm-rounded-md',
+                        'imcrm-h-full imcrm-overflow-hidden imcrm-shadow-imcrm-md',
+                        scheme === 'dark' ? 'imcrm-bg-neutral-900' : 'imcrm-bg-white',
+                        device === 'mobile'
+                            ? 'imcrm-max-h-[860px] imcrm-shrink-0 imcrm-rounded-[26px] imcrm-border-[6px] imcrm-border-neutral-800'
+                            : 'imcrm-w-full imcrm-rounded-md',
                     )}
-                    style={device === 'mobile' ? { width: 375 } : undefined}
+                    // 375px de pantalla real (el ancho de un iPhone) + el marco.
+                    style={device === 'mobile' ? { width: 375 + 12, maxWidth: '100%' } : undefined}
+                    data-device={device}
                 >
                     <EmailPreviewFrame
                         html={dataMode === 'real' ? real?.html ?? '' : previewHtml}
                         onSelect={onSelect}
                         interactive={dataMode === 'tags'}
+                        dark={scheme === 'dark'}
+                        dnd={narrow ? undefined : dnd}
+                        toolbar={toolbarInfo}
+                        onAction={(a) => blockAction(a)}
+                        onKeyDown={onKey}
                     />
                 </div>
             </div>
@@ -394,7 +587,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     return (
         <>
             <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2">
-                <Dialog.Title className="imcrm-mr-auto imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                <Dialog.Title className="imcrm-mr-auto imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
                     {__('Diseñar correo')}
                     {props.subject && (
                         <span className="imcrm-hidden imcrm-max-w-[280px] imcrm-truncate imcrm-font-normal imcrm-text-muted-foreground sm:imcrm-inline">
@@ -404,7 +597,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                 </Dialog.Title>
                 <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setShowTemplates(true)}>
                     <LayoutTemplate className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Plantillas')}
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Plantillas')}</span>
                 </Button>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5">
                     <IconToggle label={__('Deshacer (Ctrl+Z)')} onClick={undo} disabled={hist.past.length === 0} icon={Undo2} />
@@ -414,11 +607,15 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                     <IconToggle label={__('Escritorio')} active={device === 'desktop'} onClick={() => setDevice('desktop')} icon={Monitor} />
                     <IconToggle label={__('Celular')} active={device === 'mobile'} onClick={() => setDevice('mobile')} icon={Smartphone} />
                 </div>
+                <div role="group" aria-label={__('Modo de color')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
+                    <IconToggle label={__('Ver en modo claro')} active={scheme === 'light'} onClick={() => setScheme('light')} icon={Sun} />
+                    <IconToggle label={__('Ver en modo oscuro')} active={scheme === 'dark'} onClick={() => setScheme('dark')} icon={Moon} />
+                </div>
                 <div role="group" aria-label={__('Datos de la vista previa')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
                     <IconToggle label={__('Ver las variables')} active={dataMode === 'tags'} onClick={() => setDataMode('tags')} icon={Braces} />
                     <IconToggle label={__('Ver con datos de un registro')} active={dataMode === 'real'} onClick={() => setDataMode('real')} icon={Database} />
                 </div>
-                <Button variant="ghost" size="sm" onClick={close}>
+                <Button variant="ghost" size="sm" className="imcrm-hidden sm:imcrm-inline-flex" onClick={close}>
                     {__('Cancelar')}
                 </Button>
                 <Button size="sm" onClick={apply} data-testid="email-designer-apply">
@@ -468,59 +665,224 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                     }}
                 />
             )}
-
         </>
     );
+}
+
+function siblingCount(design: EmailDesign, parentId: string | null, columnIndex: number | null): number {
+    if (parentId === null) return design.blocks.length;
+    const cols = design.blocks.find((b) => b.id === parentId);
+    return cols?.type === 'columns' ? (cols.columns[columnIndex ?? 0]?.blocks.length ?? 0) : 0;
+}
+
+function Kbd({ children }: { children: React.ReactNode }): JSX.Element {
+    return (
+        <kbd className="imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted imcrm-px-1 imcrm-font-mono imcrm-text-[10px] imcrm-text-foreground">
+            {children}
+        </kbd>
+    );
+}
+
+/** Resumen corto de un bloque para el esquema ("Título · ¡Bienvenido!"). */
+function blockSummary(b: EmailBlock | EmailInnerBlock): string {
+    switch (b.type) {
+        case 'heading':
+            return b.text;
+        case 'button':
+            return b.label;
+        case 'text': {
+            return (b.doc?.content ?? [])
+                .map((p) => (p.content ?? []).map((n) => (typeof n.text === 'string' ? n.text : '')).join(''))
+                .join(' ')
+                .trim();
+        }
+        case 'image':
+            return b.alt;
+        case 'fields':
+            return b.title || (b.slugs.length ? `${b.slugs.length} ${__('campos')}` : '');
+        case 'spacer':
+            return `${b.height}px`;
+        case 'columns':
+            return `${b.columns.length} ${__('columnas')}`;
+        default:
+            return '';
+    }
+}
+
+interface OutlineDrop {
+    key: string;
+    target: DropTarget;
+    pos: 'before' | 'after';
 }
 
 function Outline({
     design,
     selected,
     onSelect,
+    draggable,
+    dragging,
+    onDragStart,
+    onDragEnd,
+    onDrop,
 }: {
     design: EmailDesign;
     selected: string | null;
     onSelect: (id: string) => void;
+    draggable: boolean;
+    dragging: DragSource | null;
+    onDragStart: (src: DragSource) => void;
+    onDragEnd: () => void;
+    onDrop: (target: DropTarget) => void;
 }): JSX.Element | null {
+    const [hint, setHint] = useState<OutlineDrop | null>(null);
+    useEffect(() => {
+        if (!dragging) setHint(null);
+    }, [dragging]);
     if (design.blocks.length === 0) return null;
+
+    /** Fila soltable: arriba/abajo según la mitad en la que está el puntero. */
+    const rowDnd = (key: string, before: DropTarget, after: DropTarget) => ({
+        onDragOver: (e: React.DragEvent) => {
+            if (!dragging) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const pos: 'before' | 'after' = e.clientY < r.top + r.height / 2 ? 'before' : 'after';
+            const target = pos === 'before' ? before : after;
+            if (!canDrop(design, dragging, target) || isNoopDrop(design, dragging, target)) {
+                if (hint?.key === key) setHint(null);
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            if (hint?.key !== key || hint.pos !== pos) setHint({ key, target, pos });
+        },
+        onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const t = hint?.key === key ? hint.target : null;
+            setHint(null);
+            if (t) onDrop(t);
+            else onDragEnd();
+        },
+    });
+
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="email-outline" onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setHint(null)}>
             <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
                 {__('En el correo')}
             </p>
-            {design.blocks.map((b) => (
-                <div key={b.id}>
-                    <OutlineRow label={__(EMAIL_BLOCK_LABELS[b.type])} active={selected === b.id} onClick={() => onSelect(b.id)} />
-                    {b.type === 'columns' &&
-                        b.columns.map((c, ci) =>
-                            c.blocks.map((ib) => (
-                                <OutlineRow
-                                    key={ib.id}
-                                    indent
-                                    label={`${ci + 1} · ${__(EMAIL_BLOCK_LABELS[ib.type])}`}
-                                    active={selected === ib.id}
-                                    onClick={() => onSelect(ib.id)}
-                                />
-                            )),
-                        )}
-                </div>
-            ))}
+            {design.blocks.map((b, i) => {
+                const top = (index: number): DropTarget => ({ parentId: null, columnIndex: null, index });
+                return (
+                    <div key={b.id}>
+                        <OutlineRow
+                            id={b.id}
+                            label={__(EMAIL_BLOCK_LABELS[b.type])}
+                            summary={blockSummary(b)}
+                            active={selected === b.id}
+                            onClick={() => onSelect(b.id)}
+                            draggable={draggable}
+                            onDragStart={() => onDragStart({ kind: 'move', id: b.id })}
+                            onDragEnd={onDragEnd}
+                            hint={hint?.key === b.id ? hint.pos : null}
+                            {...rowDnd(b.id, top(i), top(i + 1))}
+                        />
+                        {b.type === 'columns' &&
+                            b.columns.map((c, ci) => {
+                                const inCol = (index: number): DropTarget => ({ parentId: b.id, columnIndex: ci, index });
+                                const headKey = `${b.id}:${ci}`;
+                                return (
+                                    <div key={ci} className="imcrm-ml-3 imcrm-border-l imcrm-border-border imcrm-pl-2">
+                                        <div
+                                            className={cn(
+                                                'imcrm-relative imcrm-px-2 imcrm-py-0.5 imcrm-text-[10.5px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground',
+                                                hint?.key === headKey && 'imcrm-rounded imcrm-bg-primary/10 imcrm-text-primary',
+                                            )}
+                                            {...rowDnd(headKey, inCol(0), inCol(0))}
+                                        >
+                                            {__('Columna')} {ci + 1}
+                                            {c.blocks.length === 0 && <span className="imcrm-ml-1 imcrm-normal-case imcrm-tracking-normal">· {__('vacía')}</span>}
+                                        </div>
+                                        {c.blocks.map((ib, ii) => (
+                                            <OutlineRow
+                                                key={ib.id}
+                                                id={ib.id}
+                                                label={__(EMAIL_BLOCK_LABELS[ib.type])}
+                                                summary={blockSummary(ib)}
+                                                active={selected === ib.id}
+                                                onClick={() => onSelect(ib.id)}
+                                                draggable={draggable}
+                                                onDragStart={() => onDragStart({ kind: 'move', id: ib.id })}
+                                                onDragEnd={onDragEnd}
+                                                hint={hint?.key === ib.id ? hint.pos : null}
+                                                {...rowDnd(ib.id, inCol(ii), inCol(ii + 1))}
+                                            />
+                                        ))}
+                                    </div>
+                                );
+                            })}
+                    </div>
+                );
+            })}
         </div>
     );
 }
 
-function OutlineRow({ label, active, onClick, indent }: { label: string; active: boolean; onClick: () => void; indent?: boolean }): JSX.Element {
+function OutlineRow({
+    id,
+    label,
+    summary,
+    active,
+    onClick,
+    draggable,
+    onDragStart,
+    onDragEnd,
+    onDragOver,
+    onDrop,
+    hint,
+}: {
+    id: string;
+    label: string;
+    summary: string;
+    active: boolean;
+    onClick: () => void;
+    draggable: boolean;
+    onDragStart: () => void;
+    onDragEnd: () => void;
+    onDragOver: (e: React.DragEvent) => void;
+    onDrop: (e: React.DragEvent) => void;
+    hint: 'before' | 'after' | null;
+}): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
+            draggable={draggable}
+            onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', '');
+                e.dataTransfer.effectAllowed = 'move';
+                onDragStart();
+            }}
+            onDragEnd={onDragEnd}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            data-outline-id={id}
             className={cn(
-                'imcrm-flex imcrm-w-full imcrm-items-center imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-left imcrm-text-xs hover:imcrm-bg-accent',
-                indent && 'imcrm-pl-5 imcrm-text-muted-foreground',
+                'imcrm-group imcrm-relative imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-1.5 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-left imcrm-text-xs hover:imcrm-bg-accent',
                 active && 'imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary',
             )}
         >
-            {label}
+            {hint && (
+                <span
+                    aria-hidden
+                    className={cn(
+                        'imcrm-pointer-events-none imcrm-absolute imcrm-inset-x-0 imcrm-h-0.5 imcrm-rounded imcrm-bg-primary',
+                        hint === 'before' ? '-imcrm-top-px' : '-imcrm-bottom-px',
+                    )}
+                />
+            )}
+            {draggable && <GripVertical className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground/50 group-hover:imcrm-text-muted-foreground" />}
+            <span className="imcrm-shrink-0">{label}</span>
+            {summary && <span className="imcrm-min-w-0 imcrm-truncate imcrm-font-normal imcrm-text-muted-foreground">· {summary}</span>}
         </button>
     );
 }
@@ -528,11 +890,15 @@ function OutlineRow({ label, active, onClick, indent }: { label: string; active:
 function ThemePanel({
     design,
     onChange,
+    onPreviewDark,
 }: {
     design: EmailDesign;
     onChange: (patch: Partial<EmailDesign['theme']>, key: string) => void;
+    onPreviewDark: () => void;
 }): JSX.Element {
     const t = design.theme;
+    const dark = t.dark ?? { enabled: false, background: '#0f1115', surface: '#1b1d22', text: '#e8eaed', muted: '#a1a7b3' };
+    const setDark = (patch: Partial<typeof dark>, key: string): void => onChange({ dark: { ...dark, ...patch } }, key);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="email-theme">
             <Field label={__('Tipografía')} hint={__('Fuentes del sistema: las únicas que se ven igual en Gmail y Outlook.')}>
@@ -572,6 +938,36 @@ function ThemePanel({
                 <ColorRow label={__('Fondo del correo')} value={t.surface} onChange={(v) => v && onChange({ surface: v }, 'surface')} />
                 <ColorRow label={__('Texto')} value={t.text} onChange={(v) => v && onChange({ text: v }, 'text')} />
                 <ColorRow label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onChange({ muted: v }, 'muted')} />
+            </Section>
+            <Section title={__('Modo oscuro')}>
+                <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-xs" data-testid="email-dark-toggle">
+                    <input
+                        type="checkbox"
+                        className="imcrm-mt-0.5"
+                        checked={dark.enabled}
+                        onChange={(e) => {
+                            setDark({ enabled: e.target.checked }, 'dark.enabled');
+                            if (e.target.checked) onPreviewDark();
+                        }}
+                    />
+                    <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+                        <span className="imcrm-font-medium">{__('Usar mis colores cuando el correo se lee en modo oscuro')}</span>
+                        <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            {__('Los respetan Apple Mail y Outlook (Mac, iOS y web). Gmail aplica su propio modo oscuro siempre. Las bandas de color de los bloques conservan sus colores.')}
+                        </span>
+                    </span>
+                </label>
+                {dark.enabled && (
+                    <>
+                        <ColorRow label={__('Fondo de afuera')} value={dark.background} onChange={(v) => v && setDark({ background: v }, 'dark.background')} />
+                        <ColorRow label={__('Fondo del correo')} value={dark.surface} onChange={(v) => v && setDark({ surface: v }, 'dark.surface')} />
+                        <ColorRow label={__('Texto')} value={dark.text} onChange={(v) => v && setDark({ text: v }, 'dark.text')} />
+                        <ColorRow label={__('Texto secundario')} value={dark.muted} onChange={(v) => v && setDark({ muted: v }, 'dark.muted')} />
+                        <button type="button" className="imcrm-self-start imcrm-text-[11px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={onPreviewDark}>
+                            {__('Ver cómo queda en modo oscuro')}
+                        </button>
+                    </>
+                )}
             </Section>
             <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2.5 imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
                 {__('El correo se arma con tablas y estilos en línea, el formato que entienden Gmail (web y celular), Outlook (Windows, Mac y web), Apple Mail y Yahoo. Outlook de Windows muestra las esquinas rectas.')}

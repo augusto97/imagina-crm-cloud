@@ -1,4 +1,6 @@
 import {
+    EMAIL_COLUMN_MAX_BLOCKS,
+    EMAIL_DESIGN_MAX_BLOCKS,
     emailTextDoc,
     type EmailBlock,
     type EmailBlockType,
@@ -221,6 +223,109 @@ export function setColumnCount(design: EmailDesign, columnsId: string, count: 2 
             return { ...b, columns: kept };
         }),
     };
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.270 — Arrastrar y soltar
+// ---------------------------------------------------------------------------
+
+/** Dónde cae un bloque: en el primer nivel o en una columna, ANTES de `index`. */
+export interface DropTarget {
+    /** null = primer nivel; si no, el id del bloque de columnas. */
+    parentId: string | null;
+    columnIndex: number | null;
+    index: number;
+}
+
+export type DragSource = { kind: 'new'; type: EmailBlockType } | { kind: 'move'; id: string };
+
+export function isInnerType(type: EmailBlockType): type is EmailInnerBlockType {
+    return (INNER_BLOCK_TYPES as readonly string[]).includes(type);
+}
+
+function sourceType(design: EmailDesign, src: DragSource): EmailBlockType | null {
+    return src.kind === 'new' ? src.type : (findBlock(design, src.id)?.type ?? null);
+}
+
+/** ¿Se puede soltar ahí? (columnas sólo aceptan bloques simples; topes de cantidad). */
+export function canDrop(design: EmailDesign, src: DragSource, target: DropTarget): boolean {
+    const type = sourceType(design, src);
+    if (!type) return false;
+    const from = src.kind === 'move' ? locate(design, src.id) : null;
+    if (target.parentId === null) {
+        const sameList = from !== null && from.parentId === null;
+        return sameList || design.blocks.length < EMAIL_DESIGN_MAX_BLOCKS;
+    }
+    if (!isInnerType(type)) return false;
+    if (src.kind === 'move' && src.id === target.parentId) return false;
+    const cols = design.blocks.find((b) => b.id === target.parentId);
+    if (!cols || cols.type !== 'columns') return false;
+    const col = cols.columns[target.columnIndex ?? -1];
+    if (!col) return false;
+    const sameCol = from !== null && from.parentId === target.parentId && from.columnIndex === target.columnIndex;
+    return sameCol || col.blocks.length < EMAIL_COLUMN_MAX_BLOCKS;
+}
+
+/** ¿Soltar ahí deja todo igual? (el mismo lugar o justo debajo de sí mismo). */
+export function isNoopDrop(design: EmailDesign, src: DragSource, target: DropTarget): boolean {
+    if (src.kind !== 'move') return false;
+    const from = locate(design, src.id);
+    if (!from) return true;
+    return (
+        from.parentId === target.parentId &&
+        from.columnIndex === target.columnIndex &&
+        (target.index === from.index || target.index === from.index + 1)
+    );
+}
+
+function insertIn(design: EmailDesign, block: EmailBlock | EmailInnerBlock, target: DropTarget): EmailDesign {
+    if (target.parentId === null) {
+        const blocks = [...design.blocks];
+        blocks.splice(Math.max(0, Math.min(target.index, blocks.length)), 0, block as EmailBlock);
+        return { ...design, blocks };
+    }
+    return {
+        ...design,
+        blocks: design.blocks.map((b) => {
+            if (b.id !== target.parentId || b.type !== 'columns') return b;
+            return {
+                ...b,
+                columns: b.columns.map((c, ci) => {
+                    if (ci !== target.columnIndex) return c;
+                    const list = [...c.blocks];
+                    list.splice(Math.max(0, Math.min(target.index, list.length)), 0, block as EmailInnerBlock);
+                    return { blocks: list };
+                }),
+            };
+        }),
+    };
+}
+
+/** Bloque nuevo en el lugar exacto (dentro de una columna, con títulos chicos). */
+export function insertAt(design: EmailDesign, type: EmailBlockType, target: DropTarget): { design: EmailDesign; id: string | null } {
+    if (!canDrop(design, { kind: 'new', type }, target)) return { design, id: null };
+    const block = target.parentId === null ? makeBlock(type) : makeInner(type as EmailInnerBlockType);
+    return { design: insertIn(design, block, target), id: block.id };
+}
+
+/**
+ * Mueve un bloque existente. El índice del destino se cuenta sobre la lista
+ * ORIGINAL (como lo marca la línea al arrastrar): si sale de la misma lista y
+ * estaba antes del destino, el destino corre uno.
+ */
+export function moveTo(design: EmailDesign, id: string, target: DropTarget): EmailDesign {
+    const src: DragSource = { kind: 'move', id };
+    if (!canDrop(design, src, target) || isNoopDrop(design, src, target)) return design;
+    const from = locate(design, id);
+    const block = findBlock(design, id);
+    if (!from || !block) return design;
+    let index = target.index;
+    if (from.parentId === target.parentId && from.columnIndex === target.columnIndex && from.index < index) index -= 1;
+    let moved: EmailBlock | EmailInnerBlock = block;
+    // Un título que entra a una columna conserva su tamaño; uno que sale
+    // también. Lo único que cambia es dónde está.
+    if (target.parentId !== null && moved.type === 'image' && moved.bleed) moved = { ...moved, bleed: false };
+    return insertIn(removeBlock(design, id), moved, { ...target, index });
 }
 
 /** Nombre humano de cada tipo de bloque. */

@@ -45,6 +45,9 @@ import { EmailTextEditor } from './EmailTextEditor';
 export interface InspectorProps {
     block: EmailBlock | EmailInnerBlock;
     inColumn: boolean;
+    /** v0.1.270 — en el borde de su lista no se puede subir/bajar más. */
+    canMoveUp?: boolean;
+    canMoveDown?: boolean;
     design: EmailDesign;
     fields: FieldEntity[];
     onPatch: (patch: Record<string, unknown>) => void;
@@ -69,10 +72,10 @@ export function EmailBlockInspector(p: InspectorProps): JSX.Element {
                     <h3 className="imcrm-text-sm imcrm-font-semibold">{__(EMAIL_BLOCK_LABELS[block.type])}</h3>
                 </div>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5">
-                    <IconBtn label={__('Subir')} onClick={() => p.onMove(-1)} icon={ArrowUp} />
-                    <IconBtn label={__('Bajar')} onClick={() => p.onMove(1)} icon={ArrowDown} />
-                    <IconBtn label={__('Duplicar')} onClick={p.onDuplicate} icon={Copy} />
-                    <IconBtn label={__('Eliminar')} onClick={p.onRemove} icon={Trash2} danger />
+                    <IconBtn label={__('Subir (Alt+↑)')} onClick={() => p.onMove(-1)} icon={ArrowUp} disabled={p.canMoveUp === false} />
+                    <IconBtn label={__('Bajar (Alt+↓)')} onClick={() => p.onMove(1)} icon={ArrowDown} disabled={p.canMoveDown === false} />
+                    <IconBtn label={__('Duplicar (Ctrl+D)')} onClick={p.onDuplicate} icon={Copy} />
+                    <IconBtn label={__('Eliminar (Supr)')} onClick={p.onRemove} icon={Trash2} danger />
                 </div>
             </div>
 
@@ -482,15 +485,28 @@ export function Check({ label, checked, onChange }: { label: string; checked: bo
     );
 }
 
-export function IconBtn({ label, onClick, icon: Icon, danger }: { label: string; onClick: () => void; icon: typeof Copy; danger?: boolean }): JSX.Element {
+export function IconBtn({
+    label,
+    onClick,
+    icon: Icon,
+    danger,
+    disabled,
+}: {
+    label: string;
+    onClick: () => void;
+    icon: typeof Copy;
+    danger?: boolean;
+    disabled?: boolean;
+}): JSX.Element {
     return (
         <button
             type="button"
             title={label}
             aria-label={label}
             onClick={onClick}
+            disabled={disabled}
             className={cn(
-                'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground',
+                'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground disabled:imcrm-pointer-events-none disabled:imcrm-opacity-35',
                 danger && 'hover:imcrm-bg-destructive/10 hover:imcrm-text-destructive',
             )}
         >

@@ -2443,6 +2443,24 @@ conoce nuestras variables ni la firma); MJML en el servidor (otra toolchain y
 otro lenguaje, cuando el subconjunto que necesitamos es chico y testeable a
 mano); web fonts (no cargan en Outlook ni en Gmail).
 
+
+**Addendum v0.1.270 — modo oscuro e imágenes fluidas.** (a) Las imágenes ya no
+fijan el ancho de su tabla (`width="600"` hacía que el correo quedara más ancho
+que la pantalla del teléfono, con scroll lateral): la tabla ocupa el 100% y la
+imagen se achica con `width:100%;max-width:Wpx`, conservando el atributo
+`width` para Outlook de Windows. (b) El tema gana `dark` (apagado por
+defecto = lo de siempre, el correo se declara sólo-claro y cada programa decide).
+Encendido: `color-scheme: light dark` y un bloque
+`@media (prefers-color-scheme: dark)` (más los selectores `[data-ogsc]` /
+`[data-ogsb]` de Outlook.com) que cambia SÓLO lo pintado con los colores del
+tema, marcado con clases `ib-bg`/`ib-surface`/`ib-tx`/`ib-mu`/`ib-bd`; lo que
+el autor coloreó a mano y las bandas de color conservan sus colores (texto claro
+sobre una banda clara sería ilegible). Gmail no respeta `prefers-color-scheme`:
+aplica su propio oscurecimiento — la vista previa del editor lo SIMULA
+(inversión de los claros) cuando el tema no trae colores oscuros, y fuerza el
+`@media` cuando sí los trae. Se descartó derivar los colores oscuros solos
+(cada marca tiene su criterio y un acento oscuro sobre fondo oscuro se pierde).
+
 ---
 
 ### ADR-S35 — Documentos PDF desde los registros y las automatizaciones (v0.1.266)
@@ -2599,4 +2617,4 @@ conservando número y datos).
 
 ---
 
-**Versión del documento:** 1.69.0 (Google Drive como almacenamiento — ADR-S36)
+**Versión del documento:** 1.70.0 (correos: modo oscuro e imágenes fluidas — addendum ADR-S34)
