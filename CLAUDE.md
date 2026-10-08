@@ -7460,6 +7460,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         que ese caso se probó con eventos de arrastre del navegador; del panel
         al iframe y en el esquema se arrastró con el mouse.
 
+  - [x] **El menú de acciones ya no se sale de la pantalla (v0.1.271, reporte
+        del usuario con captura: "el selector de automatizaciones se sale de la
+        pantalla y arriba no hay cómo seleccionar las opciones que no se
+        ven")**. El menú compartido (`DropdownMenuContent`) ya se limitaba al
+        espacio que Radix calcula como disponible
+        (`--radix-dropdown-menu-content-available-height`), pero el menú de
+        tipos de acción le pasaba un `max-h-[70vh]` propio que lo PISABA: con
+        el disparador abajo en la pantalla (el «+ Añadir» del lienzo) el menú
+        se abría hacia arriba más alto que el espacio que había y su parte
+        superior quedaba fuera de la ventana, sin forma de alcanzarla. Ahora el
+        tope es el MENOR de los dos (`min(70vh, var(--…available-height))`) en
+        el menú de acciones, su selector, el menú de columnas, el de agrupar y
+        el «+ Bloque» del editor de la ficha (el mismo patrón). E2E navegador
+        9/9 en 1047×939 (la captura), 1280×640 y 390×844 táctil: el menú entra
+        entero, la primera opción se ve y se puede tocar, la última se alcanza
+        scrolleando — y con el código anterior el mismo E2E daba 3/9 (el menú
+        arrancaba 99 px por encima del borde, exactamente la captura).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

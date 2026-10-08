@@ -67,7 +67,7 @@ export function ColumnsMenu({
                         )}
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="imcrm-min-w-[240px] imcrm-max-h-[60vh] imcrm-overflow-y-auto">
+                <DropdownMenuContent className="imcrm-min-w-[240px] imcrm-max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] imcrm-overflow-y-auto">
                     <DropdownMenuCheckboxItem
                         checked={isVisible('id')}
                         onCheckedChange={(c) => setVisible('id', !!c)}
