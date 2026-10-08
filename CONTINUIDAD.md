@@ -349,9 +349,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.269** (Google Drive como almacenamiento propio de la empresa, después del bucket S3 de v0.1.268), en `main`.
+versión publicada: **v0.1.270** (editor de correos revisado: arrastrar y soltar, vista de celular real, modo oscuro), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- v0.1.270 (editor de correos): mandarse una prueba con «Modo oscuro»
+  encendido y abrirla en Apple Mail / Outlook con el sistema en oscuro (los
+  colores propios) y en Gmail del celular (su propio oscurecimiento). El
+  arrastre DENTRO de la vista previa se probó con eventos de arrastre del
+  navegador (el driver de mouse de Playwright se cuelga si el arrastre arranca
+  en un iframe); confirmar a mano en el navegador del usuario.
 - **Almacenamiento propio**: S3 (v0.1.268) y Google Drive (v0.1.269) hechos
   (ADR-S36). Opcional y sin pedir todavía: retención de PDF guardados.
 - v0.1.269: para que las empresas conecten Drive, el operador tiene que
@@ -406,6 +412,24 @@ versión publicada: **v0.1.269** (Google Drive como almacenamiento propio de la 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.270** — Pedido del usuario: "el editor de correos no
+  es drag and drop, la vista responsive no funciona y no hay cómo ver modo
+  oscuro; hacele una revisión completa". (1) **Arrastrar y soltar** de verdad:
+  del panel a la vista previa (línea que marca dónde cae), reordenar en la
+  vista previa y en el esquema, meter/sacar bloques de las columnas (las
+  columnas sólo aceptan bloques simples; "Datos del registro" cae al primer
+  nivel). (2) **Vista de celular rota**: no era el editor sino el correo — la
+  imagen fijaba su tabla a 600 px y el correo REAL quedaba más ancho que el
+  teléfono; ahora es fluida (afecta a todos los correos enviados, para bien), el
+  marco es de 375 px reales y los títulos se achican en el teléfono. (3) **Modo
+  oscuro**: botón sol/luna en el editor (simula Gmail/Outlook si no hay colores
+  propios) + «Modo oscuro» en Estilo general con colores propios que respetan
+  Apple Mail y Outlook. (4) Revisión: barra flotante del bloque elegido, atajos
+  (Supr, Ctrl+D, Alt+↑↓, Esc) que ahora también andan con el foco DENTRO de la
+  vista previa (antes Ctrl+Z dejaba de andar después de tocar un bloque),
+  enlace en un popover en vez de `prompt()`, esquema con resumen de cada
+  bloque y columnas, subir/bajar deshabilitados en los bordes. Tests: 17 front
+  + 4 shared nuevos, E2E 23/23.
 - **2026-10-08 · v0.1.269** — Segunda mitad de "S3 primero y después
   Drive": integración Google Drive (permiso `drive.file`, no sensible) como
   almacenamiento de la empresa — carpeta «Imagina Base» con los nombres reales,

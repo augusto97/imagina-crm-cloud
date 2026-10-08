@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { emailTemplateDesign, EMAIL_TEMPLATES } from '../templates/email-templates';
 import {
+    EMAIL_DARK_MEDIA,
     emailBodyMode,
     emailDesignSchema,
     emailSignatureHtml,
@@ -158,5 +159,63 @@ describe('utilidades', () => {
             expect(renderEmailHtml(d!, { resolve })).toContain('</html>');
         }
         expect(emailTemplateDesign('notice', '#123456').blocks[0]!.background).toBe('#123456');
+    });
+
+    it('v0.1.270 — la imagen es fluida: nunca fija el ancho de su tabla (scroll lateral en el teléfono)', () => {
+        const d = emailDesignSchema.parse({
+            blocks: [
+                { id: 'i', type: 'image', src: 'https://cdn.example.com/a.png', width: 100, bleed: true },
+                { id: 'j', type: 'image', src: 'https://cdn.example.com/b.png', width: 50, align: 'right' },
+            ],
+        });
+        const html = renderEmailHtml(d, { resolve });
+        // (la tabla de ancho fijo del condicional `<!--[if mso]>` es sólo para Outlook de Windows)
+        expect(html.replace(/<!--\[if mso\]>[\s\S]*?<!\[endif\]-->/g, '')).not.toMatch(/<table[^>]*width="\d+"/);
+        expect(html).toContain('width="600" style="display:block;margin:0 auto;width:100%;max-width:600px;');
+        expect(html).toContain('width="268" style="display:block;margin:0 0 0 auto;width:100%;max-width:268px;');
+        // Títulos más chicos en el teléfono.
+        expect(html).toContain('.ib-h1{font-size:24px!important;}');
+    });
+
+    it('v0.1.270 — modo oscuro: apagado se declara sólo-claro; encendido emite los colores con las clases del tema', () => {
+        const off = renderEmailHtml(design, { resolve });
+        expect(off).toContain('<meta name="color-scheme" content="light">');
+        expect(off).not.toContain(EMAIL_DARK_MEDIA);
+
+        const d = emailDesignSchema.parse({
+            theme: { dark: { enabled: true, background: '#000000', surface: '#111111', text: '#eeeeee', muted: '#999999' } },
+            blocks: [
+                { id: 'h', type: 'heading', text: 'Título' },
+                { id: 'c', type: 'heading', text: 'Con color', color: '#ff0000' },
+                { id: 'band', type: 'heading', text: 'En banda', background: '#fef3c7' },
+                {
+                    id: 't',
+                    type: 'text',
+                    doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hola' }] }] },
+                },
+            ],
+        });
+        const on = renderEmailHtml(d, { resolve });
+        expect(on).toContain('<meta name="color-scheme" content="light dark">');
+        expect(on).toContain(`${EMAIL_DARK_MEDIA}{`);
+        expect(on).toContain('.ib-tx{color:#eeeeee!important;}');
+        expect(on).toContain('.ib-surface{background-color:#111111!important;}');
+        expect(on).toContain('[data-ogsc] .ib-tx{color:#eeeeee!important;}');
+        expect(on).toContain('class="ib-h1 ib-tx"'); // del tema → cambia
+        expect(on).toMatch(/class="ib-h1"[^>]*color:#ff0000/); // color propio → se respeta
+        expect(on).toMatch(/class="ib-h1"[^>]*>En banda/); // banda → conserva sus colores
+        expect(on).toMatch(/<p class="ib-tx"[^>]*>Hola/);
+        expect(on).toContain('<body class="ib-bg"');
+    });
+
+    it('v0.1.270 — un diseño viejo (sin `dark`) sigue validando', () => {
+        const old = { version: 1, theme: { background: '#f4f5f7', surface: '#ffffff', text: '#1f2937', muted: '#6b7280', accent: '#0e7490', font: 'modern', width: 600, radius: 8 }, blocks: [] };
+        expect(parseEmailDesign(old)?.theme.dark.enabled).toBe(false);
+    });
+
+    it('v0.1.270 — las columnas marcan su zona para soltar sólo en la vista previa', () => {
+        const d = emailDesignSchema.parse({ blocks: [{ id: 'k', type: 'columns', columns: [{ blocks: [] }, { blocks: [] }] }] });
+        expect(renderEmailHtml(d, { resolve, preview: true })).toContain('data-ib-col="k:1"');
+        expect(renderEmailHtml(d, { resolve })).not.toContain('data-ib-col');
     });
 });

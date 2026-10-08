@@ -125,16 +125,20 @@ function Toolbar({
     }, [editor]);
     const [tagsOpen, setTagsOpen] = useState(false);
     const [colorOpen, setColorOpen] = useState(false);
+    // v0.1.270 — El enlace se edita en un popover (antes era `window.prompt`,
+    // que bloquea la página y en varios navegadores ni aparece en un iframe).
+    const [linkOpen, setLinkOpen] = useState(false);
+    const [linkDraft, setLinkDraft] = useState('');
 
-    const setLink = (): void => {
-        const prev = (editor.getAttributes('link').href as string | undefined) ?? 'https://';
-        const url = window.prompt(__('Dirección del enlace (https://…, mailto:… o una variable {{campo}})'), prev);
-        if (url === null) return;
-        if (url.trim() === '') {
-            editor.chain().focus().extendMarkRange('link').unsetLink().run();
-            return;
-        }
-        editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run();
+    const openLink = (open: boolean): void => {
+        if (open) setLinkDraft((editor.getAttributes('link').href as string | undefined) ?? '');
+        setLinkOpen(open);
+    };
+    const applyLink = (): void => {
+        const url = linkDraft.trim();
+        if (url === '' || url === 'https://') editor.chain().focus().extendMarkRange('link').unsetLink().run();
+        else editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+        setLinkOpen(false);
     };
 
     return (
@@ -149,7 +153,63 @@ function Toolbar({
             <Tool label={__('Lista numerada')} active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} icon={ListOrdered} />
             <Tool label={__('Cita')} active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} icon={Quote} />
             <Sep />
-            <Tool label={__('Enlace')} active={editor.isActive('link')} onClick={setLink} icon={Link2} />
+            <Popover open={linkOpen} onOpenChange={openLink}>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        title={__('Enlace')}
+                        aria-label={__('Enlace')}
+                        aria-pressed={editor.isActive('link')}
+                        onMouseDown={(e) => e.preventDefault()}
+                        className={cn(
+                            'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-foreground/80 hover:imcrm-bg-accent',
+                            editor.isActive('link') && 'imcrm-bg-primary/15 imcrm-text-primary',
+                        )}
+                    >
+                        <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent className="imcrm-w-72 imcrm-p-2" align="start" data-testid="email-link-popover">
+                    <form
+                        className="imcrm-flex imcrm-flex-col imcrm-gap-2"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            applyLink();
+                        }}
+                    >
+                        <label className="imcrm-text-[11px] imcrm-text-muted-foreground" htmlFor="email-link-url">
+                            {editor.state.selection.empty && !editor.isActive('link')
+                                ? __('Seleccioná primero el texto del enlace. Dirección:')
+                                : __('Dirección (https://…, mailto:… o una variable {{campo}})')}
+                        </label>
+                        <input
+                            id="email-link-url"
+                            autoFocus
+                            value={linkDraft}
+                            onChange={(e) => setLinkDraft(e.target.value)}
+                            placeholder="https://"
+                            className="imcrm-h-8 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-xs"
+                        />
+                        <div className="imcrm-flex imcrm-justify-end imcrm-gap-1.5">
+                            {editor.isActive('link') && (
+                                <button
+                                    type="button"
+                                    className="imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-destructive hover:imcrm-bg-destructive/10"
+                                    onClick={() => {
+                                        editor.chain().focus().extendMarkRange('link').unsetLink().run();
+                                        setLinkOpen(false);
+                                    }}
+                                >
+                                    {__('Quitar enlace')}
+                                </button>
+                            )}
+                            <button type="submit" className="imcrm-rounded imcrm-bg-primary imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary-foreground">
+                                {__('Aplicar')}
+                            </button>
+                        </div>
+                    </form>
+                </PopoverContent>
+            </Popover>
             <Popover open={colorOpen} onOpenChange={setColorOpen}>
                 <PopoverTrigger asChild>
                     <button

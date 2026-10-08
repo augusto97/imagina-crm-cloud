@@ -25,6 +25,7 @@ const theme = (patch: Partial<EmailTheme> = {}): EmailTheme => ({
     font: 'modern',
     width: 600,
     radius: 8,
+    dark: { enabled: false, background: '#0f1115', surface: '#1b1d22', text: '#e8eaed', muted: '#a1a7b3' },
     ...patch,
 });
 
