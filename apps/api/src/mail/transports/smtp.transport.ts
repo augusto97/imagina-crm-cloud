@@ -55,6 +55,15 @@ export class SmtpMailTransport implements MailTransport {
             subject: message.subject,
             html: message.html,
             text: message.text ?? stripHtml(message.html),
+            ...(message.attachments?.length
+                ? {
+                      attachments: message.attachments.map((a) => ({
+                          filename: a.filename,
+                          contentType: a.contentType,
+                          content: Buffer.from(a.contentBase64, 'base64'),
+                      })),
+                  }
+                : {}),
         });
         this.logger.log(`[mail:smtp] enviado → ${message.to}`);
     }

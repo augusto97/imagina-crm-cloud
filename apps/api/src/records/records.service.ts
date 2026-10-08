@@ -187,9 +187,18 @@ export class RecordsService {
         });
     }
 
-    async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number): Promise<RecordDto> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const { row, fields, hiddenKeys, relMap, relFieldIds } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+    /**
+     * `outerTx` (v0.1.266): leer DENTRO de una transacción ya abierta — el motor
+     * de automatizaciones arma un PDF en medio de un run y tiene que ver lo que
+     * escribieron las acciones anteriores del mismo run (todavía sin commit).
+     */
+    async get(tenantId: number, actor: Actor, listIdOrSlug: string, id: number, outerTx?: Tx): Promise<RecordDto> {
+        const list = outerTx
+            ? await this.lists.getWithinTx(outerTx, tenantId, listIdOrSlug)
+            : await this.lists.get(tenantId, listIdOrSlug);
+        const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
+            outerTx ? fn(outerTx) : this.tenantDb.withTenant(tenantId, fn);
+        const { row, fields, hiddenKeys, relMap, relFieldIds } = await run(async (tx) => {
             const found = await this.repo.findById(tx, tenantId, list.id, id);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const r = found ? (await this.withThrough(tx, tenantId, list.id, fields, [found]))[0] ?? found : null;
@@ -233,8 +242,10 @@ export class RecordsService {
          * cualquiera de los dos sentidos (bloques de la ficha). Interno: no
          * viaja como query param.
          */
-        opts: { related?: RelatedScope } = {},
+        opts: { related?: RelatedScope; tx?: Tx } = {},
     ): Promise<RecordsPage> {
+        const run = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> =>
+            opts.tx ? fn(opts.tx) : this.tenantDb.withTenant(tenantId, fn);
         // PERF-02: lista + fields + records se resuelven en UNA sola
         // transacción con scope (antes eran 3 → 3× BEGIN/COMMIT + entrada de
         // scope por request).
@@ -244,7 +255,7 @@ export class RecordsService {
         const byPage = query.page !== undefined;
         const pageOffset = byPage ? (query.page! - 1) * query.limit : undefined;
         const wantTotal = byPage || query.with_total === true;
-        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts, total } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { rows, fields, hiddenKeys, rels, relFieldIds, subtaskCounts, total } = await run(async (tx) => {
             const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             // v0.1.170 — los rollups filtran y ordenan por su subconsulta
@@ -273,7 +284,7 @@ export class RecordsService {
                 ),
                 fields,
             );
-            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, await this.clock(tenantId));
+            const filterWhere = compileFilterTree(fieldsById, query.filter_tree, await this.clock(tenantId, tx));
             // Búsqueda de texto (paridad con el buscador del plugin): OR de
             // ILIKE sobre los campos searchables, AND con filtros y scope.
             const searchWhere = compileSearch(fields.filter((f) => !hiddenIds.has(f.id)), query.search);

@@ -33,6 +33,8 @@ import { CollectionsService } from '../collections/collections.service';
 import { automationRuns, lists, records } from '../db/schema';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
+import { DocumentsService } from '../documents/documents.service';
+import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
 import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { RecordsRepository } from '../records/records.repository';
@@ -82,6 +84,13 @@ interface RunContext {
     pago?: Record<string, unknown>;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
+    /**
+     * v0.1.266 — el último PDF generado en este run (`{{pdf.link}}`,
+     * `{{pdf.nombre}}`) y los PDF ya armados por plantilla: un «Enviar email»
+     * que adjunta la misma plantilla no la vuelve a dibujar.
+     */
+    pdf?: Record<string, unknown>;
+    pdfs?: Map<number, { filename: string; buffer: Buffer }>;
 }
 
 /**
@@ -113,6 +122,8 @@ export class AutomationEngine {
         @Optional() private readonly collections?: CollectionsService,
         // v0.1.263 — zona horaria de la empresa (vencimientos, {{date.today}}).
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.266 — documentos PDF (acción «Generar PDF» y adjuntos del correo).
+        @Optional() private readonly documents?: DocumentsService,
     ) {}
 
     /** Marca de lista de tienda (v0.1.213), o null. */
@@ -347,6 +358,11 @@ export class AutomationEngine {
             // v0.1.251 — {{pago.link}}, {{pago.monto}}… del cobro en contexto.
             if (token.startsWith('pago.')) {
                 const v = ctx.pago?.[token.slice('pago.'.length)];
+                return v === null ? '' : v;
+            }
+            // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
+            if (token.startsWith('pdf.')) {
+                const v = ctx.pdf?.[token.slice('pdf.'.length)];
                 return v === null ? '' : v;
             }
             const key = ctx.slugToKey.get(token);
@@ -807,6 +823,45 @@ export class AutomationEngine {
                     { status: res.status, action: resolved.action.key },
                 );
             }
+            case 'generate_pdf': {
+                // v0.1.266 (ADR-S35) — arma el PDF de una plantilla de la lista
+                // con los datos del registro. Opcionalmente lo guarda en un campo
+                // Archivo (cuenta contra el almacenamiento del plan) y deja
+                // `{{pdf.link}}` / `{{pdf.nombre}}` para las acciones siguientes.
+                if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
+                if (ctx.recordId === null) return skip('generate_pdf', 'Un PDF necesita un registro.');
+                const templateId = Number(cfg.document_template_id);
+                if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elegí la plantilla del documento.');
+                const doc = await this.pdfFor(tx, ctx, templateId, typeof cfg.filename === 'string' ? merge(cfg.filename) : '');
+                const kb = Math.max(1, Math.round(doc.buffer.length / 1024));
+                ctx.pdf = { nombre: doc.filename, link: '', kb };
+                const saveSlug = typeof cfg.save_field === 'string' ? cfg.save_field : '';
+                if (!saveSlug) {
+                    return ok('generate_pdf', `Generó «${doc.filename}» (${kb} KB).`, { filename: doc.filename, bytes: doc.buffer.length });
+                }
+                const field = ctx.fieldsBySlug.get(saveSlug);
+                const key = ctx.slugToKey.get(saveSlug);
+                if (!field || !key || field.type !== 'file') {
+                    throw new Error(`«${saveSlug}» no es un campo Archivo de la lista: elegí dónde guardar el PDF.`);
+                }
+                const saved = await this.documents.storePdf(ctx.tenantId, SYSTEM_USER, doc.filename, doc.buffer).catch((err: unknown) => {
+                    throw new Error(`No se pudo guardar el PDF: ${err instanceof Error ? err.message : String(err)}`);
+                });
+                const prev = ctx.data[key];
+                const prevIds = (Array.isArray(prev) ? prev : prev === null || prev === undefined ? [] : [prev])
+                    .map(Number)
+                    .filter((n) => Number.isInteger(n) && n > 0);
+                const merged = { ...ctx.data, [key]: cfg.save_mode === 'replace' ? [saved.id] : [...prevIds, saved.id] };
+                await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
+                ctx.data = merged;
+                ctx.pdf = { nombre: doc.filename, link: this.documents.fileLink(ctx.tenantId, saved.id), kb };
+                return ok(
+                    'generate_pdf',
+                    `Generó «${doc.filename}» (${kb} KB) y lo guardó en «${field.label ?? saveSlug}».`,
+                    { filename: doc.filename, bytes: doc.buffer.length, file_id: saved.id },
+                );
+            }
             case 'send_email': {
                 // SEC-08: destinatarios saneados y CAPADOS (to/cc/bcc son
                 // merge-tag → una lista con comas podría convertir el SMTP en
@@ -834,6 +889,10 @@ export class AutomationEngine {
                 // queda escrito en el historial de la automatización, que es
                 // donde el usuario lo busca. Antes se encolaba y el run decía
                 // "Encolado" aunque el correo nunca saliera.
+                // v0.1.266 — PDFs adjuntos (cuenta de cobro, recibo…). Un PDF que
+                // no se puede armar FALLA el envío con el motivo: mandar el correo
+                // sin el documento que promete sería peor.
+                const attachments = await this.emailAttachments(tx, ctx, cfg);
                 await this.mail.sendNow({
                     tenantId: ctx.tenantId,
                     to,
@@ -844,7 +903,16 @@ export class AutomationEngine {
                     bcc: bcc || undefined,
                     from: cfg.from_email ? merge(cfg.from_email) : undefined,
                     fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
+                    ...(attachments.length > 0 ? { attachments } : {}),
                 });
+                const files = attachments.length > 0 ? ` con ${attachments.map((a) => `«${a.filename}»`).join(', ')}` : '';
+                if (files) {
+                    return ok('send_email', `Enviado a ${to}: "${subject}"${files}.${composed.signatureNote ? ` ${composed.signatureNote}` : ''}`, {
+                        to,
+                        subject,
+                        attachments: attachments.map((a) => a.filename),
+                    });
+                }
                 if (composed.signatureNote) {
                     return ok('send_email', `Enviado a ${to}: "${subject}". ${composed.signatureNote}`, { to, subject });
                 }
@@ -853,6 +921,62 @@ export class AutomationEngine {
             default:
                 return skip(spec.type, 'Acción no reconocida.');
         }
+    }
+
+    /**
+     * v0.1.266 — El PDF de una plantilla para el registro del run (lo arma una
+     * sola vez por run aunque lo pidan «Generar PDF» y «Enviar email»).
+     */
+    private async pdfFor(
+        tx: Tx,
+        ctx: RunContext,
+        templateId: number,
+        filename = '',
+    ): Promise<{ filename: string; buffer: Buffer }> {
+        if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
+        if (ctx.recordId === null) throw new Error('Un PDF necesita un registro.');
+        ctx.pdfs ??= new Map();
+        const cached = ctx.pdfs.get(templateId);
+        if (cached && !filename) return cached;
+        const fv = this.accessor(ctx);
+        const doc = await this.documents.renderTemplateInTx(tx, {
+            tenantId: ctx.tenantId,
+            listId: ctx.listId,
+            recordId: ctx.recordId,
+            templateId,
+            actor: { userId: SYSTEM_USER, role: 'admin' },
+            filename,
+            // Las variables del contexto del run: {{before.x}}, {{pago.link}}, {{payload.x}}.
+            extra: (token) =>
+                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.')
+                    ? fv(token)
+                    : undefined,
+        });
+        const out = { filename: doc.filename, buffer: doc.buffer };
+        ctx.pdfs.set(templateId, out);
+        return out;
+    }
+
+    /** Los PDF que `send_email` adjunta (`pdf_templates`: ids de plantillas). */
+    private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<MailAttachment[]> {
+        const ids = Array.isArray(cfg.pdf_templates)
+            ? [...new Set(cfg.pdf_templates.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 5)
+            : [];
+        if (ids.length === 0) return [];
+        if (ctx.recordId === null) throw new Error('Los PDF adjuntos necesitan un registro.');
+        const out: MailAttachment[] = [];
+        let total = 0;
+        for (const id of ids) {
+            const doc = await this.pdfFor(tx, ctx, id).catch((err: unknown) => {
+                throw new Error(`No se pudo armar el PDF adjunto: ${err instanceof Error ? err.message : String(err)}`);
+            });
+            total += doc.buffer.length;
+            if (total > MAIL_MAX_ATTACHMENT_BYTES) {
+                throw new Error(`Los PDF adjuntos superan ${MAIL_MAX_ATTACHMENT_BYTES / 1024 / 1024} MB: achicalos o mandá menos.`);
+            }
+            out.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });
+        }
+        return out;
     }
 }
 

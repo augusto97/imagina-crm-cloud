@@ -62,6 +62,7 @@ import {
     relations,
     savedFilters,
     savedViews,
+    documentTemplates,
     templates,
     tenants,
     users,
@@ -266,6 +267,8 @@ export class TenantTransferService {
             await dump('connections', await this.byTenant(connections, tenantId));
             await dump('attachments', attachRows);
             await dump('saved_views', await this.byTenant(savedViews, tenantId));
+            // v0.1.266 — plantillas de documentos PDF.
+            await dump('document_templates', await this.byTenant(documentTemplates, tenantId));
             await dump('saved_filters', await this.byTenant(savedFilters, tenantId));
             await dump('automations', await this.byTenant(automations, tenantId));
             await dump('dashboards', await this.byTenant(dashboards, tenantId));
@@ -840,6 +843,25 @@ export class TenantTransferService {
             await this.insertValues(tx, activity, values);
             return values.length;
         });
+
+        // 7b. Plantillas de documentos PDF (antes que las automatizaciones,
+        //     que las referencian por id). El diseño lleva la relación de la
+        //     tabla de ítems, su lista y las imágenes subidas.
+        counts.document_templates = await this.insertMapped(
+            tx,
+            await this.readAll(rows('document_templates')),
+            documentTemplates,
+            maps.document,
+            (d) => ({
+                tenantId,
+                listId: maps.list.get(Number(d.listId))!,
+                name: String(d.name),
+                filename: String(d.filename ?? ''),
+                design: remapJson((d.design as Row | null) ?? {}, maps) as Row,
+                createdBy: mapId(maps.user, d.createdBy),
+            }),
+            (d) => maps.list.has(Number(d.listId)),
+        );
 
         // 8. Automatizaciones (+ URL nueva del webhook entrante).
         const autoRows = await this.readAll(rows('automations'));

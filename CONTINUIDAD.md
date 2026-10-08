@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.265** (editor de correos por bloques compatible con Gmail/Outlook + firma visible en la acción y editable en visual), en `main`.
+versión publicada: **v0.1.266** (documentos PDF: cuentas de cobro con editor visual, botón en la ficha y acción + adjunto en las automatizaciones), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - Probar Mercado Pago / Wompi con cuentas de prueba reales (TEST- / pub_test_)
@@ -358,6 +358,10 @@ versión publicada: **v0.1.265** (editor de correos por bloques compatible con G
 - v0.1.265: mandarse una prueba del correo diseñado desde el servidor y
   abrirla en Gmail (web y celular) y Outlook (Windows) — en el sandbox el
   correo sale por el transporte de log.
+- v0.1.266: generar una cuenta de cobro real desde el servidor y abrir el PDF
+  adjunto en Gmail (web y celular) y Outlook; confirmar con el usuario si la
+  fase 2 (consecutivo atómico por plantilla, QR, descarga desde el portal) va
+  ahora o más adelante.
 - v0.1.263: el cliente de Colombia con la automatización de las 8 → 3 am
   queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
   se propone desde su navegador y el horario sin zona la sigue). Si nadie
@@ -370,6 +374,11 @@ versión publicada: **v0.1.265** (editor de correos por bloques compatible con G
   y se descartó — ver ADR-S32.)
 
 **Pendientes técnicos conocidos (no urgentes)**
+- `pnpm audit --prod` volvió a dar 4 avisos publicados después de v0.1.244
+  (no vienen de v0.1.266): `@modelcontextprotocol/sdk` <1.31 (high, el
+  cliente OAuth del SDK — nosotros usamos el SERVIDOR), `braces` y
+  `postcss-selector-parser` (vía tailwind, sólo build) y `sprintf-js` (vía
+  mssql/tedious). Merecen un release de dependencias propio.
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).
 - `style-src 'unsafe-inline'` en la CSP (React escribe `style=""`).
@@ -385,6 +394,19 @@ versión publicada: **v0.1.265** (editor de correos por bloques compatible con G
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-08 · v0.1.266** — Pedido del usuario: "una opción en
+  automatizaciones para crear un PDF y enviarlo adjunto… con editor y
+  plantillas" → recomendación aceptada ("Dale, arrancá con la fase 1, primero
+  cuenta de cobro"). Hecho (ADR-S35): plantillas de documento por lista con
+  editor visual y el PDF REAL de vista previa; arranques «Cuenta de cobro» y
+  «con detalle» (ítems de una lista vinculada, total en letras); botón
+  «Generar PDF» en la ficha (descargar o guardar en un campo Archivo);
+  acción «Generar un PDF» (`{{pdf.link}}`) y «Adjuntar PDF» en «Enviar email».
+  Render con pdfmake en el proceso (nada de Chromium): ~30 KB y <0,5 s por
+  documento; el disco sólo se usa si se elige guardar. Decisiones: no es
+  factura electrónica DIAN (lo dice la plantilla); variables legibles por
+  defecto con `|value` para el crudo. Queda: probar el PDF adjunto real en
+  Gmail/Outlook desde el servidor y decidir la fase 2.
 - **2026-10-08 · v0.1.265** — Pedido del usuario: "en la acción enviar email
   quiero un editor de correos, el actual es un campo de texto muy básico;
   diseños más elaborados y editables, totalmente compatibles con Gmail y

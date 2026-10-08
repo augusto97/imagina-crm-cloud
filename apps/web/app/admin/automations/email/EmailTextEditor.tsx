@@ -22,7 +22,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { MergeTagPicker } from '../MergeTagInput';
+import { MergeTagPicker, type MergeTagContext, type MergeTagSection } from '../MergeTagInput';
 
 /**
  * v0.1.265 — Editor de texto de un bloque del correo (ADR-S34). TipTap con
@@ -45,10 +45,15 @@ export function EmailTextEditor({
     value,
     onChange,
     fields,
+    tagContext,
+    extraTags,
 }: {
     value: EmailRichDoc | null;
     onChange: (doc: EmailRichDoc) => void;
     fields: FieldEntity[];
+    /** v0.1.266 — también lo usa el editor de documentos PDF. */
+    tagContext?: MergeTagContext;
+    extraTags?: MergeTagSection[];
 }): JSX.Element {
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
@@ -91,13 +96,23 @@ export function EmailTextEditor({
 
     return (
         <div className="imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background focus-within:imcrm-ring-2 focus-within:imcrm-ring-ring">
-            {editor && <Toolbar editor={editor} fields={fields} />}
+            {editor && <Toolbar editor={editor} fields={fields} tagContext={tagContext} extraTags={extraTags} />}
             <EditorContent editor={editor} />
         </div>
     );
 }
 
-function Toolbar({ editor, fields }: { editor: Editor; fields: FieldEntity[] }): JSX.Element {
+function Toolbar({
+    editor,
+    fields,
+    tagContext,
+    extraTags,
+}: {
+    editor: Editor;
+    fields: FieldEntity[];
+    tagContext?: MergeTagContext;
+    extraTags?: MergeTagSection[];
+}): JSX.Element {
     const [, force] = useState(0);
     useEffect(() => {
         const rerender = (): void => force((n) => n + 1);
@@ -183,6 +198,8 @@ function Toolbar({ editor, fields }: { editor: Editor; fields: FieldEntity[] }):
                 <PopoverContent className="imcrm-w-[340px] imcrm-p-0" align="end">
                     <MergeTagPicker
                         fields={fields.filter((f) => f.type !== 'relation')}
+                        context={tagContext}
+                        extra={extraTags}
                         onPick={(tag) => {
                             editor.chain().focus().insertContent(`{{${tag}}}`).run();
                             setTagsOpen(false);

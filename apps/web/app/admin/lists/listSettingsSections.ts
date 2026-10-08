@@ -1,4 +1,4 @@
-import { Columns3, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -20,7 +20,8 @@ export type ListSettingsSectionId =
     | 'general'
     | 'apariencia'
     | 'permisos'
-    | 'compartir';
+    | 'compartir'
+    | 'documentos';
 
 export interface ListSettingsSection {
     id: ListSettingsSectionId;
@@ -76,6 +77,14 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         description: __(
             'Dale a cada cliente su portal privado, o publicá la lista en una página que cualquiera pueda ver.',
         ),
+    },
+    {
+        // v0.1.266 — plantillas de documentos PDF (ADR-S35).
+        id: 'documentos',
+        label: __('Documentos'),
+        icon: FileText,
+        title: __('Documentos PDF'),
+        description: __('Cuentas de cobro, recibos y cotizaciones con los datos de cada registro, listos para descargar o mandar por correo.'),
     },
 ];
 

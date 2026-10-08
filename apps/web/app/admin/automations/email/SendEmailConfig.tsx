@@ -27,6 +27,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ActionSpec } from '@/types/automation';
 
 import { AutomationEditorListContext } from '../config-editors';
+import { EmailPdfAttachments } from '../../documents/GeneratePdfConfig';
 import { MergeTagInput } from '../MergeTagInput';
 import { EmailThumbnail } from './EmailPreviewFrame';
 
@@ -202,6 +203,12 @@ export function SendEmailConfig({
                 onChange={(patch) => set(patch)}
             />
 
+            <EmailPdfAttachments
+                value={Array.isArray(cfg.pdf_templates) ? (cfg.pdf_templates as unknown[]).map(Number).filter((n) => n > 0) : []}
+                onChange={(ids) => set({ pdf_templates: ids })}
+                fields={fields}
+            />
+
             <TestEmail config={cfg} listId={listId} myEmail={me?.email ?? ''} />
 
             <details className="imcrm-group imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-2 [&[open]]:imcrm-bg-card [&[open]]:imcrm-shadow-imcrm-sm">
@@ -350,7 +357,7 @@ function TestEmail({ config, listId, myEmail }: { config: Record<string, unknown
                 >
                     {result.error
                         ? result.error
-                        : `${__('Prueba enviada a')} ${result.sent_to}${result.sample_record_id ? ` (${__('registro')} #${result.sample_record_id})` : ''}.${result.signature_note ? ` ${result.signature_note}` : ''}`}
+                        : `${__('Prueba enviada a')} ${result.sent_to}${result.sample_record_id ? ` (${__('registro')} #${result.sample_record_id})` : ''}.${result.attachments && result.attachments.length > 0 ? ` ${__('Adjuntos')}: ${result.attachments.map((a) => `${a.filename} (${Math.max(1, Math.round(a.bytes / 1024))} KB)`).join(', ')}.` : ''}${result.signature_note ? ` ${result.signature_note}` : ''}`}
                 </p>
             )}
         </div>

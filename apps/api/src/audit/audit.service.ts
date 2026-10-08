@@ -85,7 +85,11 @@ export type AuditAction =
     // v0.1.251 — cobros de la empresa (Mercado Pago / Wompi).
     | 'collections.setup'
     | 'payment_link.create'
-    | 'payment_link.cancel';
+    | 'payment_link.cancel'
+    // v0.1.266 — plantillas de documentos PDF.
+    | 'document_template.create'
+    | 'document_template.update'
+    | 'document_template.delete';
 
 export interface AuditEntryDto {
     id: number;

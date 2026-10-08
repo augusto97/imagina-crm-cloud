@@ -61,6 +61,7 @@ export const AUTOMATION_ACTIONS = [
     'update_field',
     'create_record',
     'bulk_edit',
+    'generate_pdf',
     'if_else',
 ] as const;
 
@@ -238,6 +239,8 @@ export interface EmailTestResult {
     sent_to: string | null;
     error: string | null;
     signature_note: string | null;
+    /** v0.1.266 — PDFs adjuntos de la prueba enviada. */
+    attachments?: Array<{ filename: string; bytes: number }>;
 }
 
 export const webhookTestResultSchema = z.object({

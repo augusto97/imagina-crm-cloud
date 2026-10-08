@@ -72,6 +72,7 @@ import {
     syncLinks,
     bulkEditItems,
     bulkEdits,
+    documentTemplates,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -352,6 +353,8 @@ export class PlatformService {
             await tx.delete(publicLists).where(eq(publicLists.tenantId, id));
             await tx.delete(savedFilters).where(eq(savedFilters.tenantId, id));
             await tx.delete(savedViews).where(eq(savedViews.tenantId, id));
+            // v0.1.266 — plantillas de documentos PDF.
+            await tx.delete(documentTemplates).where(eq(documentTemplates.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));

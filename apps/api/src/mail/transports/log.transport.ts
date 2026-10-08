@@ -15,7 +15,8 @@ export class LogMailTransport implements MailTransport {
         // ningún SMTP configurado y el correo no salió a ninguna parte. Se
         // avisa fuerte; antes se registraba como un envío más y el operador
         // no tenía forma de notar que sus correos morían en el logger.
-        const line = `→ ${message.to} · "${message.subject}"`;
+        const files = message.attachments?.length ? ` · adjuntos: ${message.attachments.map((a) => a.filename).join(', ')}` : '';
+        const line = `→ ${message.to} · "${message.subject}"${files}`;
         if (process.env.NODE_ENV === 'production') {
             this.logger.warn(
                 `[mail:log] CORREO NO ENVIADO (no hay SMTP configurado) ${line}. ` +

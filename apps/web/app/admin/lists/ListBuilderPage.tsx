@@ -9,6 +9,7 @@ import { usePublicList } from '@/hooks/usePublicList';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
 import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
@@ -227,6 +228,8 @@ export function ListBuilderPage(): JSX.Element {
                         <PublicVisibilityPanel listId={data.id} />
                     </>
                 )}
+
+                {active === 'documentos' && <DocumentTemplatesPanel listId={data.id} />}
             </div>
         </div>
     );

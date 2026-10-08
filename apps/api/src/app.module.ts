@@ -33,6 +33,7 @@ import { ConnectorsModule } from './connectors/connectors.module';
 import { StoreSyncModule } from './sync/store-sync.module';
 import { SqlSyncModule } from './sql-sync/sql-sync.module';
 import { CollectionsModule } from './collections/collections.module';
+import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
 import { RecordsModule } from './records/records.module';
@@ -61,6 +62,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         StoreSyncModule,
         SqlSyncModule,
         CollectionsModule,
+        DocumentsModule,
         AuthModule,
         WorkspacesModule,
         MeModule,
