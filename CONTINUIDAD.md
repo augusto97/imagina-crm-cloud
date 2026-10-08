@@ -358,6 +358,15 @@ versión publicada: **v0.1.265** (editor de correos por bloques compatible con G
 - v0.1.265: mandarse una prueba del correo diseñado desde el servidor y
   abrirla en Gmail (web y celular) y Outlook (Windows) — en el sandbox el
   correo sale por el transporte de log.
+- **Pregunta abierta (2026-10-08): generar PDF desde automatizaciones**
+  (recibos, cuentas de cobro, proformas) con editor visual + plantillas y
+  adjuntarlo al correo. Recomendación dada: sí vale la pena; render con una
+  librería JS liviana (pdfmake/pdfkit), NO Chromium; reusar el modelo de
+  bloques del editor de correos; no guardar por defecto (sólo si se elige
+  "guardar en el registro", contando contra `max_storage_mb`); consecutivo
+  atómico; aviso de que NO es factura electrónica DIAN. Falta: `attachments`
+  en `MailMessage` (SMTP ok, Gmail 25 MB, Graph >3 MB necesita upload
+  session). Esperando que el usuario decida si se arranca y con qué alcance.
 - v0.1.263: el cliente de Colombia con la automatización de las 8 → 3 am
   queda arreglado SOLO apenas un admin de su empresa entre a la app (la zona
   se propone desde su navegador y el horario sin zona la sigue). Si nadie
