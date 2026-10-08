@@ -18,7 +18,6 @@ import {
     PenLine,
     Redo2,
     Smartphone,
-    Sun,
     Type,
     Undo2,
     X,
@@ -41,6 +40,7 @@ import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { api } from '@/lib/api';
 import { __ } from '@/lib/i18n';
@@ -464,7 +464,8 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                     <ThemePanel
                         design={design}
                         onChange={(theme, key) => commit((d) => ({ ...d, theme: { ...d.theme, ...theme } }), key)}
-                        onPreviewDark={() => setScheme('dark')}
+                        previewingDark={scheme === 'dark'}
+                        onPreviewDark={(on) => setScheme(on ? 'dark' : 'light')}
                     />
                 )}
             </div>
@@ -540,6 +541,14 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                         {__('Elegir colores')}
                     </button>
                 )}
+                <button
+                    type="button"
+                    className="imcrm-ml-auto imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                    onClick={() => setScheme('light')}
+                    data-testid="email-dark-exit"
+                >
+                    {__('Volver a la vista normal')}
+                </button>
             </div>
         ) : null;
 
@@ -607,14 +616,12 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                     <IconToggle label={__('Escritorio')} active={device === 'desktop'} onClick={() => setDevice('desktop')} icon={Monitor} />
                     <IconToggle label={__('Celular')} active={device === 'mobile'} onClick={() => setDevice('mobile')} icon={Smartphone} />
                 </div>
-                <div role="group" aria-label={__('Modo de color')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
-                    <IconToggle label={__('Ver en modo claro')} active={scheme === 'light'} onClick={() => setScheme('light')} icon={Sun} />
-                    <IconToggle label={__('Ver en modo oscuro')} active={scheme === 'dark'} onClick={() => setScheme('dark')} icon={Moon} />
-                </div>
                 <div role="group" aria-label={__('Datos de la vista previa')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
                     <IconToggle label={__('Ver las variables')} active={dataMode === 'tags'} onClick={() => setDataMode('tags')} icon={Braces} />
                     <IconToggle label={__('Ver con datos de un registro')} active={dataMode === 'real'} onClick={() => setDataMode('real')} icon={Database} />
                 </div>
+                {/* El modo claro/oscuro de la APP (la barra superior queda tapada por el editor). */}
+                <ThemeToggle compact />
                 <Button variant="ghost" size="sm" className="imcrm-hidden sm:imcrm-inline-flex" onClick={close}>
                     {__('Cancelar')}
                 </Button>
@@ -890,11 +897,13 @@ function OutlineRow({
 function ThemePanel({
     design,
     onChange,
+    previewingDark,
     onPreviewDark,
 }: {
     design: EmailDesign;
     onChange: (patch: Partial<EmailDesign['theme']>, key: string) => void;
-    onPreviewDark: () => void;
+    previewingDark: boolean;
+    onPreviewDark: (on: boolean) => void;
 }): JSX.Element {
     const t = design.theme;
     const dark = t.dark ?? { enabled: false, background: '#0f1115', surface: '#1b1d22', text: '#e8eaed', muted: '#a1a7b3' };
@@ -947,7 +956,7 @@ function ThemePanel({
                         checked={dark.enabled}
                         onChange={(e) => {
                             setDark({ enabled: e.target.checked }, 'dark.enabled');
-                            if (e.target.checked) onPreviewDark();
+                            if (e.target.checked) onPreviewDark(true);
                         }}
                     />
                     <span className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -963,11 +972,20 @@ function ThemePanel({
                         <ColorRow label={__('Fondo del correo')} value={dark.surface} onChange={(v) => v && setDark({ surface: v }, 'dark.surface')} />
                         <ColorRow label={__('Texto')} value={dark.text} onChange={(v) => v && setDark({ text: v }, 'dark.text')} />
                         <ColorRow label={__('Texto secundario')} value={dark.muted} onChange={(v) => v && setDark({ muted: v }, 'dark.muted')} />
-                        <button type="button" className="imcrm-self-start imcrm-text-[11px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={onPreviewDark}>
-                            {__('Ver cómo queda en modo oscuro')}
-                        </button>
                     </>
                 )}
+                <button
+                    type="button"
+                    className="imcrm-self-start imcrm-text-[11px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                    onClick={() => onPreviewDark(!previewingDark)}
+                    data-testid="email-dark-preview"
+                >
+                    {previewingDark
+                        ? __('Volver a la vista normal del correo')
+                        : dark.enabled
+                          ? __('Ver el correo como se lee en modo oscuro')
+                          : __('Ver cómo lo oscurecen Gmail y Outlook')}
+                </button>
             </Section>
             <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2.5 imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
                 {__('El correo se arma con tablas y estilos en línea, el formato que entienden Gmail (web y celular), Outlook (Windows, Mac y web), Apple Mail y Yahoo. Outlook de Windows muestra las esquinas rectas.')}

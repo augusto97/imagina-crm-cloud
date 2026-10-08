@@ -7477,6 +7477,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         entero, la primera opción se ve y se puede tocar, la última se alcanza
         scrolleando — y con el código anterior el mismo E2E daba 3/9 (el menú
         arrancaba 99 px por encima del borde, exactamente la captura).
+        **En el mismo release, corrección de rumbo del usuario** ("del modo
+        oscuro no me refería al correo sino a la interfaz de la app"): el
+        sol/luna que v0.1.270 puso en la cabecera del editor de correos
+        oscurecía la VISTA PREVIA del correo, y lo que faltaba era el modo
+        claro/oscuro de la APP — los editores a pantalla completa tapan la
+        barra superior, así que para ver el editor en el otro modo había que
+        salir. Ahora `components/ThemeToggle.tsx` (el mismo botón de la barra
+        superior, que también lo usa) va en la cabecera del editor de
+        correos, del de documentos PDF y del de la ficha/portal. La simulación
+        del correo en modo oscuro (y los colores propios para Apple Mail /
+        Outlook) queda donde corresponde: Estilo general → Modo oscuro, con
+        «Ver cómo lo oscurecen Gmail y Outlook» y «Volver a la vista normal»
+        en el aviso. E2E navegador 18/18 (el botón está en los tres editores,
+        pasa la app a oscuro sin salir, la interfaz queda oscura y el correo
+        conserva su tono, la simulación del correo es independiente del tema
+        de la app).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

@@ -1,13 +1,13 @@
-import { LogOut, Menu, Moon, Settings, Sparkles, Sun } from 'lucide-react';
+import { LogOut, Menu, Settings, Sparkles } from 'lucide-react';
 
 import { assistantPanel, useAssistantPanelOpen } from '@/admin/assistant/assistantPanelStore';
 import { NotificationBell } from '@/admin/layout/NotificationBell';
 import { useSession } from '@/cloud/session';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useBrandingData } from '@/hooks/useBranding';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __ } from '@/lib/i18n';
-import { useTheme } from '@/lib/theme';
 
 /**
  * Topbar:
@@ -22,8 +22,6 @@ import { useTheme } from '@/lib/theme';
  * local y recarga. La campana sólo aparece si su módulo está cableado.
  */
 export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.Element {
-    const theme = useTheme();
-    const isDark = theme.resolved === 'dark';
     const assistantOpen = useAssistantPanelOpen();
     const branding = useBrandingData();
     const activeTenantId = useSession((s) => s.activeTenantId);
@@ -93,16 +91,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}): JSX.
                 {/* v0.1.112 — claro ⇄ oscuro. La preferencia se guarda por
                  * navegador; el tri-estado (incluido "Seguir al sistema")
                  * vive en Ajustes → Apariencia. */}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={isDark ? __('Cambiar a modo claro') : __('Cambiar a modo oscuro')}
-                    title={isDark ? __('Modo claro') : __('Modo oscuro')}
-                    data-theme-toggle={theme.resolved}
-                    onClick={theme.toggle}
-                >
-                    {isDark ? <Sun className="imcrm-h-4 imcrm-w-4" /> : <Moon className="imcrm-h-4 imcrm-w-4" />}
-                </Button>
+                <ThemeToggle className="imcrm-text-foreground" />
 
                 <Button
                     variant="ghost"

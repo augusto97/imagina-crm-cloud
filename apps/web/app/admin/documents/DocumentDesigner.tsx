@@ -37,6 +37,7 @@ import {
     type DocumentTemplate,
 } from '@imagina-base/shared';
 
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -504,6 +505,7 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
                     <ExternalLink className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('Abrir PDF')}</span>
                 </Button>
+                <ThemeToggle compact />
                 <Button size="sm" onClick={() => void doSave()} disabled={save.isPending} data-testid="doc-save">
                     {save.isPending && <Loader2 className="imcrm-mr-1 imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" />}
                     {templateId === null ? __('Crear plantilla') : __('Guardar')}
