@@ -163,7 +163,7 @@ if [[ "$APP_VERSION" != "dev" && "$SNAP_VERSION" != "dev" ]]; then
             echo "  ⚠ el snapshot ($SNAP_VERSION) es MÁS NUEVO que el código ($APP_VERSION) — sigo por --force-version" >&2
         else
             echo "✗ el snapshot es de la versión $SNAP_VERSION y el código instalado es $APP_VERSION." >&2
-            echo "  Primero actualizá el código a $SNAP_VERSION (o más) y volvé a correr. (--force-version para forzar)" >&2
+            echo "  Primero actualiza el código a $SNAP_VERSION (o más) y vuelve a correr. (--force-version para forzar)" >&2
             exit 3
         fi
     fi
@@ -198,7 +198,7 @@ fi
 if [[ $DRY -eq 1 ]]; then echo "→ dry-run: no se cambió nada"; exit 0; fi
 if [[ $YES -eq 0 ]]; then
     echo
-    read -r -p "Escribí RESTAURAR para continuar: " answer
+    read -r -p "Escribe RESTAURAR para continuar: " answer
     [[ "$answer" == "RESTAURAR" ]] || { echo "cancelado"; exit 1; }
 fi
 
@@ -290,7 +290,7 @@ if [[ "$HAS_ENV" == "true" && $SKIP_ENV -eq 0 && -n "$ENV_FILE" && -f "$PARTS/en
             cp "$PARTS/env.production" "$ENV_FILE.snapshot"; chmod 600 "$ENV_FILE.snapshot"
             echo "  ⚠ SECRETS_KEY / FILES_SIGNING_SECRET del snapshot DIFIEREN del env instalado." >&2
             echo "    Las contraseñas SMTP y los secretos 2FA restaurados sólo se leen con los del snapshot." >&2
-            echo "    Quedó en $ENV_FILE.snapshot — revisalo y, si corresponde, volvé a correr con --apply-env." >&2
+            echo "    Quedó en $ENV_FILE.snapshot — revísalo y, si corresponde, vuelve a correr con --apply-env." >&2
         else
             echo "→ env: los secretos coinciden con el instalado (no se toca)"
         fi
@@ -320,7 +320,7 @@ if [[ $NO_SERVICE -eq 0 ]]; then
             if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then ok=1; break; fi
             sleep 2
         done
-        if [[ $ok -eq 1 ]]; then echo "  ✓ API sana ($HEALTH_URL)"; else echo "  ✗ el API no respondió sano en 60 s — revisá 'journalctl -u $SERVICE'" >&2; exit 4; fi
+        if [[ $ok -eq 1 ]]; then echo "  ✓ API sana ($HEALTH_URL)"; else echo "  ✗ el API no respondió sano en 60 s — revisa 'journalctl -u $SERVICE'" >&2; exit 4; fi
     fi
 fi
 echo "✓ restore completo (snapshot $SNAP_VERSION de $SNAP_DATE)"

@@ -18,14 +18,14 @@
 
 **Plataforma → Cobros**:
 
-1. En https://www.mercadopago.com.co/developers/panel/app creá una aplicación
-   (Pagos online / Checkout Pro) y copiá el **Access Token** de producción
+1. En https://www.mercadopago.com.co/developers/panel/app crea una aplicación
+   (Pagos online / Checkout Pro) y copia el **Access Token** de producción
    (`APP_USR-…`). Para probar, el de prueba (`TEST-…`): la consola marca el modo.
-2. En la aplicación → **Webhooks → Configurar notificaciones**: pegá la URL que
+2. En la aplicación → **Webhooks → Configurar notificaciones**: pega la URL que
    muestra la consola (`https://<tu-dominio>/api/v1/billing/webhook/mercadopago`)
-   y marcá los eventos **Pagos** y **Planes y suscripciones** (suscripciones y
+   y marca los eventos **Pagos** y **Planes y suscripciones** (suscripciones y
    pagos de suscripciones).
-3. Copiá la **Clave secreta** que muestra Mercado Pago y pegala en la consola.
+3. Copia la **Clave secreta** que muestra Mercado Pago y pégala en la consola.
    Sin ella los avisos se rechazan (no se puede verificar la firma
    `x-signature`) y el período **no se extiende**.
 
@@ -94,7 +94,7 @@ desde Ajustes, o que el operador les fije un corte en la consola.
 
 ## Cobros de las EMPRESAS a sus clientes (v0.1.251, ADR-S31)
 
-Distinto de todo lo anterior: acá cada empresa cobra con SU cuenta de Mercado
+Distinto de todo lo anterior: aquí cada empresa cobra con SU cuenta de Mercado
 Pago o Wompi (sin comisión de la plataforma). El operador no configura nada.
 
 - **Mercado Pago**: la empresa pega su Access Token en Ajustes → Integraciones.

@@ -41,10 +41,10 @@ git clone <URL_DEL_REPO> /opt/imagina-base
 cd /opt/imagina-base
 git checkout <rama-o-tag>
 
-# Config: copiá el ejemplo y completá TODOS los secrets.
+# Config: copia el ejemplo y completa TODOS los secrets.
 cp deploy/.env.production.example .env.production
-openssl rand -hex 32   # generá passwords para Postgres/Redis y pegalos
-nano .env.production    # ajustá dominio, DB/Redis creds, SMTP, pagos…
+openssl rand -hex 32   # genera passwords para Postgres/Redis y pégalos
+nano .env.production    # ajusta dominio, DB/Redis creds, SMTP, pagos…
 ```
 
 > `DATABASE_URL` y `REDIS_URL` deben repetir las credenciales de
@@ -70,7 +70,7 @@ sirve para el deploy manual y para la **auto-actualización** in-app:
 ├── shared/                  # persiste entre releases
 │   ├── .env.production
 │   └── backups/
-└── current -> releases/<ts>_<ver>   # systemd y Caddy apuntan acá
+└── current -> releases/<ts>_<ver>   # systemd y Caddy apuntan aquí
 ```
 
 Primer release (bootstrap desde el repo — mismo armado que el bundle del CI):
@@ -80,7 +80,7 @@ BASE=/opt/imagina-base
 sudo mkdir -p "$BASE/releases" "$BASE/shared/backups" && sudo chown -R "$USER" "$BASE"
 TS=$(date -u +%Y%m%d%H%M%S); REL="$BASE/releases/${TS}_0.0.0"
 
-# Config en shared/ (lo que antes editaste en .env.production va acá)
+# Config en shared/ (lo que antes editaste en .env.production va aquí)
 cp deploy/.env.production.example "$BASE/shared/.env.production"
 nano "$BASE/shared/.env.production"    # dominio, DB/Redis, superadmin, updater…
 
@@ -106,14 +106,14 @@ ln -sfn "$REL" "$BASE/current"
 ```
 
 > **Postgres administrado (no el de Docker):** si el usuario de conexión NO es
-> superuser, otorgale el rol de aplicación: `GRANT imagina_app TO <db_user>;`
+> superuser, otórgale el rol de aplicación: `GRANT imagina_app TO <db_user>;`
 > (con el Postgres de Docker el usuario es superuser y no hace falta).
 
 ## 5. API por systemd
 
 ```bash
 sudo cp deploy/imagina-api.service /etc/systemd/system/imagina-api.service
-# El unit ya apunta a current/apps/api + shared/.env.production. Revisá User=.
+# El unit ya apunta a current/apps/api + shared/.env.production. Revisa User=.
 sudo systemctl daemon-reload
 sudo systemctl enable --now imagina-api
 curl -s http://127.0.0.1:3001/api/v1/health/ready   # {"status":"ready",...}
@@ -127,7 +127,7 @@ curl -s http://127.0.0.1:3001/api/v1/health/ready   # {"status":"ready",...}
 
 ```bash
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
-sudo nano /etc/caddy/Caddyfile        # reemplazá app.tu-dominio.com (root ya = current/web)
+sudo nano /etc/caddy/Caddyfile        # reemplaza app.tu-dominio.com (root ya = current/web)
 sudo systemctl reload caddy
 ```
 
@@ -137,22 +137,22 @@ sudo systemctl reload caddy
 > funciona sin tocar el Caddyfile. La regla `handle /.well-known/oauth-*` del
 > Caddyfile es opcional: responde por host (dominios propios de cada empresa).
 
-Abrí `https://app.tu-dominio.com` → cae en el login. Registrá el primer usuario:
+Abre `https://app.tu-dominio.com` → cae en el login. Registra el primer usuario:
 ese registro crea el **workspace y su admin**. Para operar la auto-actualización,
-poné ese email (u otro) en `PLATFORM_SUPERADMINS`.
+pon ese email (u otro) en `PLATFORM_SUPERADMINS`.
 
 ## 8. Post-despliegue
 
-- **Backups**: programá el diario y el restore drill (ver `docs/runbook-backups.md`).
+- **Backups**: programa el diario y el restore drill (ver `docs/runbook-backups.md`).
   Cron ejemplo (diario 03:00):
   `0 3 * * * cd /opt/imagina-base && DATABASE_URL=... BACKUP_GPG_RECIPIENT=... ./scripts/backup.sh /var/backups/imagina-base`
-- **Pagos**: registrá los webhooks a `https://app.tu-dominio.com/api/v1/billing/webhook/{paypal|mercadopago}`
-  y completá credenciales (ver `docs/runbook-payments.md`).
-- **Email**: verificá el SMTP mandando un magic link de portal a tu correo.
+- **Pagos**: registra los webhooks a `https://app.tu-dominio.com/api/v1/billing/webhook/{paypal|mercadopago}`
+  y completa credenciales (ver `docs/runbook-payments.md`).
+- **Email**: verifica el SMTP mandando un magic link de portal a tu correo.
 - **Monitoreo**: `GET /api/v1/health/ready` (uptime check externo) y
   `GET /api/v1/metrics` (latencias/errores) con `Authorization: Bearer $METRICS_TOKEN`
   — desde v0.1.226, en producción sin `METRICS_TOKEN` el endpoint responde 403.
-  Es opcional: sólo configuralo si vas a scrapear métricas.
+  Es opcional: sólo configúralo si vas a scrapear métricas.
 - **Cabeceras de seguridad**: desde v0.1.227 no dependen del proxy. El API
   manda HSTS en producción, el HTML de los dos SPA trae su CSP en un `<meta>` y
   la app se niega a montarse dentro de un iframe de otro sitio. Las cabeceras de
@@ -163,15 +163,15 @@ poné ese email (u otro) en `PLATFORM_SUPERADMINS`.
 
 ## 9. Actualizar a una versión nueva
 
-**Automático (recomendado):** taggeá `vX.Y.Z` → el workflow `release.yml` publica
+**Automático (recomendado):** taggea `vX.Y.Z` → el workflow `release.yml` publica
 el bundle en GitHub Releases → en **Ajustes → Sistema · Actualizaciones**
-(superadmin) apretás *Buscar* y luego *Actualizar*. El servidor descarga+verifica
+(superadmin) aprietas *Buscar* y luego *Actualizar*. El servidor descarga+verifica
 el ZIP, lo despliega al lado, migra, hace el flip del symlink, reinicia y verifica
 el health; si falla, **rollback automático**. Botón *Rollback* para revertir a
 mano. Detalle en `docs/runbook-updates.md`.
 
-**Manual (mismo layout):** armá un release nuevo como en el paso 4 (en una carpeta
-`releases/<ts>_<ver>` nueva), y corré `BASE_PATH=$BASE RELEASE_DIR=<rel>
+**Manual (mismo layout):** arma un release nuevo como en el paso 4 (en una carpeta
+`releases/<ts>_<ver>` nueva), y corre `BASE_PATH=$BASE RELEASE_DIR=<rel>
 deploy/deploy.sh` seguido de `finalize.sh` (o `systemctl restart imagina-api`).
 
 ## Notas de arquitectura
