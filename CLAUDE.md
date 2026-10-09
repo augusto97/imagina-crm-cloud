@@ -7543,6 +7543,37 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contra el build de producción con su CSP: fuente cargada, cero
         violaciones), 10/10 del PDF y 4/4 en el celular.
 
+  - [x] **Editores de correo y PDF más claros (v0.1.273, feedback del usuario:
+        "algunos ajustes quedaron dobles, como los de tipografía; la
+        experiencia es confusa y el visor de jerarquía está debajo de los
+        bloques")**: (a) **un ajuste, un lugar** (addendum ADR-S37): el tamaño
+        rápido (Grande/Mediano/Chico del título, Chica/Normal/Grande del texto)
+        y el exacto en px/pt comparten fila dentro de «Texto» — el atajo se
+        marca sólo sin exacto y elegirlo lo borra en el mismo cambio —; el
+        color del texto y la alineación pasaron a «Texto»; el color de fondo y
+        «banda o recuadro» juntos en «Fondo»; el «Espacio arriba y abajo» y los
+        márgenes/relleno exactos juntos en «Espaciado» (en el PDF, «Relleno con
+        el fondo»); el botón y la imagen con su borde en su propia sección (el
+        «Borde» del bloque se oculta salvo que ya se haya usado). Se fueron
+        «Fondo y espacio» y «Recuadro». (b) **Contenido / Estilo**: el panel
+        del bloque se parte en dos pestañas que se recuerdan al cambiar de
+        bloque; un bloque nuevo abre en Contenido; separador (todo estilo) y
+        espacio/salto (todo contenido) no muestran pestañas; un bloque dentro
+        de columnas muestra «Columnas · columna N» para volver. (c) **Estructura
+        en su pestaña**: Agregar · Estructura (con contador) · Estilo general
+        (en el PDF, Hoja y estilo); el árbol ya no vive debajo de la paleta,
+        explica qué es y tiene estado vacío. (d) **Un solo control de color**
+        (`ColorField` con colores rápidos, «Otro color…» y «Sin color»; sin
+        color propio muestra el heredado punteado) en los dos editores, y
+        «Estilo general» en secciones plegables (Colores · Texto · Hoja · Modo
+        oscuro). Las secciones son piezas componibles de `DesignStyleControls`
+        y los atajos, funciones puras (`inspectorPresets.ts`). (e) Entorno de
+        desarrollo: `.env.example` con `MAIL_FROM` entre comillas (el script
+        lo carga con `.` y no arrancaba el API) y `create-superadmin.sh` crea
+        el usuario directo en la base (el alta pública rechaza emails de
+        superadmin, SEC-04). 7 tests nuevos (264 front en verde) + E2E
+        navegador 28/28 del correo, 15/15 del PDF y 4/4 en el celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

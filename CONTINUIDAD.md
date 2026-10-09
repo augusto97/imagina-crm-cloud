@@ -349,9 +349,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.272** (diseño por bloque en el editor de correos y en el de PDF: tipografías, tamaños, márgenes, rellenos, bordes, esquinas y sombras — ADR-S37), en `main`.
+versión publicada: **v0.1.273** (editores de correo y PDF más claros: pestañas Contenido/Estilo por bloque, cada ajuste en un solo lugar y la estructura en su propia pestaña — addendum de ADR-S37), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- v0.1.273 (UX de los editores): que el usuario recorra el editor de correos y
+  el de PDF y diga si la separación Contenido/Estilo y la pestaña
+  «Estructura» se entienden; si algún ajuste sigue sintiéndose repetido,
+  anotar cuál.
 - v0.1.272 (diseño por bloque): mandarse un correo con una fuente WEB
   (p. ej. Montserrat) y esquinas/sombra, y abrirlo en Apple Mail o el iPhone
   (se ve la fuente) y en Gmail y Outlook de Windows (se ve la de respaldo,
@@ -417,6 +421,26 @@ versión publicada: **v0.1.272** (diseño por bloque en el editor de correos y e
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.273** — Feedback del usuario sobre v0.1.272: "algunos
+  ajustes quedaron dobles, como los de tipografía; la experiencia de ese editor
+  es confusa y el visor de jerarquía está debajo de los bloques". Hecho (correo
+  y PDF, que comparten el patrón): el panel del bloque se parte en
+  **Contenido** (lo que dice) y **Estilo** (cómo se ve), recordando la pestaña
+  al cambiar de bloque; cada ajuste vive en UN lugar — el tamaño rápido
+  (Grande/Mediano/Chico) y el exacto en la misma fila (elegir el atajo borra el
+  exacto), el color del texto y la alineación dentro de «Texto», el fondo y si
+  es banda o recuadro juntos en «Fondo», el espacio rápido y los márgenes
+  exactos juntos en «Espaciado», y el botón/la imagen con su propio borde (sin
+  un segundo «Borde» del bloque). El árbol pasó a su propia pestaña
+  **Estructura** (con contador); un bloque dentro de columnas muestra el
+  camino para volver a ellas; separador y espacio no muestran pestañas; un
+  único control de color (con colores rápidos) en todos lados; «Estilo
+  general» en secciones plegables. Arreglos del entorno encontrados al
+  reconstruirlo: `.env.example` traía `MAIL_FROM` sin comillas (el script de
+  desarrollo no arrancaba el API) y `scripts/dev/create-superadmin.sh` usaba
+  el alta pública, que rechaza emails de superadmin (SEC-04) → ahora crea el
+  usuario directo en la base. Trampa del sandbox: Docker Hub responde 429; las
+  imágenes salen de `mirror.gcr.io/library/…` y se re-etiquetan.
 - **2026-10-08 · v0.1.272** — Pedido del usuario con captura del editor de
   correos: "le faltan muchas opciones: tipografía con campos numéricos
   (tamaño, margin y padding), borde, grosor de la letra, varias tipografías, a

@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/toast';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-import { HexInput } from '../../admin/template-editor-core/BlockStyleEditor';
+import { HexInput, SWATCHES } from '../../admin/template-editor-core/BlockStyleEditor';
 
 /**
  * v0.1.272 — Controles de diseño compartidos por el editor de correos y el
@@ -167,39 +167,95 @@ export function NumberField({
     );
 }
 
-/** Color compacto: muestra + selector del sistema + hex tipeable + quitar. */
+/**
+ * Color compacto: muestra (abre colores rápidos + «Otro color…» del sistema
+ * + «Sin color») y hex tipeable. v0.1.273 — el ÚNICO control de color de los
+ * editores de correo y PDF (antes convivían dos con aspectos distintos).
+ */
 export function ColorField({
     label,
     value,
     onChange,
     placeholder,
+    allowEmpty = true,
 }: {
     label: string;
     value: string | null | undefined;
     onChange: (next: string | null) => void;
     placeholder?: string;
+    /** false = un color obligatorio (no se ofrece «Sin color»). */
+    allowEmpty?: boolean;
 }): JSX.Element {
     const v = value ?? undefined;
+    const [open, setOpen] = useState(false);
+    const inherited = placeholder && /^#[0-9a-f]{3,8}$/i.test(placeholder) ? placeholder : null;
     return (
-        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1">
+        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-1" data-testid="color-field">
             <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{label}</span>
             <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
-                <label
-                    className="imcrm-relative imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-cursor-pointer imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-input"
-                    style={{ background: v ?? 'repeating-conic-gradient(#d4d7dd 0% 25%, transparent 0% 50%) 50% / 8px 8px' }}
-                    title={label}
-                >
-                    <input
-                        type="color"
-                        aria-label={`${label} — ${__('elegir color')}`}
-                        value={v && v.length === 7 ? v : '#000000'}
-                        onChange={(e) => onChange(e.target.value.toLowerCase())}
-                        className="imcrm-absolute imcrm-inset-0 imcrm-h-full imcrm-w-full imcrm-cursor-pointer imcrm-opacity-0"
-                    />
-                </label>
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <button
+                            type="button"
+                            className={cn(
+                                'imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-rounded-md imcrm-border',
+                                // Sin color propio: muestra el que se usa (el de la pista), punteado.
+                                v ? 'imcrm-border-input' : 'imcrm-border-dashed imcrm-border-muted-foreground/50',
+                            )}
+                            style={{ background: v ?? (inherited ? `${inherited} content-box` : 'repeating-conic-gradient(#d4d7dd 0% 25%, transparent 0% 50%) 50% / 8px 8px'), padding: v ? undefined : 3 }}
+                            title={label}
+                            aria-label={`${label} — ${__('elegir color')}`}
+                        />
+                    </PopoverTrigger>
+                    <PopoverContent className="imcrm-w-[13.5rem] imcrm-p-2" align="start">
+                        <div className="imcrm-grid imcrm-grid-cols-6 imcrm-gap-1">
+                            {SWATCHES.map((hex) => (
+                                <button
+                                    key={hex}
+                                    type="button"
+                                    aria-label={hex}
+                                    title={hex}
+                                    onClick={() => {
+                                        onChange(hex);
+                                        setOpen(false);
+                                    }}
+                                    className={cn(
+                                        'imcrm-h-7 imcrm-w-7 imcrm-rounded imcrm-border imcrm-border-border hover:imcrm-scale-110',
+                                        v?.toLowerCase() === hex && 'imcrm-ring-2 imcrm-ring-primary imcrm-ring-offset-1',
+                                    )}
+                                    style={{ background: hex }}
+                                />
+                            ))}
+                        </div>
+                        <div className="imcrm-mt-2 imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-2">
+                            <label className="imcrm-relative imcrm-cursor-pointer imcrm-text-[11px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                                {__('Otro color…')}
+                                <input
+                                    type="color"
+                                    aria-label={`${label} — ${__('otro color')}`}
+                                    value={v && v.length === 7 ? v : '#000000'}
+                                    onChange={(e) => onChange(e.target.value.toLowerCase())}
+                                    className="imcrm-absolute imcrm-inset-0 imcrm-h-full imcrm-w-full imcrm-cursor-pointer imcrm-opacity-0"
+                                />
+                            </label>
+                            {allowEmpty && v && (
+                                <button
+                                    type="button"
+                                    className="imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-text-destructive"
+                                    onClick={() => {
+                                        onChange(null);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    {__('Sin color')}
+                                </button>
+                            )}
+                        </div>
+                    </PopoverContent>
+                </Popover>
                 <HexInput
                     value={v}
-                    onCommit={(n) => onChange(n ?? null)}
+                    onCommit={(n) => (n || allowEmpty ? onChange(n ?? null) : undefined)}
                     placeholder={placeholder ?? '#hex'}
                     ariaLabel={`${label} hex`}
                     className="imcrm-h-7 imcrm-min-w-0 imcrm-flex-1 imcrm-px-2 imcrm-font-mono imcrm-text-[11px]"
@@ -425,7 +481,6 @@ export function cleanStyle<T extends Record<string, unknown>>(st: T): T | undefi
 
 const TYPO_KEYS = ['font', 'font_size', 'font_weight', 'italic', 'line_height', 'letter_spacing', 'text_transform'] as const;
 const SPACE_KEYS = ['margin_top', 'margin_bottom', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left'] as const;
-const BORDER_KEYS = ['border_width', 'border_style', 'border_color', 'border_sides', 'radius', 'shadow', 'bg_mode'] as const;
 
 function hasAny(st: BlockStyle | undefined, keys: readonly string[]): boolean {
     if (!st) return false;
@@ -440,6 +495,315 @@ function hasAny(st: BlockStyle | undefined, keys: readonly string[]): boolean {
     });
 }
 
+// ---------------------------------------------------------------------------
+// v0.1.273 — Secciones componibles del panel «Estilo»
+// ---------------------------------------------------------------------------
+//
+// Cada ajuste vive en UN solo lugar: el tamaño rápido de un título (Grande /
+// Mediano / Chico) y el tamaño exacto en px están en la MISMA fila; el color
+// del texto y la alineación, dentro de «Texto»; el color de fondo y si ocupa
+// todo el ancho o es un recuadro, juntos en «Fondo»; el espacio rápido (Poco /
+// Medio / Mucho) y los márgenes exactos, juntos en «Espaciado». Los
+// inspectores de correo y PDF componen estas secciones en el orden que les
+// sirve; los valores rápidos que viven en el bloque (nivel, tamaño, padding)
+// los resuelve el inspector con un solo `onPatch` (un paso de deshacer).
+
+export interface StyleEditor {
+    medium: DesignMedium;
+    st: BlockStyle;
+    /** Mezcla y limpia (vacío = automático). */
+    set: (patch: Partial<BlockStyle>) => void;
+    /** El estilo SIN estas claves (para armar un patch combinado). */
+    without: (keys: readonly string[]) => BlockStyle | undefined;
+}
+
+export function styleEditor(medium: DesignMedium, value: BlockStyle | undefined, onChange: (next: BlockStyle | undefined) => void): StyleEditor {
+    const st = value ?? {};
+    const without = (keys: readonly string[]): BlockStyle | undefined => {
+        const next: Record<string, unknown> = { ...st };
+        for (const k of keys) delete next[k];
+        return cleanStyle(next as BlockStyle);
+    };
+    return { medium, st, set: (patch) => onChange(cleanStyle({ ...st, ...patch })), without };
+}
+
+export const STYLE_KEYS = {
+    typography: TYPO_KEYS,
+    spacing: SPACE_KEYS,
+    border: ['border_width', 'border_style', 'border_color', 'border_sides', 'radius', 'shadow'] as const,
+    verticalSpace: ['margin_top', 'margin_bottom', 'padding_top', 'padding_bottom'] as const,
+    padding: ['padding_top', 'padding_right', 'padding_bottom', 'padding_left'] as const,
+} as const;
+
+/** ¿El estilo tiene algún valor propio en estas claves? */
+export function styleHasAny(st: BlockStyle | undefined, keys: readonly string[]): boolean {
+    return hasAny(st, keys);
+}
+
+/** Atajo de valores rápidos («Grande / Mediano / Chico», «Poco / Medio / Mucho»). */
+export interface QuickPreset {
+    label: string;
+    options: Array<{ value: string; label: string; title?: string }>;
+    /** null = hay un valor exacto propio (ningún atajo marcado). */
+    current: string | null;
+    onPick: (value: string) => void;
+}
+
+function QuickRow({ preset, children }: { preset: QuickPreset; children: React.ReactNode }): JSX.Element {
+    return (
+        <div className="imcrm-grid imcrm-grid-cols-[minmax(0,1fr)_4.75rem] imcrm-items-end imcrm-gap-2">
+            <Choice<string> label={preset.label} value={preset.current ?? '__custom'} options={preset.options} onChange={preset.onPick} />
+            {children}
+        </div>
+    );
+}
+
+/**
+ * «Texto»: fuente, tamaño (atajo + exacto), lo que el bloque agregue (color,
+ * alineación), grosor, interlineado, letras, itálica y mayúsculas.
+ */
+export function TypographySection({
+    editor,
+    defaults,
+    inheritFontLabel,
+    sizePreset,
+    children,
+    footer,
+    modified,
+    onReset,
+    defaultOpen,
+    title,
+}: {
+    editor: StyleEditor;
+    defaults?: { size?: number; lineHeight?: number };
+    inheritFontLabel?: string;
+    sizePreset?: QuickPreset;
+    /** Va después del tamaño: color del texto, alineación… */
+    children?: React.ReactNode;
+    /** Va al final: espacio entre párrafos… */
+    footer?: React.ReactNode;
+    modified?: boolean;
+    onReset?: () => void;
+    defaultOpen?: boolean;
+    title?: string;
+}): JSX.Element {
+    const { medium, st, set } = editor;
+    const unit = UNIT[medium];
+    const weight = st.font_weight != null ? String(st.font_weight) : 'auto';
+    const size = (
+        <NumberField
+            label={sizePreset ? __('Exacto') : __('Tamaño')}
+            unit={unit}
+            min={6}
+            max={96}
+            value={st.font_size}
+            onChange={(v) => set({ font_size: v })}
+            placeholder={defaults?.size != null ? fmt(defaults.size) : undefined}
+        />
+    );
+    return (
+        <StyleSection
+            title={title ?? __('Texto')}
+            modified={modified ?? hasAny(st, TYPO_KEYS)}
+            onReset={onReset ?? (() => editor.set(Object.fromEntries(TYPO_KEYS.map((k) => [k, undefined])) as Partial<BlockStyle>))}
+            defaultOpen={defaultOpen}
+            testId="style-typography"
+        >
+            <FontSelect
+                label={__('Fuente')}
+                value={st.font ?? null}
+                onChange={(f) => set({ font: f })}
+                medium={medium}
+                inheritLabel={inheritFontLabel ?? __('La del estilo general')}
+            />
+            {sizePreset ? <QuickRow preset={sizePreset}>{size}</QuickRow> : size}
+            {children}
+            <Choice<string>
+                label={__('Grosor')}
+                value={weight}
+                options={[
+                    { value: 'auto', label: __('Auto') },
+                    { value: '400', label: __('Normal') },
+                    { value: '600', label: __('Semi') },
+                    { value: '700', label: __('Negrita') },
+                    { value: '800', label: __('Extra') },
+                ]}
+                onChange={(v) => set({ font_weight: v === 'auto' ? null : (Number(v) as BlockStyle['font_weight']) })}
+            />
+            {(weight === '600' || weight === '800') && medium === 'email' && <Hint>{STYLE_CAVEATS.weight}</Hint>}
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                <NumberField
+                    label={__('Interlineado')}
+                    min={0.8}
+                    max={3}
+                    step={0.1}
+                    value={st.line_height}
+                    onChange={(v) => set({ line_height: v })}
+                    placeholder={defaults?.lineHeight != null ? fmt(defaults.lineHeight) : undefined}
+                />
+                <NumberField label={__('Entre letras')} unit={unit} min={-3} max={20} step={0.5} value={st.letter_spacing} onChange={(v) => set({ letter_spacing: v })} placeholder="0" />
+            </div>
+            <div className="imcrm-grid imcrm-grid-cols-[auto_1fr] imcrm-items-end imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Estilo')}</span>
+                    <button
+                        type="button"
+                        aria-pressed={!!st.italic}
+                        onClick={() => set({ italic: st.italic ? undefined : true })}
+                        className={cn(
+                            'imcrm-flex imcrm-h-7 imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-3 imcrm-text-xs imcrm-italic',
+                            st.italic ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-border-input imcrm-text-muted-foreground',
+                        )}
+                    >
+                        {__('Itálica')}
+                    </button>
+                </div>
+                <Choice<TextTransform>
+                    label={__('Mayúsculas')}
+                    value={st.text_transform ?? 'none'}
+                    options={[
+                        { value: 'none', label: 'Aa', title: __('Como está escrito') },
+                        { value: 'uppercase', label: 'AA', title: __('TODO EN MAYÚSCULAS') },
+                        { value: 'lowercase', label: 'aa', title: __('todo en minúsculas') },
+                        { value: 'capitalize', label: 'Aa Aa', title: __('Cada Palabra Con Mayúscula') },
+                    ]}
+                    onChange={(v) => set({ text_transform: v === 'none' ? undefined : v })}
+                />
+            </div>
+            {footer}
+        </StyleSection>
+    );
+}
+
+/**
+ * «Fondo»: el color (vive en el bloque) y, en el correo, si ocupa todo el
+ * ancho (banda) o es un recuadro dentro de los márgenes.
+ */
+export function BackgroundSection({
+    editor,
+    background,
+    onBackground,
+    onReset,
+    defaultOpen,
+}: {
+    editor: StyleEditor;
+    background: string | null | undefined;
+    onBackground: (next: string | null) => void;
+    /** Quita el color y el modo en un solo paso. */
+    onReset: () => void;
+    defaultOpen?: boolean;
+}): JSX.Element {
+    const { medium, st, set } = editor;
+    const sup = STYLE_SUPPORT[medium];
+    const boxy = (st.border_width ?? 0) > 0 || (st.radius ?? 0) > 0 || (!!st.shadow && st.shadow !== 'none');
+    return (
+        <StyleSection title={__('Fondo')} modified={!!background || st.bg_mode != null} onReset={onReset} defaultOpen={defaultOpen} testId="style-background">
+            <ColorField label={__('Color de fondo')} value={background} onChange={onBackground} placeholder={__('sin fondo')} />
+            {sup.bgMode && background && (
+                <Choice<'band' | 'box'>
+                    label={__('El fondo ocupa')}
+                    value={st.bg_mode ?? (boxy ? 'box' : 'band')}
+                    options={[
+                        { value: 'band', label: __('Todo el ancho'), title: __('Una banda de borde a borde del correo') },
+                        { value: 'box', label: __('Un recuadro'), title: __('Una tarjeta dentro de los márgenes') },
+                    ]}
+                    onChange={(v) => set({ bg_mode: v })}
+                />
+            )}
+        </StyleSection>
+    );
+}
+
+/**
+ * «Espaciado»: un atajo rápido opcional (vive en el bloque) + márgenes y
+ * relleno exactos. Un valor exacto pisa al atajo; elegir un atajo borra los
+ * exactos de arriba y abajo (eso lo resuelve `preset.onPick`).
+ */
+export function SpacingSection({
+    editor,
+    defaults,
+    preset,
+    modified,
+    onReset,
+    defaultOpen,
+}: {
+    editor: StyleEditor;
+    defaults?: { padding?: number; margin?: number };
+    preset?: QuickPreset;
+    modified?: boolean;
+    onReset?: () => void;
+    defaultOpen?: boolean;
+}): JSX.Element {
+    const { medium, st, set } = editor;
+    const unit = UNIT[medium];
+    const mph = defaults?.margin != null ? String(defaults.margin) : undefined;
+    return (
+        <StyleSection
+            title={__('Espaciado')}
+            modified={modified ?? hasAny(st, SPACE_KEYS)}
+            onReset={onReset ?? (() => set(Object.fromEntries(SPACE_KEYS.map((k) => [k, undefined])) as Partial<BlockStyle>))}
+            defaultOpen={defaultOpen}
+            testId="style-spacing"
+        >
+            {preset && <Choice<string> label={preset.label} value={preset.current ?? '__custom'} options={preset.options} onChange={preset.onPick} />}
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                <NumberField label={__('Margen arriba')} unit={unit} min={0} max={160} value={st.margin_top} onChange={(v) => set({ margin_top: v })} placeholder={mph} />
+                <NumberField label={__('Margen abajo')} unit={unit} min={0} max={160} value={st.margin_bottom} onChange={(v) => set({ margin_bottom: v })} placeholder={mph} />
+            </div>
+            <PaddingControls unit={unit} value={st} onPatch={set} placeholder={defaults?.padding} />
+            <Hint>
+                {preset
+                    ? __('El margen separa el bloque de los demás; el relleno es el aire entre el borde y el contenido. Un número exacto manda sobre el atajo de arriba.')
+                    : __('El margen separa el bloque de los demás; el relleno es el aire entre el borde y el contenido. Vacío = automático.')}
+            </Hint>
+        </StyleSection>
+    );
+}
+
+/** «Borde, esquinas y sombra» del bloque (en el PDF, sólo «Borde»). */
+export function BorderSection({ editor, title, defaultOpen }: { editor: StyleEditor; title?: string; defaultOpen?: boolean }): JSX.Element {
+    const { medium, st, set } = editor;
+    const sup = STYLE_SUPPORT[medium];
+    const keys = STYLE_KEYS.border;
+    return (
+        <StyleSection
+            title={title ?? (sup.shadow ? __('Borde, esquinas y sombra') : __('Borde'))}
+            modified={hasAny(st, keys)}
+            onReset={() => set(Object.fromEntries(keys.map((k) => [k, undefined])) as Partial<BlockStyle>)}
+            defaultOpen={defaultOpen}
+            testId="style-border"
+        >
+            <BorderControls medium={medium} value={st} onPatch={set} withSides />
+        </StyleSection>
+    );
+}
+
+/**
+ * Sección propia de un bloque (Botón, Imagen, Línea, Disposición…) con el
+ * mismo aspecto plegable que las demás.
+ */
+export function ElementSection({
+    title,
+    children,
+    defaultOpen = true,
+    modified,
+    onReset,
+    testId,
+}: {
+    title: string;
+    children: React.ReactNode;
+    defaultOpen?: boolean;
+    modified?: boolean;
+    onReset?: () => void;
+    testId?: string;
+}): JSX.Element {
+    return (
+        <StyleSection title={title} defaultOpen={defaultOpen} modified={modified} onReset={onReset} testId={testId}>
+            {children}
+        </StyleSection>
+    );
+}
+
 export interface BlockStylePanelProps {
     medium: DesignMedium;
     value: BlockStyle | undefined;
@@ -448,8 +812,6 @@ export interface BlockStylePanelProps {
     typography?: boolean;
     /** Margen, relleno, borde, esquinas y sombra. */
     box?: boolean;
-    /** El bloque tiene un fondo elegido (habilita banda / recuadro). */
-    hasBackground?: boolean;
     /** Lo que se usa si el campo queda vacío (se muestra como pista). */
     defaults?: { size?: number; lineHeight?: number; padding?: number; margin?: number };
     /** Etiqueta de "la tipografía del estilo general". */
@@ -457,58 +819,16 @@ export interface BlockStylePanelProps {
 }
 
 /**
- * Tipografía + Espaciado + Borde/esquinas/sombra de un bloque, en secciones
- * plegables. Los números son px en el correo y pt en el PDF.
+ * Tipografía + Espaciado + Borde de una caja sin controles propios (el fondo
+ * y recuadro de UNA columna). Los bloques componen las secciones de arriba.
  */
 export function BlockStylePanel(p: BlockStylePanelProps): JSX.Element {
-    const st = p.value ?? {};
-    const unit = UNIT[p.medium];
-    const sup = STYLE_SUPPORT[p.medium];
-    const set = (patch: Partial<BlockStyle>): void => p.onChange(cleanStyle({ ...st, ...patch }));
-    const reset = (keys: readonly string[]): void => {
-        const next: Record<string, unknown> = { ...st };
-        for (const k of keys) delete next[k];
-        p.onChange(cleanStyle(next as BlockStyle));
-    };
+    const editor = styleEditor(p.medium, p.value, p.onChange);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5" data-testid="block-style-panel">
-            <StyleClipboard value={p.value} onPaste={(pasted) => p.onChange(cleanStyle({ ...pasted }))} />
-            {p.typography && (
-                <StyleSection title={__('Tipografía')} modified={hasAny(st, TYPO_KEYS)} onReset={() => reset(TYPO_KEYS)} testId="style-typography">
-                    <TypographyControls medium={p.medium} value={st} onPatch={set} defaults={p.defaults} inheritFontLabel={p.inheritFontLabel} />
-                </StyleSection>
-            )}
-            {p.box && (
-                <StyleSection title={__('Espaciado')} modified={hasAny(st, SPACE_KEYS)} onReset={() => reset(SPACE_KEYS)} testId="style-spacing">
-                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                        <NumberField label={__('Margen arriba')} unit={unit} min={0} max={160} value={st.margin_top} onChange={(v) => set({ margin_top: v })} placeholder={p.defaults?.margin != null ? String(p.defaults.margin) : undefined} />
-                        <NumberField label={__('Margen abajo')} unit={unit} min={0} max={160} value={st.margin_bottom} onChange={(v) => set({ margin_bottom: v })} placeholder={p.defaults?.margin != null ? String(p.defaults.margin) : undefined} />
-                    </div>
-                    <PaddingControls unit={unit} value={st} onPatch={set} placeholder={p.defaults?.padding} />
-                    <Hint>{__('El margen separa el bloque de los demás; el relleno es el aire entre el borde y el contenido. Vacío = automático.')}</Hint>
-                </StyleSection>
-            )}
-            {p.box && (
-                <StyleSection
-                    title={sup.shadow ? __('Borde, esquinas y sombra') : __('Borde')}
-                    modified={hasAny(st, BORDER_KEYS)}
-                    onReset={() => reset(BORDER_KEYS)}
-                    testId="style-border"
-                >
-                    <BorderControls medium={p.medium} value={st} onPatch={set} withSides />
-                    {sup.bgMode && p.hasBackground && (
-                        <Choice<'band' | 'box'>
-                            label={__('El fondo ocupa')}
-                            value={st.bg_mode ?? ((st.border_width ?? 0) > 0 || (st.radius ?? 0) > 0 || (st.shadow && st.shadow !== 'none') ? 'box' : 'band')}
-                            options={[
-                                { value: 'band', label: __('Todo el ancho'), title: __('Una banda de borde a borde del correo') },
-                                { value: 'box', label: __('Un recuadro'), title: __('Una tarjeta dentro de los márgenes') },
-                            ]}
-                            onChange={(v) => set({ bg_mode: v })}
-                        />
-                    )}
-                </StyleSection>
-            )}
+            {p.typography && <TypographySection editor={editor} defaults={p.defaults} inheritFontLabel={p.inheritFontLabel} />}
+            {p.box && <SpacingSection editor={editor} defaults={p.defaults} />}
+            {p.box && <BorderSection editor={editor} />}
         </div>
     );
 }
@@ -529,19 +849,20 @@ function readClip(): BlockStyle | null {
  * de correos y el de PDF: es el mismo formato; lo que el PDF no dibuja se
  * ignora). Vive en la sesión del navegador.
  */
-function StyleClipboard({ value, onPaste }: { value: BlockStyle | undefined; onPaste: (st: BlockStyle) => void }): JSX.Element {
+export function DesignClipboard({ value, onPaste }: { value: BlockStyle | undefined; onPaste: (st: BlockStyle | undefined) => void }): JSX.Element {
     const toast = useToast();
     const [, bump] = useState(0);
     const clip = readClip();
     const btn =
         'imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground disabled:imcrm-pointer-events-none disabled:imcrm-opacity-40';
     return (
-        <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1 imcrm-border-t imcrm-border-border imcrm-pt-2.5">
-            <span className="imcrm-mr-auto imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{__('Diseño')}</span>
+        <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-1" data-testid="design-clipboard">
+            <span className="imcrm-mr-auto imcrm-text-[11px] imcrm-text-muted-foreground">{__('Mismo estilo en otro bloque:')}</span>
             <button
                 type="button"
                 className={btn}
                 disabled={!value}
+                title={__('Copia el texto, el espaciado y el borde de este bloque')}
                 onClick={() => {
                     try {
                         sessionStorage.setItem(CLIP_KEY, JSON.stringify(value ?? {}));
@@ -549,7 +870,7 @@ function StyleClipboard({ value, onPaste }: { value: BlockStyle | undefined; onP
                         /* sin almacenamiento: no se puede copiar */
                     }
                     bump((n) => n + 1);
-                    toast.success(__('Diseño copiado: elegí otro bloque y tocá «Pegar»'));
+                    toast.success(__('Estilo copiado: elegí otro bloque y tocá «Pegar»'));
                 }}
             >
                 <Copy className="imcrm-h-3 imcrm-w-3" />
@@ -560,94 +881,13 @@ function StyleClipboard({ value, onPaste }: { value: BlockStyle | undefined; onP
                 className={btn}
                 disabled={!clip}
                 onClick={() => {
-                    if (clip) onPaste(clip);
+                    if (clip) onPaste(cleanStyle({ ...clip }));
                 }}
             >
                 <ClipboardPaste className="imcrm-h-3 imcrm-w-3" />
                 {__('Pegar')}
             </button>
         </div>
-    );
-}
-
-function TypographyControls({
-    medium,
-    value: st,
-    onPatch,
-    defaults,
-    inheritFontLabel,
-}: {
-    medium: DesignMedium;
-    value: BlockStyle;
-    onPatch: (patch: Partial<BlockStyle>) => void;
-    defaults?: BlockStylePanelProps['defaults'];
-    inheritFontLabel?: string;
-}): JSX.Element {
-    const unit = UNIT[medium];
-    const weight = st.font_weight != null ? String(st.font_weight) : 'auto';
-    return (
-        <>
-            <FontSelect
-                label={__('Fuente')}
-                value={st.font ?? null}
-                onChange={(f) => onPatch({ font: f })}
-                medium={medium}
-                inheritLabel={inheritFontLabel ?? __('La del estilo general')}
-            />
-            <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
-                <NumberField label={__('Tamaño')} unit={unit} min={6} max={96} value={st.font_size} onChange={(v) => onPatch({ font_size: v })} placeholder={defaults?.size != null ? String(defaults.size) : undefined} />
-                <NumberField
-                    label={__('Interlineado')}
-                    min={0.8}
-                    max={3}
-                    step={0.1}
-                    value={st.line_height}
-                    onChange={(v) => onPatch({ line_height: v })}
-                    placeholder={defaults?.lineHeight != null ? fmt(defaults.lineHeight) : undefined}
-                />
-                <NumberField label={__('Entre letras')} unit={unit} min={-3} max={20} step={0.5} value={st.letter_spacing} onChange={(v) => onPatch({ letter_spacing: v })} placeholder="0" />
-            </div>
-            <Choice<string>
-                label={__('Grosor')}
-                value={weight}
-                options={[
-                    { value: 'auto', label: __('Auto') },
-                    { value: '400', label: __('Normal') },
-                    { value: '600', label: __('Semi') },
-                    { value: '700', label: __('Negrita') },
-                    { value: '800', label: __('Extra') },
-                ]}
-                onChange={(v) => onPatch({ font_weight: v === 'auto' ? null : (Number(v) as BlockStyle['font_weight']) })}
-            />
-            {(weight === '600' || weight === '800') && <Hint>{STYLE_CAVEATS.weight}</Hint>}
-            <div className="imcrm-grid imcrm-grid-cols-[auto_1fr] imcrm-items-end imcrm-gap-2">
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Estilo')}</span>
-                    <button
-                        type="button"
-                        aria-pressed={!!st.italic}
-                        onClick={() => onPatch({ italic: st.italic ? undefined : true })}
-                        className={cn(
-                            'imcrm-flex imcrm-h-7 imcrm-items-center imcrm-rounded-md imcrm-border imcrm-px-3 imcrm-text-xs imcrm-italic',
-                            st.italic ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-border-input imcrm-text-muted-foreground',
-                        )}
-                    >
-                        {__('Itálica')}
-                    </button>
-                </div>
-                <Choice<TextTransform>
-                    label={__('Mayúsculas')}
-                    value={st.text_transform ?? 'none'}
-                    options={[
-                        { value: 'none', label: 'Aa', title: __('Como está escrito') },
-                        { value: 'uppercase', label: 'AA', title: __('TODO EN MAYÚSCULAS') },
-                        { value: 'lowercase', label: 'aa', title: __('todo en minúsculas') },
-                        { value: 'capitalize', label: 'Aa Aa', title: __('Cada Palabra Con Mayúscula') },
-                    ]}
-                    onChange={(v) => onPatch({ text_transform: v === 'none' ? undefined : v })}
-                />
-            </div>
-        </>
     );
 }
 
@@ -818,17 +1058,31 @@ export function ButtonStylePanel({
     onChange,
     fullWidth,
     defaultRadius,
+    children,
+    modified,
+    onReset,
 }: {
     value: ElementStyle | undefined;
     onChange: (next: ElementStyle | undefined) => void;
     fullWidth: boolean;
     defaultRadius: number;
+    /** v0.1.273 — alineación, ancho y colores del botón, en la misma sección. */
+    children?: React.ReactNode;
+    modified?: boolean;
+    onReset?: () => void;
 }): JSX.Element {
     const e = value ?? {};
     const set = (patch: Partial<ElementStyle>): void => onChange(cleanStyle({ ...e, ...patch }));
     const keys = ['radius', 'border_width', 'border_style', 'border_color', 'shadow', 'pad_y', 'pad_x', 'width'];
     return (
-        <StyleSection title={__('Forma del botón')} modified={hasAny(e as BlockStyle, keys)} onReset={() => onChange(undefined)} defaultOpen testId="style-button">
+        <StyleSection
+            title={__('Botón')}
+            modified={(modified ?? false) || hasAny(e as BlockStyle, keys)}
+            onReset={onReset ?? (() => onChange(undefined))}
+            defaultOpen
+            testId="style-button"
+        >
+            {children}
             <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
                 <NumberField label={__('Relleno vertical')} unit="px" min={0} max={60} value={e.pad_y} onChange={(v) => set({ pad_y: v })} placeholder="12" />
                 <NumberField label={__('Relleno lateral')} unit="px" min={0} max={120} value={e.pad_x} onChange={(v) => set({ pad_x: v })} placeholder="26" />
@@ -845,17 +1099,22 @@ export function ImageFramePanel({
     value,
     onChange,
     defaultRadius,
+    children,
 }: {
     medium: DesignMedium;
     value: ElementStyle | undefined;
     onChange: (next: ElementStyle | undefined) => void;
     defaultRadius?: number;
+    /** v0.1.273 — ancho y alineación de la imagen, en la misma sección. */
+    children?: React.ReactNode;
 }): JSX.Element {
     const e = value ?? {};
     const set = (patch: Partial<ElementStyle>): void => onChange(cleanStyle({ ...e, ...patch }));
     const keys = ['radius', 'border_width', 'border_style', 'border_color', 'shadow'];
     return (
-        <StyleSection title={__('Marco de la imagen')} modified={hasAny(e as BlockStyle, keys)} onReset={() => onChange(undefined)} testId="style-frame">
+        <StyleSection title={__('Imagen')} modified={hasAny(e as BlockStyle, keys)} onReset={() => onChange(undefined)} defaultOpen testId="style-frame">
+            {children}
+            {children && <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{__('Marco')}</p>}
             <BorderControls medium={medium} value={e} onPatch={(pt) => set(pt as Partial<ElementStyle>)} defaultRadius={defaultRadius} />
         </StyleSection>
     );

@@ -48,12 +48,12 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { FontSelect, NumberField } from '@/components/design/DesignStyleControls';
+import { ColorField, FontSelect, NumberField } from '@/components/design/DesignStyleControls';
 
-import { ColorRow } from '../template-editor-core/BlockStyleEditor';
 import { MergeTagInput, type MergeTagSection } from '../automations/MergeTagInput';
 import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
 import { DocumentBlockInspector } from './DocumentBlockInspector';
+import type { InspectorTab } from '../automations/email/EmailBlockInspector';
 import {
     appendToDocColumn,
     duplicateDocBlock,
@@ -201,7 +201,9 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
     );
     const dirty = JSON.stringify([name, filename, design, portalVisible]) !== savedSnapshot;
     const [selected, setSelected] = useState<string | null>(null);
-    const [leftTab, setLeftTab] = useState<'blocks' | 'page'>('blocks');
+    const [leftTab, setLeftTab] = useState<'blocks' | 'outline' | 'page'>('blocks');
+    // v0.1.273 — la pestaña del panel del bloque se recuerda al cambiar de bloque.
+    const [inspTab, setInspTab] = useState<InspectorTab>('content');
     const [mobileTab, setMobileTab] = useState<'add' | 'preview' | 'edit'>('preview');
     const [mode, setMode] = useState<'real' | 'tags'>('real');
     const [recordId, setRecordId] = useState<number | null>(null);
@@ -287,11 +289,13 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
 
     const selectedBlock = findDocBlock(design, selected);
     const selectedLoc = selected ? locateDocBlock(design, selected) : null;
+    const blockCount = design.blocks.reduce((n, b) => n + 1 + (b.type === 'columns' ? b.columns.reduce((m, c) => m + c.blocks.length, 0) : 0), 0);
 
     const add = (type: DocBlockType): void => {
         const block = makeDocBlock(type);
         commit((d) => insertDocBlock(d, block, selected));
         setSelected(block.id);
+        setInspTab('content');
         if (narrow) setMobileTab('edit');
     };
     const onSelect = (id: string | null): void => {
@@ -342,10 +346,14 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
     const left = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col">
             <div className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-p-2">
-                <TabBtn active={leftTab === 'blocks'} onClick={() => setLeftTab('blocks')}>
-                    {__('Bloques')}
+                <TabBtn active={leftTab === 'blocks'} onClick={() => setLeftTab('blocks')} testId="doc-left-blocks">
+                    {__('Agregar')}
                 </TabBtn>
-                <TabBtn active={leftTab === 'page'} onClick={() => setLeftTab('page')}>
+                <TabBtn active={leftTab === 'outline'} onClick={() => setLeftTab('outline')} testId="doc-left-outline">
+                    {__('Estructura')}
+                    {blockCount > 0 && <span className="imcrm-ml-1 imcrm-rounded-full imcrm-bg-muted imcrm-px-1.5 imcrm-text-[10px] imcrm-tabular-nums">{blockCount}</span>}
+                </TabBtn>
+                <TabBtn active={leftTab === 'page'} onClick={() => setLeftTab('page')} testId="doc-left-page">
                     {__('Hoja y estilo')}
                 </TabBtn>
             </div>
@@ -373,8 +381,9 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
                                 </button>
                             ))}
                         </div>
-                        <Outline design={design} selected={selected} onSelect={onSelect} />
                     </div>
+                ) : leftTab === 'outline' ? (
+                    <Outline design={design} selected={selected} onSelect={onSelect} onAdd={() => setLeftTab('blocks')} />
                 ) : (
                     <PagePanel
                         design={design}
@@ -399,6 +408,16 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
             key={selectedBlock.id}
             block={selectedBlock}
             inColumn={selectedLoc?.parentId !== null && selectedLoc?.parentId !== undefined}
+            parent={
+                selectedLoc?.parentId
+                    ? {
+                          label: `${__('Columnas')} · ${__('columna')} ${(selectedLoc.columnIndex ?? 0) + 1}`,
+                          onSelect: () => onSelect(selectedLoc.parentId),
+                      }
+                    : null
+            }
+            tab={inspTab}
+            onTab={setInspTab}
             design={design}
             fields={props.fields}
             listId={props.listId}
@@ -547,37 +566,61 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
     );
 }
 
-function Outline({ design, selected, onSelect }: { design: DocDesign; selected: string | null; onSelect: (id: string) => void }): JSX.Element | null {
-    if (design.blocks.length === 0) return null;
+function Outline({
+    design,
+    selected,
+    onSelect,
+    onAdd,
+}: {
+    design: DocDesign;
+    selected: string | null;
+    onSelect: (id: string) => void;
+    onAdd: () => void;
+}): JSX.Element {
+    if (design.blocks.length === 0) {
+        return (
+            <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-py-8 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground" data-testid="doc-outline">
+                {__('El documento todavía no tiene bloques.')}
+                <button type="button" onClick={onAdd} className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                    {__('Agregar el primero')}
+                </button>
+            </div>
+        );
+    }
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="doc-outline">
-            <p className="imcrm-mt-2 imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                <ListOrdered className="imcrm-h-3 imcrm-w-3" />
-                {__('En el documento')}
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="doc-outline">
+            <p className="imcrm-mb-1.5 imcrm-flex imcrm-items-start imcrm-gap-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                <ListOrdered className="imcrm-mt-px imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                {__('El orden del documento, de arriba hacia abajo. Tocá un bloque para editarlo.')}
             </p>
             {design.blocks.map((b) => (
                 <div key={b.id}>
                     <OutlineRow label={__(DOC_BLOCK_LABELS[b.type])} active={selected === b.id} onClick={() => onSelect(b.id)} />
                     {b.type === 'columns' &&
-                        b.columns.map((c, ci) =>
-                            c.blocks.map((ib) => (
-                                <OutlineRow key={ib.id} indent label={`${ci + 1} · ${__(DOC_BLOCK_LABELS[ib.type])}`} active={selected === ib.id} onClick={() => onSelect(ib.id)} />
-                            )),
-                        )}
+                        b.columns.map((c, ci) => (
+                            <div key={ci} className="imcrm-ml-3 imcrm-border-l imcrm-border-border imcrm-pl-2">
+                                <p className="imcrm-px-2 imcrm-py-0.5 imcrm-text-[10.5px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                    {__('Columna')} {ci + 1}
+                                    {c.blocks.length === 0 && <span className="imcrm-ml-1 imcrm-normal-case imcrm-tracking-normal">· {__('vacía')}</span>}
+                                </p>
+                                {c.blocks.map((ib) => (
+                                    <OutlineRow key={ib.id} label={__(DOC_BLOCK_LABELS[ib.type])} active={selected === ib.id} onClick={() => onSelect(ib.id)} />
+                                ))}
+                            </div>
+                        ))}
                 </div>
             ))}
         </div>
     );
 }
 
-function OutlineRow({ label, active, onClick, indent }: { label: string; active: boolean; onClick: () => void; indent?: boolean }): JSX.Element {
+function OutlineRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
             className={cn(
                 'imcrm-flex imcrm-w-full imcrm-items-center imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-left imcrm-text-xs hover:imcrm-bg-accent',
-                indent && 'imcrm-pl-5 imcrm-text-muted-foreground',
                 active && 'imcrm-bg-primary/10 imcrm-font-medium imcrm-text-primary',
             )}
         >
@@ -679,10 +722,12 @@ function PagePanel({
                 </p>
             </Section>
             <Section title={__('Colores')}>
-                <ColorRow label={__('Acento (títulos, tabla, total)')} value={t.accent} onChange={(v) => v && onTheme({ accent: v }, 'accent')} />
-                <ColorRow label={__('Texto')} value={t.text} onChange={(v) => v && onTheme({ text: v }, 'text')} />
-                <ColorRow label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onTheme({ muted: v }, 'muted')} />
-                <ColorRow label={__('Líneas')} value={t.border} onChange={(v) => v && onTheme({ border: v }, 'border')} />
+                <ColorField label={__('Acento (títulos, tabla, total)')} value={t.accent} onChange={(v) => v && onTheme({ accent: v }, 'accent')} allowEmpty={false} />
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <ColorField label={__('Texto')} value={t.text} onChange={(v) => v && onTheme({ text: v }, 'text')} allowEmpty={false} />
+                    <ColorField label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onTheme({ muted: v }, 'muted')} allowEmpty={false} />
+                    <ColorField label={__('Líneas')} value={t.border} onChange={(v) => v && onTheme({ border: v }, 'border')} allowEmpty={false} />
+                </div>
             </Section>
             <Section title={__('Pie de página')}>
                 <Check label={__('Numerar las páginas («Página 1 de 2»)')} checked={design.footer.page_numbers} onChange={(v) => onFooter({ page_numbers: v }, 'page_numbers')} />
@@ -778,14 +823,15 @@ function PagePanel({
     );
 }
 
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element {
+function TabBtn({ active, onClick, children, testId }: { active: boolean; onClick: () => void; children: React.ReactNode; testId?: string }): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
+            data-testid={testId}
             aria-pressed={active}
             className={cn(
-                'imcrm-flex-1 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent',
+                'imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-whitespace-nowrap imcrm-rounded-md imcrm-px-1.5 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent',
                 active && 'imcrm-bg-primary/10 imcrm-text-primary',
             )}
         >

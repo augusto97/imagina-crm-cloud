@@ -2674,6 +2674,28 @@ en línea (Gmail recorta `<style>` en varios casos y Outlook ignora la mitad);
 ofrecer esquinas y sombras en el PDF dibujándolas con canvas (pdfmake no lo
 soporta en tablas y el resultado no se imprime bien).
 
+**Addendum v0.1.273 — UX de los editores (correo y PDF).** Con la capa de
+estilo de arriba los paneles quedaron con controles repetidos (el «Tamaño»
+Grande/Mediano/Chico del bloque y el tamaño numérico de «Tipografía»; el
+«Espacio arriba y abajo» del bloque y los márgenes exactos; el color de fondo en
+una sección y la banda/recuadro en otra). Regla desde acá: **cada ajuste
+aparece una sola vez**. Los valores rápidos que viven en el bloque (`level`,
+`size`, `padding`) se muestran como **atajo en la misma fila que el valor
+exacto** del estilo; el atajo se marca sólo si no hay un exacto que lo pise, y
+elegirlo **borra el exacto en el mismo cambio** (un solo paso de deshacer). Sin
+migración: el modelo no cambia, sólo dónde se edita. El panel del bloque se
+divide en **Contenido** y **Estilo** (pestaña recordada entre bloques; un
+bloque que tiene sólo una de las dos no muestra pestañas), y el esquema del
+documento pasa a una pestaña propia **Estructura** (antes vivía debajo de la
+paleta de bloques y se confundía con ella). Las secciones del panel Estilo son
+piezas componibles de `DesignStyleControls` (`TypographySection`,
+`BackgroundSection`, `SpacingSection`, `BorderSection`, `ElementSection`) que
+los dos inspectores ordenan según el bloque; los atajos del correo son
+funciones puras con tests (`inspectorPresets.ts`). Descartado: un único panel
+largo con todo abierto (era el problema) y fusionar el nivel del título con el
+tamaño numérico en el modelo (rompería los diseños guardados y el `<h1>`/`<h2>`
+que el correo necesita).
+
 ---
 
-**Versión del documento:** 1.71.0 (estilo por bloque compartido por correos y PDF + tipografías — ADR-S37)
+**Versión del documento:** 1.72.0 (UX de los editores de correo y PDF: Contenido/Estilo y un ajuste por lugar — addendum ADR-S37)
