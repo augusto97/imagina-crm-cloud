@@ -52,7 +52,7 @@ interface FooterAggregateCellProps {
     onChange: (kind: AggregateKind | undefined) => void;
     /**
      * Señal para ABRIR el menú desde afuera (v0.1.160): el item "Calcular"
-     * del menú de la columna manda el usuario acá, que es donde el cálculo
+     * del menú de la columna manda el usuario aquí, que es donde el cálculo
      * realmente se elige. Cambia de valor en cada pedido.
      */
     openSignal?: number;

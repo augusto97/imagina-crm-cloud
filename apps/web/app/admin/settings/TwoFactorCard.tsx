@@ -143,10 +143,10 @@ export function TwoFactorCard(): JSX.Element {
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-p-4">
                     <div>
                         <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                            {__('Guardá estos códigos de respaldo')}
+                            {__('Guarda estos códigos de respaldo')}
                         </p>
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                            {__('Cada uno sirve UNA vez para entrar si perdés el teléfono. No se vuelven a mostrar.')}
+                            {__('Cada uno sirve UNA vez para entrar si pierdes el teléfono. No se vuelven a mostrar.')}
                         </p>
                     </div>
                     <ul className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-font-mono imcrm-text-sm sm:imcrm-grid-cols-2">
@@ -198,7 +198,7 @@ export function TwoFactorCard(): JSX.Element {
                                 if (password !== '') disable.mutate();
                             }}
                         >
-                            <Label htmlFor="mfa-pw">{__('Confirmá con tu contraseña')}</Label>
+                            <Label htmlFor="mfa-pw">{__('Confirma con tu contraseña')}</Label>
                             <Input
                                 id="mfa-pw"
                                 type="password"
@@ -245,10 +245,10 @@ export function TwoFactorCard(): JSX.Element {
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3">
                         <div>
                             <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                                {__('1. Escaneá el código con tu app')}
+                                {__('1. Escanea el código con tu app')}
                             </p>
                             <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Google Authenticator, 1Password, Authy o la que uses. Si no podés escanear, cargá la clave a mano:')}
+                                {__('Google Authenticator, 1Password, Authy o la que uses. Si no puedes escanear, carga la clave a mano:')}
                             </p>
                             <p className="imcrm-mt-1 imcrm-break-all imcrm-font-mono imcrm-text-xs imcrm-text-foreground">
                                 {setup.secret}
@@ -264,7 +264,7 @@ export function TwoFactorCard(): JSX.Element {
                                 if (code.trim().length >= 6) enable.mutate();
                             }}
                         >
-                            <Label htmlFor="mfa-confirm">{__('2. Escribí el código que muestra')}</Label>
+                            <Label htmlFor="mfa-confirm">{__('2. Escribe el código que muestra')}</Label>
                             <Input
                                 id="mfa-confirm"
                                 value={code}

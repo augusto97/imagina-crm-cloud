@@ -136,7 +136,7 @@ export function storeDraftDefaults(op: StoreBulkOpKind): Partial<StoreDraft> {
 export type StoreDraftResult = { ok: true; operation: StoreBulkOperation } | { ok: false; error: string };
 
 export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): StoreDraftResult {
-    if (d.op === null) return { ok: false, error: __('Elegí qué cambiar.') };
+    if (d.op === null) return { ok: false, error: __('Elige qué cambiar.') };
     const num = (s: string | undefined) => parseNumberInput(s ?? '', format);
     const round = () =>
         d.round
@@ -156,13 +156,13 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
                 break;
             }
             const n = num(d.amount);
-            if (n === null) return { ok: false, error: __('Escribí el valor.') };
+            if (n === null) return { ok: false, error: __('Escribe el valor.') };
             const amount = kind === 'percent' ? (d.direction === 'down' ? -Math.abs(n) : Math.abs(n)) : n;
             raw = { op: d.op, change: { kind, amount, round: round() } };
             break;
         }
         case 'price_from_field': {
-            if (!d.sourceFieldId) return { ok: false, error: __('Elegí la columna de la que sale el precio.') };
+            if (!d.sourceFieldId) return { ok: false, error: __('Elige la columna de la que sale el precio.') };
             const factor = (d.factor ?? '').trim() === '' ? 1 : num(d.factor);
             if (factor === null || factor <= 0) return { ok: false, error: __('El multiplicador tiene que ser un número mayor que cero.') };
             const add = (d.amount ?? '').trim() === '' ? 0 : num(d.amount);
@@ -172,11 +172,11 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
         }
         case 'sale_dates':
             raw = { op: 'sale_dates', from: d.from || null, to: d.to || null };
-            if (!d.from && !d.to) return { ok: false, error: __('Elegí al menos una fecha (o dejá las dos vacías para sacar la programación).') };
+            if (!d.from && !d.to) return { ok: false, error: __('Elige al menos una fecha (o deja las dos vacías para sacar la programación).') };
             break;
         case 'stock': {
             const n = num(d.amount);
-            if (n === null || !Number.isInteger(n)) return { ok: false, error: __('Escribí un número entero de unidades.') };
+            if (n === null || !Number.isInteger(n)) return { ok: false, error: __('Escribe un número entero de unidades.') };
             raw = { op: 'stock', kind: d.kind ?? 'add', amount: n };
             break;
         }
@@ -190,7 +190,7 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
                 break;
             }
             const n = num(d.value);
-            if (n === null || !Number.isInteger(n) || n < 0) return { ok: false, error: __('Escribí un número entero (o vacío = el de la tienda).') };
+            if (n === null || !Number.isInteger(n) || n < 0) return { ok: false, error: __('Escribe un número entero (o vacío = el de la tienda).') };
             raw = { op: 'low_stock', value: n };
             break;
         }
@@ -208,13 +208,13 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
         case 'categories':
         case 'tags':
             if (!d.values || d.values.length === 0) {
-                if (d.mode !== 'replace') return { ok: false, error: __('Elegí al menos una.') };
+                if (d.mode !== 'replace') return { ok: false, error: __('Elige al menos una.') };
             }
             raw = { op: d.op, mode: d.mode ?? 'add', values: d.values ?? [] };
             break;
         case 'attribute':
-            if (!d.attributeName) return { ok: false, error: __('Elegí o escribí el atributo.') };
-            if (d.mode !== 'remove' && (!d.values || d.values.length === 0)) return { ok: false, error: __('Elegí o escribí al menos un valor.') };
+            if (!d.attributeName) return { ok: false, error: __('Elige o escribe el atributo.') };
+            if (d.mode !== 'remove' && (!d.values || d.values.length === 0)) return { ok: false, error: __('Elige o escribe al menos un valor.') };
             raw = {
                 op: 'attribute',
                 mode: d.mode ?? 'add',
@@ -229,7 +229,7 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
                 break;
             }
             const n = num(d.value);
-            if (n === null || n < 0) return { ok: false, error: __('Escribí el peso.') };
+            if (n === null || n < 0) return { ok: false, error: __('Escribe el peso.') };
             raw = { op: 'weight', value: n };
             break;
         }
@@ -238,23 +238,23 @@ export function storeDraftToOperation(d: StoreDraft, format?: NumberFormatId): S
             const l = dim(d.length);
             const w = dim(d.width);
             const h = dim(d.height);
-            if (l === undefined && w === undefined && h === undefined) return { ok: false, error: __('Completá al menos una medida.') };
-            if ([l, w, h].some((x) => x === null)) return { ok: false, error: __('Revisá las medidas.') };
+            if (l === undefined && w === undefined && h === undefined) return { ok: false, error: __('Completa al menos una medida.') };
+            if ([l, w, h].some((x) => x === null)) return { ok: false, error: __('Revisa las medidas.') };
             raw = { op: 'dimensions', ...(l !== undefined ? { length: l } : {}), ...(w !== undefined ? { width: w } : {}), ...(h !== undefined ? { height: h } : {}) };
             break;
         }
         case 'name':
-            if (d.kind === 'replace' ? !d.find : !d.text) return { ok: false, error: __('Escribí el texto.') };
+            if (d.kind === 'replace' ? !d.find : !d.text) return { ok: false, error: __('Escribe el texto.') };
             raw = { op: 'name', kind: d.kind ?? 'append', text: d.text ?? '', find: d.find ?? '' };
             break;
         case 'meta':
-            if (!d.metaKey) return { ok: false, error: __('Escribí la clave del campo.') };
+            if (!d.metaKey) return { ok: false, error: __('Escribe la clave del campo.') };
             raw = { op: 'meta', key: d.metaKey, value: (d.value ?? '') === '' ? null : d.value };
             break;
         default:
             return { ok: false, error: __('Operación desconocida.') };
     }
     const parsed = storeBulkOperationSchema.safeParse(raw);
-    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? __('Revisá la operación.') };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? __('Revisa la operación.') };
     return { ok: true, operation: parsed.data };
 }

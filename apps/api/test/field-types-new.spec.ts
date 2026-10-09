@@ -27,7 +27,7 @@ import { startPostgres, type TestPg } from './helpers/containers';
 const rt = new RealtimeService();
 const admin: Actor = { userId: 1, role: 'admin' };
 
-/** El controller completa `limit`/`sort_dir` con sus defaults; acá van a mano. */
+/** El controller completa `limit`/`sort_dir` con sus defaults; aquí van a mano. */
 const q = (extra: Record<string, unknown> = {}) =>
     ({ limit: 50, sort_dir: 'asc', ...extra }) as Parameters<RecordsService['list']>[3];
 

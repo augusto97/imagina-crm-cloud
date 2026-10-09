@@ -163,9 +163,9 @@ function errorEvent(err: unknown): AiChatEvent {
     if (err instanceof AiUnavailableError) return { type: 'error', code: err.code, message: err.message };
     if (err instanceof AiQuotaExceededError) return { type: 'error', code: err.code, message: err.message };
     const status = (err as { status?: number }).status;
-    if (status === 401) return { type: 'error', code: 'ai_bad_key', message: 'El proveedor rechazó la clave IA configurada. Revisala en Ajustes → Asistente IA (o Plataforma).' };
-    if (status === 429) return { type: 'error', code: 'ai_rate_limited', message: 'El proveedor está limitando las solicitudes. Probá de nuevo en unos segundos.' };
-    if (status === 529 || status === 503) return { type: 'error', code: 'ai_overloaded', message: 'El proveedor está sobrecargado. Probá de nuevo en un momento.' };
+    if (status === 401) return { type: 'error', code: 'ai_bad_key', message: 'El proveedor rechazó la clave IA configurada. Revísala en Ajustes → Asistente IA (o Plataforma).' };
+    if (status === 429) return { type: 'error', code: 'ai_rate_limited', message: 'El proveedor está limitando las solicitudes. Prueba de nuevo en unos segundos.' };
+    if (status === 529 || status === 503) return { type: 'error', code: 'ai_overloaded', message: 'El proveedor está sobrecargado. Prueba de nuevo en un momento.' };
     if ((err as { name?: string }).name === 'AbortError') return { type: 'error', code: 'aborted', message: 'Conexión cerrada.' };
     const message = err instanceof Error ? err.message : String(err);
     return { type: 'error', code: 'ai_error', message: `No se pudo completar el pedido: ${message}` };

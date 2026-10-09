@@ -79,7 +79,7 @@ export interface WriteBackInput {
     changed: Record<string, unknown>;
     /**
      * v0.1.214 — columnas que la empresa habilitó en esa lista (slugs del
-     * catálogo y `meta:<id del campo>`). Lo que no está acá no viaja.
+     * catálogo y `meta:<id del campo>`). Lo que no está aquí no viaja.
      */
     editable: readonly string[];
     /** Campos de otros plugins que cambiaron (sólo los habilitados viajan). */
@@ -95,7 +95,7 @@ export interface WriteBackInput {
 export interface WriteBackRequest {
     path: string;
     body: Record<string, unknown>;
-    /** Lo que se mandó, en criollo, para el registro de lo enviado. */
+    /** Lo que se mandó, en lenguaje claro, para el registro de lo enviado. */
     fields: string[];
 }
 
@@ -141,7 +141,7 @@ export function metaOut(value: unknown, sample: string | null): unknown {
  * pisaría, por ejemplo, un stock que la tienda bajó con una venta que todavía
  * no llegó— y sólo lo habilitado en «Columnas que se editan desde la app»
  * (v0.1.214). Qué fila acepta qué lo decide `storeCellAccess` ANTES de
- * guardar; acá se arma el pedido.
+ * guardar; aquí se arma el pedido.
  */
 export function buildWriteBack(input: WriteBackInput): WriteBackRequest | null {
     const role = roleOfResource(input.resource);
@@ -302,7 +302,7 @@ export function wooDeliveryUrlProblem(url: string): string | null {
 export function wooDisabledHooksMessage(count: number, deliveryOrigin: string): string {
     return (
         `La tienda había desactivado ${count} aviso${count === 1 ? '' : 's'} porque no lograba entregarlos a ${deliveryOrigin}. ` +
-        'Los volvimos a activar; si se repite, revisá que la tienda pueda llegar a esa dirección (un firewall o un plugin de seguridad pueden bloquearla). ' +
+        'Los volvimos a activar; si se repite, revisa que la tienda pueda llegar a esa dirección (un firewall o un plugin de seguridad pueden bloquearla). ' +
         'Mientras tanto, la tienda se sincroniza cada hora.'
     );
 }

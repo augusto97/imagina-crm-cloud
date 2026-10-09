@@ -224,8 +224,8 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
         if (!dirty) return;
         e.preventDefault();
         const ok = await confirm({
-            title: __('Tenés cambios sin guardar'),
-            description: __('Si salís ahora se pierde lo que diseñaste desde la última vez que guardaste.'),
+            title: __('Tienes cambios sin guardar'),
+            description: __('Si sales ahora se pierde lo que diseñaste desde la última vez que guardaste.'),
             confirmLabel: __('Salir sin guardar'),
             destructive: true,
         });
@@ -264,7 +264,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                                         ? __('Diseño guardado')
                                         : origin === 'converted' || origin === 'legacy'
                                           ? __('Convertido de la plantilla anterior')
-                                          : __('Diseño automático: personalizalo y guardá')}
+                                          : __('Diseño automático: personalízalo y guarda')}
                                 </span>
                             </div>
                             <div className="imcrm-ml-2 imcrm-flex imcrm-items-center imcrm-gap-0.5">
@@ -308,7 +308,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                         </div>
 
                         <p className="imcrm-rounded-lg imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground md:imcrm-hidden">
-                            {__('El diseño se arma mejor en una pantalla más grande: acá podés agregar y mover bloques, pero no ajustarlos.')}
+                            {__('El diseño se arma mejor en una pantalla más grande: aquí puedes agregar y mover bloques, pero no ajustarlos.')}
                         </p>
                         <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-gap-3">
                             <aside className="imcrm-hidden imcrm-w-[252px] imcrm-shrink-0 imcrm-flex-col imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card lg:imcrm-flex">
@@ -361,7 +361,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                                 setGalleryOpen(false);
                                 toast.success(
                                     `${__('Plantilla aplicada:')} ${PORTAL_TEMPLATE_INFO[kind].name}`,
-                                    __('Revisala con un cliente de verdad y tocá Guardar. Ctrl+Z la deshace.'),
+                                    __('Revísala con un cliente de verdad y toca Guardar. Ctrl+Z la deshace.'),
                                 );
                             }}
                         />

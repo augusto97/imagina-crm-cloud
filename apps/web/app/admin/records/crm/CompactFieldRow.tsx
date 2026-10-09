@@ -42,7 +42,7 @@ interface CompactFieldRowProps {
     showTypeIcon?: boolean;
     /**
      * v0.1.213 — En una lista de tienda, por qué este campo no se puede
-     * cambiar acá (se muestra de sólo lectura, con el motivo). null = libre.
+     * cambiar aquí (se muestra de sólo lectura, con el motivo). null = libre.
      */
     lockedReason?: string | null;
     /** v0.1.233 — "Crear" opciones nuevas desde el selector (el portal no puede). */
@@ -268,7 +268,7 @@ function EditingControl({
                     className="imcrm-text-sm"
                 />
             );
-        // date/datetime no llegan acá: son inline controls (DateCellEditor).
+        // date/datetime no llegan aquí: son inline controls (DateCellEditor).
         case 'number':
         case 'currency':
             return (

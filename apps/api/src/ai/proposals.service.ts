@@ -11,7 +11,7 @@ import type { AiToolContext } from './tools/registry';
  * Aplicar una propuesta del asistente (ADR-S21). Es el ÚNICO punto por el
  * que una conversación termina escribiendo algo, y corre como la persona:
  * misma empresa, mismo usuario, misma capability que exigiría el botón de la
- * interfaz (se re-chequea acá aunque ya se chequeó al proponer — el rol
+ * interfaz (se re-chequea aquí aunque ya se chequeó al proponer — el rol
  * pudo cambiar entre medio). Queda en la bitácora con el título legible.
  */
 @Injectable()
@@ -53,7 +53,7 @@ export class ProposalsService {
         let applied: AiProposal;
         try {
             // Releída DENTRO del candado: si otra aplicación terminó entre la
-            // lectura de arriba y el claim, acá ya figura aplicada.
+            // lectura de arriba y el claim, aquí ya figura aplicada.
             const fresh = await this.store.get(ctx.tenantId, id);
             if (!fresh || fresh.proposal.applied) {
                 throw new ConflictException({ code: 'ai_proposal_applied', message: 'Esta propuesta ya se aplicó', data: { status: 409 } });

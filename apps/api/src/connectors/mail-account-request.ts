@@ -164,7 +164,7 @@ export function buildAccountMailRequest(
     const attachedB64 = (message.attachments ?? []).reduce((n, a) => n + a.contentBase64.length, 0);
     if (attachedB64 > GRAPH_MAX_ATTACHMENT_BASE64) {
         throw new Error(
-            'Outlook no acepta adjuntos de más de 3 MB por esta vía: achicá el PDF (imágenes más livianas) o enviá desde el SMTP de la empresa.',
+            'Outlook no acepta adjuntos de más de 3 MB por esta vía: achica el PDF (imágenes más livianas) o envia desde el SMTP de la empresa.',
         );
     }
     const list = (emails: string[]): Array<{ emailAddress: { address: string } }> =>
@@ -252,13 +252,13 @@ export function readAccountMailResponse(
             limit: true,
             message:
                 `${who} frenó el envío: la cuenta llegó a su límite de correos. ` +
-                'Vuelve a habilitarse sola (hasta 24 horas). Si pasa seguido, usá una cuenta con más cupo o un servidor SMTP.',
+                'Vuelve a habilitarse sola (hasta 24 horas). Si pasa seguido, usa una cuenta con más cupo o un servidor SMTP.',
         };
     }
     if (status === 401) {
         return {
             limit: false,
-            message: `La autorización de la cuenta de ${who} venció o se revocó: reconectala en Ajustes → Integraciones.`,
+            message: `La autorización de la cuenta de ${who} venció o se revocó: reconéctala en Ajustes → Integraciones.`,
         };
     }
     if (/insufficient|scope|ErrorAccessDenied|AccessDenied/i.test(text) || status === 403) {
@@ -267,7 +267,7 @@ export function readAccountMailResponse(
         }
         return {
             limit: false,
-            message: `${who} no deja enviar con esta conexión (falta el permiso de enviar correo o lo bloqueó el administrador de la cuenta). Reconectala en Ajustes → Integraciones.${detail ? ` (${detail})` : ''}`,
+            message: `${who} no deja enviar con esta conexión (falta el permiso de enviar correo o lo bloqueó el administrador de la cuenta). Reconéctala en Ajustes → Integraciones.${detail ? ` (${detail})` : ''}`,
         };
     }
     if (/MailboxNotEnabledForRESTAPI|mail service not enabled|failedPrecondition/i.test(text)) {

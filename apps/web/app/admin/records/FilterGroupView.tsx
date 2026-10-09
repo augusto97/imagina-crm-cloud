@@ -146,7 +146,7 @@ export function FilterGroupView({
                         {__('Sin filtros activos')}
                     </p>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Agregá tu primer filtro para acotar los resultados.')}
+                        {__('Agrega tu primer filtro para acotar los resultados.')}
                     </p>
                 </div>
                 <button

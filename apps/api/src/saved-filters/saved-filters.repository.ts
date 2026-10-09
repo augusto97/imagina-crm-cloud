@@ -7,7 +7,7 @@ export type SavedFilterRow = typeof savedFilters.$inferSelect;
 
 /**
  * Acceso a datos de saved_filters, tenant-scoped (RLS + tenant_id explícito).
- * La visibilidad personal/shared se resuelve acá: un usuario ve los filtros
+ * La visibilidad personal/shared se resuelve aquí: un usuario ve los filtros
  * del workspace (user_id null) + los suyos (user_id = él).
  */
 @Injectable()

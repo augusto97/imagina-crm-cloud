@@ -58,7 +58,7 @@ export interface MaterializeResult {
  *
  * Es el ÚNICO motor detrás de "Duplicar lista" y de las plantillas — ver el
  * comentario de `listBlueprintSchema` en shared para las reglas del formato.
- * Acá vive lo que necesita DB: resolver ids ↔ slugs, crear las piezas en el
+ * Aquí vive lo que necesita DB: resolver ids ↔ slugs, crear las piezas en el
  * orden correcto y no copiar lo que no debe copiarse.
  *
  * Orden de materialización (las dependencias mandan): todas las LISTAS
@@ -507,7 +507,7 @@ export class BlueprintService {
             if (listId === undefined) continue;
             const slugToId = slugMaps.get(bl.key)!;
             // Los ajustes (el campo de título) sólo en las listas que nacieron
-            // acá: una lista existente conserva los suyos.
+            // aquí: una lista existente conserva los suyos.
             if (createdLists[bl.key] !== undefined && Object.keys(bl.settings).length > 0) {
                 const settings = resolveLists(resolveFieldRefs(bl.settings, slugToId, slugMaps)) as Record<string, unknown>;
                 if (settings.title_field_id === null) delete settings.title_field_id;

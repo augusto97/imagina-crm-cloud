@@ -36,13 +36,13 @@ const PROVIDERS: Array<{
     dkimSelectors: string[];
     dkimNote: string;
 }> = [
-    { match: /(^|\.)gmail\.com$|(^|\.)google\.com$|(^|\.)googlemail\.com$/i, name: 'Google Workspace', spfInclude: 'include:_spf.google.com', dkimType: 'TXT', dkimSelectors: ['google'], dkimNote: 'Generá la clave en admin.google.com → Apps → Gmail → Autenticar correo y publicá el TXT que te da (selector "google").' },
-    { match: /(^|\.)office365\.com$|(^|\.)outlook\.com$|(^|\.)protection\.outlook\.com$/i, name: 'Microsoft 365', spfInclude: 'include:spf.protection.outlook.com', dkimType: 'CNAME', dkimSelectors: ['selector1', 'selector2'], dkimNote: 'Activá DKIM en Microsoft 365 (Defender → Email authentication) y creá los 2 CNAME selector1/selector2 que te indica.' },
-    { match: /(^|\.)brevo\.com$|(^|\.)sendinblue\.com$/i, name: 'Brevo', spfInclude: 'include:spf.brevo.com', dkimType: 'TXT', dkimSelectors: ['mail'], dkimNote: 'En Brevo → Senders & Domains → Authenticate copiá el TXT de `mail._domainkey`.' },
+    { match: /(^|\.)gmail\.com$|(^|\.)google\.com$|(^|\.)googlemail\.com$/i, name: 'Google Workspace', spfInclude: 'include:_spf.google.com', dkimType: 'TXT', dkimSelectors: ['google'], dkimNote: 'Genera la clave en admin.google.com → Apps → Gmail → Autenticar correo y publica el TXT que te da (selector "google").' },
+    { match: /(^|\.)office365\.com$|(^|\.)outlook\.com$|(^|\.)protection\.outlook\.com$/i, name: 'Microsoft 365', spfInclude: 'include:spf.protection.outlook.com', dkimType: 'CNAME', dkimSelectors: ['selector1', 'selector2'], dkimNote: 'Activa DKIM en Microsoft 365 (Defender → Email authentication) y crea los 2 CNAME selector1/selector2 que te indica.' },
+    { match: /(^|\.)brevo\.com$|(^|\.)sendinblue\.com$/i, name: 'Brevo', spfInclude: 'include:spf.brevo.com', dkimType: 'TXT', dkimSelectors: ['mail'], dkimNote: 'En Brevo → Senders & Domains → Authenticate copia el TXT de `mail._domainkey`.' },
     { match: /(^|\.)amazonses\.com$|(^|\.)awsapps\.com$/i, name: 'Amazon SES', spfInclude: 'include:amazonses.com', dkimType: 'CNAME', dkimSelectors: [], dkimNote: 'SES usa Easy DKIM: la consola (Verified identities) te da 3 CNAMEs para crear.' },
-    { match: /(^|\.)mailgun\.org$|(^|\.)mailgun\.com$/i, name: 'Mailgun', spfInclude: 'include:mailgun.org', dkimType: 'TXT', dkimSelectors: ['smtp', 'mailo', 'k1'], dkimNote: 'En Mailgun → Sending → Domain settings copiá el TXT `*._domainkey` que te indica.' },
-    { match: /(^|\.)sendgrid\.net$/i, name: 'SendGrid', spfInclude: 'include:sendgrid.net', dkimType: 'CNAME', dkimSelectors: ['s1', 's2'], dkimNote: 'En SendGrid → Settings → Sender Authentication creá los CNAME s1/s2 del asistente.' },
-    { match: /(^|\.)zoho\.com$|(^|\.)zoho\.eu$/i, name: 'Zoho Mail', spfInclude: 'include:zohomail.com', dkimType: 'TXT', dkimSelectors: ['zmail'], dkimNote: 'En Zoho Mail Admin → Email authentication generá el selector y publicá su TXT.' },
+    { match: /(^|\.)mailgun\.org$|(^|\.)mailgun\.com$/i, name: 'Mailgun', spfInclude: 'include:mailgun.org', dkimType: 'TXT', dkimSelectors: ['smtp', 'mailo', 'k1'], dkimNote: 'En Mailgun → Sending → Domain settings copia el TXT `*._domainkey` que te indica.' },
+    { match: /(^|\.)sendgrid\.net$/i, name: 'SendGrid', spfInclude: 'include:sendgrid.net', dkimType: 'CNAME', dkimSelectors: ['s1', 's2'], dkimNote: 'En SendGrid → Settings → Sender Authentication crea los CNAME s1/s2 del asistente.' },
+    { match: /(^|\.)zoho\.com$|(^|\.)zoho\.eu$/i, name: 'Zoho Mail', spfInclude: 'include:zohomail.com', dkimType: 'TXT', dkimSelectors: ['zmail'], dkimNote: 'En Zoho Mail Admin → Email authentication genera el selector y publica su TXT.' },
 ];
 
 /** Dominio del remitente: `Acme <ventas@acme.com>` → `acme.com`. */
@@ -79,7 +79,7 @@ export function deriveDnsRecords(cfg: SmtpConfig): {
             status: 'unknown',
             ...(provider
                 ? {}
-                : { note: 'Proveedor no reconocido: si tu proveedor SMTP publica un include propio (ej. spf.tuproveedor.com), usalo en lugar de a:host.' }),
+                : { note: 'Proveedor no reconocido: si tu proveedor SMTP publica un include propio (ej. spf.tuproveedor.com), úsalo en lugar de a:host.' }),
         },
         {
             purpose: 'dkim',
@@ -87,7 +87,7 @@ export function deriveDnsRecords(cfg: SmtpConfig): {
             host: provider?.dkimSelectors[0] ? `${provider.dkimSelectors[0]}._domainkey` : 'selector._domainkey',
             value: '',
             status: 'unknown',
-            note: provider?.dkimNote ?? 'La clave DKIM la genera tu proveedor SMTP: buscá "DKIM" en su panel y publicá el registro que te dé (host selector._domainkey).',
+            note: provider?.dkimNote ?? 'La clave DKIM la genera tu proveedor SMTP: busca "DKIM" en su panel y publica el registro que te dé (host selector._domainkey).',
         },
         {
             purpose: 'dmarc',
@@ -95,7 +95,7 @@ export function deriveDnsRecords(cfg: SmtpConfig): {
             host: '_dmarc',
             value: `v=DMARC1; p=none; rua=mailto:postmaster@${domain}`,
             status: 'unknown',
-            note: 'Empezá con p=none (solo monitoreo); cuando SPF y DKIM estén en verde podés subir a p=quarantine.',
+            note: 'Empieza con p=none (solo monitoreo); cuando SPF y DKIM estén en verde puedes subir a p=quarantine.',
         },
     ];
     return { domain, provider: provider?.name ?? 'desconocido', dkimSelectors: provider?.dkimSelectors ?? [], records };

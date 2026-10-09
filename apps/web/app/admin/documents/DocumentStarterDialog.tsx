@@ -28,7 +28,7 @@ import { fieldFitsRole, suggestRoleMapping } from '../templates/roleMapping';
 /**
  * v0.1.266 — Galería de plantillas de documentos (ADR-S35). Una plantilla no
  * conoce los campos de la lista: habla de ROLES ("el nombre del cliente", "el
- * valor a cobrar"). Acá se elige qué campo cumple cada uno (con sugerencia
+ * valor a cobrar"). Aquí se elige qué campo cumple cada uno (con sugerencia
  * automática por nombre y tipo, como en las plantillas de tableros) y se
  * cargan una vez los datos de quien cobra.
  */
@@ -116,7 +116,7 @@ export function DocumentStarterDialog({
                         <DialogHeader>
                             <DialogTitle>{__('Nueva plantilla de documento')}</DialogTitle>
                             <DialogDescription>
-                                {__('Elegí un punto de partida. Después cambiás todo en el editor: textos, colores, bloques.')}
+                                {__('Elige un punto de partida. Después cambias todo en el editor: textos, colores, bloques.')}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-3">
@@ -218,7 +218,7 @@ function StarterForm({
                     </button>
                     {__(starter.name)}
                 </DialogTitle>
-                <DialogDescription>{__('Elegí qué campo de la lista va en cada lugar y cargá tus datos. Lo que no elijas queda marcado entre corchetes para completarlo en el editor.')}</DialogDescription>
+                <DialogDescription>{__('Elige qué campo de la lista va en cada lugar y carga tus datos. Lo que no elijas queda marcado entre corchetes para completarlo en el editor.')}</DialogDescription>
             </DialogHeader>
 
             <div className="imcrm-grid imcrm-gap-5 md:imcrm-grid-cols-2">
@@ -233,7 +233,7 @@ function StarterForm({
                             <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs">
                                 <span className="imcrm-font-medium">{__('Las líneas salen de')}</span>
                                 <Select value={pathKey} onChange={(e) => setPathKey(e.target.value)} aria-label={__('Lista de los ítems')}>
-                                    <option value="">{__('Elegí la lista vinculada…')}</option>
+                                    <option value="">{__('Elige la lista vinculada…')}</option>
                                     {(paths.data ?? []).map((p) => (
                                         <option key={`${p.relation_field_id}:${p.direction}`} value={`${p.relation_field_id}:${p.direction}`}>
                                             {p.other_list_name} ({__('por')} «{p.relation_label}»)
@@ -242,7 +242,7 @@ function StarterForm({
                                 </Select>
                                 {paths.data && paths.data.length === 0 && (
                                     <span className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-300">
-                                        {__('Esta lista no está vinculada con otra. Usá la cuenta de cobro simple, o creá un campo «Relación» hacia la lista de los ítems.')}
+                                        {__('Esta lista no está vinculada con otra. Usa la cuenta de cobro simple, o crea un campo «Relación» hacia la lista de los ítems.')}
                                     </span>
                                 )}
                             </label>
@@ -293,7 +293,7 @@ function StarterForm({
                     <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-xs">
                         <span className="imcrm-font-medium">{__('Nota tributaria al pie')}</span>
                         <Textarea rows={3} value={issuer.tax_note} onChange={(e) => set('tax_note', e.target.value)} className="imcrm-text-xs" />
-                        <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Ajustala a tu régimen: es la declaración que suelen pedir las empresas para pagar una cuenta de cobro.')}</span>
+                        <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Ajústala a tu régimen: es la declaración que suelen pedir las empresas para pagar una cuenta de cobro.')}</span>
                     </label>
                 </div>
             </div>
@@ -334,7 +334,7 @@ function RoleSelect({
                 {!role.required && <span className="imcrm-font-normal imcrm-text-muted-foreground"> · {__('opcional')}</span>}
             </span>
             <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={__(role.label)}>
-                <option value="">{role.required ? __('Elegí un campo…') : __('— Sin usar —')}</option>
+                <option value="">{role.required ? __('Elige un campo…') : __('— Sin usar —')}</option>
                 {options.map((f) => (
                     <option key={f.id} value={f.slug}>
                         {f.label}

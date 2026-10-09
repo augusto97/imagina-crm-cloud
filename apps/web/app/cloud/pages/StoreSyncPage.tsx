@@ -191,7 +191,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
     return (
         <section className="imcrm-space-y-5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-5" data-testid="imcrm-store-sync-setup">
             <div>
-                <h2 className="imcrm-text-base imcrm-font-semibold">{__('Traé tu tienda a Imagina Base')}</h2>
+                <h2 className="imcrm-text-base imcrm-font-semibold">{__('Trae tu tienda a Imagina Base')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
                         'Creamos una carpeta con tres listas —Clientes, Productos (cada variación, como talla o color, va adentro de su producto) y Pedidos (lo que se compró va adentro de cada pedido)— y dos tableros: ventas e inventario. Después se mantienen al día solas. Cuánto compró cada cliente, cuánto vendió cada producto (y cada talla o color), qué está agotado o por agotarse y para cuántos meses alcanza el stock se calcula solo. Los productos, pedidos y clientes se siguen creando en WooCommerce: la app los refleja.',
@@ -204,7 +204,7 @@ function Setup({ connectionId, onDone }: { connectionId: number; onDone: (s: Sto
                 {(
                     [
                         ['customers', __('Clientes'), __('Los registrados. Los que compraron como invitados llegan igual, por sus pedidos.')],
-                        ['products', __('Productos'), __('Con sus variaciones (talla, color…), precios, categorías e inventario: stock, alertas de stock bajo y lo que vale lo que tenés.')],
+                        ['products', __('Productos'), __('Con sus variaciones (talla, color…), precios, categorías e inventario: stock, alertas de stock bajo y lo que vale lo que tienes.')],
                         ['orders', __('Pedidos'), __('Con lo que se compró en cada uno (adentro del pedido).')],
                     ] as const
                 ).map(([k, label, help]) => (
@@ -488,7 +488,7 @@ function Configured({
                             const ok = await confirm({
                                 title: __('¿Recorrer toda la tienda de nuevo?'),
                                 description: __(
-                                    'Se vuelven a leer todos los clientes, productos y pedidos (no se duplica nada: se actualiza lo que haya cambiado). Sirve si notás datos desactualizados. En una tienda grande puede tardar.',
+                                    'Se vuelven a leer todos los clientes, productos y pedidos (no se duplica nada: se actualiza lo que haya cambiado). Sirve si notas datos desactualizados. En una tienda grande puede tardar.',
                                 ),
                                 confirmLabel: __('Recorrer todo'),
                             });
@@ -537,7 +537,7 @@ function Configured({
                     onClick={async () => {
                         const ok = await confirm({
                             title: __('¿Dejar de sincronizar la tienda?'),
-                            description: __('Los datos quedan. Si la volvés a activar, se crean listas nuevas.'),
+                            description: __('Los datos quedan. Si la vuelves a activar, se crean listas nuevas.'),
                             confirmLabel: __('Dejar de sincronizar'),
                             destructive: true,
                         });
@@ -669,7 +669,7 @@ function WriteBackSection({
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                         {__(
-                            'Cambiá un precio, el stock, el nombre de un producto o el estado de un pedido en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
+                            'Cambia un precio, el stock, el nombre de un producto o el estado de un pedido en la app y se actualiza en la tienda. Sólo viaja lo que cambiaste: nunca se pisan datos que la tienda cambió mientras tanto.',
                         )}
                     </p>
                 </div>
@@ -707,7 +707,7 @@ function WriteBackSection({
                 <p className="imcrm-text-sm imcrm-font-medium">{__('Columnas que se editan desde la app')}</p>
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                     {__(
-                        'Elegí qué se puede cambiar desde cada lista. Lo que no marques se sigue editando en WooCommerce. Además, cada fila acepta lo que acepta la tienda: un producto con variaciones no tiene precio ni stock propio (se cambian en cada variación) y con el stock controlado el estado del stock lo calcula WooCommerce. Necesita una clave con permiso de Lectura/Escritura.',
+                        'Elige qué se puede cambiar desde cada lista. Lo que no marques se sigue editando en WooCommerce. Además, cada fila acepta lo que acepta la tienda: un producto con variaciones no tiene precio ni stock propio (se cambian en cada variación) y con el stock controlado el estado del stock lo calcula WooCommerce. Necesita una clave con permiso de Lectura/Escritura.',
                     )}
                 </p>
                 <StoreEditableColumns status={status} busy={busy} onToggle={onEditable} />
@@ -829,7 +829,7 @@ function MetaSection({
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Campos de otros plugins')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Los plugins de WooCommerce guardan datos propios en cada producto, pedido o cliente. Estos son los que encontramos: elegí cuáles traer a una columna (de sólo lectura: se editan en WooCommerce).',
+                        'Los plugins de WooCommerce guardan datos propios en cada producto, pedido o cliente. Estos son los que encontramos: elige cuáles traer a una columna (de sólo lectura: se editan en WooCommerce).',
                     )}
                 </p>
             </div>
@@ -858,7 +858,7 @@ function MetaSection({
             {keys.length === 0 ? (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
                     {status.initial_done
-                        ? __('No encontramos campos extra acá.')
+                        ? __('No encontramos campos extra aquí.')
                         : __('Aparecen cuando termine la primera sincronización.')}
                 </p>
             ) : (

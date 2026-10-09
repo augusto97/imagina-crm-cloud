@@ -421,7 +421,7 @@ export class NotificationsService implements OnModuleInit {
                 .from(memberships)
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
                 .limit(1);
-            if (!row) throw new NotFoundException({ code: 'not_member', message: 'No sos miembro de esta empresa', data: { status: 404 } });
+            if (!row) throw new NotFoundException({ code: 'not_member', message: 'No eres miembro de esta empresa', data: { status: 404 } });
             const settings = { ...((row.settings as Record<string, unknown>) ?? {}) };
             const current = readNotificationPrefs(settings.notifications);
             const next = readNotificationPrefs({

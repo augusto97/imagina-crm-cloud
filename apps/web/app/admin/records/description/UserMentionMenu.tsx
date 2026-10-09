@@ -57,7 +57,7 @@ export function UserMentionMenu({
         setIndex(0);
     }, [debounced]);
 
-    // El teclado se maneja acá (el editor no sabe de esta lista).
+    // El teclado se maneja aquí (el editor no sabe de esta lista).
     useEffect(() => {
         const onKey = (e: KeyboardEvent): void => {
             if (hits.length === 0) return;

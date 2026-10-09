@@ -59,7 +59,7 @@ import { WOO_PARENT_RESOURCE } from './woocommerce/woo-pack';
  *    ACTUALIZA el registro; si alguien lo borró a mano, se vuelve a crear.
  *  - **Paginación por fecha de modificación, no por número de página**: si un
  *    pedido cambia mientras se recorre, con `page=N` se correría la lista y
- *    se saltearía otro. Acá cada página pide "modificados después del último
+ *    se saltearía otro. Aquí cada página pide "modificados después del último
  *    que vi" (keyset); los empates del mismo segundo se deduplican por id.
  *  - **La importación inicial no dispara automatizaciones**: traer 10.000
  *    pedidos viejos no puede mandar 10.000 WhatsApps de "pedido nuevo". Desde
@@ -455,7 +455,7 @@ export class StoreSyncEngine {
     /**
      * v0.1.217 — Lo que devolvió una edición masiva de la tienda (productos y
      * variaciones ya escritos), aplicado a las listas de una vez. A diferencia
-     * de un envío desde la app, acá SÍ se disparan automatizaciones: el cambio
+     * de un envío desde la app, aquí SÍ se disparan automatizaciones: el cambio
      * nació en la tienda y es la primera vez que la app lo ve (un aviso de
      * «stock bajo» tiene que enterarse de un ajuste de stock en lote).
      */
@@ -956,7 +956,7 @@ export class StoreSyncEngine {
                 (r) => !(cursor && gmt(r) === cursor.at && cursor.ids.includes(String(r.id))),
             );
             if (fresh.length > 0) await onPage(fresh, res.total);
-            // Avance del cursor (se guarda por página: una corrida cortada sigue desde acá).
+            // Avance del cursor (se guarda por página: una corrida cortada sigue desde aquí).
             const maxAt = res.rows.reduce<string>((m, r) => (gmt(r) > m ? gmt(r) : m), cursor?.at ?? '');
             if (plainPaging) {
                 page += 1;
@@ -1014,7 +1014,7 @@ export class StoreSyncEngine {
                 await this.billing.assertCanCreateRecords(ctx.tenantId, newCount);
             } catch {
                 throw new SyncStopped(
-                    'Se llegó al límite de registros de tu plan: la sincronización se detuvo. Subí de plan o acotá qué se trae (por ejemplo, pedidos desde una fecha).',
+                    'Se llegó al límite de registros de tu plan: la sincronización se detuvo. Sube de plan o acota qué se trae (por ejemplo, pedidos desde una fecha).',
                 );
             }
         }

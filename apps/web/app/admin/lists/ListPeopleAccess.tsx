@@ -27,7 +27,7 @@ function permsForLevel(id: string): RolePermissions {
 /**
  * Compartir la lista con una PERSONA puntual (v0.1.138).
  *
- * Hasta acá el acceso a una lista se decidía sólo por ROL: para darle
+ * Hasta aquí el acceso a una lista se decidía sólo por ROL: para darle
  * acceso a alguien había que cambiarle el rol en todo el workspace, que es
  * exactamente lo que nadie quiere hacer. Esto guarda un acceso por persona
  * en el ACL de la lista, y ese acceso pisa lo que diga su rol — para esta
@@ -82,7 +82,7 @@ export function ListPeopleAccess({ listId }: ListPeopleAccessProps): JSX.Element
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <h3 className="imcrm-text-sm imcrm-font-semibold">{__('Personas con acceso')}</h3>
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('El acceso que le des acá a alguien manda sobre el de su rol, sólo en esta lista.')}
+                    {__('El acceso que le des aquí a alguien manda sobre el de su rol, sólo en esta lista.')}
                 </p>
             </div>
 

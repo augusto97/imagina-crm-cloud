@@ -108,7 +108,7 @@ function CredentialsCard(): JSX.Element | null {
             <CardContent className="imcrm-space-y-5 imcrm-pt-0">
                 <ol className="imcrm-list-decimal imcrm-space-y-2 imcrm-pl-5 imcrm-text-sm">
                     <li>
-                        {__('En Mercado Pago → Tus integraciones, creá una aplicación (producto «Pagos online» / Checkout Pro) y copiá el ')}
+                        {__('En Mercado Pago → Tus integraciones, crea una aplicación (producto «Pagos online» / Checkout Pro) y copia el ')}
                         <strong>Access Token</strong>
                         {__(' de producción (empieza con APP_USR-). Para probar, el de prueba (TEST-).')}{' '}
                         <a className="imcrm-inline-flex imcrm-items-center imcrm-gap-0.5 imcrm-text-primary hover:imcrm-underline" href="https://www.mercadopago.com.co/developers/panel/app" target="_blank" rel="noreferrer">
@@ -116,7 +116,7 @@ function CredentialsCard(): JSX.Element | null {
                         </a>
                     </li>
                     <li>
-                        {__('En esa aplicación, Webhooks → Configurar notificaciones: pegá esta URL y marcá los eventos ')}
+                        {__('En esa aplicación, Webhooks → Configurar notificaciones: pega esta URL y marca los eventos ')}
                         <strong>{__('Pagos')}</strong>, <strong>{__('Planes y suscripciones')}</strong>
                         {__(' (suscripciones y pagos de suscripciones).')}
                         <div className="imcrm-mt-1.5 imcrm-flex imcrm-max-w-xl imcrm-items-center imcrm-gap-2">
@@ -129,7 +129,7 @@ function CredentialsCard(): JSX.Element | null {
                             </Button>
                         </div>
                     </li>
-                    <li>{__('Al guardar los webhooks, Mercado Pago muestra la «Clave secreta»: pegala abajo. Sin ella los avisos de pago se rechazan (no se puede verificar que vienen de Mercado Pago).')}</li>
+                    <li>{__('Al guardar los webhooks, Mercado Pago muestra la «Clave secreta»: pégala abajo. Sin ella los avisos de pago se rechazan (no se puede verificar que vienen de Mercado Pago).')}</li>
                 </ol>
 
                 <div className="imcrm-grid imcrm-gap-4 sm:imcrm-grid-cols-2">
@@ -139,7 +139,7 @@ function CredentialsCard(): JSX.Element | null {
                             id="mp-token"
                             type="password"
                             autoComplete="off"
-                            placeholder={mp.access_token_hint ? `${__('Guardado')} ${mp.access_token_hint} — ${__('dejá vacío para conservarlo')}` : 'APP_USR-…'}
+                            placeholder={mp.access_token_hint ? `${__('Guardado')} ${mp.access_token_hint} — ${__('deja vacío para conservarlo')}` : 'APP_USR-…'}
                             value={token}
                             onChange={(e) => setToken(e.target.value)}
                         />
@@ -150,7 +150,7 @@ function CredentialsCard(): JSX.Element | null {
                             id="mp-secret"
                             type="password"
                             autoComplete="off"
-                            placeholder={mp.webhook_secret_set ? __('Guardada — dejá vacío para conservarla') : __('Pegala desde Webhooks')}
+                            placeholder={mp.webhook_secret_set ? __('Guardada — deja vacío para conservarla') : __('Pégala desde Webhooks')}
                             value={secret}
                             onChange={(e) => setSecret(e.target.value)}
                         />

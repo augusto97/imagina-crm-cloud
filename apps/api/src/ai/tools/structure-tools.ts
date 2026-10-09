@@ -243,7 +243,7 @@ const automationSpec = z.object({
         .describe(
             'record_updated: {changed_fields: [slugs], field_filters: [{field, op, value}]}. ' +
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
-                'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo poné tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
+                'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo pon tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}.',
@@ -257,7 +257,7 @@ const automationSpec = z.object({
                 'update_field {values: {slug: valor}} — cambia campos DEL REGISTRO que disparó la automatización (es lo que corresponde a "cambiar/actualizar/marcar un campo") | ' +
                 'create_record {target_list: slug, values: {slug: valor}} | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usá exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]}. ' +
@@ -395,7 +395,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'list_lists',
             label: 'Leyendo las listas',
-            description: 'Lista todas las listas (tablas) del workspace con su slug, nombre y cantidad de campos. Usala primero para saber qué existe.',
+            description: 'Lista todas las listas (tablas) del workspace con su slug, nombre y cantidad de campos. Úsala primero para saber qué existe.',
             capability: null,
             input: z.object({}),
             run: (ctx) => this.listLists(ctx),
@@ -403,7 +403,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'get_list_schema',
             label: 'Leyendo el esquema de la lista',
-            description: 'Devuelve los campos (slug, tipo, opciones), vistas y automatizaciones de una lista — de cada automatización viaja la configuración COMPLETA (trigger_config y actions), así se puede explicar o recrear en otra lista. SIEMPRE llamala antes de proponer cambios sobre una lista existente.',
+            description: 'Devuelve los campos (slug, tipo, opciones), vistas y automatizaciones de una lista — de cada automatización viaja la configuración COMPLETA (trigger_config y actions), así se puede explicar o recrear en otra lista. SIEMPRE llámala antes de proponer cambios sobre una lista existente.',
             capability: null,
             input: z.object({ list: z.string().max(63).describe('Slug de la lista') }),
             run: (ctx, input) => this.getListSchema(ctx, input as { list: string }),
@@ -447,7 +447,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_field',
             label: 'Armando el borrado del campo',
-            description: 'Propone ELIMINAR un campo y todos sus valores guardados. Es destructivo: confirmá con la persona antes de proponerlo.',
+            description: 'Propone ELIMINAR un campo y todos sus valores guardados. Es destructivo: confirma con la persona antes de proponerlo.',
             capability: 'manage_fields',
             input: z.object({ list: z.string().max(63), field: fieldSlugSchema }),
             run: (ctx, input) => this.proposeDeleteField(ctx, input as { list: string; field: string }),
@@ -502,13 +502,13 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_configure_portal',
             label: 'Armando el portal del cliente',
             description:
-                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente al pie (sus facturas, sus tickets…) y el DISEÑO de su página. Lo más potente es `design` — el mismo modelo de la ficha: pestañas → secciones con columnas → bloques (sus datos con la forma que mejor los muestra, propiedades que él puede corregir con `editable: true`, gráficos y tablas/tableros de SUS registros vinculados con `from` = slug de la lista, avisos, botones, comentarios, actividad) más `page` (fondo, ancho, tipografía). Todo lo vinculado se acota solo a lo del cliente. `blocks` (vocabulario anterior: portada, formulario editable, preguntas frecuentes…) también se acepta y se convierte. Leé antes get_list_schema: ahí están los campos y las listas vinculadas.',
+                'Propone configurar el PORTAL DEL CLIENTE de una lista: habilitarlo, qué otras listas vinculadas ve el cliente al pie (sus facturas, sus tickets…) y el DISEÑO de su página. Lo más potente es `design` — el mismo modelo de la ficha: pestañas → secciones con columnas → bloques (sus datos con la forma que mejor los muestra, propiedades que él puede corregir con `editable: true`, gráficos y tablas/tableros de SUS registros vinculados con `from` = slug de la lista, avisos, botones, comentarios, actividad) más `page` (fondo, ancho, tipografía). Todo lo vinculado se acota solo a lo del cliente. `blocks` (vocabulario anterior: portada, formulario editable, preguntas frecuentes…) también se acepta y se convierte. Lee antes get_list_schema: ahí están los campos y las listas vinculadas.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63).describe('Slug de la lista cuyos registros son los clientes'),
                 enabled: z.boolean().optional().describe('Habilitar/deshabilitar el portal (default: habilitar si se manda plantilla)'),
                 related_lists: z.array(z.string().max(63)).max(20).optional().describe('Slugs de listas VINCULADAS que el cliente ve además de su ficha (reemplaza la selección actual). Vacío = ninguna.'),
-                design: recordDesignSpec.optional().describe('Diseño completo del portal (reemplaza el actual). Preferí esto sobre `blocks`.'),
+                design: recordDesignSpec.optional().describe('Diseño completo del portal (reemplaza el actual). Prefiere esto sobre `blocks`.'),
                 blocks: z.array(portalBlockSpec).max(40).optional().describe('Plantilla en el vocabulario anterior, de arriba hacia abajo (se convierte al diseño nuevo). No combinar con `design`.'),
             }),
             run: (ctx, input) => this.proposeConfigurePortal(ctx, input as ConfigurePortalSpec),
@@ -523,7 +523,7 @@ export class StructureTools implements AiProposalApplier {
                 list: z.string().max(63),
                 layout: recordLayoutSchema.describe('classic | crm'),
                 template: crmTemplateIdSchema.optional().describe('Sólo con crm: auto (por tipo de campo) | contact | deal | task | support | custom'),
-                custom: crmLayoutSpec.optional().describe('Sólo con template custom: grupos de campos, cabecera y lateral (formato anterior; preferí `design`)'),
+                custom: crmLayoutSpec.optional().describe('Sólo con template custom: grupos de campos, cabecera y lateral (formato anterior; prefiere `design`)'),
                 design: recordDesignSpec.optional().describe('Diseño completo de la ficha (con layout crm; no combinar con template/custom). Los gráficos y vinculados usan `from` = slug de una lista vinculada (ver linkable_lists / relaciones del esquema)'),
             }),
             run: (ctx, input) => this.proposeConfigureRecordLayout(ctx, input as ConfigureLayoutSpec),
@@ -534,7 +534,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_update_automation',
             label: 'Armando el cambio de la automatización',
             description:
-                'Propone modificar una automatización existente: renombrarla, pausarla o activarla (is_active), o reemplazar su disparador o sus acciones (mismo shape que propose_create_automation). Leé la config actual con get_list_schema.',
+                'Propone modificar una automatización existente: renombrarla, pausarla o activarla (is_active), o reemplazar su disparador o sus acciones (mismo shape que propose_create_automation). Lee la config actual con get_list_schema.',
             capability: 'manage_automations',
             input: z.object({
                 list: z.string().max(63),
@@ -551,7 +551,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_automation',
             label: 'Armando el borrado de la automatización',
-            description: 'Propone ELIMINAR una automatización y su historial de ejecuciones. Destructivo: confirmá con la persona antes.',
+            description: 'Propone ELIMINAR una automatización y su historial de ejecuciones. Destructivo: confirma con la persona antes.',
             capability: 'manage_automations',
             input: z.object({ list: z.string().max(63), automation: z.union([z.number().int().positive(), z.string().min(1).max(190)]) }),
             run: (ctx, input) => this.proposeDeleteAutomation(ctx, input as { list: string; automation: number | string }),
@@ -581,7 +581,7 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_delete_list',
             label: 'Armando el borrado de la lista',
-            description: 'Propone ELIMINAR una lista completa con todos sus registros, campos, vistas y automatizaciones. Es lo más destructivo que hay: proponelo sólo si la persona lo pidió explícitamente por su nombre.',
+            description: 'Propone ELIMINAR una lista completa con todos sus registros, campos, vistas y automatizaciones. Es lo más destructivo que hay: proponlo sólo si la persona lo pidió explícitamente por su nombre.',
             capability: 'manage_lists',
             input: z.object({ list: z.string().max(63) }),
             run: (ctx, input) => this.proposeDeleteList(ctx, input as { list: string }),
@@ -591,7 +591,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'list_members',
             label: 'Leyendo los miembros',
             description:
-                'Lista las personas del workspace con su id, nombre, email y rol. Usala para asignar registros a alguien (campo de tipo user) o para compartir una lista con una persona puntual: esas dos cosas piden el ID, no el nombre.',
+                'Lista las personas del workspace con su id, nombre, email y rol. Úsala para asignar registros a alguien (campo de tipo user) o para compartir una lista con una persona puntual: esas dos cosas piden el ID, no el nombre.',
             capability: null,
             input: z.object({}),
             run: (ctx) => this.listMembers(ctx),
@@ -613,7 +613,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_set_list_permissions',
             label: 'Armando los permisos de la lista',
             description:
-                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona), own (lo que creó) o none; más si puede crear y qué campos NO ve. También por PERSONA (pisa su rol sólo en esta lista) — pedí los ids con list_members. `admin` siempre tiene acceso total y no se configura.',
+                'Propone QUIÉN puede ver y editar los registros de una lista. Por ROL (manager / agent / viewer) con un alcance por operación: all (todo), assigned (lo asignado a esa persona), own (lo que creó) o none; más si puede crear y qué campos NO ve. También por PERSONA (pisa su rol sólo en esta lista) — pide los ids con list_members. `admin` siempre tiene acceso total y no se configura.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -625,7 +625,7 @@ export class StructureTools implements AiProposalApplier {
                     .array(z.object({ user_id: z.number().int().positive() }).and(permissionSpec))
                     .max(50)
                     .optional()
-                    .describe('Accesos POR PERSONA a agregar o cambiar. Los que ya tienen acceso y no mandás se CONSERVAN'),
+                    .describe('Accesos POR PERSONA a agregar o cambiar. Los que ya tienen acceso y no mandas se CONSERVAN'),
                 remove_users: z
                     .array(z.number().int().positive())
                     .max(50)
@@ -644,7 +644,7 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_configure_public_sharing',
             label: 'Armando la publicación de la lista',
             description:
-                'Propone PUBLICAR una lista de solo-lectura hacia afuera (una página embebible por iframe, sin cuenta) o dejar de publicarla. Sólo salen los campos que se marcan visibles. Se puede publicar una VISTA guardada para que sus filtros acoten lo que ve el visitante, restringir qué dominios pueden embeberla y ponerle fecha de caducidad. OJO: publicar expone esos datos a cualquiera con el enlace — confirmalo siempre con la persona.',
+                'Propone PUBLICAR una lista de solo-lectura hacia afuera (una página embebible por iframe, sin cuenta) o dejar de publicarla. Sólo salen los campos que se marcan visibles. Se puede publicar una VISTA guardada para que sus filtros acoten lo que ve el visitante, restringir qué dominios pueden embeberla y ponerle fecha de caducidad. OJO: publicar expone esos datos a cualquiera con el enlace — confírmalo siempre con la persona.',
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
@@ -772,7 +772,7 @@ export class StructureTools implements AiProposalApplier {
                     actions: redactSecrets(a.actions),
                 })),
                 // v0.1.198 — acciones CON NOMBRE de los conectores de la
-                // empresa. Van acá porque es la lectura que el asistente hace
+                // empresa. Van aquí porque es la lectura que el asistente hace
                 // antes de proponer una automatización: sin esto no tendría
                 // forma de saber que existe un "Enviar WhatsApp" configurado.
                 // Nunca viajan credenciales: sólo qué se puede ejecutar y qué
@@ -827,7 +827,7 @@ export class StructureTools implements AiProposalApplier {
             const clash = existing.find((l) => l.name.trim().toLowerCase() === spec.name.trim().toLowerCase());
             if (clash) {
                 throw new AiToolError(
-                    `Ya existe una lista llamada «${clash.name}» (slug ${clash.slug}). Preguntale a la persona si quiere agregarle campos (propose_add_fields) o crear otra con un nombre distinto.`,
+                    `Ya existe una lista llamada «${clash.name}» (slug ${clash.slug}). Pregúntale a la persona si quiere agregarle campos (propose_add_fields) o crear otra con un nombre distinto.`,
                 );
             }
         }
@@ -883,7 +883,7 @@ export class StructureTools implements AiProposalApplier {
                 const parsed = createAutomationSchema.safeParse({ ...a, is_active: a.is_active ?? true });
                 if (!parsed.success) throw new AiToolError(`Automatización «${a.name}»: ${zodIssues(parsed.error)}`);
                 if (JSON.stringify(parsed.data.actions).includes('"bulk_edit"')) {
-                    throw new AiToolError(`Automatización «${a.name}»: «Editar en lote» necesita los campos ya creados. Creá primero la lista y después proponé la automatización con propose_create_automation.`);
+                    throw new AiToolError(`Automatización «${a.name}»: «Editar en lote» necesita los campos ya creados. Crea primero la lista y después propón la automatización con propose_create_automation.`);
                 }
                 this.validateAutomationSlugs(parsed.data, new Set(fieldTypeBySlug.keys()), (target) => {
                     if (keys.has(target)) return { $list: target } as unknown as number;
@@ -958,7 +958,7 @@ export class StructureTools implements AiProposalApplier {
         const inputs: CreateFieldInput[] = [];
         for (const f of input.fields) {
             const slug = f.slug ?? toSlug(f.label);
-            if (currentBySlug.has(slug)) throw new AiToolError(`La lista ya tiene un campo «${slug}». Usá propose_update_field para modificarlo.`);
+            if (currentBySlug.has(slug)) throw new AiToolError(`La lista ya tiene un campo «${slug}». Usa propose_update_field para modificarlo.`);
             if (newSlugs.has(slug)) throw new AiToolError(`El pedido repite el campo «${slug}».`);
             newSlugs.add(slug);
             const { config } = this.buildFieldConfig(f, slug, {
@@ -1377,7 +1377,7 @@ export class StructureTools implements AiProposalApplier {
             });
         }
 
-        if (input.design && input.blocks) throw new AiToolError('Mandá `design` o `blocks`, no los dos.');
+        if (input.design && input.blocks) throw new AiToolError('Manda `design` o `blocks`, no los dos.');
         let v3: RecordLayoutV3 | null = null;
         let blocksPreview: AiProposalPreview['blocks'] = [];
         const warnings: string[] = [];
@@ -1476,7 +1476,7 @@ export class StructureTools implements AiProposalApplier {
                 blocks = built.preview;
                 warnings.push(...built.warnings);
             } else if (input.custom) {
-                throw new AiToolError('`custom` sólo aplica con template custom. Elegí custom o quitá los grupos.');
+                throw new AiToolError('`custom` sólo aplica con template custom. Elige custom o quita los grupos.');
             }
             if (current.layout !== 'crm') changes.push({ label: 'Ficha', from: layoutLabel(current.layout), to: layoutLabel('crm') });
             if (current.layout !== 'crm' || hasDesign || current.template !== templateId || templateId === 'custom') {
@@ -1489,7 +1489,7 @@ export class StructureTools implements AiProposalApplier {
             kind: 'configure_record_layout',
             title: `Cambiar el diseño de la ficha de «${list.name}»`,
             summary: `${changes.map((c) => `${c.label.toLowerCase()}: ${c.to}`).join('; ')}.${warnings.length ? ` ${warnings.join(' ')}` : ''}`,
-            // Pisar un diseño hecho a mano en el editor es irreversible desde acá.
+            // Pisar un diseño hecho a mano en el editor es irreversible desde aquí.
             destructive: hasDesign && input.layout === 'crm',
             listSlug: list.slug,
             preview: { changes, blocks },
@@ -1927,7 +1927,7 @@ export class StructureTools implements AiProposalApplier {
                         : 'La lista dejó de estar publicada: el enlace ya no responde.',
                     links: [{ label: 'Ajustes de publicación', href: `/lists/${payload.listSlug}/edit?s=compartir` }],
                     warnings: admin.enabled
-                        ? ['Cualquiera con el enlace ve los campos marcados visibles, sin cuenta. Revisalo antes de compartirlo.']
+                        ? ['Cualquiera con el enlace ve los campos marcados visibles, sin cuenta. Revísalo antes de compartirlo.']
                         : [],
                 };
             }
@@ -2031,7 +2031,7 @@ export class StructureTools implements AiProposalApplier {
         let usersSet: Record<string, RolePermissions> | undefined;
         let usersRemove: number[] | undefined;
         if (input.users !== undefined || input.remove_users !== undefined) {
-            // Sólo miembros de la empresa: el service lo re-valida, pero acá
+            // Sólo miembros de la empresa: el service lo re-valida, pero aquí
             // el modelo recibe el motivo y puede corregir.
             const members = await this.lists.workspaceMembers(ctx.tenantId);
             const byId = new Map(members.map((m) => [m.id, m]));
@@ -2041,7 +2041,7 @@ export class StructureTools implements AiProposalApplier {
                 const member = byId.get(u.user_id);
                 if (!member) {
                     throw new AiToolError(
-                        `El usuario #${u.user_id} no es miembro de esta empresa. Pedí la lista con list_members.`,
+                        `El usuario #${u.user_id} no es miembro de esta empresa. Pide la lista con list_members.`,
                     );
                 }
                 usersSet[String(u.user_id)] = {
@@ -2086,7 +2086,7 @@ export class StructureTools implements AiProposalApplier {
             changes.push({ label: 'Campo de asignación', from: current.assignment_field_id === null ? '(ninguno)' : String(current.assignment_field_id), to: input.assignment_field_slug ?? '(ninguno)' });
         }
         if (Object.keys(patch).length === 0 && usersSet === undefined) {
-            throw new AiToolError('No hay nada que cambiar: mandá `roles`, `users`, `remove_users` o `assignment_field_slug`.');
+            throw new AiToolError('No hay nada que cambiar: manda `roles`, `users`, `remove_users` o `assignment_field_slug`.');
         }
 
         return this.saveProposal(ctx, {
@@ -2118,7 +2118,7 @@ export class StructureTools implements AiProposalApplier {
             patch.visible_field_slugs = slugs;
             // Publicar sin campos visibles es una página vacía: mejor decirlo.
             if (slugs.length === 0 && (input.enabled ?? current.enabled)) {
-                throw new AiToolError('Una lista publicada sin campos visibles no muestra nada. Elegí al menos un campo.');
+                throw new AiToolError('Una lista publicada sin campos visibles no muestra nada. Elige al menos un campo.');
             }
             changes.push({ label: 'Campos visibles', from: current.visible_field_slugs.join(', ') || '(ninguno)', to: slugs.join(', ') });
         }
@@ -2201,7 +2201,7 @@ export class StructureTools implements AiProposalApplier {
                 ok: true,
                 proposal_id: proposal.id,
                 title: proposal.title,
-                note: 'La propuesta quedó lista como TARJETA para la persona. No la apliques vos ni digas que ya está hecho: contale brevemente qué contiene y que puede aplicarla con el botón.',
+                note: 'La propuesta quedó lista como TARJETA para la persona. No la apliques tú ni digas que ya está hecho: cuéntale brevemente qué contiene y que puede aplicarla con el botón.',
             },
             proposal,
         };
@@ -2361,7 +2361,7 @@ export class StructureTools implements AiProposalApplier {
                 if (!f.computed) throw new AiToolError(`El campo «${slug}» (computed) necesita computed {operation, inputs}.`);
                 const local = opts.localSlugs();
                 const inputs = f.computed.inputs.map((s) => {
-                    if (!local.has(s)) throw new AiToolError(`computed «${slug}»: el campo de entrada «${s}» no existe (definilo antes en la misma lista).`);
+                    if (!local.has(s)) throw new AiToolError(`computed «${slug}»: el campo de entrada «${s}» no existe (defínelo antes en la misma lista).`);
                     if (opts.forBlueprint) return { $field: s };
                     const id = opts.resolveInput?.(s);
                     if (id === undefined) throw new AiToolError(`computed «${slug}»: «${s}» tiene que ser un campo YA existente de la lista (no uno del mismo pedido).`);
@@ -2376,7 +2376,7 @@ export class StructureTools implements AiProposalApplier {
                 if (!f.ai) throw new AiToolError(`El campo «${slug}» (ai) necesita ai {task, inputs}.`);
                 const local = opts.localSlugs();
                 config.inputs = f.ai.inputs.map((s) => {
-                    if (!local.has(s)) throw new AiToolError(`ai «${slug}»: el campo «${s}» no existe (definilo antes en la misma lista).`);
+                    if (!local.has(s)) throw new AiToolError(`ai «${slug}»: el campo «${s}» no existe (defínelo antes en la misma lista).`);
                     if (opts.forBlueprint) return { $field: s };
                     const id = opts.resolveInput?.(s);
                     if (id === undefined) throw new AiToolError(`ai «${slug}»: «${s}» tiene que ser un campo YA existente de la lista.`);
@@ -2483,7 +2483,7 @@ export class StructureTools implements AiProposalApplier {
                 if (!known.includes(type)) {
                     throw new AiToolError(
                         `La acción ${where} tiene un tipo desconocido «${type}». Tipos válidos: ${known.join(', ')}. ` +
-                            'Para cambiar campos del registro que disparó la automatización usá update_field {values: {slug: valor}}.',
+                            'Para cambiar campos del registro que disparó la automatización usa update_field {values: {slug: valor}}.',
                     );
                 }
                 const cfg = a.config ?? {};
@@ -2497,7 +2497,7 @@ export class StructureTools implements AiProposalApplier {
                 if (!conn) {
                     throw new AiToolError(
                         `La acción ${where} usa la conexión ${String(cfg.connection_id ?? '(sin connection_id)')}, que no existe o no está a tu alcance. ` +
-                            `Conexiones disponibles: ${available()}. Usá connector_action SÓLO para ejecutar algo en un servicio externo; para cambiar un campo del registro es update_field.`,
+                            `Conexiones disponibles: ${available()}. Usa connector_action SÓLO para ejecutar algo en un servicio externo; para cambiar un campo del registro es update_field.`,
                     );
                 }
                 const act = conn.actions.find((x) => x.key === cfg.action_key);

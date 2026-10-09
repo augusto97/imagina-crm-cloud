@@ -89,7 +89,7 @@ export class SymlinkDeployer implements Deployer {
             if (problem === 'bytes') {
                 return {
                     ok: false,
-                    message: `No hay espacio en disco para actualizar: quedan ${mb(free)} MB libres y hacen falta al menos ${mb(minFree)} MB. Liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.`,
+                    message: `No hay espacio en disco para actualizar: quedan ${mb(free)} MB libres y hacen falta al menos ${mb(minFree)} MB. Libera espacio (Plataforma → Diagnóstico → Disco) y prueba de nuevo.`,
                     prevRelease,
                 };
             }
@@ -164,7 +164,7 @@ export class SymlinkDeployer implements Deployer {
                     ? `Fallo en deploy: ${raw.slice(0, 600)}`
                     : outOfInodes
                       ? 'El servidor se quedó sin lugar para más ARCHIVOS (inodos) durante la actualización, aunque tenga espacio en GB. Se borró lo que quedó a medias; ver docs/runbook-disk.md, «Sin inodos».'
-                      : 'El disco del servidor se llenó durante la actualización. Se borró lo que quedó a medias; liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.',
+                      : 'El disco del servidor se llenó durante la actualización. Se borró lo que quedó a medias; libera espacio (Plataforma → Diagnóstico → Disco) y prueba de nuevo.',
                 prevRelease,
             };
         }

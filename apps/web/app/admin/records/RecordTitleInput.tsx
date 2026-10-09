@@ -27,7 +27,7 @@ interface RecordTitleInputProps {
  * El título NO es un campo aparte: es la MISMA celda del campo primario, con
  * otra tipografía. Antes se mostraba de sólo lectura y para cambiar el nombre
  * había que bajar a la sección "Campos" — y en el alta directamente decía
- * "Nuevo registro" sin dejar escribirlo. Editar acá escribe en ese campo (y la
+ * "Nuevo registro" sin dejar escribirlo. Editar aquí escribe en ese campo (y la
  * fila de "Campos" lo refleja al instante, porque leen el mismo estado).
  */
 export function RecordTitleInput({

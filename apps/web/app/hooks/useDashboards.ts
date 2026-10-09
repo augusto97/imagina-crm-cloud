@@ -126,7 +126,7 @@ export function useDeleteDashboard() {
  * v0.1.230 — datos de widgets INYECTADOS: la ficha del registro dibuja sus
  * gráficos con los MISMOS componentes de los tableros, pero los datos vienen
  * de su propio bundle (acotado a los registros vinculados). Con este
- * contexto presente, `useWidgetData` no pide nada: lee de acá.
+ * contexto presente, `useWidgetData` no pide nada: lee de aquí.
  */
 export interface WidgetDataOverride {
     get(widgetId: string): { data: WidgetData | undefined; isLoading: boolean; error: Error | null };

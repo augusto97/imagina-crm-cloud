@@ -62,7 +62,7 @@ export type FormConditionOp = (typeof FORM_CONDITION_OPS)[number];
 /**
  * «Mostrar sólo si…»: depende de la respuesta a OTRO campo del formulario.
  * Una sola condición por ítem a propósito — la lógica que se arma con un
- * clic es la que la gente entiende; un árbol AND/OR acá sería un editor de
+ * clic es la que la gente entiende; un árbol AND/OR aquí sería un editor de
  * filtros para personas que sólo quieren «si eligió Empresa, pedir el NIT».
  */
 export const formConditionSchema = z.object({

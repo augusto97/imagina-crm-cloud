@@ -97,7 +97,7 @@ export async function safeWebhookFetch(
 
     // Node NO llama a `lookup` cuando el hostname ya es una IP literal, así que
     // el guard del lookup se saltaría con `http://169.254.169.254/`. Validamos
-    // la IP literal acá.
+    // la IP literal aquí.
     //
     // SEC-23 (v0.1.225): `URL.hostname` devuelve el IPv6 CON corchetes
     // (`[::1]`), así que `isIP` daba 0 y un literal IPv6 no pasaba por NINGÚN

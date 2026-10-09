@@ -246,7 +246,7 @@ export function ListsTree({
                             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-pl-3">
                                 {inside.length === 0 ? (
                                     <li className="imcrm-px-2 imcrm-py-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-                                        {__('Arrastrá listas acá')}
+                                        {__('Arrastra listas aquí')}
                                     </li>
                                 ) : (
                                     inside.map(renderList)

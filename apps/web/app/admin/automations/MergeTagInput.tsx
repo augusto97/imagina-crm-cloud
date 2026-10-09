@@ -303,7 +303,7 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder={__('Escribí para buscar')}
+                    placeholder={__('Escribe para buscar')}
                     className="imcrm-h-9 imcrm-w-full imcrm-bg-transparent imcrm-pl-8 imcrm-pr-2 imcrm-text-sm focus-visible:imcrm-outline-none"
                     autoFocus
                 />

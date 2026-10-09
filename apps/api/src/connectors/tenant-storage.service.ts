@@ -61,7 +61,7 @@ export class TenantStorageService implements TenantStorageResolver {
         }
         if (!found) {
             throw new TenantStorageUnusableError(
-                'La conexión donde se guardan los archivos ya no existe. Elegí otro almacenamiento en Ajustes → Almacenamiento.',
+                'La conexión donde se guardan los archivos ya no existe. Elige otro almacenamiento en Ajustes → Almacenamiento.',
             );
         }
         if (!isStorageIntegration(found.provider)) {
@@ -134,7 +134,7 @@ export class TenantStorageService implements TenantStorageResolver {
                 const found = await this.connectors.integrationCredsFor(tenantId, r.id);
                 if (r.provider === 'google_drive') {
                     if (found && found.creds.accessToken === '') {
-                        problem = `«${r.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones.`;
+                        problem = `«${r.name}» no está autorizada: conéctala de nuevo en Ajustes → Integraciones.`;
                     }
                 } else {
                     const built = found ? s3ConfigFromCreds(found.creds, { allowPrivate: this.env.STORAGE_ALLOW_PRIVATE_HOSTS }) : null;
@@ -144,7 +144,7 @@ export class TenantStorageService implements TenantStorageResolver {
                 problem = err instanceof Error ? err.message : String(err);
             }
             if (problem === null && r.visibility !== 'workspace') {
-                problem = `«${r.name}» es una conexión privada. Para los archivos de la empresa usá una conexión del equipo.`;
+                problem = `«${r.name}» es una conexión privada. Para los archivos de la empresa usa una conexión del equipo.`;
             }
             const label = (r.config as Record<string, unknown>).account_label;
             out.push({

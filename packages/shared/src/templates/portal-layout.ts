@@ -332,7 +332,7 @@ class Converter {
                     s({
                         id,
                         type: 'fields',
-                        title: str(c.title) ?? 'Actualizá tus datos',
+                        title: str(c.title) ?? 'Actualiza tus datos',
                         config: { field_ids: this.ids(c.editable_field_slugs), layout: 'list', editable: true, collapsible: false },
                     }),
                 ];

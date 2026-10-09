@@ -20,7 +20,7 @@ describe('verdictFor (puro)', () => {
     it('465 abierto pero sin "conexión segura" → tls_mismatch', () => {
         const r = verdictFor({ port: 465, secure: false }, [{ port: 465, status: 'open', ms: 20 }]);
         expect(r.verdict).toBe('tls_mismatch');
-        expect(r.hints[0]).toContain('activá');
+        expect(r.hints[0]).toContain('activa');
     });
 
     it('587 abierto con "conexión segura" activada → tls_mismatch', () => {

@@ -31,7 +31,7 @@ export function makeBlock(type: EmailBlockType): EmailBlock {
         case 'heading':
             return { id, type, text: 'Título', level: 2, align: 'left' };
         case 'text':
-            return { id, type, doc: emailTextDoc('Escribí acá tu mensaje.'), align: 'left', size: 'md' };
+            return { id, type, doc: emailTextDoc('Escribe aquí tu mensaje.'), align: 'left', size: 'md' };
         case 'button':
             return { id, type, label: 'Ver más', url: 'https://', align: 'center', full_width: false };
         case 'image':
@@ -351,6 +351,6 @@ export const EMAIL_BLOCK_HINTS: Record<EmailBlockType, string> = {
     spacer: 'Aire entre bloques.',
     fields: 'Los campos del registro en una tabla prolija.',
     signature: 'Tu firma, donde quieras ubicarla.',
-    html: 'Pegá tu propio HTML (para expertos).',
+    html: 'Pega tu propio HTML (para expertos).',
     columns: 'Dos o tres columnas que se apilan en el celular.',
 };

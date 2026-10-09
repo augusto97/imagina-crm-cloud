@@ -406,7 +406,7 @@ export function FieldsBlock({ ids, layout, columns }: { ids: number[]; layout: s
                                     : !ctx.canEdit || ctx.preview
                                       ? ctx.preview
                                           ? null
-                                          : __('No tenés permiso para editar este registro')
+                                          : __('No tienes permiso para editar este registro')
                                       : ctx.lockedReasons[f.slug] ?? null
                             }
                         />

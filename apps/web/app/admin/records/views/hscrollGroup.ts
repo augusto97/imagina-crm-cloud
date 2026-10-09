@@ -14,7 +14,7 @@
  * agrupada, con N cuerpos + N cabeceras + la barra espejo devolviendo ecos,
  * era todavía peor.
  *
- * Acá cada escritura programática se RECUERDA (`written`): si el evento de
+ * Aquí cada escritura programática se RECUERDA (`written`): si el evento de
  * un miembro llega con exactamente el valor que le escribimos, es el eco y
  * se ignora; si trae otro valor, lo movió la persona (o el navegador — un
  * `scrollIntoView` por foco cuenta como genuino) y se propaga. El valor

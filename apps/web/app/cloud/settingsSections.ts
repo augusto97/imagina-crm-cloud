@@ -23,7 +23,7 @@ import type { LucideIcon } from 'lucide-react';
  * panel contextual del shell es LA nav de Ajustes en escritorio). El gate es
  * el de siempre: rol admin del workspace para Suscripción/Miembros/Marca/
  * Correo. Los ajustes GLOBALES (SMTP de plataforma, actualizaciones) viven en
- * la consola de Plataforma (`platformTabs.ts`), no acá.
+ * la consola de Plataforma (`platformTabs.ts`), no aquí.
  */
 export type SettingsSectionId =
     | 'plan'

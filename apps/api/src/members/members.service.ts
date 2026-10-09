@@ -88,7 +88,7 @@ export class MembersService {
             if (targetUserId === actingUserId) {
                 throw new ForbiddenException({
                     code: 'cannot_remove_self',
-                    message: 'No podés quitarte a vos mismo del workspace',
+                    message: 'No puedes quitarte a ti mismo del workspace',
                     data: { status: 403 },
                 });
             }

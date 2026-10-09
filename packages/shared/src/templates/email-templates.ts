@@ -64,7 +64,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                 {
                     id: 't1',
                     type: 'text',
-                    doc: emailTextDoc('Te escribimos para contarte que…', 'Cualquier duda, respondé este correo.'),
+                    doc: emailTextDoc('Te escribimos para contarte que…', 'Cualquier duda, responde este correo.'),
                     align: 'left',
                     size: 'md',
                 },
@@ -93,7 +93,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                 {
                     id: 't1',
                     type: 'text',
-                    doc: emailTextDoc('Contale acá a tu cliente qué pasó y qué tiene que hacer.'),
+                    doc: emailTextDoc('Cuéntale aquí a tu cliente qué pasó y qué tiene que hacer.'),
                     align: 'center',
                     size: 'lg',
                     padding: 'md',
@@ -104,7 +104,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                 {
                     id: 'f1',
                     type: 'text',
-                    doc: emailTextDoc('Recibís este correo porque sos cliente nuestro.'),
+                    doc: emailTextDoc('Recibes este correo porque eres cliente nuestro.'),
                     align: 'center',
                     size: 'sm',
                     color: '#6b7280',
@@ -149,7 +149,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                     doc: {
                         type: 'doc',
                         content: [
-                            para(txt('Hola, te recordamos que tenés un pago pendiente.')),
+                            para(txt('Hola, te recordamos que tienes un pago pendiente.')),
                             para(bold('Monto: '), txt('$ —')),
                             para(bold('Vence: '), txt('—')),
                         ],
@@ -162,7 +162,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                 {
                     id: 't2',
                     type: 'text',
-                    doc: emailTextDoc('Si ya pagaste, ignorá este mensaje. ¡Gracias!'),
+                    doc: emailTextDoc('Si ya pagaste, ignora este mensaje. ¡Gracias!'),
                     align: 'left',
                     size: 'sm',
                     color: '#6b7280',
@@ -184,7 +184,7 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                 {
                     id: 't1',
                     type: 'text',
-                    doc: emailTextDoc('Gracias por sumarte. Así empezás:'),
+                    doc: emailTextDoc('Gracias por sumarte. Así empiezas:'),
                     align: 'center',
                     size: 'lg',
                 },
@@ -195,20 +195,20 @@ export const EMAIL_TEMPLATES: readonly EmailTemplate[] = [
                     columns: [
                         {
                             blocks: [
-                                { id: 'c1h', type: 'heading', text: '1. Completá tus datos', level: 3, align: 'center' },
+                                { id: 'c1h', type: 'heading', text: '1. Completa tus datos', level: 3, align: 'center' },
                                 { id: 'c1t', type: 'text', doc: emailTextDoc('Así podemos atenderte mejor.'), align: 'center', size: 'sm' },
                             ],
                         },
                         {
                             blocks: [
-                                { id: 'c2h', type: 'heading', text: '2. Conocé el equipo', level: 3, align: 'center' },
+                                { id: 'c2h', type: 'heading', text: '2. Conoce el equipo', level: 3, align: 'center' },
                                 { id: 'c2t', type: 'text', doc: emailTextDoc('Te asignamos una persona de contacto.'), align: 'center', size: 'sm' },
                             ],
                         },
                         {
                             blocks: [
-                                { id: 'c3h', type: 'heading', text: '3. Escribinos', level: 3, align: 'center' },
-                                { id: 'c3t', type: 'text', doc: emailTextDoc('Respondé este correo cuando quieras.'), align: 'center', size: 'sm' },
+                                { id: 'c3h', type: 'heading', text: '3. Escríbenos', level: 3, align: 'center' },
+                                { id: 'c3t', type: 'text', doc: emailTextDoc('Responde este correo cuando quieras.'), align: 'center', size: 'sm' },
                             ],
                         },
                     ],

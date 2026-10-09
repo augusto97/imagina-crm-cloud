@@ -185,7 +185,7 @@ describe('AuthService (Postgres + Redis reales)', () => {
         // scan de Redis: `keys()` devuelve también los de otros tests y a
         // veces terminaba verificando la cuenta equivocada.
         const mail = await waitFor(async () =>
-            sentMail.find((m) => m.to === email && /Confirmá tu email/i.test(m.subject)),
+            sentMail.find((m) => m.to === email && /Confirma tu email/i.test(m.subject)),
         );
         const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
         expect(token).toBeTruthy();
@@ -223,7 +223,7 @@ describe('AuthService (Postgres + Redis reales)', () => {
             new_password: 'otra-clave-999',
         });
         expect(res.revoked_sessions).toBeGreaterThanOrEqual(1);
-        // La sesión desde la que se cambió SIGUE viva (no te echa a vos mismo)…
+        // La sesión desde la que se cambió SIGUE viva (no te echa a ti mismo)…
         expect(await sessions.get(tokenA)).not.toBeNull();
         // …y las demás mueren.
         expect(await sessions.get(tokenB)).toBeNull();

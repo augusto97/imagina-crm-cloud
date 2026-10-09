@@ -133,7 +133,7 @@ export function translateBulkEditActions(actions: unknown[], fields: Field[], li
         } else if (cfg.filter_tree) {
             next.filter_tree = cfg.filter_tree;
         } else if (cfg.all_records !== true) {
-            throw new AiToolError('«Editar en lote» sin filters editaría TODA la lista cada vez que corra: pasá filters, o all_records: true si la persona lo pidió así.');
+            throw new AiToolError('«Editar en lote» sin filters editaría TODA la lista cada vez que corra: pasa filters, o all_records: true si la persona lo pidió así.');
         }
         act.config = next;
     }

@@ -146,7 +146,7 @@ describe('Zona horaria de la empresa (v0.1.263)', () => {
         expect((await branding.getFormat(tenantId)).timezone).toBeNull();
         expect((await setTz('America/Bogota')).timezone).toBe('America/Bogota');
         expect(await tzs.get(tenantId)).toBe('America/Bogota');
-        // Llega validada por Zod en el controller; acá se prueba la segunda
+        // Llega validada por Zod en el controller; aquí se prueba la segunda
         // barrera (la lista de zonas de Postgres) con una que Node no conoce.
         await expect(branding.setFormat(tenantId, { timezone: 'Etc/Nunca' })).rejects.toThrow(/zona horaria/i);
         expect((await branding.getFormat(tenantId)).timezone).toBe('America/Bogota');

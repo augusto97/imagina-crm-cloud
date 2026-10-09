@@ -119,7 +119,7 @@ interface ViewSettingsSheetProps {
  *
  * Antes cada ajuste de la vista vivía en su propio botón de la toolbar
  * (Filtros, Columnas, Agrupar) y las acciones de la lista estaban
- * repartidas entre el breadcrumb y el menú de la pestaña. Acá están
+ * repartidas entre el breadcrumb y el menú de la pestaña. Aquí están
  * TODOS juntos, con su valor actual visible de un vistazo: cuántos
  * campos se muestran, cuántas condiciones filtran, por qué campo se
  * agrupa. Los controles son los MISMOS de siempre (mismo estado, misma
@@ -244,7 +244,7 @@ export function ViewSettingsSheet({
                                       __('Estás viendo «%s». Los cambios se guardan en la vista desde la barra de pestañas.'),
                                       activeView.name,
                                   )
-                                : __('Estás viendo todos los registros. Guardá estos ajustes como una vista para volver a ellos.')}
+                                : __('Estás viendo todos los registros. Guarda estos ajustes como una vista para volver a ellos.')}
                         </p>
 
                         {isTable && (

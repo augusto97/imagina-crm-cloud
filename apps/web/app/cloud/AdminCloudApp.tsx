@@ -52,10 +52,10 @@ function NoWorkspaceScreen({ email }: { email: string }): JSX.Element {
                 <h1 className="imcrm-text-base imcrm-font-semibold">Tu cuenta no tiene ninguna empresa</h1>
                 <p className="imcrm-mt-2 imcrm-text-muted-foreground">
                     Entraste como <strong className="imcrm-text-foreground">{email}</strong>, pero esta cuenta no es
-                    miembro del equipo de ninguna empresa. Pedile a un administrador que te invite.
+                    miembro del equipo de ninguna empresa. Pídele a un administrador que te invite.
                 </p>
                 <p className="imcrm-mt-2 imcrm-text-muted-foreground">
-                    Si sos cliente de una empresa, entrá por su{' '}
+                    Si eres cliente de una empresa, entra por su{' '}
                     <a className="imcrm-text-primary hover:imcrm-underline" href="/portal">
                         portal de clientes
                     </a>
@@ -87,7 +87,7 @@ export function AdminCloudApp(): JSX.Element {
     const [booted, setBooted] = useState(false);
 
     // Branding white-label del tenant: aplica `primary_color` a los tokens del
-    // tema (una sola vez acá; el Sidebar lee del mismo query cache).
+    // tema (una sola vez aquí; el Sidebar lee del mismo query cache).
     useBranding();
 
     const me = useQuery({ queryKey: ['me'], queryFn: () => cloudApi.me(), retry: false });

@@ -31,7 +31,7 @@ export interface MercadoPagoCredsSource {
  *
  * Los avisos se verifican con la firma `x-signature` y DESPUÉS se vuelve a
  * leer el recurso desde la API con nuestra clave: el cuerpo del aviso sólo
- * dice "mirá el pago 123", nunca se le cree el estado.
+ * dice "mira el pago 123", nunca se le cree el estado.
  */
 export class MercadoPagoGateway implements PaymentGateway {
     readonly provider = 'mercadopago' as const;
@@ -258,7 +258,7 @@ export function mapMpPaymentStatus(status: string | undefined): BillingPaymentSt
         case 'cancelled':
             return 'rejected';
         default:
-            // pending / in_process / authorized / in_mediation: todavía no es plata.
+            // pending / in_process / authorized / in_mediation: todavía no es dinero.
             return 'pending';
     }
 }

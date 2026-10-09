@@ -238,7 +238,7 @@ class LayoutBuilder {
 
 /**
  * Cells declarables para `V2Builder.row()`. Cada cell tiene `weight`
- * (peso relativo dentro del row, ~12 sumando si querés ocupar todo)
+ * (peso relativo dentro del row, ~12 sumando si quieres ocupar todo)
  * y opcionalmente `height` (filas verticales — default = altura del
  * row).
  *
@@ -433,7 +433,7 @@ class V2Builder {
     }
 
     /**
-     * Row-based placement (0.35.3+): declarás cells con `weight`
+     * Row-based placement (0.35.3+): declaras cells con `weight`
      * (relativo, normalmente sumando ~12). El builder:
      *   1. Materializa cada cell — si una `group` no tiene fields
      *      disponibles, SE OMITE.
@@ -567,8 +567,8 @@ class V2Builder {
     /**
      * Helper para placement vertical de relacionados (1 block por
      * relation field). Se llama después de los `row()`s — ocupa
-     * la zona inferior con un ancho fijo. Si querés relacionados
-     * inline en una row, usá `cell.kind === 'related'`.
+     * la zona inferior con un ancho fijo. Si quieres relacionados
+     * inline en una row, usa `cell.kind === 'related'`.
      */
     autoRelatedRows(spec: { width: number; height: number }): this {
         for (const f of this.fields) {
@@ -748,7 +748,7 @@ const autoTemplate: CrmTemplate = {
                     {
                         kind: 'notes', id: 'notes-default', weight: 1, height: 8,
                         title: 'Notas',
-                        content: 'Notas internas sobre este registro. Editá el bloque para personalizar.',
+                        content: 'Notas internas sobre este registro. Edita el bloque para personalizar.',
                     },
                 ],
             },
@@ -868,7 +868,7 @@ const contactTemplate: CrmTemplate = {
                     {
                         kind: 'notes', id: 'notes-recordatorios', weight: 1, height: 4,
                         title: 'Recordatorios',
-                        content: 'Notas internas sobre este contacto. Editá el bloque para personalizar.',
+                        content: 'Notas internas sobre este contacto. Edita el bloque para personalizar.',
                     },
                     {
                         kind: 'notes', id: 'notes-proximos', weight: 1, height: 4,
@@ -1003,7 +1003,7 @@ const dealTemplate: CrmTemplate = {
                     {
                         kind: 'notes', id: 'notes-deal', weight: 1, height: 4,
                         title: 'Próximos pasos',
-                        content: 'Acciones a seguir para avanzar esta venta. Editá el bloque para personalizar.',
+                        content: 'Acciones a seguir para avanzar esta venta. Edita el bloque para personalizar.',
                     },
                     {
                         kind: 'notes', id: 'notes-objeciones', weight: 1, height: 3,
@@ -1133,12 +1133,12 @@ const taskTemplate: CrmTemplate = {
                     {
                         kind: 'notes', id: 'notes-checklist', weight: 1, height: 6,
                         title: 'Checklist',
-                        content: '- [ ] Sub-tarea 1\n- [ ] Sub-tarea 2\n- [ ] Sub-tarea 3\n\nEditá el bloque para personalizar.',
+                        content: '- [ ] Sub-tarea 1\n- [ ] Sub-tarea 2\n- [ ] Sub-tarea 3\n\nEdita el bloque para personalizar.',
                     },
                     {
                         kind: 'notes', id: 'notes-bloqueos', weight: 1, height: 6,
                         title: 'Bloqueos',
-                        content: 'Cualquier impedimento o dependencia. Editá el bloque para personalizar.',
+                        content: 'Cualquier impedimento o dependencia. Edita el bloque para personalizar.',
                     },
                 ],
             },
@@ -2043,7 +2043,7 @@ export function customConfigV2FromBuiltin(
         ? tpl.resolveV2(fields)
         : migrateV1toV2(customConfigFromBuiltin(builtinId, fields));
     // Las built-ins no emiten header block (su `V2Builder` no lo conoce);
-    // lo agregamos acá una sola vez para que el editor lo vea como un
+    // lo agregamos aquí una sola vez para que el editor lo vea como un
     // bloque real y el render sea consistente con custom configs.
     return ensureHeaderBlock(raw);
 }

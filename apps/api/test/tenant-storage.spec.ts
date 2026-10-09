@@ -301,7 +301,7 @@ describe('almacenamiento en Google Drive (v0.1.269)', () => {
         drive.token = 'otro';
         try {
             await expect(storage.set(tenantId, driveId)).rejects.toMatchObject({
-                response: { code: 'storage_not_ready', message: expect.stringMatching(/reconectá/) },
+                response: { code: 'storage_not_ready', message: expect.stringMatching(/reconecta/) },
             });
         } finally {
             drive.token = good;

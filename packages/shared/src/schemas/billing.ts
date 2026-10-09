@@ -29,7 +29,7 @@ export interface PlanLimits {
     /**
      * Correos por mes que la empresa puede enviar POR EL SMTP DE LA PLATAFORMA
      * (ADR-S18). `null` = ilimitado. Con SMTP propio configurado no aplica: los
-     * correos salen por el servidor del cliente y no cuestan nada acá.
+     * correos salen por el servidor del cliente y no cuestan nada aquí.
      */
     max_emails_month: number | null;
     /**

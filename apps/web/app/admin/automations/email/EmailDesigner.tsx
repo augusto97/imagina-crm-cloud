@@ -400,7 +400,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     const apply = (): void => {
         props.onApply(design);
         props.onOpenChange(false);
-        toast.success(__('Diseño aplicado'), __('Acordate de guardar la automatización.'));
+        toast.success(__('Diseño aplicado'), __('Acuérdate de guardar la automatización.'));
     };
 
     const left = (
@@ -423,9 +423,9 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                             {narrow
                                 ? selected
-                                    ? __('Tocá un bloque: se agrega debajo del elegido.')
-                                    : __('Tocá un bloque para agregarlo al final del correo.')
-                                : __('Arrastrá un bloque al correo y soltalo donde quieras, o hacé clic para agregarlo debajo del elegido.')}
+                                    ? __('Toca un bloque: se agrega debajo del elegido.')
+                                    : __('Toca un bloque para agregarlo al final del correo.')
+                                : __('Arrastra un bloque al correo y suéltalo donde quieras, o haz clic para agregarlo debajo del elegido.')}
                         </p>
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" data-testid="email-palette">
                             {PALETTE.map(({ type, icon: Icon }) => (
@@ -515,10 +515,10 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     ) : (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-p-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
             <MousePointerClick className="imcrm-h-6 imcrm-w-6" />
-            {__('Tocá un bloque en la vista previa para editarlo.')}
+            {__('Toca un bloque en la vista previa para editarlo.')}
             {!narrow && (
                 <ul className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-left imcrm-text-[11px] imcrm-leading-snug">
-                    <li>{__('Arrastrá los bloques para cambiarlos de lugar (también entre columnas).')}</li>
+                    <li>{__('Arrastra los bloques para cambiarlos de lugar (también entre columnas).')}</li>
                     <li>
                         <Kbd>Supr</Kbd> {__('elimina')} · <Kbd>Ctrl</Kbd>+<Kbd>D</Kbd> {__('duplica')} · <Kbd>Alt</Kbd>+<Kbd>↑↓</Kbd> {__('mueve')}
                     </li>
@@ -537,7 +537,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                 {real?.error
                     ? real.error
                     : real?.sample_record_id
-                      ? `${__('Con los datos del registro')} #${real.sample_record_id}. ${real.signature_note ?? ''} ${__('Para mover o editar bloques, volvé a «Ver las variables».')}`
+                      ? `${__('Con los datos del registro')} #${real.sample_record_id}. ${real.signature_note ?? ''} ${__('Para mover o editar bloques, vuelve a «Ver las variables».')}`
                       : __('La lista no tiene registros: las variables quedan vacías.')}
             </div>
         ) : null;
@@ -547,7 +547,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                 <Moon className="imcrm-h-3 imcrm-w-3" />
                 {design.theme.dark?.enabled
                     ? __('Con tus colores para modo oscuro (Apple Mail, Outlook de Mac, iOS y web). Gmail aplica su propio modo oscuro.')
-                    : __('Simulación: así oscurecen el correo Gmail y Outlook por su cuenta. Para elegir vos los colores, activá «Modo oscuro» en Estilo general.')}
+                    : __('Simulación: así oscurecen el correo Gmail y Outlook por su cuenta. Para elegir tú los colores, activa «Modo oscuro» en Estilo general.')}
                 {!design.theme.dark?.enabled && (
                     <button
                         type="button"
@@ -687,7 +687,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                         commit(emailTemplateDesign(key, props.brandAccent));
                         setSelected(null);
                         setShowTemplates(false);
-                        if (dirty || design.blocks.length > 0) toast.info(__('Plantilla aplicada'), __('Podés volver atrás con Deshacer.'));
+                        if (dirty || design.blocks.length > 0) toast.info(__('Plantilla aplicada'), __('Puedes volver atrás con Deshacer.'));
                     }}
                 />
             )}
@@ -807,8 +807,8 @@ function Outline({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="email-outline" onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setHint(null)}>
             <p className="imcrm-mb-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 {draggable
-                    ? __('El orden del correo, de arriba hacia abajo. Tocá un bloque para editarlo o arrastralo para moverlo.')
-                    : __('El orden del correo, de arriba hacia abajo. Tocá un bloque para editarlo.')}
+                    ? __('El orden del correo, de arriba hacia abajo. Toca un bloque para editarlo o arrástralo para moverlo.')
+                    : __('El orden del correo, de arriba hacia abajo. Toca un bloque para editarlo.')}
             </p>
             {design.blocks.map((b, i) => {
                 const top = (index: number): DropTarget => ({ parentId: null, columnIndex: null, index });
@@ -1125,8 +1125,8 @@ function TemplatesGallery({
         <div className="imcrm-absolute imcrm-inset-0 imcrm-z-10 imcrm-flex imcrm-flex-col imcrm-bg-background" data-testid="email-templates">
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-py-3">
                 <div className="imcrm-mr-auto">
-                    <h2 className="imcrm-text-base imcrm-font-semibold">{__('Elegí una plantilla')}</h2>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Después cambiás todo: textos, colores, bloques.')}</p>
+                    <h2 className="imcrm-text-base imcrm-font-semibold">{__('Elige una plantilla')}</h2>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Después cambias todo: textos, colores, bloques.')}</p>
                 </div>
                 <Button variant="ghost" size="sm" onClick={onClose}>
                     {__('Volver al editor')}

@@ -275,7 +275,7 @@ export class WorkspacesController {
         if (!report) {
             throw new NotFoundException({
                 code: 'smtp_not_configured',
-                message: 'Configurá primero el SMTP del workspace (con un remitente válido)',
+                message: 'Configura primero el SMTP del workspace (con un remitente válido)',
                 data: { status: 404 },
             });
         }
@@ -356,7 +356,7 @@ export class WorkspacesController {
         if (!report) {
             throw new NotFoundException({
                 code: 'domain_not_configured',
-                message: 'Configurá primero el dominio personalizado',
+                message: 'Configura primero el dominio personalizado',
                 data: { status: 404 },
             });
         }
@@ -433,7 +433,7 @@ export class WorkspacesController {
         if (!report) {
             throw new NotFoundException({
                 code: 'domain_not_configured',
-                message: 'Configurá primero el dominio del portal',
+                message: 'Configura primero el dominio del portal',
                 data: { status: 404 },
             });
         }
@@ -483,7 +483,7 @@ export class WorkspacesController {
         if (!host) {
             throw new NotFoundException({
                 code: 'smtp_not_configured',
-                message: 'Escribí primero el host del servidor SMTP',
+                message: 'Escribe primero el host del servidor SMTP',
                 data: { status: 404 },
             });
         }

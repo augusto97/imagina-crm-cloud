@@ -12,7 +12,7 @@ import { DomainsService } from './domains.service';
 
 /**
  * v0.1.246 — Plataforma → Dominios (sólo superadmin). Con ServerAvatar cada
- * dominio de una empresa se habilita a mano como alias del servidor web: acá
+ * dominio de una empresa se habilita a mano como alias del servidor web: aquí
  * el operador ve qué hay que agregar (verificado pero no responde), qué ya
  * funciona y qué hay que sacar (dominios que una empresa dejó de usar).
  */

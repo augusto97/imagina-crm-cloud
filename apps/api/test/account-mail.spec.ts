@@ -135,7 +135,7 @@ describe('correo de cuenta (v0.1.238)', () => {
         const { redis, env, platform } = setup();
         await clearDiagnostics(redis as unknown as Redis);
 
-        await new MailService(env, new CaptureTransport(), platform).sendNow({ to: 'a@b.test', subject: 'Verificá tu correo' });
+        await new MailService(env, new CaptureTransport(), platform).sendNow({ to: 'a@b.test', subject: 'Verifica tu correo' });
         await new MailService(env, new LogMailTransport(), platform).sendNow({ to: 'c@d.test', subject: 'Recuperar contraseña' });
         await expect(
             new MailService(env, new FailingTransport(), platform).sendNow({ to: 'e@f.test', subject: 'Invitación', tenantId: 7 }),

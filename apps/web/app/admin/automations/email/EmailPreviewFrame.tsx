@@ -10,7 +10,7 @@ import type { DropGeometry, DropResolution } from './emailDnd';
  * v0.1.265 — Vista previa del correo en un iframe aislado (ADR-S34).
  *
  * El HTML es EXACTAMENTE el que sale por correo (lo arma `renderEmailHtml`
- * de packages/shared): así lo que se ve acá es lo que recibe Gmail/Outlook,
+ * de packages/shared): así lo que se ve aquí es lo que recibe Gmail/Outlook,
  * sin que los estilos de la app lo contaminen. `sandbox` sin `allow-scripts`
  * — nada adentro ejecuta código (la firma y el bloque «HTML propio» los
  * escribe una persona) — pero con `allow-same-origin` para que la app pueda

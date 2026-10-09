@@ -15,10 +15,10 @@ const STARTTLS_PORTS = new Set(['25', '587', '2525']);
 export function tlsMismatch(form: { port: string; secure: boolean }): string | null {
     const port = form.port.trim();
     if (port === '465' && !form.secure) {
-        return 'El puerto 465 habla TLS desde el inicio: activá «Conexión segura» o el envío queda esperando hasta dar timeout.';
+        return 'El puerto 465 habla TLS desde el inicio: activa «Conexión segura» o el envío queda esperando hasta dar timeout.';
     }
     if (STARTTLS_PORTS.has(port) && form.secure) {
-        return `El puerto ${port} usa STARTTLS: desactivá «Conexión segura» (se cifra igual, pero después del saludo).`;
+        return `El puerto ${port} usa STARTTLS: desactiva «Conexión segura» (se cifra igual, pero después del saludo).`;
     }
     return null;
 }
@@ -34,13 +34,13 @@ export function explainSendError(error: string | undefined): string {
         low.includes('econnrefused') ||
         low.includes('enotfound')
     ) {
-        return `${raw} — el servidor no logró conectarse al SMTP. Tocá «Diagnosticar conexión» para ver qué puerto responde y por qué.`;
+        return `${raw} — el servidor no logró conectarse al SMTP. Toca «Diagnosticar conexión» para ver qué puerto responde y por qué.`;
     }
     if (low.includes('invalid login') || low.includes('535') || low.includes('auth')) {
-        return `${raw} — la conexión llega pero el servidor rechaza las credenciales: revisá usuario y contraseña.`;
+        return `${raw} — la conexión llega pero el servidor rechaza las credenciales: revisa usuario y contraseña.`;
     }
     if (low.includes('sender') || low.includes('553') || low.includes('550') || low.includes('from')) {
-        return `${raw} — el servidor rechaza el remitente: usá una dirección autorizada por tu proveedor en el campo From.`;
+        return `${raw} — el servidor rechaza el remitente: usa una dirección autorizada por tu proveedor en el campo From.`;
     }
     return raw;
 }

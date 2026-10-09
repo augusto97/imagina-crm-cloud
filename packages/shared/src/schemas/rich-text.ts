@@ -48,7 +48,7 @@ const NODE_ATTRS: Record<string, readonly string[]> = {
     table: [],
     tableRow: [],
     // Bloques "vivos" (v0.1.134): apuntan a entidades de la app por ID, no a
-    // contenido pegado. El render los resuelve; acá sólo se guarda el vínculo.
+    // contenido pegado. El render los resuelve; aquí sólo se guarda el vínculo.
     mentionUser: ['id', 'label'],
     mentionRecord: ['id', 'listSlug', 'label'],
     imageBlock: ['fileId', 'src', 'alt', 'width'],
@@ -374,7 +374,7 @@ export function richDocToPlainText(doc: RichDoc | null | undefined, limit = 5000
 /**
  * Schema Zod del documento. Es deliberadamente PERMISIVO en la forma (el
  * filtrado fino lo hace `sanitizeRichDoc`, que es quien decide qué se
- * persiste); acá sólo se acota el tamaño para que un payload absurdo no
+ * persiste); aquí sólo se acota el tamaño para que un payload absurdo no
  * llegue siquiera a parsearse en profundidad.
  */
 const richNodeSchema: z.ZodType<RichNode> = z.lazy(() =>

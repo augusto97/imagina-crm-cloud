@@ -193,7 +193,7 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         const rec = await recordsService.create(tenantA, ana, 'clientes', { data: { [key()]: 'ACME' } });
         await commentsService.create(tenantA, ana, 'clientes', rec.id, {
             kind: 'note',
-            body: 'Hola @beto@acme.test mirá esto (cc @ana@acme.test y @nadie@otro.test)',
+            body: 'Hola @beto@acme.test mira esto (cc @ana@acme.test y @nadie@otro.test)',
         });
         const rows = await withTenant(pg.db, tenantA, (tx) =>
             tx.select().from(mentions).where(eq(mentions.tenantId, tenantA)),
@@ -206,13 +206,13 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
             authorUserId: ana.userId,
             recordId: rec.id,
         });
-        expect(rows[0]!.snippet).toContain('mirá esto');
+        expect(rows[0]!.snippet).toContain('mira esto');
 
         // La campana de beto la ve; la de ana no.
         const feed = await meService.mentions(tenantA, beto.userId, 20);
         expect(feed).toHaveLength(1);
         expect(feed[0]).toMatchObject({ user_id: ana.userId, record_id: rec.id });
-        expect((feed[0]!.changes as { snippet: string }).snippet).toContain('mirá esto');
+        expect((feed[0]!.changes as { snippet: string }).snippet).toContain('mira esto');
         expect(await meService.mentions(tenantA, ana.userId, 20)).toHaveLength(0);
     });
 

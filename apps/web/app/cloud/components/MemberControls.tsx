@@ -224,7 +224,7 @@ export function MemberRow({
     const remove = async (): Promise<void> => {
         const ok = await confirm({
             title: `${__('¿Quitar a')} ${member.name}?`,
-            description: __('Deja de tener acceso a esta empresa al instante. Su cuenta y lo que escribió quedan; podés volver a sumarla cuando quieras.'),
+            description: __('Deja de tener acceso a esta empresa al instante. Su cuenta y lo que escribió quedan; puedes volver a sumarla cuando quieras.'),
             confirmLabel: __('Quitar'),
             destructive: true,
         });
@@ -242,7 +242,7 @@ export function MemberRow({
                 <div className="imcrm-min-w-0">
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
                         <span className="imcrm-truncate">{member.name}</span>
-                        {isSelf && <span className="imcrm-text-xs imcrm-font-normal imcrm-text-muted-foreground">({__('vos')})</span>}
+                        {isSelf && <span className="imcrm-text-xs imcrm-font-normal imcrm-text-muted-foreground">({__('tú')})</span>}
                         {member.pending && (
                             <Badge variant="warning" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]" data-testid="member-pending">
                                 {__('Invitación pendiente')}

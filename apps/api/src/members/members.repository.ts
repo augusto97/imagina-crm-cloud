@@ -32,7 +32,7 @@ export class MembersRepository {
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             // El EQUIPO: los clientes del portal se administran desde la ficha
-            // de su registro, no desde acá (v0.1.240; antes podían ser cientos
+            // de su registro, no desde aquí (v0.1.240; antes podían ser cientos
             // de filas mezcladas con las personas del equipo).
             .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client')))
             .orderBy(asc(users.name), asc(memberships.userId));

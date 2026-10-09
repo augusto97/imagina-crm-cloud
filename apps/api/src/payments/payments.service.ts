@@ -156,12 +156,12 @@ export class PaymentsService {
         if (live.some((s) => s.status === 'authorized' || s.status === 'paused')) {
             throw new ConflictException({
                 code: 'auto_renew_active',
-                message: 'Ya tenés la renovación automática activa. Para cambiar de plan, cancelala primero: lo que ya pagaste se conserva.',
+                message: 'Ya tienes la renovación automática activa. Para cambiar de plan, cancélala primero: lo que ya pagaste se conserva.',
                 data: { status: 409 },
             });
         }
         // Un intento anterior que nunca se autorizó se descarta (en el proveedor
-        // y acá): si no, quedaría un enlace viejo cobrable.
+        // y aquí): si no, quedaría un enlace viejo cobrable.
         for (const old of live) await this.cancelAt(tenantId, old);
 
         // El primer cobro cae cuando vence lo ya pagado: nadie paga dos veces el mismo mes.
@@ -199,7 +199,7 @@ export class PaymentsService {
     // ── Avisos ───────────────────────────────────────────────────────────
 
     /**
-     * Procesa un aviso: el gateway lo verifica y lo normaliza; acá se aplica.
+     * Procesa un aviso: el gateway lo verifica y lo normaliza; aquí se aplica.
      * Un error de lectura del proveedor se RELANZA (500 → el proveedor reintenta);
      * un aviso falso o ajeno no hace nada.
      */
@@ -439,7 +439,7 @@ export class PaymentsService {
         }
         for (const sub of live) {
             const gateway = this.byProvider.get(sub.provider as PaymentProvider);
-            // Acá SÍ se exige que el proveedor la cancele: si no, la tarjeta se
+            // Aquí SÍ se exige que el proveedor la cancele: si no, la tarjeta se
             // seguiría cobrando con la pantalla diciendo "cancelada".
             if (gateway?.cancelSubscription) await gateway.cancelSubscription(sub.externalId);
             await this.tenantDb.withTenant(tenantId, (tx) =>

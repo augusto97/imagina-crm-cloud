@@ -12,7 +12,7 @@ import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 /**
  * Piezas PURAS del diálogo de edición masiva (v0.1.216): cómo se llama cada
- * operación en criollo, qué columnas se pueden editar, y cómo un borrador del
+ * operación en lenguaje claro, qué columnas se pueden editar, y cómo un borrador del
  * formulario se convierte en una operación que el backend acepta.
  */
 
@@ -132,11 +132,11 @@ export type DraftResult = { ok: true; operation: BulkOperation } | { ok: false; 
 
 /** Borrador → operación validada con el MISMO schema del backend. */
 export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldType?: FieldTypeSlug): DraftResult {
-    if (d.field_id === null) return { ok: false, error: __('Elegí la columna.') };
-    if (d.op === null) return { ok: false, error: __('Elegí qué hacer.') };
+    if (d.field_id === null) return { ok: false, error: __('Elige la columna.') };
+    if (d.op === null) return { ok: false, error: __('Elige qué hacer.') };
     const num = (s: string | undefined, what: string): number | { error: string } => {
         const n = parseNumberInput(s ?? '', format);
-        return n === null ? { error: `${__('Escribí')} ${what}.` } : n;
+        return n === null ? { error: `${__('Escribe')} ${what}.` } : n;
     };
     const base = { op: d.op, field_id: d.field_id };
     let raw: Record<string, unknown>;
@@ -188,7 +188,7 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
             const operand = (o: { field_id?: number; value?: string } | undefined): Record<string, number> | { error: string } => {
                 if (o?.field_id) return { field_id: o.field_id };
                 const n = parseNumberInput(o?.value ?? '', format);
-                return n === null ? { error: __('Completá los dos lados del cálculo.') } : { value: n };
+                return n === null ? { error: __('Completa los dos lados del cálculo.') } : { value: n };
             };
             const l = operand(d.left);
             const r = operand(d.right);
@@ -198,16 +198,16 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
             break;
         }
         case 'copy':
-            if (!d.source_field_id) return { ok: false, error: __('Elegí de qué columna copiar.') };
+            if (!d.source_field_id) return { ok: false, error: __('Elige de qué columna copiar.') };
             raw = { ...base, source_field_id: d.source_field_id };
             break;
         case 'prepend':
         case 'append':
-            if (!d.text) return { ok: false, error: __('Escribí el texto.') };
+            if (!d.text) return { ok: false, error: __('Escribe el texto.') };
             raw = { ...base, text: d.text };
             break;
         case 'replace':
-            if (!d.find) return { ok: false, error: __('Escribí qué buscar.') };
+            if (!d.find) return { ok: false, error: __('Escribe qué buscar.') };
             raw = { ...base, find: d.find, replace: d.replace ?? '', case_sensitive: d.case_sensitive === true };
             break;
         case 'text_case':
@@ -215,7 +215,7 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
             break;
         case 'add_options':
         case 'remove_options':
-            if (!d.values || d.values.length === 0) return { ok: false, error: __('Elegí al menos una opción.') };
+            if (!d.values || d.values.length === 0) return { ok: false, error: __('Elige al menos una opción.') };
             raw = { ...base, values: d.values };
             break;
         case 'shift_date': {
@@ -226,14 +226,14 @@ export function draftToOperation(d: BulkDraft, format?: NumberFormatId, fieldTyp
         }
         case 'add_links':
         case 'remove_links':
-            if (!d.ids || d.ids.length === 0) return { ok: false, error: __('Elegí al menos un registro.') };
+            if (!d.ids || d.ids.length === 0) return { ok: false, error: __('Elige al menos un registro.') };
             raw = { ...base, ids: d.ids };
             break;
         default:
             raw = base;
     }
     const parsed = bulkOperationSchema.safeParse(raw);
-    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? __('Revisá la operación.') };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? __('Revisa la operación.') };
     return { ok: true, operation: parsed.data };
 }
 

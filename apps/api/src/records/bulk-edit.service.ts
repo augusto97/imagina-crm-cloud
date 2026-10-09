@@ -71,7 +71,7 @@ export class BulkEditService {
         if (!('ids' in target) && !roleHasCapability(actor.role, 'bulk_actions')) {
             throw new ForbiddenException({
                 code: 'forbidden_bulk',
-                message: 'Tu rol no puede editar en lote todos los registros de un filtro: seleccioná las filas.',
+                message: 'Tu rol no puede editar en lote todos los registros de un filtro: selecciona las filas.',
                 data: { status: 403 },
             });
         }
@@ -116,7 +116,7 @@ export class BulkEditService {
         const found = new Set(loaded.rows.map((r) => r.id));
         // Lo que no se encontró (borrado entre la vista previa y ahora, o fuera
         // del alcance de edición de la persona) se informa, no se calla.
-        for (const id of ids) if (!found.has(id)) result.failed.push({ id, message: 'El registro ya no existe o no lo podés editar.' });
+        for (const id of ids) if (!found.has(id)) result.failed.push({ id, message: 'El registro ya no existe o no lo puedes editar.' });
         // v0.1.218 — El historial: la edición se abre en la primera tanda y
         // cada fila escrita deja su antes y después (lo que sirve para deshacer).
         const labelOf = (id: number) => ctx.bulkFields.get(id)?.label ?? `#${id}`;
@@ -218,7 +218,7 @@ export class BulkEditService {
         for (const op of operations) {
             const field = byId.get(op.field_id);
             if (!field) throw badOp('Una de las columnas ya no existe en esta lista.');
-            if (hidden.has(field.slug)) throw badOp(`No podés editar «${field.label}».`);
+            if (hidden.has(field.slug)) throw badOp(`No puedes editar «${field.label}».`);
             if (field.type === 'computed' || isThroughField(field.type)) {
                 throw badOp(`«${field.label}» se calcula sola: no se edita.`);
             }
@@ -226,7 +226,7 @@ export class BulkEditService {
             if (!bulkOpsFor(field.type).includes(op.op)) throw badOp(`«${field.label}» no admite esa operación.`);
             for (const readId of readsOf(op)) {
                 const src = byId.get(readId);
-                if (!src || hidden.has(src.slug)) throw badOp('Una de las columnas del cálculo no existe o no la podés ver.');
+                if (!src || hidden.has(src.slug)) throw badOp('Una de las columnas del cálculo no existe o no la puedes ver.');
             }
         }
         const bulkFields = new Map<number, BulkField>(

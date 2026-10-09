@@ -319,7 +319,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             break;
         case 'file':
             // Subcomponente dedicado: llama useAttachments incondicionalmente
-            // (rules-of-hooks — acá estamos dentro de un switch).
+            // (rules-of-hooks — aquí estamos dentro de un switch).
             control = <FileFieldControl id={id} value={value} onChange={onChange} />;
             break;
         case 'relation':

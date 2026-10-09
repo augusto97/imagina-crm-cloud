@@ -57,7 +57,7 @@ export function useStoreAccess(
 
 /**
  * Cómo se presenta una COLUMNA de una lista de tienda en su encabezado:
- *  - `store_locked`: viene de la tienda y no se edita acá;
+ *  - `store_locked`: viene de la tienda y no se edita aquí;
  *  - `store_sync`: se puede editar (en las filas que corresponda) y viaja a la tienda;
  *  - `own`: columna propia de la empresa, nunca viaja.
  */

@@ -180,7 +180,7 @@ export class SqlSyncEngine {
         let fields = await this.fields.listByListId(tenantId, row.listId);
         const byId = new Map(fields.map((f) => [f.id, f]));
         const keyField = byId.get(settings.key_field_id);
-        if (!keyField) throw new SqlSyncFatal('El campo clave de la lista ya no existe: elegí otro en la sincronización.');
+        if (!keyField) throw new SqlSyncFatal('El campo clave de la lista ya no existe: elige otro en la sincronización.');
         const flagField = settings.on_missing === 'flag' && settings.flag_field_id ? (byId.get(settings.flag_field_id) ?? null) : null;
 
         const creds = await this.connectors.integrationCredsFor(tenantId, row.connectionId);
@@ -355,7 +355,7 @@ export class SqlSyncEngine {
             }
         }
         if (res.truncated) {
-            notes.push(`La consulta devolvió más de ${SQL_SYNC_MAX_ROWS.toLocaleString('es')} filas: se cargaron las primeras. Filtrá la consulta (por fecha, con @ultima_sincronizacion).`);
+            notes.push(`La consulta devolvió más de ${SQL_SYNC_MAX_ROWS.toLocaleString('es')} filas: se cargaron las primeras. Filtra la consulta (por fecha, con @ultima_sincronizacion).`);
         }
 
         let created = toCreate.length;

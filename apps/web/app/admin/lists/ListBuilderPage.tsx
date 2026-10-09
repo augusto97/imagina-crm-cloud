@@ -36,7 +36,7 @@ import {
  *
  * Ahora hay una tira de pestañas (el mismo patrón que las vistas
  * guardadas de la página de registros) y se muestra UNA sección por vez,
- * con su título y una línea que explica en criollo qué se hace ahí. La
+ * con su título y una línea que explica en lenguaje claro qué se hace ahí. La
  * sección activa viaja en `?s=` para poder linkearla.
  */
 export function ListBuilderPage(): JSX.Element {

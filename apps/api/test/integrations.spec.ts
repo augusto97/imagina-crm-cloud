@@ -431,7 +431,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
             if (call.url.startsWith('https://tienda.test/wp-json/wc/v3/products')) {
                 return call.url.includes('consumer_secret=cs_bueno')
                     ? { status: 200, body: '[{"id":1}]' }
-                    : { status: 401, body: '{"code":"woocommerce_rest_cannot_view","message":"No podés listar"}' };
+                    : { status: 401, body: '{"code":"woocommerce_rest_cannot_view","message":"No puedes listar"}' };
             }
             if (call.url === 'https://tienda.test/wp-json/?_fields=name') return { status: 200, body: '{"name":"Tienda Test"}' };
             if (call.url.startsWith('https://tienda.test/wp-json/wc/v3/orders/77')) {
@@ -543,7 +543,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         });
         expect(JSON.parse(test.request.body!)).toEqual({ channel: '#ventas', text: 'Nuevo pedido de Ana' });
         expect(test.request.headers.authorization).not.toContain('xoxb-bot-token-1');
-        expect(test.error).toMatch(/invitala/);
+        expect(test.error).toMatch(/invítala/);
 
         // Motor: el run queda FALLIDO con el motivo (antes un 200 era «éxito»).
         await engine.process({
@@ -555,7 +555,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         });
         const runs = await automationsService.runsById(tenantId, auto.id, {});
         expect(runs.data[0]).toMatchObject({ status: 'failed' });
-        expect(runs.data[0]!.error ?? '').toMatch(/invitala/);
+        expect(runs.data[0]!.error ?? '').toMatch(/invítala/);
 
         // La acción con nombre CUENTA como uso: borrar la conexión avisa.
         const usage = await svc.usage(tenantId, conn!.id);

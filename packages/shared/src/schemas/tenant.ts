@@ -107,7 +107,7 @@ export type UpdateTenantFormatInput = z.infer<typeof updateTenantFormatSchema>;
 
 /**
  * Respuesta del GET: agrega la URL resuelta del logo (descarga con sesión)
- * y el formato regional (viaja acá porque el branding ya se fetchea en el
+ * y el formato regional (viaja aquí porque el branding ya se fetchea en el
  * boot de todo miembro — sin request extra).
  */
 export const brandingResponseSchema = brandingSchema.extend({

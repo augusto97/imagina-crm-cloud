@@ -57,7 +57,7 @@ export class EmailComposer {
         if (mode === 'design') {
             const design = parseEmailDesign(cfg.design);
             if (!design) {
-                throw new Error('El diseño del correo no es válido: abrilo en el editor y volvé a guardarlo.');
+                throw new Error('El diseño del correo no es válido: ábrelo en el editor y vuelve a guardarlo.');
             }
             const format = await this.tenantFormat(tx, input.tenantId);
             const userNames = await this.userNames(tx, input, design.blocks);

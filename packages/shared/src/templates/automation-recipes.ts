@@ -75,7 +75,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'aviso-nuevo-registro',
         'Avisar al equipo cuando se crea un registro',
-        'Cada alta manda un correo interno con el título del registro. Completá el destinatario.',
+        'Cada alta manda un correo interno con el título del registro. Completa el destinatario.',
         'correo',
         [TITULO],
         {
@@ -96,7 +96,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'cambio-de-estado',
         'Avisar por correo cuando cambia el estado',
-        'Cada vez que cambia el estado, manda un correo con el valor nuevo y el anterior. Completá el destinatario.',
+        'Cada vez que cambia el estado, manda un correo con el valor nuevo y el anterior. Completa el destinatario.',
         'correo',
         [ESTADO, TITULO],
         {
@@ -117,7 +117,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'encuesta-satisfaccion',
         'Encuesta de satisfacción al cerrar',
-        'Cuando el estado pasa al valor de cierre (completalo en la condición), le pide al contacto su opinión por correo.',
+        'Cuando el estado pasa al valor de cierre (complétalo en la condición), le pide al contacto su opinión por correo.',
         'correo',
         [ESTADO, EMAIL, TITULO],
         {
@@ -132,7 +132,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
                     config: {
                         to: '{{email}}',
                         subject: '¿Cómo fue tu experiencia?',
-                        body: 'Hola,\n\nCerramos «{{titulo}}». Nos ayudaría mucho saber cómo te fue: respondé este correo con una nota del 1 al 5.\n\n¡Gracias!',
+                        body: 'Hola,\n\nCerramos «{{titulo}}». Nos ayudaría mucho saber cómo te fue: responde este correo con una nota del 1 al 5.\n\n¡Gracias!',
                     },
                 },
             ],
@@ -141,7 +141,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'recordatorio-antes-de-vencer',
         'Recordatorio 3 días antes de la fecha',
-        'Tres días antes de la fecha límite manda un correo de aviso. Completá el destinatario; el plazo se ajusta en el disparador.',
+        'Tres días antes de la fecha límite manda un correo de aviso. Completa el destinatario; el plazo se ajusta en el disparador.',
         'plazos',
         [role('fecha', 'Fecha límite', ['date', 'datetime']), TITULO],
         {
@@ -162,7 +162,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'recordatorio-de-pago',
         'Recordatorio de pago a los 20 días',
-        'Veinte días después de la fecha de emisión, si el estado sigue siendo el pendiente (completalo en la condición), manda un recordatorio al email del contacto.',
+        'Veinte días después de la fecha de emisión, si el estado sigue siendo el pendiente (complétalo en la condición), manda un recordatorio al email del contacto.',
         'plazos',
         [role('fecha', 'Fecha de emisión', ['date', 'datetime']), ESTADO, EMAIL, TITULO],
         {
@@ -187,7 +187,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'escalar-al-vencer',
         'Escalar la prioridad al vencer',
-        'Al llegar la fecha límite, si el estado sigue abierto (completalo en la condición), sube la prioridad al valor que elijas.',
+        'Al llegar la fecha límite, si el estado sigue abierto (complétalo en la condición), sube la prioridad al valor que elijas.',
         'plazos',
         [role('vence', 'Fecha límite', ['date', 'datetime']), ESTADO, role('prioridad', 'Prioridad', ['select'])],
         {
@@ -215,7 +215,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'completar-avance',
         'Al cerrar, avance al 100 %',
-        'Cuando el estado pasa al valor de cierre (completalo en la condición), el avance queda en 100.',
+        'Cuando el estado pasa al valor de cierre (complétalo en la condición), el avance queda en 100.',
         'campos',
         [ESTADO, role('avance', 'Avance', ['percent', 'number'])],
         {
@@ -257,7 +257,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'whatsapp-al-crear',
         'WhatsApp de confirmación al crear',
-        'Llama a tu gateway de WhatsApp/SMS con el teléfono del contacto y un mensaje. Completá la URL y las credenciales del proveedor.',
+        'Llama a tu gateway de WhatsApp/SMS con el teléfono del contacto y un mensaje. Completa la URL y las credenciales del proveedor.',
         'integraciones',
         [role('telefono', 'Teléfono', ['phone', 'text']), role('nombre', 'Nombre del contacto', ['text'], false)],
         {
@@ -282,7 +282,7 @@ export const SYSTEM_AUTOMATION_TEMPLATES: readonly SystemAutomationTemplate[] = 
     recipe(
         'stock-bajo',
         'Aviso de stock bajo o agotado',
-        'Cuando un producto pasa a «Stock bajo» o «Agotado», manda un correo para reponer con las unidades que quedan y las vendidas en 30 días. Pensada para las listas de una tienda sincronizada (Productos o Variaciones). Completá el destinatario.',
+        'Cuando un producto pasa a «Stock bajo» o «Agotado», manda un correo para reponer con las unidades que quedan y las vendidas en 30 días. Pensada para las listas de una tienda sincronizada (Productos o Variaciones). Completa el destinatario.',
         'campos',
         [
             role('estado_inventario', 'Estado de inventario', ['select']),

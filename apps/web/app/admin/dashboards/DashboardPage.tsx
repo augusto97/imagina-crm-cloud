@@ -310,7 +310,7 @@ export function DashboardPage(): JSX.Element {
         fontFamily: pageLayout.fontFamily,
     };
     // El lienzo pinta el FONDO, nada más: la tinta se aplica por widget. Un
-    // override global de los foregrounds acá teñía también las tarjetas que
+    // override global de los foregrounds aquí teñía también las tarjetas que
     // pintan su propio fondo con los tokens del tema (y quedaban blanco sobre
     // blanco con un fondo de página oscuro).
     const canvasStyle: React.CSSProperties =
@@ -621,7 +621,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }): JSX.Element {
             </span>
             <h2 className="imcrm-text-base imcrm-font-medium">{__('Dashboard vacío')}</h2>
             <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                {__('Agregá tu primer widget: un indicador, un gráfico de barras o de tendencia.')}
+                {__('Agrega tu primer widget: un indicador, un gráfico de barras o de tendencia.')}
             </p>
             <Button onClick={onAdd} className="imcrm-mt-2 imcrm-gap-2">
                 <Plus className="imcrm-h-4 imcrm-w-4" />

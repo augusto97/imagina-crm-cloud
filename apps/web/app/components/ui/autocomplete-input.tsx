@@ -119,7 +119,7 @@ export function AutocompleteInput({
                 disabled={disabled}
                 autoComplete="off"
             />
-            {/* Dropdown PLANO (sin portal): un Popover de Radix acá adentro
+            {/* Dropdown PLANO (sin portal): un Popover de Radix aquí adentro
                 — este input suele vivir dentro de OTRO popover (el panel de
                 Filtros) — se auto-descartaba a los pocos ms por el juego de
                 capas anidadas (el anchor no es parte del content). Un div

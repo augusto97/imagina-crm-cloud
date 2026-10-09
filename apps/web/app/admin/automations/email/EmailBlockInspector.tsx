@@ -502,7 +502,7 @@ function ColumnsStyle(p: InspectorProps): JSX.Element {
                 <Check label={__('En el celular, una debajo de la otra')} checked={block.stack !== false} onChange={(v) => onPatch({ stack: v ? undefined : false })} />
                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                     {block.stack === false
-                        ? __('Quedan lado a lado también en el teléfono: usalo sólo con contenido corto (íconos, cifras).')
+                        ? __('Quedan lado a lado también en el teléfono: úsalo sólo con contenido corto (íconos, cifras).')
                         : __('En el celular las columnas se apilan solas.')}
                 </p>
             </ElementSection>
@@ -621,7 +621,7 @@ function ImageContent(p: InspectorProps): JSX.Element {
                         {uploading ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <ImagePlus className="imcrm-h-3.5 imcrm-w-3.5" />}
                         {__('Subir imagen')}
                     </Button>
-                    <MergeTagInput value={block.src} onChange={(v) => p.onPatch({ src: v })} fields={p.fields} placeholder={__('o pegá la dirección https://…')} />
+                    <MergeTagInput value={block.src} onChange={(v) => p.onPatch({ src: v })} fields={p.fields} placeholder={__('o pega la dirección https://…')} />
                 </div>
             </Field>
             <Field label={__('Texto alternativo')} hint={__('Lo que se lee si el programa de correo no muestra imágenes.')}>

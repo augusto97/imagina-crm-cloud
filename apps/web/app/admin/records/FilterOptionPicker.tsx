@@ -28,7 +28,7 @@ interface FilterOptionPickerProps {
      */
     onSearch?: (q: string) => void;
     loading?: boolean;
-    /** Texto de la lista vacía sin búsqueda ("Escribí para buscar…"). */
+    /** Texto de la lista vacía sin búsqueda ("Escribe para buscar…"). */
     emptyHint?: string;
     /** Etiqueta para un valor elegido que NO está entre las opciones. */
     resolveLabel?: (value: string) => ReactNode;
@@ -48,7 +48,7 @@ const norm = (s: string): string =>
  * `value` internos a mano, separados por coma.
  *
  * Dropdown PLANO (sin portal), igual que `AutocompleteInput` (v0.1.85): un
- * Popover de Radix acá adentro vive dentro de OTRO popover (el panel de
+ * Popover de Radix aquí adentro vive dentro de OTRO popover (el panel de
  * Filtros, el de edición masiva) y se auto-descartaba por el juego de capas
  * anidadas. Un div absoluto dentro del propio contenedor no participa de
  * ese sistema y sobrevive.

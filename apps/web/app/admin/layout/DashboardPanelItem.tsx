@@ -28,7 +28,7 @@ function readKey(settings: Record<string, unknown> | undefined, key: 'icon' | 'c
  * configuración (el mismo diálogo del lápiz de la página) y eliminar.
  *
  * El gate es `manage_dashboards`; quién puede mutar UN tablero concreto
- * (su creador o un admin, v0.1.57) lo decide el backend con 403 y acá se
+ * (su creador o un admin, v0.1.57) lo decide el backend con 403 y aquí se
  * muestra el motivo en un toast — la lista del menú no trae ese dato.
  */
 export function DashboardPanelItem({

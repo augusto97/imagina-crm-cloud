@@ -41,7 +41,7 @@ import { DEFAULT_LOW_STOCK } from './woocommerce/woo-map';
 
 /**
  * Sincronización con tiendas — lo que ve y toca la persona (v0.1.206,
- * ADR-S24). El trabajo pesado lo hace `StoreSyncEngine` en la cola; acá se
+ * ADR-S24). El trabajo pesado lo hace `StoreSyncEngine` en la cola; aquí se
  * crea el pack, se guardan los ajustes y se arma el estado que muestra la
  * pantalla de la tienda.
  */

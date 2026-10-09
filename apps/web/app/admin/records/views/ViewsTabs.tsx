@@ -345,8 +345,8 @@ export function ViewsTabs({
                                                 hint={
                                                     owner
                                                         ? view.is_default
-                                                            ? __('La vista por defecto la ven todos: elegí otra por defecto primero.')
-                                                            : __('Sólo vos la ves.')
+                                                            ? __('La vista por defecto la ven todos: elige otra por defecto primero.')
+                                                            : __('Solo tú la ves.')
                                                         : __('Sólo quien creó la vista puede cambiar esto.')
                                                 }
                                                 checked={view.is_private === true}
@@ -359,7 +359,7 @@ export function ViewsTabs({
                                                 label={__('Proteger vista')}
                                                 hint={
                                                     writable
-                                                        ? __('Sólo vos (o un admin) pueden cambiarla o borrarla.')
+                                                        ? __('Solo tú (o un admin) puedes cambiarla o borrarla.')
                                                         : __('Protegida: sólo quien la creó o un admin la cambia.')
                                                 }
                                                 checked={view.is_locked === true}
@@ -663,7 +663,7 @@ function ViewTab({
                 type="button"
                 onClick={onClick}
                 onDoubleClick={onRename}
-                title={onRename && draggable ? __('Doble click para cambiar el nombre · arrastrá para reordenar') : undefined}
+                title={onRename && draggable ? __('Doble click para cambiar el nombre · arrastra para reordenar') : undefined}
                 className="imcrm-flex imcrm-items-center imcrm-gap-1.5"
             >
                 {isDefault && <Star className="imcrm-h-3 imcrm-w-3 imcrm-text-warning" aria-label={__('Vista por defecto')} />}

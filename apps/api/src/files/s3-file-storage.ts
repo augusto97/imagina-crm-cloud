@@ -186,10 +186,10 @@ export function describeS3Error(err: unknown): string {
     const code = e?.name ?? e?.Code ?? '';
     const status = e?.$metadata?.httpStatusCode ?? 0;
     const raw = (e?.message ?? String(err)).slice(0, 200);
-    if (/SSRF/.test(raw)) return 'Esa dirección apunta a una red interna: usá la dirección pública de tu proveedor.';
+    if (/SSRF/.test(raw)) return 'Esa dirección apunta a una red interna: usa la dirección pública de tu proveedor.';
     if (code === 'NoSuchBucket' || status === 404) return `El bucket no existe en esa dirección o región (${raw}).`;
     if (code === 'InvalidAccessKeyId' || code === 'SignatureDoesNotMatch' || code === 'InvalidToken') {
-        return 'El proveedor rechazó la clave: revisá el ID de la clave y la clave secreta.';
+        return 'El proveedor rechazó la clave: revisa el ID de la clave y la clave secreta.';
     }
     if (code === 'AccessDenied' || status === 403) {
         return 'La clave no tiene permiso sobre ese bucket: necesita leer, escribir y borrar.';
@@ -197,7 +197,7 @@ export function describeS3Error(err: unknown): string {
     if (code === 'PermanentRedirect' || code === 'AuthorizationHeaderMalformed' || code === 'IllegalLocationConstraintException') {
         return `La región no coincide con la del bucket (${raw}).`;
     }
-    if (/ENOTFOUND|EAI_AGAIN/.test(raw)) return 'No se encontró esa dirección: revisá el endpoint.';
+    if (/ENOTFOUND|EAI_AGAIN/.test(raw)) return 'No se encontró esa dirección: revisa el endpoint.';
     if (/ECONNREFUSED|ETIMEDOUT|timeout|socket hang up/i.test(raw)) return `No se pudo conectar con el servicio (${raw}).`;
     return raw || 'Error desconocido del proveedor de almacenamiento.';
 }

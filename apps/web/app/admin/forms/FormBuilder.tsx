@@ -251,7 +251,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const togglePublish = async (): Promise<void> => {
         const next = !enabled;
         if (next && questionCount(config) === 0) {
-            toast.error(__('Agregá al menos una pregunta'), __('Un formulario sin preguntas no crea nada.'));
+            toast.error(__('Agrega al menos una pregunta'), __('Un formulario sin preguntas no crea nada.'));
             return;
         }
         if (await save({ enabled: next })) {
@@ -264,7 +264,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         if (dirty) {
             const ok = await confirm({
                 title: __('¿Salir sin guardar?'),
-                description: __('Tenés cambios que todavía no guardaste.'),
+                description: __('Tienes cambios que todavía no guardaste.'),
                 confirmLabel: __('Salir sin guardar'),
                 destructive: true,
             });
@@ -320,7 +320,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-1.5">
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Vista previa — tocá una pregunta para editarla')}
+                    {__('Vista previa — toca una pregunta para editarla')}
                 </span>
                 <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
                     {(
@@ -632,7 +632,7 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                 <ol className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-p-2" data-testid="form-structure">
                     {p.config.items.length === 0 && (
                         <li className="imcrm-px-2 imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Todavía no hay preguntas. Agregalas desde la pestaña «Agregar».')}
+                            {__('Todavía no hay preguntas. Agrégalas desde la pestaña «Agregar».')}
                         </li>
                     )}
                     {p.config.items.map((item, idx) => {
@@ -866,7 +866,7 @@ function ConditionEditor({
                             </Select>
                         ) : options.length > 0 ? (
                             <Select value={String(cond.value ?? '')} onChange={(e) => onSet({ ...cond, value: e.target.value })} aria-label={__('Valor')}>
-                                <option value="">{__('Elegí una opción')}</option>
+                                <option value="">{__('Elige una opción')}</option>
                                 {options.map((o) => (
                                     <option key={o.value} value={o.value}>
                                         {o.label || o.value}
@@ -907,13 +907,13 @@ function SettingsInspector({
                     <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
                     <span>
                         {__('La lista exige')} {missing.map((f) => `«${f.label}»`).join(', ')}{' '}
-                        {__('y el formulario puede no traerlo: esas respuestas no se van a poder guardar. Agregalo como pregunta visible y sin condición, o quitale el «obligatorio» en la lista.')}
+                        {__('y el formulario puede no traerlo: esas respuestas no se van a poder guardar. Agrégalo como pregunta visible y sin condición, o quítale el «obligatorio» en la lista.')}
                     </span>
                 </div>
             )}
             <div>
                 <p className="imcrm-text-sm imcrm-font-semibold">{__('Ajustes del formulario')}</p>
-                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Tocá una pregunta en la vista previa para editarla.')}</p>
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Toca una pregunta en la vista previa para editarla.')}</p>
             </div>
             <Field label={__('Nombre interno')} hint={__('Sólo lo ve tu equipo.')}>
                 <Input value={draft.name} onChange={(e) => setName(e.target.value)} />
@@ -994,7 +994,7 @@ function SettingsInspector({
             </Section>
             <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 <Code2 className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                {__('Para avisarle a alguien de cada respuesta, armá una automatización con «Cuando se envía un formulario».')}
+                {__('Para avisarle a alguien de cada respuesta, arma una automatización con «Cuando se envía un formulario».')}
             </p>
         </div>
     );

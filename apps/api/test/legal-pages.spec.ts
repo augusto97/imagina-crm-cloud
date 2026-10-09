@@ -19,7 +19,7 @@ const env = { APP_BASE_URL: 'https://base.imagina.cloud' } as Env;
 describe('páginas públicas de la plataforma (v0.1.247)', () => {
     it('markdown mínimo: escapa todo y sólo enlaza https/mailto', () => {
         const html = renderLegalMarkdown(
-            '## Título <b>\nTexto **fuerte** con [ok](https://x.com) y [malo](javascript:alert(1))\n\n- uno\n- <script>dos</script>\n\nEscribinos a hola@acme.co.',
+            '## Título <b>\nTexto **fuerte** con [ok](https://x.com) y [malo](javascript:alert(1))\n\n- uno\n- <script>dos</script>\n\nEscríbenos a hola@acme.co.',
         );
         expect(html).toContain('<h2>Título &lt;b&gt;</h2>');
         expect(html).toContain('<strong>fuerte</strong>');

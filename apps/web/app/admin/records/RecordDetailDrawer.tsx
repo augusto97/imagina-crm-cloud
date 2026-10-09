@@ -338,7 +338,7 @@ export function RecordDetailDrawer({
                                     </span>
 
                                     {/* El título ES el campo primario (v0.1.136):
-                                        se edita acá y la fila de "Campos" lo
+                                        se edita aquí y la fila de "Campos" lo
                                         refleja al instante — mismo estado. */}
                                     <SheetTitle asChild>
                                         <div className="imcrm-mt-2">

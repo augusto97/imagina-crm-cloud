@@ -686,7 +686,7 @@ export class AutomationEngine {
                     connection = await this.connectors.resolvePartsInTx(tx, ctx.tenantId, connectionId);
                     if (!connection) {
                         throw new Error(
-                            `La conexión #${connectionId} ya no existe: revisá la acción en el editor.`,
+                            `La conexión #${connectionId} ya no existe: revisa la acción en el editor.`,
                         );
                     }
                 }
@@ -728,7 +728,7 @@ export class AutomationEngine {
                 );
                 if (!resolved) {
                     throw new Error(
-                        `La conexión #${connId} ya no existe: revisá la acción en el editor.`,
+                        `La conexión #${connId} ya no existe: revisa la acción en el editor.`,
                     );
                 }
                 if (!resolved.action) {
@@ -814,7 +814,7 @@ export class AutomationEngine {
                     );
                 }
                 // `identity`: los valores ya pasaron por merge en el compilador.
-                // Volver a expandir acá re-interpretaría como plantilla el
+                // Volver a expandir aquí re-interpretaría como plantilla el
                 // contenido de un registro (un texto con `{{algo}}` adentro).
                 const req = buildWebhookRequest(
                     call.cfg,
@@ -844,7 +844,7 @@ export class AutomationEngine {
                 if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
                 if (ctx.recordId === null) return skip('generate_pdf', 'Un PDF necesita un registro.');
                 const templateId = Number(cfg.document_template_id);
-                if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elegí la plantilla del documento.');
+                if (!Number.isInteger(templateId) || templateId <= 0) return skip('generate_pdf', 'Elige la plantilla del documento.');
                 const doc = await this.pdfFor(tx, ctx, templateId, typeof cfg.filename === 'string' ? merge(cfg.filename) : '');
                 const kb = Math.max(1, Math.round(doc.buffer.length / 1024));
                 // v0.1.268 — sin guardarlo, `{{pdf.link}}` es un enlace firmado
@@ -863,7 +863,7 @@ export class AutomationEngine {
                 const field = ctx.fieldsBySlug.get(saveSlug);
                 const key = ctx.slugToKey.get(saveSlug);
                 if (!field || !key || field.type !== 'file') {
-                    throw new Error(`«${saveSlug}» no es un campo Archivo de la lista: elegí dónde guardar el PDF.`);
+                    throw new Error(`«${saveSlug}» no es un campo Archivo de la lista: elige dónde guardar el PDF.`);
                 }
                 const saved = await this.documents.storePdf(ctx.tenantId, SYSTEM_USER, doc.filename, doc.buffer).catch((err: unknown) => {
                     throw new Error(`No se pudo guardar el PDF: ${err instanceof Error ? err.message : String(err)}`);
@@ -996,7 +996,7 @@ export class AutomationEngine {
             });
             total += doc.buffer.length;
             if (total > MAIL_MAX_ATTACHMENT_BYTES) {
-                throw new Error(`Los PDF adjuntos superan ${MAIL_MAX_ATTACHMENT_BYTES / 1024 / 1024} MB: achicalos o mandá menos.`);
+                throw new Error(`Los PDF adjuntos superan ${MAIL_MAX_ATTACHMENT_BYTES / 1024 / 1024} MB: achícalos o manda menos.`);
             }
             out.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });
         }

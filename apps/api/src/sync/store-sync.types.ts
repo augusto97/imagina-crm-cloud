@@ -10,7 +10,7 @@ import {
 
 /**
  * Lo que guarda una sincronización (v0.1.206, ADR-S24). `settings` lo escribe
- * la persona (vía el service) y `state` el motor; los lectores de acá son
+ * la persona (vía el service) y `state` el motor; los lectores de aquí son
  * TOLERANTES —un jsonb viejo o a medio escribir nunca tira el motor—.
  */
 

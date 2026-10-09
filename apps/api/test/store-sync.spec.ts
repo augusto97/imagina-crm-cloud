@@ -40,7 +40,7 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
             const method = opts.method ?? 'GET';
             const input = opts.body ? (JSON.parse(opts.body) as Row) : {};
             const ok = (o: unknown) => ({ status: 200, body: JSON.stringify(o), headers: {} });
-            const denied = { status: 401, body: '{"code":"woocommerce_rest_cannot_create","message":"No tenés permiso"}', headers: {} };
+            const denied = { status: 401, body: '{"code":"woocommerce_rest_cannot_create","message":"No tienes permiso"}', headers: {} };
             const touchRow = (o: Row) => {
                 store.clock += 60_000;
                 o.date_modified_gmt = new Date(store.clock).toISOString().slice(0, 19);
@@ -921,7 +921,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         // Nombre y SKU no vienen habilitados: hay que elegirlos (v0.1.214).
         await expect(
             recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'nombre')]: 'Otra' } } as never),
-        ).rejects.toThrow(/habilitala/);
+        ).rejects.toThrow(/habilítala/);
         await expect(
             recordsService.update(tenantId, admin(), products, Number(taza.id), { data: { [k('products', 'tipo')]: 'variable' } } as never),
         ).rejects.toThrow(/Se edita en WooCommerce/);
@@ -978,7 +978,7 @@ describe('Sincronización con WooCommerce (v0.1.206)', () => {
         const customers = await rows(tenantId, st.lists.customers!.id);
         await expect(
             recordsService.update(tenantId, admin(), st.lists.customers!.slug, Number(customers[0]!.id), { data: { [k('customers', 'telefono')]: '+573009998877' } } as never),
-        ).rejects.toThrow(/habilitala/);
+        ).rejects.toThrow(/habilítala/);
 
         queue.pushes.length = 0;
         await recordsService.update(tenantId, admin(), st.lists.orders!.slug, Number(pedido.id), { data: { [k('orders', 'estado')]: 'on-hold' } } as never);

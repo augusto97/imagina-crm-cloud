@@ -231,7 +231,7 @@ export function RecordPage(): JSX.Element {
                             {list.data.name}
                         </Link>
                     </Button>
-                    {/* El título ES el campo primario y se edita acá (v0.1.136). */}
+                    {/* El título ES el campo primario y se edita aquí (v0.1.136). */}
                     <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                         <RecordTitleInput
                             field={titleField}

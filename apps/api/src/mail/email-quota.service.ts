@@ -18,7 +18,7 @@ export class EmailQuotaExceededError extends Error {
     ) {
         super(
             `Se alcanzó el límite de correos del plan para este mes (${used}/${limit}). ` +
-                'Configurá el SMTP propio de tu empresa en Ajustes → Correo (SMTP) para enviar sin límite, o pasá a un plan mayor.',
+                'Configura el SMTP propio de tu empresa en Ajustes → Correo (SMTP) para enviar sin límite, o pasa a un plan mayor.',
         );
     }
 }
@@ -33,7 +33,7 @@ export function periodOf(now: Date = new Date()): string {
  *
  * Sólo cuentan los correos que salen por el SMTP DE LA PLATAFORMA: son los que
  * paga el operador (envío + reputación del dominio remitente). Si la empresa
- * configuró su propio SMTP, sus correos no pasan por acá — ni se cuentan ni se
+ * configuró su propio SMTP, sus correos no pasan por aquí — ni se cuentan ni se
  * limitan. Los correos de CUENTA (reset de contraseña, verificación de email,
  * invitaciones de plataforma) no tienen tenant y por eso nunca se bloquean:
  * frenarlos dejaría a alguien afuera de su propia cuenta.

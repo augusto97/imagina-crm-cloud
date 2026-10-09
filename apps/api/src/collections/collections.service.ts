@@ -105,7 +105,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 /**
  * Cobros de las EMPRESAS a sus clientes (v0.1.251, ADR-S31): Mercado Pago y
- * Wompi. La plata va a la cuenta de la empresa; la app crea el link, lo deja
+ * Wompi. El dinero va a la cuenta de la empresa; la app crea el link, lo deja
  * en el registro y se entera sola cuando el cliente paga.
  *
  * Reglas que no son opcionales:
@@ -347,7 +347,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         await this.reachable(tenantId, list, recordId, actor, 'edit');
         const conns = await this.connectionsFor(tenantId, actor);
         if (!conns.some((c) => c.id === input.connection_id)) {
-            throw new NotFoundException({ code: 'connection_not_found', message: 'Esa conexión de cobro no existe o no la podés usar.', data: { status: 404 } });
+            throw new NotFoundException({ code: 'connection_not_found', message: 'Esa conexión de cobro no existe o no la puedes usar.', data: { status: 404 } });
         }
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             try {

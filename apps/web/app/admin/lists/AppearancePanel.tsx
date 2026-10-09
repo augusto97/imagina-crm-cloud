@@ -123,7 +123,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                             <h4 className="imcrm-text-sm imcrm-font-semibold">{__('Plantilla')}</h4>
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    'Todas se arman solas con tus campos y relaciones; cambia la composición y el estilo. Si querés retocarla, abrí el editor: arranca desde la que elegiste.',
+                                    'Todas se arman solas con tus campos y relaciones; cambia la composición y el estilo. Si quieres retocarla, abre el editor: arranca desde la que elegiste.',
                                 )}
                             </p>
                         </div>
@@ -170,7 +170,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
                                             {__('Personalizada')}
                                         </span>
                                         <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                            {__('Diseñá la ficha con el editor visual: pestañas, secciones, gráficos de los vinculados y cada campo con la forma que mejor lo muestra.')}
+                                            {__('Diseña la ficha con el editor visual: pestañas, secciones, gráficos de los vinculados y cada campo con la forma que mejor lo muestra.')}
                                         </span>
                                     </div>
                                     <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2">
@@ -203,7 +203,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
 }
 
 /**
- * Qué hace cada plantilla, en criollo (las descripciones de `crmTemplates`
+ * Qué hace cada plantilla, en lenguaje claro (las descripciones de `crmTemplates`
  * eran de la grilla vieja). v0.1.236 — cada una es una ficha distinta.
  */
 const TEMPLATE_BLURB: Record<string, string> = {

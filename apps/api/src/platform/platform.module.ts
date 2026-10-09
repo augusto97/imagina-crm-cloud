@@ -9,7 +9,7 @@ import { TenantTransferController } from './tenant-transfer.controller';
 import { TenantTransferService } from './tenant-transfer.service';
 
 /**
- * Consola de plataforma (operador SaaS). `SuperadminGuard` se provee acá (no es
+ * Consola de plataforma (operador SaaS). `SuperadminGuard` se provee aquí (no es
  * global). `BillingService` llega por el módulo @Global de billing y DRIZZLE por
  * DbModule @Global.
  */

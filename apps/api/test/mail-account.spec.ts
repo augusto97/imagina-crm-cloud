@@ -166,7 +166,7 @@ describe('armado de la petición (puro)', () => {
         expect(limitM).toMatchObject({ limit: true });
         expect(limitM!.message).toMatch(/Microsoft frenó/);
         expect(readAccountMailResponse('outlook', 401, '{}')).toMatchObject({ limit: false });
-        expect(readAccountMailResponse('outlook', 401, '{}')!.message).toMatch(/reconectala/);
+        expect(readAccountMailResponse('outlook', 401, '{}')!.message).toMatch(/reconéctala/);
         expect(
             readAccountMailResponse('gmail', 403, JSON.stringify({ error: { message: 'Request had insufficient authentication scopes.' } }))!
                 .message,
@@ -311,7 +311,7 @@ describe('correo de la empresa por su cuenta (Postgres real)', () => {
         expect(await smtp.ownMail(tenantId)).toBe(true);
 
         // Los correos de CUENTA (sin empresa) siguen por la plataforma.
-        await mail.sendNow({ to: 'alguien@x.test', subject: 'Verificá tu correo', text: 'x' });
+        await mail.sendNow({ to: 'alguien@x.test', subject: 'Verifica tu correo', text: 'x' });
         expect(platformTransport.sent).toHaveLength(1);
         // Otra empresa no se entera.
         await mail.sendNow({ tenantId: otherTenantId, to: 'z@x.test', subject: 's', text: 'x' });

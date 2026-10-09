@@ -387,7 +387,7 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
             chips = chipsFrom(ofType('select'), 2);
             cover = 'color';
             if (!bill) {
-                sections.push({ id: 'empty', columns: [12], blocks: [[notice('no-billing', 'Vinculá una lista con importes (por ejemplo, Facturas) para mostrar el estado de cuenta.', 'info')]] });
+                sections.push({ id: 'empty', columns: [12], blocks: [[notice('no-billing', 'Vincula una lista con importes (por ejemplo, Facturas) para mostrar el estado de cuenta.', 'info')]] });
                 break;
             }
             const a = anatomy(bill);
@@ -435,7 +435,7 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
                 id: 'help',
                 columns: [7, 5],
                 blocks: [
-                    compact<LayoutBlock>([notice('help-tip', '¿Tenés una duda con un pago o una factura? Escribinos acá y te respondemos.'), conversation('Dudas con tu cuenta')]),
+                    compact<LayoutBlock>([notice('help-tip', '¿Tienes una duda con un pago o una factura? Escríbenos aquí y te respondemos.'), conversation('Dudas con tu cuenta')]),
                     compact<LayoutBlock>([group('billing-data', 'Datos de facturación', 'dollar', billingData, 'list'), filesBlock('Documentos')]),
                 ],
             });
@@ -503,8 +503,8 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
                     blocks: [
                         [related(sup, 'cases', `Tus ${lower(sup.name)}`, 'board', 30)],
                         compact<LayoutBlock>([
-                            notice('help', '¿Necesitás ayuda? Escribinos y te respondemos lo antes posible.', 'info'),
-                            conversation('Escribinos'),
+                            notice('help', '¿Necesitas ayuda? Escríbenos y te respondemos lo antes posible.', 'info'),
+                            conversation('Escríbenos'),
                             group('contact', 'Tus datos', 'circle_user', takeAll(contactFields()), 'list'),
                             filesBlock('Archivos'),
                         ]),
@@ -623,14 +623,14 @@ export function portalTemplateLayout(kind: PortalTemplateKind, input: PortalTemp
                 sections.push({
                     id: 'linked',
                     columns: [12],
-                    blocks: [linked.map((l, i) => related(l, `linked-${i}`, i === 0 ? 'Lo que tenés con nosotros' : l.name, i === 0 ? 'cards' : 'list', 6))],
+                    blocks: [linked.map((l, i) => related(l, `linked-${i}`, i === 0 ? 'Lo que tienes con nosotros' : l.name, i === 0 ? 'cards' : 'list', 6))],
                 });
             }
             sections.push({
                 id: 'main',
                 columns: [7, 5],
                 blocks: [
-                    compact<LayoutBlock>([linked.length > 0 ? null : group('info', 'Tu información', 'user', info, 'grid'), conversation('Escribinos')]),
+                    compact<LayoutBlock>([linked.length > 0 ? null : group('info', 'Tu información', 'user', info, 'grid'), conversation('Escríbenos')]),
                     compact<LayoutBlock>([
                         group('contact', 'Tus datos de contacto', 'mail', contact, 'list', true),
                         linked.length > 0 ? group('info', 'Tu información', 'user', info, 'list') : null,

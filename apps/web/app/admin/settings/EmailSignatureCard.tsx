@@ -61,7 +61,7 @@ export function EmailSignatureCard(): JSX.Element {
                 </h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                     {__(
-                        'Tu firma aparece al final de los correos de las automatizaciones que tengan activada la opción «Agregar la firma al final del correo» (en la acción «Enviar email»). Podés escribirla como en Gmail o pegar HTML.',
+                        'Tu firma aparece al final de los correos de las automatizaciones que tengan activada la opción «Agregar la firma al final del correo» (en la acción «Enviar email»). Puedes escribirla como en Gmail o pegar HTML.',
                     )}
                 </p>
             </div>

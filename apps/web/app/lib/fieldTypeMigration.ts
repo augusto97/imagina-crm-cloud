@@ -1,7 +1,7 @@
 /**
- * Mirror frontend del matrix de transiciones permitidas. Mantenelo
+ * Mirror frontend del matrix de transiciones permitidas. Mantenlo
  * SINCRONIZADO con `src/Fields/FieldTypeMigration.php::MATRIX` —
- * cualquier transición que esté acá pero no en el backend va a ser
+ * cualquier transición que esté aquí pero no en el backend va a ser
  * rechazada con error de validación.
  *
  * El backend es la fuente de verdad: el frontend solo lo usa para

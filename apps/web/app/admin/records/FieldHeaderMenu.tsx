@@ -50,7 +50,7 @@ import { storeColumnKind, useStoreRules } from './storeRules';
  *   - Ocultar columna → `columnVisibility` de la vista.
  *   - Duplicar / Copiar ID / Eliminar.
  *
- * "Convertir tipo" no vive acá (migra datos): está en el administrador de
+ * "Convertir tipo" no vive aquí (migra datos): está en el administrador de
  * campos, a un click desde "Modificar".
  *
  * El trigger vive dentro de un `<th draggable>` con botón de sort: paramos

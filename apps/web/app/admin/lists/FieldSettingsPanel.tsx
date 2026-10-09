@@ -157,7 +157,7 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
                     rows={2}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder={__('Contale al equipo cómo se usa este campo')}
+                    placeholder={__('Cuéntale al equipo cómo se usa este campo')}
                 />
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                     {__('Se muestra como ayuda debajo del campo en los formularios.')}
@@ -304,7 +304,7 @@ function TypeRiskNote({ fromType, toType }: { fromType: string; toType: string }
  * "Quién lo ve": los roles que NO deben ver este campo.
  *
  * Escribe en `settings.permissions[rol].fields_hidden` de la lista — el
- * MISMO ACL que el backend aplica al leer registros (v0.1.126). Acá se ve
+ * MISMO ACL que el backend aplica al leer registros (v0.1.126). Aquí se ve
  * desde el campo; en Ajustes → Permisos, desde el rol. Los administradores
  * ven todo siempre y por eso no aparecen.
  */

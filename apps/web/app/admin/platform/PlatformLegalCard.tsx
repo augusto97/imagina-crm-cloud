@@ -21,7 +21,7 @@ export const LEGAL_QUERY_KEY = ['platform-legal'] as const;
  * Google exige, para publicar y verificar la app, una página principal
  * PÚBLICA que describa la app y una política de privacidad que diga qué se
  * hace con los datos de Google. Microsoft y Slack piden lo mismo. La
- * plataforma las sirve ya armadas; acá se completa quién es el responsable y,
+ * plataforma las sirve ya armadas; aquí se completa quién es el responsable y,
  * si se quiere, se ajustan los textos.
  */
 export function PlatformLegalCard({ q }: { q: UseQueryResult<PlatformLegalView> }): JSX.Element {
@@ -83,7 +83,7 @@ export function PlatformLegalCard({ q }: { q: UseQueryResult<PlatformLegalView> 
                 </div>
                 <CardDescription>
                     {__(
-                        'Google, Microsoft y Slack piden una página principal pública y una política de privacidad para publicar y verificar la app. La plataforma ya las sirve armadas (incluida la cláusula de «uso limitado» que exige Google): completá quién es el responsable y usá estos enlaces en las guías de abajo. Si preferís usar las de tu propio sitio, también sirve.',
+                        'Google, Microsoft y Slack piden una página principal pública y una política de privacidad para publicar y verificar la app. La plataforma ya las sirve armadas (incluida la cláusula de «uso limitado» que exige Google): completa quién es el responsable y usa estos enlaces en las guías de abajo. Si prefieres usar las de tu propio sitio, también sirve.',
                     )}
                 </CardDescription>
             </CardHeader>
@@ -181,7 +181,7 @@ function TextEditor({
     return (
         <div className="imcrm-space-y-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3">
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Formato: «## Título», «- ítem», **negrita** y [texto](https://…). Los marcadores {{app_name}}, {{company}}, {{email}}, {{app_url}} y {{updated}} se completan solos. Es un punto de partida: revisalo con tu asesor legal.')}
+                {__('Formato: «## Título», «- ítem», **negrita** y [texto](https://…). Los marcadores {{app_name}}, {{company}}, {{email}}, {{app_url}} y {{updated}} se completan solos. Es un punto de partida: revísalo con tu asesor legal.')}
             </p>
             <Textarea rows={16} className="imcrm-font-mono imcrm-text-xs" value={value ?? fallback} onChange={(e) => onChange(e.target.value)} />
             {value !== null && (

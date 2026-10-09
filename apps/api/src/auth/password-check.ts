@@ -26,7 +26,7 @@ export async function verifyAccountPassword(
         throw new HttpException(
             {
                 code: 'too_many_attempts',
-                message: 'Demasiados intentos con una contraseña incorrecta. Esperá 15 minutos y volvé a probar.',
+                message: 'Demasiados intentos con una contraseña incorrecta. Espera 15 minutos y vuelve a probar.',
                 data: { status: 429 },
             },
             HttpStatus.TOO_MANY_REQUESTS,

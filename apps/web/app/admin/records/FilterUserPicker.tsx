@@ -79,7 +79,7 @@ export function FilterUserPicker({ mode, value, onChange }: FilterUserPickerProp
             options={options}
             onSearch={setQuery}
             loading={search.isFetching && debounced !== ''}
-            emptyHint={__('Escribí para buscar miembros.')}
+            emptyHint={__('Escribe para buscar miembros.')}
             resolveLabel={(id) => <UserName id={Number(id)} />}
             actions={actions}
             placeholder={mode === 'multi' ? __('Elegir personas…') : __('Elegir persona…')}

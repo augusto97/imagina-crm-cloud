@@ -493,7 +493,7 @@ export class FilesService {
             if (active.connectionId === null) {
                 throw new BadRequestException({
                     code: 'storage_not_chosen',
-                    message: 'Primero elegí dónde guardar los archivos.',
+                    message: 'Primero elige dónde guardar los archivos.',
                     data: { status: 400 },
                 });
             }

@@ -45,7 +45,7 @@ export function DuplicateListDialog({ open, onOpenChange, sourceId }: Props): JS
                         <div>
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Duplicar lista')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Los campos van siempre. Elegí qué más llevarte.')}
+                                {__('Los campos van siempre. Elige qué más llevarte.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -140,7 +140,7 @@ export function DuplicateListForm({
                         value={chosen === '' ? '' : String(chosen)}
                         onChange={(e) => setChosen(e.target.value === '' ? '' : Number(e.target.value))}
                     >
-                        <option value="">{__('Elegí una lista…')}</option>
+                        <option value="">{__('Elige una lista…')}</option>
                         {(lists.data ?? []).map((l) => (
                             <option key={l.id} value={l.id}>{l.name}</option>
                         ))}

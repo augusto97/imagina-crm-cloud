@@ -19,7 +19,7 @@ import {
  *
  * Se carga con `import()` la primera vez que alguien usa SQL Server: una
  * instalación que nunca conecta una base no paga el driver al arrancar.
- * Lo que se usa del paquete se tipa acá abajo (`MssqlLike`), así el motor no
+ * Lo que se usa del paquete se tipa aquí abajo (`MssqlLike`), así el motor no
  * depende de sus tipos.
  */
 
@@ -108,7 +108,7 @@ export class MssqlRunner implements SqlRunner {
         if (!target.ok) {
             throw new SqlRunError(
                 target.reason === 'dns'
-                    ? `No se encontró el servidor «${conn.server}». Revisá el nombre (sin «https://» ni la base de datos).`
+                    ? `No se encontró el servidor «${conn.server}». Revisa el nombre (sin «https://» ni la base de datos).`
                     : `«${conn.server}» es una dirección de red interna: por seguridad sólo se conecta a servidores públicos.`,
                 target.reason === 'dns' ? 'dns' : 'blocked',
             );

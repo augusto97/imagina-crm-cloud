@@ -167,7 +167,7 @@ export function decodeReference(ref: string): DecodedReference | null {
     return { tenantId, plan: plan(parts[1]), mode: 'period', months: 1 };
 }
 
-/** «Tarjeta de crédito», «PSE», «Efecty»… en criollo, para el historial. */
+/** «Tarjeta de crédito», «PSE», «Efecty»… en lenguaje claro, para el historial. */
 export function paymentMethodLabel(typeId: string | undefined, methodId: string | undefined): string | null {
     const m = (methodId ?? '').toLowerCase();
     const named: Record<string, string> = {

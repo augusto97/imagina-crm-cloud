@@ -184,7 +184,7 @@ describe('compilado + buildWebhookRequest (lo que de verdad sale)', () => {
         const { cfg } = compileConnectorCall(
             action(),
             // El registro trae literalmente esto escrito por una persona.
-            { recipient: '+57', message: 'Escribí {{nombre}} en el formulario' },
+            { recipient: '+57', message: 'Escribe {{nombre}} en el formulario' },
             (raw) => String(raw ?? ''),
         );
         const req = buildWebhookRequest(
@@ -193,6 +193,6 @@ describe('compilado + buildWebhookRequest (lo que de verdad sale)', () => {
             { recordId: 1, listId: 1 },
             null,
         );
-        expect(req.body).toContain(encodeURIComponent('Escribí {{nombre}} en el formulario'));
+        expect(req.body).toContain(encodeURIComponent('Escribe {{nombre}} en el formulario'));
     });
 });

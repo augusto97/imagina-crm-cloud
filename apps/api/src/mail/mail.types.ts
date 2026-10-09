@@ -52,7 +52,7 @@ export const MAIL_TRANSPORT = Symbol('MAIL_TRANSPORT');
 /**
  * v0.1.249 (ADR-S29) — la CUENTA de Google o Microsoft de la empresa como
  * forma de envío. Lo implementa el módulo de conectores (que tiene los tokens)
- * y lo consume el MailService: se declara acá como interfaz para no atar el
+ * y lo consume el MailService: se declara aquí como interfaz para no atar el
  * correo a los conectores (los tests de correo siguen sin conocerlos).
  */
 export interface TenantMailAccountSender {

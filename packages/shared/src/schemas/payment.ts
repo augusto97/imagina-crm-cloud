@@ -60,7 +60,7 @@ export const createCheckoutSchema = z
         months: z.coerce
             .number()
             .int()
-            .refine((m) => (PERIOD_MONTHS as readonly number[]).includes(m), 'Elegí 1, 3, 6 o 12 meses')
+            .refine((m) => (PERIOD_MONTHS as readonly number[]).includes(m), 'Elige 1, 3, 6 o 12 meses')
             .default(1),
         /**
          * Renovación automática: el correo de la cuenta de Mercado Pago que va
@@ -136,7 +136,7 @@ export const billingPaymentSchema = z.object({
     amount: z.number(),
     currency: z.string(),
     status: z.enum(BILLING_PAYMENT_STATUSES),
-    /** «Tarjeta», «PSE», «Efecty»… en criollo. */
+    /** «Tarjeta», «PSE», «Efecty»… en lenguaje claro. */
     method: z.string().nullable(),
     /** Hasta cuándo dejó pagado este pago (sólo los aprobados). */
     period_end: z.string().nullable(),

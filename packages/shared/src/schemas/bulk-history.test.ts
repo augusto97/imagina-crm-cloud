@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sameBulkValue, summarizeBulkOperations, summarizeStoreBulkOperations } from './bulk-history';
 
 describe('historial de ediciones masivas (v0.1.218)', () => {
-    it('resume las operaciones en criollo, con el nombre de cada columna', () => {
+    it('resume las operaciones en lenguaje claro, con el nombre de cada columna', () => {
         const labels: Record<number, string> = { 1: 'Precio', 2: 'Costo', 3: 'Etiquetas', 4: 'Vence' };
         const txt = summarizeBulkOperations(
             [

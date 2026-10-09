@@ -17,7 +17,7 @@ function readDismissed(userId: number): boolean {
 }
 
 /**
- * v0.1.238 — Aviso de "confirmá tu correo" en TODA la app. Desde v0.1.118 la
+ * v0.1.238 — Aviso de "confirma tu correo" en TODA la app. Desde v0.1.118 la
  * cuenta sin verificar sólo se avisaba en Ajustes → Cuenta → Seguridad, así que
  * después de registrarse nadie se enteraba de que tenía un enlace esperando en
  * su bandeja. No bloquea el uso (decisión de producto de v0.1.118): explica
@@ -36,7 +36,7 @@ export function EmailVerifyBanner(): JSX.Element | null {
         mutationFn: () => api.resendEmailVerification(),
         onSuccess: () => {
             setResent(true);
-            toast.success(__('Te reenviamos el correo de verificación'), __('Revisá también la carpeta de spam.'));
+            toast.success(__('Te reenviamos el correo de verificación'), __('Revisa también la carpeta de spam.'));
         },
         onError: (err) => toast.error(__('No se pudo reenviar'), err instanceof Error ? err.message : undefined),
     });
@@ -60,10 +60,10 @@ export function EmailVerifyBanner(): JSX.Element | null {
         >
             <MailWarning className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-warning sm:imcrm-mt-0" aria-hidden />
             <p className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-foreground">
-                <span className="imcrm-font-medium">{__('Confirmá tu correo.')}</span>{' '}
+                <span className="imcrm-font-medium">{__('Confirma tu correo.')}</span>{' '}
                 <span className="imcrm-text-muted-foreground">
                     {__('Te mandamos un enlace a')} <strong className="imcrm-break-all imcrm-text-foreground">{user.email}</strong>
-                    {__(': abrilo para verificar tu cuenta. Si no lo ves, revisá spam.')}
+                    {__(': ábrelo para verificar tu cuenta. Si no lo ves, revisa spam.')}
                 </span>
             </p>
             <button

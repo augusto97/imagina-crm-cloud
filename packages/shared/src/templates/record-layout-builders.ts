@@ -240,7 +240,7 @@ function convertV2Block(
                         kind: 'pie',
                         metric: 'count',
                         // El campo de agrupación es de la OTRA lista: la v2 lo
-                        // guardaba por slug y acá no conocemos sus ids — el
+                        // guardaba por slug y aquí no conocemos sus ids — el
                         // servidor lo resuelve contra esa lista.
                         group_by_field_slug: str(c.group_by_field_slug),
                     },

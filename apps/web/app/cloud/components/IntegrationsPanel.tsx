@@ -55,7 +55,7 @@ export function IntegrationsPanel(): JSX.Element | null {
     });
 
     /**
-     * Vuelta del proveedor: el callback del backend redirige acá con el
+     * Vuelta del proveedor: el callback del backend redirige aquí con el
      * resultado. Se muestra y se limpian los parámetros para que no quede
      * pegado en el historial ni reaparezca al recargar.
      */
@@ -64,7 +64,7 @@ export function IntegrationsPanel(): JSX.Element | null {
         if (!oauthResult) return;
         setNotice(
             oauthResult === 'ok'
-                ? { kind: 'ok', text: __('¡Listo! La app quedó conectada y ya la podés usar en tus automatizaciones.') }
+                ? { kind: 'ok', text: __('¡Listo! La app quedó conectada y ya la puedes usar en tus automatizaciones.') }
                 : { kind: 'err', text: params.get('msg') ?? __('No se pudo conectar la app.') },
         );
         const next = new URLSearchParams(params);
@@ -120,7 +120,7 @@ export function IntegrationsPanel(): JSX.Element | null {
         const usage =
             c.usage_count > 0
                 ? `${__('La usan')} ${c.usage_count} ${__('acciones de automatización: van a fallar hasta que la conectes de nuevo.')}`
-                : __('Podés volver a conectarla cuando quieras.');
+                : __('Puedes volver a conectarla cuando quieras.');
         const ok = await confirm({
             title: __('¿Desconectar esta app?'),
             // Una tienda sincronizada deja de actualizarse, pero lo que se trajo queda.
@@ -141,7 +141,7 @@ export function IntegrationsPanel(): JSX.Element | null {
             {/* El título de la sección lo pone la página de Ajustes. */}
             <p className="imcrm-text-sm imcrm-text-muted-foreground">
                 {__(
-                    'Conectá las apps que usa tu empresa y usalas en tus automatizaciones: mandá un WhatsApp, avisá en Slack, agendá en tu calendario, sumá filas a una planilla o traé datos de tu base SQL Server.',
+                    'Conecta las apps que usa tu empresa y úsalas en tus automatizaciones: manda un WhatsApp, avisa en Slack, agenda en tu calendario, suma filas a una planilla o trae datos de tu base SQL Server.',
                 )}
             </p>
 
@@ -160,7 +160,7 @@ export function IntegrationsPanel(): JSX.Element | null {
 
             {info && !canConnect && (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Las apps las conecta el administrador del workspace. Las que ya estén conectadas las podés usar en tus automatizaciones.')}
+                    {__('Las apps las conecta el administrador del workspace. Las que ya estén conectadas las puedes usar en tus automatizaciones.')}
                 </p>
             )}
 
@@ -357,7 +357,7 @@ function ConnectedRow({
                     {c.visibility === 'private' && (
                         <Badge variant="outline" className="imcrm-gap-1 imcrm-text-[10px]">
                             <Lock className="imcrm-h-3 imcrm-w-3" />
-                            {__('Sólo vos')}
+                            {__('Solo tú')}
                         </Badge>
                     )}
                     {broken ? (
@@ -382,7 +382,7 @@ function ConnectedRow({
                 )}
                 {c.secret_state === 'unreadable' && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive">
-                        {__('La clave guardada ya no se puede leer: volvé a cargarla.')}
+                        {__('La clave guardada ya no se puede leer: vuelve a cargarla.')}
                     </p>
                 )}
             </div>

@@ -124,7 +124,7 @@ export const sqlProcedureParamSchema = z.object({
 export type SqlProcedureParam = z.infer<typeof sqlProcedureParamSchema>;
 
 export const sqlSourceSchema = z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('query'), sql: z.string().trim().min(1, 'Escribí la consulta').max(20_000) }),
+    z.object({ kind: z.literal('query'), sql: z.string().trim().min(1, 'Escribe la consulta').max(20_000) }),
     z.object({
         kind: z.literal('procedure'),
         name: procedureNameSchema,

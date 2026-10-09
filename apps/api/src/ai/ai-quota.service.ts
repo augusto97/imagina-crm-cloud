@@ -14,7 +14,7 @@ export class AiQuotaExceededError extends Error {
     ) {
         super(
             `Se alcanzó el límite de pedidos al asistente del plan para este mes (${used}/${limit}). ` +
-                'Cargá una clave IA propia en Ajustes → Asistente IA para usarlo sin límite, o pasá a un plan mayor.',
+                'Carga una clave IA propia en Ajustes → Asistente IA para usarlo sin límite, o pasa a un plan mayor.',
         );
     }
 }

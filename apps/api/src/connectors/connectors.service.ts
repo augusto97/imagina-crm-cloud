@@ -115,7 +115,7 @@ import {
  *    gateway de WhatsApp o un CRM ajeno.
  *  - Crear o editar una conexión del equipo es del ADMIN, igual que el SMTP,
  *    el dominio o los miembros: es configuración de empresa y la credencial
- *    puede gastar plata o mandar mensajes en su nombre.
+ *    puede gastar dinero o mandar mensajes en su nombre.
  *  - Una conexión PRIVADA (sólo su dueño) existe únicamente si el admin
  *    habilitó la opción en los ajustes del workspace.
  */
@@ -149,7 +149,7 @@ export class ConnectionUnusableError extends Error {
     constructor(name: string) {
         super(
             `La conexión «${name}» está configurada pero su credencial no se puede descifrar con la clave actual del servidor. ` +
-                'Volvé a escribirla en Ajustes → Integraciones.',
+                'Vuelve a escribirla en Ajustes → Integraciones.',
         );
     }
 }
@@ -184,7 +184,7 @@ const oauthStateKey = (state: string): string => `connoauth:${state}`;
 const oauthLockKey = (tenantId: number, id: number): string => `connoauthlock:${tenantId}:${id}`;
 
 /**
- * Subconjunto de ioredis que necesita el flujo OAuth. Se declara acá —mismo
+ * Subconjunto de ioredis que necesita el flujo OAuth. Se declara aquí —mismo
  * criterio que el `HookCaptureStore` de v0.1.111— para poder ejercitar el
  * canje y el lock con un fake en memoria, sin levantar Redis en cada spec.
  */
@@ -359,7 +359,7 @@ export class ConnectorsService {
 
     /**
      * Igual, pero DENTRO de la transacción del que llama. El motor de
-     * automatizaciones ya corre en un `withTenant`: abrir otro acá tomaría una
+     * automatizaciones ya corre en un `withTenant`: abrir otro aquí tomaría una
      * segunda conexión del pool por cada acción, y con el pool chico eso es un
      * bloqueo esperando a sí mismo.
      */
@@ -517,7 +517,7 @@ export class ConnectorsService {
             let problem: string | null = null;
             if (secrets === null) problem = new ConnectionUnusableError(raw.name).message;
             else if (typeof raw.secrets.access_token !== 'string') {
-                problem = `«${raw.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones.`;
+                problem = `«${raw.name}» no está autorizada: conéctala de nuevo en Ajustes → Integraciones.`;
             } else if (state.error) problem = `La última renovación del acceso falló: ${state.error}`;
             out.push({
                 id: raw.id,
@@ -543,7 +543,7 @@ export class ConnectorsService {
         const found = await this.row(tenantId, id);
         if (!found || !isMailAccountIntegration(found.provider)) {
             throw new Error(
-                'La cuenta con la que salía el correo de la empresa ya no existe. Elegí otra en Ajustes → Correo.',
+                'La cuenta con la que salía el correo de la empresa ya no existe. Elige otra en Ajustes → Correo.',
             );
         }
         const row = (await this.ensureFreshToken(tenantId, found)) ?? found;
@@ -552,7 +552,7 @@ export class ConnectorsService {
         const token = secrets.access_token ?? '';
         if (token === '') {
             throw new Error(
-                `«${row.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones para que vuelva a salir el correo de la empresa.`,
+                `«${row.name}» no está autorizada: conéctala de nuevo en Ajustes → Integraciones para que vuelva a salir el correo de la empresa.`,
             );
         }
         const label = row.config.account_label;
@@ -577,7 +577,7 @@ export class ConnectorsService {
         if (secrets === null) throw new ConnectionUnusableError(row.name);
         const token = secrets.access_token ?? '';
         if (token === '') {
-            throw new Error(`«${row.name}» no está autorizada: conectala de nuevo en Ajustes → Integraciones.`);
+            throw new Error(`«${row.name}» no está autorizada: conéctala de nuevo en Ajustes → Integraciones.`);
         }
         return token;
     }
@@ -611,7 +611,7 @@ export class ConnectorsService {
         if (Number(chosen?.connection_id) !== id) return;
         throw new ConflictException({
             code: 'connection_mail_account',
-            message: `«${name}» es la cuenta con la que sale el correo de la empresa. Elegí otra forma de envío en Ajustes → Correo antes de ${verb}la.`,
+            message: `«${name}» es la cuenta con la que sale el correo de la empresa. Elige otra forma de envío en Ajustes → Correo antes de ${verb}la.`,
             data: { status: 409 },
         });
     }
@@ -633,7 +633,7 @@ export class ConnectorsService {
         if (Number(chosen?.connection_id) === id) {
             throw new ConflictException({
                 code: 'connection_storage',
-                message: `«${name}» es donde se guardan los archivos de la empresa. Elegí otro almacenamiento en Ajustes → Almacenamiento antes de ${verb}la.`,
+                message: `«${name}» es donde se guardan los archivos de la empresa. Elige otro almacenamiento en Ajustes → Almacenamiento antes de ${verb}la.`,
                 data: { status: 409 },
             });
         }
@@ -641,7 +641,7 @@ export class ConnectorsService {
         if (files > 0) {
             throw new ConflictException({
                 code: 'connection_storage_files',
-                message: `«${name}» tiene ${files} archivo(s) guardado(s). Pasalos al servidor (o a otro almacenamiento) en Ajustes → Almacenamiento antes de ${verb}la.`,
+                message: `«${name}» tiene ${files} archivo(s) guardado(s). Pásalos al servidor (o a otro almacenamiento) en Ajustes → Almacenamiento antes de ${verb}la.`,
                 data: { status: 409, files },
             });
         }
@@ -782,7 +782,7 @@ export class ConnectorsService {
 
     /**
      * v0.1.203 — «Conectar» una app de la galería. La fila de la conexión NO se
-     * crea acá sino al volver con la autorización: si la persona cancela en el
+     * crea aquí sino al volver con la autorización: si la persona cancela en el
      * proveedor no queda una conexión a medias ensuciando la lista.
      */
     async startIntegrationOAuth(
@@ -851,7 +851,7 @@ export class ConnectorsService {
         if (!raw) {
             return {
                 ok: false,
-                error: 'La autorización venció o ya se usó. Volvé a empezar desde Ajustes → Integraciones.',
+                error: 'La autorización venció o ya se usó. Vuelve a empezar desde Ajustes → Integraciones.',
             };
         }
         let pending: PendingOAuth;
@@ -887,7 +887,7 @@ export class ConnectorsService {
                 const before = typeof row.config.account_label === 'string' ? row.config.account_label : null;
                 const after = await this.fetchIdentity('google', token.accessToken);
                 if (before && after && before.toLowerCase() !== after.toLowerCase() && (await this.filesIn(pending.tenantId, row.id)) > 0) {
-                    const error = `Autorizaste con ${after}, pero los archivos de la empresa están en el Drive de ${before}. Reconectá con esa cuenta (o mové los archivos al servidor antes de cambiarla).`;
+                    const error = `Autorizaste con ${after}, pero los archivos de la empresa están en el Drive de ${before}. Reconecta con esa cuenta (o mueve los archivos al servidor antes de cambiarla).`;
                     await this.setOAuthError(pending.tenantId, row.id, error);
                     return { ok: false, error };
                 }
@@ -1123,7 +1123,7 @@ export class ConnectorsService {
         if (refresh === '') {
             throw new BadRequestException({
                 code: 'oauth_expired',
-                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Volvé a conectarla en Ajustes → Integraciones.`,
+                message: `La autorización de «${row.name}» venció y el proveedor no entregó un token de renovación. Vuelve a conectarla en Ajustes → Integraciones.`,
                 data: { status: 400 },
             });
         }
@@ -1135,7 +1135,7 @@ export class ConnectorsService {
             if (updated) return updated;
             throw new ConflictException({
                 code: 'oauth_refresh_busy',
-                message: `Otra ejecución está renovando la autorización de «${row.name}». Reintentá en unos segundos.`,
+                message: `Otra ejecución está renovando la autorización de «${row.name}». Reintenta en unos segundos.`,
                 data: { status: 409 },
             });
         }
@@ -1322,7 +1322,7 @@ export class ConnectorsService {
     ): Promise<string | null> {
         if (key === 'whatsapp' && (creds.fields.account ?? '').trim() === '') {
             const label = def.auth.kind === 'key' ? def.auth.fields.find((f) => f.key === 'account')?.label : null;
-            return `Elegí o escribí «${label ?? 'la cuenta'}» antes de mandar la prueba.`;
+            return `Elige o escribe «${label ?? 'la cuenta'}» antes de mandar la prueba.`;
         }
         const req = testSendRequest(key, creds, to);
         if (!req) return null;
@@ -1382,7 +1382,7 @@ export class ConnectorsService {
                 if (files > 0) {
                     throw new ConflictException({
                         code: 'connection_storage_files',
-                        message: `«${row.name}» ya tiene ${files} archivo(s) guardado(s): no se puede cambiar el bucket, la dirección ni la carpeta. Conectá otro almacenamiento y mové los archivos desde Ajustes → Almacenamiento.`,
+                        message: `«${row.name}» ya tiene ${files} archivo(s) guardado(s): no se puede cambiar el bucket, la dirección ni la carpeta. Conecta otro almacenamiento y mueve los archivos desde Ajustes → Almacenamiento.`,
                         data: { status: 409, files },
                     });
                 }
@@ -1547,7 +1547,7 @@ export class ConnectorsService {
 
     /**
      * v0.1.251 — Mercado Pago / Wompi: una credencial que no funciona NO se
-     * guarda (a diferencia de una app de mensajería, acá un error se notaría
+     * guarda (a diferencia de una app de mensajería, aquí un error se notaría
      * recién cuando un cliente intenta pagar).
      */
     private async runCollectionVerify(key: 'mercadopago' | 'wompi', creds: IntegrationCreds): Promise<VerifyOutcome> {
@@ -1565,7 +1565,7 @@ export class ConnectorsService {
             return parseCollectionVerify(key, res.status, res.body ?? '', creds);
         } catch (err) {
             const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
-            return { ...base, error: `No pudimos comunicarnos con ${key === 'wompi' ? 'Wompi' : 'Mercado Pago'} (${message}). Probá de nuevo en un momento.` };
+            return { ...base, error: `No pudimos comunicarnos con ${key === 'wompi' ? 'Wompi' : 'Mercado Pago'} (${message}). Prueba de nuevo en un momento.` };
         }
     }
 
@@ -1666,16 +1666,16 @@ export class ConnectorsService {
         }
         if (authMessage !== null) {
             return fail(
-                `WooCommerce rechazó la clave${authMessage ? ` («${authMessage}»)` : ''}. Revisá que copiaste la clave del cliente y la secreta de la MISMA clave, y que tenga permisos de «Lectura» o «Lectura/Escritura».`,
+                `WooCommerce rechazó la clave${authMessage ? ` («${authMessage}»)` : ''}. Revisa que copiaste la clave del cliente y la secreta de la MISMA clave, y que tenga permisos de «Lectura» o «Lectura/Escritura».`,
             );
         }
         if (!reached) {
-            return fail(`No pudimos llegar a la tienda (${lastProblem ?? 'sin respuesta'}). Revisá la dirección.`);
+            return fail(`No pudimos llegar a la tienda (${lastProblem ?? 'sin respuesta'}). Revisa la dirección.`);
         }
         return fail(
             lastProblem && lastProblem !== ''
                 ? `No pudimos usar la API de la tienda: ${lastProblem}`
-                : 'No encontramos la API de WooCommerce en esa dirección. Revisá que sea la del sitio de WordPress donde está instalado WooCommerce.',
+                : 'No encontramos la API de WooCommerce en esa dirección. Revisa que sea la del sitio de WordPress donde está instalado WooCommerce.',
         );
     }
 
@@ -1691,7 +1691,7 @@ export class ConnectorsService {
         const out: VerifyOutcome = { ok: true, label: null, error: null, warning: null, options: {} };
         const conn = sqlConnParams(creds.fields, creds.secret);
         if (!conn.server || !conn.database || !conn.user) {
-            return { ...out, ok: false, error: 'Completá el servidor, la base de datos y el usuario.' };
+            return { ...out, ok: false, error: 'Completa el servidor, la base de datos y el usuario.' };
         }
         if (!conn.password) return { ...out, ok: false, error: 'Falta la contraseña.' };
         if (!this.sqlRunner) return { ...out, ok: false, error: 'El servidor no tiene habilitado SQL Server.' };
@@ -1827,12 +1827,12 @@ export class ConnectorsService {
     /**
      * Borrar una conexión en uso rompe automatizaciones, así que por defecto
      * se rechaza diciendo EXACTAMENTE cuáles. Es la pregunta que las
-     * plataformas grandes contestan mal y acá sale gratis.
+     * plataformas grandes contestan mal y aquí sale gratis.
      */
     /**
      * Limpieza de otros módulos antes de borrar una conexión (v0.1.214: la
      * sincronización con tiendas saca sus avisos de WooCommerce). Se registra
-     * así —y no inyectando ese módulo acá— porque él ya depende de éste.
+     * así —y no inyectando ese módulo aquí— porque él ya depende de éste.
      * Best-effort: una tienda caída no impide borrar la conexión.
      */
     private readonly beforeRemove: Array<(tenantId: number, connectionId: number) => Promise<void>> = [];
@@ -2305,7 +2305,7 @@ export class ConnectorsService {
                 throw new ForbiddenException({
                     code: 'connection_admin_only',
                     message:
-                        'Sólo el admin del workspace puede crear conexiones del equipo. Pedile que la cree, o usá una conexión privada si están habilitadas.',
+                        'Sólo el admin del workspace puede crear conexiones del equipo. Pídele que la cree, o usa una conexión privada si están habilitadas.',
                     data: { status: 403 },
                 });
             }
@@ -2370,7 +2370,7 @@ export class ConnectorsService {
                 if (typeof raw !== 'string' || raw === '') continue;
                 // Sin clave, `decryptSecret` devuelve el texto cifrado TAL CUAL
                 // y mandaríamos esa basura como credencial. Eso es el fallo
-                // silencioso que v0.1.113 cerró para el SMTP: acá se reporta.
+                // silencioso que v0.1.113 cerró para el SMTP: aquí se reporta.
                 if (isEncrypted(raw) && !this.env.SECRETS_KEY) return null;
                 out[key] = decryptSecret(raw, this.env.SECRETS_KEY);
             }

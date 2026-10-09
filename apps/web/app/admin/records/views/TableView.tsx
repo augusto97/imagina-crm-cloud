@@ -92,7 +92,7 @@ interface TableViewProps {
     /**
      * Cálculo opt-in elegido por el user para cada columna del
      * footer. Map `{column_id: kind_slug}`. Si la column id no
-     * está acá, el footer muestra "Calcular ▾" como CTA.
+     * está aquí, el footer muestra "Calcular ▾" como CTA.
      */
     footerAggregates?: Record<string, string>;
     onFooterAggregatesChange?: (next: Record<string, string>) => void;
@@ -169,7 +169,7 @@ export function TableView({
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
     // Gating de edición inline por capability (Fase 7 — follow-up).
-    // El backend rechaza un PATCH sin la cap con 403; acá deshabilitamos
+    // El backend rechaza un PATCH sin la cap con 403; aquí deshabilitamos
     // el doble-click → input UX para evitar la confusión del 403-on-submit.
     const canEditRecords = useCanAny(CAP.EDIT_RECORDS, CAP.EDIT_OWN_RECORDS);
     // v0.1.213 — lista de una tienda: los registros se crean y se borran allá,
@@ -349,7 +349,7 @@ export function TableView({
     );
     const relationTitles = useRelationTitlesForRows(fields, relationRows);
 
-    // v0.1.252 — el estado del ARRASTRE se controla acá y se evalúa en el
+    // v0.1.252 — el estado del ARRASTRE se controla aquí y se evalúa en el
     // acto. TanStack calcula el ancho nuevo DENTRO del updater de
     // `setColumnSizingInfo`; con el estado interno, React lo evalúa recién en
     // el próximo render, así que cuando llegaba `onColumnSizingChange` el
@@ -696,7 +696,7 @@ export function TableView({
                                                 <span
                                                     className="imcrm-cursor-grab imcrm-text-muted-foreground/40 imcrm-opacity-0 imcrm-transition-opacity group-hover/th:imcrm-opacity-100 active:imcrm-cursor-grabbing"
                                                     aria-hidden
-                                                    title={__('Arrastrá para reordenar')}
+                                                    title={__('Arrastra para reordenar')}
                                                 >
                                                     <GripVertical className="imcrm-h-3 imcrm-w-3" />
                                                 </span>
@@ -804,7 +804,7 @@ export function TableView({
             {onAddColumn && <FloatingAddColumn onClick={onAddColumn} />}
             </div>
             <div
-                // Solo scroll HORIZONTAL acá adentro (columnas anchas). El
+                // Solo scroll HORIZONTAL aquí adentro (columnas anchas). El
                 // vertical es el de la PÁGINA (main del shell) — la tabla
                 // crece a su alto natural; el usuario pidió explícitamente
                 // una sola barra al borde derecho de la ventana, sin scroll

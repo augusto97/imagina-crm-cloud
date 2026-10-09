@@ -36,7 +36,7 @@ export function MembersPanel(): JSX.Element {
                     <div>
                         <CardTitle>Miembros del workspace</CardTitle>
                         <CardDescription>
-                            Invitá a tu equipo por email y elegí su rol. Si la persona no tiene cuenta, le llega un correo
+                            Invita a tu equipo por email y elige su rol. Si la persona no tiene cuenta, le llega un correo
                             para definir su contraseña; si ya tiene, queda sumada al instante. Los clientes del portal se
                             manejan desde la ficha de cada registro.
                         </CardDescription>

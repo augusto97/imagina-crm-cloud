@@ -6,7 +6,7 @@ import { useTheme, type ThemeMode } from '@/lib/theme';
 
 /**
  * v0.1.112 — Apariencia (per-usuario, por navegador): claro / oscuro /
- * seguir al sistema. El atajo rápido es el botón del topbar; acá está el
+ * seguir al sistema. El atajo rápido es el botón del topbar; aquí está el
  * tri-estado completo, que es el único lugar donde se puede volver a
  * "Seguir al sistema" después de elegir manualmente.
  *
@@ -28,7 +28,7 @@ export function AppearanceCard(): JSX.Element {
             <div>
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Apariencia')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Elegí cómo se ve la app en este dispositivo. También podés cambiarlo desde el ícono de sol/luna de la barra superior.')}
+                    {__('Elige cómo se ve la app en este dispositivo. También puedes cambiarlo desde el ícono de sol/luna de la barra superior.')}
                 </p>
             </div>
 

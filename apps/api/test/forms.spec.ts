@@ -228,7 +228,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
                     { id: ids.monto, type: 'field', field_id: f.monto!.id },
                     { id: ids.adjunto, type: 'field', field_id: f.adjunto!.id },
                 ],
-                settings: { title: 'Escribinos', ...over },
+                settings: { title: 'Escríbenos', ...over },
             }),
         });
         await svc.update(tenantId, 'contactos', dto.id, { enabled: true });
@@ -249,7 +249,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
     it('lo público trae SÓLO las preguntas del formulario (nada de la lista entera)', async () => {
         const { token } = await contactForm();
         const meta = await svc.meta(token);
-        expect(meta.title).toBe('Escribinos');
+        expect(meta.title).toBe('Escríbenos');
         expect(meta.closed).toBeNull();
         const labels = meta.items.flatMap((i) => (i.type === 'field' ? [i.label] : []));
         expect(labels).toEqual(['Nombre', 'Email', 'Tipo', 'NIT', 'Origen', 'Presupuesto', 'Adjunto']);

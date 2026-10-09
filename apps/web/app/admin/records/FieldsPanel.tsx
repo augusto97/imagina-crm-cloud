@@ -36,7 +36,7 @@ import { FieldTypePreview } from './FieldTypePreview';
  *
  * La pestaña **"Copiar de otra lista"** es nuestro equivalente honesto al
  * "Agregar existente" de ClickUp: allá un campo es una entidad del
- * workspace que vive en varias listas; acá un campo pertenece a UNA lista
+ * workspace que vive en varias listas; aquí un campo pertenece a UNA lista
  * (`fields.list_id`), así que compartir la misma entidad sería otro modelo
  * de datos. Copiar la definición (tipo + configuración + opciones) da el
  * resultado que la gente busca sin mentir sobre lo que hay debajo.
@@ -68,7 +68,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
      *
      * En v0.1.163 la preview era una franja al PIE del panel y el usuario la
      * reportó como confusa: cambiaba sola, lejos del tipo señalado y sin
-     * diferenciarse del contenido. Acá se guarda el rect de la fila para
+     * diferenciarse del contenido. Aquí se guarda el rect de la fila para
      * anclarla a su altura, como el catálogo de ClickUp.
      */
     const [hovered, setHovered] = useState<{ type: FieldTypeSlug; top: number; left: number } | null>(null);
@@ -364,7 +364,7 @@ function TypeSection({
                         <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                             <span className="imcrm-truncate imcrm-text-sm">{opt.label}</span>
                             {/* En celular no hay hover ni lugar para el flotante:
-                                la descripción va acá, en la fila (v0.1.165). */}
+                                la descripción va aquí, en la fila (v0.1.165). */}
                             <span className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground sm:imcrm-hidden">
                                 {opt.description}
                             </span>

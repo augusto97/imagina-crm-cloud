@@ -18,8 +18,8 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     mention: 'Te mencionan',
     assigned: 'Te asignan un registro',
-    comment: 'Comentan un registro que seguís',
-    update: 'Cambia un registro que seguís',
+    comment: 'Comentan un registro que sigues',
+    update: 'Cambia un registro que sigues',
     reminder: 'Tus recordatorios',
 };
 

@@ -24,7 +24,7 @@ const DNS_STATUS_META: Record<
 function saveErrorText(e: unknown): string {
     if (e instanceof CloudApiError) {
         if (e.code === 'domain_reserved') {
-            return 'Ese dominio está reservado por la plataforma: usá un dominio propio (ej. crm.tuempresa.com).';
+            return 'Ese dominio está reservado por la plataforma: usa un dominio propio (ej. crm.tuempresa.com).';
         }
         if (e.code === 'domain_taken') {
             return 'Ese dominio ya está en uso por otra empresa.';
@@ -79,7 +79,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
         onSuccess: () => {
             setNotice({
                 kind: 'ok',
-                text: 'Dominio pedido. Creá los dos registros DNS de abajo y tocá «Verificar propiedad»: hasta entonces el dominio no se usa.',
+                text: 'Dominio pedido. Crea los dos registros DNS de abajo y toca «Verificar propiedad»: hasta entonces el dominio no se usa.',
             });
             invalidate();
         },
@@ -110,11 +110,11 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
             if (r.verified) {
                 setNotice({ kind: 'ok', text: `¡Listo! ${r.domain.domain} quedó verificado y activo.` });
             } else if (r.status === 'unknown') {
-                setNotice({ kind: 'err', text: 'El DNS no respondió. Probá de nuevo en un momento.' });
+                setNotice({ kind: 'err', text: 'El DNS no respondió. Prueba de nuevo en un momento.' });
             } else if (r.status === 'mismatch') {
                 setNotice({
                     kind: 'err',
-                    text: 'Encontramos un registro de verificación pero con otro código: revisá que el valor sea exactamente el de abajo.',
+                    text: 'Encontramos un registro de verificación pero con otro código: revisa que el valor sea exactamente el de abajo.',
                 });
             } else {
                 setNotice({
@@ -167,7 +167,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     const report = dnsQ.data;
     const dnsError = dnsQ.isError
         ? dnsQ.error instanceof CloudApiError && dnsQ.error.code === 'domain_not_configured'
-            ? 'Guardá primero un dominio propio.'
+            ? 'Guarda primero un dominio propio.'
             : dnsQ.error instanceof Error
               ? dnsQ.error.message
               : 'No se pudo verificar el DNS.'
@@ -190,7 +190,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                         <CardDescription>
                             {isPortal
                                 ? 'Un dominio aparte para tus clientes (por ejemplo clientes.tuempresa.com). Abre directo su portal con tu logo, tus colores y tu nombre, y los enlaces de acceso que reciben salen por ahí. Nunca ven la pantalla de tu equipo.'
-                                : 'Accedé a la app por tu propio dominio: tu equipo entra por tu URL y ve tu marca desde el login.'}
+                                : 'Accede a la app por tu propio dominio: tu equipo entra por tu URL y ve tu marca desde el login.'}
                         </CardDescription>
                     </div>
                 </div>
@@ -282,13 +282,13 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                             <div>
                                 <h4 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
-                                    1. Verificá que el dominio es tuyo
+                                    1. Verifica que el dominio es tuyo
                                     <Badge dot variant="warning">
                                         Pendiente
                                     </Badge>
                                 </h4>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    Creá este registro TXT en el DNS de{' '}
+                                    Crea este registro TXT en el DNS de{' '}
                                     <span className="imcrm-font-medium imcrm-text-foreground">{d.pending.domain}</span>.
                                     Hasta que lo veamos, el dominio no se usa (así nadie puede tomar el dominio de otra
                                     empresa).
@@ -345,10 +345,10 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                             <div>
                                 <h4 className="imcrm-text-sm imcrm-font-medium">
-                                    {d.pending ? '2. Apuntá el dominio a la plataforma' : 'Registro DNS'}
+                                    {d.pending ? '2. Apunta el dominio a la plataforma' : 'Registro DNS'}
                                 </h4>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    Creá este registro en el DNS de tu dominio para que{' '}
+                                    Crea este registro en el DNS de tu dominio para que{' '}
                                     <span className="imcrm-font-medium imcrm-text-foreground">{shownDomain}</span>{' '}
                                     apunte a la plataforma.
                                 </p>
@@ -400,8 +400,8 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                             {report?.serving === 'ok' && (
                                 <p className="imcrm-text-xs imcrm-text-emerald-700 dark:imcrm-text-emerald-400">
                                     {isPortal
-                                        ? 'El dominio responde: tus clientes ya entran por acá y los enlaces de acceso salen por este dominio.'
-                                        : 'El dominio responde: tu equipo ya puede entrar por acá.'}
+                                        ? 'El dominio responde: tus clientes ya entran por aquí y los enlaces de acceso salen por este dominio.'
+                                        : 'El dominio responde: tu equipo ya puede entrar por aquí.'}
                                 </p>
                             )}
                             {report?.serving === 'no' && (
@@ -419,7 +419,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                             )}
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 Para un dominio raíz (apex, ej. <code className="imcrm-font-mono">tuempresa.com</code>)
-                                tu proveedor puede no aceptar CNAME: usá un registro A hacia la IP de la
+                                tu proveedor puede no aceptar CNAME: usa un registro A hacia la IP de la
                                 plataforma (o el alias/ANAME que ofrezca tu DNS).
                             </p>
                         </div>

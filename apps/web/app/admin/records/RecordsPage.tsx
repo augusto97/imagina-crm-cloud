@@ -313,7 +313,7 @@ export function RecordsPage(): JSX.Element {
     // atajo «Asignar» (la edición masiva ya apuntada al campo de persona).
     const [structure, setStructure] = useState<{ action: BulkStructureAction; matching: boolean } | null>(null);
     const [bulkEditPreset, setBulkEditPreset] = useState<{ title: string; drafts: BulkDraft[] } | null>(null);
-    // El dialog de export es controlado desde acá: lo abren tanto el
+    // El dialog de export es controlado desde aquí: lo abren tanto el
     // botón compacto del breadcrumb (desktop) como el menú "···" (mobile).
     const [exportOpen, setExportOpen] = useState(false);
     // Panel "Personalizar vista" (engranaje de la toolbar) — v0.1.127.
@@ -1327,7 +1327,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         >
                             {sprintf(
                                 /* translators: 1: records shown, 2: total records */
-                                __('Mostrando %1$d de %2$d registros — usá filtros para acotar la vista.'),
+                                __('Mostrando %1$d de %2$d registros — usa filtros para acotar la vista.'),
                                 records.data?.data.length ?? 0,
                                 meta.total,
                             )}

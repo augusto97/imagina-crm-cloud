@@ -193,7 +193,7 @@ export function Sidebar({
         closeTimer.current = window.setTimeout(() => setHovered(null), 180);
     };
     // Al navegar (o al desmontar) el flotante se va: si no, queda tapando
-    // justo el contenido al que acabás de entrar.
+    // justo el contenido al que acabas de entrar.
     useEffect(() => {
         clearTimers();
         setHovered(null);
@@ -204,7 +204,7 @@ export function Sidebar({
     // v0.1.172 — un menú contextual o un diálogo abierto DESDE el flotante
     // lo sostiene abierto (el menú va por portal: en el DOM el mouse "sale"
     // del flotante al entrar al menú, y cada click adentro burbujea hasta
-    // acá). Al soltarlo, el flotante se va: el mouse ya está en otro lado.
+    // aquí). Al soltarlo, el flotante se va: el mouse ya está en otro lado.
     const holdRef = useRef(false);
     const peekHold = useCallback((held: boolean): void => {
         if (holdRef.current === held) return;
@@ -262,7 +262,7 @@ export function Sidebar({
 
     /**
      * El CONTENIDO del panel para una sección. Lo usan las dos superficies
-     * —el panel acoplado y el flotante del hover— así que agregar algo acá
+     * —el panel acoplado y el flotante del hover— así que agregar algo aquí
      * sale en ambas por construcción.
      */
     const panelBody = (sec: RailSection): JSX.Element => (
@@ -759,7 +759,7 @@ function FavoritesSection({
     if (sections.length === 0 && favViews.length === 0) {
         return (
             <p className="imcrm-px-2.5 imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Tocá el pin de una lista o un dashboard en su menú para anclarlo acá. Las vistas se anclan desde el menú de su pestaña.')}
+                {__('Toca el pin de una lista o un dashboard en su menú para anclarlo aquí. Las vistas se anclan desde el menú de su pestaña.')}
             </p>
         );
     }

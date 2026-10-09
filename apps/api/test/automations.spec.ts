@@ -650,7 +650,7 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
                 },
                 {
                     type: 'call_webhook',
-                    // Sin URL → skipped (no importa acá; probamos que el run corre).
+                    // Sin URL → skipped (no importa aquí; probamos que el run corre).
                     config: {},
                 },
             ],

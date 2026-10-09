@@ -116,7 +116,7 @@ export function PlatformAiCard(): JSX.Element | null {
                         )}
                         {s?.key_unreadable && (
                             <span className="imcrm-text-xs imcrm-text-destructive">
-                                {__('No descifra con la SECRETS_KEY actual del servidor: escribila de nuevo.')}
+                                {__('No descifra con la SECRETS_KEY actual del servidor: escríbela de nuevo.')}
                             </span>
                         )}
                         {s?.has_key && (
@@ -169,7 +169,7 @@ export function PlatformAiCard(): JSX.Element | null {
                         <span>
                             <span className="imcrm-font-medium">{__('Compartir la clave de la plataforma')}</span>
                             <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Las empresas usan tu clave con la cuota mensual de su plan (columna "IA/mes" en Planes). Los pedidos los pagás vos.')}
+                                {__('Las empresas usan tu clave con la cuota mensual de su plan (columna "IA/mes" en Planes). Los pedidos los pagas tú.')}
                             </span>
                         </span>
                     </label>

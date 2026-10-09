@@ -85,7 +85,7 @@ export function GeneratePdfConfig({
                 <Label className="imcrm-text-xs">{__('Plantilla del documento')}</Label>
                 <div className="imcrm-flex imcrm-gap-2">
                     <Select value={templateId ? String(templateId) : ''} onChange={(e) => set({ document_template_id: e.target.value ? Number(e.target.value) : null })} aria-label={__('Plantilla del documento')}>
-                        <option value="">{list.length === 0 ? __('Todavía no hay plantillas') : __('Elegí una plantilla…')}</option>
+                        <option value="">{list.length === 0 ? __('Todavía no hay plantillas') : __('Elige una plantilla…')}</option>
                         {list.map((t) => (
                             <option key={t.id} value={t.id}>
                                 {t.name}
@@ -99,7 +99,7 @@ export function GeneratePdfConfig({
                         </Button>
                     )}
                 </div>
-                {missing && <p className="imcrm-text-[11px] imcrm-text-destructive">{__('La plantilla elegida ya no existe: elegí otra.')}</p>}
+                {missing && <p className="imcrm-text-[11px] imcrm-text-destructive">{__('La plantilla elegida ya no existe: elige otra.')}</p>}
                 <Button type="button" variant="ghost" size="sm" className="imcrm-self-start imcrm-gap-1.5 imcrm-px-1 imcrm-text-primary" onClick={launcher.create} disabled={listId === undefined}>
                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Nueva plantilla (cuenta de cobro, recibo…)')}
@@ -117,7 +117,7 @@ export function GeneratePdfConfig({
                     ))}
                 </Select>
                 {fileFields.length === 0 && (
-                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Para guardarlo, creá en la lista un campo de tipo Archivo.')}</p>
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Para guardarlo, crea en la lista un campo de tipo Archivo.')}</p>
                 )}
                 {typeof cfg.save_field === 'string' && cfg.save_field !== '' && (
                     <Select value={cfg.save_mode === 'replace' ? 'replace' : 'append'} onChange={(e) => set({ save_mode: e.target.value })} aria-label={__('Si ya hay archivos')}>
@@ -169,7 +169,7 @@ export function EmailPdfAttachments({
                 {__('Adjuntar PDF')}
             </Label>
             {list.length === 0 ? (
-                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Diseñá una plantilla de documento (cuenta de cobro, recibo) y mandala adjunta en este correo.')}</p>
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Diseña una plantilla de documento (cuenta de cobro, recibo) y mándala adjunta en este correo.')}</p>
             ) : (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-1">
                     {list.map((t) => (

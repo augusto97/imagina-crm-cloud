@@ -32,7 +32,7 @@ export function getOauthRequestId(): string | null {
 
 const SCOPE_TEXT: Record<PersonalTokenScope, { label: string; hint: string }> = {
     read: { label: 'Sólo lectura', hint: 'Consultar listas, esquemas, registros y agregados.' },
-    full: { label: 'Lectura y cambios', hint: 'Además propone cambios (listas, campos, tableros, automatizaciones, registros) que vos confirmás desde el cliente antes de aplicarse.' },
+    full: { label: 'Lectura y cambios', hint: 'Además propone cambios (listas, campos, tableros, automatizaciones, registros) que tú confirmas desde el cliente antes de aplicarse.' },
 };
 
 export function OauthConsentPage({ requestId }: { requestId: string }): JSX.Element {
@@ -112,7 +112,7 @@ function Consent({
                 <Card>
                     <h1 className="imcrm-text-lg imcrm-font-semibold">{__('Este pedido de autorización venció')}</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-oauth-expired">
-                        {__('Volvé al cliente (Claude, Cursor…) y repetí "Conectar": tenés 10 minutos para autorizar desde que lo iniciás.')}
+                        {__('Vuelve al cliente (Claude, Cursor…) y repite "Conectar": tienes 10 minutos para autorizar desde que lo inicias.')}
                     </p>
                     <Button variant="outline" size="sm" className="imcrm-self-start" onClick={() => window.location.assign('/')}>
                         {__('Ir a la app')}
@@ -149,7 +149,7 @@ function Consent({
                         <span>
                             {__('No reconocemos esta app. El acceso a tu cuenta se enviará a')}{' '}
                             <span className="imcrm-font-mono imcrm-font-semibold">{req.redirect_host}</span>.{' '}
-                            {__('El nombre que ves arriba lo eligió quien la registró: autorizá sólo si VOS empezaste la conexión desde esa app y confiás en ese sitio.')}
+                            {__('El nombre que ves arriba lo eligió quien la registró: autoriza sólo si TÚ empezaste la conexión desde esa app y confías en ese sitio.')}
                         </span>
                     </div>
                 )}
@@ -186,7 +186,7 @@ function Consent({
 
                 <p className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-2.5 imcrm-text-xs imcrm-text-muted-foreground">
                     <ShieldCheck className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
-                    <span>{__('Podés revocar esta conexión cuando quieras desde Ajustes → Cuenta → Seguridad → Conexión MCP.')}</span>
+                    <span>{__('Puedes revocar esta conexión cuando quieras desde Ajustes → Cuenta → Seguridad → Conexión MCP.')}</span>
                 </p>
 
                 {error && <p className="imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-oauth-error">{error}</p>}

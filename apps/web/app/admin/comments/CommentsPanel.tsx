@@ -139,7 +139,7 @@ export function CommentsPanel({
                 <div className="imcrm-relative">
                     <Textarea
                         ref={textareaRef}
-                        placeholder={__('Escribí un comentario… Usá @ para mencionar.')}
+                        placeholder={__('Escribe un comentario… Usa @ para mencionar.')}
                         rows={3}
                         value={draft}
                         onChange={(e) => {
@@ -355,7 +355,7 @@ function EmptyState(): JSX.Element {
         <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-py-8 imcrm-text-center imcrm-text-muted-foreground">
             <MessageSquare className="imcrm-h-6 imcrm-w-6" />
             <p className="imcrm-text-sm">{__('Aún no hay comentarios.')}</p>
-            <p className="imcrm-text-xs">{__('Empezá la conversación con el primero.')}</p>
+            <p className="imcrm-text-xs">{__('Empieza la conversación con el primero.')}</p>
         </div>
     );
 }

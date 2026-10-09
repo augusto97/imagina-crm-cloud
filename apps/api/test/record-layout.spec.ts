@@ -185,7 +185,7 @@ describe('datos de la ficha v3 (Postgres real)', () => {
         await lists_.updatePermissions(tenantId, 'facturas', {
             permissions: { agent: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: ['total'] } },
         });
-        // Por defecto el agente ve sólo lo suyo; acá ve todos los clientes.
+        // Por defecto el agente ve sólo lo suyo; aquí ve todos los clientes.
         await lists_.updatePermissions(tenantId, 'clientes', {
             permissions: { agent: { view: 'all', create: false, edit: 'none', delete: 'none', fields_hidden: [] } },
         });

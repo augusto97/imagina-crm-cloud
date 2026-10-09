@@ -195,8 +195,8 @@ export class AuthService implements OnModuleInit {
         await this.mail.enqueue({
             to: user.email,
             subject: 'Restablecer tu contraseña — Imagina Base',
-            html: `<p>Hola ${escapeHtml(user.name)},</p><p>Recibimos un pedido para restablecer tu contraseña. El enlace vence en 30 minutos:</p><p><a href="${link}">Restablecer contraseña</a></p><p>Si no lo pediste, ignorá este correo.</p>`,
-            text: `Restablecé tu contraseña (vence en 30 min): ${link}`,
+            html: `<p>Hola ${escapeHtml(user.name)},</p><p>Recibimos un pedido para restablecer tu contraseña. El enlace vence en 30 minutos:</p><p><a href="${link}">Restablecer contraseña</a></p><p>Si no lo pediste, ignora este correo.</p>`,
+            text: `Restablece tu contraseña (vence en 30 min): ${link}`,
         });
         this.logger.log(`Reset de contraseña solicitado para userId=${user.id}`);
     }
@@ -220,7 +220,7 @@ export class AuthService implements OnModuleInit {
         if (!userId) {
             throw new BadRequestException({
                 code: 'invalid_reset_token',
-                message: 'El enlace es inválido o expiró. Pedí uno nuevo.',
+                message: 'El enlace es inválido o expiró. Pide uno nuevo.',
                 data: { status: 400 },
             });
         }
@@ -380,7 +380,7 @@ export class AuthService implements OnModuleInit {
             .limit(1);
         if (!user) throw new NotFoundException({ code: 'user_not_found', message: `Usuario ${userId} no existe`, data: { status: 404 } });
         // Guard rail: no dejar que el operador se bloquee a sí mismo ni a otro
-        // superadmin de plataforma desde acá.
+        // superadmin de plataforma desde aquí.
         if (disabled && this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase())) {
             throw new ForbiddenException({
                 code: 'cannot_disable_superadmin',
@@ -412,7 +412,7 @@ export class AuthService implements OnModuleInit {
         targetUserId: number,
     ): Promise<{ token: string; target: { id: number; name: string; email: string } }> {
         if (operatorId === targetUserId) {
-            throw new BadRequestException({ code: 'self_impersonation', message: 'No tiene sentido impersonarte a vos mismo', data: { status: 400 } });
+            throw new BadRequestException({ code: 'self_impersonation', message: 'No tiene sentido impersonarte a ti mismo', data: { status: 400 } });
         }
         const [target] = await this.db.select().from(users).where(eq(users.id, targetUserId)).limit(1);
         if (!target) {
@@ -466,7 +466,7 @@ export class AuthService implements OnModuleInit {
         const token = randomBytes(32).toString('base64url');
         const invite = kind === 'invite';
         await this.redis.set(resetKey(token), String(userId), 'EX', invite ? INVITE_TTL_SECONDS : RESET_TTL_SECONDS);
-        // `invite=1` sólo cambia los textos de la pantalla ("Definí tu
+        // `invite=1` sólo cambia los textos de la pantalla ("Define tu
         // contraseña" en vez de "Nueva contraseña"); el token es el mismo.
         const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}${invite ? '&invite=1' : ''}`;
         const expires = invite ? '7 días' : '30 minutos';
@@ -475,10 +475,10 @@ export class AuthService implements OnModuleInit {
         if (invite && opts.tenantName) {
             const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} te invitó` : 'Te invitaron';
             subject = `Te invitaron a «${oneLine(opts.tenantName)}» en Imagina Base`;
-            intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en Imagina Base. Definí tu contraseña para entrar`;
+            intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en Imagina Base. Define tu contraseña para entrar`;
         } else if (invite) {
             subject = 'Te crearon una cuenta en Imagina Base';
-            intro = 'Se creó una cuenta para vos en Imagina Base. Definí tu contraseña para entrar';
+            intro = 'Se creó una cuenta para ti en Imagina Base. Define tu contraseña para entrar';
         } else {
             subject = 'Restablecer tu contraseña — Imagina Base';
             intro = 'Se solicitó restablecer tu contraseña';
@@ -546,7 +546,7 @@ export class AuthService implements OnModuleInit {
             });
         }
         // Una cuenta nueva sólo sirve si le llega el correo: sin SMTP de cuenta
-        // se corta acá, antes de crear nada.
+        // se corta aquí, antes de crear nada.
         if (!known) await this.mail.assertAccountMailAvailable();
         // Quién invita, para el correo ("Ana te invitó…").
         let invitedBy: string | null = null;
@@ -673,7 +673,7 @@ export class AuthService implements OnModuleInit {
         await this.mail.assertAccountMailAvailable();
         if (!(await this.withinMailBudget(`inviteresend:${userId}`, INVITE_RESEND_MAX, 60 * 60))) {
             throw new HttpException(
-                { code: 'too_many_requests', message: 'Ya se reenvió varias veces en la última hora. Probá más tarde.', data: { status: 429 } },
+                { code: 'too_many_requests', message: 'Ya se reenvió varias veces en la última hora. Prueba más tarde.', data: { status: 429 } },
                 429,
             );
         }
@@ -698,8 +698,8 @@ export class AuthService implements OnModuleInit {
             await this.mail.enqueue({
                 to: user.email,
                 subject: `Te sumaron a «${oneLine(tenantName)}» en Imagina Base`,
-                html: `<p>Hola ${escapeHtml(user.name)},</p><p>${who} a «${escapeHtml(tenantName)}» en Imagina Base. Entrá con tu cuenta de siempre y elegí la empresa en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
-                text: `${invitedBy ? `${invitedBy} te sumó` : 'Te sumaron'} a «${tenantName}» en Imagina Base. Entrá: ${base}/`,
+                html: `<p>Hola ${escapeHtml(user.name)},</p><p>${who} a «${escapeHtml(tenantName)}» en Imagina Base. Entra con tu cuenta de siempre y elige la empresa en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
+                text: `${invitedBy ? `${invitedBy} te sumó` : 'Te sumaron'} a «${tenantName}» en Imagina Base. Entra: ${base}/`,
             });
             return true;
         } catch (err) {
@@ -797,7 +797,7 @@ export class AuthService implements OnModuleInit {
                 {
                     code: 'too_many_attempts',
                     message:
-                        'Demasiados intentos fallidos para esta cuenta. Esperá unos minutos o restablecé tu contraseña.',
+                        'Demasiados intentos fallidos para esta cuenta. Espera unos minutos o restablece tu contraseña.',
                     data: { status: 429 },
                 },
                 429,
@@ -827,7 +827,7 @@ export class AuthService implements OnModuleInit {
         if (user.disabledAt) {
             throw new ForbiddenException({
                 code: 'account_disabled',
-                message: 'Tu cuenta está desactivada. Contactá al administrador.',
+                message: 'Tu cuenta está desactivada. Contacta al administrador.',
                 data: { status: 403 },
             });
         }
@@ -870,7 +870,7 @@ export class AuthService implements OnModuleInit {
         if (raw === null) {
             throw new UnauthorizedException({
                 code: 'mfa_challenge_expired',
-                message: 'El desafío venció. Volvé a ingresar tu contraseña.',
+                message: 'El desafío venció. Vuelve a ingresar tu contraseña.',
                 data: { status: 401 },
             });
         }
@@ -881,7 +881,7 @@ export class AuthService implements OnModuleInit {
             await this.redis.del(mfaKey(input.challenge));
             throw new UnauthorizedException({
                 code: 'mfa_too_many_attempts',
-                message: 'Demasiados códigos incorrectos. Volvé a ingresar tu contraseña.',
+                message: 'Demasiados códigos incorrectos. Vuelve a ingresar tu contraseña.',
                 data: { status: 401 },
             });
         }
@@ -898,7 +898,7 @@ export class AuthService implements OnModuleInit {
         if (Number((await this.redis.get(failKey)) ?? 0) >= MFA_USER_MAX_FAILS) {
             throw new UnauthorizedException({
                 code: 'mfa_locked',
-                message: 'Demasiados códigos incorrectos. Esperá 15 minutos y volvé a intentar.',
+                message: 'Demasiados códigos incorrectos. Espera 15 minutos y vuelve a intentar.',
                 data: { status: 401 },
             });
         }
@@ -990,14 +990,14 @@ export class AuthService implements OnModuleInit {
         if (secret === null) {
             throw new BadRequestException({
                 code: 'two_factor_setup_expired',
-                message: 'El alta venció. Volvé a empezar la configuración.',
+                message: 'El alta venció. Vuelve a empezar la configuración.',
                 data: { status: 400 },
             });
         }
         if (!verifyTotp(secret, code)) {
             throw new BadRequestException({
                 code: 'invalid_code',
-                message: 'El código no coincide. Revisá la hora de tu teléfono e intentá de nuevo.',
+                message: 'El código no coincide. Revisa la hora de tu teléfono e intenta de nuevo.',
                 data: { status: 400 },
             });
         }
@@ -1113,9 +1113,9 @@ export class AuthService implements OnModuleInit {
         const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/verify?token=${token}`;
         await this.mail.enqueue({
             to: user.email,
-            subject: 'Confirmá tu email — Imagina Base',
-            html: `<p>Hola ${escapeHtml(user.name)},</p><p>Confirmá tu dirección de correo para activar del todo tu cuenta. El enlace vence en 48 horas:</p><p><a href="${link}">Confirmar mi email</a></p><p>Si no creaste esta cuenta, ignorá este mensaje.</p>`,
-            text: `Confirmá tu email (vence en 48 h): ${link}`,
+            subject: 'Confirma tu email — Imagina Base',
+            html: `<p>Hola ${escapeHtml(user.name)},</p><p>Confirma tu dirección de correo para activar del todo tu cuenta. El enlace vence en 48 horas:</p><p><a href="${link}">Confirmar mi email</a></p><p>Si no creaste esta cuenta, ignora este mensaje.</p>`,
+            text: `Confirma tu email (vence en 48 h): ${link}`,
         });
         this.logger.log(`Verificación de email enviada a userId=${user.id}`);
     }
@@ -1130,7 +1130,7 @@ export class AuthService implements OnModuleInit {
         if (!userId) {
             throw new BadRequestException({
                 code: 'invalid_verify_token',
-                message: 'El enlace es inválido o expiró. Pedí uno nuevo desde Ajustes.',
+                message: 'El enlace es inválido o expiró. Pide uno nuevo desde Ajustes.',
                 data: { status: 400 },
             });
         }

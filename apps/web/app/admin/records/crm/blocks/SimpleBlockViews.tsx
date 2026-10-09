@@ -48,7 +48,7 @@ export function FilesBlockView({ block, record }: FilesBlockViewProps): JSX.Elem
     return (
         <Card title={title ?? __('Archivos')} icon={Paperclip}>
             {fileFields.length === 0 ? (
-                <Empty>{__('No hay file fields. Editá el bloque para configurar.')}</Empty>
+                <Empty>{__('No hay file fields. Edita el bloque para configurar.')}</Empty>
             ) : items.length === 0 ? (
                 <Empty>{__('Sin archivos vinculados a este registro.')}</Empty>
             ) : (
@@ -248,7 +248,7 @@ export function ActionButtonView({ block, record }: ActionButtonViewProps): JSX.
                 <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
                     {targetSource === 'field'
                         ? __('El campo no tiene valor en este registro.')
-                        : __('Configurá el target en el bloque.')}
+                        : __('Configura el target en el bloque.')}
                 </p>
             )}
         </section>

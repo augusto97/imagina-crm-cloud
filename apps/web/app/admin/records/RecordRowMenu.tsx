@@ -43,7 +43,7 @@ interface RecordRowMenuProps {
  * como en ClickUp.
  *
  * Sólo entran acciones que existen de verdad en la app; el menú de ClickUp
- * trae cosas que acá no tienen equivalente (seguir la tarea, recordatorios,
+ * trae cosas que aquí no tienen equivalente (seguir la tarea, recordatorios,
  * combinar, tipo de tarea) y ponerlas apagadas sería peor que no ponerlas.
  *
  * El menú se ancla a un punto FIJO del viewport: Radix necesita un trigger,

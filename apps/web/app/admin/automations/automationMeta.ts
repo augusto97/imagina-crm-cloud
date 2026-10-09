@@ -302,7 +302,7 @@ export function summarizeAction(
         }
         case 'generate_pdf': {
             const save = typeof cfg.save_field === 'string' ? cfg.save_field : '';
-            if (!cfg.document_template_id) return __('Genera un PDF (elegí la plantilla)');
+            if (!cfg.document_template_id) return __('Genera un PDF (elige la plantilla)');
             return save !== ''
                 ? sprintf(__('Genera un PDF y lo guarda en «%s»'), fieldLabel(fields, save))
                 : __('Genera un PDF');
@@ -315,7 +315,7 @@ export function summarizeAction(
                 (a) => a.connector?.action_key === key && a.connector.connection_id === connId,
             );
             // Con catálogo cargado y sin coincidencia, la acción ya no existe
-            // en el conector: decirlo acá evita que alguien crea que anda.
+            // en el conector: decirlo aquí evita que alguien crea que anda.
             if (!hit && (catalog ?? []).length > 0) {
                 return sprintf(
                     /* translators: %s: action key */

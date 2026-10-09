@@ -48,7 +48,7 @@ export function FieldTypeSelect({
             onChange={(e) => onChange(e.target.value as FieldTypeSlug)}
         >
             <option value="" disabled>
-                {isLoading ? __('Cargando…') : __('Elegí un tipo')}
+                {isLoading ? __('Cargando…') : __('Elige un tipo')}
             </option>
             {visibleTypes?.map((t) => {
                 let label: string = t.label;

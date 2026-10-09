@@ -388,7 +388,7 @@ export interface EmailRenderOptions {
     fieldLabel?: (slug: string) => string | null;
     /** Valor legible (formateado) de un campo. */
     fieldValue?: (slug: string) => string;
-    /** HTML de la firma (lo escribió la persona; se limpia acá). */
+    /** HTML de la firma (lo escribió la persona; se limpia aquí). */
     signatureHtml?: string | null;
     /** Sin bloque «Firma» en el diseño: se agrega al final. */
     appendSignature?: boolean;
@@ -764,7 +764,7 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
                 : '';
             if (html) return html;
             return ctx.o.preview
-                ? `<p style="margin:0;${ty.face}font-size:${ty.size}px;color:${t.muted};text-align:${b.align};">Escribí el texto…</p>`
+                ? `<p style="margin:0;${ty.face}font-size:${ty.size}px;color:${t.muted};text-align:${b.align};">Escribe el texto…</p>`
                 : '';
         }
         case 'button': {
@@ -844,7 +844,7 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
                 : '';
             if (!rows) {
                 return ctx.o.preview
-                    ? `${title}<p style="margin:0;font-family:${ctx.font};font-size:13px;color:${t.muted};">Elegí qué campos mostrar.</p>`
+                    ? `${title}<p style="margin:0;font-family:${ctx.font};font-size:13px;color:${t.muted};">Elige qué campos mostrar.</p>`
                     : '';
             }
             return `${title}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">${rows}</table>`;
@@ -857,7 +857,7 @@ function blockContent(ctx: Ctx, b: EmailBlock | EmailInnerBlock, width: number):
                 : '';
             if (sig) return sig;
             return ctx.o.preview
-                ? `<p style="margin:0;font-family:${ctx.font};font-size:13px;color:${t.muted};font-style:italic;">Acá va la firma (todavía no hay una cargada).</p>`
+                ? `<p style="margin:0;font-family:${ctx.font};font-size:13px;color:${t.muted};font-style:italic;">Aquí va la firma (todavía no hay una cargada).</p>`
                 : '';
         }
         case 'html': {
@@ -954,7 +954,7 @@ function columnsHtml(ctx: Ctx, b: Extract<EmailBlock, { type: 'columns' }>, widt
                 })
                 .join('');
         const empty = ctx.o.preview
-            ? `<p style="margin:0;padding:16px 0;font-family:${ctx.font};font-size:12px;color:${ctx.t.muted};text-align:center;border:1px dashed #c4c9d2;border-radius:4px;">Columna vacía: arrastrá un bloque acá</p>`
+            ? `<p style="margin:0;padding:16px 0;font-family:${ctx.font};font-size:12px;color:${ctx.t.muted};text-align:center;border:1px dashed #c4c9d2;border-radius:4px;">Columna vacía: arrastra un bloque aquí</p>`
             : '&nbsp;';
         const boxed = c.background || hasBoxStyle(c.style);
         const body = boxed
@@ -1137,7 +1137,7 @@ export function renderEmailHtml(design: EmailDesign, opts: EmailRenderOptions): 
     const scheme = t.dark?.enabled ? 'light dark' : 'light';
     const empty =
         opts.preview && rows === ''
-            ? `<tr><td style="padding:48px 32px;text-align:center;font-family:${ctx.font};font-size:14px;color:${t.muted};">Arrastrá bloques desde el panel de la izquierda (o tocalos para agregarlos).</td></tr>`
+            ? `<tr><td style="padding:48px 32px;text-align:center;font-family:${ctx.font};font-size:14px;color:${t.muted};">Arrastra bloques desde el panel de la izquierda (o tócalos para agregarlos).</td></tr>`
             : '';
     // v0.1.272 — Fuentes web: en el correo, Google Fonts escondido de
     // Outlook de Windows (si lo ve, ignora la pila y cae a Times New Roman) +

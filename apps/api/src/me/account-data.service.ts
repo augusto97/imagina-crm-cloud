@@ -203,7 +203,7 @@ export class AccountDataService {
         if (blocking.length > 0) {
             throw new ConflictException({
                 code: 'sole_admin',
-                message: `Sos el único administrador de: ${blocking.map((b) => b.name).join(', ')}. Nombrá otro administrador antes de borrar tu cuenta.`,
+                message: `Eres el único administrador de: ${blocking.map((b) => b.name).join(', ')}. Nombra otro administrador antes de borrar tu cuenta.`,
                 data: { status: 409, workspaces: blocking },
             });
         }

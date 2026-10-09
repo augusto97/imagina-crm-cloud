@@ -116,7 +116,7 @@ export class PlatformPaymentsService {
         try {
             return decryptSecret(enc, this.env.SECRETS_KEY);
         } catch {
-            this.logger.error('Credencial de cobro ilegible (cambió SECRETS_KEY): volvé a cargarla en Plataforma → Cobros.');
+            this.logger.error('Credencial de cobro ilegible (cambió SECRETS_KEY): vuelve a cargarla en Plataforma → Cobros.');
             return null;
         }
     }

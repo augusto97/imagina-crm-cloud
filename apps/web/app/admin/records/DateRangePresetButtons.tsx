@@ -25,7 +25,7 @@ interface DateRangePresetButtonsProps {
  * condición con operador `between_relative` y el slug del preset
  * como valor (ver `dateRangePresets.ts`).
  *
- * "Personalizado" no se muestra acá — el usuario edita los inputs
+ * "Personalizado" no se muestra aquí — el usuario edita los inputs
  * `desde`/`hasta` manualmente para rangos ad hoc.
  */
 export function DateRangePresetButtons({

@@ -8,7 +8,7 @@ import { defaultStoreEditable, STORE_EDITABLE_CATALOG, type StoreListMarker, typ
  * variación, quedaría un dato que la tienda no tiene (o no acepta) y la
  * próxima sincronización lo pisaría o lo dejaría huérfano. Por eso:
  *
- *  - **Registros**: no se crean ni se borran acá — se hace en WooCommerce.
+ *  - **Registros**: no se crean ni se borran aquí — se hace en WooCommerce.
  *  - **Columnas de la tienda**: de sólo lectura, salvo las que la empresa
  *    habilitó (v0.1.214; por defecto precios, stock y estados) y sólo con
  *    «Editar desde la app» activado.
@@ -66,7 +66,7 @@ const HOW_TO_EDIT = 'Se edita en WooCommerce.';
 
 /**
  * Qué se puede hacer con una celda: `own` (columna propia, libre),
- * `editable` (viaja a la tienda) o `locked` con el motivo en criollo.
+ * `editable` (viaja a la tienda) o `locked` con el motivo en lenguaje claro.
  */
 export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: StoreRowGetter): StoreCellAccess {
     const slug = storeFieldSlug(marker, fieldId);
@@ -76,13 +76,13 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
     if (!marker.write_back) {
         return {
             access: 'locked',
-            reason: 'Viene de WooCommerce. Para cambiarla desde acá, activá «Editar desde la app» en la página de la tienda.',
+            reason: 'Viene de WooCommerce. Para cambiarla desde aquí, activa «Editar desde la app» en la página de la tienda.',
         };
     }
     if (!storeEditableSlugs(marker).includes(slug)) {
         return {
             access: 'locked',
-            reason: 'Viene de WooCommerce. Para cambiarla desde acá, habilitala en «Columnas que se editan desde la app» (ajustes de la tienda).',
+            reason: 'Viene de WooCommerce. Para cambiarla desde aquí, habilítala en «Columnas que se editan desde la app» (ajustes de la tienda).',
         };
     }
     const kind = typeof row('tipo') === 'string' ? (row('tipo') as string) : '';
@@ -114,7 +114,7 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
         case 'stock':
         case 'umbral_stock':
             if (!ownStock) return { access: 'locked', reason: stockElsewhere(kind) };
-            if (!managed) return { access: 'locked', reason: 'Activá «Controla stock» para llevar la cantidad.' };
+            if (!managed) return { access: 'locked', reason: 'Activa «Controla stock» para llevar la cantidad.' };
             return { access: 'editable' };
         case 'estado_stock':
             if (!ownStock) return { access: 'locked', reason: stockElsewhere(kind) };
@@ -124,7 +124,7 @@ export function storeCellAccess(marker: StoreListMarker, fieldId: number, row: S
         case 'sku':
             return { access: 'editable' };
         case 'nombre':
-            if (kind === 'variacion') return { access: 'locked', reason: 'El nombre de una variación sale de su producto y sus atributos: cambiá el del producto.' };
+            if (kind === 'variacion') return { access: 'locked', reason: 'El nombre de una variación sale de su producto y sus atributos: cambia el del producto.' };
             return { access: 'editable' };
         case 'slug_url':
             if (kind === 'variacion') return { access: 'locked', reason: 'Una variación no tiene dirección propia: usa la de su producto.' };
@@ -182,7 +182,7 @@ export function storeValueError(
             return null;
         }
         case 'stock': {
-            if (empty) return 'El stock no puede quedar vacío: desactivá «Controla stock» si no querés llevar la cantidad.';
+            if (empty) return 'El stock no puede quedar vacío: desactiva «Controla stock» si no quieres llevar la cantidad.';
             const n = num(value);
             if (n === null || !Number.isInteger(n)) return 'El stock tiene que ser un número entero.';
             return null;
@@ -194,7 +194,7 @@ export function storeValueError(
             return null;
         }
         case 'estado_stock':
-            if (empty || !['instock', 'outofstock', 'onbackorder'].includes(String(value))) return 'Elegí un estado del stock.';
+            if (empty || !['instock', 'outofstock', 'onbackorder'].includes(String(value))) return 'Elige un estado del stock.';
             return null;
         case 'nombre':
             if (empty || String(value).trim() === '') return 'El nombre no puede quedar vacío.';
@@ -211,11 +211,11 @@ export function storeValueError(
             if (marker.role === 'orders') {
                 return (STORE_SETTABLE_ORDER_STATUSES as readonly string[]).includes(String(value))
                     ? null
-                    : 'Ese estado lo pone la tienda: elegí otro.';
+                    : 'Ese estado lo pone la tienda: elige otro.';
             }
             return (STORE_SETTABLE_PRODUCT_STATUSES as readonly string[]).includes(String(value))
                 ? null
-                : 'La papelera se maneja en WooCommerce: elegí otro estado.';
+                : 'La papelera se maneja en WooCommerce: elige otro estado.';
         }
         default:
             return null;

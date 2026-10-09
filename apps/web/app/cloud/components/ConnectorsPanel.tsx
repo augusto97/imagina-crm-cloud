@@ -200,7 +200,7 @@ export function ConnectorsPanel(): JSX.Element | null {
     }
 
     // v0.1.203 — las apps de la galería se muestran arriba, en Integraciones;
-    // acá quedan sólo las APIs personalizadas.
+    // aquí quedan sólo las APIs personalizadas.
     const rows = (list.data ?? []).filter((c) => c.integration_key === null);
     const redirectUri =
         rows.find((c) => c.oauth_redirect_uri !== '')?.oauth_redirect_uri ??
@@ -317,7 +317,7 @@ export function ConnectorsPanel(): JSX.Element | null {
                                 <span className="imcrm-font-medium">{__('Permitir conexiones privadas')}</span>
                                 <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
                                     {__(
-                                        'Quien arma automatizaciones puede guardar su propia credencial, visible sólo para esa persona. Las conexiones del equipo las creás vos.',
+                                        'Quien arma automatizaciones puede guardar su propia credencial, visible sólo para esa persona. Las conexiones del equipo las creas tú.',
                                     )}
                                 </span>
                             </span>
@@ -448,7 +448,7 @@ function ConnectionRow({
             )}
             {confirming && c.usage_count > 0 && (
                 <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-connector-confirm">
-                    {__('Está en uso: si la borrás, esas automatizaciones van a fallar. Tocá la papelera otra vez para confirmar.')}
+                    {__('Está en uso: si la borras, esas automatizaciones van a fallar. Toca la papelera otra vez para confirmar.')}
                 </p>
             )}
         </li>
@@ -695,7 +695,7 @@ function InlineSecretsCard({
                 </CardTitle>
                 <CardDescription>
                     {__(
-                        'Se guardan en claro y hay que cambiarlas una por una cada vez que rotás la clave. Convertirlas las mueve a una conexión cifrada; las automatizaciones siguen funcionando igual.',
+                        'Se guardan en claro y hay que cambiarlas una por una cada vez que rotas la clave. Convertirlas las mueve a una conexión cifrada; las automatizaciones siguen funcionando igual.',
                     )}
                 </CardDescription>
             </CardHeader>
@@ -822,7 +822,7 @@ function OAuthConfigFields({
         >
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                 {__(
-                    'Registrá una app en el proveedor y pegá acá sus datos. Después tocá "Autorizar": nadie tiene que pegar tokens a mano, y el que entregue el proveedor se renueva solo.',
+                    'Registra una app en el proveedor y pega aquí sus datos. Después toca "Autorizar": nadie tiene que pegar tokens a mano, y el que entregue el proveedor se renueva solo.',
                 )}
             </p>
 
@@ -905,7 +905,7 @@ function OAuthConfigFields({
             {preset && <p className="imcrm-text-xs imcrm-text-muted-foreground">{preset.hint}</p>}
 
             <div>
-                <Label>{__('URI de redirección (registrala en el proveedor)')}</Label>
+                <Label>{__('URI de redirección (regístrala en el proveedor)')}</Label>
                 <div className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-2">
                     <code
                         className="imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-background imcrm-px-2 imcrm-py-1 imcrm-text-xs"
@@ -935,7 +935,7 @@ function OAuthConfigFields({
 
             {!editing && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Guardá la conexión y después tocá "Autorizar" en su fila.')}
+                    {__('Guarda la conexión y después toca "Autorizar" en su fila.')}
                 </p>
             )}
         </div>

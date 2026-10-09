@@ -385,9 +385,9 @@ function toHttpError(err: unknown): unknown {
     const e = err as { code?: string; status?: number; message?: string };
     if (e.code === 'ai_unavailable') return new ForbiddenException({ code: e.code, message: e.message });
     if (e.code === 'ai_quota_reached') return new HttpException({ code: e.code, message: e.message }, 429);
-    if (e.status === 401) return new BadGatewayException({ code: 'ai_bad_key', message: 'El proveedor de IA rechazó la clave. Revisala en Ajustes → Asistente IA.' });
-    if (e.status === 429) return new HttpException({ code: 'ai_rate_limited', message: 'El proveedor de IA está limitando los pedidos. Probá en un rato.' }, 429);
-    if (e.status === 529 || e.status === 503) return new ServiceUnavailableException({ code: 'ai_overloaded', message: 'El proveedor de IA está saturado. Probá en un rato.' });
+    if (e.status === 401) return new BadGatewayException({ code: 'ai_bad_key', message: 'El proveedor de IA rechazó la clave. Revísala en Ajustes → Asistente IA.' });
+    if (e.status === 429) return new HttpException({ code: 'ai_rate_limited', message: 'El proveedor de IA está limitando los pedidos. Prueba en un rato.' }, 429);
+    if (e.status === 529 || e.status === 503) return new ServiceUnavailableException({ code: 'ai_overloaded', message: 'El proveedor de IA está saturado. Prueba en un rato.' });
     return new BadGatewayException({ code: 'ai_error', message: `La IA no respondió: ${e.message ?? String(err)}` });
 }
 

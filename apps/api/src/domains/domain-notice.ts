@@ -32,8 +32,8 @@ export function domainOperatorNotice(e: DomainOperatorEvent): { subject: string;
                 'Todavía no funciona: falta habilitarlo en el servidor.',
                 '',
                 'En ServerAvatar:',
-                `  1. En la aplicación de Imagina Base, agregá ${e.domain} como dominio adicional (alias).`,
-                '  2. SSL → volvé a emitir el certificado de Let\'s Encrypt incluyendo el alias.',
+                `  1. En la aplicación de Imagina Base, agrega ${e.domain} como dominio adicional (alias).`,
+                '  2. SSL → vuelve a emitir el certificado de Let\'s Encrypt incluyendo el alias.',
                 '',
                 `El DNS de ${e.domain} tiene que apuntar a ${e.target} (CNAME) antes de emitir el certificado.`,
                 `En la consola ves si ya apunta y si ya responde: ${e.consoleUrl}`,
@@ -45,10 +45,10 @@ export function domainOperatorNotice(e: DomainOperatorEvent): { subject: string;
         text: [
             `${e.tenantName} dejó de usar ${e.domain} (era el dominio de ${what}).`,
             '',
-            'Sacalo del servidor para que no rompa la renovación del certificado:',
-            `  En ServerAvatar, quitá el alias ${e.domain} de la aplicación de Imagina Base y volvé a emitir el SSL.`,
+            'Sácalo del servidor para que no rompa la renovación del certificado:',
+            `  En ServerAvatar, quita el alias ${e.domain} de la aplicación de Imagina Base y vuelve a emitir el SSL.`,
             '',
-            `Después marcalo como hecho en la consola: ${e.consoleUrl}`,
+            `Después márcalo como hecho en la consola: ${e.consoleUrl}`,
         ].join('\n'),
     };
 }

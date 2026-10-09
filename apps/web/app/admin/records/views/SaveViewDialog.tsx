@@ -74,7 +74,7 @@ export function SaveViewDialog({
             create.reset();
         }
         // Sólo al cambiar `open`. `create` (objeto de mutación de react-query) es
-        // una referencia NUEVA en cada render; incluirlo acá disparaba el effect
+        // una referencia NUEVA en cada render; incluirlo aquí disparaba el effect
         // en cada render → `create.reset()` → re-render → loop infinito ("Maximum
         // update depth"). El `reset()` sólo debe correr al cerrar el diálogo.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,12 +183,12 @@ export function SaveViewDialog({
                                 <option value="spreadsheet">{__('Hoja de cálculo (estilo Excel)')}</option>
                                 <option value="kanban" disabled={selectFields.length === 0}>
                                     {selectFields.length === 0
-                                        ? __('Kanban (necesitás al menos un campo de selección)')
+                                        ? __('Kanban (necesitas al menos un campo de selección)')
                                         : __('Kanban')}
                                 </option>
                                 <option value="calendar" disabled={dateFields.length === 0}>
                                     {dateFields.length === 0
-                                        ? __('Calendario (necesitás al menos un campo de fecha)')
+                                        ? __('Calendario (necesitas al menos un campo de fecha)')
                                         : __('Calendario')}
                                 </option>
                                 <option value="cards">{__('Tarjetas')}</option>

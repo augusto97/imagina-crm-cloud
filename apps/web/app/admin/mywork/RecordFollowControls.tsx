@@ -29,13 +29,13 @@ export function RecordFollowControls({ listId, recordId, compact = false }: { li
 
     const toggle = (): void =>
         setFollow.mutate(!following, {
-            onSuccess: (s) => toast.success(s.following ? __('Seguís este registro') : __('Dejaste de seguirlo')),
+            onSuccess: (s) => toast.success(s.following ? __('Sigues este registro') : __('Dejaste de seguirlo')),
             onError: (err) => toast.error(__('No se pudo'), err instanceof Error ? err.message : String(err)),
         });
 
     const followTitle = following
-        ? sprintf(__('Lo seguís: te avisamos de comentarios y cambios (%d lo siguen)'), followers)
-        : __('Seguir: avisame de comentarios y cambios');
+        ? sprintf(__('Lo sigues: te avisamos de comentarios y cambios (%d lo siguen)'), followers)
+        : __('Seguir: avísame de comentarios y cambios');
 
     return (
         <div className="imcrm-flex imcrm-items-center imcrm-gap-1" data-testid="record-follow-controls">

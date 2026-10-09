@@ -75,7 +75,7 @@ export function RelationPicker({
     const [open, setOpen] = useState(false);
 
     if (target === null) {
-        return <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Elegí la lista vinculada en la configuración del campo.')}</span>;
+        return <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('Elige la lista vinculada en la configuración del campo.')}</span>;
     }
 
     const toggle = (rid: number): void => {

@@ -187,7 +187,7 @@ async function readAll(source: Readable): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
-/** El error de Google, en criollo y con lo que hay que hacer. */
+/** El error de Google, en lenguaje claro y con lo que hay que hacer. */
 async function driveError(res: Response, what: string): Promise<DriveStorageError> {
     let reason = '';
     let message = '';
@@ -199,17 +199,17 @@ async function driveError(res: Response, what: string): Promise<DriveStorageErro
         // cuerpo vacío o no-JSON
     }
     if (res.status === 401) {
-        return new DriveStorageError('Google rechazó el acceso al Drive: reconectá la cuenta en Ajustes → Integraciones.', 401);
+        return new DriveStorageError('Google rechazó el acceso al Drive: reconecta la cuenta en Ajustes → Integraciones.', 401);
     }
     if (reason === 'storageQuotaExceeded') {
-        return new DriveStorageError('El Google Drive de la empresa está lleno: liberá espacio o ampliá el plan de Google.', 403);
+        return new DriveStorageError('El Google Drive de la empresa está lleno: libera espacio o amplia el plan de Google.', 403);
     }
     if (reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded' || res.status === 429) {
-        return new DriveStorageError('Google Drive pidió esperar (demasiados pedidos seguidos). Probá de nuevo en un momento.', 429);
+        return new DriveStorageError('Google Drive pidió esperar (demasiados pedidos seguidos). Prueba de nuevo en un momento.', 429);
     }
     if (res.status === 403) {
         return new DriveStorageError(
-            `Google no dejó ${what}${message ? ` (${message})` : ''}. Revisá que la Drive API esté habilitada y reconectá la cuenta.`,
+            `Google no dejó ${what}${message ? ` (${message})` : ''}. Revisa que la Drive API esté habilitada y reconecta la cuenta.`,
             403,
         );
     }

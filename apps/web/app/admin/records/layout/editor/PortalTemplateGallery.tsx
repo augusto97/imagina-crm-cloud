@@ -199,7 +199,7 @@ export function PortalTemplateGallery({ open, onOpenChange, list, fields, onAppl
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Buscando listas vinculadas…')}</p>
                                 ) : linked.items.length === 0 ? (
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Ninguna otra lista está vinculada a ésta. Con un campo de relación (por ejemplo, «Cliente» en Facturas) aparece acá.')}
+                                        {__('Ninguna otra lista está vinculada a ésta. Con un campo de relación (por ejemplo, «Cliente» en Facturas) aparece aquí.')}
                                     </p>
                                 ) : (
                                     linked.items.map((l) => (
@@ -227,7 +227,7 @@ export function PortalTemplateGallery({ open, onOpenChange, list, fields, onAppl
                             {kind === 'account' && (
                                 <p className="imcrm-flex imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-card imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground imcrm-ring-1 imcrm-ring-border">
                                     <Pencil className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
-                                    {__('El cliente podrá corregir sus datos de contacto. Lo cambiás en el bloque con «El cliente puede editarlo».')}
+                                    {__('El cliente podrá corregir sus datos de contacto. Lo cambias en el bloque con «El cliente puede editarlo».')}
                                 </p>
                             )}
 

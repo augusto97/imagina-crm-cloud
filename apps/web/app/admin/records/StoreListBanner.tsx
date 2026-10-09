@@ -8,7 +8,7 @@ import { __, sprintf } from '@/lib/i18n';
 /**
  * Aviso de una lista sincronizada con WooCommerce (v0.1.213): qué es esta
  * lista, dónde se crean y borran sus registros, qué se puede cambiar desde
- * acá (y que viaja a la tienda) y qué significan las marcas de las columnas.
+ * aquí (y que viaja a la tienda) y qué significan las marcas de las columnas.
  * La duda que resuelve es la que planteó el usuario: «¿si cambio esto, lo
  * manda a WooCommerce? ¿la tienda lo acepta?».
  */
@@ -24,9 +24,9 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
     const listing = joinList(editable);
     const children =
         marker.role === 'products'
-            ? __('Las variaciones (talla, color…) están dentro de cada producto: desplegalo con la flechita.')
+            ? __('Las variaciones (talla, color…) están dentro de cada producto: despliégalo con la flechita.')
             : marker.role === 'orders'
-              ? __('Lo que se compró en cada pedido está dentro del pedido: desplegalo con la flechita.')
+              ? __('Lo que se compró en cada pedido está dentro del pedido: despliégalo con la flechita.')
               : null;
     const storeUrl = marker.store_url.replace(/\/+$/, '');
     const createUrl =
@@ -48,7 +48,7 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                 </span>
                 <span className="imcrm-text-muted-foreground">
                     {marker.write_back && editable.length > 0
-                        ? sprintf(__('Podés cambiar %s: el cambio viaja a la tienda.'), listing)
+                        ? sprintf(__('Puedes cambiar %s: el cambio viaja a la tienda.'), listing)
                         : canChoose
                           ? __('Sólo lectura: los cambios se hacen en WooCommerce.')
                           : __('Los datos se editan en WooCommerce.')}
@@ -91,10 +91,10 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                         {canChoose && (
                             <li>
                                 {marker.write_back && editable.length > 0
-                                    ? sprintf(__('Desde acá se puede cambiar: %s. El cambio se manda a la tienda.'), listing)
+                                    ? sprintf(__('Desde aquí se puede cambiar: %s. El cambio se manda a la tienda.'), listing)
                                     : marker.write_back
-                                      ? __('Todavía no habilitaste ninguna columna para editar desde acá.')
-                                      : __('Para cambiar datos desde acá, activá «Editar desde la app» en los ajustes de la tienda.')}{' '}
+                                      ? __('Todavía no habilitaste ninguna columna para editar desde aquí.')
+                                      : __('Para cambiar datos desde aquí, activa «Editar desde la app» en los ajustes de la tienda.')}{' '}
                                 <Link
                                     to={`/settings/stores/${marker.connection_id}?seccion=editar`}
                                     className="imcrm-text-primary hover:imcrm-underline"
@@ -104,14 +104,14 @@ export function StoreListBanner({ marker }: { marker: StoreListMarker }): JSX.El
                                 </Link>
                             </li>
                         )}
-                        <li>{__('Podés sumar columnas propias (una nota, un responsable): son sólo de Imagina y nunca viajan a la tienda.')}</li>
+                        <li>{__('Puedes sumar columnas propias (una nota, un responsable): son sólo de Imagina y nunca viajan a la tienda.')}</li>
                     </ul>
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1" aria-label={__('Marcas de las columnas')}>
                         <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
                             <Lock className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden /> {__('Viene de WooCommerce: se edita allá.')}
                         </li>
                         <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                            <ArrowLeftRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden /> {__('Se cambia desde acá y viaja a la tienda.')}
+                            <ArrowLeftRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden /> {__('Se cambia desde aquí y viaja a la tienda.')}
                         </li>
                         <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
                             <PencilLine className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-emerald-600 dark:imcrm-text-emerald-400" aria-hidden /> {__('Columna sólo de Imagina.')}

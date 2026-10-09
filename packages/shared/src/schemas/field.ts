@@ -175,7 +175,7 @@ export const fieldConfigSchemas = {
         format: z.enum(['hm', 'clock']).optional(),
     }),
     /**
-     * v0.1.170 — Lookup: "mostrá el campo X de los registros vinculados por
+     * v0.1.170 — Lookup: "muestra el campo X de los registros vinculados por
      * la relación R". `relation_field_id` puede ser una relación de ESTA
      * lista (hacia afuera) o una relación de OTRA lista que apunta a esta
      * (hacia adentro: "las facturas que me apuntan"); el backend deduce la
@@ -188,7 +188,7 @@ export const fieldConfigSchemas = {
         target_field_id: idSchema.optional(),
     }),
     /**
-     * Rollup: "contá / sumá / promediá el campo X de los registros
+     * Rollup: "cuenta / suma / promedia el campo X de los registros
      * vinculados", con un filtro opcional sobre ESOS registros (el mismo
      * filter tree de las vistas, compilado por el QueryBuilder contra la
      * lista del otro lado — "deuda = suma del monto de las facturas con
@@ -339,7 +339,7 @@ export const createFieldSchema = z.object({
 });
 export type CreateFieldInput = z.infer<typeof createFieldSchema>;
 
-/** Patch de campo. El `type` NO se cambia acá (requiere migración de datos). */
+/** Patch de campo. El `type` NO se cambia aquí (requiere migración de datos). */
 /** Una opción nueva para un select/multi_select, creada al vuelo desde la tabla o la ficha. */
 export const appendFieldOptionSchema = z.object({
     value: z.string().trim().min(1).max(190),

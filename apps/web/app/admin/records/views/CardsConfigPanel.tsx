@@ -97,7 +97,7 @@ export function CardsConfigPanel({
                 </Select>
                 {fileFields.length === 0 && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Necesitás un campo tipo Archivo, o un Enlace que se muestre como imagen, para usar portada.')}
+                        {__('Necesitas un campo tipo Archivo, o un Enlace que se muestre como imagen, para usar portada.')}
                     </p>
                 )}
             </div>

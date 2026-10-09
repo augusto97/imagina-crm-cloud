@@ -261,7 +261,7 @@ const qrBlock = z.object({
     /** Lado del cuadrado en puntos (72 pt = 2,54 cm). */
     size: z.number().int().min(40).max(240).default(96),
     align: align.default('left'),
-    /** Una línea debajo: "Escaneá para pagar". */
+    /** Una línea debajo: "Escanea para pagar". */
     caption: z.string().max(200).default(''),
 });
 

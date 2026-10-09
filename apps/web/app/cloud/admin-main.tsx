@@ -16,7 +16,7 @@ import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
 // Tema claro/oscuro (v0.1.112): el script inline de index.html ya pintó el
-// atributo antes del primer frame; acá se re-afirma y se engancha el listener
+// atributo antes del primer frame; aquí se re-afirma y se engancha el listener
 // del SO para el modo "seguir al sistema".
 initTheme();
 

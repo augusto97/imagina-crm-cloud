@@ -179,7 +179,7 @@ function Toolbar({
                     >
                         <label className="imcrm-text-[11px] imcrm-text-muted-foreground" htmlFor="email-link-url">
                             {editor.state.selection.empty && !editor.isActive('link')
-                                ? __('Seleccioná primero el texto del enlace. Dirección:')
+                                ? __('Selecciona primero el texto del enlace. Dirección:')
                                 : __('Dirección (https://…, mailto:… o una variable {{campo}})')}
                         </label>
                         <input

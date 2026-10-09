@@ -264,7 +264,7 @@ export class RecordLayoutDataService {
         fieldsOf: (listId: number) => Promise<Field[]>,
     ): Promise<ResolvedSource> {
         if (source.kind !== 'list') return this.resolveSource(tenantId, baseListId, baseFields, recordId, source);
-        if (source.list_id === baseListId) throw badBlock('Para mostrar datos del propio cliente usá un bloque de campo');
+        if (source.list_id === baseListId) throw badBlock('Para mostrar datos del propio cliente usa un bloque de campo');
         const other = await fieldsOf(source.list_id);
         const byPosition = [...other].sort((a, b) => a.position - b.position);
         const rel = byPosition.find(

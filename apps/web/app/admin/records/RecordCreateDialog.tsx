@@ -140,7 +140,7 @@ export function RecordCreateDialog({
                                 </span>
 
                                 {/* v0.1.136 — el título del alta ya no es un
-                                    cartel fijo: se escribe acá y va al campo
+                                    cartel fijo: se escribe aquí y va al campo
                                     primario, igual que en la ficha. */}
                                 <SheetTitle asChild>
                                     <div className="imcrm-mt-2">

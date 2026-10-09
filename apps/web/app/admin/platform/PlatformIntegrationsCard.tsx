@@ -62,7 +62,7 @@ export function PlatformIntegrationsCard(): JSX.Element {
                     <CardTitle>{__('Integraciones')}</CardTitle>
                     <CardDescription>
                         {__(
-                            'Registrá una vez la app de cada proveedor y todas las empresas podrán conectar su Google, Microsoft o Slack con un solo botón. Las apps que funcionan con una clave (WhatsApp, Telegram) no necesitan nada acá.',
+                            'Registra una vez la app de cada proveedor y todas las empresas podrán conectar su Google, Microsoft o Slack con un solo botón. Las apps que funcionan con una clave (WhatsApp, Telegram) no necesitan nada aquí.',
                         )}
                     </CardDescription>
                 </CardHeader>
@@ -181,14 +181,14 @@ function ProviderCard({
                             autoComplete="off"
                             placeholder={
                                 app.has_secret
-                                    ? `${app.secret_hint ?? '••••'} — ${__('dejá vacío para conservarlo')}`
+                                    ? `${app.secret_hint ?? '••••'} — ${__('deja vacío para conservarlo')}`
                                     : ''
                             }
                             data-testid="imcrm-platform-client-secret"
                         />
                         {app.secret_unreadable && (
                             <p className="imcrm-text-xs imcrm-text-destructive">
-                                {__('El secreto guardado no se puede leer con la clave actual del servidor: cargalo de nuevo.')}
+                                {__('El secreto guardado no se puede leer con la clave actual del servidor: cárgalo de nuevo.')}
                             </p>
                         )}
                     </div>
@@ -295,7 +295,7 @@ function guideValues(redirectUri: string, scopes: string[], legal: PlatformLegal
         support_email: {
             label: __('Correo de asistencia'),
             value: email,
-            missing: email === '' ? __('completalo en «Páginas públicas» (arriba)') : undefined,
+            missing: email === '' ? __('complétalo en «Páginas públicas» (arriba)') : undefined,
         },
         scope_justification: { label: __('Justificación de permisos'), value: scopeJustificationText(scopes) },
         video_script: { label: __('Guion del video'), value: videoScriptText(appName, origin) },

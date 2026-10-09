@@ -17,7 +17,7 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
  *  - "Para habilitar": verificados por la empresa que el servidor todavía no
  *    atiende (los enlaces de esa empresa siguen saliendo por la plataforma);
  *  - "Para quitar del servidor": dominios que una empresa dejó de usar (si
- *    quedan en el certificado y dejan de apuntar acá, la renovación falla);
+ *    quedan en el certificado y dejan de apuntar aquí, la renovación falla);
  *  - "Funcionando" y "Esperando verificación", como referencia.
  */
 const KEY = ['platform-domains'];
@@ -70,7 +70,7 @@ export function PlatformDomainsCard(): JSX.Element {
                     {toEnable.length === 0 ? (
                         <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground">
                             <CircleCheck className="imcrm-h-4 imcrm-w-4 imcrm-text-success" aria-hidden />
-                            {__('No hay dominios esperando. Cuando una empresa verifique uno, te llega un correo y aparece acá.')}
+                            {__('No hay dominios esperando. Cuando una empresa verifique uno, te llega un correo y aparece aquí.')}
                         </p>
                     ) : (
                         <DomainList rows={toEnable} testId="domains-to-enable" />
@@ -136,16 +136,16 @@ function HowToCard({ target }: { target: string }): JSX.Element {
             <CardContent className="imcrm-pt-0">
                 <ol className="imcrm-flex imcrm-list-decimal imcrm-flex-col imcrm-gap-1.5 imcrm-pl-5 imcrm-text-sm" data-testid="domains-howto">
                     <li>
-                        {__('Esperá a que el dominio diga «Apunta acá»: la empresa tiene que crear un CNAME hacia')}{' '}
+                        {__('Espera a que el dominio diga «Apunta aquí»: la empresa tiene que crear un CNAME hacia')}{' '}
                         <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-py-0.5 imcrm-text-xs">{target}</code>.{' '}
                         {__('Sin eso, Let\'s Encrypt rechaza el certificado.')}
                     </li>
-                    <li>{__('En ServerAvatar, abrí la aplicación de Imagina Base y agregá el dominio como alias (dominio adicional).')}</li>
-                    <li>{__('En el SSL de la aplicación, volvé a emitir el certificado de Let\'s Encrypt para que incluya el alias.')}</li>
-                    <li>{__('Tocá «Comprobar». Cuando diga «Responde», los enlaces de esa empresa ya salen por su dominio.')}</li>
+                    <li>{__('En ServerAvatar, abre la aplicación de Imagina Base y agrega el dominio como alias (dominio adicional).')}</li>
+                    <li>{__('En el SSL de la aplicación, vuelve a emitir el certificado de Let\'s Encrypt para que incluya el alias.')}</li>
+                    <li>{__('Toca «Comprobar». Cuando diga «Responde», los enlaces de esa empresa ya salen por su dominio.')}</li>
                 </ol>
                 <p className="imcrm-mt-3 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Los alias comparten un solo certificado: si una empresa deja de usar su dominio, sacalo también del servidor (aparece en «Para quitar del servidor»), o la próxima renovación puede fallar para todos.')}
+                    {__('Los alias comparten un solo certificado: si una empresa deja de usar su dominio, sácalo también del servidor (aparece en «Para quitar del servidor»), o la próxima renovación puede fallar para todos.')}
                 </p>
             </CardContent>
         </Card>
@@ -211,7 +211,7 @@ function DomainRow({ row }: { row: PlatformDomain }): JSX.Element {
 function DnsBadge({ row }: { row: PlatformDomain }): JSX.Element {
     const dns = row.dns;
     if (!dns || dns.status === 'unknown') return <Badge variant="secondary">{__('DNS sin respuesta')}</Badge>;
-    if (dns.status === 'ok') return <Badge variant="success">{__('Apunta acá')}</Badge>;
+    if (dns.status === 'ok') return <Badge variant="success">{__('Apunta aquí')}</Badge>;
     const title = dns.current ? `${__('Apunta a')} ${dns.current}` : undefined;
     return (
         <Badge variant="warning" title={title} data-testid="dns-badge">
@@ -235,7 +235,7 @@ function RetiredCard({ rows }: { rows: RetiredDomain[] }): JSX.Element {
                     <Badge variant="warning">{rows.length}</Badge>
                 </CardTitle>
                 <CardDescription>
-                    {__('Estas empresas dejaron de usar su dominio. Sacá el alias en ServerAvatar y volvé a emitir el SSL; después marcalo como hecho.')}
+                    {__('Estas empresas dejaron de usar su dominio. Saca el alias en ServerAvatar y vuelve a emitir el SSL; después márcalo como hecho.')}
                 </CardDescription>
             </CardHeader>
             <CardContent className="imcrm-pt-0">

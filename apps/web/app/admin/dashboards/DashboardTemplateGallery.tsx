@@ -209,7 +209,7 @@ export function DashboardTemplateGallery({ onCreated }: Props): JSX.Element {
                 {!selected ? (
                     <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-py-10 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                         <LayoutTemplate className="imcrm-h-6 imcrm-w-6 imcrm-opacity-50" />
-                        {__('Elegí una plantilla y después la lista sobre la que se arma.')}
+                        {__('Elige una plantilla y después la lista sobre la que se arma.')}
                     </div>
                 ) : (
                     <>
@@ -322,7 +322,7 @@ function RoleListMapping({
                     onChange({ listId: id, fields: {} });
                 }}
             >
-                <option value="">{__('Elegí una lista…')}</option>
+                <option value="">{__('Elige una lista…')}</option>
                 {(lists.data ?? []).map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
                 ))}

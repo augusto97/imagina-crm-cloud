@@ -18,7 +18,7 @@ import {
 } from '../src/connectors/integration-calls';
 
 /**
- * v0.1.203 — las peticiones de las apps de la galería. Son puras: acá se
+ * v0.1.203 — las peticiones de las apps de la galería. Son puras: aquí se
  * verifica la FORMA exacta que espera cada API, sin salir a la red.
  */
 const creds = (over: Partial<IntegrationCreds> = {}): IntegrationCreds => ({
@@ -76,7 +76,7 @@ describe('compileIntegrationValues', () => {
     });
 
     it('SEC-33: en el cuerpo HTML de Gmail/Outlook los valores interpolados se escapan', () => {
-        const nota = '<a href="https://evil.test">Pagá acá</a>';
+        const nota = '<a href="https://evil.test">Paga aquí</a>';
         const fill = (esc: (s: string) => string) => (raw: unknown): string =>
             String(raw ?? '').replace(/\{\{(\w+)\}\}/g, (_m, k: string) => esc(({ nota } as Record<string, string>)[k] ?? ''));
         const merge = fill((s) => s);
@@ -85,7 +85,7 @@ describe('compileIntegrationValues', () => {
             const tpl = '<p>Hola</p><p>{{nota}}</p>';
             const html = compileIntegrationValues(app, actionOf(app, 'send_email'), { to: 'a@b.test', subject: '{{nota}}', body: tpl, html: 'true' }, merge, mergeHtml);
             // La plantilla del autor queda como HTML; el valor del registro, como texto.
-            expect(html.values.body).toBe('<p>Hola</p><p>&lt;a href=&quot;https://evil.test&quot;&gt;Pagá acá&lt;/a&gt;</p>');
+            expect(html.values.body).toBe('<p>Hola</p><p>&lt;a href=&quot;https://evil.test&quot;&gt;Paga aquí&lt;/a&gt;</p>');
             // El asunto no es HTML: no se escapa.
             expect(html.values.subject).toBe(nota);
             // En texto plano no hay nada que escapar.
@@ -222,7 +222,7 @@ describe('Slack', () => {
         expect(req.headers.authorization).toBe('Bearer ya29.token-de-prueba');
         expect(JSON.parse(req.body!)).toEqual({ channel: '#ventas', text: 'Hola' });
         expect(checkIntegrationResponse('slack', 200, '{"ok":true}')).toBeNull();
-        expect(checkIntegrationResponse('slack', 200, '{"ok":false,"error":"not_in_channel"}')).toMatch(/invitala/);
+        expect(checkIntegrationResponse('slack', 200, '{"ok":false,"error":"not_in_channel"}')).toMatch(/invítala/);
         expect(identityLabel('slack', '{"ok":true,"team":"Acme"}')).toBe('Acme');
     });
 });
@@ -355,7 +355,7 @@ describe('Google Sheets', () => {
 
 describe('respuestas de Google / Microsoft', () => {
     it('401 pide reconectar; 4xx trae el mensaje del proveedor', () => {
-        expect(checkIntegrationResponse('gmail', 401, '')).toMatch(/reconectá/);
+        expect(checkIntegrationResponse('gmail', 401, '')).toMatch(/reconecta/);
         expect(
             checkIntegrationResponse('google_sheets', 404, '{"error":{"code":404,"message":"Requested entity was not found."}}'),
         ).toMatch(/Requested entity was not found/);

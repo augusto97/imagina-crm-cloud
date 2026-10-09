@@ -232,7 +232,7 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
     },
     // Contenido
     { key: 'heading', type: 'heading', category: 'content', label: __('Título'), description: __('Un título de sección.'), icon: Heading, create: () => block('heading', { text: __('Nuevo título'), level: 2 }) },
-    { key: 'text', type: 'text', category: 'content', label: __('Texto'), description: __('Texto con formato, fijo o de un campo.'), icon: AlignLeft, create: () => block('text', { source: 'literal', content: __('Escribí acá.') }) },
+    { key: 'text', type: 'text', category: 'content', label: __('Texto'), description: __('Texto con formato, fijo o de un campo.'), icon: AlignLeft, create: () => block('text', { source: 'literal', content: __('Escribe aquí.') }) },
     { key: 'notice', type: 'notice', category: 'content', label: __('Aviso'), description: __('Un recordatorio destacado.'), icon: Info, create: () => block('notice', { tone: 'info', text: __('Un recordatorio para el equipo.') }) },
     { key: 'image', type: 'image', category: 'content', label: __('Imagen'), description: __('Subida o por enlace.'), icon: Image, create: () => block('image', { height: 220, fit: 'cover' }) },
     { key: 'gallery', type: 'gallery', category: 'content', label: __('Galería de imágenes'), description: __('Varias imágenes en grilla.'), icon: Columns3, create: () => block('gallery', { images: [], columns: 3, height: 160 }) },

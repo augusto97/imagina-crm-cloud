@@ -73,12 +73,12 @@ export function SendEmailConfig({
     const signatureIsMine = signatureUserId !== null && signatureUserId === me?.id;
     const signatureHtml = includeSignature && signatureIsMine ? (mySignature.data ?? '') || null : null;
     const signatureHint = !includeSignature
-        ? __('La firma está apagada. Activala en «Firma» (debajo del contenido) para que aparezca acá.')
+        ? __('La firma está apagada. Actívala en «Firma» (debajo del contenido) para que aparezca aquí.')
         : signatureIsMine
           ? signatureHtml
-              ? __('Acá va tu firma. Cambiala en Ajustes → Firma de email.')
-              : __('Todavía no cargaste tu firma: hacelo en Ajustes → Firma de email.')
-          : __('Acá va la firma de la persona elegida en «Firma». Para verla, usá «Ver con datos de un registro».');
+              ? __('Aquí va tu firma. Cámbiala en Ajustes → Firma de email.')
+              : __('Todavía no cargaste tu firma: hazlo en Ajustes → Firma de email.')
+          : __('Aquí va la firma de la persona elegida en «Firma». Para verla, usa «Ver con datos de un registro».');
 
     const setMode = (next: EmailBodyMode): void => {
         if (next === mode) return;
@@ -171,7 +171,7 @@ export function SendEmailConfig({
                     <MergeTagInput
                         rows={5}
                         autoGrow
-                        placeholder={__('Tu mensaje. Usá los botones de abajo para insertar variables.')}
+                        placeholder={__('Tu mensaje. Usa los botones de abajo para insertar variables.')}
                         value={str('body')}
                         onChange={(v) => set({ body: v })}
                         fields={fields}
@@ -188,7 +188,7 @@ export function SendEmailConfig({
                             fields={fields}
                         />
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Para Outlook y Gmail usá tablas y estilos en línea (style="…"). Con «Diseño visual» eso se hace solo.')}
+                            {__('Para Outlook y Gmail usa tablas y estilos en línea (style="…"). Con «Diseño visual» eso se hace solo.')}
                         </p>
                     </>
                 )}
@@ -297,7 +297,7 @@ function SignatureSection({
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-pl-6">
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                         <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Firma de')}</Label>
-                        <UserPicker value={userId} onChange={(id) => onChange({ signature_user_id: id })} showAssignMe placeholder={__('Elegí a alguien del equipo')} />
+                        <UserPicker value={userId} onChange={(id) => onChange({ signature_user_id: id })} showAssignMe placeholder={__('Elige a alguien del equipo')} />
                     </div>
                     {isMine &&
                         (mySignature.trim() ? (
@@ -344,7 +344,7 @@ function TestEmail({ config, listId, myEmail }: { config: Record<string, unknown
                 {__('Enviarme una prueba')}
             </Button>
             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                {__('Llega a')} {myEmail || __('tu correo')} {__('con los datos del último registro de la lista. Abrila en Gmail y en Outlook para ver cómo queda.')}
+                {__('Llega a')} {myEmail || __('tu correo')} {__('con los datos del último registro de la lista. Ábrela en Gmail y en Outlook para ver cómo queda.')}
             </p>
             {result && (
                 <p

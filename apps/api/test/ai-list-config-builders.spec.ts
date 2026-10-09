@@ -49,7 +49,7 @@ describe('buildPortalTemplate', () => {
                 { type: 'client_data', title: 'Tus datos', fields: ['nombre', 'email'] },
                 { type: 'editable_form', fields: ['telefono'] },
                 { type: 'related_records_table', list: 'facturas', fields: ['numero', 'monto'] },
-                { type: 'static_text', title: 'Cómo pagar', text: 'Transferí al CBU.\n\nMandá el comprobante.' },
+                { type: 'static_text', title: 'Cómo pagar', text: 'Transfiere a la cuenta.\n\nManda el comprobante.' },
                 { type: 'download_files', field: 'contrato' },
             ],
             ctx(),
@@ -70,7 +70,7 @@ describe('buildPortalTemplate', () => {
         expect(data!.config).toMatchObject({ visible_field_slugs: ['nombre', 'email'], title: 'Tus datos' });
         expect(form!.config).toMatchObject({ editable_field_slugs: ['telefono'], submit_label: 'Guardar' });
         expect(table!.config).toMatchObject({ list_slug: 'facturas', visible_field_slugs: ['numero', 'monto'], per_page: 10 });
-        expect(text!.config).toMatchObject({ html: '<p>Transferí al CBU.</p><p>Mandá el comprobante.</p>' });
+        expect(text!.config).toMatchObject({ html: '<p>Transfiere a la cuenta.</p><p>Manda el comprobante.</p>' });
         expect(files!.config).toMatchObject({ field_slug: 'contrato' });
         expect(template.blocks.every((b) => typeof b.id === 'string' && b.id.length > 3)).toBe(true);
         expect(preview.map((p) => p.type)).toEqual(['Portada', 'Indicador', 'Indicador', 'Datos del cliente', 'Formulario editable', 'Tabla de registros', 'Texto', 'Descargas']);
@@ -183,7 +183,7 @@ describe('buildRecordLayoutV3 (v0.1.232)', () => {
         const { buildRecordLayoutV3 } = await import('../src/ai/tools/record-layout-design');
         const r = buildRecordLayoutV3(page([{ type: 'field', field: 'avance', display: 'countdown' }]) as never, ctx);
         expect(r.warnings[0]).toContain('no admite la forma «countdown»');
-        expect(() => buildRecordLayoutV3(page([{ type: 'chart', from: 'pedidos', kind: 'kpi' }]) as never, ctx)).toThrow(/indicá `via`/);
+        expect(() => buildRecordLayoutV3(page([{ type: 'chart', from: 'pedidos', kind: 'kpi' }]) as never, ctx)).toThrow(/indica `via`/);
         const ok = buildRecordLayoutV3(page([{ type: 'chart', from: 'pedidos', via: 'referido', kind: 'kpi', metric: 'sum', metric_field: 'total' }]) as never, ctx);
         expect(ok.layout.pages[0]!.sections[0]!.blocks[0]![0]!.config).toMatchObject({ source: { kind: 'related', field_id: 51 }, metric_field_id: 60 });
     });

@@ -369,7 +369,7 @@ function EditorBody({
             return;
         }
         if (state.actions.length === 0) {
-            setError(__('Agregá al menos una acción: sin acciones la automatización no hace nada.'));
+            setError(__('Agrega al menos una acción: sin acciones la automatización no hace nada.'));
             return;
         }
 
@@ -455,7 +455,7 @@ function EditorBody({
                             <input
                                 value={state.description}
                                 onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-                                placeholder={__('Agregá una descripción (opcional)…')}
+                                placeholder={__('Agrega una descripción (opcional)…')}
                                 aria-label={__('Descripción')}
                                 className="imcrm-w-full imcrm-border-0 imcrm-bg-transparent imcrm-p-0 imcrm-text-[13px] imcrm-text-muted-foreground imcrm-outline-none placeholder:imcrm-text-muted-foreground/40 focus:imcrm-ring-0"
                             />
@@ -475,7 +475,7 @@ function EditorBody({
                                     className="imcrm-gap-1.5"
                                     onClick={() => void runNow()}
                                     disabled={runningNow || dirty}
-                                    title={dirty ? __('Guardá los cambios antes de ejecutar.') : __('Corre ahora, sin esperar al horario.')}
+                                    title={dirty ? __('Guarda los cambios antes de ejecutar.') : __('Corre ahora, sin esperar al horario.')}
                                     data-testid="imcrm-automation-run-now"
                                 >
                                     {runningNow ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Play className="imcrm-h-3.5 imcrm-w-3.5" />}

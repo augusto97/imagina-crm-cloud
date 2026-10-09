@@ -3,7 +3,7 @@ import { explainSendError, tlsMismatch } from './smtpHelp';
 
 describe('tlsMismatch', () => {
     it('465 sin conexión segura → avisa (es el timeout clásico)', () => {
-        expect(tlsMismatch({ port: '465', secure: false })).toContain('activá');
+        expect(tlsMismatch({ port: '465', secure: false })).toContain('activa');
     });
 
     it('587 con conexión segura → avisa que use STARTTLS', () => {

@@ -43,7 +43,7 @@ interface ModeConfig {
 }
 
 const MODES: ModeConfig[] = [
-    { kind: 'note', label: 'Nota', icon: StickyNote, placeholder: 'Escribí un comentario…' },
+    { kind: 'note', label: 'Nota', icon: StickyNote, placeholder: 'Escribe un comentario…' },
     { kind: 'call', label: 'Llamada', icon: Phone, placeholder: 'Resumen de la llamada…' },
     { kind: 'email', label: 'Email', icon: Mail, placeholder: 'Resumen del email…' },
     { kind: 'meeting', label: 'Reunión', icon: Users, placeholder: 'Notas de la reunión…' },
@@ -105,7 +105,7 @@ export function ActivityFeed({
                     {filter === 'comments'
                         ? __('Todavía no hay comentarios.')
                         : filter === 'changes'
-                          ? __('Los cambios del registro van a aparecer acá.')
+                          ? __('Los cambios del registro van a aparecer aquí.')
                           : __('Todavía no hay actividad.')}
                 </p>
             ) : (
@@ -208,7 +208,7 @@ function Composer({ listId, recordId }: { listId: number; recordId: number }): J
                 data-testid="imcrm-activity-composer"
             >
                 <Avatar name={me} size={24} />
-                {__('Escribí un comentario…')}
+                {__('Escribe un comentario…')}
             </button>
         );
     }

@@ -8,7 +8,7 @@ import type { CommentEntity, CommentMetadata, CreateCommentInput } from '@/types
  * `commentSchema`); la UI heredada del plugin habla `content` + `metadata.kind`.
  * Antes no había traducción: publicar desde la ficha devolvía 400 ("body
  * Required") y los comentarios existentes se veían SIN texto. La traducción
- * vive acá, el único lugar por donde pasan todas las pantallas.
+ * vive aquí, el único lugar por donde pasan todas las pantallas.
  */
 type ApiComment = Omit<CommentEntity, 'content'> & { body?: string; content?: string; kind?: CommentMetadata['kind'] };
 

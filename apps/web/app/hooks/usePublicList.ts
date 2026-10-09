@@ -40,7 +40,7 @@ export function useUpdatePublicList(idOrSlug: string | number) {
 
 /**
  * URL absoluta de la página pública (para link + snippet de iframe). El backend
- * devuelve `public_path` relativo a la raíz del API (`/public/l/:token`); acá
+ * devuelve `public_path` relativo a la raíz del API (`/public/l/:token`); aquí
  * lo prefijamos con el origen + el `restRoot` de la nube.
  */
 export function publicListUrl(publicPath: string | null): string | null {

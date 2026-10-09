@@ -99,8 +99,8 @@ export function StoreVariationsDialog({ open, onOpenChange, listId, selectedIds,
 
     const buildSpec = () => {
         const ready = attrs.filter((a) => a.name.trim() !== '' && a.options.length > 0);
-        if (ready.length === 0) return { error: __('Elegí al menos un atributo con sus valores.') };
-        if (ready.length !== attrs.length) return { error: __('Hay un atributo sin nombre o sin valores: completalo o quitalo.') };
+        if (ready.length === 0) return { error: __('Elige al menos un atributo con sus valores.') };
+        if (ready.length !== attrs.length) return { error: __('Hay un atributo sin nombre o sin valores: complétalo o quítalo.') };
         const p = price.trim() === '' ? null : parseNumberInput(price);
         if (p === null && price.trim() !== '') return { error: __('El precio no es un número.') };
         const s = stock.trim() === '' ? null : parseNumberInput(stock);
@@ -339,7 +339,7 @@ export function StoreVariationsDialog({ open, onOpenChange, listId, selectedIds,
                     }}
                     listId={listId}
                     editId={result.edit_id}
-                    summary={__('Las variaciones que acabás de crear')}
+                    summary={__('Las variaciones que acabas de crear')}
                 />
             )}
         </Dialog.Root>

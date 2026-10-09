@@ -10,7 +10,7 @@ import { lists } from '../db/schema';
  * o borrar un pedido, quedaría un dato que la tienda no tiene y la próxima
  * sincronización lo pisaría o lo dejaría huérfano. Lo usan el alta, el
  * borrado y la importación (el motor de la sincronización escribe por su
- * propio camino y no pasa por acá).
+ * propio camino y no pasa por aquí).
  */
 export function assertNotStoreManaged(
     list: { settings: Record<string, unknown> },

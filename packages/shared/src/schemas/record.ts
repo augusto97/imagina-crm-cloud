@@ -5,7 +5,7 @@ import { filterTreeSchema } from './filter';
 /**
  * Record del API. `data` son los valores dinámicos con claves `f{field_id}`
  * (ADR-S02). El backend valida `data` contra los fields de la lista antes de
- * persistir; acá el shape es genérico.
+ * persistir; aquí el shape es genérico.
  */
 export const recordSchema = z.object({
     id: idSchema,
@@ -29,7 +29,7 @@ export const recordSchema = z.object({
      * ¿El registro tiene descripción (v0.1.133)? El CONTENIDO no viaja en el
      * listado a propósito — una página de 50 filas con documentos completos
      * pesaría de más y la tabla no lo muestra. La descripción se pide aparte
-     * (`GET .../records/:id/description`) al abrir la ficha; acá sólo va el
+     * (`GET .../records/:id/description`) al abrir la ficha; aquí sólo va el
      * indicador que necesita el icono de la fila.
      */
     has_description: z.boolean().default(false),
@@ -66,7 +66,7 @@ export const sortDirSchema = z.enum(['asc', 'desc']);
  * último visto). `sort_dir` controla el orden por id (asc = más viejo primero).
  *
  * El orden por un campo arbitrario (keyset compuesto sobre (valor, id)) lo
- * necesitan las saved views y llega en F2; acá el orden canónico es por id.
+ * necesitan las saved views y llega en F2; aquí el orden canónico es por id.
  */
 export const listRecordsQuerySchema = z.object({
     cursor: z.coerce.number().int().positive().optional(),

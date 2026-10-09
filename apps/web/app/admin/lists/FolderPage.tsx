@@ -104,7 +104,7 @@ export function FolderPage(): JSX.Element {
                     title={__('Esta carpeta está vacía')}
                     description={
                         canCreateList
-                            ? __('Creá una lista acá, o arrastrá una desde el menú lateral hasta el nombre de la carpeta.')
+                            ? __('Crea una lista aquí, o arrastra una desde el menú lateral hasta el nombre de la carpeta.')
                             : __('Todavía no hay listas en esta carpeta.')
                     }
                     action={

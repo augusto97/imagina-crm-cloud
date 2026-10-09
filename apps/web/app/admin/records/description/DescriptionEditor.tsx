@@ -63,7 +63,7 @@ const CLOSED: SlashState = { open: false, query: '', from: 0, index: 0, rect: nu
  * bloques y barra flotante de formato al seleccionar texto.
  *
  * El contenido se emite como JSON de ProseMirror; quien lo monta decide cuándo
- * persistirlo (acá sólo se avisa que cambió).
+ * persistirlo (aquí sólo se avisa que cambió).
  */
 export function DescriptionEditor({
     value,
@@ -97,7 +97,7 @@ export function DescriptionEditor({
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     const extensions = useMemo(
-        () => descriptionExtensions(__('Escribí algo o «/» para insertar bloques')),
+        () => descriptionExtensions(__('Escribe algo o «/» para insertar bloques')),
         [],
     );
 
@@ -138,7 +138,7 @@ export function DescriptionEditor({
         }
         if (cmd.action === 'embed') {
             const url = window.prompt(
-                __('Pegá el enlace de YouTube, Loom, Figma, Drive o Vimeo'),
+                __('Pega el enlace de YouTube, Loom, Figma, Drive o Vimeo'),
                 'https://',
             );
             if (url === null || url.trim() === '') return;

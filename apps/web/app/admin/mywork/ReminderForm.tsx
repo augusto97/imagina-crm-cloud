@@ -77,14 +77,14 @@ export function ReminderForm({
             <Input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder={recordId ? __('Nota (opcional): qué tenés que hacer') : __('¿Qué te recordamos?')}
+                placeholder={recordId ? __('Nota (opcional): qué tienes que hacer') : __('¿Qué te recordamos?')}
                 maxLength={500}
                 className="imcrm-h-8"
                 onKeyDown={(e) => e.key === 'Enter' && save()}
                 data-testid="reminder-note"
             />
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{valid && when ? formatDateTime(when) : __('Elegí una fecha futura')}</span>
+                <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{valid && when ? formatDateTime(when) : __('Elige una fecha futura')}</span>
                 <Button
                     size="sm"
                     onClick={save}

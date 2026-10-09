@@ -103,7 +103,7 @@ export function AiSettingsPanel(): JSX.Element | null {
                             )}
                         </div>
                         <CardDescription>
-                            {__('Pedile en lenguaje natural listas, campos, vistas, tableros y automatizaciones. Siempre muestra una vista previa antes de aplicar nada, y sólo puede hacer lo que el rol de cada persona ya le permite.')}
+                            {__('Pídele en lenguaje natural listas, campos, vistas, tableros y automatizaciones. Siempre muestra una vista previa antes de aplicar nada, y sólo puede hacer lo que el rol de cada persona ya le permite.')}
                         </CardDescription>
                     </div>
                 </div>
@@ -111,7 +111,7 @@ export function AiSettingsPanel(): JSX.Element | null {
             <CardContent className="imcrm-space-y-5 imcrm-pt-0">
                 {platformOff && (
                     <p className="imcrm-rounded-lg imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs">
-                        {__('El operador de la plataforma tiene el asistente desactivado: por ahora no se puede usar aunque lo actives acá.')}
+                        {__('El operador de la plataforma tiene el asistente desactivado: por ahora no se puede usar aunque lo actives aquí.')}
                     </p>
                 )}
 
@@ -151,7 +151,7 @@ export function AiSettingsPanel(): JSX.Element | null {
                             </Badge>
                             <span className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {s.key_unreadable
-                                    ? __('La clave guardada no se puede descifrar con la clave actual del servidor: escribila de nuevo.')
+                                    ? __('La clave guardada no se puede descifrar con la clave actual del servidor: escríbela de nuevo.')
                                     : __('Tus pedidos no consumen la cuota del plan.')}
                             </span>
                             <Button variant="ghost" size="sm" onClick={() => clearKey.mutate()} disabled={clearKey.isPending} data-testid="imcrm-ai-clear-key">
@@ -163,8 +163,8 @@ export function AiSettingsPanel(): JSX.Element | null {
                             {needsOwnKey
                                 ? __('La plataforma no comparte su clave: para usar el asistente tu empresa tiene que cargar la suya.')
                                 : status.data?.usage.limit !== null && status.data
-                                  ? `${__('Usás la clave de la plataforma con la cuota de tu plan')} (${status.data.usage.used} / ${status.data.usage.limit} ${__('pedidos este mes')}).`
-                                  : __('Usás la clave de la plataforma.')}
+                                  ? `${__('Usas la clave de la plataforma con la cuota de tu plan')} (${status.data.usage.used} / ${status.data.usage.limit} ${__('pedidos este mes')}).`
+                                  : __('Usas la clave de la plataforma.')}
                         </p>
                     )}
                     {byokAllowed ? (

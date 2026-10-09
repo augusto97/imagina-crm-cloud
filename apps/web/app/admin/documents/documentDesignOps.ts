@@ -40,7 +40,7 @@ export function makeDocBlock(type: DocBlockType): DocBlock {
         case 'heading':
             return { id, type, text: 'Título', level: 2, align: 'left' };
         case 'text':
-            return { id, type, doc: emailTextDoc('Escribí acá el texto del documento.'), align: 'left', size: 'md' };
+            return { id, type, doc: emailTextDoc('Escribe aquí el texto del documento.'), align: 'left', size: 'md' };
         case 'fields':
             return { id, type, title: '', slugs: [], layout: 'table', columns: 1 };
         case 'items':

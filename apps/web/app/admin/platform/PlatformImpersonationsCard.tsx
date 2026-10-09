@@ -25,7 +25,7 @@ export function PlatformImpersonationsCard(): JSX.Element {
                     <div>
                         <CardTitle>{__('Auditoría de impersonación')}</CardTitle>
                         <CardDescription>
-                            {__('Quién entró como quién y cuándo. Toda sesión de soporte queda registrada acá.')}
+                            {__('Quién entró como quién y cuándo. Toda sesión de soporte queda registrada aquí.')}
                         </CardDescription>
                     </div>
                 </div>

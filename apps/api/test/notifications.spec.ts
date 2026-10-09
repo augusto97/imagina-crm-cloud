@@ -45,7 +45,7 @@ const estadoField = {
 };
 
 describe('v0.1.276 — avisos (puro)', () => {
-    it('títulos en criollo, con o sin persona', () => {
+    it('títulos en lenguaje claro, con o sin persona', () => {
         expect(notificationTitle('assigned', { actorName: 'Ana', recordTitle: 'Propuesta' })).toBe('Ana te asignó «Propuesta»');
         expect(notificationTitle('assigned', { actorName: null, recordTitle: 'Propuesta' })).toBe('Una automatización te asignó «Propuesta»');
         expect(notificationTitle('mention', { actorName: 'Ana', recordTitle: '', source: 'description' })).toBe(
@@ -274,7 +274,7 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
 
     it('comentarios: mención directa, seguidores y nadie que no pueda ver el registro', async () => {
         const id = await create({ [`f${f.titulo!.id}`]: 'Cotización', [`f${f.resp!.id}`]: beto });
-        await comments.create(tenantId, admin(), 'tareas', id, { body: 'Mirá esto @caro@acme.test y @cli@cliente.test', kind: 'note' });
+        await comments.create(tenantId, admin(), 'tareas', id, { body: 'Mira esto @caro@acme.test y @cli@cliente.test', kind: 'note' });
         await settle();
         // Beto sigue el registro → «comentó».
         expect((await inbox(beto)).map((n) => n.kind)).toEqual(['assigned', 'comment']);

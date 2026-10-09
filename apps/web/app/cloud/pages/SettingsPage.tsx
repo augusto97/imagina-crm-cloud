@@ -37,7 +37,7 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
 
 /**
  * Ajustes del workspace: renderiza UNA sección a la vez. La NAV de secciones
- * vive en el panel contextual del Sidebar (estilo ClickUp) — acá sólo queda
+ * vive en el panel contextual del Sidebar (estilo ClickUp) — aquí sólo queda
  * el select mobile (<lg) como fallback cuando el panel no está visible. La
  * sección activa se persiste en el query param `?s=` (sobrevive refresh y es
  * linkeable). Los gates de visibilidad (compartidos con el Sidebar vía
@@ -105,7 +105,7 @@ export function SettingsPage(): JSX.Element {
             )}
             {checkout === 'cancel' && (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
-                    Cancelaste el pago. Podés intentarlo de nuevo cuando quieras.
+                    Cancelaste el pago. Puedes intentarlo de nuevo cuando quieras.
                 </div>
             )}
 
@@ -252,7 +252,7 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                             ? 'Sin límite de la plataforma: tus correos salen por tu propio servidor o tu cuenta de Google/Microsoft (con los límites de ese proveedor).'
                             : summary.limits.max_emails_month === null
                               ? undefined
-                              : 'Incluye automatizaciones y accesos al portal. ¿Necesitás más? En Ajustes → Correo podés mandar con tu cuenta de Google o Microsoft, o con tu propio SMTP.'
+                              : 'Incluye automatizaciones y accesos al portal. ¿Necesitas más? En Ajustes → Correo puedes mandar con tu cuenta de Google o Microsoft, o con tu propio SMTP.'
                     }
                 />
                 {/* Cuota del asistente IA (ADR-S21): sólo cuentan los pedidos
@@ -266,7 +266,7 @@ function BillingCard({ summary }: { summary: BillingSummary }): JSX.Element {
                             ? 'Sin límite: el asistente usa la clave IA de tu empresa.'
                             : summary.limits.max_ai_requests_month === null
                               ? undefined
-                              : 'Cada mensaje al asistente cuenta como un pedido. ¿Necesitás más? Cargá tu propia clave en Ajustes → Asistente IA y no hay límite.'
+                              : 'Cada mensaje al asistente cuenta como un pedido. ¿Necesitas más? Carga tu propia clave en Ajustes → Asistente IA y no hay límite.'
                     }
                 />
             </CardContent>

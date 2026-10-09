@@ -301,7 +301,7 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
      * desde `tenants`), así que cada release que agregó una tabla con
      * `tenant_id` podía dejar la empresa imborrable con un 500 por FK. El test
      * anterior sólo sembraba listas/records/automatizaciones, que es por lo
-     * que la regresión pasó desapercibida: acá se siembran las tablas que
+     * que la regresión pasó desapercibida: aquí se siembran las tablas que
      * llegaron después.
      */
     it('deleteTenant: borra también adjuntos, conexiones, plantillas, carpetas, menciones, recurrencias y bitácora', async () => {

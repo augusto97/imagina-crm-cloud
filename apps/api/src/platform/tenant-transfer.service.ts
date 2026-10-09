@@ -372,7 +372,7 @@ export class TenantTransferService {
 
         try {
             // `--no-same-owner`: el tar viene de otro servidor, los uid/gid de
-            // adentro no significan nada acá.
+            // adentro no significan nada aquí.
             await this.tar(['-xf', file, '--no-same-owner', '-C', work]);
             // SEC-30 (v0.1.228): un archivo armado a mano puede traer un
             // symlink (`files/x → /opt/imagina-base/shared/.env`); al leer los
@@ -417,7 +417,7 @@ export class TenantTransferService {
         if (parsed.data.format > TENANT_TRANSFER_FORMAT) {
             throw new BadRequestException({
                 code: 'format_too_new',
-                message: `El archivo usa el formato ${parsed.data.format} y esta instalación entiende hasta el ${TENANT_TRANSFER_FORMAT}. Actualizá antes de importar.`,
+                message: `El archivo usa el formato ${parsed.data.format} y esta instalación entiende hasta el ${TENANT_TRANSFER_FORMAT}. Actualiza antes de importar.`,
                 data: { status: 400 },
             });
         }
@@ -460,7 +460,7 @@ export class TenantTransferService {
         const srcSettings = (tenantRow.settings ?? {}) as Row;
         if (srcSettings.storage && typeof srcSettings.storage === 'object') {
             warnings.push(
-                'La empresa guardaba sus archivos en un almacenamiento propio: llegaron al servidor (cuentan para el plan). Elegí de nuevo el almacenamiento en Ajustes → Almacenamiento y mové los archivos.',
+                'La empresa guardaba sus archivos en un almacenamiento propio: llegaron al servidor (cuentan para el plan). Elige de nuevo el almacenamiento en Ajustes → Almacenamiento y mueve los archivos.',
             );
         }
         const slug = await this.freeSlug(tx, input.slug ?? String(tenantRow.slug));
@@ -485,13 +485,13 @@ export class TenantTransferService {
         const tenantId = createdTenant!.id;
         counts.tenant = 1;
 
-        // 2. Usuarios: se reusa la cuenta si el email ya existe acá (la misma
+        // 2. Usuarios: se reusa la cuenta si el email ya existe aquí (la misma
         //    persona puede estar ya en el servidor destino por otra empresa).
         const userRows = await this.readAll(rows('users'));
         // SEC-30 (v0.1.228): la contraseña (hash), el email verificado y el
         // segundo factor de una cuenta NUEVA salen del archivo. Si el archivo
         // no lo armó un servidor de confianza, quien lo armó elige la
-        // contraseña de cualquier email que todavía no exista acá — y cuando
+        // contraseña de cualquier email que todavía no exista aquí — y cuando
         // otra empresa invite a esa persona, la invitación cae en una cuenta
         // que controla él. Por defecto las cuentas nuevas nacen SIN contraseña
         // utilizable ni verificación: la persona entra con "olvidé mi
@@ -1084,7 +1084,7 @@ export class TenantTransferService {
             if (connectionId === null) continue;
             const state: Row = { ...((sRow.state as Row | null) ?? {}), running: false };
             // Los avisos en tiempo real apuntan a la instancia de ORIGEN: se
-            // registran de nuevo acá cuando corre (fase 3).
+            // registran de nuevo aquí cuando corre (fase 3).
             if (state.realtime && typeof state.realtime === 'object') {
                 state.realtime = { ...(state.realtime as Row), webhook_ids: [] };
             }
@@ -1126,7 +1126,7 @@ export class TenantTransferService {
         });
         // v0.1.243 — sincronizaciones desde SQL Server. `remapJson` traduce los
         // campos de la configuración (`key_field_id`, `columns[].field_id`…);
-        // la marca de la lista lleva ids de sincronización, que se rearma acá.
+        // la marca de la lista lleva ids de sincronización, que se rearma aquí.
         const sqlByList = new Map<number, Array<Record<string, unknown>>>();
         let sqlCount = 0;
         for (const q of await this.readAll(rows('sql_syncs'))) {
@@ -1177,18 +1177,18 @@ export class TenantTransferService {
                 .where(eq(lists.id, newId));
         }
         if (sqlCount > 0 && !sameKey) {
-            warnings.push('La contraseña de la base de datos SQL no viajó (otra clave de cifrado): volvé a cargarla en Integraciones → SQL Server.');
+            warnings.push('La contraseña de la base de datos SQL no viajó (otra clave de cifrado): vuelve a cargarla en Integraciones → SQL Server.');
         }
 
         if (syncMap.size > 0 && !sameKey) {
             warnings.push(
-                'La clave de la tienda no viajó (otra clave de cifrado): volvé a cargarla en Integraciones → WooCommerce. La sincronización sigue donde estaba, sin duplicar nada.',
+                'La clave de la tienda no viajó (otra clave de cifrado): vuelve a cargarla en Integraciones → WooCommerce. La sincronización sigue donde estaba, sin duplicar nada.',
             );
         }
 
         if (!trustCredentials && usersCreated > 0) {
             warnings.push(
-                `${usersCreated} cuenta(s) nueva(s) se crearon SIN contraseña: cada persona entra con «¿Olvidaste tu contraseña?» (así se comprueba que el correo es suyo). Para conservar las contraseñas, importá marcando que el archivo viene de un servidor de confianza.`,
+                `${usersCreated} cuenta(s) nueva(s) se crearon SIN contraseña: cada persona entra con «¿Olvidaste tu contraseña?» (así se comprueba que el correo es suyo). Para conservar las contraseñas, importa marcando que el archivo viene de un servidor de confianza.`,
             );
         }
         if (publicTokens.size > 0) {
@@ -1204,17 +1204,17 @@ export class TenantTransferService {
         const hooks = autoRows.filter((a) => String(a.triggerType) === 'incoming_webhook').length;
         if (hooks > 0) {
             warnings.push(
-                `${hooks} automatización(es) con webhook entrante tienen una URL nueva: actualizá el sistema que las llama.`,
+                `${hooks} automatización(es) con webhook entrante tienen una URL nueva: actualiza el sistema que las llama.`,
             );
         }
         if (tenantRow.customDomain) {
             warnings.push(
-                `El dominio propio «${String(tenantRow.customDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo acá.`,
+                `El dominio propio «${String(tenantRow.customDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo aquí.`,
             );
         }
         if (tenantRow.portalDomain) {
             warnings.push(
-                `El dominio del portal de clientes «${String(tenantRow.portalDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo acá.`,
+                `El dominio del portal de clientes «${String(tenantRow.portalDomain)}» no viajó: apunta al servidor anterior y hay que configurarlo aquí.`,
             );
         }
         // v0.1.251 — cobros: la conexión viaja, el historial de links no (cada
@@ -1225,7 +1225,7 @@ export class TenantTransferService {
             .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])));
         if (Number(collections?.n ?? 0) > 0) {
             warnings.push(
-                'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pegá la nueva en Desarrolladores → «URL de Eventos» (la ves en Integraciones → Cobros).',
+                'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pega la nueva en Desarrolladores → «URL de Eventos» (la ves en Integraciones → Cobros).',
             );
         }
 
@@ -1341,7 +1341,7 @@ export class TenantTransferService {
             .insert(table)
             .values(values as never)
             .returning({ id: sql<string>`id` })) as Array<{ id: string }>;
-        // `id` es `bigint`: sin el parser de la columna (que acá no se puede
+        // `id` es `bigint`: sin el parser de la columna (que aquí no se puede
         // nombrar, la tabla se resuelve en runtime) el driver lo devuelve como
         // CADENA. Un id que quede en string envenena todos los mapas y las
         // referencias salen como `"3"` en vez de `3`.
@@ -1391,7 +1391,7 @@ export class TenantTransferService {
         return null;
     }
 
-    /** Quita del `settings` de la empresa lo que no se puede descifrar acá. */
+    /** Quita del `settings` de la empresa lo que no se puede descifrar aquí. */
     private cleanTenantSettings(settings: Row | null, sameKey: boolean): Row {
         const out = { ...(settings ?? {}) };
         // v0.1.268 (ADR-S36) — los adjuntos llegan al servidor de la

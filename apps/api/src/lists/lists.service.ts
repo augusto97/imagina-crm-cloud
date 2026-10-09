@@ -268,7 +268,7 @@ export class ListsService {
                         });
                     }
                 }
-                // v0.1.230 — la plantilla v3 de la ficha se valida acá: el
+                // v0.1.230 — la plantilla v3 de la ficha se valida aquí: el
                 // editor y el asistente escriben el mismo shape y una plantilla
                 // rota no se guarda (antes una v2 inválida se aceptaba y la
                 // ficha caía en silencio al diseño por defecto).

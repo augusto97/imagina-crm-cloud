@@ -168,10 +168,10 @@ export function notificationEmail(o: {
     const inner = `<p style="margin:0 0 10px;font-size:17px;font-weight:600">${escapeHtml(o.title)}</p>
 ${body ? `<p style="margin:0;padding:10px 12px;background:#f9fafb;border-left:3px solid #d1d5db;border-radius:4px;color:#374151;white-space:pre-wrap">${escapeHtml(body)}</p>` : ''}
 ${button(o.link, 'Abrir')}`;
-    const footer = `Recibís este correo por tus preferencias de avisos. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiarlas</a>`;
+    const footer = `Recibes este correo por tus preferencias de avisos. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiarlas</a>`;
     return {
         subject: o.title,
-        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}Abrir: ${o.link}\n\nCambiá tus preferencias de avisos: ${o.settingsLink}`,
+        text: `${o.title}\n\n${body ? `${body}\n\n` : ''}Abrir: ${o.link}\n\nCambia tus preferencias de avisos: ${o.settingsLink}`,
         html: shell(o.company, inner, footer),
     };
 }
@@ -209,11 +209,11 @@ export function digestEmail(o: {
     const b = section('Vence hoy', o.today);
     const c = section('Avisos sin leer', o.unread, Math.max(0, o.unreadTotal - o.unread.length));
     const subject = `Tu resumen de ${o.company} · ${o.dateLabel}`;
-    const intro = 'Esto es lo que tenés pendiente hoy.';
+    const intro = 'Esto es lo que tienes pendiente hoy.';
     const inner = `<p style="margin:0 0 4px;font-size:17px;font-weight:600">${escapeHtml(`Tu resumen · ${o.dateLabel}`)}</p>
 <p style="margin:0;color:#4b5563">${intro}</p>${a.html}${b.html}${c.html}
 ${button(o.link, 'Ir a Mi trabajo')}`;
-    const footer = `Recibís este resumen porque lo activaste. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiar o apagar</a>`;
+    const footer = `Recibes este resumen porque lo activaste. <a href="${escapeHtml(o.settingsLink)}" style="color:#6b7280">Cambiar o apagar</a>`;
     return {
         subject,
         text: `Tu resumen · ${o.dateLabel}\n\n${intro}\n\n${a.text}${b.text}${c.text}\nIr a Mi trabajo: ${o.link}\n\nCambiar o apagar el resumen: ${o.settingsLink}`,

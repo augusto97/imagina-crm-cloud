@@ -101,7 +101,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                         </CardTitle>
                         <CardDescription>
                             {__(
-                                'Cada registro puede tener su propia página privada. Le mandás un enlace de acceso al cliente y entra sin usuario ni contraseña.',
+                                'Cada registro puede tener su propia página privada. Le mandas un enlace de acceso al cliente y entra sin usuario ni contraseña.',
                             )}
                         </CardDescription>
                     </div>
@@ -176,8 +176,8 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
                                     {__('¿Cómo le doy acceso a un cliente?')}
                                 </p>
                                 <ol className="imcrm-flex imcrm-list-decimal imcrm-flex-col imcrm-gap-0.5 imcrm-pl-4 imcrm-text-xs imcrm-text-muted-foreground">
-                                    <li>{__('Abrí el registro del cliente (desde la tabla de la lista).')}</li>
-                                    <li>{__('En la ficha, usá "Emitir acceso al portal" — se le envía el enlace por email.')}</li>
+                                    <li>{__('Abre el registro del cliente (desde la tabla de la lista).')}</li>
+                                    <li>{__('En la ficha, usa "Emitir acceso al portal" — se le envía el enlace por email.')}</li>
                                     <li>{__('El cliente abre el enlace y ve su portal, sin registrarse.')}</li>
                                 </ol>
                             </div>
@@ -203,7 +203,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
  * Elige qué otras listas ve el cliente en su portal. Sólo aparecen las que de
  * verdad se pueden acotar a él: las que tienen un campo `relation` apuntando a
  * esta lista (sus facturas, sus tickets) o un campo `user`. Si una lista no
- * está acá, el backend no tendría forma de saber qué filas le pertenecen —y
+ * está aquí, el backend no tendría forma de saber qué filas le pertenecen —y
  * por diseño no muestra nada antes que mostrar de más.
  */
 function RelatedListsPicker({
@@ -237,14 +237,14 @@ function RelatedListsPicker({
             <span className="imcrm-text-sm imcrm-font-medium">{__('Qué más ve el cliente')}</span>
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-px-4 imcrm-py-3">
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Además de su ficha, el cliente puede ver los registros de otras listas que le pertenecen (sus facturas, sus tickets…). Elegí cuáles: por defecto no ve ninguna.')}
+                    {__('Además de su ficha, el cliente puede ver los registros de otras listas que le pertenecen (sus facturas, sus tickets…). Elige cuáles: por defecto no ve ninguna.')}
                 </p>
                 {options.isLoading && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Buscando listas vinculadas…')}</p>
                 )}
                 {options.data?.length === 0 && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Ninguna otra lista está vinculada a ésta. Agregá un campo de tipo "relación" apuntando a esta lista (por ejemplo, en Facturas un campo "Cliente") y aparecerá acá.')}
+                        {__('Ninguna otra lista está vinculada a ésta. Agrega un campo de tipo "relación" apuntando a esta lista (por ejemplo, en Facturas un campo "Cliente") y aparecerá aquí.')}
                     </p>
                 )}
                 {(options.data ?? []).map((o) => (

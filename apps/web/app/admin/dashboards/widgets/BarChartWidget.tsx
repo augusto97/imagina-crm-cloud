@@ -32,7 +32,7 @@ interface BarChartWidgetProps {
  * Toggles del widget config:
  *  - `show_average_line` → promedio en header + línea punteada (default on)
  *  - `show_data_labels`  → siempre mostramos el valor numérico, ya
- *                          es parte del layout base (no aplica acá)
+ *                          es parte del layout base (no aplica aquí)
  */
 export function BarChartWidget({ dashboardId, widget }: BarChartWidgetProps): JSX.Element {
     const data = useWidgetData(dashboardId, widget.id);

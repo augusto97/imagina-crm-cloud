@@ -23,7 +23,7 @@ export function StoreColumnBadge({ fieldId }: { fieldId: number }): JSX.Element 
     }
     if (kind === 'store_sync') {
         return (
-            <span title={__('Se puede cambiar desde acá: el cambio viaja a WooCommerce.')} data-testid="store-col-sync" className="imcrm-text-primary">
+            <span title={__('Se puede cambiar desde aquí: el cambio viaja a WooCommerce.')} data-testid="store-col-sync" className="imcrm-text-primary">
                 <ArrowLeftRight className={cls} aria-label={__('Se envía a WooCommerce')} />
             </span>
         );
@@ -47,7 +47,7 @@ export function StoreFieldNote(): JSX.Element {
             data-testid="store-field-note"
         >
             <Lock className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
-            {__('Esta columna viene de WooCommerce: podés cambiarle el nombre, pero el tipo y su configuración los define la tienda. No se puede borrar mientras la lista esté sincronizada.')}
+            {__('Esta columna viene de WooCommerce: puedes cambiarle el nombre, pero el tipo y su configuración los define la tienda. No se puede borrar mientras la lista esté sincronizada.')}
         </p>
     );
 }

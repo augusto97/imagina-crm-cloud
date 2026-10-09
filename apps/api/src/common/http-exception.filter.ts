@@ -53,7 +53,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
             // 500 y cada rechazo quedaba como error del servidor.
             status = clientErrorStatus(exception)!;
             const message = status === 429
-                ? 'Demasiados pedidos seguidos: esperá un momento y volvé a intentar.'
+                ? 'Demasiados pedidos seguidos: espera un momento y vuelve a intentar.'
                 : exception instanceof Error && exception.message !== '' ? exception.message : 'Pedido rechazado';
             body = { code: codeForStatus(status), message, data: { status } };
         } else {

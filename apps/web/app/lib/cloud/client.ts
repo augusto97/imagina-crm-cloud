@@ -296,7 +296,7 @@ export class CloudApiError extends Error {
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface CloudClientOptions {
-    /** Base del API. Default `/api/v1`; en dev apuntá al backend con VITE_API_URL. */
+    /** Base del API. Default `/api/v1`; en dev apunta al backend con VITE_API_URL. */
     baseUrl?: string;
     /** Tenant activo (workspace). Se envía como header `X-Tenant-Id`. */
     getTenantId?: () => number | string | null;

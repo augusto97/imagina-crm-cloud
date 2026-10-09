@@ -302,9 +302,9 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
                     ],
                 },
             },
-            { text: 'Listo: la propuesta tiene 4 campos y un kanban. Revisala y aplicala cuando quieras.' },
+            { text: 'Listo: la propuesta tiene 4 campos y un kanban. Revísala y aplícala cuando quieras.' },
         ]);
-        const events = await run(svc, ctx, 'Armame una lista de proveedores con estado, saldo y próximo pago');
+        const events = await run(svc, ctx, 'Ármame una lista de proveedores con estado, saldo y próximo pago');
 
         expect(events[0]).toMatchObject({ type: 'start' });
         expect(events.filter((e) => e.type === 'tool_start').map((e) => (e as { name: string }).name)).toEqual(['list_lists', 'propose_create_list']);
@@ -365,7 +365,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         const conv = await svc.conversation(ctx, done.conversation_id);
         expect(conv!.messages.map((m) => m.role)).toEqual(['user', 'assistant']);
         expect(conv!.messages[1]!.proposals[0]).toMatchObject({ id: proposalEv.proposal.id, applied: true });
-        expect(conv!.messages[1]!.text).toContain('Revisala');
+        expect(conv!.messages[1]!.text).toContain('Revísala');
     });
 
     it('un input inválido vuelve al modelo como error corregible y NO crea propuesta', async () => {
@@ -373,7 +373,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
             { tool: 'propose_create_view', input: { list: 'no-existe', view: { name: 'X', type: 'kanban' } } },
             { text: 'Esa lista no existe.' },
         ]);
-        const events = await run(svc, ctx, 'Hacé un kanban');
+        const events = await run(svc, ctx, 'Haz un kanban');
         const end = events.find((e) => e.type === 'tool_end') as { ok: boolean; summary: string };
         expect(end.ok).toBe(false);
         expect(end.summary).toContain('no existe');
@@ -417,7 +417,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
             },
             { text: 'Listo.' },
         ]);
-        const events = await run(svc, ctx, 'Mejorá facturas');
+        const events = await run(svc, ctx, 'Mejora facturas');
         const ends = events.filter((e) => e.type === 'tool_end') as Array<{ name: string; ok: boolean; summary: string }>;
         // El esquema se leyó; el 1er add_fields rebotó por slug duplicado; el resto OK.
         expect(ends.map((e) => [e.name, e.ok])).toEqual([

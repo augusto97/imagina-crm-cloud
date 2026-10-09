@@ -208,7 +208,7 @@ export class OauthService {
         const redirectUri = q('redirect_uri');
         if (!clientId) throw new OauthError('invalid_request', 'Falta client_id');
         const client = await this.client(clientId);
-        if (!client) throw new OauthError('invalid_client', 'Cliente desconocido: volvé a agregar el conector para que se registre de nuevo', 400);
+        if (!client) throw new OauthError('invalid_client', 'Cliente desconocido: vuelve a agregar el conector para que se registre de nuevo', 400);
         if (!redirectUri || !redirectUriMatches(client.redirectUris, redirectUri)) {
             throw new OauthError('invalid_request', 'redirect_uri no coincide con la registrada por el cliente');
         }
@@ -258,7 +258,7 @@ export class OauthService {
     /**
      * La persona aprobó: emite el code (un solo uso, 5 min) atado al cliente,
      * redirect, PKCE, usuario, workspace y alcance. Sólo un workspace del que
-     * ES miembro — el id viene del navegador y se verifica acá.
+     * ES miembro — el id viene del navegador y se verifica aquí.
      */
     async approve(requestId: string, userId: number, input: OauthApproveInput): Promise<OauthDecision> {
         const pending = await this.pending(requestId);
@@ -267,7 +267,7 @@ export class OauthService {
             .from(memberships)
             .where(and(eq(memberships.userId, userId), eq(memberships.tenantId, input.tenant_id)))
             .limit(1);
-        if (!member) throw new NotFoundException({ code: 'not_a_member', message: 'No sos miembro de ese workspace', data: { status: 404 } });
+        if (!member) throw new NotFoundException({ code: 'not_a_member', message: 'No eres miembro de ese workspace', data: { status: 404 } });
         // v0.1.185 — el usuario del portal (rol client) no autoriza conectores.
         assertNotClient(member.role as Role);
         // GETDEL: el pedido se consume — un segundo "Autorizar" (doble click,
@@ -329,7 +329,7 @@ export class OauthService {
             const out = await this.tokens.rotate(refresh, client.clientId, ACCESS_TTL_MS, REFRESH_TTL_MS);
             if (!out) throw new OauthError('invalid_grant', 'refresh_token inválido, vencido, revocado o de otro cliente');
             // Un refresh no puede AMPLIAR el alcance; sí podría acotarlo, pero
-            // acá se conserva el otorgado (los clientes MCP no lo cambian).
+            // aquí se conserva el otorgado (los clientes MCP no lo cambian).
             return { access_token: out.accessToken, token_type: 'Bearer', expires_in: out.expiresIn, refresh_token: out.refreshToken, scope: out.token.scope };
         }
         throw new OauthError('unsupported_grant_type', 'grant_type: authorization_code o refresh_token');
