@@ -44,10 +44,9 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { Choice, ColorField, FontSelect, NumberField } from '@/components/design/DesignStyleControls';
+import { Choice, ColorField, FontSelect, NumberField, StyleSection } from '@/components/design/DesignStyleControls';
 
-import { ColorRow } from '../../template-editor-core/BlockStyleEditor';
-import { EmailBlockInspector, Section } from './EmailBlockInspector';
+import { EmailBlockInspector, type InspectorTab } from './EmailBlockInspector';
 import {
     EMAIL_BLOCK_HINTS,
     EMAIL_BLOCK_LABELS,
@@ -154,7 +153,9 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
     const [scheme, setScheme] = useState<'light' | 'dark'>('light');
     const [dataMode, setDataMode] = useState<'tags' | 'real'>('tags');
-    const [leftTab, setLeftTab] = useState<'blocks' | 'style'>('blocks');
+    const [leftTab, setLeftTab] = useState<'blocks' | 'outline' | 'style'>('blocks');
+    // v0.1.273 — la pestaña del panel del bloque se recuerda al cambiar de bloque.
+    const [inspTab, setInspTab] = useState<InspectorTab>('content');
     const [mobileTab, setMobileTab] = useState<'add' | 'preview' | 'edit'>('preview');
     const [showTemplates, setShowTemplates] = useState(Boolean(props.startWithTemplates));
     const [dragging, setDragging] = useState<DragSource | null>(null);
@@ -312,6 +313,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     const selectedBlock = findBlock(design, selected);
     const selectedLoc = selected ? locate(design, selected) : null;
     const siblings = selectedLoc ? siblingCount(design, selectedLoc.parentId, selectedLoc.columnIndex) : 0;
+    const blockCount = design.blocks.reduce((n, b) => n + 1 + (b.type === 'columns' ? b.columns.reduce((m, c) => m + c.blocks.length, 0) : 0), 0);
 
     // --- Arrastrar y soltar ---------------------------------------------------
     const dragRef = useRef<DragSource | null>(null);
@@ -333,6 +335,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                 if (r.id) {
                     commit(r.design);
                     setSelected(r.id);
+                    setInspTab('content');
                 }
             } else {
                 const next = moveTo(d, src.id, target);
@@ -372,6 +375,7 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
         const block = makeBlock(type);
         commit((d) => insertBlock(d, block, selected));
         setSelected(block.id);
+        setInspTab('content');
         if (narrow) setMobileTab('edit');
     };
 
@@ -402,10 +406,14 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
     const left = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col">
             <div className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-p-2">
-                <TabBtn active={leftTab === 'blocks'} onClick={() => setLeftTab('blocks')}>
-                    {__('Bloques')}
+                <TabBtn active={leftTab === 'blocks'} onClick={() => setLeftTab('blocks')} testId="email-left-blocks">
+                    {__('Agregar')}
                 </TabBtn>
-                <TabBtn active={leftTab === 'style'} onClick={() => setLeftTab('style')}>
+                <TabBtn active={leftTab === 'outline'} onClick={() => setLeftTab('outline')} testId="email-left-outline">
+                    {__('Estructura')}
+                    {blockCount > 0 && <span className="imcrm-ml-1 imcrm-rounded-full imcrm-bg-muted imcrm-px-1.5 imcrm-text-[10px] imcrm-tabular-nums">{blockCount}</span>}
+                </TabBtn>
+                <TabBtn active={leftTab === 'style'} onClick={() => setLeftTab('style')} testId="email-left-style">
                     {__('Estilo general')}
                 </TabBtn>
             </div>
@@ -448,17 +456,19 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
                                 </button>
                             ))}
                         </div>
-                        <Outline
-                            design={design}
-                            selected={selected}
-                            onSelect={onSelect}
-                            draggable={!narrow}
-                            dragging={dragging}
-                            onDragStart={startDrag}
-                            onDragEnd={endDrag}
-                            onDrop={dropAt}
-                        />
                     </div>
+                ) : leftTab === 'outline' ? (
+                    <Outline
+                        design={design}
+                        selected={selected}
+                        onSelect={onSelect}
+                        draggable={!narrow}
+                        dragging={dragging}
+                        onDragStart={startDrag}
+                        onDragEnd={endDrag}
+                        onDrop={dropAt}
+                        onAdd={() => setLeftTab('blocks')}
+                    />
                 ) : (
                     <ThemePanel
                         design={design}
@@ -476,6 +486,16 @@ function DesignerBody(props: EmailDesignerProps): JSX.Element {
             key={selectedBlock.id}
             block={selectedBlock}
             inColumn={selectedLoc?.parentId !== null && selectedLoc?.parentId !== undefined}
+            parent={
+                selectedLoc?.parentId
+                    ? {
+                          label: `${__('Columnas')} · ${__('columna')} ${(selectedLoc.columnIndex ?? 0) + 1}`,
+                          onSelect: () => onSelect(selectedLoc.parentId),
+                      }
+                    : null
+            }
+            tab={inspTab}
+            onTab={setInspTab}
             canMoveUp={(selectedLoc?.index ?? 0) > 0}
             canMoveDown={(selectedLoc?.index ?? 0) < siblings - 1}
             design={design}
@@ -730,6 +750,7 @@ function Outline({
     onDragStart,
     onDragEnd,
     onDrop,
+    onAdd,
 }: {
     design: EmailDesign;
     selected: string | null;
@@ -739,12 +760,23 @@ function Outline({
     onDragStart: (src: DragSource) => void;
     onDragEnd: () => void;
     onDrop: (target: DropTarget) => void;
+    /** Lleva a «Agregar» (estado vacío). */
+    onAdd: () => void;
 }): JSX.Element | null {
     const [hint, setHint] = useState<OutlineDrop | null>(null);
     useEffect(() => {
         if (!dragging) setHint(null);
     }, [dragging]);
-    if (design.blocks.length === 0) return null;
+    if (design.blocks.length === 0) {
+        return (
+            <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-py-8 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground" data-testid="email-outline">
+                {__('El correo todavía no tiene bloques.')}
+                <button type="button" onClick={onAdd} className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                    {__('Agregar el primero')}
+                </button>
+            </div>
+        );
+    }
 
     /** Fila soltable: arriba/abajo según la mitad en la que está el puntero. */
     const rowDnd = (key: string, before: DropTarget, after: DropTarget) => ({
@@ -773,8 +805,10 @@ function Outline({
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="email-outline" onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setHint(null)}>
-            <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                {__('En el correo')}
+            <p className="imcrm-mb-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {draggable
+                    ? __('El orden del correo, de arriba hacia abajo. Tocá un bloque para editarlo o arrastralo para moverlo.')
+                    : __('El orden del correo, de arriba hacia abajo. Tocá un bloque para editarlo.')}
             </p>
             {design.blocks.map((b, i) => {
                 const top = (index: number): DropTarget => ({ parentId: null, columnIndex: null, index });
@@ -908,8 +942,18 @@ function ThemePanel({
     const dark = t.dark ?? { enabled: false, background: '#0f1115', surface: '#1b1d22', text: '#e8eaed', muted: '#a1a7b3' };
     const setDark = (patch: Partial<typeof dark>, key: string): void => onChange({ dark: { ...dark, ...patch } }, key);
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="email-theme">
-            <Section title={__('Tipografía')}>
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2.5" data-testid="email-theme">
+            <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                {__('Vale para todo el correo. Lo que cambies en un bloque (pestaña «Estilo» del bloque) manda sobre esto.')}
+            </p>
+            <StyleSection title={__('Colores')} defaultOpen testId="theme-colors">
+                <ColorField label={__('Acento (botones y enlaces)')} value={t.accent} onChange={(v) => v && onChange({ accent: v }, 'accent')} allowEmpty={false} />
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <ColorField label={__('Fondo del correo')} value={t.surface} onChange={(v) => v && onChange({ surface: v }, 'surface')} allowEmpty={false} />
+                    <ColorField label={__('Fondo de afuera')} value={t.background} onChange={(v) => v && onChange({ background: v }, 'background')} allowEmpty={false} />
+                </div>
+            </StyleSection>
+            <StyleSection title={__('Texto')} defaultOpen testId="theme-text">
                 <FontSelect label={__('Fuente del texto')} value={t.font} onChange={(f) => f && onChange({ font: f }, 'font')} medium="email" />
                 <FontSelect
                     label={__('Fuente de los títulos')}
@@ -937,9 +981,13 @@ function ThemePanel({
                         onChange={(v) => onChange({ line_height: v }, 'line_height')}
                         placeholder="1,6"
                     />
+                    <ColorField label={__('Color del texto')} value={t.text} onChange={(v) => v && onChange({ text: v }, 'text')} allowEmpty={false} />
+                    <ColorField label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onChange({ muted: v }, 'muted')} allowEmpty={false} />
+                    <ColorField label={__('Títulos')} value={t.heading_color} onChange={(v) => onChange({ heading_color: v }, 'heading_color')} placeholder={t.text} />
+                    <ColorField label={__('Enlaces del texto')} value={t.link_color} onChange={(v) => onChange({ link_color: v }, 'link_color')} placeholder={t.accent} />
                 </div>
-            </Section>
-            <Section title={__('Hoja')}>
+            </StyleSection>
+            <StyleSection title={__('Hoja')} testId="theme-sheet">
                 <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
                     <NumberField
                         label={__('Ancho del correo')}
@@ -1007,19 +1055,8 @@ function ThemePanel({
                     ]}
                     onChange={(v) => onChange({ sheet_shadow: v === 'none' ? undefined : v }, 'sheet_shadow')}
                 />
-            </Section>
-            <Section title={__('Colores')}>
-                <ColorRow label={__('Acento (botones y enlaces)')} value={t.accent} onChange={(v) => v && onChange({ accent: v }, 'accent')} />
-                <ColorRow label={__('Fondo de afuera')} value={t.background} onChange={(v) => v && onChange({ background: v }, 'background')} />
-                <ColorRow label={__('Fondo del correo')} value={t.surface} onChange={(v) => v && onChange({ surface: v }, 'surface')} />
-                <ColorRow label={__('Texto')} value={t.text} onChange={(v) => v && onChange({ text: v }, 'text')} />
-                <ColorRow label={__('Texto secundario')} value={t.muted} onChange={(v) => v && onChange({ muted: v }, 'muted')} />
-                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                    <ColorField label={__('Títulos')} value={t.heading_color} onChange={(v) => onChange({ heading_color: v }, 'heading_color')} placeholder={t.text} />
-                    <ColorField label={__('Enlaces del texto')} value={t.link_color} onChange={(v) => onChange({ link_color: v }, 'link_color')} placeholder={t.accent} />
-                </div>
-            </Section>
-            <Section title={__('Modo oscuro')}>
+            </StyleSection>
+            <StyleSection title={__('Modo oscuro')} defaultOpen={dark.enabled || previewingDark} modified={dark.enabled} testId="theme-dark">
                 <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-start imcrm-gap-2 imcrm-text-xs" data-testid="email-dark-toggle">
                     <input
                         type="checkbox"
@@ -1039,10 +1076,12 @@ function ThemePanel({
                 </label>
                 {dark.enabled && (
                     <>
-                        <ColorRow label={__('Fondo de afuera')} value={dark.background} onChange={(v) => v && setDark({ background: v }, 'dark.background')} />
-                        <ColorRow label={__('Fondo del correo')} value={dark.surface} onChange={(v) => v && setDark({ surface: v }, 'dark.surface')} />
-                        <ColorRow label={__('Texto')} value={dark.text} onChange={(v) => v && setDark({ text: v }, 'dark.text')} />
-                        <ColorRow label={__('Texto secundario')} value={dark.muted} onChange={(v) => v && setDark({ muted: v }, 'dark.muted')} />
+                        <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                            <ColorField label={__('Fondo del correo')} value={dark.surface} onChange={(v) => v && setDark({ surface: v }, 'dark.surface')} allowEmpty={false} />
+                            <ColorField label={__('Fondo de afuera')} value={dark.background} onChange={(v) => v && setDark({ background: v }, 'dark.background')} allowEmpty={false} />
+                            <ColorField label={__('Texto')} value={dark.text} onChange={(v) => v && setDark({ text: v }, 'dark.text')} allowEmpty={false} />
+                            <ColorField label={__('Texto secundario')} value={dark.muted} onChange={(v) => v && setDark({ muted: v }, 'dark.muted')} allowEmpty={false} />
+                        </div>
                     </>
                 )}
                 <button
@@ -1057,7 +1096,7 @@ function ThemePanel({
                           ? __('Ver el correo como se lee en modo oscuro')
                           : __('Ver cómo lo oscurecen Gmail y Outlook')}
                 </button>
-            </Section>
+            </StyleSection>
             <p className="imcrm-rounded-md imcrm-bg-muted/50 imcrm-p-2.5 imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
                 {__('El correo se arma con tablas y estilos en línea, el formato que entienden Gmail (web y celular), Outlook (Windows, Mac y web), Apple Mail y Yahoo. Outlook de Windows muestra las esquinas rectas.')}
             </p>
@@ -1112,14 +1151,15 @@ function TemplatesGallery({
     );
 }
 
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }): JSX.Element {
+function TabBtn({ active, onClick, children, testId }: { active: boolean; onClick: () => void; children: React.ReactNode; testId?: string }): JSX.Element {
     return (
         <button
             type="button"
             onClick={onClick}
             aria-pressed={active}
+            data-testid={testId}
             className={cn(
-                'imcrm-flex-1 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent',
+                'imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-whitespace-nowrap imcrm-rounded-md imcrm-px-1.5 imcrm-py-1.5 imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground hover:imcrm-bg-accent',
                 active && 'imcrm-bg-primary/10 imcrm-text-primary',
             )}
         >

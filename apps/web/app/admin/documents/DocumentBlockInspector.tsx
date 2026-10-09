@@ -29,11 +29,36 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { BlockStylePanel, Choice, ColorField, ImageFramePanel, NumberField, StyleSection } from '@/components/design/DesignStyleControls';
+import {
+    BackgroundSection,
+    BlockStylePanel,
+    BorderSection,
+    Choice,
+    ColorField,
+    DesignClipboard,
+    ElementSection,
+    ImageFramePanel,
+    NumberField,
+    STYLE_KEYS,
+    SpacingSection,
+    StyleSection,
+    TypographySection,
+    styleEditor,
+    styleHasAny,
+    type QuickPreset,
+} from '@/components/design/DesignStyleControls';
 
-import { ColorRow } from '../template-editor-core/BlockStyleEditor';
 import { MergeTagInput, type MergeTagSection } from '../automations/MergeTagInput';
-import { AlignControl, Check, Field, IconBtn, Section, Segmented } from '../automations/email/EmailBlockInspector';
+import {
+    AlignControl,
+    Check,
+    Field,
+    IconBtn,
+    InspectorHeader,
+    InspectorTabs,
+    Segmented,
+    type InspectorTab,
+} from '../automations/email/EmailBlockInspector';
 import { EmailTextEditor } from '../automations/email/EmailTextEditor';
 import { makeDocInner, newTotalRowId } from './documentDesignOps';
 
@@ -41,10 +66,18 @@ import { makeDocInner, newTotalRowId } from './documentDesignOps';
  * v0.1.266 — Ajustes del bloque elegido en el editor de documentos PDF
  * (ADR-S35). Cada cambio vuelve a pedir la vista previa al servidor: lo que
  * se ve es el PDF que va a salir.
+ *
+ * v0.1.273 — Igual que el editor de correos: pestañas «Contenido» y
+ * «Estilo», y cada ajuste en un solo lugar (tamaño rápido + exacto en la
+ * misma fila, color del texto dentro de «Texto», fondo y relleno juntos).
  */
 export interface DocInspectorProps {
     block: DocBlock | DocInnerBlock;
     inColumn: boolean;
+    /** v0.1.273 — el bloque de columnas que lo contiene (para volver a él). */
+    parent?: { label: string; onSelect: () => void } | null;
+    tab: InspectorTab;
+    onTab: (tab: InspectorTab) => void;
     design: DocDesign;
     fields: FieldEntity[];
     listId: number;
@@ -62,83 +95,22 @@ export interface DocInspectorProps {
 export function DocumentBlockInspector(p: DocInspectorProps): JSX.Element {
     const { block } = p;
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="doc-inspector">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                <div>
-                    <p className="imcrm-text-[11px] imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                        {p.inColumn ? __('Bloque en columna') : __('Bloque')}
-                    </p>
-                    <h3 className="imcrm-text-sm imcrm-font-semibold">{__(DOC_BLOCK_LABELS[block.type])}</h3>
-                </div>
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-0.5">
-                    <IconBtn label={__('Subir')} onClick={() => p.onMove(-1)} icon={ArrowUp} />
-                    <IconBtn label={__('Bajar')} onClick={() => p.onMove(1)} icon={ArrowDown} />
-                    <IconBtn label={__('Duplicar')} onClick={p.onDuplicate} icon={Copy} />
-                    <IconBtn label={__('Eliminar')} onClick={p.onRemove} icon={Trash2} danger />
-                </div>
-            </div>
-
-            <BlockFields {...p} />
-
-            {block.type !== 'spacer' && block.type !== 'page_break' && (
-                <Section title={__('Recuadro')}>
-                    <ColorRow
-                        label={__('Color de fondo')}
-                        value={block.background ?? undefined}
-                        onChange={(v) => p.onPatch({ background: v ?? null })}
-                    />
-                    {block.background && (
-                        <Segmented<DocPadding>
-                            label={__('Margen interior')}
-                            value={block.padding ?? 'md'}
-                            options={[
-                                { value: 'sm', label: __('Poco') },
-                                { value: 'md', label: __('Medio') },
-                                { value: 'lg', label: __('Mucho') },
-                            ]}
-                            onChange={(v) => p.onPatch({ padding: v })}
-                        />
-                    )}
-                </Section>
-            )}
-
-            {block.type === 'image' && (
-                <ImageFramePanel medium="pdf" value={block.frame} onChange={(frame) => p.onPatch({ frame })} />
-            )}
-
-            {block.type !== 'spacer' && block.type !== 'page_break' && (
-                <BlockStylePanel
-                    medium="pdf"
-                    value={block.style}
-                    onChange={(style) => p.onPatch({ style })}
-                    typography={DOC_TYPO_BLOCKS.has(block.type)}
-                    box
-                    defaults={docStyleDefaults(block, p.design)}
-                    inheritFontLabel={block.type === 'heading' ? __('La de los títulos') : __('La del documento')}
-                />
-            )}
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="doc-inspector">
+            <InspectorHeader
+                label={__(DOC_BLOCK_LABELS[block.type])}
+                parent={p.parent ?? null}
+                actions={
+                    <>
+                        <IconBtn label={__('Subir')} onClick={() => p.onMove(-1)} icon={ArrowUp} />
+                        <IconBtn label={__('Bajar')} onClick={() => p.onMove(1)} icon={ArrowDown} />
+                        <IconBtn label={__('Duplicar')} onClick={p.onDuplicate} icon={Copy} />
+                        <IconBtn label={__('Eliminar')} onClick={p.onRemove} icon={Trash2} danger />
+                    </>
+                }
+            />
+            <InspectorTabs tab={p.tab} onTab={p.onTab} content={contentFor(p)} style={styleFor(p)} />
         </div>
     );
-}
-
-/** Bloques con texto: muestran la sección Tipografía. */
-const DOC_TYPO_BLOCKS = new Set<string>(['header', 'heading', 'text', 'fields', 'items', 'totals', 'signature', 'qr']);
-
-const DOC_TEXT_SIZE = { sm: -1.5, md: 0, lg: 2 } as const;
-
-/** Lo que el generador usa si el campo queda vacío (para las pistas). */
-function docStyleDefaults(block: DocBlock | DocInnerBlock, design: DocDesign): { size?: number; lineHeight?: number; padding?: number } {
-    const base = design.theme.font_size;
-    const lh = design.theme.line_height ?? 1.25;
-    const padding = block.background ? { none: 0, sm: 4, md: 8, lg: 14 }[block.padding ?? 'md'] : 0;
-    switch (block.type) {
-        case 'heading':
-            return { size: block.level === 1 ? base + 10 : block.level === 2 ? base + 5 : base + 0.5, lineHeight: 1.2, padding };
-        case 'text':
-            return { size: base + DOC_TEXT_SIZE[block.size], lineHeight: lh, padding };
-        default:
-            return { size: base, lineHeight: lh, padding };
-    }
 }
 
 function tagInput(p: DocInspectorProps, value: string, onChange: (v: string) => void, opts: { placeholder?: string; autoGrow?: boolean } = {}): JSX.Element {
@@ -155,7 +127,9 @@ function tagInput(p: DocInspectorProps, value: string, onChange: (v: string) => 
     );
 }
 
-function BlockFields(p: DocInspectorProps): JSX.Element | null {
+// --- Contenido ---------------------------------------------------------------
+
+function contentFor(p: DocInspectorProps): React.ReactNode {
     const { block, onPatch } = p;
     switch (block.type) {
         case 'header':
@@ -199,93 +173,19 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                 </>
             );
         case 'heading':
-            return (
-                <>
-                    <Field label={__('Texto')}>{tagInput(p, block.text, (v) => onPatch({ text: v }))}</Field>
-                    <Segmented<string>
-                        label={__('Tamaño')}
-                        value={String(block.level)}
-                        options={[
-                            { value: '1', label: __('Grande') },
-                            { value: '2', label: __('Mediano') },
-                            { value: '3', label: __('Rótulo') },
-                        ]}
-                        onChange={(v) => onPatch({ level: Number(v) })}
-                    />
-                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
-                    <ColorRow label={__('Color del texto')} value={block.color ?? undefined} onChange={(v) => onPatch({ color: v ?? null })} />
-                </>
-            );
+            return <Field label={__('Texto')}>{tagInput(p, block.text, (v) => onPatch({ text: v }))}</Field>;
         case 'text':
             return (
-                <>
-                    <EmailTextEditor
-                        key={block.id}
-                        value={block.doc}
-                        onChange={(doc) => onPatch({ doc })}
-                        fields={p.fields}
-                        tagContext="document"
-                        extraTags={p.extraTags}
-                    />
-                    <Segmented<'sm' | 'md' | 'lg'>
-                        label={__('Tamaño de letra')}
-                        value={block.size}
-                        options={[
-                            { value: 'sm', label: __('Chica') },
-                            { value: 'md', label: __('Normal') },
-                            { value: 'lg', label: __('Grande') },
-                        ]}
-                        onChange={(v) => onPatch({ size: v })}
-                    />
-                    <Segmented<'left' | 'center' | 'right' | 'justify'>
-                        label={__('Alineación')}
-                        value={block.align}
-                        options={[
-                            { value: 'left', label: __('Izq.') },
-                            { value: 'center', label: __('Centro') },
-                            { value: 'right', label: __('Der.') },
-                            { value: 'justify', label: __('Justif.') },
-                        ]}
-                        onChange={(v) => onPatch({ align: v })}
-                    />
-                    <ColorRow label={__('Color del texto')} value={block.color ?? undefined} onChange={(v) => onPatch({ color: v ?? null })} />
-                    <NumberField
-                        label={__('Espacio entre párrafos')}
-                        unit="pt"
-                        min={0}
-                        max={48}
-                        value={block.paragraph_spacing}
-                        onChange={(v) => onPatch({ paragraph_spacing: v })}
-                        placeholder="auto"
-                    />
-                </>
+                <EmailTextEditor key={block.id} value={block.doc} onChange={(doc) => onPatch({ doc })} fields={p.fields} tagContext="document" extraTags={p.extraTags} />
             );
         case 'fields':
-            return <FieldsBlockFields {...p} />;
+            return <FieldsContent {...p} />;
         case 'items':
             return <ItemsFields {...p} />;
         case 'totals':
             return <TotalsFields {...p} />;
-        case 'image': {
-            return (
-                <>
-                    <DocImageField label={__('Imagen')} value={block.src} onChange={(src) => onPatch({ src })} allowBrand />
-                    <Field label={`${__('Ancho')}: ${block.width}%`}>
-                        <input
-                            type="range"
-                            min={5}
-                            max={100}
-                            step={5}
-                            value={block.width}
-                            onChange={(e) => onPatch({ width: Number(e.target.value) })}
-                            className="imcrm-w-full"
-                            aria-label={__('Ancho de la imagen')}
-                        />
-                    </Field>
-                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
-                </>
-            );
-        }
+        case 'image':
+            return <DocImageField label={__('Imagen')} value={block.src} onChange={(src) => onPatch({ src })} allowBrand />;
         case 'qr':
             return (
                 <>
@@ -295,60 +195,12 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                     >
                         {tagInput(p, block.value, (v) => onPatch({ value: v }), { placeholder: 'https://…  o  {{link_de_pago}}' })}
                     </Field>
-                    <Field label={`${__('Tamaño')}: ${block.size} pt`}>
-                        <input
-                            type="range"
-                            min={40}
-                            max={240}
-                            step={8}
-                            value={block.size}
-                            onChange={(e) => onPatch({ size: Number(e.target.value) })}
-                            className="imcrm-w-full"
-                            aria-label={__('Tamaño del código QR')}
-                        />
-                    </Field>
-                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
                     <Field label={__('Texto debajo (opcional)')}>
                         {tagInput(p, block.caption, (v) => onPatch({ caption: v }), { placeholder: __('Escaneá para pagar') })}
                     </Field>
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                         {__('Si el contenido queda vacío para un registro (por ejemplo, sin link de pago), el código no se dibuja.')}
                     </p>
-                </>
-            );
-        case 'divider':
-            return (
-                <>
-                    <ColorRow label={__('Color de la línea')} value={block.color ?? undefined} onChange={(v) => onPatch({ color: v ?? null })} />
-                    <Segmented<string>
-                        label={__('Grosor')}
-                        value={String(block.thickness)}
-                        options={[0.5, 1, 2, 3].map((n) => ({ value: String(n), label: `${n}` }))}
-                        onChange={(v) => onPatch({ thickness: Number(v) })}
-                    />
-                    <Choice<BorderStyle>
-                        label={__('Tipo de línea')}
-                        value={block.line_style ?? 'solid'}
-                        options={[
-                            { value: 'solid', label: __('Continua') },
-                            { value: 'dashed', label: __('Rayada') },
-                            { value: 'dotted', label: __('Punteada') },
-                        ]}
-                        onChange={(v) => onPatch({ line_style: v === 'solid' ? undefined : v })}
-                    />
-                    <Field label={`${__('Largo')}: ${block.length ?? 100}%`}>
-                        <input
-                            type="range"
-                            min={5}
-                            max={100}
-                            step={5}
-                            value={block.length ?? 100}
-                            onChange={(e) => onPatch({ length: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })}
-                            className="imcrm-w-full"
-                            aria-label={__('Largo de la línea')}
-                        />
-                    </Field>
-                    {(block.length ?? 100) < 100 && <AlignControl value={block.align ?? 'center'} onChange={(v) => onPatch({ align: v })} />}
                 </>
             );
         case 'spacer':
@@ -382,15 +234,6 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                         ]}
                         onChange={(v) => p.onSetColumns(Number(v) as 2 | 3)}
                     />
-                    <div className="imcrm-grid imcrm-grid-cols-[1fr_auto] imcrm-gap-2">
-                        <Choice<string>
-                            label={__('Proporción')}
-                            value={block.ratio && block.ratio.split('-').length === block.columns.length ? block.ratio : block.columns.length === 2 ? '1-1' : '1-1-1'}
-                            options={COLUMN_RATIOS[block.columns.length as 2 | 3].map((r) => ({ value: r, label: r.split('-').join(':') }))}
-                            onChange={(v) => onPatch({ ratio: v === '1-1' || v === '1-1-1' ? undefined : v })}
-                        />
-                        <NumberField className="imcrm-w-20" label={__('Separación')} unit="pt" min={0} max={48} value={block.gap} onChange={(v) => onPatch({ gap: v == null ? undefined : Math.round(v) })} placeholder="16" />
-                    </div>
                     {block.columns.map((col, ci) => (
                         <div key={ci} className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
                             <p className="imcrm-mb-1.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
@@ -410,32 +253,367 @@ function BlockFields(p: DocInspectorProps): JSX.Element | null {
                                 ))}
                                 <AddInner onAdd={(t) => p.onAppendToColumn(ci, makeDocInner(t))} />
                             </div>
-                            <DocColumnBoxEditor
-                                background={col.background ?? null}
-                                style={col.style}
-                                onChange={(patch) => onPatch({ columns: block.columns.map((c, i) => (i === ci ? { ...c, ...patch } : c)) })}
-                            />
                         </div>
                     ))}
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('La proporción, la separación y el fondo de cada columna están en «Estilo».')}</p>
                 </>
             );
         default:
+            // El separador no tiene contenido: todo es estilo.
             return null;
     }
 }
 
+// --- Estilo ------------------------------------------------------------------
+
+/** Relleno de un bloque con fondo (pt), como en el generador. */
+const PAD: Record<DocPadding, number> = { none: 0, sm: 4, md: 8, lg: 14 };
+
+/** Bloques con texto: muestran la sección «Texto». */
+const DOC_TYPO_BLOCKS = new Set<string>(['header', 'heading', 'text', 'fields', 'items', 'totals', 'signature', 'qr']);
+
+const DOC_TEXT_SIZE = { sm: -1.5, md: 0, lg: 2 } as const;
+
+function styleFor(p: DocInspectorProps): React.ReactNode {
+    const { block, onPatch, design } = p;
+    if (block.type === 'spacer' || block.type === 'page_break') return null;
+    const ed = styleEditor('pdf', block.style, (style) => onPatch({ style }));
+    const t = design.theme;
+    const base = t.font_size;
+    const lh = t.line_height ?? 1.25;
+    const typoModified = (...extra: unknown[]): boolean => styleHasAny(block.style, STYLE_KEYS.typography) || extra.some((x) => x != null && x !== false);
+    const typoReset = (extra: Record<string, unknown> = {}): (() => void) => () => onPatch({ ...extra, style: ed.without(STYLE_KEYS.typography) });
+
+    const sections: React.ReactNode[] = [];
+    switch (block.type) {
+        case 'heading': {
+            const sizes = { 1: base + 10, 2: base + 5, 3: base + 0.5 } as const;
+            const preset: QuickPreset = {
+                label: __('Tamaño'),
+                options: [
+                    { value: '1', label: __('Grande'), title: `${sizes[1]} pt` },
+                    { value: '2', label: __('Mediano'), title: `${sizes[2]} pt` },
+                    { value: '3', label: __('Rótulo'), title: `${sizes[3]} pt` },
+                ],
+                current: block.style?.font_size == null ? String(block.level) : null,
+                onPick: (v) => onPatch({ level: Number(v), style: ed.without(['font_size']) }),
+            };
+            sections.push(
+                <TypographySection
+                    key="typo"
+                    editor={ed}
+                    defaultOpen
+                    inheritFontLabel={__('La de los títulos')}
+                    defaults={{ size: sizes[block.level], lineHeight: 1.2 }}
+                    sizePreset={preset}
+                    modified={typoModified(block.color)}
+                    onReset={typoReset({ color: null })}
+                >
+                    <ColorField label={__('Color del texto')} value={block.color} onChange={(v) => onPatch({ color: v })} placeholder={block.level === 3 ? t.accent : t.text} />
+                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
+                </TypographySection>,
+            );
+            break;
+        }
+        case 'text': {
+            const sizes = { sm: base + DOC_TEXT_SIZE.sm, md: base, lg: base + DOC_TEXT_SIZE.lg };
+            sections.push(
+                <TypographySection
+                    key="typo"
+                    editor={ed}
+                    defaultOpen
+                    defaults={{ size: sizes[block.size], lineHeight: lh }}
+                    sizePreset={{
+                        label: __('Tamaño'),
+                        options: [
+                            { value: 'sm', label: __('Chica'), title: `${sizes.sm} pt` },
+                            { value: 'md', label: __('Normal'), title: `${sizes.md} pt` },
+                            { value: 'lg', label: __('Grande'), title: `${sizes.lg} pt` },
+                        ],
+                        current: block.style?.font_size == null ? block.size : null,
+                        onPick: (v) => onPatch({ size: v, style: ed.without(['font_size']) }),
+                    }}
+                    modified={typoModified(block.color, block.paragraph_spacing)}
+                    onReset={typoReset({ color: null, paragraph_spacing: null })}
+                    footer={
+                        <NumberField
+                            label={__('Espacio entre párrafos')}
+                            unit="pt"
+                            min={0}
+                            max={48}
+                            value={block.paragraph_spacing}
+                            onChange={(v) => onPatch({ paragraph_spacing: v })}
+                            placeholder="auto"
+                        />
+                    }
+                >
+                    <ColorField label={__('Color del texto')} value={block.color} onChange={(v) => onPatch({ color: v })} placeholder={t.text} />
+                    <Segmented<'left' | 'center' | 'right' | 'justify'>
+                        label={__('Alineación')}
+                        value={block.align}
+                        options={[
+                            { value: 'left', label: __('Izq.') },
+                            { value: 'center', label: __('Centro') },
+                            { value: 'right', label: __('Der.') },
+                            { value: 'justify', label: __('Justif.') },
+                        ]}
+                        onChange={(v) => onPatch({ align: v })}
+                    />
+                </TypographySection>,
+            );
+            break;
+        }
+        case 'fields':
+            sections.push(
+                <ElementSection key="layout" title={__('Disposición')} testId="style-layout">
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                        <Choice<'table' | 'stacked'>
+                            label={__('Forma')}
+                            value={block.layout}
+                            options={[
+                                { value: 'table', label: __('Tabla') },
+                                { value: 'stacked', label: __('Etiqueta arriba') },
+                            ]}
+                            onChange={(v) => onPatch({ layout: v })}
+                        />
+                        <Choice<string>
+                            label={__('Columnas')}
+                            value={String(block.columns)}
+                            options={[
+                                { value: '1', label: __('Una') },
+                                { value: '2', label: __('Dos') },
+                            ]}
+                            onChange={(v) => onPatch({ columns: Number(v) })}
+                        />
+                    </div>
+                    {block.layout === 'table' && (
+                        <>
+                            <Field label={`${__('Ancho de los nombres')}: ${block.label_width ?? 40}%`}>
+                                <input
+                                    type="range"
+                                    min={15}
+                                    max={70}
+                                    step={5}
+                                    value={block.label_width ?? 40}
+                                    onChange={(e) => onPatch({ label_width: Number(e.target.value) })}
+                                    className="imcrm-w-full"
+                                    aria-label={__('Ancho de la columna de nombres')}
+                                />
+                            </Field>
+                            <Check label={__('Línea entre filas')} checked={block.lines !== false} onChange={(v) => onPatch({ lines: v ? undefined : false })} />
+                        </>
+                    )}
+                </ElementSection>,
+                <TypographySection
+                    key="typo"
+                    editor={ed}
+                    defaults={{ size: base, lineHeight: lh }}
+                    modified={typoModified(block.label_color, block.value_color)}
+                    onReset={typoReset({ label_color: null, value_color: null })}
+                >
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                        <ColorField label={__('Color de los nombres')} value={block.label_color} onChange={(v) => onPatch({ label_color: v })} placeholder={t.muted} />
+                        <ColorField label={__('Color de los valores')} value={block.value_color} onChange={(v) => onPatch({ value_color: v })} placeholder={t.text} />
+                    </div>
+                </TypographySection>,
+            );
+            break;
+        case 'image':
+            sections.push(
+                <ImageFramePanel key="img" medium="pdf" value={block.frame} onChange={(frame) => onPatch({ frame })}>
+                    <Field label={`${__('Ancho')}: ${block.width}%`}>
+                        <input
+                            type="range"
+                            min={5}
+                            max={100}
+                            step={5}
+                            value={block.width}
+                            onChange={(e) => onPatch({ width: Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Ancho de la imagen')}
+                        />
+                    </Field>
+                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
+                </ImageFramePanel>,
+            );
+            break;
+        case 'qr':
+            sections.push(
+                <ElementSection key="qr" title={__('Código')} testId="style-qr">
+                    <Field label={`${__('Tamaño')}: ${block.size} pt`}>
+                        <input
+                            type="range"
+                            min={40}
+                            max={240}
+                            step={8}
+                            value={block.size}
+                            onChange={(e) => onPatch({ size: Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Tamaño del código QR')}
+                        />
+                    </Field>
+                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
+                </ElementSection>,
+            );
+            break;
+        case 'signature':
+            sections.push(
+                <ElementSection key="sig" title={__('Firma')} testId="style-signature">
+                    <AlignControl value={block.align} onChange={(v) => onPatch({ align: v })} />
+                    <Check label={__('Línea para firmar')} checked={block.line} onChange={(v) => onPatch({ line: v })} />
+                </ElementSection>,
+            );
+            break;
+        case 'divider':
+            sections.push(
+                <ElementSection key="line" title={__('Línea')} testId="style-line">
+                    <ColorField label={__('Color de la línea')} value={block.color} onChange={(v) => onPatch({ color: v })} placeholder={t.border} />
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                        <Choice<string>
+                            label={__('Grosor')}
+                            value={String(block.thickness)}
+                            options={[0.5, 1, 2, 3].map((n) => ({ value: String(n), label: String(n).replace('.', ','), title: `${n} pt` }))}
+                            onChange={(v) => onPatch({ thickness: Number(v) })}
+                        />
+                        <Choice<BorderStyle>
+                            label={__('Tipo')}
+                            value={block.line_style ?? 'solid'}
+                            options={[
+                                { value: 'solid', label: '———', title: __('Continua') },
+                                { value: 'dashed', label: '– – –', title: __('Rayada') },
+                                { value: 'dotted', label: '·····', title: __('Punteada') },
+                            ]}
+                            onChange={(v) => onPatch({ line_style: v === 'solid' ? undefined : v })}
+                        />
+                    </div>
+                    <Field label={`${__('Largo')}: ${block.length ?? 100}%`}>
+                        <input
+                            type="range"
+                            min={5}
+                            max={100}
+                            step={5}
+                            value={block.length ?? 100}
+                            onChange={(e) => onPatch({ length: Number(e.target.value) === 100 ? undefined : Number(e.target.value) })}
+                            className="imcrm-w-full"
+                            aria-label={__('Largo de la línea')}
+                        />
+                    </Field>
+                    {(block.length ?? 100) < 100 && <AlignControl value={block.align ?? 'center'} onChange={(v) => onPatch({ align: v })} />}
+                </ElementSection>,
+            );
+            break;
+        case 'columns':
+            sections.push(<ColumnsStyle key="cols" {...p} />);
+            break;
+        default:
+            break;
+    }
+
+    // «Texto» genérico para los bloques con texto que no lo armaron arriba.
+    if (DOC_TYPO_BLOCKS.has(block.type) && !['heading', 'text', 'fields'].includes(block.type)) {
+        sections.push(
+            <TypographySection
+                key="typo"
+                editor={ed}
+                defaultOpen={block.type === 'header' || block.type === 'items' || block.type === 'totals'}
+                defaults={{ size: base, lineHeight: lh }}
+                inheritFontLabel={__('La del documento')}
+            />,
+        );
+    }
+
+    const legacy = PAD[block.padding ?? (block.background ? 'md' : 'none')];
+    const boxed = styleHasAny(block.style, STYLE_KEYS.border) || styleHasAny(block.style, STYLE_KEYS.padding);
+    const padDefault = boxed ? (block.background || (block.style?.border_width ?? 0) > 0 ? Math.max(legacy, 8) : 0) : block.background ? legacy : 0;
+    sections.push(
+        <BackgroundSection
+            key="bg"
+            editor={ed}
+            background={block.background}
+            onBackground={(v) => onPatch({ background: v })}
+            onReset={() => onPatch({ background: null })}
+        />,
+        <SpacingSection
+            key="space"
+            editor={ed}
+            defaults={{ padding: padDefault, margin: undefined }}
+            preset={
+                block.background
+                    ? {
+                          label: __('Relleno con el fondo'),
+                          options: (['sm', 'md', 'lg'] as const).map((v) => ({
+                              value: v,
+                              label: { sm: __('Poco'), md: __('Medio'), lg: __('Mucho') }[v],
+                              title: `${PAD[v]} pt`,
+                          })),
+                          current: styleHasAny(block.style, STYLE_KEYS.padding) ? null : (block.padding ?? 'md'),
+                          onPick: (v) => onPatch({ padding: v, style: ed.without(STYLE_KEYS.padding) }),
+                      }
+                    : undefined
+            }
+            modified={styleHasAny(block.style, STYLE_KEYS.spacing) || block.padding != null}
+            onReset={() => onPatch({ padding: undefined, style: ed.without(STYLE_KEYS.spacing) })}
+        />,
+    );
+    if (block.type !== 'image' || styleHasAny(block.style, STYLE_KEYS.border)) {
+        sections.push(<BorderSection key="border" editor={ed} title={block.type === 'image' ? __('Borde del bloque') : undefined} />);
+    }
+
+    return (
+        <>
+            <DesignClipboard value={block.style} onPaste={(style) => onPatch({ style })} />
+            {sections}
+        </>
+    );
+}
+
+function ColumnsStyle(p: DocInspectorProps): JSX.Element {
+    const block = p.block as Extract<DocBlock, { type: 'columns' }>;
+    const { onPatch } = p;
+    return (
+        <>
+            <ElementSection title={__('Columnas')} testId="style-columns">
+                <div className="imcrm-grid imcrm-grid-cols-[1fr_auto] imcrm-gap-2">
+                    <Choice<string>
+                        label={__('Proporción')}
+                        value={block.ratio && block.ratio.split('-').length === block.columns.length ? block.ratio : block.columns.length === 2 ? '1-1' : '1-1-1'}
+                        options={COLUMN_RATIOS[block.columns.length as 2 | 3].map((r) => ({ value: r, label: r.split('-').join(':') }))}
+                        onChange={(v) => onPatch({ ratio: v === '1-1' || v === '1-1-1' ? undefined : v })}
+                    />
+                    <NumberField className="imcrm-w-20" label={__('Separación')} unit="pt" min={0} max={48} value={block.gap} onChange={(v) => onPatch({ gap: v == null ? undefined : Math.round(v) })} placeholder="16" />
+                </div>
+            </ElementSection>
+            {block.columns.map((col, ci) => (
+                <DocColumnBoxEditor
+                    key={ci}
+                    index={ci}
+                    background={col.background ?? null}
+                    style={col.style}
+                    onChange={(patch) => onPatch({ columns: block.columns.map((c, i) => (i === ci ? { ...c, ...patch } : c)) })}
+                />
+            ))}
+        </>
+    );
+}
+
 /** Fondo y recuadro de UNA columna del PDF (plegado). */
 function DocColumnBoxEditor({
+    index,
     background,
     style,
     onChange,
 }: {
+    index: number;
     background: string | null;
     style: BlockStyle | undefined;
     onChange: (patch: { background?: string | null; style?: BlockStyle }) => void;
 }): JSX.Element {
     return (
-        <StyleSection title={__('Fondo y recuadro')} modified={!!background || !!style}>
+        <StyleSection
+            title={`${__('Fondo de la columna')} ${index + 1}`}
+            modified={!!background || !!style}
+            onReset={() => onChange({ background: null, style: undefined })}
+        >
             <ColorField label={__('Color de fondo')} value={background} onChange={(v) => onChange({ background: v })} />
             <BlockStylePanel medium="pdf" value={style} onChange={(st) => onChange({ style: st })} box />
         </StyleSection>
@@ -582,7 +760,7 @@ function FieldPicker({
     );
 }
 
-function FieldsBlockFields(p: DocInspectorProps): JSX.Element {
+function FieldsContent(p: DocInspectorProps): JSX.Element {
     const block = p.block as Extract<DocBlock, { type: 'fields' }>;
     return (
         <>
@@ -590,45 +768,6 @@ function FieldsBlockFields(p: DocInspectorProps): JSX.Element {
             <Field label={__('Campos a mostrar')} hint={__('Con el valor como se lee en la ficha: montos, fechas y opciones legibles.')}>
                 <FieldPicker fields={p.fields} selected={block.slugs} onChange={(slugs) => p.onPatch({ slugs })} />
             </Field>
-            <Segmented<'table' | 'stacked'>
-                label={__('Forma')}
-                value={block.layout}
-                options={[
-                    { value: 'table', label: __('Tabla') },
-                    { value: 'stacked', label: __('Etiqueta arriba') },
-                ]}
-                onChange={(v) => p.onPatch({ layout: v })}
-            />
-            <Segmented<string>
-                label={__('Columnas')}
-                value={String(block.columns)}
-                options={[
-                    { value: '1', label: __('Una') },
-                    { value: '2', label: __('Dos') },
-                ]}
-                onChange={(v) => p.onPatch({ columns: Number(v) })}
-            />
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                <ColorField label={__('Color de los nombres')} value={block.label_color} onChange={(v) => p.onPatch({ label_color: v })} placeholder={p.design.theme.muted} />
-                <ColorField label={__('Color de los valores')} value={block.value_color} onChange={(v) => p.onPatch({ value_color: v })} placeholder={p.design.theme.text} />
-            </div>
-            {block.layout === 'table' && (
-                <>
-                    <Field label={`${__('Ancho de los nombres')}: ${block.label_width ?? 40}%`}>
-                        <input
-                            type="range"
-                            min={15}
-                            max={70}
-                            step={5}
-                            value={block.label_width ?? 40}
-                            onChange={(e) => p.onPatch({ label_width: Number(e.target.value) })}
-                            className="imcrm-w-full"
-                            aria-label={__('Ancho de la columna de nombres')}
-                        />
-                    </Field>
-                    <Check label={__('Línea entre filas')} checked={block.lines !== false} onChange={(v) => p.onPatch({ lines: v ? undefined : false })} />
-                </>
-            )}
         </>
     );
 }
@@ -1020,8 +1159,6 @@ function SignatureFields(p: DocInspectorProps): JSX.Element {
                     {__('Agregar otra firma')}
                 </Button>
             )}
-            <AlignControl value={block.align} onChange={(v) => p.onPatch({ align: v })} />
-            <Check label={__('Línea para firmar')} checked={block.line} onChange={(v) => p.onPatch({ line: v })} />
             <DocImageField label={__('Firma escaneada (opcional)')} value={block.image} onChange={(image) => p.onPatch({ image })} />
         </>
     );

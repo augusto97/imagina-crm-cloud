@@ -33,7 +33,7 @@ const BUILTIN_PRESETS: StylePreset[] = [
 
 /** Paleta curada: neutros + tonos suaves + acentos. Hex plano para que
  * el portal (que no comparte los CSS vars del admin) pinte idéntico. */
-const SWATCHES: string[] = [
+export const SWATCHES: string[] = [
     '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0', '#0f172a', '#1e293b',
     '#eff6ff', '#dbeafe', '#2563eb', '#ecfdf5', '#d1fae5', '#059669',
     '#fefce8', '#fef3c7', '#d97706', '#fef2f2', '#fee2e2', '#dc2626',
