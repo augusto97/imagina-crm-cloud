@@ -101,3 +101,7 @@ POST /api/v1/system/update/rollback   # vuelve al release anterior
 3. *Actualizar* → seguí el estado (`queued → running → restarting → success`).
 4. Verificá `GET /system/update/status` → `current_version` = la nueva.
 5. Probá *Rollback* → vuelve a la anterior y `update_available` reaparece.
+
+## Disco lleno
+
+Si una actualización falla por espacio (o para verlo antes): Plataforma → Diagnóstico → Disco, y `docs/runbook-disk.md` para liberar a mano y activar la poda del WAL.

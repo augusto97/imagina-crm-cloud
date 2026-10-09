@@ -8,6 +8,7 @@ import type { AppRelease } from '@imagina-base/shared';
 import type { Env } from '../config/env';
 import type { DeployResult, Deployer } from './update.types';
 import { verifyDetachedSignature } from './verify-signature';
+import { LayoutDisk, freeBytes } from './disk-space';
 
 const run = promisify(execFile);
 
@@ -22,6 +23,11 @@ export class SymlinkDeployer implements Deployer {
     private readonly logger = new Logger(SymlinkDeployer.name);
 
     constructor(private readonly env: Env) {}
+
+    /** v0.1.278 — limpieza y medición del disco del layout. */
+    get disk(): LayoutDisk {
+        return new LayoutDisk(this.base, this.env.UPDATER_KEEP_RELEASES);
+    }
 
     get enabled(): boolean {
         return this.env.UPDATER_BASE_PATH !== '';
@@ -62,6 +68,29 @@ export class SymlinkDeployer implements Deployer {
         const zipPath = path.join(releasesDir, `${stamp}_${release.version}.zip`);
         const prevRelease = existsSync(this.current) ? safeReadlink(this.current) : null;
 
+        // v0.1.278 — antes de descargar nada: si el disco no alcanza, primero
+        // se limpia lo que sobra (zips y extracciones cortadas, releases y
+        // copias viejas) y, si igual no alcanza, se corta con el número a la
+        // vista. Antes se descomprimía a ciegas y un disco lleno dejaba basura
+        // que llenaba más el siguiente intento.
+        const minFree = this.env.UPDATER_MIN_FREE_MB * 1024 * 1024;
+        try {
+            if (freeBytes(this.base).free < minFree) {
+                const freed = await this.disk.cleanup();
+                this.logger.warn(`Poco espacio antes de actualizar: se liberaron ${mb(freed.freed)} MB (${freed.removed.length} elementos)`);
+            }
+            const { free } = freeBytes(this.base);
+            if (free < minFree) {
+                return {
+                    ok: false,
+                    message: `No hay espacio en disco para actualizar: quedan ${mb(free)} MB libres y hacen falta al menos ${mb(minFree)} MB. Liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.`,
+                    prevRelease,
+                };
+            }
+        } catch (err) {
+            this.logger.warn(`No se pudo medir el espacio libre (sigo): ${String(err)}`);
+        }
+
         try {
             // 1. Backup de BD (best-effort).
             await this.backup(shared).catch((e) => this.logger.warn(`Backup falló (sigo): ${String(e)}`));
@@ -72,6 +101,7 @@ export class SymlinkDeployer implements Deployer {
             // 3. Verificar SHA-256 (fail-closed).
             const actual = await this.sha256(zipPath);
             if (actual.toLowerCase() !== release.checksum.toLowerCase()) {
+                await run('rm', ['-f', zipPath]).catch(() => undefined);
                 return { ok: false, message: `Checksum no coincide (esperado ${release.checksum.slice(0, 12)}…)`, prevRelease };
             }
 
@@ -104,7 +134,18 @@ export class SymlinkDeployer implements Deployer {
 
             return { ok: true, message: `Release ${release.version} desplegado`, prevRelease };
         } catch (err) {
-            return { ok: false, message: `Fallo en deploy: ${String(err instanceof Error ? err.message : err)}`, prevRelease };
+            // v0.1.278 — no dejar basura: un unzip cortado (disco lleno) dejaba
+            // el zip y la carpeta a medio extraer, y el reintento llenaba más.
+            await run('rm', ['-rf', releaseDir, zipPath, `${zipPath}.sig`]).catch(() => undefined);
+            const raw = String(err instanceof Error ? err.message : err);
+            const full = /No space left on device|ENOSPC/i.test(raw);
+            return {
+                ok: false,
+                message: full
+                    ? 'El disco del servidor se llenó durante la actualización. Se borró lo que quedó a medias; liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.'
+                    : `Fallo en deploy: ${raw.slice(0, 600)}`,
+                prevRelease,
+            };
         }
     }
 
@@ -164,7 +205,9 @@ export class SymlinkDeployer implements Deployer {
         const script = path.join(this.current, 'deploy', 'backup.sh');
         if (!existsSync(script)) return;
         await run('bash', [script, path.join(shared, 'backups')], {
-            env: { ...process.env, DATABASE_URL: this.env.DATABASE_URL, BACKUP_RETENTION_DAYS: '30' },
+            // v0.1.278 — una copia por actualización: quedan las 5 más nuevas
+            // (con muchas actualizaciones por día, 30 días eran cientos).
+            env: { ...process.env, DATABASE_URL: this.env.DATABASE_URL, BACKUP_RETENTION_DAYS: '30', BACKUP_KEEP: '5' },
         });
     }
 
@@ -181,6 +224,10 @@ export class SymlinkDeployer implements Deployer {
         const { stdout } = await run('sha256sum', [file]);
         return stdout.trim().split(/\s+/)[0] ?? '';
     }
+}
+
+function mb(bytes: number): number {
+    return Math.round(bytes / 1024 / 1024);
 }
 
 function stampNow(): string {

@@ -349,9 +349,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.277** (campos con IA — ADR-S41), en `main`.
+versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-09 — **disco lleno en producción**: la actualización a v0.1.276
+  falló con «No space left on device». Se le pasaron al usuario los comandos
+  para medir y liberar (`docs/runbook-disk.md` §3); falta que confirme cuánto
+  liberó y qué era lo grande (sospecha principal: el archivo de WAL de
+  Postgres, que nada podaba). Pendiente además: recrear el contenedor de
+  Postgres una vez para activar la poda del WAL (runbook §4). v0.1.278 hace
+  que no se repita (chequeo de espacio, limpieza, «Liberar espacio» en
+  Diagnóstico) — pero para instalarla primero hay que liberar a mano.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
@@ -450,6 +458,12 @@ versión publicada: **v0.1.277** (campos con IA — ADR-S41), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.278** — Reporte del usuario: «Actualizar» falló con
+  «No space left on device». El actualizador ahora mira el espacio antes,
+  limpia lo que sobra (y lo que deja un deploy cortado), guarda 3 versiones y
+  5 copias previas, y Plataforma → Diagnóstico muestra el disco con «Liberar
+  espacio». El WAL de Postgres se poda solo tras recrear su contenedor una
+  vez (runbook-disk). Para esta vez, comandos a mano en la consola.
 - **2026-10-09 · v0.1.277** — Campos con IA (ADR-S41), la tercera de las
   ideas elegidas: resumir, clasificar, extraer, traducir o instrucciones
   propias a partir de otros campos (también PDF e imágenes), recalculados

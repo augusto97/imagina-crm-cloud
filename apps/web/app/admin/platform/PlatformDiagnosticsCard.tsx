@@ -13,6 +13,8 @@ import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
+import { DiskUsageCard } from './DiskUsageCard';
+
 /**
  * v0.1.238 — Plataforma → Diagnóstico. Responde, sin entrar al servidor:
  *  - ¿los correos de cuenta (verificación, recuperación, invitaciones) tienen
@@ -61,6 +63,7 @@ export function PlatformDiagnosticsCard(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="platform-diagnostics">
+            <DiskUsageCard />
             <Card>
                 <CardHeader>
                     <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">

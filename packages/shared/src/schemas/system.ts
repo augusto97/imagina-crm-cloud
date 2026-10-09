@@ -163,3 +163,29 @@ export const platformDiagnosticsSchema = z.object({
     errors: z.array(serverErrorEntrySchema),
 });
 export type PlatformDiagnostics = z.infer<typeof platformDiagnosticsSchema>;
+
+/**
+ * v0.1.278 — Uso del disco del servidor (Plataforma → Diagnóstico). `parts`
+ * son las carpetas de la app que más crecen; `available` es false fuera del
+ * layout de releases (desarrollo).
+ */
+export const diskUsageSchema = z.object({
+    available: z.boolean(),
+    path: z.string(),
+    total_bytes: z.number(),
+    free_bytes: z.number(),
+    /** Por debajo del mínimo que pide una actualización. */
+    low: z.boolean(),
+    min_free_bytes: z.number(),
+    parts: z.array(z.object({ key: z.string(), label: z.string(), bytes: z.number().nullable() })),
+    /** Lo que liberaría «Liberar espacio» ahora (estimado). */
+    reclaimable_bytes: z.number(),
+});
+export type DiskUsage = z.infer<typeof diskUsageSchema>;
+
+export const diskCleanupResultSchema = z.object({
+    freed_bytes: z.number(),
+    removed: z.array(z.string()),
+    free_bytes: z.number(),
+});
+export type DiskCleanupResult = z.infer<typeof diskCleanupResultSchema>;
