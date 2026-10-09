@@ -95,6 +95,8 @@ import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } fr
 const AI_FIELD_TYPES = [
     'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
     'checkbox', 'url', 'email', 'phone', 'user', 'relation', 'file', 'rating', 'percent', 'duration', 'computed',
+    // v0.1.277 (ADR-S41) — campo con IA.
+    'ai',
 ] as const satisfies readonly FieldType[];
 
 const optionSpec = z.object({
@@ -126,6 +128,17 @@ const fieldSpec = z.object({
         })
         .optional()
         .describe('Sólo computed: cómo se calcula'),
+    ai: z
+        .object({
+            task: z.enum(['summarize', 'classify', 'extract', 'translate', 'custom']),
+            inputs: z.array(fieldSlugSchema).min(1).max(10).describe('Slugs de los campos que lee (texto, opciones, números, archivos PDF/imagen…)'),
+            prompt: z.string().max(2000).optional().describe('extract: qué dato sacar; custom: instrucciones; resto: indicaciones extra'),
+            options: z.array(z.string().min(1).max(80)).max(30).optional().describe('classify: las opciones posibles (al menos 2)'),
+            language: z.string().max(40).optional().describe('translate: idioma destino (inglés, portugués…)'),
+            length: z.enum(['short', 'medium', 'long']).optional(),
+        })
+        .optional()
+        .describe('Sólo ai: el valor lo completa un modelo a partir de otros campos y se recalcula solo al cambiarlos (consume la cuota de IA)'),
 });
 type FieldSpec = z.infer<typeof fieldSpec>;
 
@@ -2357,6 +2370,24 @@ export class StructureTools implements AiProposalApplier {
                 config.operation = f.computed.operation;
                 config.inputs = inputs;
                 if (f.computed.separator !== undefined) config.separator = f.computed.separator;
+                break;
+            }
+            case 'ai': {
+                if (!f.ai) throw new AiToolError(`El campo «${slug}» (ai) necesita ai {task, inputs}.`);
+                const local = opts.localSlugs();
+                config.inputs = f.ai.inputs.map((s) => {
+                    if (!local.has(s)) throw new AiToolError(`ai «${slug}»: el campo «${s}» no existe (definilo antes en la misma lista).`);
+                    if (opts.forBlueprint) return { $field: s };
+                    const id = opts.resolveInput?.(s);
+                    if (id === undefined) throw new AiToolError(`ai «${slug}»: «${s}» tiene que ser un campo YA existente de la lista.`);
+                    return id;
+                });
+                config.task = f.ai.task;
+                if (f.ai.prompt) config.prompt = f.ai.prompt;
+                if (f.ai.options) config.options = f.ai.options;
+                if (f.ai.language) config.language = f.ai.language;
+                if (f.ai.length) config.length = f.ai.length;
+                if (f.ai.task === 'classify' && (f.ai.options ?? []).length < 2) throw new AiToolError(`ai «${slug}»: clasificar necesita al menos dos options.`);
                 break;
             }
             default:

@@ -1015,6 +1015,9 @@ export class RecordsService {
                 errors[key] = `El tipo '${field.type}' no se escribe en los datos`;
                 continue;
             }
+            // v0.1.277 — el campo con IA lo escribe el servidor: un formulario
+            // que reenvía su valor (sin cambiarlo) no rompe el guardado.
+            if (field.type === 'ai') continue;
             const result = validateFieldValue(
                 { type: field.type, config: field.config, is_required: field.is_required },
                 value,
@@ -1225,7 +1228,7 @@ function recordNotFound(id: number): NotFoundException {
  * `description_text`). El needle viaja SIEMPRE bindeado y con los
  * metacaracteres de LIKE escapados (regla de oro nº 4).
  */
-const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url', 'phone']);
+const SEARCHABLE_TYPES: ReadonlySet<string> = new Set(['text', 'long_text', 'email', 'url', 'phone', 'ai']);
 
 function compileSearch(fields: Field[], search: string | undefined): SQL | undefined {
     const needle = (search ?? '').trim();
@@ -1293,7 +1296,7 @@ function withComputed<T extends { data: Record<string, unknown> }>(fields: Field
  */
 const NON_SORTABLE: readonly string[] = ['relation', 'file', 'computed', 'lookup'];
 /** Tipos cuyo orden es alfabético (expresión de texto). */
-const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup']);
+const TEXT_SORT_TYPES = new Set<string>(['text', 'long_text', 'email', 'url', 'phone', 'select', 'lookup', 'ai']);
 
 function parseFieldSort(
     raw: string | undefined,

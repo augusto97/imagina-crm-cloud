@@ -3,6 +3,7 @@ import {
     fieldSlugSchema,
     formatDuration,
     formatPhone,
+    AI_INPUT_TYPES,
     isDataField,
     isStoreField,
     isThroughField,
@@ -121,6 +122,19 @@ export class FieldsService {
         type: FieldType,
         config: Record<string, unknown>,
     ): Promise<void> {
+        if (type === 'ai') {
+            // v0.1.277 — las fuentes de un campo con IA: de ESTA lista y legibles.
+            for (const id of (config.inputs as unknown[] | undefined) ?? []) {
+                const f = await this.repo.findAnyById(tx, tenantId, Number(id));
+                if (!f || f.listId !== listId) {
+                    throw new BadRequestException({ code: 'invalid_field_config', message: 'Una de las fuentes no es un campo de esta lista', data: { status: 400, errors: { inputs: 'Inválido' } } });
+                }
+                if (!AI_INPUT_TYPES.includes(f.type)) {
+                    throw new BadRequestException({ code: 'invalid_field_config', message: `«${f.label}» no se puede usar como fuente de la IA`, data: { status: 400, errors: { inputs: 'Inválido' } } });
+                }
+            }
+            return;
+        }
         if (!isThroughField(type)) return;
         const fail = (field: string, message: string): never => {
             throw new BadRequestException({
@@ -672,13 +686,13 @@ function fieldNotFound(idOrSlug: string): NotFoundException {
  * (relation vive en la tabla `relations`, computed jamás se persiste, file
  * son IDs de attachments que dejarían huérfanos silenciosos).
  */
-const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup'];
+const NON_CONVERTIBLE: readonly FieldType[] = ['computed', 'relation', 'file', 'lookup', 'rollup', 'ai'];
 
 function assertConvertible(from: FieldType, to: FieldType): void {
     if (NON_CONVERTIBLE.includes(from) || NON_CONVERTIBLE.includes(to)) {
         throw new BadRequestException({
             code: 'type_not_convertible',
-            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup y rollup no admiten conversión.`,
+            message: `No se puede convertir entre '${from}' y '${to}' — los tipos relación, archivo, calculado, lookup, rollup y con IA no admiten conversión.`,
             data: { status: 400 },
         });
     }

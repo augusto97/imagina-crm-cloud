@@ -7703,6 +7703,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         desde la ficha, grupos de «Mi trabajo», preferencias persistidas,
         marcar todo leído, celular).
 
+  - [x] **Campos con IA (v0.1.277, ADR-S41, la tercera de las ideas
+        elegidas por el usuario)**: tipo de campo nuevo «Campo con IA» que
+        **resume, clasifica (elige una de tus opciones), extrae un dato,
+        traduce o sigue instrucciones** a partir de otros campos del registro
+        —también de los PDF e imágenes de un campo Archivo (hasta 3, de 5 MB)—.
+        (a) Vive en `records.data` como texto (filtra, ordena, busca y
+        exporta) pero nadie lo escribe a mano: `isUserWritableType` (shared) lo
+        deja afuera del import, la edición masiva, el portal, las
+        automatizaciones y los formularios, y un PATCH que trae su valor lo
+        ignora. (b) **Se recalcula solo** cuando cambian sus fuentes: escucha el
+        `RecordChangeHub` y encola un job de BullMQ por (registro, campo) con 4 s
+        de espera (el autoguardado no paga un pedido por tecla) y escribe por un
+        camino que no vuelve a emitir cambios (sin cadenas). (c) **El pedido**
+        separa instrucciones de datos (lo del registro va etiquetado como dato,
+        no instrucción; el modelo no tiene herramientas), valida la
+        clasificación contra las opciones, y sin nada que leer deja el campo
+        vacío sin gastar un pedido. (d) **Clave y cuota de ADR-S21**: clave
+        propia o la compartida contra la cuota del plan; calidad «rápida»
+        (Haiku 4.5, default) o «la del asistente». (e) **Interfaz**: en el
+        catálogo de campos («Campo con IA», icono ✦), editor con qué hace, de
+        qué campos lee, opciones/idioma/instrucciones, largo, modelo y
+        «recalcular solo»; con el campo creado, «Completar los vacíos» /
+        «Recalcular todos» (hasta 500, y no más de lo que queda de la cuota) y
+        el último error. En la ficha el valor se lee con ✦ y un botón
+        «Calcular/Recalcular» que espera la respuesta y, si falla, dice por qué
+        (IA apagada, cuota, clave, proveedor). El asistente/MCP puede crearlos
+        (`propose_add_fields` con `ai {task, inputs, …}`). 11 tests de API
+        (config incompleta, pedido con datos aislados, lectura de la respuesta,
+        qué recalcular ante un cambio, + Postgres/Redis con modelo falso:
+        calcula y cuenta la cuota, la persona no lo escribe, respuesta fuera de
+        las opciones → último error, sin fuentes no gasta, IA apagada dice por
+        qué, PDF como documento, «Completar» respeta la cuota) — 1063
+        API, 273 front, 190 shared en verde — + E2E navegador 11/11 con el
+        proveedor de IA SIMULADO por `ANTHROPIC_BASE_URL` (alta del campo por
+        la interfaz, se calcula solo al crear un registro, «Calcular» en la
+        ficha, «Completar los vacíos», columna en la tabla, motivo con la IA
+        apagada, modelo rápido). **Límite de la verificación**: el modelo real
+        no alcanza el sandbox; la calidad de las respuestas se ve en el
+        servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -109,6 +109,8 @@ export function operatorsForType(type: FieldTypeSlug, field?: { through?: Throug
         case 'email':
         case 'url':
         case 'phone':
+        case 'ai':
+            // v0.1.277 — el campo con IA guarda texto.
             // v0.1.158 — el teléfono se guarda como texto canónico:
             // "empieza con +57" es justo lo que se filtra en un CRM.
             return TEXT_LIKE;

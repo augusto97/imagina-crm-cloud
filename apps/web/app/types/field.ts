@@ -20,7 +20,9 @@ export type FieldTypeSlug =
     | 'duration'
     // v0.1.170 — a través de una relación (lookup / rollup, ADR-S19).
     | 'lookup'
-    | 'rollup';
+    | 'rollup'
+    // v0.1.277 — campo con IA (ADR-S41).
+    | 'ai';
 
 /**
  * Relación RESUELTA de un lookup/rollup (v0.1.170). La deriva el backend

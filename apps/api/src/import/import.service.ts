@@ -4,7 +4,7 @@ import {
     EXPORT_PARENT_HEADER,
     IMPORT_ID_COLUMN,
     IMPORT_PARENT_COLUMN,
-    isDataField,
+    isUserWritableType,
     jsonbKeyForField,
     roleHasCapability,
     validateFieldValue,
@@ -67,7 +67,7 @@ export class ImportService {
         const columns: Array<{ column: string; field: Field; key: string }> = [];
         for (const [column, fieldId] of Object.entries(input.mapping)) {
             const field = byId.get(fieldId);
-            if (!field || !isDataField(field.type)) {
+            if (!field || !isUserWritableType(field.type)) {
                 throw new BadRequestException({
                     code: 'invalid_mapping',
                     message: `El mapeo apunta a un campo inválido (${fieldId})`,
@@ -524,7 +524,7 @@ export class ImportService {
 
     async importableFields(tenantId: number, listId: number): Promise<Field[]> {
         const all = await this.fields.listByListId(tenantId, listId);
-        return all.filter((f) => isDataField(f.type));
+        return all.filter((f) => isUserWritableType(f.type));
     }
 
     /**

@@ -78,6 +78,7 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
         case 'file':
             return <FileDisplay value={value} />;
         case 'long_text':
+        case 'ai':
             return <LongTextDisplay value={value} />;
         case 'computed':
             return <ComputedDisplay field={field} value={value} />;

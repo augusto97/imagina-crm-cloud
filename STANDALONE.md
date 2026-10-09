@@ -2824,6 +2824,49 @@ que tienen como base ClickUp («Mi trabajo» + Inbox), Monday y Airtable
 bandeja. Quedan fuera: avisos push del navegador/celular, «posponer» un aviso
 y reglas de aviso por lista.
 
+### ADR-S41 — Campos con IA (v0.1.277)
+
+**Contexto.** Tercera idea elegida por el usuario: que la IA trabaje DENTRO
+de los registros, no sólo en el chat del asistente — resumir una nota larga,
+clasificar un ticket, sacar el NIT de una factura en PDF, traducir. Es el
+"AI field" de Airtable/ClickUp/Notion.
+
+**Decisión.**
+1. **Un tipo de campo más, `ai`**, que vive en `records.data` como texto (se
+   filtra, ordena, busca y exporta como cualquier texto) pero que **nadie
+   escribe a mano**: `isUserWritableType` lo deja afuera del import, la
+   edición masiva, el portal, las automatizaciones y los formularios, y un
+   PATCH que trae su valor lo ignora (un formulario que lo reenvía sin cambios
+   no rompe el guardado).
+2. **Config** (`aiFieldConfigSchema`): qué hace (`summarize`, `classify` con
+   opciones, `extract` con qué dato, `translate` con idioma, `custom` con
+   instrucciones), de qué campos lee (`inputs`, hasta 10, de la MISMA lista),
+   largo, calidad y si se recalcula solo. `inputs` sigue la convención de
+   nombres: plantillas y migración de empresa lo re-mapean solos.
+3. **Se recalcula cuando cambian sus fuentes**: escucha el `RecordChangeHub`
+   y encola un job de BullMQ con id por (registro, campo) y 4 s de espera — el
+   autoguardado escribe varias veces y no se paga un pedido por tecla. El
+   resultado se escribe por un camino que **no vuelve a emitir cambios**: un
+   campo con IA nunca dispara otro en cadena.
+4. **El pedido**: el contenido del registro va dentro de etiquetas y el
+   sistema dice que son DATOS, no instrucciones; el modelo no tiene
+   herramientas, así que un texto malicioso a lo sumo ensucia su propio campo.
+   Al clasificar, la respuesta se valida contra las opciones (una que no está
+   no se guarda). Los campos Archivo pasan PDF e imágenes tal cual (hasta 3, de
+   5 MB). Sin nada que leer, el campo queda vacío sin gastar un pedido.
+5. **Clave y cuota**: la misma de ADR-S21 — clave propia de la empresa o la
+   compartida de la plataforma contra `max_ai_requests_month`. Calidad
+   «rápida» (default) usa Haiku 4.5; «el del asistente», el modelo elegido por
+   la empresa. «Completar los vacíos» / «Recalcular todos» encola hasta 500 y,
+   con la clave compartida, no más de lo que queda de la cuota.
+6. **Errores a la vista**: «Recalcular» en la ficha responde con el motivo
+   (IA desactivada, cuota, clave rechazada, proveedor saturado); en segundo
+   plano el último error queda por campo y se muestra en su configuración.
+
+**Consecuencias.** La IA llena columnas sin integraciones ni automatizaciones.
+Queda fuera: encadenar campos con IA, campos con IA que escriben números o
+fechas tipados, y un historial de pedidos por registro.
+
 ---
 
-**Versión del documento:** 1.75.0 («Mi trabajo» + bandeja de avisos — ADR-S40)
+**Versión del documento:** 1.76.0 (campos con IA — ADR-S41)

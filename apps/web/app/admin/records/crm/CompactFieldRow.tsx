@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AiFieldValue } from '../AiFieldValue';
 import { Lock, Pencil } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
@@ -107,7 +108,9 @@ export function CompactFieldRow({
     // una lista de tienda, lo que se edita en WooCommerce (v0.1.213).
     const isReadOnly = isDerivedFieldType(field.type) || lockedReason !== null;
 
-    const control = isReadOnly ? (
+    const control = field.type === 'ai' && lockedReason === null ? (
+        <AiFieldValue field={field} value={value} listId={listId} recordId={recordId} />
+    ) : isReadOnly ? (
         <div
             className="imcrm-flex imcrm-min-h-[24px] imcrm-items-center imcrm-gap-1.5 imcrm-py-0.5 imcrm-text-sm"
             title={lockedReason ?? undefined}

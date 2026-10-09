@@ -625,7 +625,7 @@ export class AutomationEngine {
                         skipped.push(`${k} (campo inexistente en la lista destino)`);
                         continue;
                     }
-                    if (field.type === 'computed' || field.type === 'lookup' || field.type === 'rollup') {
+                    if (field.type === 'computed' || field.type === 'lookup' || field.type === 'rollup' || field.type === 'ai') {
                         skipped.push(`${k} (${field.type} es solo lectura)`);
                         continue;
                     }
