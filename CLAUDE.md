@@ -7697,7 +7697,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         ve el registro ni al cliente, bandeja y aislamiento, preferencias y
         tope de correos, recordatorios de un solo disparo, «Mi trabajo»
         ordenado y sin lo terminado, resumen a su hora una vez por día) + 2 del
-        front — API_COUNT API, 273 front y 190 shared en verde — + E2E
+        front — 1052 API, 273 front y 190 shared en verde — + E2E
         navegador 20/20 (contador, comentario por realtime sin recargar, abrir
         el aviso lleva al registro y lo marca leído, «Siguiendo», recordatorio
         desde la ficha, grupos de «Mi trabajo», preferencias persistidas,
