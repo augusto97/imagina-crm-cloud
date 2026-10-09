@@ -7768,7 +7768,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el actualizador corta sin espacio antes de descargar y no deja basura
         con un zip roto) + `archive_command` probado contra un Postgres 16 real
         (archiva y poda, 0 fallos) + E2E navegador 8/8 de la tarjeta Disco
-        sobre un layout de releases falso.
+        sobre un layout de releases falso. **El "disco lleno" era de
+        INODOS**: el usuario mostró 26 GB libres — se acabó la cantidad de
+        archivos (una versión trae ~36.000). El chequeo previo, el mensaje de
+        error y la tarjeta Disco miden también los inodos (`freeInodes` /
+        `spaceProblem`, mínimo 60.000; runbook-disk §5). Un servidor que ya
+        se quedó sin inodos con una versión anterior necesita liberar una vez
+        por consola: el instalador que corre es el viejo.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

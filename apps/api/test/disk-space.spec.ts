@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
-import { LayoutDisk, freeBytes, planCleanup } from '../src/update/disk-space';
+import { LayoutDisk, MIN_FREE_INODES, freeBytes, freeInodes, planCleanup, spaceProblem } from '../src/update/disk-space';
 import { SymlinkDeployer } from '../src/update/symlink-deployer.service';
 
 const rel = (name: string, complete = true) => ({ name, isDir: true, complete });
@@ -77,6 +77,25 @@ describe('v0.1.278 — espacio en disco del layout de releases', () => {
     });
 });
 
+
+describe('v0.1.278 — inodos: sin lugar para archivos aunque haya GB libres', () => {
+    it('distingue falta de bytes, falta de archivos y nada', () => {
+        const gb = 1024 ** 3;
+        expect(spaceProblem({ free: 26 * gb }, { free: 12 }, gb)).toBe('inodes'); // el caso del reporte
+        expect(spaceProblem({ free: 100 }, { free: 12 }, gb)).toBe('bytes');
+        expect(spaceProblem({ free: 26 * gb }, { free: MIN_FREE_INODES + 1 }, gb)).toBeNull();
+        // btrfs/xfs dinámico: sin tope fijo de inodos → sólo cuentan los bytes.
+        expect(spaceProblem({ free: 26 * gb }, null, gb)).toBeNull();
+    });
+
+    it('freeInodes lee el sistema de archivos real (o null si no tiene tope)', () => {
+        const i = freeInodes(tmpdir());
+        if (i !== null) {
+            expect(i.total).toBeGreaterThan(0);
+            expect(i.free).toBeLessThanOrEqual(i.total);
+        }
+    });
+});
 
 describe('v0.1.278 — el actualizador y el disco', () => {
     const layout = () => {

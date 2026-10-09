@@ -80,3 +80,31 @@ sudo docker exec imagina-base-prod-postgres-1 sh -c 'psql -U "$POSTGRES_USER" -d
 Los datos no se tocan: `pgdata` y `walarchive` son volúmenes y sobreviven a
 recrear el contenedor. La ventana de restauración a un instante (PITR) pasa a
 ser de 3 días; para restaurar más atrás están las copias diarias.
+
+## 5. Sin inodos («No space left on device» con GB libres)
+
+Un disco tiene dos límites: **bytes** y **cantidad de archivos** (inodos). Una
+versión de la app trae ~36.000 archivos (`node_modules`), así que un servidor
+puede quedarse sin inodos con decenas de GB libres — y el error es el mismo:
+`No space left on device` (típicamente `checkdir error: cannot create …` al
+descomprimir). El panel del proveedor (ServerAvatar) muestra sólo los bytes.
+
+Desde v0.1.278 el actualizador mide también los inodos antes de descargar,
+limpia lo que sobra y, si no alcanza, lo dice; y **Plataforma → Diagnóstico →
+Disco** muestra la línea «Archivos». Pero la versión que está corriendo es la
+que instala la siguiente: si el servidor ya se quedó sin inodos con una versión
+anterior, hay que liberarlos una vez por consola.
+
+Medir:
+
+```bash
+df -i /                                  # IUse% al 100% = sin inodos
+sudo du --inodes -x -d 3 / 2>/dev/null | sort -n | tail -25   # quién los usa
+ls -1d /opt/imagina-base/releases/*/ | wc -l                  # versiones guardadas
+```
+
+Liberar: los pasos **a**, **b** y **e** de la §3 (versiones viejas y lo que
+dejó una actualización cortada son, de lejos, lo que más archivos tiene en la
+app: ~36.000 cada una). Si `du --inodes` señala otra carpeta fuera de
+`/opt/imagina-base` (cachés de npm/pnpm, sesiones de PHP, colas de correo,
+capas de Docker), se limpia ahí. Después, «Actualizar» desde la app.

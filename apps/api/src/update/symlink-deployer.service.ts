@@ -8,7 +8,7 @@ import type { AppRelease } from '@imagina-base/shared';
 import type { Env } from '../config/env';
 import type { DeployResult, Deployer } from './update.types';
 import { verifyDetachedSignature } from './verify-signature';
-import { LayoutDisk, freeBytes } from './disk-space';
+import { LayoutDisk, MIN_FREE_INODES, freeBytes, freeInodes, spaceProblem } from './disk-space';
 
 const run = promisify(execFile);
 
@@ -75,15 +75,28 @@ export class SymlinkDeployer implements Deployer {
         // que llenaba más el siguiente intento.
         const minFree = this.env.UPDATER_MIN_FREE_MB * 1024 * 1024;
         try {
-            if (freeBytes(this.base).free < minFree) {
+            // Bytes Y archivos (inodos): un disco puede quedarse sin inodos con
+            // GB libres y el error es el mismo «No space left on device».
+            if (spaceProblem(freeBytes(this.base), freeInodes(this.base), minFree)) {
                 const freed = await this.disk.cleanup();
-                this.logger.warn(`Poco espacio antes de actualizar: se liberaron ${mb(freed.freed)} MB (${freed.removed.length} elementos)`);
+                this.logger.warn(
+                    `Poco espacio antes de actualizar: se liberaron ${mb(freed.freed)} MB y ${freed.freedInodes} archivos (${freed.removed.length} elementos)`,
+                );
             }
             const { free } = freeBytes(this.base);
-            if (free < minFree) {
+            const inodes = freeInodes(this.base);
+            const problem = spaceProblem({ free }, inodes, minFree);
+            if (problem === 'bytes') {
                 return {
                     ok: false,
                     message: `No hay espacio en disco para actualizar: quedan ${mb(free)} MB libres y hacen falta al menos ${mb(minFree)} MB. Liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.`,
+                    prevRelease,
+                };
+            }
+            if (problem === 'inodes' && inodes) {
+                return {
+                    ok: false,
+                    message: `El disco tiene ${mb(free)} MB libres pero se quedó sin lugar para más ARCHIVOS (inodos): quedan ${inodes.free} y una versión necesita unos ${MIN_FREE_INODES}. Hay que borrar archivos sueltos del servidor (ver docs/runbook-disk.md, «Sin inodos»).`,
                     prevRelease,
                 };
             }
@@ -139,11 +152,19 @@ export class SymlinkDeployer implements Deployer {
             await run('rm', ['-rf', releaseDir, zipPath, `${zipPath}.sig`]).catch(() => undefined);
             const raw = String(err instanceof Error ? err.message : err);
             const full = /No space left on device|ENOSPC/i.test(raw);
+            let outOfInodes = false;
+            try {
+                outOfInodes = spaceProblem(freeBytes(this.base), freeInodes(this.base), minFree) === 'inodes';
+            } catch {
+                /* sin medición */
+            }
             return {
                 ok: false,
-                message: full
-                    ? 'El disco del servidor se llenó durante la actualización. Se borró lo que quedó a medias; liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.'
-                    : `Fallo en deploy: ${raw.slice(0, 600)}`,
+                message: !full
+                    ? `Fallo en deploy: ${raw.slice(0, 600)}`
+                    : outOfInodes
+                      ? 'El servidor se quedó sin lugar para más ARCHIVOS (inodos) durante la actualización, aunque tenga espacio en GB. Se borró lo que quedó a medias; ver docs/runbook-disk.md, «Sin inodos».'
+                      : 'El disco del servidor se llenó durante la actualización. Se borró lo que quedó a medias; liberá espacio (Plataforma → Diagnóstico → Disco) y probá de nuevo.',
                 prevRelease,
             };
         }

@@ -2891,6 +2891,14 @@ cortado dejaba el zip y la carpeta a medio extraer, que el reintento sumaba.
 5. El `archive_command` del compose de producción poda el WAL de más de 3
    días; se activa recreando el contenedor de Postgres una vez
    (`docs/runbook-disk.md`), porque la auto-actualización no toca Docker.
+6. **Inodos además de bytes**: el error del reporte era `checkdir error:
+   cannot create … No space left on device` con 26 GB libres — se acabaron
+   los inodos (una versión trae ~36.000 archivos). El chequeo previo, el
+   mensaje de error y la tarjeta Disco miden también los inodos
+   (`freeInodes`/`spaceProblem`, mínimo 60.000). Límite que no se puede
+   saltar desde un release: la versión que instala es la que YA corre, así
+   que un servidor que se quedó sin inodos con una versión anterior necesita
+   liberar una vez por consola (runbook-disk §5).
 
 ---
 

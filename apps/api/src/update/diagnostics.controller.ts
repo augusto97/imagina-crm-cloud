@@ -2,7 +2,7 @@ import { Controller, Delete, Get, HttpCode, Inject, Post, UseGuards } from '@nes
 import type { DiskCleanupResult, DiskUsage, PlatformDiagnostics } from '@imagina-base/shared';
 import path from 'node:path';
 import { ENV, type Env } from '../config/env';
-import { LayoutDisk, dirBytes, freeBytes } from './disk-space';
+import { LayoutDisk, MIN_FREE_INODES, dirBytes, freeBytes, freeInodes } from './disk-space';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
@@ -47,8 +47,15 @@ export class DiagnosticsController {
         const min = this.env.UPDATER_MIN_FREE_MB * 1024 * 1024;
         const where = base || process.cwd();
         const { free, total } = freeBytes(where);
+        const ino = freeInodes(where);
+        const inodes = {
+            total_inodes: ino?.total ?? null,
+            free_inodes: ino?.free ?? null,
+            min_free_inodes: MIN_FREE_INODES,
+            low_inodes: ino !== null && ino.free < MIN_FREE_INODES,
+        };
         if (!base) {
-            return { available: false, path: where, total_bytes: total, free_bytes: free, low: free < min, min_free_bytes: min, parts: [], reclaimable_bytes: 0 };
+            return { available: false, path: where, total_bytes: total, free_bytes: free, low: free < min, min_free_bytes: min, ...inodes, parts: [], reclaimable_bytes: 0 };
         }
         const layout = new LayoutDisk(base, this.env.UPDATER_KEEP_RELEASES);
         const [releases, backups, uploads, reclaimable] = await Promise.all([
@@ -64,6 +71,7 @@ export class DiagnosticsController {
             free_bytes: free,
             low: free < min,
             min_free_bytes: min,
+            ...inodes,
             parts: [
                 { key: 'releases', label: 'Versiones de la app', bytes: releases },
                 { key: 'backups', label: 'Copias de seguridad', bytes: backups },

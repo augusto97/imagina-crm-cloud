@@ -177,6 +177,12 @@ export const diskUsageSchema = z.object({
     /** Por debajo del mínimo que pide una actualización. */
     low: z.boolean(),
     min_free_bytes: z.number(),
+    /** Inodos (cantidad de archivos); null si el sistema de archivos no tiene tope fijo. */
+    total_inodes: z.number().nullable().default(null),
+    free_inodes: z.number().nullable().default(null),
+    min_free_inodes: z.number().default(0),
+    /** Sin lugar para más archivos aunque haya GB libres. */
+    low_inodes: z.boolean().default(false),
     parts: z.array(z.object({ key: z.string(), label: z.string(), bytes: z.number().nullable() })),
     /** Lo que liberaría «Liberar espacio» ahora (estimado). */
     reclaimable_bytes: z.number(),

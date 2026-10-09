@@ -68,6 +68,35 @@ export function freeBytes(dir: string): { free: number; total: number } {
     return { free: Number(s.bavail) * Number(s.bsize), total: Number(s.blocks) * Number(s.bsize) };
 }
 
+/**
+ * Inodos: la cantidad de ARCHIVOS que el disco puede tener, aparte de los
+ * bytes. Una versión trae ~36.000 archivos (node_modules), así que un disco
+ * puede quedarse sin inodos con decenas de GB libres — y el error es el mismo
+ * «No space left on device». `null` si el sistema de archivos no tiene un
+ * tope fijo (btrfs/xfs dinámico informan 0).
+ */
+export function freeInodes(dir: string): { free: number; total: number } | null {
+    const s = statfsSync(dir);
+    const total = Number(s.files);
+    if (!total) return null;
+    return { free: Number(s.ffree), total };
+}
+
+/** Una versión trae ~36.000 archivos; con margen para la copia y lo demás. */
+export const MIN_FREE_INODES = 60_000;
+
+/** Qué falta para instalar una versión: bytes, archivos (inodos) o nada. */
+export function spaceProblem(
+    bytes: { free: number },
+    inodes: { free: number } | null,
+    minBytes: number,
+    minInodes = MIN_FREE_INODES,
+): 'bytes' | 'inodes' | null {
+    if (bytes.free < minBytes) return 'bytes';
+    if (inodes !== null && inodes.free < minInodes) return 'inodes';
+    return null;
+}
+
 export async function dirBytes(dir: string): Promise<number | null> {
     if (!existsSync(dir)) return 0;
     try {
@@ -128,8 +157,9 @@ export class LayoutDisk {
         return total;
     }
 
-    async cleanup(): Promise<{ freed: number; removed: string[] }> {
+    async cleanup(): Promise<{ freed: number; freedInodes: number; removed: string[] }> {
         const before = freeBytes(this.base).free;
+        const beforeInodes = freeInodes(this.base)?.free ?? 0;
         const p = this.plan();
         const removed: string[] = [];
         for (const r of p.releases) {
@@ -140,6 +170,10 @@ export class LayoutDisk {
             await rm(path.join(this.backupsDir, d), { force: true }).catch(() => undefined);
             removed.push(`shared/backups/${d}`);
         }
-        return { freed: Math.max(0, freeBytes(this.base).free - before), removed };
+        return {
+            freed: Math.max(0, freeBytes(this.base).free - before),
+            freedInodes: Math.max(0, (freeInodes(this.base)?.free ?? 0) - beforeInodes),
+            removed,
+        };
     }
 }

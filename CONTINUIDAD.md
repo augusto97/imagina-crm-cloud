@@ -352,14 +352,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-10-09 — **disco lleno en producción**: la actualización a v0.1.276
-  falló con «No space left on device». Se le pasaron al usuario los comandos
-  para medir y liberar (`docs/runbook-disk.md` §3); falta que confirme cuánto
-  liberó y qué era lo grande (sospecha principal: el archivo de WAL de
-  Postgres, que nada podaba). Pendiente además: recrear el contenedor de
-  Postgres una vez para activar la poda del WAL (runbook §4). v0.1.278 hace
-  que no se repita (chequeo de espacio, limpieza, «Liberar espacio» en
-  Diagnóstico) — pero para instalarla primero hay que liberar a mano.
+- 2026-10-09 — **"disco lleno" en producción = SIN INODOS**: la actualización
+  a v0.1.276 falló con `checkdir error: cannot create … No space left on
+  device`, pero el usuario mostró el panel de ServerAvatar con **26,66 GB
+  libres** (53,8 % usado) → lo que se acabó son los inodos (cantidad de
+  archivos; cada versión trae ~36.000). Preguntó si no se podía arreglar
+  sólo con una versión nueva: **no**, porque el instalador que corre es el
+  de la versión vieja y falla al descomprimir antes de ejecutar nada nuevo
+  (y el rollback de finalize.sh restaura el último dump → no sirve como
+  atajo). Se le pidió UNA vez por consola: `df -i /`, `sudo du --inodes -x
+  -d 3 / | sort -n | tail -25` y los pasos a/b/e del runbook-disk §3; queda
+  esperando que pase esos números para saber qué los llenó (sospecha:
+  carpetas de releases viejas o cortadas; si `du --inodes` señala otra cosa
+  fuera de /opt/imagina-base, es de otro lado del servidor). v0.1.278 ya
+  mide inodos (chequeo previo, mensaje y tarjeta Disco) para que no vuelva a
+  pasar a ciegas. Pendiente además: recrear el contenedor de Postgres una
+  vez para activar la poda del WAL (runbook §4).
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
@@ -463,7 +471,10 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   limpia lo que sobra (y lo que deja un deploy cortado), guarda 3 versiones y
   5 copias previas, y Plataforma → Diagnóstico muestra el disco con «Liberar
   espacio». El WAL de Postgres se poda solo tras recrear su contenedor una
-  vez (runbook-disk). Para esta vez, comandos a mano en la consola.
+  vez (runbook-disk). Para esta vez, comandos a mano en la consola. El
+  mismo release suma los INODOS (el servidor tenía 26 GB libres: lo que se
+  acabó es la cantidad de archivos) al chequeo previo, al mensaje de error y
+  a la tarjeta Disco (runbook-disk §5).
 - **2026-10-09 · v0.1.277** — Campos con IA (ADR-S41), la tercera de las
   ideas elegidas: resumir, clasificar, extraer, traducir o instrucciones
   propias a partir de otros campos (también PDF e imágenes), recalculados

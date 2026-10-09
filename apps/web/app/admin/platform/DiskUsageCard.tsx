@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { __, sprintf } from '@/lib/i18n';
+import { formatNumber } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 function size(bytes: number | null): string {
@@ -44,6 +45,10 @@ export function DiskUsageCard(): JSX.Element | null {
     const used = Math.max(0, d.total_bytes - d.free_bytes);
     const pct = d.total_bytes > 0 ? Math.round((used / d.total_bytes) * 100) : 0;
     const known = d.parts.reduce((a, p) => a + (p.bytes ?? 0), 0);
+    const inodePct =
+        d.total_inodes && d.free_inodes !== null ? Math.round(((d.total_inodes - d.free_inodes) / d.total_inodes) * 100) : null;
+    const bad = d.low || d.low_inodes;
+    const warn = pct > 85 || (inodePct !== null && inodePct > 85);
     return (
         <Card data-testid="disk-usage">
             <CardHeader>
@@ -59,8 +64,8 @@ export function DiskUsageCard(): JSX.Element | null {
                             </CardDescription>
                         </div>
                     </div>
-                    <Badge dot variant={d.low ? 'destructive' : pct > 85 ? 'warning' : 'success'} className="imcrm-shrink-0" data-testid="disk-status">
-                        {d.low ? __('Sin espacio') : pct > 85 ? __('Queda poco') : __('Bien')}
+                    <Badge dot variant={bad ? 'destructive' : warn ? 'warning' : 'success'} className="imcrm-shrink-0" data-testid="disk-status">
+                        {d.low ? __('Sin espacio') : d.low_inodes ? __('Sin lugar para archivos') : warn ? __('Queda poco') : __('Bien')}
                     </Badge>
                 </div>
             </CardHeader>
@@ -68,6 +73,18 @@ export function DiskUsageCard(): JSX.Element | null {
                 <div className="imcrm-h-2 imcrm-overflow-hidden imcrm-rounded-full imcrm-bg-muted" aria-label={sprintf(__('%d%% usado'), pct)}>
                     <div className={cn('imcrm-h-full', d.low ? 'imcrm-bg-destructive' : pct > 85 ? 'imcrm-bg-warning' : 'imcrm-bg-primary')} style={{ width: `${pct}%` }} />
                 </div>
+                {d.total_inodes !== null && d.free_inodes !== null && (
+                    <p className={cn('imcrm-text-xs', d.low_inodes ? 'imcrm-font-medium imcrm-text-destructive' : 'imcrm-text-muted-foreground')} data-testid="disk-inodes">
+                        {d.low_inodes
+                            ? sprintf(
+                                  __('Se acabó el lugar para más ARCHIVOS: quedan %1$s de %2$s (inodos), aunque haya GB libres. Una actualización necesita unos %3$s. Ver docs/runbook-disk.md, «Sin inodos».'),
+                                  formatNumber(d.free_inodes),
+                                  formatNumber(d.total_inodes),
+                                  formatNumber(d.min_free_inodes),
+                              )
+                            : sprintf(__('Archivos: %1$s%% usado (%2$s libres de %3$s).'), String(inodePct ?? 0), formatNumber(d.free_inodes), formatNumber(d.total_inodes))}
+                    </p>
+                )}
                 {d.available ? (
                     <>
                         <ul className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-1 imcrm-text-sm sm:imcrm-grid-cols-2">
