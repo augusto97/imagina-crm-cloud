@@ -6,7 +6,7 @@ export interface TriggerEvent {
     tenantId: number;
     listId: number;
     recordId: number;
-    trigger: 'record_created' | 'record_updated' | 'payment_received';
+    trigger: 'record_created' | 'record_updated' | 'payment_received' | 'form_submitted';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -16,6 +16,11 @@ export interface TriggerEvent {
      * lo que la automatización usa como `{{pago.*}}`.
      */
     payment?: Record<string, unknown>;
+    /**
+     * v0.1.275 — el formulario público que se acaba de enviar (trigger
+     * `form_submitted`): `{{formulario.nombre}}` y el filtro por formulario.
+     */
+    form?: { id: number; name: string };
 }
 
 /** v0.1.221 — la acción «Editar en lote» de una automatización, lista para el worker. */

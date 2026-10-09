@@ -1,4 +1,4 @@
-import { Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { ClipboardList, Columns3, FileText, Globe2, Paintbrush, Settings2, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -21,7 +21,8 @@ export type ListSettingsSectionId =
     | 'apariencia'
     | 'permisos'
     | 'compartir'
-    | 'documentos';
+    | 'documentos'
+    | 'formularios';
 
 export interface ListSettingsSection {
     id: ListSettingsSectionId;
@@ -85,6 +86,14 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: FileText,
         title: __('Documentos PDF'),
         description: __('Cuentas de cobro, recibos y cotizaciones con los datos de cada registro, listos para descargar o mandar por correo.'),
+    },
+    {
+        // v0.1.275 — formularios públicos que crean registros (ADR-S39).
+        id: 'formularios',
+        label: __('Formularios'),
+        icon: ClipboardList,
+        title: __('Formularios'),
+        description: __('Una página que cualquiera puede llenar —o que insertás en tu sitio— y cada respuesta llega como un registro nuevo.'),
     },
 ];
 

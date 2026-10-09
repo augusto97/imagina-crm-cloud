@@ -281,6 +281,15 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
               ].filter((t) => matches(t.label) || matches(t.tag) || matches('pdf'))
             : [];
 
+    // v0.1.275 — el formulario que creó el registro (trigger «Cuando se
+    // envía un formulario»).
+    const formTags =
+        context === 'automation'
+            ? [{ tag: 'formulario.nombre', label: __('Nombre del formulario'), hint: __('el que llenaron') }].filter(
+                  (t) => matches(t.label) || matches(t.tag) || matches(__('Formulario')),
+              )
+            : [];
+
     // v0.1.251 — el cobro en contexto: el link que creó «Crear link de pago»
     // en una acción anterior, o el pago recién recibido (trigger «Cuando se
     // recibe un pago»).
@@ -330,6 +339,7 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra =
                     <Section title={__('En palabras y fechas largas')} items={wordItems} onPick={onPick} />
                 )}
                 {pdfTags.length > 0 && <Section title={__('Último PDF generado')} items={pdfTags} onPick={onPick} />}
+                {formTags.length > 0 && <Section title={__('Formulario')} items={formTags} onPick={onPick} />}
                 {context === 'automation' && visibleBefore.length > 0 && (
                     <Section
                         title={__('Valor anterior (antes del cambio)')}

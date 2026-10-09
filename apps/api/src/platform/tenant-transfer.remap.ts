@@ -23,6 +23,8 @@ export interface IdMaps {
     view: Map<number, number>;
     /** v0.1.266 — plantillas de documentos PDF. */
     document: Map<number, number>;
+    /** v0.1.275 — formularios públicos (el disparador «Cuando se envía un formulario»). */
+    form: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -36,6 +38,7 @@ export function emptyMaps(): IdMaps {
         template: new Map(),
         view: new Map(),
         document: new Map(),
+        form: new Map(),
     };
 }
 
@@ -69,6 +72,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // imágenes subidas del diseño (logo, firma escaneada).
     document_template_id: 'document',
     file_id: 'attachment',
+    // v0.1.275 — el formulario que filtra un disparador `form_submitted`.
+    form_id: 'form',
 };
 /** Arrays de ids con nombre propio que no son de listas. */
 const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {

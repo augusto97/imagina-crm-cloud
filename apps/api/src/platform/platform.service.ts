@@ -74,6 +74,7 @@ import {
     bulkEdits,
     documentNumbers,
     documentTemplates,
+    forms,
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
@@ -359,6 +360,8 @@ export class PlatformService {
             // v0.1.266 — plantillas de documentos PDF.
             await tx.delete(documentNumbers).where(eq(documentNumbers.tenantId, id));
             await tx.delete(documentTemplates).where(eq(documentTemplates.tenantId, id));
+            // v0.1.275 — formularios públicos.
+            await tx.delete(forms).where(eq(forms.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));

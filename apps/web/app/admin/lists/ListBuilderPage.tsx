@@ -10,6 +10,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
+import { FormsPanel } from '../forms/FormsPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { DuplicateTemplatePanel } from './DuplicateTemplatePanel';
 import { DangerZonePanel, GeneralPanel } from './GeneralPanel';
@@ -230,6 +231,10 @@ export function ListBuilderPage(): JSX.Element {
                 )}
 
                 {active === 'documentos' && <DocumentTemplatesPanel listId={data.id} />}
+
+                {active === 'formularios' && (
+                    <FormsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                )}
             </div>
         </div>
     );

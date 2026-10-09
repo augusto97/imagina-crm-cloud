@@ -33,6 +33,7 @@ import type { WebhookTestResult } from '@imagina-base/shared';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
+import { useForms } from '../forms/useForms';
 
 /**
  * Editores de configuración del módulo de automatizaciones, compartidos
@@ -128,6 +129,8 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     // backend rota la URL y los sistemas externos quedan apuntando a un 404.
     // (Regenerar = mandar el config SIN token a propósito.)
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
+    // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
+    if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
     return out;
 }
 
@@ -148,6 +151,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Corre en el horario que elijas, sin un registro en particular: ideal para «Editar en lote» (subir precios cada semana, marcar vencidas cada noche), crear un registro de resumen o avisar por correo.');
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
+        case 'form_submitted':
+            return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que podés avisarle al equipo, contestarle a quien lo llenó o completar campos. Podés usar {{formulario.nombre}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones podés usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
@@ -239,6 +244,54 @@ export function TriggerConfigEditor({
 
             {triggerType === 'incoming_webhook' && (
                 <IncomingWebhookConfig config={config} onChange={onChange} fields={fields} />
+            )}
+
+            {triggerType === 'form_submitted' && <FormSubmittedConfig config={config} onChange={onChange} />}
+        </div>
+    );
+}
+
+/** v0.1.275 — elegir qué formulario dispara (o cualquiera de la lista). */
+function FormSubmittedConfig({
+    config,
+    onChange,
+}: {
+    config: TriggerConfig;
+    onChange: (next: TriggerConfig) => void;
+}): JSX.Element {
+    const listId = useAutomationListId();
+    const forms = useForms(listId);
+    const current = typeof config.form_id === 'number' ? config.form_id : 0;
+    const list = forms.data ?? [];
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="trigger-form-config">
+            <Label htmlFor="trigger-form-id">{__('Formulario')}</Label>
+            <Select
+                id="trigger-form-id"
+                value={String(current)}
+                onChange={(e) => {
+                    const id = Number(e.target.value);
+                    const next = { ...config };
+                    if (id > 0) next.form_id = id;
+                    else delete next.form_id;
+                    onChange(next);
+                }}
+            >
+                <option value="0">{__('Cualquier formulario de esta lista')}</option>
+                {list.map((f) => (
+                    <option key={f.id} value={f.id}>
+                        {f.name}
+                        {f.enabled ? '' : ` (${__('sin publicar')})`}
+                    </option>
+                ))}
+                {current > 0 && !list.some((f) => f.id === current) && !forms.isLoading && (
+                    <option value={current}>{__('Formulario eliminado')}</option>
+                )}
+            </Select>
+            {!forms.isLoading && list.length === 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('Esta lista todavía no tiene formularios: crealos en Ajustes de la lista → Formularios.')}
+                </p>
             )}
         </div>
     );
