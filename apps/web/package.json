@@ -56,7 +56,6 @@
         "react-router": "7.18.2",
         "socket.io-client": "^4.8.3",
         "tailwind-merge": "^2.5.4",
-        "tailwindcss-animate": "^1.0.7",
         "zod": "^3.25.76",
         "zustand": "^5.0.0"
     },
@@ -84,6 +83,7 @@
         "prettier": "^3.3.3",
         "prettier-plugin-tailwindcss": "^0.6.8",
         "tailwindcss": "^3.4.13",
+        "tailwindcss-animate": "^1.0.7",
         "typescript": "^5.6.3",
         "vite": "^5.4.8",
         "vitest": "^2.1.2"

@@ -7574,6 +7574,30 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         superadmin, SEC-04). 7 tests nuevos (264 front en verde) + E2E
         navegador 28/28 del correo, 15/15 del PDF y 4/4 en el celular.
 
+  - [x] **Dependencias de producción en cero, otra vez (v0.1.274, ADR-S38)**:
+        `pnpm audit --prod` daba 4 avisos (2 high) publicados después de
+        v0.1.244. (a) **`@modelcontextprotocol/sdk` 1.30 → 1.31** (el aviso es
+        del CLIENTE OAuth del SDK, que podía mandar credenciales a un servidor
+        de autorización elegido por el servidor MCP; nosotros usamos el
+        servidor, pero se sube igual). (b) **`tailwindcss-animate` pasa a
+        `devDependencies`**: es un plugin de compilación y, estando en
+        `dependencies`, arrastraba a Tailwind al árbol de producción con
+        `braces` (DoS sin parche) y `postcss-selector-parser`; el CSS del build
+        sigue trayendo las animaciones. (c) **`sprintf-js`** (vía
+        mssql→tedious) no tiene versión arreglada y tedious lo llama sólo con
+        formatos LITERALES (el DoS necesita controlar el formato) → excepción
+        por id en `pnpm.auditConfig.ignoreGhsas`, con la regla nueva de
+        ADR-S38: producción en 0, herramientas de build/test en dev, y
+        excepciones sólo sin parche, verificadas como no explotables, por id y
+        anotadas en CONTINUIDAD con la condición para sacarlas. De paso, los
+        dos pins propios de `brace-expansion` (v0.1.114) habían quedado ellos
+        mismos vulnerables (sólo ESLint/Testcontainers): 1.1.20 y 2.1.6.
+        Verificación: lint y tipos en 0, build del front con las animaciones en
+        el CSS, suite completa de la API en verde, specs de MCP/OAuth 48/48 con
+        el SDK nuevo y MCP en vivo por HTTP (initialize, las 8 herramientas de
+        lectura, `list_lists`, 401 sin token y 405 por GET). Quedan avisos sólo
+        en herramientas de desarrollo (vite/vitest exigen versión mayor).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
