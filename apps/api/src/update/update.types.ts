@@ -22,6 +22,13 @@ export interface Deployer {
     finalize(prevRelease: string | null, targetVersion: string): void;
     /** Rollback manual al release anterior (desde el panel). */
     rollback(): { ok: boolean; message: string };
+    /**
+     * v0.1.278 — Poda de versiones viejas y copias de más, al ARRANCAR. La
+     * poda de `finalize.sh` corre después del `systemctl restart`, y systemd
+     * (KillMode=control-group) mata a ese script junto con el API: nunca se
+     * borró nada y un servidor juntó 173 versiones hasta quedarse sin inodos.
+     */
+    prune?(): Promise<{ removed: string[] }>;
 }
 
 export const DEPLOYER = Symbol('DEPLOYER');

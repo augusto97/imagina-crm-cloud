@@ -2867,6 +2867,50 @@ clasificar un ticket, sacar el NIT de una factura en PDF, traducir. Es el
 Queda fuera: encadenar campos con IA, campos con IA que escriben números o
 fechas tipados, y un historial de pedidos por registro.
 
+### ADR-S13 addendum — El actualizador cuida el disco (v0.1.278)
+
+**Contexto.** En producción una actualización falló con `No space left on
+device` al descomprimir. Tres cosas llenaban el disco sin que nadie lo viera:
+una copia de la base por cada actualización guardada 30 días (con varias
+actualizaciones por día, cientos), 5 versiones con sus `node_modules`, y —lo
+más grande— el archivo de WAL de Postgres, que nada podaba (16 MB por
+segmento, hasta ~4,5 GB por día con `archive_timeout=300`). Encima un deploy
+cortado dejaba el zip y la carpeta a medio extraer, que el reintento sumaba.
+
+**Decisión.**
+1. Antes de descargar, el actualizador mira el espacio libre
+   (`UPDATER_MIN_FREE_MB`, 1024): si falta, limpia lo que sobra y, si igual
+   no alcanza, corta con cuánto hay y cuánto hace falta.
+2. Un deploy que falla borra lo que dejó (zip, firma, carpeta a medias) y
+   traduce el disco lleno a un mensaje claro.
+3. Retención: 3 versiones (antes 5) y las 5 copias previas más nuevas
+   (`BACKUP_KEEP` en `backup.sh`); las copias diarias de ADR-S20 no se tocan.
+4. La decisión de qué borrar es pura (`planCleanup`) y la usan el
+   actualizador y el botón «Liberar espacio» de Plataforma → Diagnóstico →
+   Disco (que además muestra libre/total y qué ocupa cada parte).
+5. El `archive_command` del compose de producción poda el WAL de más de 3
+   días; se activa recreando el contenedor de Postgres una vez
+   (`docs/runbook-disk.md`), porque la auto-actualización no toca Docker.
+6. **Inodos además de bytes**: el error del reporte era `checkdir error:
+   cannot create … No space left on device` con 26 GB libres — se acabaron
+   los inodos (una versión trae ~36.000 archivos). El chequeo previo, el
+   mensaje de error y la tarjeta Disco miden también los inodos
+   (`freeInodes`/`spaceProblem`, mínimo 60.000). Límite que no se puede
+   saltar desde un release: la versión que instala es la que YA corre, así
+   que un servidor que se quedó sin inodos con una versión anterior necesita
+   liberar una vez por consola (runbook-disk §5).
+7. **La causa de fondo: la poda nunca corrió.** El servidor tenía **173
+   versiones** con `UPDATER_KEEP_RELEASES=5`. `finalize.sh` poda DESPUÉS de
+   `systemctl restart`, pero systemd (KillMode=control-group, el default) mata
+   todos los procesos del servicio al reiniciarlo — también al script
+   «desacoplado» que lo pidió. Ahora la versión nueva poda AL ARRANCAR
+   (`UpdateManager` → `deployer.prune()`, en segundo plano 90 s después, con
+   el mismo `planCleanup` que nunca toca la activa). Corolario: el
+   health-check + rollback automático de `finalize.sh` tampoco llegaba a
+   correr bajo systemd; para que corra hace falta `KillMode=process` en la
+   unidad (runbook-disk §6, opcional, por consola: la auto-actualización no
+   toca systemd).
+
 ---
 
-**Versión del documento:** 1.76.0 (campos con IA — ADR-S41)
+**Versión del documento:** 1.77.0 (el actualizador cuida el disco — addendum ADR-S13)

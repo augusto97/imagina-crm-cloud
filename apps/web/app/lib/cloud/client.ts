@@ -172,6 +172,10 @@ import {
     tenantStorageStatusSchema,
     moveTenantFilesResultSchema,
     platformDiagnosticsSchema,
+    diskUsageSchema,
+    diskCleanupResultSchema,
+    type DiskUsage,
+    type DiskCleanupResult,
     platformDomainSchema,
     platformDomainsSchema,
     smtpDiagnoseInputSchema,
@@ -1232,6 +1236,13 @@ export class CloudClient {
     }
     diagnosticsClear(): Promise<void> {
         return this.request('DELETE', '/system/diagnostics', {});
+    }
+    // v0.1.278 — el disco del servidor.
+    diskUsage(): Promise<DiskUsage> {
+        return this.request('GET', '/system/diagnostics/disk', { schema: diskUsageSchema });
+    }
+    diskCleanup(): Promise<DiskCleanupResult> {
+        return this.request('POST', '/system/diagnostics/disk/cleanup', { schema: diskCleanupResultSchema });
     }
 
     // --- dominios de las empresas (v0.1.246, sólo superadmin) ---

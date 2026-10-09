@@ -12,6 +12,8 @@
 #   BACKUP_DIR              destino (default: ./backups). Arg 1 lo sobreescribe.
 #   BACKUP_GPG_RECIPIENT    si está, cifra el .dump → .dump.gpg y borra el plano.
 #   BACKUP_RETENTION_DAYS   borra backups más viejos que N días (default: 30).
+#   BACKUP_KEEP             además, deja sólo las N copias más nuevas (v0.1.278;
+#                           el actualizador manda 5: una copia por actualización).
 set -euo pipefail
 
 : "${DATABASE_URL:?Falta DATABASE_URL}"
@@ -37,3 +39,12 @@ echo "→ backup listo: $OUT ($(du -h "$OUT" | cut -f1))"
 # Retención: borra backups viejos (por mtime).
 find "$BACKUP_DIR" -name 'imagina-base-*.dump*' -type f -mtime "+$RETENTION_DAYS" -print -delete \
     | sed 's/^/→ purgado (retención): /' || true
+
+# v0.1.278 — Retención por CANTIDAD (además de por días): el actualizador
+# hace una copia en cada actualización y, con varias por día, 30 días eran
+# cientos de copias llenando el disco.
+if [[ -n "${BACKUP_KEEP:-}" && "${BACKUP_KEEP}" =~ ^[0-9]+$ && "${BACKUP_KEEP}" -gt 0 ]]; then
+    ls -1t "$BACKUP_DIR"/imagina-base-*.dump* 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while read -r f; do
+        rm -f "$f" && echo "→ purgado (cantidad): $f"
+    done
+fi

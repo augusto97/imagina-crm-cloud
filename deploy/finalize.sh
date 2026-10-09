@@ -42,7 +42,7 @@ if [ -z "${FORCE_ROLLBACK:-}" ]; then
     if wait_healthy; then
         echo "✓ release nuevo saludable"
         # Poda de releases viejos (deja los últimos N) — best-effort.
-        KEEP="${UPDATER_KEEP_RELEASES:-5}"
+        KEEP="${UPDATER_KEEP_RELEASES:-3}"
         ls -1dt "${BASE_PATH}/releases/"*/ 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -rf
         exit 0
     fi

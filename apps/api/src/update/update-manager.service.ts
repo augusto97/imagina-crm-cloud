@@ -46,6 +46,25 @@ export class UpdateManager implements OnModuleInit {
         } catch (err) {
             this.logger.warn(`Self-heal post-reinicio pospuesto (Redis no disponible): ${String(err)}`);
         }
+        this.schedulePrune();
+    }
+
+    /**
+     * v0.1.278 — Poda al arrancar, en segundo plano y un rato después (el API
+     * ya está atendiendo y el health-check del deploy ya pasó). Deja la versión
+     * activa y las anteriores que se conservan para volver atrás.
+     */
+    private schedulePrune(): void {
+        if (!this.deployer.enabled || !this.deployer.prune) return;
+        const prune = this.deployer.prune.bind(this.deployer);
+        const timer = setTimeout(() => {
+            prune()
+                .then((r) => {
+                    if (r.removed.length) this.logger.log(`Poda al arrancar: ${r.removed.length} elementos (versiones viejas, restos de actualizaciones, copias de más)`);
+                })
+                .catch((err) => this.logger.warn(`Poda al arrancar falló: ${String(err)}`));
+        }, this.env.NODE_ENV === 'test' ? 0 : 90_000);
+        timer.unref();
     }
 
     currentVersion(): string {

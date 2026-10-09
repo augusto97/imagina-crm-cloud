@@ -184,7 +184,10 @@ const envSchema = z.object({
     // `base` del layout de releases atómicos: DOS niveles arriba del app root
     // (releases/<ts>_<ver>/apps/api → base). En dev queda vacío = updater off.
     UPDATER_BASE_PATH: z.string().default(''),
-    UPDATER_KEEP_RELEASES: z.coerce.number().int().positive().default(5),
+    // v0.1.278 — 3 (antes 5): cada release trae sus node_modules.
+    UPDATER_KEEP_RELEASES: z.coerce.number().int().positive().default(3),
+    // v0.1.278 — espacio libre mínimo para empezar una actualización.
+    UPDATER_MIN_FREE_MB: z.coerce.number().int().positive().default(1024),
 
     // --- Copias de seguridad completas (v0.1.179, ADR-S20). En producción
     // ambos se derivan de UPDATER_BASE_PATH (shared/backups y current/deploy);

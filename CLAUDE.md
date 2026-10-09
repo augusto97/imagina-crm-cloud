@@ -7743,6 +7743,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         no alcanza el sandbox; la calidad de las respuestas se ve en el
         servidor.
 
+  - [x] **El actualizador cuida el disco (v0.1.278, reporte del usuario: la
+        actualización a v0.1.276 falló con «No space left on device» al
+        descomprimir)**: el servidor se llenó sin que nadie lo viera. Causas:
+        una copia de la base por actualización guardada 30 días (cientos, con
+        varias actualizaciones por día), 5 versiones con sus `node_modules`, y
+        el archivo de WAL de Postgres que nada podaba (16 MB por segmento,
+        hasta ~4,5 GB/día con `archive_timeout=300`); y un deploy cortado dejaba
+        el zip y la carpeta a medio extraer, que el reintento sumaba. Ahora:
+        (a) antes de descargar se mira el espacio libre (`UPDATER_MIN_FREE_MB`,
+        1024): si falta se limpia lo que sobra y, si igual no alcanza, se corta
+        con «quedan X MB, hacen falta Y» sin descargar nada; (b) un deploy que
+        falla borra lo que dejó y el disco lleno se explica en criollo;
+        (c) 3 versiones (antes 5) y las 5 copias previas más nuevas
+        (`BACKUP_KEEP` en `backup.sh`; las copias diarias de ADR-S20 no se
+        tocan); (d) **Plataforma → Diagnóstico → Disco**: libre/total, qué
+        ocupan versiones/copias/archivos y «Liberar espacio» (la misma
+        limpieza, decidida por la función pura `planCleanup`); (e) el
+        `archive_command` del compose de producción poda el WAL de más de 3
+        días (se activa recreando el contenedor de Postgres una vez:
+        `docs/runbook-disk.md`, con los comandos para liberar espacio a mano).
+        5 tests (plan con basura de un deploy cortado, el activo nunca se
+        borra, limpieza sobre carpetas reales que respeta uploads y snapshots,
+        el actualizador corta sin espacio antes de descargar y no deja basura
+        con un zip roto) + `archive_command` probado contra un Postgres 16 real
+        (archiva y poda, 0 fallos) + E2E navegador 8/8 de la tarjeta Disco
+        sobre un layout de releases falso. **El "disco lleno" era de
+        INODOS**: el usuario mostró 26 GB libres — se acabó la cantidad de
+        archivos (una versión trae ~36.000). El chequeo previo, el mensaje de
+        error y la tarjeta Disco miden también los inodos (`freeInodes` /
+        `spaceProblem`, mínimo 60.000; runbook-disk §5). Un servidor que ya
+        se quedó sin inodos con una versión anterior necesita liberar una vez
+        por consola: el instalador que corre es el viejo. **Causa de fondo**:
+        el servidor tenía **173 versiones** — la poda de `finalize.sh` corre
+        después de `systemctl restart`, que la mata junto con el API
+        (KillMode=control-group); ahora la versión nueva poda AL ARRANCAR
+        (`deployer.prune()` desde `UpdateManager`, 90 s después, con el mismo
+        `planCleanup`). Por la misma causa el health-check con rollback de
+        `finalize.sh` nunca corrió: `KillMode=process` opcional (runbook §6).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

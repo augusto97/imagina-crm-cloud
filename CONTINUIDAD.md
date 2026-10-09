@@ -349,9 +349,47 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.277** (campos con IA — ADR-S41), en `main`.
+versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-09 — **"disco lleno" en producción = SIN INODOS**: la actualización
+  a v0.1.276 falló con `checkdir error: cannot create … No space left on
+  device`, pero el usuario mostró el panel de ServerAvatar con **26,66 GB
+  libres** (53,8 % usado) → lo que se acabó son los inodos (cantidad de
+  archivos; cada versión trae ~36.000). Preguntó si no se podía arreglar
+  sólo con una versión nueva: **no**, porque el instalador que corre es el
+  de la versión vieja y falla al descomprimir antes de ejecutar nada nuevo
+  (y el rollback de finalize.sh restaura el último dump → no sirve como
+  atajo). Se le pidió UNA vez por consola: `df -i /`, `sudo du --inodes -x
+  -d 3 / | sort -n | tail -25` y los pasos a/b/e del runbook-disk §3; queda
+  esperando que pase esos números para saber qué los llenó (sospecha:
+  carpetas de releases viejas o cortadas; si `du --inodes` señala otra cosa
+  fuera de /opt/imagina-base, es de otro lado del servidor). v0.1.278 ya
+  mide inodos (chequeo previo, mensaje y tarjeta Disco) para que no vuelva a
+  pasar a ciegas. Pendiente además: recrear el contenedor de Postgres una
+  vez para activar la poda del WAL (runbook §4).
+  **Confirmado** (consola del usuario): `df -i /` = 3.850.240 inodos, 100 %
+  usados, y **173 carpetas de versiones** (activa 0.1.274). Causa de fondo:
+  la poda de `finalize.sh` corre después de `systemctl restart`, que la mata
+  con el API (KillMode=control-group) → nunca se borró nada. v0.1.278 poda al
+  arrancar. Se le pasaron los pasos 2-4 (zips/carpetas cortadas, dejar la
+  activa + 2, docker prune, journal); falta que confirme el `df -i` después.
+  Opcional para él: `KillMode=process` en la unidad (runbook-disk §6) para
+  que también corra el health-check con rollback de finalize.sh, que por la
+  misma causa nunca corrió.
+  **Resuelto (16:30 UTC)**: tras la limpieza quedan 4 carpetas de versiones e
+  inodos al **9 %**. Postgres se había caído por falta de inodos y el
+  `docker system prune` borró su contenedor detenido y la red (los volúmenes
+  NO: pgdata intacto, la app carga todo); se recreó con `docker compose up
+  -d`. Datos del servidor que conviene recordar: (a) **Redis es el del HOST**
+  (127.0.0.1:6379, de ServerAvatar) — el contenedor redis del compose no
+  levanta por puerto ocupado y no hace falta (health `redis: true`); (b) el
+  volumen `walarchive` NO existía (se creó recién): el contenedor viejo
+  archivaba el WAL dentro de su propia capa, que se fue con el prune → la
+  ventana de PITR arranca hoy; (c) el compose levantado es el de 0.1.274 (sin
+  la poda del WAL): tras instalar v0.1.278, recrear postgres una vez
+  (runbook-disk §4). Lección: no recomendar `docker system prune` sin mirar
+  antes `docker ps -a` — borra contenedores detenidos de la app.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
@@ -450,6 +488,17 @@ versión publicada: **v0.1.277** (campos con IA — ADR-S41), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.278** — Reporte del usuario: «Actualizar» falló con
+  «No space left on device». El actualizador ahora mira el espacio antes,
+  limpia lo que sobra (y lo que deja un deploy cortado), guarda 3 versiones y
+  5 copias previas, y Plataforma → Diagnóstico muestra el disco con «Liberar
+  espacio». El WAL de Postgres se poda solo tras recrear su contenedor una
+  vez (runbook-disk). Para esta vez, comandos a mano en la consola. El
+  mismo release suma los INODOS (el servidor tenía 26 GB libres: lo que se
+  acabó es la cantidad de archivos) al chequeo previo, al mensaje de error y
+  a la tarjeta Disco (runbook-disk §5). Y la causa de fondo: el servidor
+  tenía 173 versiones porque systemd mataba a `finalize.sh` (y su poda) al
+  reiniciar el API; ahora la versión nueva poda al arrancar (runbook §6).
 - **2026-10-09 · v0.1.277** — Campos con IA (ADR-S41), la tercera de las
   ideas elegidas: resumir, clasificar, extraer, traducir o instrucciones
   propias a partir de otros campos (también PDF e imágenes), recalculados

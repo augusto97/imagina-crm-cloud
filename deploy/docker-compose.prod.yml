@@ -15,6 +15,8 @@ services:
     # restaura a CUALQUIER instante, no sólo al último dump lógico.
     # `archive_timeout=300` fuerza el archivado aunque haya poca escritura (acota
     # el RPO a ≤5 min). El `archive_command` es idempotente (no pisa segmentos).
+    # OJO: cada segmento pesa 16 MB aunque esté casi vacío — con archivado cada
+    # 5 min son hasta ~4,5 GB por día; por eso el comando poda (ver abajo).
     command:
       - postgres
       - -c
@@ -24,7 +26,12 @@ services:
       - -c
       - archive_mode=on
       - -c
-      - archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f
+      # v0.1.278 — además poda el archivo: los segmentos de más de 3 días se
+      # borran solos (antes nada lo podaba y llenó un disco). Con un base
+      # backup diario (scripts/basebackup.sh) eso alcanza para restaurar a
+      # cualquier momento de los últimos 3 días. Cambiar a mano los minutos
+      # (4320) si se quiere otra ventana.
+      - archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f && (find /wal_archive -type f -mmin +4320 -delete || true)
       - -c
       - archive_timeout=300
       - -c
