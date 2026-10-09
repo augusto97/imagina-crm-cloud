@@ -79,7 +79,7 @@ Las herramientas `propose_*` **no escriben**. Devuelven una propuesta
 afectados, muestra). El cliente MCP se la muestra a la persona y, sólo si
 ella confirma, llama a `apply_proposal { proposal_id }`. Es el mismo
 contrato del chat de la app (donde la tarjeta tiene el botón "Aplicar");
-acá la confirmación la pide el cliente. Las propuestas duran 2 horas.
+aquí la confirmación la pide el cliente. Las propuestas duran 2 horas.
 
 Aplicar corre con los mismos services de la interfaz: ACL por lista,
 límites de plan, realtime y bitácora (`ai.apply`).
@@ -89,12 +89,12 @@ límites de plan, realtime y bitácora (`ai.apply`).
 ### Con "Autorizar" (claude.ai, Claude Desktop, celular, Claude Code, Cursor) — v0.1.184
 
 La app es **servidor OAuth 2.1** del MCP: el cliente descubre la metadata,
-se registra solo y te manda a una pantalla de Imagina Base donde elegís el
+se registra solo y te manda a una pantalla de Imagina Base donde eliges el
 workspace y el alcance. No hay nada que copiar.
 
 - **claude.ai / Claude Desktop / app móvil**: Ajustes → Conectores →
   *Agregar conector personalizado* → URL `https://<tu-dominio>/api/v1/mcp` →
-  Conectar → iniciás sesión en la app (si no la tenías abierta) → *Autorizar*.
+  Conectar → inicias sesión en la app (si no la tenías abierta) → *Autorizar*.
   (Requiere un plan de Claude que admita conectores personalizados — el
   modelo lo paga tu suscripción, no la app.)
 - **Claude Code**: `claude mcp add --transport http imagina-base
@@ -196,7 +196,7 @@ Sin token o con uno inválido/vencido/revocado → `401` con
 - Lo que devuelven las herramientas son **datos** del workspace (valores de
   registros recortados y marcados como tales), nunca instrucciones para el
   cliente.
-- El rate limit por IP del API aplica también acá.
+- El rate limit por IP del API aplica también aquí.
 
 ## Conectores (v0.1.198) y apps de la galería (v0.1.203)
 

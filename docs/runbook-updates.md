@@ -24,7 +24,7 @@
 En `shared/.env.production` (ver `deploy/.env.production.example`):
 
 ```
-PLATFORM_SUPERADMINS=vos@tu-dominio.com   # quién puede actualizar (coma-sep)
+PLATFORM_SUPERADMINS=tu-correo@tu-dominio.com   # quién puede actualizar (coma-sep)
 UPDATER_GITHUB_REPO=augusto97/imagina-crm-cloud
 UPDATER_CHANNEL=stable
 UPDATER_GITHUB_TOKEN=                       # SÓLO si el repo es privado (repo:read)
@@ -45,27 +45,27 @@ El `.sha256` sólo detecta un archivo corrupto: quien pudiera alterar un release
 también publicaría un checksum que coincide. Con firma, el servidor instala
 SOLO bundles firmados con tu clave privada.
 
-1. Generá el par de claves (una vez, en tu computadora — la privada no va al servidor):
+1. Genera el par de claves (una vez, en tu computadora — la privada no va al servidor):
    ```bash
    openssl genpkey -algorithm ed25519 -out release-signing.pem
    openssl pkey -in release-signing.pem -pubout -out release-signing.pub
    ```
-2. En GitHub → Settings → Secrets → Actions, creá `RELEASE_SIGNING_KEY` con el
+2. En GitHub → Settings → Secrets → Actions, crea `RELEASE_SIGNING_KEY` con el
    contenido de `release-signing.pem`. Desde el próximo release, el workflow
    publica también `imagina-base-<versión>.zip.sig`.
-3. En el servidor, agregá al `.env.production` la clave PÚBLICA en una sola
+3. En el servidor, agrega al `.env.production` la clave PÚBLICA en una sola
    línea — alcanza con el cuerpo, sin las líneas BEGIN/END:
    `UPDATER_PUBLIC_KEY=MCowBQYDK2VwAyEA…` (lo que queda de `release-signing.pub`
-   al sacarle la primera y la última línea), y reiniciá el servicio.
+   al sacarle la primera y la última línea), y reinicia el servicio.
 
 Desde ese momento un release sin `.sig` o con una firma que no valida se
-RECHAZA (fail-closed) y queda el motivo en el panel de Actualizaciones. Activá
+RECHAZA (fail-closed) y queda el motivo en el panel de Actualizaciones. Activa
 el paso 3 recién cuando ya hay al menos un release firmado publicado.
 
 ## Repo privado (a futuro)
 
-Cuando el repo pase a privado: creá un token de solo-lectura (fine-grained,
-`Contents: read`) y ponelo en `UPDATER_GITHUB_TOKEN`. El DETECT lo manda como
+Cuando el repo pase a privado: crea un token de solo-lectura (fine-grained,
+`Contents: read`) y ponlo en `UPDATER_GITHUB_TOKEN`. El DETECT lo manda como
 `Authorization: Bearer` y la descarga del asset usa `Accept: application/octet-stream`.
 Sin token, con repo privado, `releases/latest` da 404 y no se detecta nada.
 
@@ -96,11 +96,11 @@ POST /api/v1/system/update/rollback   # vuelve al release anterior
 
 ## Prueba de humo
 
-1. Taggeá un `vX.Y.Z` de prueba y esperá a que el workflow publique el Release.
+1. Taggea un `vX.Y.Z` de prueba y espera a que el workflow publique el Release.
 2. En el panel: *Buscar* → debe aparecer la versión disponible.
-3. *Actualizar* → seguí el estado (`queued → running → restarting → success`).
-4. Verificá `GET /system/update/status` → `current_version` = la nueva.
-5. Probá *Rollback* → vuelve a la anterior y `update_available` reaparece.
+3. *Actualizar* → sigue el estado (`queued → running → restarting → success`).
+4. Verifica `GET /system/update/status` → `current_version` = la nueva.
+5. Prueba *Rollback* → vuelve a la anterior y `update_available` reaparece.
 
 ## Disco lleno
 

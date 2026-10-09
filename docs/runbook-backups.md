@@ -58,7 +58,7 @@ TARGET_DATABASE_URL=postgres://user:pass@host:5432/imagina_base_restore \
   ./scripts/restore.sh /var/backups/imagina-base/imagina-base-XXXX.dump.gpg
 ```
 
-⚠️ Verificá dos veces el `TARGET_DATABASE_URL`: `--clean` sobrescribe objetos.
+⚠️ Verifica dos veces el `TARGET_DATABASE_URL`: `--clean` sobrescribe objetos.
 Nunca apuntes a producción salvo en un DR real y planificado.
 
 ## Restore drill (mensual)

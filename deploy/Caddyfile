@@ -4,7 +4,7 @@
 # backend NestJS. Al ser mismo origen no hay CORS y la cookie de sesión httpOnly
 # viaja sin problemas. Caddy resuelve HTTPS automáticamente (Let's Encrypt).
 #
-# Reemplazá `app.tu-dominio.com` por tu dominio real y apuntá su DNS (A/AAAA) a
+# Reemplaza `app.tu-dominio.com` por tu dominio real y apunta su DNS (A/AAAA) a
 # la IP del VPS ANTES de arrancar Caddy (necesita validar el certificado).
 #
 # ── Dominios personalizados por empresa (ADR-S17) ───────────────────────────
@@ -14,7 +14,7 @@
 # `app.tu-dominio.com`, lo registra en Ajustes → Marca, y su dominio queda
 # vivo con HTTPS sin tocar el servidor.
 #
-# Subdominios automáticos (`slug.app.tu-dominio.com`): apuntá también el DNS
+# Subdominios automáticos (`slug.app.tu-dominio.com`): apunta también el DNS
 # wildcard `*.app.tu-dominio.com` (A/AAAA) a la IP del VPS; el mismo bloque
 # on-demand los sirve (el `ask` valida el slug contra la DB).
 
@@ -97,7 +97,7 @@
     #   · Las descargas de archivos mandan `Content-Security-Policy: sandbox`.
     #   · `frame-src` (v0.1.135): sólo los proveedores que el editor de
     #     descripción sabe embeber (la lista vive en `EMBED_FRAME_HOSTS`
-    #     de packages/shared — si se agrega uno allá, va también acá).
+    #     de packages/shared — si se agrega uno allá, va también aquí).
     # Por eso el matcher excluye el API.
     @spa not path /api/* /.well-known/oauth-*
     header @spa {

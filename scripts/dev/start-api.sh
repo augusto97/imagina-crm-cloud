@@ -1,6 +1,6 @@
 #!/bin/sh
 # Arranca el API compilado (apps/api/dist) con la config de desarrollo.
-# Las variables de acá pisan las de apps/api/.env.
+# Las variables de aquí pisan las de apps/api/.env.
 . "$(dirname "$0")/env.sh"
 cd "$ROOT/apps/api"
 set -a; . ./.env; set +a

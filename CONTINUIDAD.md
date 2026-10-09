@@ -500,8 +500,9 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   correos, las páginas públicas, las plantillas y el asistente pasaron a
   tuteo neutro (ADR-S42). La regla queda fija en §1 «Cómo responderle» y en
   CLAUDE.md §6: también las respuestas en el chat van en tuteo neutro.
-  Queda: los runbooks de `docs/` siguen con voseo (son internos); pasarlos si
-  el usuario los lee.
+  Después (sin release propio, viaja en el próximo): a pedido del usuario se
+  pasaron también a español neutro las guías de `docs/`, los comentarios de
+  `deploy/` y los mensajes de los scripts de operación (`scripts/`).
 
 - **2026-10-09 · v0.1.278** — Reporte del usuario: «Actualizar» falló con
   «No space left on device». El actualizador ahora mira el espacio antes,

@@ -184,7 +184,7 @@ if [[ -n "${BACKUP_GPG_RECIPIENT:-}" ]]; then
     rm -f "$OUT"
     OUT="$OUT.gpg"
 elif [[ "$ENV_INCLUDED" == "true" ]]; then
-    echo "  ⚠ el snapshot incluye el .env con SECRETOS y NO está cifrado: guardalo como tal" >&2
+    echo "  ⚠ el snapshot incluye el .env con SECRETOS y NO está cifrado: guárdalo como tal" >&2
     chmod 600 "$OUT"
 fi
 echo "✓ snapshot listo: $OUT ($(du -h "$OUT" | cut -f1); versión $APP_VERSION, migraciones ${MIGRATIONS:-0})"

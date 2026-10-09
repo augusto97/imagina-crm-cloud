@@ -111,7 +111,7 @@ for _ in $(seq 1 120); do
 done
 
 if [[ -z "$ok" ]]; then
-    echo "⚠️  el recovery no promovió en el tiempo esperado — revisá los logs:" >&2
+    echo "⚠️  el recovery no promovió en el tiempo esperado — revisa los logs:" >&2
     echo "    docker logs $RESTORE_CONTAINER" >&2
     exit 1
 fi
@@ -125,7 +125,7 @@ Siguiente paso (verificación antes de promover a producción):
   docker exec -it $RESTORE_CONTAINER psql -U postgres -c 'SELECT count(*) FROM users;'
 
 El cluster restaurado vive en:  $DATA_ABS
-El contenedor de verificación:  $RESTORE_CONTAINER  (borralo con: docker rm -f $RESTORE_CONTAINER)
-Para promover: apuntá el volumen pgdata de producción a este data-dir (con el
+El contenedor de verificación:  $RESTORE_CONTAINER  (bórralo con: docker rm -f $RESTORE_CONTAINER)
+Para promover: apunta el volumen pgdata de producción a este data-dir (con el
 API detenido) — ver docs/runbook-pitr.md.
 EOF

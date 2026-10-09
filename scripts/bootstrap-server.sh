@@ -60,12 +60,12 @@ PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*'
 [[ -n "$PARTS" ]] || { echo "✗ no es un snapshot de Imagina Base" >&2; exit 1; }
 SNAP_VERSION="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).app_version||"")' "$PARTS/manifest.json")"
 VERSION="${VERSION:-$SNAP_VERSION}"
-[[ -n "$VERSION" && "$VERSION" != "dev" ]] || { echo "✗ el snapshot no trae versión (dev): pasá --version x.y.z" >&2; exit 1; }
+[[ -n "$VERSION" && "$VERSION" != "dev" ]] || { echo "✗ el snapshot no trae versión (dev): pasa --version x.y.z" >&2; exit 1; }
 ENV_FILE="$BASE_PATH/shared/.env.production"
 if [[ ! -f "$ENV_FILE" ]]; then
     [[ -f "$PARTS/env.production" ]] || { echo "✗ el snapshot no incluye env y no existe $ENV_FILE" >&2; exit 1; }
     cp "$PARTS/env.production" "$ENV_FILE"; chmod 600 "$ENV_FILE"
-    echo "→ env instalado en $ENV_FILE (revisá dominio/URLs si cambian en este servidor)"
+    echo "→ env instalado en $ENV_FILE (revisa dominio/URLs si cambian en este servidor)"
 fi
 echo "→ snapshot versión $SNAP_VERSION → se instala el bundle $VERSION"
 
@@ -106,6 +106,6 @@ else
 ✓ datos restaurados. Falta el servicio y el proxy (una sola vez por servidor):
    sudo cp $REL/deploy/imagina-api.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now imagina-api
    Caddy/nginx: ver docs/runbook-deploy.md §6 (o --install-service para el servicio).
-   Después apuntá el DNS al servidor nuevo.
+   Después apunta el DNS al servidor nuevo.
 EOF
 fi

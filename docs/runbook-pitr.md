@@ -96,19 +96,19 @@ privada junto a los backups.
 ### 3. Restore a un instante (DR)
 
 ```bash
-# Traé el base backup + el WAL desde off-site primero, luego:
+# Trae el base backup + el WAL desde off-site primero, luego:
 WAL_ARCHIVE_DIR=/restore/wal \
   ./scripts/pitr-restore.sh /restore/base-20260710T030000Z /srv/pg-restore \
       --target-time "2026-07-10 14:29:55+00"
 ```
 
 - Sin `--target-time` → replay hasta el **final** del WAL disponible (máxima
-  recuperación posible ante un desastre "recuperá todo lo que haya").
+  recuperación posible ante un desastre "recupera todo lo que haya").
 - Con `--target-time` → replay hasta ESE instante (p.ej. un segundo **antes**
   del `DROP TABLE` accidental) y **promote**.
 
 El script **no toca el `pgdata` de producción**: restaura en un data-dir NUEVO
-y levanta un contenedor efímero para el replay. Verificá ahí antes de promover:
+y levanta un contenedor efímero para el replay. Verifica ahí antes de promover:
 
 ```bash
 docker exec -it imagina-pitr-restore psql -U postgres -c '\dt'
@@ -119,19 +119,19 @@ docker exec -it imagina-pitr-restore psql -U postgres -c 'SELECT count(*) FROM u
 
 Una vez verificado, con el **API detenido** (`systemctl stop imagina-api`):
 
-1. `docker rm -f imagina-pitr-restore` (soltá el data-dir restaurado).
-2. Respaldá el pgdata viejo y apuntá el volumen `pgdata` al data-dir
+1. `docker rm -f imagina-pitr-restore` (suelta el data-dir restaurado).
+2. Respalda el pgdata viejo y apunta el volumen `pgdata` al data-dir
    restaurado (o `docker cp`/`rsync` el contenido), luego
    `docker compose -f deploy/docker-compose.prod.yml up -d postgres`.
 3. Post-restauración (igual que backups): correr migraciones pendientes
    (`pnpm --filter @imagina-base/api db:migrate`), `GET /health/ready` → 200,
    revisar `/metrics`, confirmar que el worker re-sembró los schedulers de
    BullMQ (viven en Redis, no en el WAL).
-4. Reanudá el API (`systemctl start imagina-api`).
+4. Reanuda el API (`systemctl start imagina-api`).
 
 > Tras promover, el `walarchive` viejo contiene WAL posterior al punto de
 > recuperación (la "línea de tiempo" anterior). Postgres arranca una timeline
-> nueva; archivá/rotá el WAL viejo para no mezclar timelines en un restore
+> nueva; archiva/rota el WAL viejo para no mezclar timelines en un restore
 > futuro.
 
 ## Drill (mensual)

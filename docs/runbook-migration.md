@@ -17,7 +17,7 @@
 | `db.dump` | `pg_dump` formato custom, **con** privilegios (los GRANT al rol `imagina_app` viajan) |
 | `uploads.tar.gz` | `shared/uploads` (storage local). Con `STORAGE_DRIVER=s3` no viaja: los bytes ya viven en el bucket |
 | `redis-platform.json` | claves `platform:*` de Redis (SMTP de plataforma, ajustes de copias). Sesiones y colas NO (efímeras) |
-| `env.production` | el `.env` del servidor. **Contiene secretos**: guardá el snapshot como tal o cifralo (`BACKUP_GPG_RECIPIENT`) |
+| `env.production` | el `.env` del servidor. **Contiene secretos**: guarda el snapshot como tal o cífralo (`BACKUP_GPG_RECIPIENT`) |
 | `checksums.sha256` | se verifica antes de restaurar |
 
 Los tres scripts viajan en cada release (`current/deploy/`) y en el repo (`scripts/`):
@@ -32,7 +32,7 @@ El superadmin puede, sin SSH:
 - **Copias automáticas**: todos los días a la hora UTC elegida, conservando las
   N más nuevas (tick horario; si el servidor estaba apagado a esa hora, sale
   en el próximo tick del día).
-- **Descargar** cualquier copia (para llevarla fuera del servidor — hacelo:
+- **Descargar** cualquier copia (para llevarla fuera del servidor — hazlo:
   una copia en el mismo disco que la app no cubre la pérdida del servidor).
 - **Restaurar** una copia (escribiendo `RESTAURAR`): detiene el API, guarda una
   copia previa de la base actual (`pre-restore-<ts>.dump`), reemplaza base +
@@ -62,9 +62,9 @@ pendientes → `systemctl start` → health-check.
 **Versiones.** Un snapshot MÁS VIEJO que el código instalado es normal: las
 migraciones que faltan se aplican al final. Un snapshot MÁS NUEVO que el
 código se rechaza (el esquema tendría migraciones que ese código no conoce):
-primero actualizá el código (Plataforma → Actualizaciones, o rollback al
-release correcto) y después restaurá. `--force-version` sólo si sabés lo que
-hacés.
+primero actualiza el código (Plataforma → Actualizaciones, o rollback al
+release correcto) y después restaura. `--force-version` sólo si sabes lo que
+haces.
 
 **Deshacer el restore**: `TARGET_DATABASE_URL=$DATABASE_URL ./restore.sh shared/backups/pre-restore-<ts>.dump`
 (+ mover `uploads.pre-restore-<ts>` de vuelta).
@@ -81,7 +81,7 @@ scp /opt/imagina-base/shared/backups/imagina-snapshot-<ts>-v<ver>.tar nuevo:/tmp
 En el servidor **nuevo** (Node 22, Docker, `unzip`, `curl`; Postgres + Redis
 levantados con `deploy/docker-compose.prod.yml` y el MISMO `.env` — el
 snapshot lo trae, `bootstrap-server.sh` lo instala en `shared/.env.production`;
-si cambian dominio o URLs, editalo después):
+si cambian dominio o URLs, edítalo después):
 
 ```bash
 mkdir -p /opt/imagina-base && cd /opt/imagina-base
@@ -98,13 +98,13 @@ BASE_PATH=/opt/imagina-base ./bootstrap-server.sh --snapshot /tmp/imagina-snapsh
 
 > `bootstrap-server.sh` está en el release (`current/deploy/`) y en el repo
 > (`scripts/`); usa el `snapshot-restore.sh` y el `redis-kv.mjs` que estén
-> **junto a él**, así que copiá los tres juntos. Repo privado:
+> **junto a él**, así que copia los tres juntos. Repo privado:
 > `UPDATER_GITHUB_TOKEN=...`. Otra versión: `--version x.y.z` (nunca más vieja
 > que la del snapshot).
 >
 > Este escenario se ensayó completo en v0.1.180 (snapshot → servidor limpio →
 > bundle real de GitHub → restore → API arriba con los mismos datos). Antes de
-> una migración de verdad, hacé el mismo ensayo en una VM descartable con TU
+> una migración de verdad, haz el mismo ensayo en una VM descartable con TU
 > snapshot: es la única forma de saber que tu `.env` y tus datos pasan.
 
 Después: Caddy/nginx (`docs/runbook-deploy.md` §6, una vez por servidor),
@@ -113,8 +113,8 @@ snapshot lleva los mismos secretos, las sesiones del portal, las URLs
 firmadas y los SMTP/2FA siguen funcionando; los usuarios del admin vuelven a
 iniciar sesión (las sesiones viven en Redis y son efímeras a propósito).
 
-Con `STORAGE_DRIVER=s3` los archivos no viajan en el snapshot: apuntá el
-servidor nuevo al mismo bucket (o replicalo).
+Con `STORAGE_DRIVER=s3` los archivos no viajan en el snapshot: apunta el
+servidor nuevo al mismo bucket (o replícalo).
 
 ## Escenario 3 — Migrar UNA empresa (tenant) a otra instancia
 
@@ -122,19 +122,19 @@ Para partir un servidor en dos, venderle una empresa a otro operador o sacar a
 un cliente de la nube compartida a la suya. Todo desde **Plataforma → Migrar
 empresas** (superadmin). ADR-S23.
 
-1. **En el servidor de ORIGEN**: elegí la empresa y tocá **Exportar**. Deja un
+1. **En el servidor de ORIGEN**: elige la empresa y toca **Exportar**. Deja un
    `imagina-tenant-<slug>-<fecha>.tar` con sus listas, campos, registros
    (incluidas subtareas y descripciones), vistas, tableros, automatizaciones,
-   comentarios, actividad, archivos subidos y miembros. Descargalo.
+   comentarios, actividad, archivos subidos y miembros. Descárgalo.
 2. **En el servidor de DESTINO**: **Subir archivo (.tar)**, después
-   **Importar acá**. Podés cambiarle el nombre y el identificador; si el
+   **Importar aquí**. Puedes cambiarle el nombre y el identificador; si el
    identificador ya está ocupado se usa el siguiente libre (`acme` → `acme-2`).
-3. **Revisá los avisos del import.** Son acciones pendientes, no ruido:
+3. **Revisa los avisos del import.** Son acciones pendientes, no ruido:
    - El **enlace público** de cada lista es nuevo → hay que volver a repartirlo.
-   - La **URL de los webhooks entrantes** es nueva → actualizá el sistema que
+   - La **URL de los webhooks entrantes** es nueva → actualiza el sistema que
      los llama.
    - El **dominio propio** no viaja (es único global y apunta al servidor
-     anterior): configuralo en Ajustes → Marca y movele el DNS.
+     anterior): configúralo en Ajustes → Marca y muévele el DNS.
    - Si el destino tiene otra `SECRETS_KEY`, **no viajaron** la contraseña
      SMTP, la clave de IA, las credenciales de los conectores ni los segundos
      factores: hay que volver a cargarlos.
@@ -144,7 +144,7 @@ empresas** (superadmin). ADR-S23.
    abiertas no viajan**: todos vuelven a iniciar sesión.
 5. **La empresa de origen queda intacta.** Migrar es COPIAR: si algo sale mal,
    el cliente sigue operando donde estaba. Recién cuando verificaste el destino
-   (entrar, ver listas y registros, descargar un adjunto) dás de baja la
+   (entrar, ver listas y registros, descargar un adjunto) das de baja la
    original desde Plataforma → Empresas.
 
 > Con `STORAGE_DRIVER=s3` los bytes de los adjuntos igual viajan DENTRO del
