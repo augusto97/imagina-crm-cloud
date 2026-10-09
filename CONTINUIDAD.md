@@ -390,6 +390,9 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   la poda del WAL): tras instalar v0.1.278, recrear postgres una vez
   (runbook-disk §4). Lección: no recomendar `docker system prune` sin mirar
   antes `docker ps -a` — borra contenedores detenidos de la app.
+  **CERRADO**: el usuario instaló v0.1.278 desde el panel y recreó postgres
+  (poda del WAL activa). Queda sólo lo opcional: `KillMode=process` en la
+  unidad systemd (runbook-disk §6), sin pedir — ofrecido, no aplicado.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
