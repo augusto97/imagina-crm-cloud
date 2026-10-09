@@ -126,7 +126,7 @@ export function NotificationBell(): JSX.Element {
                                 <Bell className="imcrm-h-6 imcrm-w-6 imcrm-text-muted-foreground" />
                                 <p className="imcrm-text-sm imcrm-font-medium">{onlyUnread ? __('Estás al día') : __('Todavía no hay avisos')}</p>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    {__('Te avisamos cuando te mencionen, te asignen un registro o cambie algo que seguís.')}
+                                    {__('Te avisamos cuando te mencionen, te asignen un registro o cambie algo que sigues.')}
                                 </p>
                             </div>
                         ) : (

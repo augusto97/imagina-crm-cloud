@@ -6,7 +6,7 @@ import type { FieldEntity } from '@/types/field';
  *
  * El backend marca `is_primary` en UN campo por lista: el elegido en
  * `settings.title_field_id` o, si la lista no eligió ninguno, el primer
- * campo de texto (ver `resolveTitleFieldId` en `packages/shared`). Acá sólo
+ * campo de texto (ver `resolveTitleFieldId` en `packages/shared`). Aquí sólo
  * se lee esa marca, con el mismo fallback por si la respuesta viene de una
  * versión anterior del API.
  */

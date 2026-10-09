@@ -27,7 +27,7 @@ export class UpdateManager implements OnModuleInit {
     ) {}
 
     /**
-     * Al bootear: si veníamos de un reinicio de update, resolvé el resultado.
+     * Al bootear: si veníamos de un reinicio de update, resuelve el resultado.
      * Best-effort: si Redis no está disponible NO debe abortar el arranque del
      * API (si no, un corte de Redis dejaría el server sin escuchar). La
      * reconciliación también ocurre de forma perezosa en `run()`.

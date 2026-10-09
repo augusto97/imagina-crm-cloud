@@ -7,7 +7,7 @@
  * Por qué generar y no importar componentes: `@phosphor-icons/react` empaqueta
  * los SEIS pesos de cada icono en cada módulo (~3-8 KB por icono) y el
  * catálogo va en el bundle principal (el panel los necesita al bootear). Con
- * los `d` de los SVG fill extraídos acá, 240 iconos pesan ~30 KB gz y no hay
+ * los `d` de los SVG fill extraídos aquí, 240 iconos pesan ~30 KB gz y no hay
  * dependencia en runtime. Se corre a mano:
  *
  *   node scripts/gen-list-icons.mjs

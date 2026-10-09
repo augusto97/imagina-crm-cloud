@@ -3,7 +3,7 @@ import { parseUtcDate } from './utcDate';
 /**
  * Formato regional por workspace (v0.1.104): separadores de número, orden
  * de fecha y reloj 12/24 h. La config vive en `tenants.settings.format`,
- * viaja dentro del branding (que todo miembro trae al bootear) y acá se
+ * viaja dentro del branding (que todo miembro trae al bootear) y aquí se
  * mantiene como estado de módulo: los helpers de formateo son funciones
  * puras llamadas en render (renderCellValue, agregados, widgets) donde no
  * hay hooks disponibles. `useBrandingData` la setea apenas llega.

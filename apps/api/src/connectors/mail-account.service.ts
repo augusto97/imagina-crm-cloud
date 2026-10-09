@@ -138,7 +138,7 @@ export class MailAccountService implements TenantMailAccountSender {
                 sent_today: await this.sentToday(tenantId),
                 problem: conn
                     ? conn.problem
-                    : 'La cuenta elegida ya no existe: los correos de la empresa no están saliendo. Elegí otra o volvé al correo de la plataforma.',
+                    : 'La cuenta elegida ya no existe: los correos de la empresa no están saliendo. Elige otra o vuelve al correo de la plataforma.',
             };
         }
         return {
@@ -167,7 +167,7 @@ export class MailAccountService implements TenantMailAccountSender {
         if (conn.visibility !== 'workspace') {
             throw new BadRequestException({
                 code: 'mail_account_private',
-                message: `«${conn.name}» es una conexión privada. Para el correo de la empresa usá una conexión del equipo (visible para los demás administradores).`,
+                message: `«${conn.name}» es una conexión privada. Para el correo de la empresa usa una conexión del equipo (visible para los demás administradores).`,
                 data: { status: 400 },
             });
         }

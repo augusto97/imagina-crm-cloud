@@ -5,7 +5,7 @@ import { idSchema, isoDateTimeSchema } from './common';
  * Conectores / integraciones (v0.1.196, ADR-S22) — fase 1.
  *
  * Una CONEXIÓN es la credencial de un servicio externo guardada UNA vez y
- * referenciada por ID desde donde se use. Hasta acá el secreto de firma y las
+ * referenciada por ID desde donde se use. Hasta aquí el secreto de firma y las
  * cabeceras de autorización de un webhook vivían en texto plano dentro de
  * `action.config` de CADA automatización: cinco automatizaciones contra el
  * mismo gateway eran cinco copias de la misma clave, rotar era editarlas a
@@ -90,7 +90,7 @@ export type ConnectorPair = z.infer<typeof connectorPairSchema>;
 // --- OAuth 2.0 como CLIENTE (v0.1.199, fase 3) --------------------------
 
 /**
- * Hasta acá toda credencial era un secreto ESTÁTICO que alguien pegaba. Para
+ * Hasta aquí toda credencial era un secreto ESTÁTICO que alguien pegaba. Para
  * Google, Slack, Microsoft o HubSpot eso no existe: la empresa **autoriza** la
  * app una vez y el servicio entrega un token que caduca y se renueva solo.
  *
@@ -292,7 +292,7 @@ const actionKeySchema = z
     .trim()
     .min(1)
     .max(60)
-    .regex(/^[a-z][a-z0-9_]*$/, 'Usá minúsculas, números y guion bajo');
+    .regex(/^[a-z][a-z0-9_]*$/, 'Usa minúsculas, números y guion bajo');
 
 export const CONNECTOR_ACTION_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export const connectorActionMethodSchema = z.enum(CONNECTOR_ACTION_METHODS);

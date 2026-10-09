@@ -67,7 +67,7 @@ export class PublicPageController {
 
 /**
  * Config ADMIN de la publicación de una lista. Solo admin (`manage_lists`).
- * Vive acá (no en ListsController) para evitar dependencia circular: el
+ * Vive aquí (no en ListsController) para evitar dependencia circular: el
  * PublicListsService ya depende de ListsService.
  */
 @Controller('lists')

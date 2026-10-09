@@ -31,7 +31,7 @@ export interface ListSettingsSection {
     icon: LucideIcon;
     /** Título de la sección (encabezado del contenido). */
     title: string;
-    /** Una línea en lenguaje humano: qué se hace acá. */
+    /** Una línea en lenguaje humano: qué se hace aquí. */
     description: string;
 }
 
@@ -41,7 +41,7 @@ const CAMPOS: ListSettingsSection = {
     icon: Columns3,
     title: __('Campos'),
     description: __(
-        'La información que guarda cada registro. Arrastrá para cambiar el orden en que aparecen.',
+        'La información que guarda cada registro. Arrastra para cambiar el orden en que aparecen.',
     ),
 };
 
@@ -67,7 +67,7 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: ShieldCheck,
         title: __('Quién puede hacer qué'),
         description: __(
-            'Elegí el nivel de acceso de cada rol a los registros de esta lista.',
+            'Elige el nivel de acceso de cada rol a los registros de esta lista.',
         ),
     },
     {
@@ -76,7 +76,7 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         icon: Globe2,
         title: __('Compartir con gente de afuera'),
         description: __(
-            'Dale a cada cliente su portal privado, o publicá la lista en una página que cualquiera pueda ver.',
+            'Dale a cada cliente su portal privado, o publica la lista en una página que cualquiera pueda ver.',
         ),
     },
     {
@@ -93,7 +93,7 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         label: __('Formularios'),
         icon: ClipboardList,
         title: __('Formularios'),
-        description: __('Una página que cualquiera puede llenar —o que insertás en tu sitio— y cada respuesta llega como un registro nuevo.'),
+        description: __('Una página que cualquiera puede llenar —o que insertas en tu sitio— y cada respuesta llega como un registro nuevo.'),
     },
 ];
 

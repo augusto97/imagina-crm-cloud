@@ -156,7 +156,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                         </CardTitle>
                         <CardDescription>
                             {__(
-                                'Publicá la lista en una dirección que cualquiera puede abrir, sin entrar a la app. Solo se muestran los campos que marques.',
+                                'Publica la lista en una dirección que cualquiera puede abrir, sin entrar a la app. Solo se muestran los campos que marques.',
                             )}
                         </CardDescription>
                     </div>
@@ -246,7 +246,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                                         {__('Qué campos se muestran')}
                                     </span>
                                     <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Lo que no marques acá nunca sale de la app.')}
+                                        {__('Lo que no marques aquí nunca sale de la app.')}
                                     </span>
                                 </div>
                                 <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
@@ -381,7 +381,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                             />
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__(
-                                    'Un dominio por línea. Si lo dejás vacío, cualquier web puede insertar la lista. El enlace directo funciona igual en los dos casos.',
+                                    'Un dominio por línea. Si lo dejas vacío, cualquier web puede insertar la lista. El enlace directo funciona igual en los dos casos.',
                                 )}
                             </p>
                         </div>
@@ -397,7 +397,7 @@ export function PublicVisibilityPanel({ listId }: Props): JSX.Element {
                 <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-3">
                     {enabled && dirty && (
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Guardá para generar o actualizar el enlace.')}
+                            {__('Guarda para generar o actualizar el enlace.')}
                         </p>
                     )}
                     <Button onClick={() => void handleSave()} disabled={!dirty || update.isPending}>

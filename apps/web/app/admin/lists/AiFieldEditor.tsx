@@ -19,7 +19,7 @@ const TASKS: Array<{ key: AiFieldTask; label: string; hint: string }> = [
     { key: 'classify', label: 'Clasificar', hint: 'Elige UNA de las opciones que le des (prioridad, tema, sentimiento…).' },
     { key: 'extract', label: 'Extraer un dato', hint: 'Saca un dato puntual: el NIT de una factura, la ciudad de una dirección…' },
     { key: 'translate', label: 'Traducir', hint: 'Traduce el texto de las fuentes a otro idioma.' },
-    { key: 'custom', label: 'Personalizado', hint: 'Escribí lo que querés que haga con las fuentes.' },
+    { key: 'custom', label: 'Personalizado', hint: 'Escribe lo que quieres que haga con las fuentes.' },
 ];
 
 const LANGUAGES = ['inglés', 'español', 'portugués', 'francés', 'alemán', 'italiano'];
@@ -164,8 +164,8 @@ export function AiFieldEditor({
                             task === 'extract'
                                 ? __('Ej.: el número de NIT del cliente')
                                 : task === 'custom'
-                                  ? __('Ej.: escribí un mensaje de bienvenida corto para este cliente')
-                                  : __('Ej.: mencioná siempre el monto y la fecha')
+                                  ? __('Ej.: escribe un mensaje de bienvenida corto para este cliente')
+                                  : __('Ej.: menciona siempre el monto y la fecha')
                         }
                         maxLength={2000}
                         data-testid="ai-field-prompt"

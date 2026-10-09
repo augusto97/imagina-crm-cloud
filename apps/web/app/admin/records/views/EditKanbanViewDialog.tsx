@@ -185,7 +185,7 @@ export function EditKanbanViewDialog({
                             </select>
                             {groupByCandidates.length === 0 && (
                                 <p className="imcrm-text-[11px] imcrm-text-warning">
-                                    {__('Necesitás un campo tipo "Select" para agrupar.')}
+                                    {__('Necesitas un campo tipo "Select" para agrupar.')}
                                 </p>
                             )}
                         </div>

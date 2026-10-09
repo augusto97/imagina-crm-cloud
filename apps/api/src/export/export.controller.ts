@@ -70,7 +70,7 @@ export class ExportController {
         if (!roleHasCapability(req.tenant!.role, 'manage_lists')) {
             throw new ForbiddenException({
                 code: 'export_json_requires_manage_lists',
-                message: 'El export completo (JSON) es para quien administra listas; exportá en CSV',
+                message: 'El export completo (JSON) es para quien administra listas; exporta en CSV',
                 data: { status: 403 },
             });
         }
@@ -78,7 +78,7 @@ export class ExportController {
             'content-type': 'application/json; charset=utf-8',
             'content-disposition': 'attachment; filename="export.json"',
         });
-        // `new Date()` acá es válido (código de app, no workflow script).
+        // `new Date()` aquí es válido (código de app, no workflow script).
         await this.exportService.streamExport(
             req.tenant!.tenantId,
             list,

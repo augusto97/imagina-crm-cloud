@@ -118,7 +118,7 @@ export const updateTenantSchema = z
             v.status !== undefined ||
             v.archived !== undefined ||
             v.subscription_ends_at !== undefined,
-        { message: 'Indicá al menos un campo a cambiar' },
+        { message: 'Indica al menos un campo a cambiar' },
     );
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
 
@@ -160,7 +160,7 @@ export const updatePlatformUserSchema = z
         disabled: z.boolean().optional(),
     })
     .refine((v) => v.name !== undefined || v.email !== undefined || v.disabled !== undefined, {
-        message: 'Indicá al menos un campo a cambiar',
+        message: 'Indica al menos un campo a cambiar',
     });
 export type UpdatePlatformUserInput = z.infer<typeof updatePlatformUserSchema>;
 
@@ -241,7 +241,7 @@ export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
 export const impersonateSchema = z.object({ user_id: idSchema });
 export type ImpersonateInput = z.infer<typeof impersonateSchema>;
 
-/** Resultado del alta de impersonación (el token va por cookie, no acá). */
+/** Resultado del alta de impersonación (el token va por cookie, no aquí). */
 export interface ImpersonateResult {
     target: { id: number; name: string; email: string };
 }

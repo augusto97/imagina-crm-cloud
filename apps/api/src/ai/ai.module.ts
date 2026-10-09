@@ -36,7 +36,7 @@ import { StructureTools } from './tools/structure-tools';
  * si tiene clave propia) sin que sus módulos tengan que importar éste.
  *
  * El registro de herramientas se arma UNA vez al bootear: las tools de
- * estructura (fase 1) se registran acá; las de datos (fase 2) y el
+ * estructura (fase 1) se registran aquí; las de datos (fase 2) y el
  * servidor MCP (fase 3) se suman al mismo registro.
  */
 @Global()

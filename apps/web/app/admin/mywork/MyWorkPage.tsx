@@ -54,7 +54,7 @@ export function MyWorkPage(): JSX.Element {
                         {__('Mi trabajo')}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Lo que tenés asignado en todas las listas, tus recordatorios y lo que seguís.')}
+                        {__('Lo que tienes asignado en todas las listas, tus recordatorios y lo que sigues.')}
                     </p>
                 </div>
                 <Link to="/settings?s=avisos" className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground">
@@ -101,11 +101,11 @@ export function MyWorkPage(): JSX.Element {
                 counts.assigned === 0 ? (
                     <Empty
                         icon={ListChecks}
-                        title={__('No tenés nada asignado')}
+                        title={__('No tienes nada asignado')}
                         text={
                             (work.data?.lists_with_assignee ?? 0) === 0
                                 ? __('Para asignar registros, una lista necesita un campo de tipo Persona (por ejemplo «Responsable»).')
-                                : __('Cuando alguien te ponga como responsable de un registro, aparece acá.')
+                                : __('Cuando alguien te ponga como responsable de un registro, aparece aquí.')
                         }
                     />
                 ) : (
@@ -144,8 +144,8 @@ export function MyWorkPage(): JSX.Element {
             ) : counts.following === 0 ? (
                 <Empty
                     icon={Eye}
-                    title={__('No seguís ningún registro')}
-                    text={__('Seguís automáticamente lo que creás, comentás o te asignan. Desde la ficha de un registro también podés tocar «Seguir».')}
+                    title={__('No sigues ningún registro')}
+                    text={__('Sigues automáticamente lo que creas, comentas o te asignan. Desde la ficha de un registro también puedes tocar «Seguir».')}
                 />
             ) : (
                 <Card>
@@ -241,8 +241,8 @@ function RemindersTab({ reminders }: { reminders: ReminderDto[] }): JSX.Element 
             {reminders.length === 0 ? (
                 <Empty
                     icon={AlarmClock}
-                    title={__('No tenés recordatorios')}
-                    text={__('Creá uno acá o desde la ficha de un registro con «Recordarme». Te llega a la bandeja (y por correo, si lo tenés encendido).')}
+                    title={__('No tienes recordatorios')}
+                    text={__('Crea uno aquí o desde la ficha de un registro con «Recordarme». Te llega a la bandeja (y por correo, si lo tienes encendido).')}
                 />
             ) : (
                 <Card>

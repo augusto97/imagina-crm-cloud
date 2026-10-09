@@ -74,7 +74,7 @@ const MIME: Record<WebhookContentType, string> = {
  * v0.1.196 — `connection` son las partes YA resueltas de un conector (base
  * URL, cabeceras con la credencial inyectada, query fija y secreto de firma).
  * Llega como argumento porque esta función es pura y síncrona a propósito:
- * descifrar acá adentro obligaría a hacer I/O y el probador de la UI dejaría
+ * descifrar aquí adentro obligaría a hacer I/O y el probador de la UI dejaría
  * de armar exactamente la misma petición que el motor.
  */
 export function buildWebhookRequest(
@@ -159,7 +159,7 @@ export function buildWebhookRequest(
     }
 
     // Firma HMAC del cuerpo (opcional): el receptor puede verificar que el
-    // pedido salió de acá y que nadie lo tocó en el camino. El secreto de la
+    // pedido salió de aquí y que nadie lo tocó en el camino. El secreto de la
     // CONEXIÓN manda sobre el escrito en la acción: después de convertir, el
     // inline ya no existe, y mientras convivan gana el que está cifrado.
     const signing = connection?.signingSecret ?? (cfg.secret ? String(cfg.secret) : '');

@@ -120,7 +120,7 @@ export function labelResolverFor(
  * Aplica una cadena de modificadores (`|+1m|-1d`) a un valor fecha
  * `YYYY-MM-DD` (o datetime `YYYY-MM-DD ...` — se preserva la cola). Si el
  * valor no parsea como fecha, se devuelve intacto. Los modificadores que
- * no son de fecha (`label`, `value`) se ignoran acá.
+ * no son de fecha (`label`, `value`) se ignoran aquí.
  */
 export function applyDateModifiers(value: string, mods: string): string {
     const m = /^(\d{4})-(\d{2})-(\d{2})(.*)$/.exec(value);

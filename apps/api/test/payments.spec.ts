@@ -567,9 +567,9 @@ describe('PaymentsService (Postgres real)', () => {
         expect(t.paidUntil!.getTime()).toBe(addMonthsClamped(future, 1).getTime());
 
         // Con una activa, abrir otra se rechaza (hay que cancelar primero).
-        await expect(svc.createCheckout(tA, 'a@b.co', { plan: 'starter', provider: 'mercadopago', mode: 'subscription', months: 1 })).rejects.toThrow(/cancelala primero/);
+        await expect(svc.createCheckout(tA, 'a@b.co', { plan: 'starter', provider: 'mercadopago', mode: 'subscription', months: 1 })).rejects.toThrow(/cancélala primero/);
 
-        // Cancelar: en el proveedor y acá; lo pagado se conserva.
+        // Cancelar: en el proveedor y aquí; lo pagado se conserva.
         info = await svc.cancelAutoRenew(tA);
         expect(mp.cancelled).toEqual(['sub_1']);
         expect(info.auto_renew).toBeNull();

@@ -32,7 +32,7 @@ export const DEFAULT_GATEWAY_BASES: GatewayBases = {
     wompiCheckout: WOMPI_CHECKOUT,
 };
 
-/** Credenciales de prueba: los pagos no son plata real. */
+/** Credenciales de prueba: los pagos no son dinero real. */
 export function isTestCreds(provider: CollectionProvider, creds: IntegrationCreds): boolean {
     if (provider === 'mercadopago') return creds.secret.startsWith('TEST-');
     return (creds.fields.public_key ?? '').startsWith('pub_test_') || creds.secret.startsWith('prv_test_');
@@ -75,7 +75,7 @@ export function providerError(provider: CollectionProvider, status: number, body
                   .filter((s): s is string => s !== null)
                   .join('; ')
             : '';
-        if (status === 401 || status === 403) return 'Mercado Pago rechazó el Access Token (¿lo cambiaste o lo revocaste?). Actualizalo en Integraciones.';
+        if (status === 401 || status === 403) return 'Mercado Pago rechazó el Access Token (¿lo cambiaste o lo revocaste?). Actualízalo en Integraciones.';
         return `Mercado Pago respondió ${status}${message ? `: ${message}` : ''}${cause ? ` (${cause})` : ''}.`;
     }
     const err = (json?.error ?? null) as Record<string, unknown> | null;
@@ -85,7 +85,7 @@ export function providerError(provider: CollectionProvider, status: number, body
               .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
               .join('; ')
         : '';
-    if (status === 401 || status === 403) return 'Wompi rechazó la llave privada (¿es la del mismo ambiente que la pública?). Actualizala en Integraciones.';
+    if (status === 401 || status === 403) return 'Wompi rechazó la llave privada (¿es la del mismo ambiente que la pública?). Actualízala en Integraciones.';
     return `Wompi respondió ${status}${reason ? `: ${reason}` : ''}${messages ? ` (${messages})` : ''}.`;
 }
 
@@ -100,7 +100,7 @@ export function precheckCreds(provider: CollectionProvider, creds: IntegrationCr
     if (provider === 'mercadopago') {
         const t = creds.secret.trim();
         if (!/^(APP_USR|TEST)-/.test(t)) {
-            return 'Ese no parece un Access Token de Mercado Pago: empieza con APP_USR- (producción) o TEST- (prueba). La «Public Key» no sirve acá.';
+            return 'Ese no parece un Access Token de Mercado Pago: empieza con APP_USR- (producción) o TEST- (prueba). La «Public Key» no sirve aquí.';
         }
         return null;
     }
@@ -154,7 +154,7 @@ export function parseCollectionVerify(
     const json = parseJson(body);
     if (provider === 'mercadopago') {
         if (status === 401 || status === 403) {
-            return { ...out, ok: false, error: 'Mercado Pago no reconoce ese Access Token. Copialo de nuevo de «Credenciales de producción».' };
+            return { ...out, ok: false, error: 'Mercado Pago no reconoce ese Access Token. Cópialo de nuevo de «Credenciales de producción».' };
         }
         if (status !== 200 || !json) {
             return { ...out, ok: false, error: providerError('mercadopago', status, body) };
@@ -167,7 +167,7 @@ export function parseCollectionVerify(
         };
     }
     if (status === 404 || status === 422 || status === 401) {
-        return { ...out, ok: false, error: 'Wompi no reconoce esa llave pública. Copiala de nuevo de Desarrolladores → Programadores.' };
+        return { ...out, ok: false, error: 'Wompi no reconoce esa llave pública. Cópiala de nuevo de Desarrolladores → Programadores.' };
     }
     const data = (json?.data ?? null) as Record<string, unknown> | null;
     if (status !== 200 || !data) {

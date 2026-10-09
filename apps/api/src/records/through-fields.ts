@@ -20,7 +20,7 @@ import { compileFilterTree, fieldTypedExpr, type FilterableField } from './query
  *
  * Un lookup muestra un campo de los registros VINCULADOS; un rollup los
  * cuenta o agrega. Ninguno se persiste: se resuelven en cada lectura
- * cruzando la tabla `relations`, y por eso viven acá y no en el evaluador
+ * cruzando la tabla `relations`, y por eso viven aquí y no en el evaluador
  * compartido (que sólo ve la fila propia).
  *
  * La relación puede ir en las dos direcciones:

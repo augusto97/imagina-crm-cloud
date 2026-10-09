@@ -66,8 +66,8 @@ function BlockLibrary(): JSX.Element {
             </div>
             <p className="imcrm-px-0.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 {ed.catalog.target === 'portal'
-                    ? __('Arrastrá un bloque al portal o hacé clic para agregarlo debajo de lo elegido.')
-                    : __('Arrastrá un bloque a la ficha o hacé clic para agregarlo debajo de lo elegido.')}
+                    ? __('Arrastra un bloque al portal o haz clic para agregarlo debajo de lo elegido.')
+                    : __('Arrastra un bloque a la ficha o haz clic para agregarlo debajo de lo elegido.')}
             </p>
             {categories.map((cat) => {
                 const entries = matches.filter((e) => e.category === cat);

@@ -27,7 +27,7 @@ export function reminderKindFor(paidUntil: Date, now: Date, autoRenew: boolean):
         return t < cut + 7 * DAY ? 'read_only' : null;
     }
     // Con la renovación automática activa, Mercado Pago cobra solo (y reintenta
-    // la tarjeta en la gracia): avisar "pagá" sería ruido.
+    // la tarjeta en la gracia): avisar "paga" sería ruido.
     if (autoRenew) return null;
     if (t >= due) return 'expired';
     if (due - t <= SOON_DAYS * DAY) return 'soon';
@@ -49,14 +49,14 @@ export function billingReminderEmail(
             subject: `Tu plan de «${name}» vence el ${due}`,
             lines: [
                 `El período pagado de «${name}» vence el ${due}.`,
-                'Para seguir sin interrupciones, pagá el próximo período o activá la renovación automática con tarjeta.',
+                'Para seguir sin interrupciones, paga el próximo período o activa la renovación automática con tarjeta.',
             ],
         },
         expired: {
             subject: `Venció el plan de «${name}»`,
             lines: [
                 `El período pagado de «${name}» venció el ${due}.`,
-                `Tenés ${BILLING_GRACE_DAYS} días de gracia: si no se renueva antes del ${cut}, el espacio queda en solo-lectura (tus datos se conservan y se pueden exportar).`,
+                `Tienes ${BILLING_GRACE_DAYS} días de gracia: si no se renueva antes del ${cut}, el espacio queda en solo-lectura (tus datos se conservan y se pueden exportar).`,
             ],
         },
         read_only: {
@@ -68,7 +68,7 @@ export function billingReminderEmail(
         },
     };
     const c = copy[kind];
-    const text = `${c.lines.join('\n\n')}\n\nGestioná tu plan: ${opts.link}`;
+    const text = `${c.lines.join('\n\n')}\n\nGestiona tu plan: ${opts.link}`;
     const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1f2937">
 ${c.lines.map((l) => `<p style="margin:0 0 14px">${escapeHtml(l)}</p>`).join('\n')}
 <p style="margin:22px 0"><a href="${escapeHtml(opts.link)}" style="background:#0e7490;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block">Gestionar el plan</a></p>

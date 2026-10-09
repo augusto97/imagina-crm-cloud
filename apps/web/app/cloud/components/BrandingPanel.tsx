@@ -101,11 +101,11 @@ export function BrandingPanel(): JSX.Element {
         const nextColor = colorHex.trim() === '' ? null : colorHex.trim();
         const nextSidebar = sidebarHex.trim() === '' ? null : sidebarHex.trim();
         if (nextColor !== null && !HEX_RE.test(nextColor)) {
-            setNotice({ kind: 'err', text: 'Color primario inválido: usá el formato #RRGGBB.' });
+            setNotice({ kind: 'err', text: 'Color primario inválido: usa el formato #RRGGBB.' });
             return;
         }
         if (nextSidebar !== null && !HEX_RE.test(nextSidebar)) {
-            setNotice({ kind: 'err', text: 'Color de la barra lateral inválido: usá el formato #RRGGBB.' });
+            setNotice({ kind: 'err', text: 'Color de la barra lateral inválido: usa el formato #RRGGBB.' });
             return;
         }
         // PATCH parcial: sólo los campos que cambiaron respecto de lo guardado.
@@ -142,7 +142,7 @@ export function BrandingPanel(): JSX.Element {
                     <div>
                         <CardTitle>Marca</CardTitle>
                         <CardDescription>
-                            Personalizá el nombre, el color primario, el color de la barra lateral y el logo. Tu
+                            Personaliza el nombre, el color primario, el color de la barra lateral y el logo. Tu
                             equipo los ve en la app, y tus clientes en su portal y en los correos de acceso: ahí no
                             aparece nada de la plataforma.
                         </CardDescription>

@@ -66,7 +66,7 @@ export class AutomationHooksController {
         await this.enforceLimit(token);
         const payload = normalizePayload(body);
         // v0.1.111 — captura de prueba para el panel "Probar" del editor.
-        // Best-effort: si Redis falla acá, el dispatch de abajo va a fallar
+        // Best-effort: si Redis falla aquí, el dispatch de abajo va a fallar
         // igual; no rompemos la respuesta por la captura.
         await this.automations
             .captureHookPayload(hook.tenantId, hook.automationId, payload)

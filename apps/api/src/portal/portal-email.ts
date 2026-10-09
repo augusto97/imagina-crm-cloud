@@ -66,17 +66,17 @@ export function portalAccessEmail(
     const ink = inkOn(color);
     const subject = opts.allAccounts ? 'Tu acceso a todas tus cuentas' : `Tu acceso al portal de ${name}`;
     const intro = opts.allAccounts
-        ? 'Con este enlace ves en un solo lugar todas las cuentas que tenés en portales de clientes.'
+        ? 'Con este enlace ves en un solo lugar todas las cuentas que tienes en portales de clientes.'
         : `${name} te dio acceso a su portal de clientes.`;
     const footer = opts.allAccounts
-        ? 'Recibiste este correo porque pediste ver todas tus cuentas. Si no fuiste vos, ignoralo.'
-        : `Recibiste este correo porque ${name} te dio acceso a su portal. Si no lo esperabas, ignoralo.`;
+        ? 'Recibiste este correo porque pediste ver todas tus cuentas. Si no fuiste tú, ignóralo.'
+        : `Recibiste este correo porque ${name} te dio acceso a su portal. Si no lo esperabas, ignóralo.`;
 
     const text = [
         'Hola,',
         '',
         intro,
-        'Entrá con este enlace (vale por 24 horas y se usa una sola vez):',
+        'Entra con este enlace (vale por 24 horas y se usa una sola vez):',
         url,
         '',
         footer,
@@ -99,7 +99,7 @@ export function portalAccessEmail(
 <p style="margin:0 0 12px">Hola,</p>
 <p style="margin:0 0 20px">${e(intro)}</p>
 <p style="margin:0 0 20px;text-align:center"><a href="${e(url)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px">Entrar al portal</a></p>
-<p style="margin:0 0 8px;font-size:13px;color:#6b7280">El enlace vale por 24 horas y se usa una sola vez. Si el botón no funciona, copiá esta dirección en el navegador:</p>
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280">El enlace vale por 24 horas y se usa una sola vez. Si el botón no funciona, copia esta dirección en el navegador:</p>
 <p style="margin:0 0 20px;font-size:12px;color:#6b7280;word-break:break-all">${e(url)}</p>
 </td></tr>
 <tr><td style="padding:16px 28px 24px;border-top:1px solid #f0f1f3;font-size:12px;color:#9ca3af">${e(footer)}</td></tr>

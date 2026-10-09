@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
  * menú aparece al apretar). Pero en táctil el `pointerdown` es el INICIO de
  * cualquier gesto: deslizar la tira de pestañas de vistas (o el árbol del
  * panel) apoyando el dedo sobre un "···" abría su menú aunque la intención
- * fuera scrollear. Acá, para punteros que no son mouse, se anula la apertura
+ * fuera scrollear. Aquí, para punteros que no son mouse, se anula la apertura
  * en `pointerdown` y se abre en `click` — que el navegador NO dispara si el
  * gesto terminó en scroll. Mouse y teclado no cambian.
  *

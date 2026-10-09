@@ -196,7 +196,7 @@ function contentFor(p: DocInspectorProps): React.ReactNode {
                         {tagInput(p, block.value, (v) => onPatch({ value: v }), { placeholder: 'https://…  o  {{link_de_pago}}' })}
                     </Field>
                     <Field label={__('Texto debajo (opcional)')}>
-                        {tagInput(p, block.caption, (v) => onPatch({ caption: v }), { placeholder: __('Escaneá para pagar') })}
+                        {tagInput(p, block.caption, (v) => onPatch({ caption: v }), { placeholder: __('Escanea para pagar') })}
                     </Field>
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                         {__('Si el contenido queda vacío para un registro (por ejemplo, sin link de pago), el código no se dibuja.')}
@@ -802,7 +802,7 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                         });
                     }}
                 >
-                    <option value="">{__('Elegí una relación…')}</option>
+                    <option value="">{__('Elige una relación…')}</option>
                     {(paths.data ?? []).map((x) => (
                         <option key={`${x.relation_field_id}:${x.direction}`} value={`${x.relation_field_id}:${x.direction}`}>
                             {x.other_list_name} ({__('por')} «{x.relation_label}»)
@@ -811,7 +811,7 @@ function ItemsFields(p: DocInspectorProps): JSX.Element {
                 </Select>
                 {paths.data && paths.data.length === 0 && (
                     <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-300">
-                        {__('Esta lista no tiene relaciones con otras listas. Creá un campo «Relación» para vincular los ítems.')}
+                        {__('Esta lista no tiene relaciones con otras listas. Crea un campo «Relación» para vincular los ítems.')}
                     </p>
                 )}
             </Field>
@@ -934,7 +934,7 @@ function TotalsFields(p: DocInspectorProps): JSX.Element {
     return (
         <>
             <p className="imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Cada fila se calcula sola: la suma de una columna de la tabla, un campo del registro, un porcentaje de otra fila (IVA) o la suma de varias. En el texto podés usar {{totales.total|pesos}} para escribir el monto en letras.')}
+                {__('Cada fila se calcula sola: la suma de una columna de la tabla, un campo del registro, un porcentaje de otra fila (IVA) o la suma de varias. En el texto puedes usar {{totales.total|pesos}} para escribir el monto en letras.')}
             </p>
             {block.rows.map((row, i) => (
                 <div key={i} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2" data-total-row={row.id}>
@@ -1051,10 +1051,10 @@ function TotalSourceEditor({
     switch (s.kind) {
         case 'items_sum': {
             const it = itemsBlocks.find((b) => b.id === s.block_id) ?? itemsBlocks[0];
-            if (!it) return <p className="imcrm-text-[11px] imcrm-text-amber-700">{__('Agregá antes una tabla de ítems.')}</p>;
+            if (!it) return <p className="imcrm-text-[11px] imcrm-text-amber-700">{__('Agrega antes una tabla de ítems.')}</p>;
             return (
                 <Select value={s.slug} onChange={(e) => onChange({ ...s, block_id: it.id, slug: e.target.value })} className={cls} aria-label={__('Columna a sumar')}>
-                    <option value="">{__('Elegí la columna…')}</option>
+                    <option value="">{__('Elige la columna…')}</option>
                     {it.columns.map((c) => (
                         <option key={c.slug} value={c.slug}>
                             {c.label || c.slug}
@@ -1066,7 +1066,7 @@ function TotalSourceEditor({
         case 'field':
             return (
                 <Select value={s.slug} onChange={(e) => onChange({ ...s, slug: e.target.value })} className={cls} aria-label={__('Campo')}>
-                    <option value="">{__('Elegí el campo…')}</option>
+                    <option value="">{__('Elige el campo…')}</option>
                     {fields
                         .filter((f) => NUMERIC.has(f.type))
                         .map((f) => (

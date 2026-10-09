@@ -20,7 +20,7 @@ function size(bytes: number | null): string {
 
 /**
  * v0.1.278 — Plataforma → Diagnóstico → Disco. Un servidor se llenó sin que
- * nadie lo viera hasta que falló una actualización: acá se ve cuánto queda,
+ * nadie lo viera hasta que falló una actualización: aquí se ve cuánto queda,
  * qué ocupa la app y se libera lo que sobra (versiones viejas, copias previas
  * a cada actualización, lo que dejó una actualización cortada) sin consola.
  */
@@ -124,7 +124,7 @@ export function DiskUsageCard(): JSX.Element | null {
                             </Button>
                         </div>
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Si la base de datos ocupa mucho, revisá el archivo de WAL de Postgres (ver docs/runbook-disk.md).')}
+                            {__('Si la base de datos ocupa mucho, revisa el archivo de WAL de Postgres (ver docs/runbook-disk.md).')}
                         </p>
                     </>
                 ) : (

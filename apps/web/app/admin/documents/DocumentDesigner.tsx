@@ -318,7 +318,7 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
 
     const doSave = async (): Promise<void> => {
         if (!name.trim()) {
-            toast.error(__('Ponele un nombre a la plantilla'));
+            toast.error(__('Ponle un nombre a la plantilla'));
             return;
         }
         try {
@@ -361,7 +361,7 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
                 {leftTab === 'blocks' ? (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {selected ? __('Se agrega debajo del bloque elegido.') : __('Tocá un bloque para agregarlo al final del documento.')}
+                            {selected ? __('Se agrega debajo del bloque elegido.') : __('Toca un bloque para agregarlo al final del documento.')}
                         </p>
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" data-testid="doc-palette">
                             {PALETTE.map(({ type, icon: Icon }) => (
@@ -443,7 +443,7 @@ function DesignerBody(props: DocumentDesignerProps & { initialTpl: TemplateDraft
     ) : (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-p-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
             <MousePointerClick className="imcrm-h-6 imcrm-w-6" />
-            {__('Tocá un bloque en el documento para editarlo.')}
+            {__('Toca un bloque en el documento para editarlo.')}
         </div>
     );
 
@@ -591,7 +591,7 @@ function Outline({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="doc-outline">
             <p className="imcrm-mb-1.5 imcrm-flex imcrm-items-start imcrm-gap-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 <ListOrdered className="imcrm-mt-px imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                {__('El orden del documento, de arriba hacia abajo. Tocá un bloque para editarlo.')}
+                {__('El orden del documento, de arriba hacia abajo. Toca un bloque para editarlo.')}
             </p>
             {design.blocks.map((b) => (
                 <div key={b.id}>
@@ -795,7 +795,7 @@ function PagePanel({
                                 </Select>
                             </Field>
                             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Para mostrarlo en el documento usá la variable')} <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1">{'{{documento.numero}}'}</code>.
+                                {__('Para mostrarlo en el documento usa la variable')} <code className="imcrm-rounded imcrm-bg-muted imcrm-px-1">{'{{documento.numero}}'}</code>.
                             </p>
                         </>
                     )}
@@ -808,7 +808,7 @@ function PagePanel({
                     onChange={onPortalVisible}
                 />
                 <p className="imcrm-text-[11px] imcrm-leading-relaxed imcrm-text-muted-foreground">
-                    {__('El cliente lo descarga desde su portal, siempre con los datos de SU registro. Si numera, bajarlo le asigna el número igual que generarlo acá.')}
+                    {__('El cliente lo descarga desde su portal, siempre con los datos de SU registro. Si numera, bajarlo le asigna el número igual que generarlo aquí.')}
                 </p>
             </Section>
             <Section title={__('Archivo')}>

@@ -136,7 +136,7 @@ export class BulkStructureService {
         const title = this.titleFn(list, loaded.fields);
         const result: BulkStructureResult = { succeeded: [], unchanged: [], failed: [], created: 0, edit_id: editId ?? null };
         const found = new Set(loaded.rows.map((r) => r.id));
-        for (const id of ids) if (!found.has(id)) result.failed.push({ id, message: 'El registro ya no existe o no lo podés tocar.' });
+        for (const id of ids) if (!found.has(id)) result.failed.push({ id, message: 'El registro ya no existe o no lo puedes tocar.' });
 
         const parent = action === 'move' ? await this.resolveParent(tenantId, actor, list, parentId ?? null) : null;
         const summary =
@@ -400,7 +400,7 @@ export class BulkStructureService {
         if (byFilter && !roleHasCapability(role, 'bulk_actions')) {
             throw new ForbiddenException({
                 code: 'forbidden_bulk',
-                message: 'Tu rol no puede actuar sobre todos los registros de un filtro: seleccioná las filas.',
+                message: 'Tu rol no puede actuar sobre todos los registros de un filtro: selecciona las filas.',
                 data: { status: 403 },
             });
         }
@@ -418,7 +418,7 @@ export class BulkStructureService {
         if (parentId === null) return null;
         const loaded = await this.records.bulkRows(tenantId, actor, String(list.id), { ids: [parentId] }, 1);
         const parent = loaded.rows[0];
-        if (!parent) throw bad('El registro elegido como padre no existe o no lo podés editar.');
+        if (!parent) throw bad('El registro elegido como padre no existe o no lo puedes editar.');
         if (parent.parentId !== null) throw bad('El padre tiene que ser un registro de primer nivel: una subtarea no puede tener subtareas.');
         return parent;
     }

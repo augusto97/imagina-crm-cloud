@@ -47,7 +47,7 @@ export function ActionTypeSelect({
     const subtitle = connector
         ? connector.connector!.connection_name
         : option?.group === 'unknown'
-          ? __('Ya no está disponible: elegí otra acción')
+          ? __('Ya no está disponible: elige otra acción')
           : meta.description !== ''
             ? __(meta.description)
             : '';

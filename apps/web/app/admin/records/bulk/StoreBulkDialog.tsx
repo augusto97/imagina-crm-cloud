@@ -314,7 +314,7 @@ export function StoreBulkDialog({
                     }}
                     listId={listId}
                     editId={result.edit_id}
-                    summary={__('La edición de la tienda que acabás de aplicar')}
+                    summary={__('La edición de la tienda que acabas de aplicar')}
                 />
             )}
         </Dialog.Root>
@@ -737,7 +737,7 @@ function PriceFromFieldInputs({
             )}
             {sources.length === 0 && (
                 <p className="imcrm-text-[11px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
-                    {__('La lista no tiene columnas numéricas. Agregá una columna propia (p. ej. «Costo», de moneda) y cargala en cada producto o variación.')}
+                    {__('La lista no tiene columnas numéricas. Agrega una columna propia (p. ej. «Costo», de moneda) y cárgala en cada producto o variación.')}
                 </p>
             )}
             <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-xs">

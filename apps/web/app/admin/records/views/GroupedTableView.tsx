@@ -100,7 +100,7 @@ interface GroupedTableViewProps {
     columnOrder?: string[];
     /**
      * Set de bucket keys colapsadas (persistido en el saved view).
-     * Si un bucket NO está acá, está expandido. Por defecto array
+     * Si un bucket NO está aquí, está expandido. Por defecto array
      * vacío = todos expandidos.
      */
     collapsedGroups?: string[];
@@ -190,7 +190,7 @@ function GroupedTableViewImpl({
     );
 
     // `collapsedGroups` (del saved view) lista keys CERRADOS. Un bucket
-    // que NO está acá se considera abierto por default. `openLocally`
+    // que NO está aquí se considera abierto por default. `openLocally`
     // overridea por sesión (sin re-guardar el saved view).
     const collapsedSet = useMemo(
         () => new Set(collapsedGroups ?? []),
@@ -363,7 +363,7 @@ function GroupedTableViewImpl({
     }
 
     // `allVisibleRecordIds` se computa arriba (antes de los early
-    // returns) por la regla de hooks. Acá solo lo usamos.
+    // returns) por la regla de hooks. Aquí solo lo usamos.
 
     return (
         <RecurrencesBatchProvider listId={listId} recordIds={allVisibleRecordIds}>
@@ -378,7 +378,7 @@ function GroupedTableViewImpl({
                 tiene `min-width: tableWidth` para que todos midan
                 igual. Sticky-left funciona contra este outer div.
 
-                Solo scroll HORIZONTAL acá: el vertical es el de la
+                Solo scroll HORIZONTAL aquí: el vertical es el de la
                 página (pedido del usuario, v0.1.70) — los buckets crecen
                 a su alto natural. */}
             <HScrollSyncContext.Provider value={hScrollSync}>
@@ -472,7 +472,7 @@ function GroupedTableViewImpl({
                         {' · '}
                         {sprintf(
                             /* translators: %1$d shown groups, %2$d hidden groups */
-                            __('Se muestran los primeros %1$d grupos; %2$d más quedan afuera. Agrupá por un campo con menos valores distintos o filtrá.'),
+                            __('Se muestran los primeros %1$d grupos; %2$d más quedan afuera. Agrupa por un campo con menos valores distintos o filtra.'),
                             (bundle.data?.meta.total_groups ?? 0) - (bundle.data?.meta.hidden_groups ?? 0),
                             bundle.data?.meta.hidden_groups ?? 0,
                         )}
@@ -862,7 +862,7 @@ function GroupBucketSection({
             // Grupo PLANO (estilo ClickUp): sin card (border/rounded/
             // shadow/bg-card) alrededor — header del grupo (chip +
             // contador) directo sobre el canvas, filas debajo separadas
-            // por hairlines. OJO: tampoco usar `overflow-hidden` acá —
+            // por hairlines. OJO: tampoco usar `overflow-hidden` aquí —
             // rompe `position: sticky` de las celdas internas (crea un
             // containing block para el sticky que NO scrollea).
             aria-expanded={isOpen}

@@ -39,7 +39,7 @@ import { SqlSyncQueue } from './sql-sync.queue';
  * Sincronizaciones desde SQL Server (v0.1.243): alta, cambios, estado, vista
  * previa de la consulta y de la carga, y el tick que encola las que tocan.
  *
- * Quién: `manage_lists` (lo exige el controller) y, acá, poder EDITAR la
+ * Quién: `manage_lists` (lo exige el controller) y, aquí, poder EDITAR la
  * conexión — la misma puerta que la sincronización de la tienda: trae datos
  * de afuera a nombre de la empresa.
  */
@@ -284,16 +284,16 @@ export class SqlSyncService {
             throw bad('La lista elegida no existe.');
         }
         if (readStoreListMarker(list.settings)) {
-            throw bad('Esa lista es de una tienda sincronizada: sus datos los trae WooCommerce. Elegí otra lista.');
+            throw bad('Esa lista es de una tienda sincronizada: sus datos los trae WooCommerce. Elige otra lista.');
         }
         const fields: Field[] = await this.fields.listByListId(tenantId, list.id);
         const byId = new Map(fields.map((f) => [f.id, f]));
         const key = byId.get(s.key_field_id);
         if (!key) throw bad('El campo clave no es de esa lista.');
         if (!(SQL_SYNC_KEY_TYPES as readonly string[]).includes(key.type)) {
-            throw bad(`«${key.label}» no puede ser la clave: elegí un campo de texto, número, email, teléfono o enlace.`);
+            throw bad(`«${key.label}» no puede ser la clave: elige un campo de texto, número, email, teléfono o enlace.`);
         }
-        if (s.key_column.trim() === '') throw bad('Elegí la columna clave del resultado.');
+        if (s.key_column.trim() === '') throw bad('Elige la columna clave del resultado.');
         const seen = new Set<number>([key.id]);
         for (const m of s.columns) {
             const f = byId.get(m.field_id);
@@ -306,11 +306,11 @@ export class SqlSyncService {
         }
         if (s.on_missing === 'flag') {
             const flag = s.flag_field_id ? byId.get(s.flag_field_id) : undefined;
-            if (!flag || flag.type !== 'checkbox') throw bad('Para marcar lo que ya no está en SQL elegí un campo de tipo casilla.');
-            if (seen.has(flag.id)) throw bad(`«${flag.label}» ya recibe una columna: elegí otra casilla para marcar lo que falta.`);
+            if (!flag || flag.type !== 'checkbox') throw bad('Para marcar lo que ya no está en SQL elige un campo de tipo casilla.');
+            if (seen.has(flag.id)) throw bad(`«${flag.label}» ya recibe una columna: elige otra casilla para marcar lo que falta.`);
             if (sqlSourceIsIncremental(s.source)) {
                 throw bad(
-                    'La consulta usa @ultima_sincronizacion, así que sólo trae lo que cambió: lo que no cambió tampoco aparece y quedaría marcado como «ya no está». Marcá lo que falta sólo con una consulta que traiga todo.',
+                    'La consulta usa @ultima_sincronizacion, así que sólo trae lo que cambió: lo que no cambió tampoco aparece y quedaría marcado como «ya no está». Marca lo que falta sólo con una consulta que traiga todo.',
                 );
             }
         }

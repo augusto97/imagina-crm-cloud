@@ -24,10 +24,10 @@ interface UiMessage {
 }
 
 const SUGGESTIONS = [
-    'Armame una lista de proveedores con contacto, categoría, estado y saldo pendiente',
-    'Creá un tablero con los indicadores más útiles de esta lista',
-    'Agregale a esta lista un campo de prioridad (alta, media, baja) con colores',
-    'Cuando cambie el estado a "Ganado", mandá un correo al responsable',
+    'Ármame una lista de proveedores con contacto, categoría, estado y saldo pendiente',
+    'Crea un tablero con los indicadores más útiles de esta lista',
+    'Agrégale a esta lista un campo de prioridad (alta, media, baja) con colores',
+    'Cuando cambie el estado a "Ganado", manda un correo al responsable',
 ];
 
 /**
@@ -205,7 +205,7 @@ export function AssistantPanel(): JSX.Element | null {
                             ? st.usage.limit === null
                                 ? __('Pedidos ilimitados')
                                 : `${st.usage.used} / ${st.usage.limit} ${__('pedidos este mes')}`
-                            : __('Proponé, revisá, aplicá')}
+                            : __('Propón, revisa, aplica')}
                     </div>
                 </div>
                 <Button variant="ghost" size="icon" aria-label={__('Nueva conversación')} title={__('Nueva conversación')} onClick={reset} disabled={messages.length === 0 && !busy}>
@@ -241,7 +241,7 @@ export function AssistantPanel(): JSX.Element | null {
                 {st?.available && messages.length === 0 && (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                            {__('Pedime en tus palabras una lista, campos, una vista, un tablero o una automatización. Te muestro una vista previa y vos decidís si se aplica.')}
+                            {__('Pídeme en tus palabras una lista, campos, una vista, un tablero o una automatización. Te muestro una vista previa y tú decides si se aplica.')}
                         </p>
                         {SUGGESTIONS.map((s) => (
                             <button
@@ -310,7 +310,7 @@ export function AssistantPanel(): JSX.Element | null {
                                 void send(draft);
                             }
                         }}
-                        placeholder={st?.available ? __('Pedí algo… (Enter envía, Shift+Enter salto de línea)') : __('El asistente no está disponible')}
+                        placeholder={st?.available ? __('Pide algo… (Enter envía, Shift+Enter salto de línea)') : __('El asistente no está disponible')}
                         disabled={!st?.available}
                         rows={2}
                         className="imcrm-min-h-[44px] imcrm-max-h-40 imcrm-resize-none"
@@ -327,7 +327,7 @@ export function AssistantPanel(): JSX.Element | null {
                     )}
                 </div>
                 <p className="imcrm-mt-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('El asistente propone; nada cambia hasta que aplicás una tarjeta.')}
+                    {__('El asistente propone; nada cambia hasta que aplicas una tarjeta.')}
                 </p>
             </form>
         </aside>

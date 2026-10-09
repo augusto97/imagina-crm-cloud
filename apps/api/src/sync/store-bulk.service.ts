@@ -343,7 +343,7 @@ export class StoreBulkService implements OnModuleInit {
         const variable = t.products.filter((p) => p.variable);
         const out: StoreVariationsPreview = { record_ids: t.recordIds, products: variable.length, to_create: 0, existing: 0, sample: [], warnings: [] };
         const simple = t.products.length - variable.length;
-        if (simple > 0) out.warnings.push(`${simple} ${simple === 1 ? 'producto no es variable' : 'productos no son variables'}: no reciben variaciones (cambiá su tipo en WooCommerce).`);
+        if (simple > 0) out.warnings.push(`${simple} ${simple === 1 ? 'producto no es variable' : 'productos no son variables'}: no reciben variaciones (cambia su tipo en WooCommerce).`);
         if (t.variations.length > 0) out.warnings.push('Las variaciones elegidas se ignoran: las variaciones nuevas se crean sobre sus PRODUCTOS.');
         // La cuenta exacta necesita las variaciones de cada producto: se leen los primeros
         // (los que entran en la muestra); el resto se estima con las combinaciones.
@@ -834,7 +834,7 @@ export class StoreBulkService implements OnModuleInit {
         if (!settings.write_back) {
             throw new BadRequestException({
                 code: 'store_write_back_off',
-                message: 'Para editar la tienda desde la app activá «Editar desde la app» en los ajustes de la tienda.',
+                message: 'Para editar la tienda desde la app activa «Editar desde la app» en los ajustes de la tienda.',
                 data: { status: 400 },
             });
         }

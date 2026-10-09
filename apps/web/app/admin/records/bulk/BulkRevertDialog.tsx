@@ -237,7 +237,7 @@ function RevertPreviewPanel({
                         <span>
                             {__('Volverlos atrás igual')}
                             <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Se pierde lo que se cambió después en esas columnas. Si no lo marcás, esos registros quedan como están.')}
+                                {__('Se pierde lo que se cambió después en esas columnas. Si no lo marcas, esos registros quedan como están.')}
                             </span>
                         </span>
                     </label>

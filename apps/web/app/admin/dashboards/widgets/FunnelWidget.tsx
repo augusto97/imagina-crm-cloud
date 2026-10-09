@@ -27,7 +27,7 @@ interface FunnelWidgetProps {
  * usuario) — no por valor.
  *
  * Reusa el evaluador de chart_bar del backend: `{data: [{label,
- * value}]}`. El backend ordena por valor; acá reordenamos por las
+ * value}]}`. El backend ordena por valor; aquí reordenamos por las
  * options del select.
  */
 export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.Element {

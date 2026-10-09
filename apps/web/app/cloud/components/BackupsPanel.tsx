@@ -257,7 +257,7 @@ export function BackupsPanel(): JSX.Element | null {
                         </div>
                         <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
                             Sin los secretos del .env, las contraseñas SMTP y los códigos 2FA de la copia no se pueden leer en
-                            otro servidor. Guardá las copias en un lugar seguro (o cifralas con BACKUP_GPG_RECIPIENT).
+                            otro servidor. Guarda las copias en un lugar seguro (o cífralas con BACKUP_GPG_RECIPIENT).
                         </p>
                         <div className="imcrm-mt-2">
                             <Button size="sm" variant="ghost" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || !touched} data-testid="backups-save-settings">
@@ -363,7 +363,7 @@ export function BackupsPanel(): JSX.Element | null {
                                 alrededor de un minuto; nadie puede usar la app mientras tanto.
                             </p>
                             <label className="imcrm-block imcrm-space-y-1">
-                                <span className="imcrm-text-xs imcrm-text-rose-900/80">Escribí RESTAURAR para confirmar</span>
+                                <span className="imcrm-text-xs imcrm-text-rose-900/80">Escribe RESTAURAR para confirmar</span>
                                 <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="imcrm-h-8 imcrm-max-w-xs" data-testid="restore-confirm-input" />
                             </label>
                             <div className="imcrm-flex imcrm-gap-2">
@@ -391,11 +391,11 @@ export function BackupsPanel(): JSX.Element | null {
                 <CardContent className="imcrm-pt-0">
                     <ol className="imcrm-list-decimal imcrm-space-y-1 imcrm-pl-5 imcrm-text-sm">
                         <li>
-                            Creá una copia (arriba) o en el servidor viejo:{' '}
+                            Crea una copia (arriba) o en el servidor viejo:{' '}
                             <code className="imcrm-text-xs">BASE_PATH=/opt/imagina-base ./deploy/snapshot.sh</code>
                         </li>
                         <li>
-                            Copiala al servidor nuevo (ya con Docker, Postgres y Redis levantados con el mismo .env):{' '}
+                            Cópiala al servidor nuevo (ya con Docker, Postgres y Redis levantados con el mismo .env):{' '}
                             <code className="imcrm-text-xs">scp shared/backups/imagina-snapshot-….tar nuevo:/tmp/</code>
                         </li>
                         <li>
@@ -405,7 +405,7 @@ export function BackupsPanel(): JSX.Element | null {
                             </code>{' '}
                             — descarga el release de la misma versión, restaura todo y arranca el API.
                         </li>
-                        <li>Configurá Caddy/nginx (una vez) y apuntá el DNS al servidor nuevo.</li>
+                        <li>Configura Caddy/nginx (una vez) y apunta el DNS al servidor nuevo.</li>
                     </ol>
                 </CardContent>
             </Card>

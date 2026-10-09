@@ -72,7 +72,7 @@ export const DEFAULT_APP_DESCRIPTION =
     '{{app_name}} es una plataforma para que cada empresa arme sus propias bases de datos —clientes, ventas, proyectos, facturación, inventario— con vistas de tabla, tablero, calendario y tarjetas, paneles con indicadores y automatizaciones. Cada empresa trabaja en su propio espacio, separado del resto.\n\nLas integraciones son opcionales y las activa cada empresa: con Gmail, Outlook, Google Calendar, Google Sheets o Slack, sus automatizaciones pueden mandar un correo, crear un evento, agregar una fila a una hoja o publicar un mensaje cuando cambia algo en sus datos.';
 
 export const DEFAULT_PRIVACY_MD = `## Quién es responsable
-{{company}} opera {{app_name}} ({{app_url}}). Para cualquier consulta sobre tus datos escribinos a {{email}}.
+{{company}} opera {{app_name}} ({{app_url}}). Para cualquier consulta sobre tus datos escríbenos a {{email}}.
 
 ## Qué datos tratamos
 - **Datos de tu cuenta**: nombre, correo y contraseña (guardada con un hash irreversible), y los registros de inicio de sesión necesarios para proteger la cuenta.
@@ -102,13 +102,13 @@ Con Outlook usamos sólo los permisos para enviar correos (Mail.Send) y crear ev
 Con proveedores que necesitamos para operar (servidores, envío de correo, procesamiento de pagos), bajo contrato y sólo para ese fin. Y con los servicios que cada empresa conecta por su cuenta, cuando sus automatizaciones lo indican.
 
 ## Cuánto tiempo los guardamos
-Mientras la cuenta o el espacio de la empresa estén activos. Podés descargar tus datos o borrar tu cuenta desde Ajustes → Cuenta; una empresa puede exportar sus listas en cualquier momento.
+Mientras la cuenta o el espacio de la empresa estén activos. Puedes descargar tus datos o borrar tu cuenta desde Ajustes → Cuenta; una empresa puede exportar sus listas en cualquier momento.
 
 ## Seguridad
 Conexiones cifradas (HTTPS), secretos y tokens cifrados en reposo, separación de datos entre empresas a nivel de base de datos, verificación en dos pasos opcional y copias de seguridad.
 
 ## Tus derechos
-Podés pedir acceso, corrección o eliminación de tus datos escribiendo a {{email}}.
+Puedes pedir acceso, corrección o eliminación de tus datos escribiendo a {{email}}.
 
 ## Cambios
 Si cambiamos esta política lo publicamos en esta página. Última actualización: {{updated}}.`;
@@ -117,7 +117,7 @@ export const DEFAULT_TERMS_MD = `## El servicio
 {{app_name}} ({{app_url}}) es un servicio de {{company}} para que las empresas armen y gestionen sus propias bases de datos, vistas, tableros y automatizaciones.
 
 ## Tu cuenta
-Sos responsable de mantener segura tu contraseña y de lo que se haga con tu cuenta. Cada empresa decide quién entra a su espacio y con qué permisos.
+Eres responsable de mantener segura tu contraseña y de lo que se haga con tu cuenta. Cada empresa decide quién entra a su espacio y con qué permisos.
 
 ## Tus datos
 Los datos que una empresa carga son suyos. Nos da permiso para guardarlos y procesarlos sólo para prestarle el servicio. Puede exportarlos en cualquier momento, incluso si su plan está impago (en ese caso el espacio queda en modo de sólo lectura, pero los datos no se retienen).
@@ -129,7 +129,7 @@ No se puede usar el servicio para enviar correo no deseado, para actividades ile
 Las integraciones con Google, Microsoft, Slack u otros servicios las activa cada empresa con su propia cuenta y quedan sujetas también a los términos de esos servicios.
 
 ## Planes y pagos
-Los planes pagos se cobran por adelantado según el período elegido. Podés cancelar cuando quieras; el servicio sigue hasta el fin del período pago.
+Los planes pagos se cobran por adelantado según el período elegido. Puedes cancelar cuando quieras; el servicio sigue hasta el fin del período pago.
 
 ## Disponibilidad y responsabilidad
 Hacemos lo razonable para que el servicio esté disponible y para resguardar los datos con copias de seguridad, pero se presta «tal cual»: no respondemos por daños indirectos ni por pérdidas causadas por el uso que cada empresa haga de sus automatizaciones.

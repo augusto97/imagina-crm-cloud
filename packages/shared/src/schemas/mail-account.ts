@@ -32,7 +32,7 @@ export interface MailAccountLimits {
     label: string;
     /** Destinatarios por día que el proveedor tolera (aproximado: el proveedor no lo publica exacto). */
     daily_recipients: number;
-    /** Lo que dice la tarjeta, en criollo. */
+    /** Lo que dice la tarjeta, en lenguaje claro. */
     daily_label: string;
     /** Destinatarios por mensaje (to + cc + cco). */
     per_message: number;

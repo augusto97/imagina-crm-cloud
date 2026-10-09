@@ -63,7 +63,7 @@ export class OauthController {
                 // con el error, sin que la persona haga nada, convertía este
                 // endpoint en un open redirect con nuestro dominio adelante
                 // (el típico link de phishing "de confianza"). El error se
-                // muestra acá; al cliente sólo se vuelve tras una decisión
+                // muestra aquí; al cliente sólo se vuelve tras una decisión
                 // de la persona (Autorizar / Cancelar).
                 const err = new URL(start.to).searchParams;
                 void reply

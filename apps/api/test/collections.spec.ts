@@ -581,7 +581,7 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
                         },
                         {
                             type: 'call_webhook',
-                            config: { url: 'https://hooks.example.test/whatsapp', method: 'POST', body_template: '{"msg":"Pagá acá: {{pago.link}} ({{pago.monto}})"}' },
+                            config: { url: 'https://hooks.example.test/whatsapp', method: 'POST', body_template: '{"msg":"Paga aquí: {{pago.link}} ({{pago.monto}})"}' },
                         },
                     ],
                     isActive: true,
@@ -595,7 +595,7 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
         expect(run!.status).toBe('success');
         const items = (mp.prefs[0]!.items as Array<Record<string, unknown>>)[0]!;
         expect(items).toMatchObject({ unit_price: 150000, title: 'Factura FAC-001' });
-        expect(sent[0]!.body).toContain('Pagá acá: https://www.mercadopago.com.co/checkout/v1/redirect?pref_id=pref-1 (150000)');
+        expect(sent[0]!.body).toContain('Paga aquí: https://www.mercadopago.com.co/checkout/v1/redirect?pref_id=pref-1 (150000)');
         expect((await recordData(inv.listId, inv.recordId))[`f${mapping.status}`]).toBe('pendiente');
     });
 

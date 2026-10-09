@@ -198,7 +198,7 @@ export function FieldDialog({
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {isEdit
                                     ? __('El tipo se puede convertir: los datos existentes se migran.')
-                                    : __('Definí el nombre, el tipo y la configuración del campo nuevo.')}
+                                    : __('Define el nombre, el tipo y la configuración del campo nuevo.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -360,7 +360,7 @@ function TypeChangeWarning({
     return (
         <div className={cn('imcrm-mt-1 imcrm-rounded-md imcrm-border imcrm-px-3 imcrm-py-2 imcrm-text-xs', palette)}>
             <strong>{__('Atención:')}</strong> {message}{' '}
-            {__('Antes de continuar, considerá hacer un export por seguridad.')}
+            {__('Antes de continuar, considera hacer un export por seguridad.')}
         </div>
     );
 }

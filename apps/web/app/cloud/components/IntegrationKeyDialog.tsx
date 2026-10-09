@@ -22,9 +22,9 @@ import { cn } from '@/lib/utils';
 
 /**
  * Conectar una app que funciona con una clave (v0.1.203): WhatsApp (WAS) y
- * Telegram. Un solo diálogo con los datos que pide ESA app, rotulados en
- * criollo y con los pasos para encontrarlos. La clave se prueba contra el
- * servicio antes de guardarse: si está mal, se sabe acá y no a la primera
+ * Telegram. Un solo diálogo con los datos que pide ESA app, rotulados en lenguaje
+ * claro y con los pasos para encontrarlos. La clave se prueba contra el
+ * servicio antes de guardarse: si está mal, se sabe aquí y no a la primera
  * automatización que falle.
  *
  * v0.1.204: la prueba que vale es un MENSAJE REAL («Enviar prueba»). Listar
@@ -146,7 +146,7 @@ export function IntegrationKeyDialog({
                         onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
                         data-testid={`imcrm-integration-field-${f.key}`}
                     >
-                        <option value="">{__('Elegí una opción')}</option>
+                        <option value="">{__('Elige una opción')}</option>
                         {options.map((o) => (
                             <option key={o.value} value={o.value}>
                                 {o.label}
@@ -161,7 +161,7 @@ export function IntegrationKeyDialog({
                         autoComplete="off"
                         value={value}
                         placeholder={
-                            f.secret && editing ? __('Dejá vacío para conservar la guardada') : f.placeholder
+                            f.secret && editing ? __('Deja vacío para conservar la guardada') : f.placeholder
                         }
                         onChange={(e) => {
                             setValues((prev) => ({ ...prev, [f.key]: e.target.value }));
@@ -306,7 +306,7 @@ export function IntegrationKeyDialog({
                                 data-testid="imcrm-integration-test-ok"
                             >
                                 <CheckCircle2 className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
-                                {`${__('Mensaje de prueba enviado a')} ${sentTo}. ${__('Si te llegó, ya podés conectar.')}`}
+                                {`${__('Mensaje de prueba enviado a')} ${sentTo}. ${__('Si te llegó, ya puedes conectar.')}`}
                             </p>
                         )}
                         {sentTo === null &&

@@ -8,7 +8,7 @@ import { Global, Injectable, Logger, Module } from '@nestjs/common';
  *
  * Existe para no acoplar `RecordsService` a cada módulo que quiera enterarse
  * (y no armar ciclos de dependencias). La regla que evita los bucles: el
- * motor de sincronización escribe por su propio camino y NUNCA emite acá —
+ * motor de sincronización escribe por su propio camino y NUNCA emite aquí —
  * lo que llega de la tienda no vuelve a la tienda.
  */
 export interface RecordChange {

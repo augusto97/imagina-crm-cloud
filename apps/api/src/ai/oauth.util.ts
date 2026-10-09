@@ -21,7 +21,7 @@ export class OauthError extends Error {
 /**
  * Origen público de la request (`https://app.acme.com`), respetando el proxy
  * (`trustProxy` en Fastify resuelve `protocol`/`host` desde X-Forwarded-*).
- * El issuer OAuth y la URL del recurso MCP se derivan de acá — cada dominio
+ * El issuer OAuth y la URL del recurso MCP se derivan de aquí — cada dominio
  * (plataforma o dominio propio de una empresa, ADR-S17) es su propio issuer,
  * y la cookie de sesión de la pantalla "Autorizar" es de ese mismo host.
  */

@@ -29,7 +29,7 @@ import {
  *    shape que las acciones con nombre de la fase 2, así el editor de
  *    automatizaciones las muestra con el mismo formulario.
  *
- * Lo que va en las peticiones (URL, método, cuerpo) NO vive acá: lo arma el
+ * Lo que va en las peticiones (URL, método, cuerpo) NO vive aquí: lo arma el
  * backend en código, una función por acción. Una API externa no se describe
  * bien con filas clave/valor (Gmail quiere un mensaje RFC 2822 en base64, Sheets
  * un arreglo de filas, Calendar objetos anidados), y el usuario nunca tiene que
@@ -219,7 +219,7 @@ function field(def: Partial<IntegrationFieldDef> & { key: string; label: string 
 /**
  * Las acciones usan el shape de las acciones con nombre (fase 2) para que el
  * editor de automatizaciones las pinte con el MISMO formulario. `method`,
- * `path` y `content_type` quedan en sus defaults: acá no significan nada, la
+ * `path` y `content_type` quedan en sus defaults: aquí no significan nada, la
  * petición la arma el backend.
  */
 function action(def: {
@@ -300,7 +300,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'whatsapp',
         name: 'WhatsApp',
-        tagline: 'Mandá mensajes de WhatsApp desde tus automatizaciones.',
+        tagline: 'Manda mensajes de WhatsApp desde tus automatizaciones.',
         description:
             'Usa tu cuenta de Imagina WAS: avisos de vencimiento, confirmaciones, recordatorios de pago. El número de destino lo toma del registro.',
         category: 'mensajeria',
@@ -313,7 +313,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     label: 'Clave de API',
                     secret: true,
                     required: true,
-                    placeholder: 'Pegá la clave',
+                    placeholder: 'Pega la clave',
                     help: 'En tu panel de WAS: Herramientas → Claves de API.',
                 }),
                 field({
@@ -321,7 +321,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     label: 'Cuenta de WhatsApp',
                     required: true,
                     lookup: true,
-                    placeholder: 'Elegí la cuenta',
+                    placeholder: 'Elige la cuenta',
                     help: 'El número conectado en WAS desde el que salen los mensajes.',
                 }),
                 field({
@@ -330,14 +330,14 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     advanced: true,
                     default: WAS_DEFAULT_SERVER,
                     placeholder: WAS_DEFAULT_SERVER,
-                    help: 'Sólo si usás un servidor de WAS propio.',
+                    help: 'Sólo si usas un servidor de WAS propio.',
                 }),
             ],
             how_to: [
-                'Entrá a tu panel de WhatsApp (WAS).',
-                'Andá a Herramientas → Claves de API y copiá la clave.',
-                'Pegala acá y tocá «Buscar mis cuentas» para elegir el número. Si tu clave no tiene permiso para listar cuentas, escribí a mano el identificador de la cuenta (el mismo que ya usás en tus envíos).',
-                'Mandate un mensaje de prueba a tu propio número: si llega, quedó conectado.',
+                'Entra a tu panel de WhatsApp (WAS).',
+                'Ve a Herramientas → Claves de API y copia la clave.',
+                'Pégala aquí y toca «Buscar mis cuentas» para elegir el número. Si tu clave no tiene permiso para listar cuentas, escribe a mano el identificador de la cuenta (el mismo que ya usas en tus envíos).',
+                'Mándate un mensaje de prueba a tu propio número: si llega, quedó conectado.',
             ],
             test: {
                 label: 'Número para el mensaje de prueba',
@@ -355,7 +355,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         key: 'recipient',
                         label: 'Número de destino',
                         required: true,
-                        help: 'Con indicativo de país, por ejemplo +573001234567. Podés usar {{telefono}}.',
+                        help: 'Con indicativo de país, por ejemplo +573001234567. Puedes usar {{telefono}}.',
                     },
                     { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
                 ],
@@ -394,7 +394,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'Telegram',
         tagline: 'Avisos a un chat, grupo o canal de Telegram.',
         description:
-            'Conectá un bot de Telegram y mandá mensajes a tu equipo o a tus clientes cuando pase algo en una lista.',
+            'Conecta un bot de Telegram y manda mensajes a tu equipo o a tus clientes cuando pase algo en una lista.',
         category: 'mensajeria',
         color: '#26A5E4',
         auth: {
@@ -406,13 +406,13 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     secret: true,
                     required: true,
                     placeholder: '123456789:AA…',
-                    help: 'Lo entrega @BotFather cuando creás el bot.',
+                    help: 'Lo entrega @BotFather cuando creas el bot.',
                 }),
             ],
             how_to: [
-                'En Telegram abrí @BotFather y escribí /newbot.',
-                'Elegí un nombre y copiá el token que te devuelve.',
-                'Agregá el bot al grupo o canal donde quieras recibir los avisos.',
+                'En Telegram abre @BotFather y escribe /newbot.',
+                'Elige un nombre y copia el token que te devuelve.',
+                'Agrega el bot al grupo o canal donde quieras recibir los avisos.',
             ],
             test: {
                 label: 'Chat para el mensaje de prueba',
@@ -443,7 +443,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'Slack',
         tagline: 'Mensajes a los canales de tu equipo.',
         description:
-            'Avisá en un canal cuando se crea un registro, cambia un estado o vence una fecha.',
+            'Avisa en un canal cuando se crea un registro, cambia un estado o vence una fecha.',
         category: 'mensajeria',
         color: '#4A154B',
         auth: { kind: 'oauth', provider: 'slack', scopes: 'chat:write,chat:write.public' },
@@ -457,7 +457,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         key: 'channel',
                         label: 'Canal',
                         required: true,
-                        help: 'El nombre (#ventas) o el ID del canal. En canales privados, invitá primero la app con /invite.',
+                        help: 'El nombre (#ventas) o el ID del canal. En canales privados, invita primero la app con /invite.',
                     },
                     { key: 'text', label: 'Mensaje', type: 'long_text', required: true },
                 ],
@@ -467,7 +467,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'gmail',
         name: 'Gmail',
-        tagline: 'Enviá correos desde tu propia cuenta de Gmail.',
+        tagline: 'Envia correos desde tu propia cuenta de Gmail.',
         description:
             'Los correos salen desde tu dirección de Gmail o Google Workspace y quedan en tus enviados.',
         category: 'correo',
@@ -485,9 +485,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'google_calendar',
         name: 'Google Calendar',
-        tagline: 'Creá eventos en tu calendario.',
+        tagline: 'Crea eventos en tu calendario.',
         description:
-            'Agendá reuniones, visitas o vencimientos a partir de las fechas de tus registros.',
+            'Agenda reuniones, visitas o vencimientos a partir de las fechas de tus registros.',
         category: 'calendario',
         color: '#4285F4',
         auth: {
@@ -514,9 +514,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'google_sheets',
         name: 'Google Sheets',
-        tagline: 'Agregá filas a una hoja de cálculo.',
+        tagline: 'Agrega filas a una hoja de cálculo.',
         description:
-            'Cada vez que pase algo en una lista, sumá una fila a tu planilla: un registro de ventas, un respaldo, un reporte.',
+            'Cada vez que pase algo en una lista, suma una fila a tu planilla: un registro de ventas, un respaldo, un reporte.',
         category: 'datos',
         color: '#34A853',
         auth: {
@@ -534,7 +534,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         key: 'spreadsheet',
                         label: 'Hoja de cálculo',
                         required: true,
-                        help: 'Pegá el enlace de la planilla (https://docs.google.com/spreadsheets/d/…).',
+                        help: 'Pega el enlace de la planilla (https://docs.google.com/spreadsheets/d/…).',
                     },
                     { key: 'sheet', label: 'Pestaña', help: 'Nombre de la pestaña. Vacío = la primera.' },
                     {
@@ -554,9 +554,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         // «Imagina Base»), nunca el resto del Drive. Es un permiso NO sensible.
         key: 'google_drive',
         name: 'Google Drive',
-        tagline: 'Guardá los archivos de tu empresa en tu Google Drive.',
+        tagline: 'Guarda los archivos de tu empresa en tu Google Drive.',
         description:
-            'Conectá la cuenta de Google de la empresa y elegila en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van a una carpeta de tu Drive y no ocupan el espacio de tu plan. La app sólo ve los archivos que ella misma crea ahí.',
+            'Conecta la cuenta de Google de la empresa y elígela en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van a una carpeta de tu Drive y no ocupan el espacio de tu plan. La app sólo ve los archivos que ella misma crea ahí.',
         category: 'almacenamiento',
         color: '#1FA463',
         auth: {
@@ -571,7 +571,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'Outlook',
         tagline: 'Correo y calendario de Microsoft 365.',
         description:
-            'Enviá correos desde tu cuenta de Outlook y creá eventos en tu calendario de Microsoft 365.',
+            'Envia correos desde tu cuenta de Outlook y crea eventos en tu calendario de Microsoft 365.',
         category: 'correo',
         color: '#0078D4',
         auth: { kind: 'oauth', provider: 'microsoft', scopes: 'Mail.Send Calendars.ReadWrite' },
@@ -595,7 +595,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'WooCommerce',
         tagline: 'Tu tienda online: pedidos, clientes y productos.',
         description:
-            'Conectá tu tienda de WordPress para actualizar productos, precios y stock, cambiar el estado de los pedidos y crear cupones desde tus automatizaciones.',
+            'Conecta tu tienda de WordPress para actualizar productos, precios y stock, cambiar el estado de los pedidos y crear cupones desde tus automatizaciones.',
         category: 'comercio',
         color: '#7F54B3',
         auth: {
@@ -628,9 +628,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 field({ key: 'api_style', label: 'Rutas', hidden: true, default: 'pretty' }),
             ],
             how_to: [
-                'En el panel de WordPress andá a WooCommerce → Ajustes → Avanzado → API REST.',
-                'Tocá «Añadir clave», poné una descripción (por ejemplo «Imagina Base») y en Permisos elegí «Lectura/Escritura».',
-                'Tocá «Generar clave API» y copiá la clave del cliente (ck_…) y la clave secreta (cs_…) acá. La secreta sólo se muestra esa vez.',
+                'En el panel de WordPress ve a WooCommerce → Ajustes → Avanzado → API REST.',
+                'Toca «Añadir clave», pon una descripción (por ejemplo «Imagina Base») y en Permisos elige «Lectura/Escritura».',
+                'Toca «Generar clave API» y copia la clave del cliente (ck_…) y la clave secreta (cs_…) aquí. La secreta sólo se muestra esa vez.',
             ],
         },
         actions: [
@@ -655,7 +655,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     {
                         key: 'sale_price',
                         label: 'Precio rebajado',
-                        help: 'Vacío = no se cambia. Escribí «quitar» para sacar la rebaja.',
+                        help: 'Vacío = no se cambia. Escribe «quitar» para sacar la rebaja.',
                     },
                     {
                         key: 'stock_quantity',
@@ -772,9 +772,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'mercadopago',
         name: 'Mercado Pago',
-        tagline: 'Cobrá con links de pago y enterate solo cuando te pagan.',
+        tagline: 'Cobra con links de pago y entérate solo cuando te pagan.',
         description:
-            'Creá links de pago desde un registro o una automatización (PSE, Nequi, tarjeta, efectivo), mandalos por WhatsApp o correo, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
+            'Crea links de pago desde un registro o una automatización (PSE, Nequi, tarjeta, efectivo), mándalos por WhatsApp o correo, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
         category: 'pagos',
         color: '#00B1EA',
         auth: {
@@ -790,8 +790,8 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 }),
             ],
             how_to: [
-                'Entrá a mercadopago.com.co/developers → Tus integraciones y creá una aplicación (o abrí la que ya tengas).',
-                'En «Credenciales de producción» copiá el Access Token (empieza con APP_USR-) y pegalo acá. Para probar sin plata real, usá el de prueba (TEST-).',
+                'Entra a mercadopago.com.co/developers → Tus integraciones y crea una aplicación (o abre la que ya tengas).',
+                'En «Credenciales de producción» copia el Access Token (empieza con APP_USR-) y pégalo aquí. Para probar sin dinero real, usa el de prueba (TEST-).',
                 'Listo: los pagos te llegan a TU cuenta de Mercado Pago, sin comisión de Imagina Base. Cada link le avisa a la app cuando se paga; no hay que configurar nada más.',
             ],
         },
@@ -830,7 +830,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         name: 'Wompi',
         tagline: 'Links de pago de Bancolombia: PSE, Nequi, tarjeta y efectivo.',
         description:
-            'Creá links de pago de Wompi desde un registro o una automatización, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
+            'Crea links de pago de Wompi desde un registro o una automatización, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
         category: 'pagos',
         color: '#2C2A29',
         auth: {
@@ -861,9 +861,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 }),
             ],
             how_to: [
-                'Entrá a comercios.wompi.co → Desarrolladores → Programadores.',
-                'Copiá la llave pública (pub_prod_…), la llave privada (prv_prod_…) y el secreto de Eventos (prod_events_…) y pegalos acá. Para probar sin plata real, usá las de Sandbox (test).',
-                'Después de conectar, abrí «Cobros» en esta conexión, copiá la URL de eventos y pegala en Wompi → Desarrolladores → «URL de Eventos». Así la app se entera sola de cada pago.',
+                'Entra a comercios.wompi.co → Desarrolladores → Programadores.',
+                'Copia la llave pública (pub_prod_…), la llave privada (prv_prod_…) y el secreto de Eventos (prod_events_…) y pégalos aquí. Para probar sin dinero real, usa las de Sandbox (test).',
+                'Después de conectar, abre «Cobros» en esta conexión, copia la URL de eventos y pégala en Wompi → Desarrolladores → «URL de Eventos». Así la app se entera sola de cada pago.',
             ],
         },
         actions: [
@@ -883,9 +883,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'sqlserver',
         name: 'SQL Server / Azure SQL',
-        tagline: 'Traé datos de tu base de datos a una lista, cada hora o cada día.',
+        tagline: 'Trae datos de tu base de datos a una lista, cada hora o cada día.',
         description:
-            'Conectá una base de SQL Server o Azure SQL con un usuario de solo lectura y cargá el resultado de una consulta o de un procedimiento almacenado en una lista, actualizando por una columna clave (NIT, número de factura) en vez de duplicar.',
+            'Conecta una base de SQL Server o Azure SQL con un usuario de solo lectura y carga el resultado de una consulta o de un procedimiento almacenado en una lista, actualizando por una columna clave (NIT, número de factura) en vez de duplicar.',
         category: 'bases_datos',
         color: '#CC2927',
         auth: {
@@ -914,7 +914,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     advanced: true,
                     default: 'true',
                     type: 'boolean',
-                    help: 'Azure SQL la exige. Apagala sólo si tu servidor no tiene TLS configurado.',
+                    help: 'Azure SQL la exige. Apágala sólo si tu servidor no tiene TLS configurado.',
                 }),
                 field({
                     key: 'trust_server_certificate',
@@ -922,14 +922,14 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     advanced: true,
                     default: 'false',
                     type: 'boolean',
-                    help: 'Sólo para servidores propios con un certificado autofirmado. En Azure dejalo apagado.',
+                    help: 'Sólo para servidores propios con un certificado autofirmado. En Azure déjalo apagado.',
                 }),
             ],
             how_to: [
-                'Pedile a quien administra la base un usuario de solo lectura (rol db_datareader y, si vas a usar un procedimiento, permiso EXECUTE sobre él).',
-                'Si es Azure SQL: en el portal de Azure → tu servidor SQL → Redes, agregá la IP de este servidor a las reglas del firewall.',
+                'Pídele a quien administra la base un usuario de solo lectura (rol db_datareader y, si vas a usar un procedimiento, permiso EXECUTE sobre él).',
+                'Si es Azure SQL: en el portal de Azure → tu servidor SQL → Redes, agrega la IP de este servidor a las reglas del firewall.',
                 'Si es un servidor propio: tiene que aceptar conexiones en el puerto 1433 desde la IP de este servidor (o por una VPN).',
-                'Después de conectar, armá la sincronización con «Sincronizaciones».',
+                'Después de conectar, arma la sincronización con «Sincronizaciones».',
             ],
         },
         actions: [],
@@ -940,9 +940,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         // Cloudflare R2, Wasabi, DigitalOcean Spaces, MinIO…
         key: 's3',
         name: 'Almacenamiento S3',
-        tagline: 'Guardá los archivos de tu empresa en tu propio bucket (Amazon S3, Backblaze, Cloudflare R2…).',
+        tagline: 'Guarda los archivos de tu empresa en tu propio bucket (Amazon S3, Backblaze, Cloudflare R2…).',
         description:
-            'Conectá un bucket compatible con S3 y elegilo en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van ahí, no ocupan el espacio de tu plan y se descargan directo desde tu bucket.',
+            'Conecta un bucket compatible con S3 y elígelo en Ajustes → Almacenamiento: los archivos que se suban y los PDF que se guarden van ahí, no ocupan el espacio de tu plan y se descargan directo desde tu bucket.',
         category: 'almacenamiento',
         color: '#E25444',
         auth: {
@@ -959,7 +959,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     label: 'Región',
                     placeholder: 'us-east-1',
                     default: 'us-east-1',
-                    help: 'La del bucket (us-east-005, eu-central-1…). En Cloudflare R2 poné «auto».',
+                    help: 'La del bucket (us-east-005, eu-central-1…). En Cloudflare R2 pon «auto».',
                 }),
                 field({ key: 'bucket', label: 'Bucket', required: true, placeholder: 'mi-empresa-archivos' }),
                 field({
@@ -989,14 +989,14 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     advanced: true,
                     type: 'boolean',
                     default: 'false',
-                    help: 'Encendelo para MinIO o servidores propios. Amazon, Backblaze, R2 y Wasabi funcionan apagado.',
+                    help: 'Enciéndelo para MinIO o servidores propios. Amazon, Backblaze, R2 y Wasabi funcionan apagado.',
                 }),
             ],
             how_to: [
-                'Creá un bucket PRIVADO en tu proveedor (no hace falta que sea público: los archivos se entregan con enlaces temporales).',
-                'Creá una clave de acceso que pueda leer, escribir y borrar en ese bucket (en Backblaze: «Application Key» con acceso a ese bucket; en R2: un token de API «Object Read & Write»).',
-                'Pegá acá la dirección, la región, el bucket y la clave. Al conectar probamos subir, leer y borrar un archivo chiquito.',
-                'Después elegilo en Ajustes → Almacenamiento y, si querés, mové ahí los archivos que ya tenés.',
+                'Crea un bucket PRIVADO en tu proveedor (no hace falta que sea público: los archivos se entregan con enlaces temporales).',
+                'Crea una clave de acceso que pueda leer, escribir y borrar en ese bucket (en Backblaze: «Application Key» con acceso a ese bucket; en R2: un token de API «Object Read & Write»).',
+                'Pega aquí la dirección, la región, el bucket y la clave. Al conectar probamos subir, leer y borrar un archivo chiquito.',
+                'Después elígelo en Ajustes → Almacenamiento y, si quieres, mueve ahí los archivos que ya tienes.',
             ],
         },
         actions: [],

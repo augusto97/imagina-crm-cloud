@@ -201,7 +201,7 @@ export class RecordsController {
         @Body(new ZodValidationPipe(createRecordSchema)) input: CreateRecordInput,
     ): Promise<RecordDto> {
         // Límite de records por plan (STANDALONE §11): lo aplica el service
-        // (v0.1.228), así vale también para los caminos que no pasan por acá.
+        // (v0.1.228), así vale también para los caminos que no pasan por aquí.
         return this.records.create(tenantId(req), actor(req), list, input);
     }
 
@@ -251,7 +251,7 @@ export function parseListQuery(raw: Record<string, unknown>): ListRecordsQuery {
         sort: raw.sort,
         search: raw.search,
         // Subtareas (v0.1.132). OJO: este objeto es un WHITELIST — lo que no
-        // se copia acá se descarta en silencio (fue exactamente el bug de
+        // se copia aquí se descarta en silencio (fue exactamente el bug de
         // v0.1.68 con `filter_tree`).
         parent: raw.parent,
         include_subtasks: raw.include_subtasks,

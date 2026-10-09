@@ -26,7 +26,7 @@ export class MetricsGuard implements CanActivate {
         // token el endpoint se cierra (se configura METRICS_TOKEN para el scraper).
         if (!expected) {
             if (this.env.NODE_ENV !== 'production') return true;
-            throw new ForbiddenException('Métricas deshabilitadas: configurá METRICS_TOKEN');
+            throw new ForbiddenException('Métricas deshabilitadas: configura METRICS_TOKEN');
         }
 
         const req = context.switchToHttp().getRequest<FastifyRequest>();

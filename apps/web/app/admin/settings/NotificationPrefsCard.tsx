@@ -14,7 +14,7 @@ const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 /**
  * v0.1.276 (ADR-S40) — Ajustes → Cuenta → Avisos. Por persona Y por empresa:
- * en la bandeja llega siempre todo; acá se elige qué llega TAMBIÉN por correo
+ * en la bandeja llega siempre todo; aquí se elige qué llega TAMBIÉN por correo
  * y el resumen diario (lo vencido, lo que vence hoy y lo sin leer).
  */
 export function NotificationPrefsCard(): JSX.Element {
@@ -35,7 +35,7 @@ export function NotificationPrefsCard(): JSX.Element {
             <div>
                 <h2 className="imcrm-text-base imcrm-font-semibold">{__('Avisos')}</h2>
                 <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Todo llega a la campana de la barra superior. Elegí qué querés recibir también por correo en esta empresa.')}
+                    {__('Todo llega a la campana de la barra superior. Elige qué quieres recibir también por correo en esta empresa.')}
                 </p>
             </div>
 

@@ -59,7 +59,7 @@ describe('plantillas de documentos (v0.1.266)', () => {
         expect(formatDocNumber(12345, { prefix: '', padding: 3 })).toBe('12345');
         const d = parseDocDesign({
             blocks: [
-                { id: 'q', type: 'qr', value: '{{pago.link}}', caption: 'Escaneá para pagar' },
+                { id: 'q', type: 'qr', value: '{{pago.link}}', caption: 'Escanea para pagar' },
                 { id: 'c', type: 'columns', columns: [{ blocks: [{ id: 'q2', type: 'qr', value: 'x' }] }, { blocks: [] }] },
             ],
         })!;

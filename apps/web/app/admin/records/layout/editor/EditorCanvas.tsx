@@ -27,7 +27,7 @@ import {
 /**
  * v0.1.231 — El lienzo del editor: la ficha REAL (los mismos componentes que
  * ve la persona, con datos de un registro de verdad) con los controles del
- * editor alrededor. Lo que se ve acá es lo que se ve en la ficha.
+ * editor alrededor. Lo que se ve aquí es lo que se ve en la ficha.
  */
 export function EditorCanvas({ onPageChange }: { onPageChange: (id: string) => void }): JSX.Element {
     const ed = useEditor();
@@ -64,7 +64,7 @@ function HeaderChrome({ children }: { children: ReactNode }): JSX.Element {
             {children ?? (
                 // Cabecera oculta: queda un asa para volver a mostrarla.
                 <div className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-rounded-[14px] imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Cabecera oculta — elegila para mostrarla')}
+                    {__('Cabecera oculta — elígela para mostrarla')}
                 </div>
             )}
             <button
@@ -326,7 +326,7 @@ function DropZone({ sectionId, col, index, grow = false }: { sectionId: string; 
             )}
         >
             {over && !grow && <span className="imcrm-absolute imcrm-inset-x-0 imcrm-top-1/2 imcrm-h-0.5 imcrm--translate-y-1/2 imcrm-rounded-full imcrm-bg-primary" />}
-            {grow && <span className="imcrm-flex imcrm-h-full imcrm-min-h-[64px] imcrm-items-center imcrm-justify-center imcrm-text-xs imcrm-text-muted-foreground">{__('Soltá un bloque acá')}</span>}
+            {grow && <span className="imcrm-flex imcrm-h-full imcrm-min-h-[64px] imcrm-items-center imcrm-justify-center imcrm-text-xs imcrm-text-muted-foreground">{__('Suelta un bloque aquí')}</span>}
         </div>
     );
 }

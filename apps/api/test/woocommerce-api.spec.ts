@@ -18,7 +18,7 @@ import {
 
 /**
  * v0.1.205 — WooCommerce: la forma exacta de las peticiones, sin salir a la
- * red. Lo que se prueba acá es lo mismo que ejecutan el motor, el probador y
+ * red. Lo que se prueba aquí es lo mismo que ejecutan el motor, el probador y
  * (fase 2) la sincronización.
  */
 const creds = (fields: Record<string, string> = {}): IntegrationCreds => ({

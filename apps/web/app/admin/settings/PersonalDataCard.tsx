@@ -67,7 +67,7 @@ export function PersonalDataCard(): JSX.Element {
                         {__('Descargar tus datos')}
                     </h2>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Un archivo JSON con tu cuenta, las empresas donde participás y lo que escribiste en cada una (comentarios, actividad, menciones, filtros y archivos subidos).')}
+                        {__('Un archivo JSON con tu cuenta, las empresas donde participas y lo que escribiste en cada una (comentarios, actividad, menciones, filtros y archivos subidos).')}
                     </p>
                 </div>
                 <Button
@@ -101,10 +101,10 @@ export function PersonalDataCard(): JSX.Element {
                         <AlertTriangle className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-shrink-0 imcrm-text-warning" />
                         <div className="imcrm-text-sm">
                             <p className="imcrm-font-medium imcrm-text-foreground">
-                                {__('Primero nombrá otro administrador')}
+                                {__('Primero nombra otro administrador')}
                             </p>
                             <p className="imcrm-text-muted-foreground">
-                                {__('Sos el único administrador de')}{' '}
+                                {__('Eres el único administrador de')}{' '}
                                 <strong>{blocking.map((w) => w.name).join(', ')}</strong>.{' '}
                                 {__('Si te vas, nadie podría administrar esa empresa.')}
                             </p>
@@ -130,7 +130,7 @@ export function PersonalDataCard(): JSX.Element {
                     >
                         <p className="imcrm-text-sm imcrm-text-foreground">
                             {__('Vas a borrar la cuenta')} <strong>{user?.email}</strong>.{' '}
-                            {__('Confirmá con tu contraseña.')}
+                            {__('Confirma con tu contraseña.')}
                         </p>
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                             <Label htmlFor="delete-pw">{__('Contraseña')}</Label>

@@ -4,10 +4,10 @@ import { wooNumber, type WooJson } from './woo-map';
 /**
  * Edición masiva de la tienda (v0.1.217, ADR-S24). PURO: dado el producto o la
  * variación tal como lo tiene la tienda AHORA y la lista de operaciones, qué
- * se le manda a WooCommerce y qué cambia, en criollo, para la vista previa.
+ * se le manda a WooCommerce y qué cambia, en lenguaje claro, para la vista previa.
  * Se prueba sin red ni base; el servicio hace la red.
  *
- * Reglas que viven acá (y no en la pantalla):
+ * Reglas que viven aquí (y no en la pantalla):
  *  - El producto con variaciones no tiene precio ni —en general— stock
  *    propio: esas operaciones van a cada variación.
  *  - Una variación que hereda el stock del producto (`manage_stock:
@@ -689,12 +689,12 @@ export function planVariations(product: WooJson, existing: readonly WooJson[], s
     const notes: string[] = [];
     const out: VariationsPlan = { productAttributes: null, create: [], existing: 0, notes };
     if (product.type !== 'variable') {
-        notes.push('No es un producto variable: cambiá su tipo a «Producto variable» en WooCommerce para darle variaciones.');
+        notes.push('No es un producto variable: cambia su tipo a «Producto variable» en WooCommerce para darle variaciones.');
         return out;
     }
     const combos = variationCombos(spec.attributes);
     if (combos.length > STORE_VARIATIONS_MAX_PER_PRODUCT) {
-        notes.push(`Son ${combos.length} combinaciones y el tope es ${STORE_VARIATIONS_MAX_PER_PRODUCT} por producto: elegí menos valores.`);
+        notes.push(`Son ${combos.length} combinaciones y el tope es ${STORE_VARIATIONS_MAX_PER_PRODUCT} por producto: elige menos valores.`);
         return out;
     }
     // Atributos del producto: se suman los valores que falten, sin tocar el resto.

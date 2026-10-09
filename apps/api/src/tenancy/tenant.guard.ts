@@ -20,7 +20,7 @@ export interface TenantContext {
     status: BillingStatus;
 }
 
-/** Los magic-link / consumo del portal no pasan por acá; sí las mutaciones. */
+/** Los magic-link / consumo del portal no pasan por aquí; sí las mutaciones. */
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /**
@@ -74,7 +74,7 @@ export class TenantGuard implements CanActivate {
         });
 
         if (!membership) {
-            throw new ForbiddenException('No sos miembro de ese workspace');
+            throw new ForbiddenException('No eres miembro de ese workspace');
         }
         // SEC-24 (v0.1.225): el rol `client` es SÓLO portal. Sus endpoints
         // (`/portal/*`) resuelven la empresa por el vínculo, nunca por este

@@ -425,7 +425,7 @@ function UploadStep({
             <FileUp className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <span className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                    {fileName !== '' ? fileName : __('Elegí un archivo CSV')}
+                    {fileName !== '' ? fileName : __('Elige un archivo CSV')}
                 </span>
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
                     {__('Click o arrastra. Tamaño máximo recomendado: 5 MB / 5 000 filas.')}
@@ -552,7 +552,7 @@ function MapStep({
                     <span className="imcrm-font-medium imcrm-text-warning">
                         ⚠ {__('Atención — columnas con datos sin mapear:')}
                     </span>{' '}
-                    {__('los datos de estas columnas se PERDERÁN si seguís así. Mapealas a un campo existente o usá "Crear campo nuevo".')}
+                    {__('los datos de estas columnas se PERDERÁN si sigues así. Mapéalas a un campo existente o usa "Crear campo nuevo".')}
                     <ul className="imcrm-mt-1 imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                         {unmappedWithData.map((c) => (
                             <li key={c.idx}>
@@ -728,7 +728,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                         <>
                             {' · '}
                             <span className="imcrm-font-medium imcrm-text-warning">
-                                {__('Hay datos perdidos — revisá abajo')}
+                                {__('Hay datos perdidos — revisa abajo')}
                             </span>
                         </>
                     )}
@@ -761,7 +761,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                         ))}
                     </ul>
                     <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
-                        {__('Para importar estos datos: volvé a empezar y mapealas a un campo existente o pedí "Crear campo nuevo".')}
+                        {__('Para importar estos datos: vuelve a empezar y mapéalas a un campo existente o pide "Crear campo nuevo".')}
                     </p>
                 </div>
             )}
@@ -837,7 +837,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
             )}
             {result.truncated && (
                 <p className="imcrm-text-xs imcrm-text-warning">
-                    {__('Se procesaron las primeras 5 000 filas. Volvé a importar con el resto del archivo.')}
+                    {__('Se procesaron las primeras 5 000 filas. Vuelve a importar con el resto del archivo.')}
                 </p>
             )}
             {result.errors.length > 0 && (

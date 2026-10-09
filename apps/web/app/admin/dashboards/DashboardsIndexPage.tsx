@@ -153,7 +153,7 @@ function DashboardsEmpty({ onCreate }: { onCreate: () => void }): JSX.Element {
         <EmptyState
             icon={BarChart3}
             title={__('Aún no hay dashboards')}
-            description={__('Creá un tablero con indicadores y gráficos sobre cualquiera de tus listas.')}
+            description={__('Crea un tablero con indicadores y gráficos sobre cualquiera de tus listas.')}
             action={
                 <Button onClick={onCreate} className="imcrm-gap-2">
                     <Plus className="imcrm-h-4 imcrm-w-4" />

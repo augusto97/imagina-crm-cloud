@@ -35,7 +35,7 @@ export const activitySchema = z.object({
 export type ActivityDto = z.infer<typeof activitySchema>;
 
 // --- v0.1.114: bitácora de acciones ADMINISTRATIVAS del workspace ---
-// Distinta de `activity` (cambios de registros): acá van las acciones que
+// Distinta de `activity` (cambios de registros): aquí van las acciones que
 // cambian la configuración o destruyen datos, incluidas las que no cuelgan
 // de ninguna lista (miembros, plan, SMTP, dominio).
 export const auditEntrySchema = z.object({

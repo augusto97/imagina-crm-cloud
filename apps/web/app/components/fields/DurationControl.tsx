@@ -76,7 +76,7 @@ export const DurationControl = forwardRef<HTMLInputElement, Props>(function Dura
                 className,
             )}
             aria-invalid={invalid}
-            title={invalid ? 'Escribí una duración: 1h 30m, 1:30 o 90' : undefined}
+            title={invalid ? 'Escribe una duración: 1h 30m, 1:30 o 90' : undefined}
         />
     );
 });

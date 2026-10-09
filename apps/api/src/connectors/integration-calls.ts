@@ -5,7 +5,7 @@ import { buildWooRequest, checkWooResponse } from './woocommerce/wc-api';
  * Peticiones de las apps de la galería (v0.1.203, ADR-S22 fase 4).
  *
  * Cada acción ya armada («Enviar mensaje a Slack», «Agregar fila en Google
- * Sheets») se traduce acá a la petición HTTP real. Es código y no filas
+ * Sheets») se traduce aquí a la petición HTTP real. Es código y no filas
  * clave/valor a propósito: Gmail quiere un mensaje RFC 2822 en base64, Sheets
  * un arreglo de filas, Calendar objetos anidados con zona horaria. Nadie que
  * use la galería tiene que ver nada de esto.
@@ -286,7 +286,7 @@ export function spreadsheetId(raw: string): string {
     if (fromUrl) return fromUrl[1]!;
     if (/^[A-Za-z0-9_-]{20,}$/.test(text)) return text;
     throw new IntegrationInputError(
-        'No reconocemos la hoja de cálculo: pegá el enlace completo (https://docs.google.com/spreadsheets/d/…).',
+        'No reconocemos la hoja de cálculo: pega el enlace completo (https://docs.google.com/spreadsheets/d/…).',
     );
 }
 
@@ -506,12 +506,12 @@ export function buildIntegrationRequest(
 // --- Respuestas -----------------------------------------------------------------
 
 const SLACK_ERRORS: Record<string, string> = {
-    channel_not_found: 'No existe ese canal o la app no lo ve. Revisá el nombre.',
-    not_in_channel: 'La app no está en ese canal: invitala con /invite.',
+    channel_not_found: 'No existe ese canal o la app no lo ve. Revisa el nombre.',
+    not_in_channel: 'La app no está en ese canal: invítala con /invite.',
     is_archived: 'El canal está archivado.',
-    invalid_auth: 'La autorización de Slack ya no es válida: reconectá la app.',
-    token_revoked: 'La autorización de Slack fue revocada: reconectá la app.',
-    account_inactive: 'La autorización de Slack fue revocada: reconectá la app.',
+    invalid_auth: 'La autorización de Slack ya no es válida: reconecta la app.',
+    token_revoked: 'La autorización de Slack fue revocada: reconecta la app.',
+    account_inactive: 'La autorización de Slack fue revocada: reconecta la app.',
     msg_too_long: 'El mensaje es demasiado largo para Slack.',
     no_text: 'El mensaje está vacío.',
 };
@@ -540,9 +540,9 @@ export function checkIntegrationResponse(
         if (json && json.ok === false) {
             const desc = String(json.description ?? '');
             if (/chat not found/i.test(desc)) {
-                return 'No encontramos ese chat: revisá el ID y que el bot esté en el grupo o canal.';
+                return 'No encontramos ese chat: revisa el ID y que el bot esté en el grupo o canal.';
             }
-            if (status === 401) return 'El token del bot ya no es válido: actualizalo en Integraciones.';
+            if (status === 401) return 'El token del bot ya no es válido: actualízalo en Integraciones.';
             return `Telegram rechazó el mensaje: ${desc || status}.`;
         }
         return status >= 400 ? `Telegram respondió ${status}.` : null;
@@ -556,7 +556,7 @@ export function checkIntegrationResponse(
         return null;
     }
     if (status === 401) {
-        return 'La autorización venció o se revocó: reconectá la app en Ajustes → Integraciones.';
+        return 'La autorización venció o se revocó: reconecta la app en Ajustes → Integraciones.';
     }
     if (status >= 400) {
         const err = json?.error;
@@ -643,14 +643,14 @@ export function parseVerify(
     const out: VerifyOutcome = { ok: true, label: null, error: null, warning: null, options: {} };
     if (integration === 'telegram') {
         if (status === 401 || status === 404 || json?.ok === false) {
-            return { ...out, ok: false, error: 'Telegram no reconoce ese token. Copialo de nuevo desde @BotFather.' };
+            return { ...out, ok: false, error: 'Telegram no reconoce ese token. Cópialo de nuevo desde @BotFather.' };
         }
         if (status !== 200 || json?.ok !== true) {
             // Algo en el medio (un proxy, una caída) contestó en vez de
             // Telegram: no se sabe si el token sirve, y hay que decirlo.
             return {
                 ...out,
-                warning: `No pudimos comprobar el token ahora (respuesta ${status}). Se guardó igual: probalo con «Probar ahora» en una automatización.`,
+                warning: `No pudimos comprobar el token ahora (respuesta ${status}). Se guardó igual: pruébalo con «Probar ahora» en una automatización.`,
             };
         }
         const result = json.result as Record<string, unknown> | undefined;
@@ -690,7 +690,7 @@ export function parseVerify(
             ...out,
             warning:
                 `No pudimos listar tus cuentas con esta clave${detail}. Es normal si la clave sólo tiene ` +
-                'permiso de envío: escribí el identificador de la cuenta a mano y mandá un mensaje de prueba ' +
+                'permiso de envío: escribe el identificador de la cuenta a mano y manda un mensaje de prueba ' +
                 'para confirmar que funciona.',
         };
     }

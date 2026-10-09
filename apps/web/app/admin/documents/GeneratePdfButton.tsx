@@ -119,7 +119,7 @@ export function GeneratePdfButton({
                 <DropdownMenuLabel className="imcrm-text-xs imcrm-text-muted-foreground">{__('Documentos de esta lista')}</DropdownMenuLabel>
                 {list.length === 0 && (
                     <p className="imcrm-px-2 imcrm-pb-2 imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Todavía no hay plantillas. Armá la primera (cuenta de cobro, recibo…).')}
+                        {__('Todavía no hay plantillas. Arma la primera (cuenta de cobro, recibo…).')}
                     </p>
                 )}
                 {list.map((t) => (

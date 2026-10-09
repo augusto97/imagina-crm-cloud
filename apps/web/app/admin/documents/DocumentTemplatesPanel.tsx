@@ -35,7 +35,7 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-pt-5" data-testid="doc-templates-panel">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-max-w-xl imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Diseñá documentos con los datos de cada registro. Después los generás desde la ficha o los manda una automatización por correo.')}
+                        {__('Diseña documentos con los datos de cada registro. Después los generas desde la ficha o los manda una automatización por correo.')}
                     </p>
                     <Button size="sm" className="imcrm-gap-1.5" onClick={() => setStarterOpen(true)} data-testid="doc-new">
                         <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -53,7 +53,7 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
                         <FileText className="imcrm-h-7 imcrm-w-7 imcrm-text-muted-foreground" />
                         <p className="imcrm-text-sm imcrm-font-medium">{__('Todavía no hay plantillas')}</p>
                         <p className="imcrm-max-w-sm imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Arrancá con la cuenta de cobro: el monto en letras, tus datos bancarios y la firma ya vienen armados.')}
+                            {__('Arranca con la cuenta de cobro: el monto en letras, tus datos bancarios y la firma ya vienen armados.')}
                         </p>
                         <Button size="sm" variant="outline" onClick={() => setStarterOpen(true)}>
                             {__('Crear la primera')}

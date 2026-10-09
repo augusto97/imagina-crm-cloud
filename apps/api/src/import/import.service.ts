@@ -214,7 +214,7 @@ export class ImportService {
         if (input.new_fields.length > 0 && !canManageFields) {
             throw new ForbiddenException({
                 code: 'import_new_fields_forbidden',
-                message: 'Tu rol no puede crear campos: mapeá las columnas a campos que ya existen o pedíselo a un administrador.',
+                message: 'Tu rol no puede crear campos: mapea las columnas a campos que ya existen o pídeselo a un administrador.',
                 data: { status: 403 },
             });
         }
@@ -225,7 +225,7 @@ export class ImportService {
 
         const mapping = new Map<number, string>();
         // Columnas de JERARQUÍA (v0.1.132): viajan en el mismo mapping pero no
-        // son campos — se apartan acá para que el resto del flujo no las vea.
+        // son campos — se apartan aquí para que el resto del flujo no las vea.
         let idColumn: number | null = null;
         let parentColumn: number | null = null;
         for (const [k, slug] of Object.entries(input.mapping)) {

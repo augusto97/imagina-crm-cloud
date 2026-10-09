@@ -249,7 +249,7 @@ describe('Migración de empresa (v0.1.197)', () => {
                 listId: clientesId,
                 recordId: clienteRecId,
                 userId: anaId,
-                body: '@carlos revisá esto',
+                body: '@carlos revisa esto',
             })
             .returning();
         await pg.db.insert(comments).values({
@@ -267,7 +267,7 @@ describe('Migración de empresa (v0.1.197)', () => {
             recordId: clienteRecId,
             mentionedUserId: carlosId,
             authorUserId: anaId,
-            snippet: 'revisá esto',
+            snippet: 'revisa esto',
         });
         await pg.db.insert(activity).values({
             tenantId: tenantA,

@@ -259,7 +259,7 @@ export class DocumentsService {
             if (used.length > 0) {
                 throw new ConflictException({
                     code: 'document_template_in_use',
-                    message: `La usan estas automatizaciones: ${used.join(', ')}. Sacala de ellas antes de borrarla.`,
+                    message: `La usan estas automatizaciones: ${used.join(', ')}. Sácala de ellas antes de borrarla.`,
                     data: { status: 409, automations: used },
                 });
             }
@@ -409,7 +409,7 @@ export class DocumentsService {
             if (!field || field.type !== 'file') {
                 throw new BadRequestException({
                     code: 'invalid_save_field',
-                    message: 'Elegí un campo de tipo Archivo de esta lista para guardar el PDF.',
+                    message: 'Elige un campo de tipo Archivo de esta lista para guardar el PDF.',
                     data: { status: 400 },
                 });
             }
@@ -457,10 +457,10 @@ export class DocumentsService {
         },
     ): Promise<RenderedDocument> {
         const tpl = await this.findAnyInTx(tx, opts.tenantId, opts.templateId);
-        if (!tpl) throw new Error(`La plantilla de documento #${opts.templateId} ya no existe: revisá la acción.`);
+        if (!tpl) throw new Error(`La plantilla de documento #${opts.templateId} ya no existe: revisa la acción.`);
         if (tpl.listId !== opts.listId) throw new Error(`La plantilla «${tpl.name}» es de otra lista.`);
         const design = parseDocDesign(tpl.design);
-        if (!design) throw new Error(`El diseño de «${tpl.name}» no es válido: abrilo en el editor y volvé a guardarlo.`);
+        if (!design) throw new Error(`El diseño de «${tpl.name}» no es válido: ábrelo en el editor y vuelve a guardarlo.`);
         return this.renderInTx(tx, {
             tenantId: opts.tenantId,
             actor: opts.actor,
@@ -583,7 +583,7 @@ export class DocumentsService {
         // muestra ya (el registro se leyó antes de emitirlo).
         if (record && numbering.field) record = { ...record, data: { ...record.data, [numbering.field.key]: numbering.field.value } };
         if (!design.numbering.enabled && JSON.stringify(design).includes('documento.numero')) {
-            warnings.push('El documento usa {{documento.numero}} pero la numeración está apagada: encendela en «Hoja y estilo».');
+            warnings.push('El documento usa {{documento.numero}} pero la numeración está apagada: enciéndela en «Hoja y estilo».');
         }
 
         // Ítems (tablas de registros vinculados).
@@ -686,7 +686,7 @@ export class DocumentsService {
         if (out.buffer.length > DOC_MAX_PDF_BYTES) {
             throw new BadRequestException({
                 code: 'document_too_large',
-                message: `El PDF pesa ${(out.buffer.length / 1024 / 1024).toFixed(1)} MB: el máximo es ${DOC_MAX_PDF_BYTES / 1024 / 1024} MB. Achicá las imágenes o la tabla de ítems.`,
+                message: `El PDF pesa ${(out.buffer.length / 1024 / 1024).toFixed(1)} MB: el máximo es ${DOC_MAX_PDF_BYTES / 1024 / 1024} MB. Achica las imágenes o la tabla de ítems.`,
                 data: { status: 400 },
             });
         }
@@ -773,7 +773,7 @@ export class DocumentsService {
         if (numbering.save_field) {
             const f = fields.find((x) => x.slug === numbering.save_field);
             if (!f || (f.type !== 'text' && f.type !== 'long_text')) {
-                warnings.push(`El número no se guardó en «${numbering.save_field}»: elegí un campo de texto de esta lista.`);
+                warnings.push(`El número no se guardó en «${numbering.save_field}»: elige un campo de texto de esta lista.`);
             } else {
                 await tx
                     .update(recordsTable)
@@ -841,7 +841,7 @@ export class DocumentsService {
             fields: [],
             warning,
         });
-        if (!b.source) return empty('Elegí de qué registros vinculados salen las filas.');
+        if (!b.source) return empty('Elige de qué registros vinculados salen las filas.');
         const rel = await this.fields.findAnyByIdWithinTx(tx, req.tenantId, b.source.relation_field_id);
         const target = Number((rel?.config as { target_list_id?: unknown } | undefined)?.target_list_id ?? 0);
         const valid =
@@ -852,7 +852,7 @@ export class DocumentsService {
                 : rel.list_id === b.source.list_id && target === listId);
         if (!valid) {
             return empty(
-                'La relación de esta tabla ya no existe: elegí otra en el editor.',
+                'La relación de esta tabla ya no existe: elige otra en el editor.',
                 `La tabla «${b.title || 'de ítems'}» apunta a una relación que ya no existe.`,
             );
         }
@@ -867,7 +867,7 @@ export class DocumentsService {
             width: c.width,
         }));
         if (cols.length === 0) {
-            return { ...empty('Elegí las columnas de la tabla.'), table: { columns: [], rows: [], notice: 'Elegí las columnas de la tabla.' } };
+            return { ...empty('Elige las columnas de la tabla.'), table: { columns: [], rows: [], notice: 'Elige las columnas de la tabla.' } };
         }
         if (tagsMode) {
             const row = cols.map((c) => `{{${c.slug}}}`);
@@ -981,7 +981,7 @@ export class DocumentsService {
                     const id = img.kind === 'brand' ? brandLogo : img.file_id;
                     const row = id ? byId.get(id) : undefined;
                     if (!row) {
-                        if (img.kind === 'file') warnings.push('Una imagen del documento ya no existe o no tenés acceso a ella.');
+                        if (img.kind === 'file') warnings.push('Una imagen del documento ya no existe o no tienes acceso a ella.');
                         continue;
                     }
                     const bytes = await readAll(

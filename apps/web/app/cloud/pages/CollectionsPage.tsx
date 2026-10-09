@@ -60,7 +60,7 @@ export function CollectionsPage(): JSX.Element {
                         {d.connection.test_mode && <Badge variant="warning">{__('Modo prueba')}</Badge>}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {d.connection.account_label ?? label} — {__('la plata va directo a tu cuenta, sin comisión de la plataforma.')}
+                        {d.connection.account_label ?? label} — {__('el dinero va directo a tu cuenta, sin comisión de la plataforma.')}
                     </p>
                 </div>
             </header>
@@ -85,7 +85,7 @@ export function CollectionsPage(): JSX.Element {
                 {d.hook_needs_setup ? (
                     <div className="imcrm-mt-2 imcrm-space-y-2 imcrm-text-sm">
                         <p className="imcrm-text-muted-foreground">
-                            {__('Para que la app se entere sola de cada pago, pegá esta URL en Wompi → Desarrolladores → «URL de Eventos» (en el ambiente de')}{' '}
+                            {__('Para que la app se entere sola de cada pago, pega esta URL en Wompi → Desarrolladores → «URL de Eventos» (en el ambiente de')}{' '}
                             {d.connection.test_mode ? __('Sandbox') : __('Producción')}).
                         </p>
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2">
@@ -95,7 +95,7 @@ export function CollectionsPage(): JSX.Element {
                         {!d.events_secret_set && (
                             <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
                                 <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
-                                {__('Falta el «Secreto de eventos»: cargalo en «Actualizar clave» para que cada aviso se verifique con su firma. Igual cada pago se confirma volviendo a consultarlo en Wompi.')}
+                                {__('Falta el «Secreto de eventos»: cárgalo en «Actualizar clave» para que cada aviso se verifique con su firma. Igual cada pago se confirma volviendo a consultarlo en Wompi.')}
                             </p>
                         )}
                         {!d.last_hook_at && (
@@ -117,10 +117,10 @@ export function CollectionsPage(): JSX.Element {
                     {__('Cómo cobrar')}
                 </h2>
                 <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
-                    <li>{__('Desde un registro: abrilo y tocá «Cobrar». El link queda copiado para mandarlo por WhatsApp o correo.')}</li>
+                    <li>{__('Desde un registro: ábrelo y toca «Cobrar». El link queda copiado para mandarlo por WhatsApp o correo.')}</li>
                     <li>{__('Desde una automatización: acción «Crear link de pago» (por ejemplo, al crear una factura) y después «Enviar WhatsApp» o «Enviar correo» con {{pago.link}}.')}</li>
                     <li>{__('Para reaccionar al pago: disparador «Cuando se recibe un pago» (agradecer, marcar la factura, avisar al equipo).')}</li>
-                    <li>{__('Con «Agregar columnas» en un registro, la lista muestra el estado de cada pago y podés filtrar quién debe.')}</li>
+                    <li>{__('Con «Agregar columnas» en un registro, la lista muestra el estado de cada pago y puedes filtrar quién debe.')}</li>
                 </ul>
             </section>
 

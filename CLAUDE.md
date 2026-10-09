@@ -7782,6 +7782,27 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `planCleanup`). Por la misma causa el health-check con rollback de
         `finalize.sh` nunca corrió: `KillMode=process` opcional (runbook §6).
 
+  - [x] **Español neutro en toda la app (v0.1.279, ADR-S42, pedido del
+        usuario: "nunca escribas con acento argentino, no me gusta; todo en
+        español neutro, a lo mucho tuteando")**: los textos se habían escrito
+        con voseo rioplatense desde el inicio. Conversión de TODO texto
+        visible —interfaz, errores del API, correos (portal, invitaciones,
+        avisos), páginas públicas (formularios, listas, legales), catálogo de
+        plantillas, guías de integraciones y el prompt del asistente IA— a
+        tuteo neutro: ~1.600 reemplazos en ~400 archivos con un diccionario
+        voseo → tú que respeta los cambios de raíz ("probá" → "prueba",
+        "volvé" → "vuelve", "elegí" → "elige", "andá" → "ve", "hacé" → "haz")
+        y la tilde de los enclíticos ("revisalo" → "revísalo", "decime" →
+        "dime", "ponele" → "ponle"), más una pasada a mano de pronombres ("vos"
+        → "tú/ti", "sos" → "eres") y vocabulario ("acá" → "aquí", "plata" →
+        "dinero", "en criollo" → "en lenguaje claro"). El asistente ✨/MCP
+        recibe la instrucción de responder en español neutro. Lo que cada
+        empresa ya guardó (sus plantillas, correos, páginas legales propias)
+        no se toca. Regla permanente en §6 y en CONTINUIDAD. Tipos y lint en
+        0; 190 shared, 273 front y la suite completa de la API en verde
+        (los tests que comparaban textos se convirtieron con el mismo
+        diccionario).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
@@ -7796,3 +7817,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    decisiones y pedidos importantes de la conversación aunque no generen
    release (ej. una pregunta que quedó esperando respuesta). Es el respaldo
    por si la conversación se pierde: lo que no esté escrito ahí, se pierde.
+6. **Idioma: español NEUTRO, tuteando — nunca voseo** (pedido explícito del
+   usuario, 2026-10-09: "nunca escribas con acento argentino"). Vale para
+   TODO texto visible de la app (UI, mensajes de error, correos, páginas
+   públicas, plantillas, prompts del asistente) y para las respuestas al
+   usuario: "elige / puedes / tienes / aquí", jamás "elegí / podés / tenés /
+   acá / vos / plata / en criollo". Ver ADR-S42.

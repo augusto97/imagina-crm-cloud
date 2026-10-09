@@ -94,11 +94,11 @@ export function RecordPaymentsPanel({
                     {__('Cobros')}
                 </p>
                 <p className="imcrm-mt-1">
-                    {__('Conectá Mercado Pago o Wompi en')}{' '}
+                    {__('Conecta Mercado Pago o Wompi en')}{' '}
                     <Link to="/settings?s=conectores" className="imcrm-text-primary hover:imcrm-underline">
                         {__('Ajustes → Integraciones')}
                     </Link>{' '}
-                    {__('para cobrar desde acá y saber quién ya pagó.')}
+                    {__('para cobrar desde aquí y saber quién ya pagó.')}
                 </p>
             </section>
         );
@@ -132,7 +132,7 @@ export function RecordPaymentsPanel({
                             setCollecting(false);
                             refresh();
                             void navigator.clipboard?.writeText(link.url).catch(() => undefined);
-                            toast.success(__('Link de pago creado'), __('Ya está copiado: pegáselo al cliente por WhatsApp o correo.'));
+                            toast.success(__('Link de pago creado'), __('Ya está copiado: pégaselo al cliente por WhatsApp o correo.'));
                         }}
                     />
                 )}
@@ -158,7 +158,7 @@ export function RecordPaymentsPanel({
             {data.fields === null && data.can_setup && data.connections.length > 0 && (
                 <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
                     <span className="imcrm-flex-1">
-                        {__('Agregá las columnas de cobro a la lista (link, estado, fecha, monto y medio) para ver y filtrar quién ya pagó sin abrir cada registro.')}
+                        {__('Agrega las columnas de cobro a la lista (link, estado, fecha, monto y medio) para ver y filtrar quién ya pagó sin abrir cada registro.')}
                     </span>
                     <Button size="sm" variant="outline" disabled={setup.isPending} onClick={() => setup.mutate()} data-testid="imcrm-payment-setup">
                         <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -219,7 +219,7 @@ export function RecordPaymentsPanel({
                                                 description:
                                                     l.provider === 'wompi'
                                                         ? __('El link se desactiva en Wompi y queda «Anulado».')
-                                                        : __('Queda «Anulado» acá. Mercado Pago no permite desactivar el link: si el cliente igual paga, se registra el pago.'),
+                                                        : __('Queda «Anulado» aquí. Mercado Pago no permite desactivar el link: si el cliente igual paga, se registra el pago.'),
                                                 confirmLabel: __('Anular'),
                                                 destructive: true,
                                             });
@@ -248,7 +248,7 @@ export function RecordPaymentsPanel({
                         setCollecting(false);
                         refresh();
                         void navigator.clipboard?.writeText(link.url).catch(() => undefined);
-                        toast.success(__('Link de pago creado'), __('Ya está copiado: pegáselo al cliente por WhatsApp o correo.'));
+                        toast.success(__('Link de pago creado'), __('Ya está copiado: pégaselo al cliente por WhatsApp o correo.'));
                     }}
                 />
             )}
@@ -344,7 +344,7 @@ function CollectDialog({
                         )}
                         {conn.test_mode && (
                             <p className="imcrm-rounded-md imcrm-bg-amber-500/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-amber-800 dark:imcrm-text-amber-300">
-                                {__('Esta conexión usa credenciales de PRUEBA: el link no cobra plata real.')}
+                                {__('Esta conexión usa credenciales de PRUEBA: el link no cobra dinero real.')}
                             </p>
                         )}
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

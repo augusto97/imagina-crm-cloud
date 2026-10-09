@@ -94,14 +94,14 @@ export function explainSqlError(err: unknown, conn?: Pick<SqlConnParams, 'server
 
     if (number === 18456 || code === 'ELOGIN') {
         return new SqlRunError(
-            `SQL Server rechazó el usuario o la contraseña${conn?.user ? ` de «${conn.user}»` : ''}. Revisá los datos y que el usuario tenga acceso a la base «${conn?.database ?? ''}».${tail}`,
+            `SQL Server rechazó el usuario o la contraseña${conn?.user ? ` de «${conn.user}»` : ''}. Revisa los datos y que el usuario tenga acceso a la base «${conn?.database ?? ''}».${tail}`,
             'login',
         );
     }
     if (number === 40615 || /not allowed to access the server/i.test(raw)) {
         const ip = raw.match(/IP address '([^']+)'/i)?.[1];
         return new SqlRunError(
-            `El firewall de Azure SQL no deja entrar a este servidor${ip ? ` (IP ${ip})` : ''}. En el portal de Azure → tu servidor SQL → Redes, agregá esa IP a las reglas del firewall.`,
+            `El firewall de Azure SQL no deja entrar a este servidor${ip ? ` (IP ${ip})` : ''}. En el portal de Azure → tu servidor SQL → Redes, agrega esa IP a las reglas del firewall.`,
             'firewall',
         );
     }
@@ -113,7 +113,7 @@ export function explainSqlError(err: unknown, conn?: Pick<SqlConnParams, 'server
     }
     if (number === 229 || number === 230 || /permission was denied/i.test(raw)) {
         return new SqlRunError(
-            `El usuario no tiene permiso para lo que pide la consulta. Si usás un procedimiento, necesita permiso EXECUTE sobre él.${tail}`,
+            `El usuario no tiene permiso para lo que pide la consulta. Si usas un procedimiento, necesita permiso EXECUTE sobre él.${tail}`,
             'permission',
         );
     }
@@ -128,7 +128,7 @@ export function explainSqlError(err: unknown, conn?: Pick<SqlConnParams, 'server
     }
     if (code === 'ETIMEOUT' && /request/i.test(raw)) {
         return new SqlRunError(
-            'La consulta tardó más que el tiempo máximo permitido. Traé menos filas (un filtro por fecha, `@ultima_sincronizacion`) o subí el tiempo máximo.',
+            'La consulta tardó más que el tiempo máximo permitido. Trae menos filas (un filtro por fecha, `@ultima_sincronizacion`) o sube el tiempo máximo.',
             'timeout',
         );
     }
@@ -136,13 +136,13 @@ export function explainSqlError(err: unknown, conn?: Pick<SqlConnParams, 'server
     // rechazado como ESOCKET/«Failed to connect» y el consejo correcto es otro.
     if (/certificate|self[- ]signed|SSL|TLS/i.test(raw)) {
         return new SqlRunError(
-            `Falló la conexión cifrada con ${server}. Si es un servidor propio con un certificado autofirmado, activá «Confiar en el certificado del servidor» en la conexión.${tail}`,
+            `Falló la conexión cifrada con ${server}. Si es un servidor propio con un certificado autofirmado, activa «Confiar en el certificado del servidor» en la conexión.${tail}`,
             'tls',
         );
     }
     if (code === 'ETIMEOUT' || code === 'ESOCKET' || /ECONNREFUSED|ETIMEDOUT|EHOSTUNREACH|ENOTFOUND|Failed to connect/i.test(raw)) {
         return new SqlRunError(
-            `No se pudo conectar a ${server}. Revisá el nombre del servidor y el puerto, y que acepte conexiones desde la IP de este servidor (firewall de Azure, o el puerto 1433 abierto si es un servidor propio).${tail}`,
+            `No se pudo conectar a ${server}. Revisa el nombre del servidor y el puerto, y que acepte conexiones desde la IP de este servidor (firewall de Azure, o el puerto 1433 abierto si es un servidor propio).${tail}`,
             'connect',
         );
     }

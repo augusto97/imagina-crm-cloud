@@ -271,7 +271,7 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
                 { type: 'generate_pdf', config: { document_template_id: tpl.id, save_field: 'documento' } },
                 {
                     type: 'send_email',
-                    config: { to: 'cliente@beta.test', subject: 'Tu cuenta {{record.id}}', body: 'Descargala: {{pdf.link}}', pdf_templates: [tpl.id] },
+                    config: { to: 'cliente@beta.test', subject: 'Tu cuenta {{record.id}}', body: 'Descárgala: {{pdf.link}}', pdf_templates: [tpl.id] },
                 },
             ],
         });
@@ -391,7 +391,7 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         const qrDesign: DocDesign = {
             ...design,
             blocks: [
-                { id: 'q1', type: 'qr', value: 'https://pagar.test/{{record.id}}', size: 96, align: 'center', caption: 'Escaneá para pagar' },
+                { id: 'q1', type: 'qr', value: 'https://pagar.test/{{record.id}}', size: 96, align: 'center', caption: 'Escanea para pagar' },
                 { id: 'q2', type: 'qr', value: '', size: 64, align: 'left', caption: '' },
                 { id: 'q3', type: 'qr', value: '{{no_existe}}', size: 64, align: 'right', caption: '' },
             ],
@@ -414,7 +414,7 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
             trigger_type: 'record_created',
             actions: [
                 { type: 'generate_pdf', config: { document_template_id: tpl.id } },
-                { type: 'send_email', config: { to: 'cliente@beta.test', subject: 'Tu cuenta', body: 'Bajala: {{pdf.link}}' } },
+                { type: 'send_email', config: { to: 'cliente@beta.test', subject: 'Tu cuenta', body: 'Bájala: {{pdf.link}}' } },
             ],
         });
         const nuevo = await recs.create(tenantId, admin, 'cobros', { data: { [`f${f.cliente!.id}`]: 'Zeta' } });

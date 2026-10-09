@@ -70,7 +70,7 @@ export class SmtpProbeService {
                 ports: [],
                 verdict: 'dns_failed',
                 hints: [
-                    'El nombre del servidor apunta a una dirección interna (privada o reservada). El SMTP de tu empresa tiene que ser un servidor accesible desde internet: escribí el host real de tu proveedor de correo.',
+                    'El nombre del servidor apunta a una dirección interna (privada o reservada). El SMTP de tu empresa tiene que ser un servidor accesible desde internet: escribe el host real de tu proveedor de correo.',
                 ],
             };
         }
@@ -146,20 +146,20 @@ export function isLinkLocal(ip: string): boolean {
 
 function dnsHints(host: string, error: string): string[] {
     const hints = [
-        `El nombre «${host}» no resuelve (${error}). Revisá que esté bien escrito: va sólo el host, sin «http://», sin barras y sin espacios.`,
+        `El nombre «${host}» no resuelve (${error}). Revisa que esté bien escrito: va sólo el host, sin «http://», sin barras y sin espacios.`,
     ];
     if (host.includes('@')) hints.push('Parece que escribiste un email en el campo Host. Ahí va el servidor (ej. smtp.tu-proveedor.com).');
-    if (/^https?:/i.test(host)) hints.push('Sacá el «http://» o «https://» del host.');
+    if (/^https?:/i.test(host)) hints.push('Saca el «http://» o «https://» del host.');
     return hints;
 }
 
 /** El puerto define el TLS: 465 es implícito; 25/587/2525 usan STARTTLS. */
 function tlsAdviceFor(port: number, secure: boolean): string | null {
     if (IMPLICIT_TLS_PORTS.has(port) && !secure) {
-        return 'El puerto 465 habla TLS desde el inicio: activá «Conexión segura (SSL/TLS)». Con la opción apagada la conexión se queda esperando y da timeout.';
+        return 'El puerto 465 habla TLS desde el inicio: activa «Conexión segura (SSL/TLS)». Con la opción apagada la conexión se queda esperando y da timeout.';
     }
     if (!IMPLICIT_TLS_PORTS.has(port) && secure) {
-        return `El puerto ${port} usa STARTTLS: desactivá «Conexión segura (SSL/TLS)» (se cifra igual, pero después del saludo). Con la opción activada el servidor no contesta y da timeout.`;
+        return `El puerto ${port} usa STARTTLS: desactiva «Conexión segura (SSL/TLS)» (se cifra igual, pero después del saludo). Con la opción activada el servidor no contesta y da timeout.`;
     }
     return null;
 }
@@ -182,7 +182,7 @@ export function verdictFor(
             verdict: 'ok',
             hints: [
                 `El servidor llega al puerto ${cfg.port} sin problemas${mine.greeting ? ` (responde «${mine.greeting}»)` : ''}.`,
-                'Si el envío igual falla, ya no es de red: revisá usuario y contraseña, y que el remitente (From) esté autorizado por tu proveedor.',
+                'Si el envío igual falla, ya no es de red: revisa usuario y contraseña, y que el remitente (From) esté autorizado por tu proveedor.',
             ],
         };
     }
@@ -190,10 +190,10 @@ export function verdictFor(
     if (openOthers.length > 0) {
         const suggested = openOthers.find((p) => p.port === 587) ?? openOthers.find((p) => p.port === 465) ?? openOthers[0]!;
         const hints = [
-            `El puerto ${cfg.port} no responde, pero el ${suggested.port} sí. Probá con ese.`,
+            `El puerto ${cfg.port} no responde, pero el ${suggested.port} sí. Prueba con ese.`,
             suggested.port === 465
-                ? 'Con el 465 activá «Conexión segura (SSL/TLS)».'
-                : `Con el ${suggested.port} dejá «Conexión segura» desactivada (usa STARTTLS).`,
+                ? 'Con el 465 activa «Conexión segura (SSL/TLS)».'
+                : `Con el ${suggested.port} deja «Conexión segura» desactivada (usa STARTTLS).`,
         ];
         if (mine?.status === 'refused') {
             hints.push(`El servidor rechaza la conexión en el ${cfg.port}: ese puerto está cerrado del otro lado.`);
@@ -208,7 +208,7 @@ export function verdictFor(
             hints: [
                 'Ningún puerto SMTP responde desde el servidor. La causa más común es que el proveedor del VPS bloquee el correo saliente: Hetzner, DigitalOcean, Oracle Cloud, Google Cloud y AWS lo hacen por defecto.',
                 'Solución: pedirle al proveedor que habilite el envío SMTP (suelen desbloquearlo a pedido), o usar un proveedor de correo que ofrezca el puerto 2525.',
-                'Si el bloqueo no es del proveedor, revisá el firewall del propio servidor (ufw/iptables) y que el host esté bien escrito.',
+                'Si el bloqueo no es del proveedor, revisa el firewall del propio servidor (ufw/iptables) y que el host esté bien escrito.',
             ],
         };
     }
@@ -216,7 +216,7 @@ export function verdictFor(
     return {
         verdict: 'all_blocked',
         hints: [
-            'No se pudo abrir ninguna conexión SMTP con ese servidor. Revisá el host y el puerto con tu proveedor de correo.',
+            'No se pudo abrir ninguna conexión SMTP con ese servidor. Revisa el host y el puerto con tu proveedor de correo.',
             'Si el servidor rechaza la conexión (no es timeout), el host resuelve pero no hay un SMTP escuchando ahí.',
         ],
     };

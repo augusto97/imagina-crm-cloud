@@ -58,7 +58,7 @@ export function LoginPage(): JSX.Element {
         } catch (err) {
             setError(
                 isTransientError(err)
-                    ? 'No pudimos conectar con el servidor. Probá de nuevo en unos segundos.'
+                    ? 'No pudimos conectar con el servidor. Prueba de nuevo en unos segundos.'
                     : err instanceof CloudApiError
                       ? err.message
                       : 'Error inesperado',
@@ -89,9 +89,9 @@ export function LoginPage(): JSX.Element {
                         {challenge !== null
                             ? 'Verificación en dos pasos'
                             : mode === 'login'
-                            ? 'Entrá a tu workspace'
+                            ? 'Entra a tu workspace'
                             : mode === 'register'
-                              ? 'Creá tu cuenta y workspace'
+                              ? 'Crea tu cuenta y workspace'
                               : 'Te enviamos un enlace para restablecerla'}
                     </p>
                 </div>
@@ -99,8 +99,8 @@ export function LoginPage(): JSX.Element {
                 {challenge !== null ? (
                     <>
                         <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
-                            Ingresá el código de 6 dígitos de tu app de autenticación. Si perdiste
-                            el teléfono, usá uno de tus códigos de respaldo.
+                            Ingresa el código de 6 dígitos de tu app de autenticación. Si perdiste
+                            el teléfono, usa uno de tus códigos de respaldo.
                         </p>
                         <Field label="Código" id="mfa-code">
                             <Input
@@ -136,7 +136,7 @@ export function LoginPage(): JSX.Element {
                 ) : mode === 'forgot' && sent ? (
                     <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                         Si existe una cuenta con ese email, te enviamos un enlace para restablecer la
-                        contraseña. Revisá tu correo (vence en 30 minutos).
+                        contraseña. Revisa tu correo (vence en 30 minutos).
                     </p>
                 ) : (
                     <>
@@ -218,7 +218,7 @@ export function LoginPage(): JSX.Element {
                         }}
                         className="imcrm-w-full imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground"
                     >
-                        {mode === 'login' ? '¿No tenés cuenta? Registrate' : '¿Ya tenés cuenta? Entrá'}
+                        {mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra'}
                     </button>
                 )}
             </form>

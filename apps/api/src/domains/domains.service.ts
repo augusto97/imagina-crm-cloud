@@ -200,7 +200,7 @@ export class DomainsService {
         if (domain === this.targetHost() || (base && (domain === base || domain.endsWith(`.${base}`)))) {
             throw new BadRequestException({
                 code: 'domain_reserved',
-                message: `Los subdominios de ${base ?? this.targetHost()} son automáticos (${'slug'}.${base ?? '...'}) — configurá acá solo un dominio TUYO`,
+                message: `Los subdominios de ${base ?? this.targetHost()} son automáticos (${'slug'}.${base ?? '...'}) — configura aquí solo un dominio TUYO`,
                 data: { status: 400 },
             });
         }

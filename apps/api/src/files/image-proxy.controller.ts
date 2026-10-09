@@ -6,7 +6,7 @@ import { ImageProxyService } from './image-proxy';
 /**
  * v0.1.210 — `GET /media/image?url=` — miniaturas de imágenes externas (ver
  * `image-proxy.ts`). Sólo sesión: un `<img>` manda la cookie pero no
- * `X-Tenant-Id`, y acá no se toca ningún dato de la empresa.
+ * `X-Tenant-Id`, y aquí no se toca ningún dato de la empresa.
  */
 @Controller('media')
 @UseGuards(SessionGuard)

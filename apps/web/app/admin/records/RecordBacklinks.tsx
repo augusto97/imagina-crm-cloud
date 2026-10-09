@@ -68,7 +68,7 @@ function BacklinkGroup({ path, recordId }: { path: RelationPath; recordId: numbe
         () => (relField ? { [relField.slug]: [recordId] } : undefined),
         [relField, recordId],
     );
-    // Una lista de tienda no admite altas desde acá (se crean en WooCommerce).
+    // Una lista de tienda no admite altas desde aquí (se crean en WooCommerce).
     const storeManaged = readStoreListMarker(list.data?.settings) !== null;
     const label = path.list_name === path.relation_label ? path.list_name : `${path.list_name} · ${path.relation_label}`;
 

@@ -203,7 +203,7 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
                         number: 'N.º {{record.id}}',
                         date: '{{date.today|larga}}',
                     },
-                    { id: id('t'), type: 'text', doc: doc(para(txt('Escribí acá el contenido del documento.'))), align: 'left', size: 'md' },
+                    { id: id('t'), type: 'text', doc: doc(para(txt('Escribe aquí el contenido del documento.'))), align: 'left', size: 'md' },
                 ],
             },
         };
@@ -297,7 +297,7 @@ export function buildDocumentStarter(key: string, input: DocumentStarterInput = 
                     label: 'TOTAL A PAGAR',
                     source: itemSlug('total')
                         ? { kind: 'items_sum', block_id: itemsId, slug: itemSlug('total')! }
-                        : { kind: 'text', value: '[Elegí la columna del valor]' },
+                        : { kind: 'text', value: '[Elige la columna del valor]' },
                     emphasis: true,
                 },
             ],

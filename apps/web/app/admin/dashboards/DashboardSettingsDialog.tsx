@@ -136,7 +136,7 @@ export function DashboardSettingsDialog({
                                 {__('Configuración del dashboard')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Cambiá el nombre, la descripción o la visibilidad.')}
+                                {__('Cambia el nombre, la descripción o la visibilidad.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>

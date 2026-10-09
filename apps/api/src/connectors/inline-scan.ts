@@ -4,7 +4,7 @@ import type { ConnectorAuthType, ConnectorPair } from '@imagina-base/shared';
  * Detección de credenciales escritas DENTRO de una acción `call_webhook`
  * (v0.1.196).
  *
- * Es la deuda que el conector viene a saldar: hasta acá el token y el secreto
+ * Es la deuda que el conector viene a saldar: hasta aquí el token y el secreto
  * de firma se tipeaban en el editor de automatizaciones y quedaban en claro en
  * el jsonb. Este módulo las encuentra para poder moverlas a una conexión
  * cifrada sin que el usuario tenga que acordarse de cuáles eran.

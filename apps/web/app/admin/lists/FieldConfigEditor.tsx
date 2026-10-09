@@ -176,12 +176,12 @@ function OptionsEditor({ config, onChange }: SubProps): JSX.Element {
                 {__('Opciones')}
             </legend>
             <p className="imcrm-text-[12px] imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Escribí la etiqueta que se ve; el valor interno se completa solo (podés cambiarlo). El color es opcional.')}
+                {__('Escribe la etiqueta que se ve; el valor interno se completa solo (puedes cambiarlo). El color es opcional.')}
             </p>
 
             {options.length === 0 ? (
                 <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-warning/40 imcrm-bg-warning/5 imcrm-px-3 imcrm-py-3 imcrm-text-[12px] imcrm-text-warning">
-                    {__('Agregá al menos una opción para que el campo se pueda usar.')}
+                    {__('Agrega al menos una opción para que el campo se pueda usar.')}
                 </div>
             ) : (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2">
@@ -515,7 +515,7 @@ function RelationEditor({ config, onChange }: SubProps): JSX.Element {
                 value={targetId}
                 onChange={(e) => onChange({ ...config, target_list_id: Number(e.target.value) })}
             >
-                <option value={0}>{__('Elegí…')}</option>
+                <option value={0}>{__('Elige…')}</option>
                 {(lists.data ?? []).map((l) => (
                     <option key={l.id} value={l.id}>
                         {l.name}
@@ -561,7 +561,7 @@ function pathLabel(p: RelationPath): string {
           )
         : sprintf(
               /* translators: 1: other list name, 2: relation field label */
-              __('%1$s que apuntan acá (por «%2$s»)'),
+              __('%1$s que apuntan aquí (por «%2$s»)'),
               p.other_list_name,
               p.relation_label,
           );
@@ -593,7 +593,7 @@ function RelationPathSelect({
                 }}
                 data-testid="through-relation"
             >
-                <option value={0}>{__('Elegí…')}</option>
+                <option value={0}>{__('Elige…')}</option>
                 {options.map((p) => (
                     <option key={p.relation_field_id} value={p.relation_field_id}>
                         {pathLabel(p)}
@@ -602,7 +602,7 @@ function RelationPathSelect({
             </Select>
             {paths.isSuccess && options.length === 0 && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Esta lista no tiene relaciones todavía: creá primero un campo de tipo Relación (acá o en la lista que quieras conectar).')}
+                    {__('Esta lista no tiene relaciones todavía: crea primero un campo de tipo Relación (aquí o en la lista que quieras conectar).')}
                 </p>
             )}
         </div>
@@ -637,7 +637,7 @@ function LookupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                         onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
                         data-testid="through-target"
                     >
-                        <option value={0}>{__('Elegí…')}</option>
+                        <option value={0}>{__('Elige…')}</option>
                         {eligible.map((f) => (
                             <option key={f.id} value={f.id}>
                                 {f.label}
@@ -647,7 +647,7 @@ function LookupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                 </div>
             )}
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Se lee del registro vinculado en cada consulta: si allá cambia, acá cambia. No se puede editar.')}
+                {__('Se lee del registro vinculado en cada consulta: si allá cambia, aquí cambia. No se puede editar.')}
             </p>
         </div>
     );
@@ -716,7 +716,7 @@ function RollupEditor({ config, onChange, listId }: ThroughEditorProps): JSX.Ele
                         onChange={(e) => onChange(cleanThrough({ ...config, target_field_id: Number(e.target.value) }))}
                         data-testid="through-target"
                     >
-                        <option value={0}>{__('Elegí…')}</option>
+                        <option value={0}>{__('Elige…')}</option>
                         {eligible.map((f) => (
                             <option key={f.id} value={f.id}>
                                 {f.label}
@@ -945,7 +945,7 @@ function ComputedEditor({
                     value={operation}
                     onChange={(e) => setOperation(e.target.value)}
                 >
-                    <option value="">{__('Elegí…')}</option>
+                    <option value="">{__('Elige…')}</option>
                     {COMPUTED_OPS.map((op) => (
                         <option key={op.slug} value={op.slug}>
                             {op.label}
@@ -980,7 +980,7 @@ function ComputedEditor({
                                     onChange={(e) => setInputAt(i, Number(e.target.value))}
                                     className="imcrm-flex-1"
                                 >
-                                    <option value={0}>{__('Elegí un campo…')}</option>
+                                    <option value={0}>{__('Elige un campo…')}</option>
                                     {eligibleFields.map((f) => (
                                         <option key={f.id} value={f.id}>
                                             {f.label}

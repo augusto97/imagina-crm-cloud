@@ -185,7 +185,7 @@ export class AutomationsService {
         if (!(await this.scheduler.runNow(tenantId, id))) {
             throw new ServiceUnavailableException({
                 code: 'queue_unavailable',
-                message: 'La cola de tareas no está disponible: probá de nuevo en un rato.',
+                message: 'La cola de tareas no está disponible: prueba de nuevo en un rato.',
                 data: { status: 503 },
             });
         }
@@ -567,7 +567,7 @@ export class AutomationsService {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
-                error: `Así se crearía el link: «${v.title ?? ''}» por ${v.amount ?? ''} ${currency}${v.payer_email ? ` para ${v.payer_email}` : ''}. Para no generar un cobro real, la prueba no lo envía: probalo con «Cobrar» en un registro.`,
+                error: `Así se crearía el link: «${v.title ?? ''}» por ${v.amount ?? ''} ${currency}${v.payer_email ? ` para ${v.payer_email}` : ''}. Para no generar un cobro real, la prueba no lo envía: pruébalo con «Cobrar» en un registro.`,
                 sample_record_id: sampleRecordId,
             };
         }

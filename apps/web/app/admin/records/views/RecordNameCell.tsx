@@ -22,7 +22,7 @@ interface RecordNameCellProps {
  * Vivía suelta dentro de `TableView`, y por eso la vista AGRUPADA nunca
  * tuvo subtareas: el usuario reportó que sólo aparecían en la vista
  * "Todos". Extraerla es lo que garantiza que las dos tablas muestren lo
- * mismo — y que la próxima señal que se agregue acá salga en ambas.
+ * mismo — y que la próxima señal que se agregue aquí salga en ambas.
  */
 export function RecordNameCell({
     record,

@@ -91,7 +91,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             env,
             new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pd-'))), env),
         );
-        // v0.1.245 — sin red en los tests: un dominio "responde" sólo si está acá.
+        // v0.1.245 — sin red en los tests: un dominio "responde" sólo si está aquí.
         domainsService.probeServing = async (_tid, domain) => servingDomains.has(domain);
         // MailService sin onModuleInit → enqueue cae a sendNow → transporte captura.
         const mail = new MailService(env, mailbox);
@@ -715,7 +715,7 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect((await portal.checkAccess(tenantId, 'clientes', 'nadie41@acme.test', recordId)).status).toBe('new');
         });
 
-        it('alguien del EQUIPO de otra empresa puede ser cliente acá; el enlace sólo le llega por correo', async () => {
+        it('alguien del EQUIPO de otra empresa puede ser cliente aquí; el enlace sólo le llega por correo', async () => {
             const [tc] = await pg.db.insert(tenants).values({ slug: 'gamma41', name: 'Gamma' }).returning();
             const [staff] = await pg.db.insert(users).values({ email: 'staff@gamma.test', passwordHash: 'x', name: 'Staff Gamma' }).returning();
             await withTenant(pg.db, tc!.id, (tx) => tx.insert(memberships).values({ userId: staff!.id, tenantId: tc!.id, role: 'admin' }));

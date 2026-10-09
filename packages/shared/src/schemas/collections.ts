@@ -4,7 +4,7 @@ import { idSchema } from './common';
 /**
  * Cobros de las EMPRESAS a sus clientes (v0.1.251–252, ADR-S31).
  *
- * Distinto del cobro de los planes (ADR-S30): acá la plata va a la cuenta de
+ * Distinto del cobro de los planes (ADR-S30): aquí el dinero va a la cuenta de
  * Mercado Pago o Wompi de CADA empresa (sin comisión de la plataforma). Una
  * empresa conecta su cuenta en Integraciones, crea un link de pago desde un
  * registro o desde una automatización, y cuando el cliente paga la app se
@@ -100,7 +100,7 @@ export type PaymentLinkRow = z.infer<typeof paymentLinkRowSchema>;
 
 export const createPaymentLinkSchema = z.object({
     connection_id: idSchema,
-    title: z.string().trim().min(1, 'Escribí el concepto').max(200),
+    title: z.string().trim().min(1, 'Escribe el concepto').max(200),
     amount: z.coerce.number().positive('El monto tiene que ser mayor a cero').max(1_000_000_000),
     currency: z
         .string()
@@ -119,7 +119,7 @@ export const collectionConnectionSchema = z.object({
     name: z.string(),
     provider: collectionProviderSchema,
     account_label: z.string().nullable(),
-    /** Credencial de prueba (sandbox): los pagos no son plata real. */
+    /** Credencial de prueba (sandbox): los pagos no son dinero real. */
     test_mode: z.boolean(),
 });
 export type CollectionConnection = z.infer<typeof collectionConnectionSchema>;

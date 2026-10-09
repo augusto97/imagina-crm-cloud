@@ -60,7 +60,7 @@ export const lookup = (
     });
 type RollupFilter = { slug: string; op: string; value: unknown };
 
-/** Rollup hacia adentro: agrega `targetSlug` de los registros de `relKey` que apuntan acá por `relSlug`. */
+/** Rollup hacia adentro: agrega `targetSlug` de los registros de `relKey` que apuntan aquí por `relSlug`. */
 export const rollup = (
     label: string,
     slug: string,

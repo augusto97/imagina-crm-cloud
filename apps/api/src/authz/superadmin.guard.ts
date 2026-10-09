@@ -50,7 +50,7 @@ export class SuperadminGuard implements CanActivate {
         if (req.sessionVia !== 'password') {
             throw new UnauthorizedException({
                 code: 'reauth_required',
-                message: 'Volvé a iniciar sesión para usar la consola de plataforma',
+                message: 'Vuelve a iniciar sesión para usar la consola de plataforma',
                 data: { status: 401 },
             });
         }

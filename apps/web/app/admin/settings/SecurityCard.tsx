@@ -117,7 +117,7 @@ export function SecurityCard(): JSX.Element {
                     <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-2">
                         <div>
                             <p className="imcrm-text-sm imcrm-font-medium imcrm-text-foreground">
-                                {__('Confirmá tu dirección de correo')}
+                                {__('Confirma tu dirección de correo')}
                             </p>
                             <p className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {__('Te mandamos un enlace a')} <strong>{user.email}</strong>.{' '}
@@ -224,7 +224,7 @@ export function SecurityCard(): JSX.Element {
                             {__('Dispositivos conectados')}
                         </h2>
                         <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                            {__('Dónde está abierta tu cuenta. Si ves algo que no reconocés, cerralo y cambiá la contraseña.')}
+                            {__('Dónde está abierta tu cuenta. Si ves algo que no reconoces, ciérralo y cambia la contraseña.')}
                         </p>
                     </div>
                     {others > 0 && (

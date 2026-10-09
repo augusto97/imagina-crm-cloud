@@ -220,7 +220,7 @@ export class ImportUpdateService {
         if (input.match.by !== IMPORT_MATCH_BY_ID) {
             keyField = bySlug.get(input.match.by) ?? null;
             if (!keyField || !(IMPORT_MATCH_TYPES as readonly string[]).includes(keyField.type)) {
-                throw bad('Para emparejar elegí el ID o una columna de texto, email, teléfono, enlace o número.');
+                throw bad('Para emparejar elige el ID o una columna de texto, email, teléfono, enlace o número.');
             }
         }
         const mapping = new Map<number, string>();
@@ -230,7 +230,7 @@ export class ImportUpdateService {
             if (!bySlug.has(slug)) throw bad(`La columna «${slug}» no existe o no se puede actualizar desde un archivo.`);
             mapping.set(idx, slug);
         }
-        if (mapping.size === 0 && input.mode === 'update') throw bad('Elegí al menos una columna para actualizar.');
+        if (mapping.size === 0 && input.mode === 'update') throw bad('Elige al menos una columna para actualizar.');
         return { list, store, rows, truncated, fields, bySlug, mapping, keyField, matchCol };
     }
 

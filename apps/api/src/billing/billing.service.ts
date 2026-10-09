@@ -95,7 +95,7 @@ export class BillingService {
         if (count + additional > limit) {
             throw new ForbiddenException({
                 code: 'plan_limit_reached',
-                message: `Se superaría el límite de ${limit} registros del plan ${plan} (tenés ${count}, se agregarían ${additional})`,
+                message: `Se superaría el límite de ${limit} registros del plan ${plan} (tienes ${count}, se agregarían ${additional})`,
                 data: { status: 403, errors: { plan: 'límite de registros' } },
             });
         }
@@ -115,7 +115,7 @@ export class BillingService {
         if (count >= limit) {
             throw new ForbiddenException({
                 code: 'plan_limit_reached',
-                message: `Alcanzaste el límite de ${limit} usuarios del plan ${plan}. Quitá a alguien o pasá a un plan mayor.`,
+                message: `Alcanzaste el límite de ${limit} usuarios del plan ${plan}. Quita a alguien o pasa a un plan mayor.`,
                 data: { status: 403, errors: { plan: 'límite de usuarios' } },
             });
         }

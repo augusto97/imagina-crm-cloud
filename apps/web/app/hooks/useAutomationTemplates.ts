@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 /**
  * Plantillas de automatización (v0.1.167). Aplicar es CLIENT-SIDE (se mapean
  * los roles a los campos con `remapAutomationSlugs` y se abre el editor
- * pre-cargado), así que acá sólo galería, guardar y borrar.
+ * pre-cargado), así que aquí sólo galería, guardar y borrar.
  */
 export const automationTemplatesKeys = {
     all: ['automation-templates'] as const,

@@ -140,7 +140,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 available: false,
                 via: 'platform_smtp',
                 host: read.config.host || null,
-                reason: `El SMTP de Plataforma está configurado pero no se puede usar: ${read.reason}. Volvé a escribir la contraseña en Plataforma → Correo.`,
+                reason: `El SMTP de Plataforma está configurado pero no se puede usar: ${read.reason}. Vuelve a escribir la contraseña en Plataforma → Correo.`,
             };
         }
         if (this.transport.name !== 'log') return { available: true, via: 'server_smtp', host: null, reason: null };
@@ -150,7 +150,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             available: false,
             via: 'none',
             host: null,
-            reason: 'No hay un SMTP de plataforma configurado: los correos de verificación, recuperación de contraseña e invitaciones no se envían. Configuralo en Plataforma → Correo (SMTP).',
+            reason: 'No hay un SMTP de plataforma configurado: los correos de verificación, recuperación de contraseña e invitaciones no se envían. Configúralo en Plataforma → Correo (SMTP).',
         };
     }
 
@@ -162,8 +162,8 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             code: 'mail_unavailable',
             message:
                 status.via === 'platform_smtp'
-                    ? 'Este servidor no puede enviar correos ahora: el correo de la plataforma está mal configurado. Avisale al administrador.'
-                    : 'Este servidor todavía no tiene un correo configurado para enviar este mensaje. Avisale al administrador de la plataforma.',
+                    ? 'Este servidor no puede enviar correos ahora: el correo de la plataforma está mal configurado. Avísale al administrador.'
+                    : 'Este servidor todavía no tiene un correo configurado para enviar este mensaje. Avísale al administrador de la plataforma.',
             data: { status: 503 },
         });
     }

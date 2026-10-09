@@ -57,7 +57,7 @@ function RouteFallback(): JSX.Element {
 }
 
 export function App(): JSX.Element {
-    // Invalidación push del workspace activo. Vive acá (y no en el gate de
+    // Invalidación push del workspace activo. Vive aquí (y no en el gate de
     // sesión) para que socket.io viaje en el chunk de la app, no en el login.
     useRealtime();
     // v0.1.263 — la primera vez que entra un admin, la empresa toma su zona horaria.

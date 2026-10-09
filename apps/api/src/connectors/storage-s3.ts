@@ -8,7 +8,7 @@ import type { IntegrationCreds, VerifyOutcome } from './integration-calls';
  * a la config del driver. PURO salvo el chequeo final de `verifyS3`.
  *
  * La dirección (endpoint) la escribe la empresa: tiene que ser https y no
- * puede apuntar a la red interna del servidor. Un literal IP se mira acá
+ * puede apuntar a la red interna del servidor. Un literal IP se mira aquí
  * porque node no pasa por `lookup` para una IP; los nombres los cubre el
  * `guardedLookup` del driver al conectar.
  */

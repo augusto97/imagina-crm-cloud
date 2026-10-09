@@ -126,7 +126,7 @@ export function FilterValueInput({
                         onChange={(next) => onChange(next ?? '')}
                     />
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {current === null ? __('Elegí una calificación') : `${current} / ${max}`}
+                        {current === null ? __('Elige una calificación') : `${current} / ${max}`}
                     </span>
                 </div>
             );

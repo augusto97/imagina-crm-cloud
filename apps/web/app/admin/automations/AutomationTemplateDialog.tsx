@@ -141,7 +141,7 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
                         <div>
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Automatización desde una plantilla')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Elegí una receta, indicá qué campo cumple cada rol y se abre en el editor para revisarla antes de guardar.')}
+                                {__('Elige una receta, indica qué campo cumple cada rol y se abre en el editor para revisarla antes de guardar.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -206,7 +206,7 @@ export function AutomationTemplateDialog({ open, onOpenChange, list, fields }: P
                             {!selected ? (
                                 <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-py-10 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                                     <Zap className="imcrm-h-6 imcrm-w-6 imcrm-opacity-50" />
-                                    {__('Elegí una receta para ver qué hace.')}
+                                    {__('Elige una receta para ver qué hace.')}
                                 </div>
                             ) : (
                                 <>

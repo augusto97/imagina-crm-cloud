@@ -22,7 +22,7 @@ const SYSTEM_PREFIX = 'sys:';
 
 /**
  * Plantillas de automatización (v0.1.167). Se APLICAN en el cliente (mapeo
- * de roles → slugs y editor pre-cargado); acá sólo se guardan y se listan.
+ * de roles → slugs y editor pre-cargado); aquí sólo se guardan y se listan.
  * Las del sistema viven en shared (`SYSTEM_AUTOMATION_TEMPLATES`) y se
  * devuelven junto a las del workspace para que la galería tenga una sola
  * fuente.

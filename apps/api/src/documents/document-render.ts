@@ -394,7 +394,7 @@ function qrNode(ctx: Ctx, b: Extract<DocBlock, { type: 'qr' }>, width: number): 
     // cree que el código «no anda». Configurado pero vacío para ESTE registro
     // (sin link de pago, por ejemplo): no se dibuja.
     if (!b.value.trim()) {
-        return { stack: [alignBox(placeholder(ctx, 'QR\n(elegí qué contiene)', size, size - 12), b.align, width, size), ...captionNode] };
+        return { stack: [alignBox(placeholder(ctx, 'QR\n(elige qué contiene)', size, size - 12), b.align, width, size), ...captionNode] };
     }
     const value = ctx.input.resolve(b.value).trim();
     if (!value) return { text: '' };
@@ -545,7 +545,7 @@ function fieldsNode(ctx: Ctx, b: Extract<DocBlock, { type: 'fields' }>, width: n
     const t = ctx.t;
     const title: Node[] = b.title ? [{ text: runs(ctx, b.title), bold: true, fontSize: ctx.base, color: t.text, margin: [0, 0, 0, 4] }] : [];
     if (b.slugs.length === 0) {
-        return { stack: [...title, { text: ctx.input.tagsMode ? 'Elegí qué campos mostrar.' : '', color: t.muted, fontSize: ctx.base - 1 }] };
+        return { stack: [...title, { text: ctx.input.tagsMode ? 'Elige qué campos mostrar.' : '', color: t.muted, fontSize: ctx.base - 1 }] };
     }
     const value = (slug: string): Node[] =>
         ctx.input.tagsMode ? runs(ctx, `{{${slug}}}`) : [{ text: ctx.input.fieldValue(slug) || '—' }];
@@ -607,7 +607,7 @@ function itemsNode(ctx: Ctx, b: Extract<DocBlock, { type: 'items' }>): Node {
     const data = ctx.input.items.get(b.id);
     const title: Node[] = b.title ? [{ text: runs(ctx, b.title), bold: true, fontSize: ctx.base, color: t.text, margin: [0, 0, 0, 5], characterSpacing: 0.3 }] : [];
     if (!data || data.notice) {
-        return { stack: [...title, { text: data?.notice ?? 'Elegí de qué registros vinculados salen las filas.', color: t.muted, fontSize: ctx.base - 1, italics: true }] };
+        return { stack: [...title, { text: data?.notice ?? 'Elige de qué registros vinculados salen las filas.', color: t.muted, fontSize: ctx.base - 1, italics: true }] };
     }
     const ink = readableInk(t.accent);
     const cols = data.columns;
@@ -654,7 +654,7 @@ function totalsNode(ctx: Ctx, b: Extract<DocBlock, { type: 'totals' }>): Node {
     const t = ctx.t;
     const rows = ctx.input.totals.get(b.id) ?? [];
     if (rows.length === 0) {
-        return { text: ctx.input.tagsMode ? 'Agregá las filas de los totales.' : '', color: t.muted, fontSize: ctx.base - 1 };
+        return { text: ctx.input.tagsMode ? 'Agrega las filas de los totales.' : '', color: t.muted, fontSize: ctx.base - 1 };
     }
     const ink = readableInk(t.accent);
     const body = rows.map((r) =>
@@ -740,7 +740,7 @@ function innerOrBlock(ctx: Ctx, b: DocBlock | DocInnerBlock, width: number): Nod
             const nodes = b.doc
                 ? richBlocks(ctx, b.doc.content, { size, color, align: b.align, lh: b.style?.line_height ?? ctx.lh, gap: b.paragraph_spacing ?? null })
                 : [];
-            if (nodes.length === 0) return { text: ctx.input.tagsMode ? 'Escribí el texto…' : ' ', color: t.muted, fontSize: size };
+            if (nodes.length === 0) return { text: ctx.input.tagsMode ? 'Escribe el texto…' : ' ', color: t.muted, fontSize: size };
             return { stack: nodes };
         }
         case 'fields':
@@ -900,7 +900,7 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
     // (un texto vacío sí: tiene alto de línea).
     content.push({ id: END_ID, canvas: [{ type: 'rect', x: 0, y: 0, w: 0, h: 0 }] });
     if (input.tagsMode && design.blocks.length === 0) {
-        content.unshift({ text: 'Agregá bloques desde el panel de la izquierda.', color: t.muted, alignment: 'center', margin: [0, 120, 0, 0] });
+        content.unshift({ text: 'Agrega bloques desde el panel de la izquierda.', color: t.muted, alignment: 'center', margin: [0, 120, 0, 0] });
     }
 
     const positions = new Map<string, StartPos>();

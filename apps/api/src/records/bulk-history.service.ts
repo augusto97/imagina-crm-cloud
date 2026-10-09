@@ -294,7 +294,7 @@ export class BulkHistoryService {
         for (const item of items) {
             const row = item.recordId ? rows.get(item.recordId) : undefined;
             if (!row) {
-                result.failed.push({ item_id: item.id, title: item.title, message: 'El registro ya no existe o no lo podés editar.' });
+                result.failed.push({ item_id: item.id, title: item.title, message: 'El registro ya no existe o no lo puedes editar.' });
                 continue;
             }
             if (!force && this.drift(item, row, byId)) {
@@ -373,7 +373,7 @@ export class BulkHistoryService {
         if (!this.canRevert(actor, edit.userId, edit.kind)) {
             throw new ForbiddenException({
                 code: 'forbidden_bulk_revert',
-                message: 'Sólo podés deshacer tus propias ediciones masivas.',
+                message: 'Sólo puedes deshacer tus propias ediciones masivas.',
                 data: { status: 403 },
             });
         }

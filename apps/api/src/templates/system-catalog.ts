@@ -501,7 +501,7 @@ const reclutamiento: SystemTemplate = {
                     f('Entrevistador', 'entrevistador', 'user'),
                     f('CV', 'cv', 'file'),
                     f('Notas', 'notas', 'long_text'),
-                    // El área y el salario viven en la vacante: acá se leen.
+                    // El área y el salario viven en la vacante: aquí se leen.
                     lookup('Área', 'area_vacante', 'candidatos', 'vacante', 'vacantes', 'area',
                         'El área de la vacante a la que postula.'),
                     lookup('Salario de la vacante', 'salario_vacante', 'candidatos', 'vacante', 'vacantes', 'salario',
@@ -636,7 +636,7 @@ const eventos: SystemTemplate = {
 const gastos: SystemTemplate = {
     key: 'gastos',
     name: 'Control de gastos',
-    description: 'Gastos por categoría con monto, fecha, quién pagó, comprobante y aprobación. Tablero de dónde se va la plata.',
+    description: 'Gastos por categoría con monto, fecha, quién pagó, comprobante y aprobación. Tablero de dónde se va el dinero.',
     icon: 'wallet',
     color: '#22c55e',
     category: 'finanzas',
@@ -1128,7 +1128,7 @@ const citas: SystemTemplate = {
                                 config: {
                                     to: '{{email}}',
                                     subject: 'Recordatorio de tu cita',
-                                    body: 'Hola {{cliente}},\n\nTe recordamos tu cita el {{fecha}}. Si no podés asistir, avisanos para reprogramar.\n\n¡Hasta pronto!',
+                                    body: 'Hola {{cliente}},\n\nTe recordamos tu cita el {{fecha}}. Si no puedes asistir, avísanos para reprogramar.\n\n¡Hasta pronto!',
                                 },
                             },
                         ],

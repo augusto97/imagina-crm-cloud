@@ -12,7 +12,7 @@ import type { ListSummary } from '@/types/list';
 
 /**
  * Duplicar listas y plantillas (v0.1.166). Un solo motor en el backend
- * (`BlueprintService`); acá sólo las mutaciones y la galería.
+ * (`BlueprintService`); aquí sólo las mutaciones y la galería.
  */
 export const templatesKeys = {
     all: ['list-templates'] as const,

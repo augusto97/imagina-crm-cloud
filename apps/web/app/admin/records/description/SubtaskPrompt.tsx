@@ -65,7 +65,7 @@ export function SubtaskPrompt({
                 <SheetHeader>
                     <SheetTitle>{__('Nueva subtarea')}</SheetTitle>
                     <SheetDescription>
-                        {__('Se crea como registro hijo de este y se enlaza acá.')}
+                        {__('Se crea como registro hijo de este y se enlaza aquí.')}
                     </SheetDescription>
                 </SheetHeader>
 

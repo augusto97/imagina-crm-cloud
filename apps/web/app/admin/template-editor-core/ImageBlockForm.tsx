@@ -372,7 +372,7 @@ export function GalleryBlockView({
     if (images.length === 0) {
         return (
             <div className="imcrm-flex imcrm-h-24 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/20 imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Agregá imágenes a la galería')}
+                {__('Agrega imágenes a la galería')}
             </div>
         );
     }

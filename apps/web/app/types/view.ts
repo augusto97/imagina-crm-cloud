@@ -36,7 +36,7 @@ export interface SavedViewConfig {
     /**
      * Cálculo opt-in en el footer de cada columna: map
      * `{column_id: kind_slug}` (ej. `{"valor_cop": "sum"}`). Si la
-     * column id no está acá, su footer queda con el CTA "Calcular".
+     * column id no está aquí, su footer queda con el CTA "Calcular".
      * Slugs válidos en `AggregateKind` (ver
      * `views/FooterAggregateCell.tsx`).
      */

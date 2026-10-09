@@ -194,7 +194,7 @@ export function UserPicker({
                     ) : hits.length === 0 ? (
                         <li className="imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
                             {debounced === ''
-                                ? __('Escribí para buscar usuarios.')
+                                ? __('Escribe para buscar usuarios.')
                                 : __('Sin resultados.')}
                         </li>
                     ) : (

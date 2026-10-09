@@ -15,7 +15,7 @@ export class PlatformSmtpUnusableError extends Error {
     constructor(reason: string) {
         super(
             `El SMTP de la plataforma está configurado pero no se puede usar: ${reason}. ` +
-                'Volvé a escribir la contraseña en Plataforma → Correo.',
+                'Vuelve a escribir la contraseña en Plataforma → Correo.',
         );
     }
 }
@@ -80,7 +80,7 @@ export class PlatformSettingsService {
 
     /**
      * v0.1.238 — La contraseña vacía CONSERVA la guardada. El panel siempre lo
-     * prometió ("dejá la contraseña vacía para conservar la actual") pero acá
+     * prometió ("deja la contraseña vacía para conservar la actual") pero aquí
      * se guardaba vacía: re-guardar el formulario para cambiar el remitente
      * borraba la contraseña, el SMTP empezaba a rechazar la autenticación y
      * dejaban de salir los correos de verificación y de recuperación. Mismo

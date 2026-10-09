@@ -152,9 +152,9 @@ export function helpForTrigger(triggerType: string): string {
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: "20 días después del vencimiento" para recordatorios de pago.');
         case 'form_submitted':
-            return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que podés avisarle al equipo, contestarle a quien lo llenó o completar campos. Podés usar {{formulario.nombre}}.');
+            return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes usar {{formulario.nombre}}.');
         case 'payment_received':
-            return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones podés usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
+            return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         default:
             return '';
     }
@@ -290,7 +290,7 @@ function FormSubmittedConfig({
             </Select>
             {!forms.isLoading && list.length === 0 && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Esta lista todavía no tiene formularios: crealos en Ajustes de la lista → Formularios.')}
+                    {__('Esta lista todavía no tiene formularios: créalos en Ajustes de la lista → Formularios.')}
                 </p>
             )}
         </div>
@@ -346,11 +346,11 @@ function IncomingWebhookConfig({
                 </>
             ) : (
                 <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Guardá la automatización para generar la URL pública única.')}
+                    {__('Guarda la automatización para generar la URL pública única.')}
                 </p>
             )}
             <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Hacé un POST con JSON a esa URL desde un formulario u otra plataforma. Las claves del payload que coincidan con slugs de esta lista')}
+                {__('Haz un POST con JSON a esa URL desde un formulario u otra plataforma. Las claves del payload que coincidan con slugs de esta lista')}
                 {slugs !== '' ? ` (${slugs}…)` : ''}
                 {__(' se usan en las condiciones y como variables {{slug}}; el resto queda disponible como {{payload.clave}}.')}
             </p>
@@ -446,7 +446,7 @@ function WebhookTestPanel({ fields }: { fields: FieldEntity[] }): JSX.Element | 
             </div>
             {latest === undefined ? (
                 <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Todavía no llegó ningún dato. Tocá "Escuchar datos de prueba" y enviá un POST a la URL de arriba desde tu formulario u otra plataforma — el payload va a aparecer acá para que veas qué llega y cómo mapearlo.')}
+                    {__('Todavía no llegó ningún dato. Toca "Escuchar datos de prueba" y envia un POST a la URL de arriba desde tu formulario u otra plataforma — el payload va a aparecer aquí para que veas qué llega y cómo mapearlo.')}
                 </p>
             ) : (
                 <>
@@ -454,7 +454,7 @@ function WebhookTestPanel({ fields }: { fields: FieldEntity[] }): JSX.Element | 
                         {__('Último dato recibido')} {relativeTime(latest.received_at)}
                         {(captures.data?.length ?? 0) > 1 ? ` · ${captures.data!.length} ${__('capturas en 24 h')}` : ''}
                         {' — '}
-                        {__('tocá un tag para copiarlo y usarlo en las acciones.')}
+                        {__('toca un tag para copiarlo y usarlo en las acciones.')}
                     </p>
                     <div className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card">
                         {rows.map((row) => {
@@ -514,7 +514,7 @@ function FieldChangedConfig({
                 onChange={(e) => onChange({ ...config, field: e.target.value })}
                 aria-label={__('Campo')}
             >
-                <option value="">{__('Elegí un campo…')}</option>
+                <option value="">{__('Elige un campo…')}</option>
                 {fields.map((f) => (
                     <option key={f.id} value={f.slug}>
                         {f.label} ({f.slug})
@@ -660,16 +660,16 @@ function ScheduledConfig({
             </p>
             {zone.source === 'fallback' && (
                 <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-schedule-utc-warning">
-                    {__('La empresa todavía no tiene zona horaria: este horario corre en UTC (en Colombia, 5 horas antes). Elegila en ')}
+                    {__('La empresa todavía no tiene zona horaria: este horario corre en UTC (en Colombia, 5 horas antes). Elígela en ')}
                     <a className="imcrm-font-medium imcrm-underline" href="#/settings?s=formato">
                         {__('Ajustes → Formato regional')}
                     </a>
-                    {__(' o elegí una arriba.')}
+                    {__(' o elige una arriba.')}
                 </p>
             )}
             {hasCron && (
                 <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
-                    {__('Este horario usa una expresión cron (abajo). Borrala para elegir la frecuencia de la lista.')}
+                    {__('Este horario usa una expresión cron (abajo). Bórrala para elegir la frecuencia de la lista.')}
                 </p>
             )}
             <details className="imcrm-text-xs" open={hasCron || undefined}>
@@ -681,7 +681,7 @@ function ScheduledConfig({
                         onChange={(e) => onChange({ ...config, cron: e.target.value })}
                         data-testid="imcrm-schedule-cron"
                     />
-                    <span className="imcrm-text-muted-foreground">{__('Si la completás, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
+                    <span className="imcrm-text-muted-foreground">{__('Si la completas, manda sobre la frecuencia de arriba (minuto hora día mes día-de-semana).')}</span>
                 </div>
             </details>
         </div>
@@ -759,7 +759,7 @@ function DueDateConfig({
                 value={dueField}
                 onChange={(e) => onChange({ ...config, due_field: e.target.value })}
             >
-                <option value="">{__('Elegí un campo…')}</option>
+                <option value="">{__('Elige un campo…')}</option>
                 {dateFields.map((f) => (
                     <option key={f.id} value={f.slug}>
                         {f.label}
@@ -879,7 +879,7 @@ export function ActionsEditor({
 
             {value.length === 0 ? (
                 <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-canvas imcrm-px-3 imcrm-py-4 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Todavía no hay acciones. Agregá al menos una.')}
+                    {__('Todavía no hay acciones. Agrega al menos una.')}
                 </p>
             ) : (
                 <ol className="imcrm-flex imcrm-flex-col imcrm-gap-2.5">
@@ -1184,7 +1184,7 @@ function UpdateFieldConfig({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Elegí qué campos cambiar en el registro que disparó la automatización y su valor nuevo. Acepta variables como {{slug}} o {{record.id}}.')}
+                {__('Elige qué campos cambiar en el registro que disparó la automatización y su valor nuevo. Acepta variables como {{slug}} o {{record.id}}.')}
             </p>
             {/* Misma estructura de fila que CreateRecordConfig: selector +
                 eliminar arriba, valor a ancho completo abajo. */}
@@ -1315,7 +1315,7 @@ function CreateRecordConfig({
                 {__('Crea un registro en la lista elegida. Los valores aceptan variables del registro que disparó la automatización ({{slug}}, {{record.id}}); en un campo de relación, {{record.id}} lo vincula a ese registro.')}
             </p>
             <p className="imcrm-rounded-md imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
-                {__('Fechas con aritmética: |+1m suma un mes, |-1d resta un día — ej. {{before.proximo_cobro|+1m|-1d}} = fin del período anticipado. Etiquetas: {{campo|label}} escribe el texto de la opción en vez de su valor interno (acá, para un select destino, conviene el valor).')}
+                {__('Fechas con aritmética: |+1m suma un mes, |-1d resta un día — ej. {{before.proximo_cobro|+1m|-1d}} = fin del período anticipado. Etiquetas: {{campo|label}} escribe el texto de la opción en vez de su valor interno (aquí, para un select destino, conviene el valor).')}
             </p>
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                 <Label className="imcrm-shrink-0 imcrm-text-xs">{__('Lista destino')}</Label>
@@ -1432,7 +1432,7 @@ function FieldValueInput({
     if (!field) {
         return (
             <Input
-                placeholder={__('Elegí un campo primero')}
+                placeholder={__('Elige un campo primero')}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 className="imcrm-flex-1"
@@ -1450,7 +1450,7 @@ function FieldValueInput({
                 className="imcrm-flex-1"
                 aria-label={__('Valor')}
             >
-                <option value="">{__('Elegí un valor…')}</option>
+                <option value="">{__('Elige un valor…')}</option>
                 {options.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                         {opt.label || opt.value}
@@ -1477,7 +1477,7 @@ function FieldValueInput({
 
     // date / datetime / number / currency: MergeTagInput — un input
     // tipado (type=date / type=number) NO acepta merge tags, y mapear
-    // variables acá es el caso central de create_record/update_field
+    // variables aquí es el caso central de create_record/update_field
     // (ej. monto = {{monto_mensual}}, periodo = {{before.proximo_cobro}}).
     // El backend valida/coerciona con el schema del campo destino; un
     // valor fijo se tipea a mano en el formato del placeholder.
@@ -1569,7 +1569,7 @@ function readRows(raw: unknown): KeyValueRow[] {
 
 /**
  * Editor de filas clave/valor con merge tags en el valor. Es la pieza que
- * convierte "escribí el JSON a mano" en "completá los datos que pide la API".
+ * convierte "escribe el JSON a mano" en "completa los datos que pide la API".
  */
 function KeyValueEditor({
     label,
@@ -1882,7 +1882,7 @@ function ConnectionSelect({
                 onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
                 data-testid="imcrm-action-connection"
             >
-                <option value="">{__('Sin conexión (escribir la credencial acá abajo)')}</option>
+                <option value="">{__('Sin conexión (escribir la credencial aquí abajo)')}</option>
                 {options.map((c) => (
                     <option key={c.id} value={c.id}>
                         {c.name}
@@ -1896,7 +1896,7 @@ function ConnectionSelect({
                 )}
             </Select>
             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                {__('Las conexiones se crean en Ajustes → Conectores. La URL de acá puede ser relativa a la base de la conexión.')}
+                {__('Las conexiones se crean en Ajustes → Conectores. La URL de aquí puede ser relativa a la base de la conexión.')}
             </p>
         </div>
     );
@@ -2096,15 +2096,15 @@ function CallWebhookConfig({
                                 placeholder={__('deja vacío si el destino no verifica firma')}
                             />
                             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Se envía la cabecera x-imagina-signature con el HMAC-SHA256 del cuerpo: el destino puede comprobar que el pedido salió de acá.')}
+                                {__('Se envía la cabecera x-imagina-signature con el HMAC-SHA256 del cuerpo: el destino puede comprobar que el pedido salió de aquí.')}
                             </p>
                             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Mejor todavía: guardalo en una conexión (Ajustes → Conectores) y usala acá. Queda cifrado y se rota en un solo lugar.')}
+                                {__('Mejor todavía: guárdalo en una conexión (Ajustes → Conectores) y úsala aquí. Queda cifrado y se rota en un solo lugar.')}
                             </p>
                         </div>
                     ) : (
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('La credencial y el secreto de firma los pone la conexión elegida arriba. No hace falta escribirlos acá.')}
+                            {__('La credencial y el secreto de firma los pone la conexión elegida arriba. No hace falta escribirlos aquí.')}
                         </p>
                     )}
                 </div>

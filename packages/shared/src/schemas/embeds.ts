@@ -31,7 +31,7 @@ export const EMBED_PROVIDER_LABELS: Record<EmbedProvider, string> = {
 };
 
 /**
- * Dominios que el `frame-src` del proxy tiene que permitir. Vive acá para que
+ * Dominios que el `frame-src` del proxy tiene que permitir. Vive aquí para que
  * la lista de la CSP y la del código no se separen (`deploy/`).
  */
 export const EMBED_FRAME_HOSTS: readonly string[] = [
@@ -47,7 +47,7 @@ export const EMBED_FRAME_HOSTS: readonly string[] = [
 /**
  * `URL` es global en Node y en el navegador, pero el `lib` de este paquete es
  * ES2023 (sin DOM) a propósito — el shared no debe tocar el DOM. Se declara
- * acá lo mínimo que se usa, en vez de abrirle el DOM entero al paquete.
+ * aquí lo mínimo que se usa, en vez de abrirle el DOM entero al paquete.
  */
 interface ParsedUrl {
     protocol: string;

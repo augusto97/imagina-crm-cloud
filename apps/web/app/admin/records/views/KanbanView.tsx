@@ -244,7 +244,7 @@ export function KanbanView({
                         <div className="imcrm-flex imcrm-min-h-[80px] imcrm-flex-col imcrm-gap-2 imcrm-p-2">
                             {colRecords.length === 0 ? (
                                 <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-border-2 imcrm-border-dashed imcrm-border-border/50 imcrm-py-8 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground/70">
-                                    {__('Arrastrá una tarjeta acá')}
+                                    {__('Arrastra una tarjeta aquí')}
                                 </div>
                             ) : (
                                 colRecords.map((record) => (

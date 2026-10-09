@@ -71,9 +71,12 @@ día: describe lo que quiere, manda **capturas**, prueba en su servidor y
 reporta. Ya tiene clientes reales (~10 empresas).
 
 **Cómo responderle**
-- En **español**, con **voseo** ("hacé", "tocá", "fijate") — igual que los
-  textos de la UI. Claro, sin jerga; si hay que explicar algo técnico, en
-  criollo y con el "para qué".
+- En **español neutro, tuteando** ("haz", "toca", "fíjate") — igual que los
+  textos de la UI. **NUNCA voseo ni modismos argentinos** ("hacé", "podés",
+  "vos", "acá", "plata", "en criollo"): pedido explícito del usuario
+  (2026-10-09, "nunca escribas con acento argentino, no me gusta"). Claro,
+  sin jerga; si hay que explicar algo técnico, en lenguaje sencillo y con el
+  "para qué".
 - Al terminar: qué se hizo, **qué tiene que probar él** y los **límites
   honestos** (qué no se pudo verificar y por qué). Nunca decir "listo" sin
   haberlo verificado; si algo falló, decirlo.
@@ -390,6 +393,9 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   la poda del WAL): tras instalar v0.1.278, recrear postgres una vez
   (runbook-disk §4). Lección: no recomendar `docker system prune` sin mirar
   antes `docker ps -a` — borra contenedores detenidos de la app.
+  **CERRADO**: el usuario instaló v0.1.278 desde el panel y recreó postgres
+  (poda del WAL activa). Queda sólo lo opcional: `KillMode=process` en la
+  unidad systemd (runbook-disk §6), sin pedir — ofrecido, no aplicado.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
@@ -487,6 +493,15 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-10-09 · v0.1.279** — Pedido del usuario: "la app tiene todo un
+  acento argentino; nunca escribas con acento argentino, escribe todo en
+  español neutro, a lo mucho tutea". Toda la interfaz, los errores, los
+  correos, las páginas públicas, las plantillas y el asistente pasaron a
+  tuteo neutro (ADR-S42). La regla queda fija en §1 «Cómo responderle» y en
+  CLAUDE.md §6: también las respuestas en el chat van en tuteo neutro.
+  Queda: los runbooks de `docs/` siguen con voseo (son internos); pasarlos si
+  el usuario los lee.
 
 - **2026-10-09 · v0.1.278** — Reporte del usuario: «Actualizar» falló con
   «No space left on device». El actualizador ahora mira el espacio antes,

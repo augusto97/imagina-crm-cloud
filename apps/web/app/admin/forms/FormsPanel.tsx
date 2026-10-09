@@ -65,7 +65,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
             <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-pt-5" data-testid="forms-panel">
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                     <p className="imcrm-max-w-xl imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Compartí el enlace o insertalo en tu sitio. Cada respuesta crea un registro, y una automatización puede avisarte o responderle a quien lo llenó.')}
+                        {__('Comparte el enlace o insértalo en tu sitio. Cada respuesta crea un registro, y una automatización puede avisarte o responderle a quien lo llenó.')}
                     </p>
                     <Button size="sm" className="imcrm-gap-1.5" onClick={createNew} disabled={create.isPending} data-testid="form-new">
                         {create.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
@@ -83,7 +83,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                         <ClipboardList className="imcrm-h-7 imcrm-w-7 imcrm-text-muted-foreground" />
                         <p className="imcrm-text-sm imcrm-font-medium">{__('Todavía no hay formularios')}</p>
                         <p className="imcrm-max-w-sm imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Arrancá con los campos de la lista ya puestos: sacá los que no quieras preguntar y publicalo.')}
+                            {__('Arranca con los campos de la lista ya puestos: saca los que no quieras preguntar y publícalo.')}
                         </p>
                         <Button size="sm" variant="outline" onClick={createNew} disabled={create.isPending}>
                             {__('Crear el primero')}
@@ -140,7 +140,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                                                 variant="ghost"
                                                 size="sm"
                                                 disabled={questions === 0 || update.isPending}
-                                                title={questions === 0 ? __('Agregá al menos una pregunta') : undefined}
+                                                title={questions === 0 ? __('Agrega al menos una pregunta') : undefined}
                                                 onClick={() =>
                                                     update.mutate(
                                                         { id: f.id, body: { enabled: true } },

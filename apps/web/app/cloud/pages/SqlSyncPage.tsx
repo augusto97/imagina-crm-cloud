@@ -94,7 +94,7 @@ export function SqlSyncPage(): JSX.Element {
                 <div className="imcrm-min-w-0 imcrm-flex-1">
                     <h1 className="imcrm-text-xl imcrm-font-semibold">{conn?.account_label ?? __('SQL Server')}</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Traé el resultado de una consulta o de un procedimiento a una lista, cada tanto, sin duplicar.')}
+                        {__('Trae el resultado de una consulta o de un procedimiento a una lista, cada tanto, sin duplicar.')}
                     </p>
                 </div>
                 {editing === null && (
@@ -124,7 +124,7 @@ export function SqlSyncPage(): JSX.Element {
                     <Database className="imcrm-mx-auto imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
                     <p className="imcrm-mt-3 imcrm-text-sm imcrm-font-medium">{__('Todavía no hay sincronizaciones')}</p>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Elegí qué traer de la base (una consulta o un procedimiento), a qué lista y cada cuánto.')}
+                        {__('Elige qué traer de la base (una consulta o un procedimiento), a qué lista y cada cuánto.')}
                     </p>
                     <Button className="imcrm-mt-4" onClick={() => setEditing('new')}>
                         <Plus className="imcrm-h-4 imcrm-w-4" />
@@ -415,8 +415,8 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
 
     const save = useMutation({
         mutationFn: async () => {
-            if (listId <= 0) throw new Error(__('Elegí la lista donde cargar los datos.'));
-            if (keyColumn === '') throw new Error(__('Elegí la columna clave.'));
+            if (listId <= 0) throw new Error(__('Elige la lista donde cargar los datos.'));
+            if (keyColumn === '') throw new Error(__('Elige la columna clave.'));
             // Los campos nuevos se crean primero (la sincronización guarda ids).
             const created: Record<string, number> = {};
             let key = keyField;
@@ -511,7 +511,7 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
                             data-testid="imcrm-sql-query"
                         />
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Podés usar @ultima_sincronizacion (fecha y hora UTC de la última corrida, NULL la primera vez) para traer sólo lo que cambió. Corre en una transacción que se deshace: no puede modificar tu base.')}
+                            {__('Puedes usar @ultima_sincronizacion (fecha y hora UTC de la última corrida, NULL la primera vez) para traer sólo lo que cambió. Corre en una transacción que se deshace: no puede modificar tu base.')}
                         </p>
                     </div>
                 ) : (
@@ -568,7 +568,7 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
                             }}
                             data-testid="imcrm-sql-list"
                         >
-                            <option value={0}>{__('Elegí una lista')}</option>
+                            <option value={0}>{__('Elige una lista')}</option>
                             {(lists.data ?? []).map((l) => (
                                 <option key={l.id} value={l.id}>
                                     {l.name}
@@ -580,7 +580,7 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
                         <Label>{__('Columna clave en SQL')}</Label>
                         {columns.length > 0 ? (
                             <Select value={keyColumn} onChange={(e) => changeKeyColumn(e.target.value)} data-testid="imcrm-sql-key-column">
-                                <option value="">{__('Elegí una columna')}</option>
+                                <option value="">{__('Elige una columna')}</option>
                                 {columns.map((c) => (
                                     <option key={c} value={c}>
                                         {c}
@@ -659,7 +659,7 @@ function SyncEditor({ connectionId, sync, onClose }: { connectionId: number; syn
                     </div>
                 )}
                 {listId > 0 && columns.length === 0 && (
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Tocá «Probar» para ver las columnas que devuelve la consulta y elegir a qué campo va cada una.')}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Toca «Probar» para ver las columnas que devuelve la consulta y elegir a qué campo va cada una.')}</p>
                 )}
             </div>
 

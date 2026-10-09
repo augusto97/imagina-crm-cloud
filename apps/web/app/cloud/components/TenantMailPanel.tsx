@@ -56,7 +56,7 @@ export function TenantMailPanel(): JSX.Element | null {
                 <CardHeader>
                     <CardTitle>Cómo salen los correos de tu empresa</CardTitle>
                     <CardDescription>
-                        Avisos de automatizaciones, enlaces del portal del cliente y recordatorios. Elegí una forma de
+                        Avisos de automatizaciones, enlaces del portal del cliente y recordatorios. Elige una forma de
                         envío: sólo una está activa a la vez.
                     </CardDescription>
                 </CardHeader>
@@ -265,7 +265,7 @@ function AccountSection({ status }: { status: TenantMailStatus }): JSX.Element {
         onSuccess: (r) =>
             setNotice(
                 r.ok
-                    ? { kind: 'ok', text: `Correo de prueba enviado a ${myEmail || 'tu correo'}. Revisá también la carpeta de spam.` }
+                    ? { kind: 'ok', text: `Correo de prueba enviado a ${myEmail || 'tu correo'}. Revisa también la carpeta de spam.` }
                     : { kind: 'err', text: r.error ?? 'No se pudo enviar.' },
             ),
         onError: (e) => setNotice({ kind: 'err', text: e instanceof Error ? e.message : 'No se pudo enviar.' }),
@@ -321,7 +321,7 @@ function AccountSection({ status }: { status: TenantMailStatus }): JSX.Element {
                             <NoConnections />
                         ) : (
                             <>
-                                <p className="imcrm-text-sm imcrm-font-medium">Elegí con qué cuenta salen los correos</p>
+                                <p className="imcrm-text-sm imcrm-font-medium">Elige con qué cuenta salen los correos</p>
                                 <div className="imcrm-space-y-2" role="radiogroup">
                                     {status.candidates.map((c) => (
                                         <CandidateRow
@@ -336,7 +336,7 @@ function AccountSection({ status }: { status: TenantMailStatus }): JSX.Element {
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                     ¿Falta una cuenta?{' '}
                                     <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
-                                        Conectala en Integraciones
+                                        Conéctala en Integraciones
                                     </Link>{' '}
                                     (Gmail u Outlook, como conexión del equipo).
                                 </p>
@@ -370,7 +370,7 @@ function AccountSection({ status }: { status: TenantMailStatus }): JSX.Element {
                                                 setChanging(false);
                                                 setNotice({
                                                     kind: 'ok',
-                                                    text: `Listo: los correos de la empresa salen desde ${pickedCandidate.address ?? pickedCandidate.name}. Probá el envío para confirmarlo.`,
+                                                    text: `Listo: los correos de la empresa salen desde ${pickedCandidate.address ?? pickedCandidate.name}. Prueba el envío para confirmarlo.`,
                                                 });
                                             },
                                             onError: (e) => setNotice({ kind: 'err', text: e.message }),
@@ -564,7 +564,7 @@ function CandidateRow({
 }): JSX.Element {
     const disabled = !c.ready || !c.shared;
     const reason = !c.shared
-        ? 'Es una conexión privada: para el correo de la empresa usá una del equipo.'
+        ? 'Es una conexión privada: para el correo de la empresa usa una del equipo.'
         : c.problem;
     const kind = MAIL_ACCOUNT_LIMITS[mailAccountKind(c.integration, c.address)];
     return (
@@ -604,8 +604,8 @@ function NoConnections(): JSX.Element {
     return (
         <div className="imcrm-space-y-3 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-p-4 imcrm-text-sm" data-testid="mail-account-empty">
             <p>
-                Todavía no hay una cuenta de Gmail ni de Outlook conectada. Conectala una vez en Integraciones (como
-                conexión del <span className="imcrm-font-medium">equipo</span>) y volvé acá para elegirla.
+                Todavía no hay una cuenta de Gmail ni de Outlook conectada. Conéctala una vez en Integraciones (como
+                conexión del <span className="imcrm-font-medium">equipo</span>) y vuelve aquí para elegirla.
             </p>
             <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                 <Button size="sm" variant="outline" asChild>
@@ -622,7 +622,7 @@ function NoConnections(): JSX.Element {
                 </Button>
             </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                Consejo: conectá una casilla compartida (por ejemplo notificaciones@tuempresa.com), no la personal de
+                Consejo: conecta una casilla compartida (por ejemplo notificaciones@tuempresa.com), no la personal de
                 alguien que mañana puede irse.
             </p>
         </div>
@@ -640,8 +640,8 @@ function SmtpSection({ status }: { status: TenantMailStatus }): JSX.Element {
                     <span className="imcrm-flex-1">
                         Ahora los correos salen por tu cuenta de Google o Microsoft.{' '}
                         {status.smtp_configured
-                            ? 'Tenés un servidor SMTP guardado: podés volver a usarlo.'
-                            : 'Si guardás un servidor SMTP, pasa a ser la forma de envío.'}
+                            ? 'Tienes un servidor SMTP guardado: puedes volver a usarlo.'
+                            : 'Si guardas un servidor SMTP, pasa a ser la forma de envío.'}
                     </span>
                     {status.smtp_configured && (
                         <Button size="sm" variant="outline" disabled={clearAccount.isPending} onClick={() => clearAccount.mutate()}>

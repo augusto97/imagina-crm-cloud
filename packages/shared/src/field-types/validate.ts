@@ -106,13 +106,13 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
         }
         case 'date': {
             if (typeof raw !== 'string' || !isoDateSchema.safeParse(raw).success) {
-                return fail('Fecha inválida. Usá formato YYYY-MM-DD.');
+                return fail('Fecha inválida. Usa formato YYYY-MM-DD.');
             }
             return ok(raw);
         }
         case 'datetime': {
             if (typeof raw !== 'string' || !isoDateTimeSchema.safeParse(raw).success) {
-                return fail('Fecha/hora inválida. Usá formato ISO 8601 con zona.');
+                return fail('Fecha/hora inválida. Usa formato ISO 8601 con zona.');
             }
             return ok(raw);
         }
@@ -176,7 +176,7 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
             if (v === null) return fail('Se esperaba texto.');
             return ok(v.slice(0, 10_000));
         }
-        // relation/computed/lookup/rollup no viven en `data` — no deberían llegar acá.
+        // relation/computed/lookup/rollup no viven en `data` — no deberían llegar aquí.
         case 'relation':
         case 'computed':
         case 'lookup':

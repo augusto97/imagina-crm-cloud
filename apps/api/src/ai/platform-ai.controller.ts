@@ -57,7 +57,7 @@ export class PlatformAiController {
             const res = await client.messages.create({
                 model: platform.model,
                 max_tokens: 16,
-                messages: [{ role: 'user', content: 'Respondé sólo "ok".' }],
+                messages: [{ role: 'user', content: 'Responde sólo "ok".' }],
             });
             const text = res.content.find((b) => b.type === 'text');
             return { ok: true, model: res.model, message: `El proveedor respondió (${text && text.type === 'text' ? text.text.trim() : 'sin texto'}).` };
@@ -66,7 +66,7 @@ export class PlatformAiController {
             const detail = err instanceof Error ? err.message : String(err);
             const message =
                 status === 401
-                    ? 'El proveedor rechazó la clave (401). Revisá que esté completa y vigente.'
+                    ? 'El proveedor rechazó la clave (401). Revisa que esté completa y vigente.'
                     : status === 404
                       ? `El modelo ${platform.model} no está disponible para esta clave (404).`
                       : `No se pudo hablar con el proveedor: ${detail}`;

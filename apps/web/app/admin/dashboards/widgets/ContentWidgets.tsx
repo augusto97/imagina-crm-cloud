@@ -37,7 +37,7 @@ export function TextWidget({ widget }: { widget: WidgetSpec }): JSX.Element {
                 </h3>
             )}
             <div className="imcrm-whitespace-pre-wrap imcrm-text-[13px] imcrm-leading-relaxed">
-                {text || <span className="imcrm-text-muted-foreground">{__('Escribí el texto en la configuración del bloque.')}</span>}
+                {text || <span className="imcrm-text-muted-foreground">{__('Escribe el texto en la configuración del bloque.')}</span>}
             </div>
         </div>
     );
@@ -49,7 +49,7 @@ export function ImageWidget({ widget }: { widget: WidgetSpec }): JSX.Element {
     if (src === undefined) {
         return (
             <div className="imcrm-flex imcrm-h-full imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-text-xs imcrm-text-muted-foreground">
-                {__('Elegí una imagen en la configuración del bloque.')}
+                {__('Elige una imagen en la configuración del bloque.')}
             </div>
         );
     }

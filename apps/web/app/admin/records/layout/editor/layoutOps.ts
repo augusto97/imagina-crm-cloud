@@ -4,7 +4,7 @@ import type { LayoutBlock, LayoutPage, LayoutSection, RecordLayoutV3 } from '@im
  * v0.1.231 — Operaciones PURAS del editor de la ficha sobre la plantilla v3.
  * Cada una devuelve una plantilla NUEVA (el historial de deshacer guarda
  * copias) y nunca deja una sección inválida: columnas que suman 12 y una pila
- * por columna. Todo lo que el editor hace pasa por acá, así se testea sin
+ * por columna. Todo lo que el editor hace pasa por aquí, así se testea sin
  * montar la interfaz.
  */
 

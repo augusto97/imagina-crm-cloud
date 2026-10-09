@@ -438,7 +438,7 @@ export function AutomationCanvas({
                 if (e.button !== 0) return;
                 // Los eventos de React burbujean por el ÁRBOL DE COMPONENTES,
                 // no por el DOM: un click dentro de contenido PORTALEADO
-                // (menús, popovers) llegaría acá y el setPointerCapture le
+                // (menús, popovers) llegaría aquí y el setPointerCapture le
                 // robaría el pointerup a ese botón (bloqueaba cerrar/chips).
                 // Solo paneamos si el evento nació dentro del contenedor real.
                 if (!(e.currentTarget as HTMLElement).contains(e.target as Node)) return;
@@ -623,7 +623,7 @@ export function AutomationCanvas({
 
             {/* Hint de navegación */}
             <div className="imcrm-pointer-events-none imcrm-absolute imcrm-bottom-3 imcrm-left-3 imcrm-z-20 imcrm-rounded-md imcrm-bg-card/80 imcrm-px-2 imcrm-py-1 imcrm-text-[10px] imcrm-text-muted-foreground imcrm-backdrop-blur">
-                {__('Arrastrá para moverte · Ctrl+rueda para zoom · clic en un paso para configurarlo')}
+                {__('Arrastra para moverte · Ctrl+rueda para zoom · clic en un paso para configurarlo')}
             </div>
 
         </div>

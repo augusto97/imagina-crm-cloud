@@ -15,7 +15,7 @@ import { IntegrationAppsService } from './integration-apps.service';
 /**
  * Plataforma → Integraciones (superadmin, v0.1.203).
  *
- * Acá el operador registra UNA vez la app de cada proveedor (Google,
+ * Aquí el operador registra UNA vez la app de cada proveedor (Google,
  * Microsoft, Slack). Es lo que le permite a cada empresa conectar su cuenta
  * con un botón, sin ver jamás un client id ni una URL de tokens.
  */

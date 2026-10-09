@@ -78,8 +78,8 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName }: Lis
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {mode === 'blank' && __('Define el nombre y los campos llegarán después.')}
-                                {mode === 'template' && __('Elegí una plantilla: nace con campos, vistas y automatizaciones listos.')}
-                                {mode === 'duplicate' && __('Una copia de una lista que ya tenés.')}
+                                {mode === 'template' && __('Elige una plantilla: nace con campos, vistas y automatizaciones listos.')}
+                                {mode === 'duplicate' && __('Una copia de una lista que ya tienes.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>

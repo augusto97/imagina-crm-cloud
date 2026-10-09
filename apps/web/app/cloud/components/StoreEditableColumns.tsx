@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * «Columnas que se editan desde la app» (v0.1.214): cada empresa elige, por
- * lista de la tienda, qué columnas de WooCommerce se pueden cambiar desde acá
+ * lista de la tienda, qué columnas de WooCommerce se pueden cambiar desde aquí
  * —además de precios, stock y estados, el nombre, el SKU, las categorías, las
  * etiquetas, datos de los clientes y los campos de otros plugins traídos a
  * columnas—. Se muestra en la página de la tienda y en Ajustes → Campos de

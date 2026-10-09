@@ -148,7 +148,7 @@ export function GeneralPanel({ list }: Props): JSX.Element {
  * Zona de peligro: eliminar la lista. Vive al FINAL de la sección
  * General, no en el encabezado de la página — antes el botón "Eliminar"
  * estaba arriba a la derecha, al lado de "Ver registros", que es
- * exactamente donde no querés una acción irreversible.
+ * exactamente donde no quieres una acción irreversible.
  */
 export function DangerZonePanel({ list }: Props): JSX.Element {
     const navigate = useNavigate();

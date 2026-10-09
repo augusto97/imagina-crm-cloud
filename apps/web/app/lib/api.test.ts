@@ -15,7 +15,7 @@ import {
  * v0.1.114 — Tests del ADAPTADOR entre el fork (que habla por slug y por
  * página) y el backend NestJS (que habla por `f{field_id}` y por cursor).
  *
- * Por qué acá y no en un E2E: esta capa es la que más regresiones produjo del
+ * Por qué aquí y no en un E2E: esta capa es la que más regresiones produjo del
  * proyecto (v0.1.68 los filtros viajaban en el formato equivocado, v0.1.81 la
  * invalidación del import, v0.1.85 el path de automatizaciones…) y no tenía
  * NI UN test. Son funciones puras: cuestan milisegundos y atrapan justo la

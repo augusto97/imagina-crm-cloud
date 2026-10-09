@@ -335,7 +335,7 @@ export function BulkEditDialog({
                     }}
                     listId={listId}
                     editId={result.edit_id}
-                    summary={__('La edición que acabás de aplicar')}
+                    summary={__('La edición que acabas de aplicar')}
                 />
             )}
         </Dialog.Root>

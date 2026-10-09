@@ -218,7 +218,7 @@ export function BulkStructureDialog({
 
                                 {action === 'delete' && (
                                     <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Las subtareas se van con su registro. Podés deshacerlo desde el historial de ediciones masivas: los registros vuelven enteros, con sus subtareas y vínculos.')}
+                                        {__('Las subtareas se van con su registro. Puedes deshacerlo desde el historial de ediciones masivas: los registros vuelven enteros, con sus subtareas y vínculos.')}
                                     </p>
                                 )}
 

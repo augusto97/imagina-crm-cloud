@@ -401,7 +401,7 @@ function CellEditor({ field, value, onChange, onCommit, onCancel, isPending }: C
                     disabled={isPending}
                 />
             );
-        // select / multi_select NO pasan por acá: en modo lectura la celda
+        // select / multi_select NO pasan por aquí: en modo lectura la celda
         // ya renderiza el OptionPicker (variant="cell") con popover directo.
         case 'number':
         case 'currency':

@@ -46,7 +46,7 @@ export class SmtpUnusableError extends Error {
     constructor(reason: string) {
         super(
             `El SMTP de la empresa está configurado pero no se puede usar: ${reason}. ` +
-                'Volvé a escribir la contraseña en Ajustes → Correo (SMTP).',
+                'Vuelve a escribir la contraseña en Ajustes → Correo (SMTP).',
         );
     }
 }
@@ -96,7 +96,7 @@ export class TenantSmtpService {
             throw new BadRequestException({
                 code: 'smtp_password_required',
                 message:
-                    'No se puede leer la contraseña guardada (cambió la clave de cifrado del servidor). Escribila de nuevo para volver a habilitar el envío.',
+                    'No se puede leer la contraseña guardada (cambió la clave de cifrado del servidor). Escríbela de nuevo para volver a habilitar el envío.',
                 data: { status: 400 },
             });
         }

@@ -2911,6 +2911,28 @@ cortado dejaba el zip y la carpeta a medio extraer, que el reintento sumaba.
    unidad (runbook-disk §6, opcional, por consola: la auto-actualización no
    toca systemd).
 
+### ADR-S42 — Idioma de la interfaz: español neutro (v0.1.279)
+
+**Contexto.** Los textos de la app se escribieron desde el inicio con voseo
+rioplatense ("elegí", "podés", "tocá", "vos", "acá") y algunos modismos
+("plata", "en criollo"). El producto se vende en Colombia y el resto de
+Latinoamérica, y el usuario pidió explícitamente no usar nunca ese registro.
+
+**Decisión.** Todo texto visible —interfaz, mensajes de error del API,
+correos, páginas públicas (formularios, listas, legales), plantillas del
+catálogo, guías de integraciones y el prompt del asistente IA— va en
+**español neutro tuteando** ("elige", "puedes", "toca", "aquí", "tú").
+Nada de voseo ni modismos regionales. El asistente recibe la instrucción de
+responder igual. Los comentarios del código siguen la misma regla cuando se
+tocan, pero no es obligatorio reescribirlos.
+
+**Consecuencias.** La conversión de v0.1.279 fue mecánica (diccionario
+voseo → tú con los cambios de raíz: "probá" → "prueba", "volvé" → "vuelve",
+"elegí" → "elige", enclíticos con su tilde: "revisalo" → "revísalo") más una
+pasada a mano de pronombres y vocabulario. Lo que el usuario ya guardó
+(textos de sus plantillas, correos, páginas legales personalizadas) es suyo y
+no se toca.
+
 ---
 
-**Versión del documento:** 1.77.0 (el actualizador cuida el disco — addendum ADR-S13)
+**Versión del documento:** 1.78.0 (español neutro en la interfaz — ADR-S42)

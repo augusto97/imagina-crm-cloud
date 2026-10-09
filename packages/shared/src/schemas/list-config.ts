@@ -3,7 +3,7 @@ import { idSchema } from './common';
 
 /**
  * v0.1.195 — configuración de la lista que vive en `list.settings` y que
- * hasta acá NO tenía schema: el portal del cliente (habilitado, listas
+ * hasta aquí NO tenía schema: el portal del cliente (habilitado, listas
  * relacionadas y la plantilla de bloques) y el layout de la ficha del
  * registro (formulario clásico o layout CRM por plantilla / personalizado).
  *
@@ -13,7 +13,7 @@ import { idSchema } from './common';
  * puedan proponer la configuración por lenguaje natural sin inventar
  * claves. Son tolerantes a propósito (`passthrough` en los `config`): un
  * bloque guardado por el editor trae claves de estilo (`style`, `variant`,
- * `accent_color`) que acá no se enumeran.
+ * `accent_color`) que aquí no se enumeran.
  */
 
 // ── Portal del cliente ───────────────────────────────────────────────────
@@ -67,7 +67,7 @@ export type PortalTemplateBlock = z.infer<typeof portalTemplateBlockSchema>;
 export const portalTemplateSchema = z
     .object({
         blocks: z.array(portalTemplateBlockSchema).max(80),
-        /** v0.1.94 — ajustes de página del portal (fondo, ancho, tipografía). Opaco acá. */
+        /** v0.1.94 — ajustes de página del portal (fondo, ancho, tipografía). Opaco aquí. */
         page: z.record(z.unknown()).optional(),
     })
     .passthrough();

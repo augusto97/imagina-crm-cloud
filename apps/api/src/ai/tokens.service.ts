@@ -29,7 +29,7 @@ export interface ResolvedToken {
 
 /**
  * Tokens de acceso personal (ADR-S21 fase 3): la credencial del servidor
- * MCP. El secreto se genera acá, se devuelve UNA vez y sólo se guarda su
+ * MCP. El secreto se genera aquí, se devuelve UNA vez y sólo se guarda su
  * SHA-256; resolverlo hace UNA query (hash → token + membresía + usuario) y
  * falla cerrado si el token venció, fue revocado, la persona ya no es
  * miembro o su cuenta está desactivada.

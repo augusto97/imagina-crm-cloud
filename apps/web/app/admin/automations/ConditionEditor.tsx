@@ -121,7 +121,7 @@ export function ConditionEditor({
      * Inserta gte+lte (fechas fijas) para un preset, reemplazando el
      * row idx. Las automatizaciones evalúan condiciones contra un
      * snapshot del registro en el momento del trigger, así que tener
-     * un rango "este mes" dinámico no aplica acá — el momento de la
+     * un rango "este mes" dinámico no aplica aquí — el momento de la
      * evaluación ES el momento del trigger.
      */
     const applyDateRange = (

@@ -122,7 +122,7 @@ export function FieldsForm({ block, set }: FormProps): JSX.Element {
     return (
         <>
             <Group title={__('Datos')}>
-                <Row label={__('Campos')} hint={ctx.mode === 'portal' ? __('El cliente los ve; si lo permitís, los corrige.') : __('Se editan en la ficha y se guardan solos.')}>
+                <Row label={__('Campos')} hint={ctx.mode === 'portal' ? __('El cliente los ve; si lo permites, los corrige.') : __('Se editan en la ficha y se guardan solos.')}>
                     <FieldChecklist fields={ctx.fields} value={ids(c.field_ids)} onChange={(v) => set({ field_ids: v })} max={40} />
                 </Row>
             </Group>
@@ -206,7 +206,7 @@ function SourcePicker({ value, onChange, allowList }: { value: LayoutDataSource 
             className="imcrm-h-8 imcrm-text-sm"
             aria-label={__('Fuente de datos')}
         >
-            {value === undefined && <option value="">{__('— Elegí de dónde salen los datos —')}</option>}
+            {value === undefined && <option value="">{__('— Elige de dónde salen los datos —')}</option>}
             {paths.length > 0 && (
                 <optgroup label={__('Registros vinculados a éste')}>
                     {paths.map((p) => (
@@ -489,7 +489,7 @@ export function RelatedForm({ block, set }: FormProps): JSX.Element {
         <>
             <Group title={__('Datos')}>
                 {ed.catalog.paths.length === 0 ? (
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Esta lista no tiene relaciones con otras. Agregá un campo «Relación» para mostrar sus registros vinculados.')}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Esta lista no tiene relaciones con otras. Agrega un campo «Relación» para mostrar sus registros vinculados.')}</p>
                 ) : (
                     <Row label={__('Registros de')}>
                         <SourcePicker value={source} onChange={(s) => set({ source: s, field_ids: undefined, sort_field_id: undefined, group_field_id: undefined, date_field_id: undefined, image_field_id: undefined, filter_tree: undefined })} allowList={false} />

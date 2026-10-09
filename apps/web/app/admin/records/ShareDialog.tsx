@@ -40,7 +40,7 @@ interface ShareDialogProps {
  *     lista o una vista guardada, con sus filtros), qué campos se ven,
  *     hasta cuándo vale el enlace y desde qué sitios puede insertarse.
  *
- * La configuración es la misma que vive en Ajustes → Compartir: acá está
+ * La configuración es la misma que vive en Ajustes → Compartir: aquí está
  * a un click de donde se usa.
  */
 export function ShareDialog({
@@ -191,7 +191,7 @@ export function ShareDialog({
                             </div>
 
                             {/* v0.1.138 — compartir con una persona puntual.
-                                Hasta acá el acceso era sólo por ROL: para
+                                Hasta aquí el acceso era sólo por ROL: para
                                 sumar a alguien había que cambiarle el rol en
                                 TODO el workspace. */}
                             {canPublish && (

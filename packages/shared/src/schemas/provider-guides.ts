@@ -59,7 +59,7 @@ const G = 'https://console.cloud.google.com';
 export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
     google: {
         intro:
-            'Son cinco fases. Las tres primeras dejan la conexión funcionando para tus usuarios de prueba; la 4 y la 5 hacen que cualquier empresa pueda conectarse sin el aviso de «Google no verificó esta app». Usá una cuenta de Google de la plataforma (no personal): va a ser la dueña del proyecto.',
+            'Son cinco fases. Las tres primeras dejan la conexión funcionando para tus usuarios de prueba; la 4 y la 5 hacen que cualquier empresa pueda conectarse sin el aviso de «Google no verificó esta app». Usa una cuenta de Google de la plataforma (no personal): va a ser la dueña del proyecto.',
         phases: [
             {
                 key: 'project',
@@ -67,23 +67,23 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Un proyecto de Google Cloud para la plataforma, con las tres APIs encendidas.',
                 steps: [
                     {
-                        text: 'Creá un proyecto nuevo (por ejemplo, con el nombre de tu plataforma). No hace falta facturación: estas APIs son gratuitas.',
+                        text: 'Crea un proyecto nuevo (por ejemplo, con el nombre de tu plataforma). No hace falta facturación: estas APIs son gratuitas.',
                         link: { label: 'Crear proyecto', url: `${G}/projectcreate` },
                     },
                     {
-                        text: 'Con el proyecto elegido arriba, habilitá Gmail API.',
+                        text: 'Con el proyecto elegido arriba, habilita Gmail API.',
                         link: { label: 'Gmail API', url: `${G}/apis/library/gmail.googleapis.com` },
                     },
                     {
-                        text: 'Habilitá Google Calendar API.',
+                        text: 'Habilita Google Calendar API.',
                         link: { label: 'Calendar API', url: `${G}/apis/library/calendar-json.googleapis.com` },
                     },
                     {
-                        text: 'Habilitá Google Sheets API.',
+                        text: 'Habilita Google Sheets API.',
                         link: { label: 'Sheets API', url: `${G}/apis/library/sheets.googleapis.com` },
                     },
                     {
-                        text: 'Habilitá Google Drive API (para que las empresas guarden sus archivos en su Drive).',
+                        text: 'Habilita Google Drive API (para que las empresas guarden sus archivos en su Drive).',
                         link: { label: 'Drive API', url: `${G}/apis/library/drive.googleapis.com` },
                     },
                 ],
@@ -94,7 +94,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Lo que ve cada empresa cuando aprieta «Conectar»: nombre, logo, enlaces y permisos.',
                 steps: [
                     {
-                        text: 'Abrí Google Auth Platform y tocá «Comenzar». Tipo de usuario (Público): Externo. Si ya estaba creada como Interna, cambiala a Externa en «Público».',
+                        text: 'Abre Google Auth Platform y toca «Comenzar». Tipo de usuario (Público): Externo. Si ya estaba creada como Interna, cámbiala a Externa en «Público».',
                         link: { label: 'Google Auth Platform', url: `${G}/auth/overview` },
                     },
                     {
@@ -103,15 +103,15 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         copy: ['app_name', 'support_email'],
                     },
                     {
-                        text: 'En la misma pantalla: página principal, política de privacidad y condiciones del servicio. Podés usar las páginas públicas que arma esta plataforma (sección «Páginas públicas» de arriba) o las de tu sitio.',
+                        text: 'En la misma pantalla: página principal, política de privacidad y condiciones del servicio. Puedes usar las páginas públicas que arma esta plataforma (sección «Páginas públicas» de arriba) o las de tu sitio.',
                         copy: ['home_url', 'privacy_url', 'terms_url'],
                     },
                     {
-                        text: 'En «Dominios autorizados» agregá tu dominio principal (sin https ni subdominio).',
+                        text: 'En «Dominios autorizados» agrega tu dominio principal (sin https ni subdominio).',
                         copy: ['domain'],
                     },
                     {
-                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pegá estos permisos en «Agregar permisos manualmente» y guardá. gmail.send, calendar.events y spreadsheets aparecen como «sensibles» y drive.file como «no sensible»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
+                        text: 'En «Acceso a los datos» (Data access) → «Agregar o quitar permisos»: pega estos permisos en «Agregar permisos manualmente» y guarda. gmail.send, calendar.events y spreadsheets aparecen como «sensibles» y drive.file como «no sensible»; ninguno es «restringido», así que NO hace falta la auditoría de seguridad paga (CASA).',
                         link: { label: 'Acceso a los datos', url: `${G}/auth/scopes` },
                         copy: ['scopes_lines'],
                     },
@@ -123,23 +123,23 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Las credenciales que se pegan abajo, y una prueba real con un usuario de prueba.',
                 steps: [
                     {
-                        text: 'En «Clientes» → «Crear cliente»: tipo «Aplicación web». En «URI de redireccionamiento autorizados» pegá esta URI exacta (no hace falta «Orígenes de JavaScript»).',
+                        text: 'En «Clientes» → «Crear cliente»: tipo «Aplicación web». En «URI de redireccionamiento autorizados» pega esta URI exacta (no hace falta «Orígenes de JavaScript»).',
                         link: { label: 'Clientes', url: `${G}/auth/clients` },
                         copy: ['redirect_uri'],
                     },
                     {
-                        text: 'Copiá el ID de cliente y el secreto en el formulario de abajo y guardá. Google muestra el secreto completo SÓLO al crearlo: si lo perdés, generá uno nuevo en el mismo cliente.',
+                        text: 'Copia el ID de cliente y el secreto en el formulario de abajo y guarda. Google muestra el secreto completo SÓLO al crearlo: si lo pierdes, genera uno nuevo en el mismo cliente.',
                     },
                     {
-                        text: 'En «Público» → «Usuarios de prueba» agregá tu propio correo (y el de las empresas que quieras dejar probar). Mientras la app esté «En prueba», sólo esas cuentas pueden conectarse (máximo 100).',
+                        text: 'En «Público» → «Usuarios de prueba» agrega tu propio correo (y el de las empresas que quieras dejar probar). Mientras la app esté «En prueba», sólo esas cuentas pueden conectarse (máximo 100).',
                         link: { label: 'Público', url: `${G}/auth/audience` },
                     },
                     {
-                        text: 'Probala: entrá a una empresa → Ajustes → Integraciones → Gmail → Conectar. Vas a ver «Google no verificó esta app»: tocá «Avanzado» → «Ir a … (no seguro)» y aceptá. Mandá un correo de prueba desde una automatización.',
+                        text: 'Pruébala: entra a una empresa → Ajustes → Integraciones → Gmail → Conectar. Vas a ver «Google no verificó esta app»: toca «Avanzado» → «Ir a … (no seguro)» y acepta. Manda un correo de prueba desde una automatización.',
                     },
                 ],
                 warning:
-                    'En modo «En prueba» Google vence cada conexión a los 7 días: cada empresa tendría que reconectar todas las semanas. Por eso no te quedes en esta fase: pasá a la 4 apenas confirmes que funciona.',
+                    'En modo «En prueba» Google vence cada conexión a los 7 días: cada empresa tendría que reconectar todas las semanas. Por eso no te quedes en esta fase: pasa a la 4 apenas confirmes que funciona.',
             },
             {
                 key: 'publish',
@@ -147,7 +147,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Saca el límite de 7 días y de usuarios de prueba.',
                 steps: [
                     {
-                        text: 'En «Público» → «Estado de publicación» tocá «Publicar app» y confirmá. Queda «En producción».',
+                        text: 'En «Público» → «Estado de publicación» toca «Publicar app» y confirma. Queda «En producción».',
                         link: { label: 'Público', url: `${G}/auth/audience` },
                     },
                     {
@@ -162,28 +162,28 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Es lo que hace que la pantalla de Google muestre tu nombre y logo sin advertencias.',
                 steps: [
                     {
-                        text: 'Verificá que el dominio es tuyo en Google Search Console con una propiedad de tipo «Dominio» (un registro TXT en el DNS). Hacelo con la MISMA cuenta de Google que es dueña del proyecto: si no, Google no lo reconoce.',
+                        text: 'Verifica que el dominio es tuyo en Google Search Console con una propiedad de tipo «Dominio» (un registro TXT en el DNS). Hazlo con la MISMA cuenta de Google que es dueña del proyecto: si no, Google no lo reconoce.',
                         link: { label: 'Search Console', url: 'https://search.google.com/search-console' },
                         copy: ['domain'],
                     },
                     {
-                        text: 'Revisá que la página principal sea pública (sin login), describa la app y enlace a la política de privacidad, y que la política explique qué hace la app con los datos de Google e incluya la frase de «uso limitado» de Google. Las páginas públicas de esta plataforma ya cumplen las dos cosas.',
+                        text: 'Revisa que la página principal sea pública (sin login), describa la app y enlace a la política de privacidad, y que la política explique qué hace la app con los datos de Google e incluya la frase de «uso limitado» de Google. Las páginas públicas de esta plataforma ya cumplen las dos cosas.',
                         copy: ['home_url', 'privacy_url'],
                     },
                     {
-                        text: 'Grabá un video corto (subilo a YouTube como «No listado»): la pantalla de consentimiento de Google mostrando la barra de direcciones con el client_id, y después la app usando cada permiso (mandar un correo, crear un evento, agregar una fila a una hoja). Este guion te sirve:',
+                        text: 'Graba un video corto (súbelo a YouTube como «No listado»): la pantalla de consentimiento de Google mostrando la barra de direcciones con el client_id, y después la app usando cada permiso (mandar un correo, crear un evento, agregar una fila a una hoja). Este guion te sirve:',
                         copy: ['video_script'],
                     },
                     {
-                        text: 'En «Centro de verificación» tocá «Preparar para la verificación» y completá el formulario. Para cada permiso te pide justificar el uso: estos textos ya están escritos para lo que hace la app.',
+                        text: 'En «Centro de verificación» toca «Preparar para la verificación» y completa el formulario. Para cada permiso te pide justificar el uso: estos textos ya están escritos para lo que hace la app.',
                         link: { label: 'Centro de verificación', url: `${G}/auth/verification` },
                         copy: ['scope_justification', 'app_description'],
                     },
                     {
-                        text: 'Google responde por correo (a la dirección de contacto del desarrollador). La revisión de marca suele tardar 2-3 días hábiles y la de permisos sensibles entre unos días y algunas semanas; si piden cambios, respondé ese mismo correo. Cuando aprueban, la pantalla muestra tu logo y el aviso desaparece solo: no hay que tocar nada acá.',
+                        text: 'Google responde por correo (a la dirección de contacto del desarrollador). La revisión de marca suele tardar 2-3 días hábiles y la de permisos sensibles entre unos días y algunas semanas; si piden cambios, responde ese mismo correo. Cuando aprueban, la pantalla muestra tu logo y el aviso desaparece solo: no hay que tocar nada aquí.',
                     },
                 ],
-                tip: 'Si cambiás el nombre, el logo o los permisos después de verificar, Google vuelve a revisar la app.',
+                tip: 'Si cambias el nombre, el logo o los permisos después de verificar, Google vuelve a revisar la app.',
             },
         ],
     },
@@ -208,11 +208,11 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         text: 'Tipos de cuenta admitidos: «Cuentas de cualquier directorio organizativo y cuentas personales de Microsoft». Con otra opción, las cuentas personales o las de otras empresas no pueden conectarse.',
                     },
                     {
-                        text: 'URI de redirección: plataforma «Web», pegá esta URI exacta. Tocá «Registrar».',
+                        text: 'URI de redirección: plataforma «Web», pega esta URI exacta. Toca «Registrar».',
                         copy: ['redirect_uri'],
                     },
                     {
-                        text: 'En «Información general» copiá el «Id. de aplicación (cliente)» al formulario de abajo.',
+                        text: 'En «Información general» copia el «Id. de aplicación (cliente)» al formulario de abajo.',
                     },
                 ],
             },
@@ -222,15 +222,15 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Qué puede hacer la app en nombre de cada persona, y la clave que la identifica.',
                 steps: [
                     {
-                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marcá openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite. No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar.',
+                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marca openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite. No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar.',
                         copy: ['scopes_lines'],
                     },
                     {
-                        text: 'En «Certificados y secretos» → «Nuevo secreto de cliente»: elegí el vencimiento más largo (24 meses). Copiá la columna VALOR (no el «Id. de secreto») al formulario de abajo: Microsoft la muestra una sola vez.',
+                        text: 'En «Certificados y secretos» → «Nuevo secreto de cliente»: elige el vencimiento más largo (24 meses). Copia la columna VALOR (no el «Id. de secreto») al formulario de abajo: Microsoft la muestra una sola vez.',
                     },
                 ],
                 warning:
-                    'El secreto de Microsoft VENCE. El día que vence, todas las conexiones de Outlook dejan de renovarse. Anotá la fecha y, un mes antes, creá un secreto nuevo y pegalo acá (el viejo puede convivir hasta que lo borres).',
+                    'El secreto de Microsoft VENCE. El día que vence, todas las conexiones de Outlook dejan de renovarse. Anota la fecha y, un mes antes, crea un secreto nuevo y pégalo aquí (el viejo puede convivir hasta que lo borres).',
             },
             {
                 key: 'branding',
@@ -242,11 +242,11 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                         copy: ['home_url', 'terms_url', 'privacy_url'],
                     },
                     {
-                        text: 'Dominio del publicador: verificá tu dominio. Microsoft te da un archivo `microsoft-identity-association.json` que tiene que quedar publicado en https://TU-DOMINIO/.well-known/ — subilo a tu sitio web principal.',
+                        text: 'Dominio del publicador: verifica tu dominio. Microsoft te da un archivo `microsoft-identity-association.json` que tiene que quedar publicado en https://TU-DOMINIO/.well-known/ — súbelo a tu sitio web principal.',
                         copy: ['domain'],
                     },
                     {
-                        text: 'Probala: en una empresa → Ajustes → Integraciones → Outlook → Conectar, con una cuenta personal y con una de trabajo.',
+                        text: 'Pruébala: en una empresa → Ajustes → Integraciones → Outlook → Conectar, con una cuenta personal y con una de trabajo.',
                     },
                 ],
             },
@@ -256,7 +256,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Cambia «no comprobado» por la insignia azul de publicador verificado.',
                 steps: [
                     {
-                        text: 'Necesitás una cuenta del Microsoft AI Cloud Partner Program (gratis) verificada a nombre de tu empresa. Con su Partner ID, en «Personalización de marca y propiedades» → «Agregar un id. de MPN para comprobar el publicador».',
+                        text: 'Necesitas una cuenta del Microsoft AI Cloud Partner Program (gratis) verificada a nombre de tu empresa. Con su Partner ID, en «Personalización de marca y propiedades» → «Agregar un id. de MPN para comprobar el publicador».',
                         link: { label: 'Partner Center', url: 'https://partner.microsoft.com/dashboard/account/v3/enrollment/introduction/partnership' },
                     },
                     {
@@ -294,18 +294,18 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Dónde vuelve Slack después de autorizar y qué puede hacer el bot.',
                 steps: [
                     {
-                        text: 'En «OAuth & Permissions» → «Redirect URLs» → «Add New Redirect URL»: pegá esta URI y tocá «Save URLs».',
+                        text: 'En «OAuth & Permissions» → «Redirect URLs» → «Add New Redirect URL»: pega esta URI y toca «Save URLs».',
                         copy: ['redirect_uri'],
                     },
                     {
-                        text: 'En «Scopes» → «Bot Token Scopes» agregá chat:write y chat:write.public.',
+                        text: 'En «Scopes» → «Bot Token Scopes» agrega chat:write y chat:write.public.',
                         copy: ['scopes_lines'],
                     },
                     {
-                        text: 'Dejá APAGADO «Token Rotation» (las conexiones de bot quedan sin vencimiento).',
+                        text: 'Deja APAGADO «Token Rotation» (las conexiones de bot quedan sin vencimiento).',
                     },
                     {
-                        text: 'En «Basic Information» → «App Credentials» copiá el Client ID y el Client Secret al formulario de abajo.',
+                        text: 'En «Basic Information» → «App Credentials» copia el Client ID y el Client Secret al formulario de abajo.',
                     },
                 ],
             },
@@ -315,13 +315,13 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Lo que permite que OTRAS empresas instalen la app.',
                 steps: [
                     {
-                        text: 'En «Manage Distribution» completá la lista: marcá «Remove Hard Coded Information» y verificá que la redirección usa https.',
+                        text: 'En «Manage Distribution» completa la lista: marca «Remove Hard Coded Information» y verifica que la redirección usa https.',
                     },
                     {
-                        text: 'Tocá «Activate Public Distribution». Sin esto, una empresa que toque «Conectar» ve un error de Slack.',
+                        text: 'Toca «Activate Public Distribution». Sin esto, una empresa que toque «Conectar» ve un error de Slack.',
                     },
                     {
-                        text: 'Probala: en una empresa → Ajustes → Integraciones → Slack → Conectar, y mandá un mensaje de prueba a un canal.',
+                        text: 'Pruébala: en una empresa → Ajustes → Integraciones → Slack → Conectar, y manda un mensaje de prueba a un canal.',
                     },
                 ],
                 tip: 'No hace falta publicarla en el Slack Marketplace. Si un workspace tiene activada la aprobación de apps, su administrador la aprueba una vez.',
@@ -352,14 +352,14 @@ export function scopeJustificationText(scopes: string[]): string {
 export function videoScriptText(appName: string, appUrl: string): string {
     return [
         `Guion del video de verificación (${appName}):`,
-        `1. Mostrá ${appUrl} y entrá con una cuenta de prueba.`,
-        '2. Andá a Ajustes → Integraciones → Gmail → Conectar.',
-        '3. En la pantalla de Google, mostrá la barra de direcciones completa (se tiene que ver el client_id) y los permisos que pide. Aceptá.',
-        '4. Volvé a la app: la conexión aparece como conectada.',
-        '5. Abrí una automatización con la acción «Enviar correo con Gmail», tocá «Probar ahora» y mostrá el correo recibido.',
-        '6. Igual con «Crear evento en Google Calendar» (mostrá el evento en el calendario) y «Agregar fila en Google Sheets» (mostrá la fila nueva en la hoja).',
-        '7. Google Drive: conectalo, elegilo en Ajustes → Almacenamiento, subí un archivo a un registro y mostrá que aparece en la carpeta «Imagina Base» del Drive.',
-        '8. Explicá en voz alta o con subtítulos para qué se usa cada permiso.',
+        `1. Muestra ${appUrl} y entra con una cuenta de prueba.`,
+        '2. Ve a Ajustes → Integraciones → Gmail → Conectar.',
+        '3. En la pantalla de Google, muestra la barra de direcciones completa (se tiene que ver el client_id) y los permisos que pide. Acepta.',
+        '4. Vuelve a la app: la conexión aparece como conectada.',
+        '5. Abre una automatización con la acción «Enviar correo con Gmail», toca «Probar ahora» y muestra el correo recibido.',
+        '6. Igual con «Crear evento en Google Calendar» (muestra el evento en el calendario) y «Agregar fila en Google Sheets» (muestra la fila nueva en la hoja).',
+        '7. Google Drive: conéctalo, elígelo en Ajustes → Almacenamiento, sube un archivo a un registro y muestra que aparece en la carpeta «Imagina Base» del Drive.',
+        '8. Explica en voz alta o con subtítulos para qué se usa cada permiso.',
     ].join('\n');
 }
 

@@ -43,7 +43,7 @@ export class TenantTimeZones {
 
     /**
      * Quien depende de la zona (los horarios de automatizaciones en BullMQ)
-     * se entera de un cambio por acá, sin que el módulo de ajustes tenga que
+     * se entera de un cambio por aquí, sin que el módulo de ajustes tenga que
      * conocerlo.
      */
     onChange(listener: (tenantId: number) => Promise<void> | void): void {

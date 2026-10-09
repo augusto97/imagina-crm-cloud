@@ -178,7 +178,7 @@ export function nextOccurrence(currentDate: string, rec: RollSpec): string {
  * Normaliza un valor de fecha para comparación lexicográfica ("naive UTC"):
  * `T` → espacio, sin fracción de segundos ni sufijo de zona. El plugin
  * comparaba strings crudos porque su formato era uniforme (`Y-m-d H:i:s`);
- * acá los `datetime` llegan como ISO con `T`/`Z`, así que se normaliza a la
+ * aquí los `datetime` llegan como ISO con `T`/`Z`, así que se normaliza a la
  * misma familia de formato antes de comparar (misma semántica).
  */
 export function comparableDate(value: string): string {

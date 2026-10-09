@@ -95,7 +95,7 @@ export class SessionGuard implements CanActivate {
         }
         throw new UnauthorizedException({
             code: 'portal_session_required',
-            message: 'Entrá al portal con tu enlace de acceso',
+            message: 'Entra al portal con tu enlace de acceso',
             data: { status: 401 },
         });
     }

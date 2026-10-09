@@ -77,7 +77,7 @@ function emptyParam(existing: ConnectorParam[]): ConnectorParam {
 /**
  * Catálogo de acciones CON NOMBRE de una conexión (v0.1.198).
  *
- * Lo que se define acá es lo que después aparece en el menú de acciones del
+ * Lo que se define aquí es lo que después aparece en el menú de acciones del
  * editor de automatizaciones: "Enviar WhatsApp" con sus campos rotulados, en
  * vez de "POST /send" y adivinar el cuerpo. La clave técnica de cada acción
  * es estable a propósito — renombrar la etiqueta NUNCA rompe una
@@ -103,7 +103,7 @@ export function ConnectorActionsEditor({
                     <Label>{__('Acciones de esta conexión')}</Label>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__(
-                            'Cada acción aparece con su nombre en el editor de automatizaciones, con los campos que definas acá.',
+                            'Cada acción aparece con su nombre en el editor de automatizaciones, con los campos que definas aquí.',
                         )}
                     </p>
                 </div>
@@ -280,7 +280,7 @@ export function ConnectorActionsEditor({
                                 {raw && (
                                     <div>
                                         <Label htmlFor={`act-body-${action.key}`}>
-                                            {__('Cuerpo (usá {clave} para insertar un campo)')}
+                                            {__('Cuerpo (usa {clave} para insertar un campo)')}
                                         </Label>
                                         <Textarea
                                             id={`act-body-${action.key}`}

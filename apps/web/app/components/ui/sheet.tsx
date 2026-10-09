@@ -26,7 +26,7 @@ interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog
  * se puede salir (el usuario lo reportó en "Personalizar vista"). En vez de
  * agregar la X panel por panel — que es justo lo que se venía olvidando —
  * el contenedor pone una de respaldo, y cada `SheetCloseButton` que el panel
- * dibuje en su cabecera se anuncia acá para que no salgan dos.
+ * dibuje en su cabecera se anuncia aquí para que no salgan dos.
  */
 const SheetCloseRegistry = React.createContext<((delta: number) => void) | null>(null);
 

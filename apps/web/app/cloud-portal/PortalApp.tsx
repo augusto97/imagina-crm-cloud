@@ -130,7 +130,7 @@ function PortalPage(): JSX.Element {
 
     if (loggedOut) return <RequestAccessScreen note="Cerraste sesión." />;
     // v0.1.154 — el enlace vence a las 24 h y la sesión a los 30 días de
-    // inactividad: en vez de un cartel muerto, el cliente pide uno nuevo acá.
+    // inactividad: en vez de un cartel muerto, el cliente pide uno nuevo aquí.
     if (boot.isError && !stale) return <RequestAccessScreen />;
     if (!boot.data) return <Centered>Cargando tu portal…</Centered>;
 
@@ -169,7 +169,7 @@ function PortalContent({
         setTenantFormat(boot.format ?? null);
     }, [boot.format]);
     // White-label (v0.1.245): la marca de la cuenta que se mira (color, logo,
-    // título y favicon) la pinta la raíz del portal — acá sólo se avisa. El
+    // título y favicon) la pinta la raíz del portal — aquí sólo se avisa. El
     // nombre que se muestra es el que eligió la empresa o, si no eligió, el de
     // la empresa (antes caía al nombre de la LISTA, que es interno).
     const displayName = branding.app_name ?? (boot.tenant_name || null);
@@ -271,7 +271,7 @@ function RelatedListSection({ accountId, slug, name }: { accountId: number | nul
             {!q.data ? (
                 <p className="imcrm-text-sm imcrm-text-muted-foreground">Cargando…</p>
             ) : q.data.data.length === 0 ? (
-                <p className="imcrm-text-sm imcrm-text-muted-foreground">Todavía no hay nada acá.</p>
+                <p className="imcrm-text-sm imcrm-text-muted-foreground">Todavía no hay nada aquí.</p>
             ) : (
                 <div className="imcrm-overflow-x-auto">
                     <table className="imcrm-w-full imcrm-text-sm">
@@ -347,13 +347,13 @@ function RequestAccessScreen({ note }: { note?: string } = {}): JSX.Element {
                         {brand?.name ? `Entrar al portal de ${brand.name}` : 'Entrar a tu portal'}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                        {note ?? 'Tu enlace de acceso venció o cerraste sesión.'} Escribí tu correo y te
+                        {note ?? 'Tu enlace de acceso venció o cerraste sesión.'} Escribe tu correo y te
                         mandamos uno nuevo.
                     </p>
                 </div>
                 {ask.isSuccess ? (
                     <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm">
-                        Si ese correo tiene acceso, en unos segundos te llega un enlace. Revisá también la carpeta
+                        Si ese correo tiene acceso, en unos segundos te llega un enlace. Revisa también la carpeta
                         de spam.
                     </p>
                 ) : (

@@ -23,7 +23,7 @@ import { __ } from '@/lib/i18n';
  * Extensiones del editor de descripción (v0.1.133).
  *
  * El conjunto es EXACTAMENTE el que la whitelist de `sanitizeRichDoc`
- * (packages/shared) sabe persistir: si acá se agrega un nodo nuevo sin
+ * (packages/shared) sabe persistir: si aquí se agrega un nodo nuevo sin
  * agregarlo allá, el backend lo descartaría en silencio al guardar y el
  * usuario vería desaparecer su contenido al recargar. Los dos lados se tocan
  * juntos, siempre.

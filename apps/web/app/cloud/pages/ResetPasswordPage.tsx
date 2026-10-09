@@ -30,7 +30,7 @@ function isInviteLink(): boolean {
     }
 }
 
-/** Pantalla de "elegí tu nueva contraseña" tras el enlace de recuperación (o de invitación). */
+/** Pantalla de "elige tu nueva contraseña" tras el enlace de recuperación (o de invitación). */
 export function ResetPasswordPage({ token }: { token: string }): JSX.Element {
     const [invite] = useState(isInviteLink);
     const [password, setPassword] = useState('');
@@ -69,12 +69,12 @@ export function ResetPasswordPage({ token }: { token: string }): JSX.Element {
             >
                 <div className="imcrm-space-y-1">
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                        {invite ? 'Definí tu contraseña' : 'Nueva contraseña'}
+                        {invite ? 'Define tu contraseña' : 'Nueva contraseña'}
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {invite
-                            ? 'Te invitaron a Imagina Base. Elegí una contraseña para entrar; tu usuario es el email donde recibiste la invitación.'
-                            : 'Elegí una contraseña para tu cuenta de Imagina Base.'}
+                            ? 'Te invitaron a Imagina Base. Elige una contraseña para entrar; tu usuario es el email donde recibiste la invitación.'
+                            : 'Elige una contraseña para tu cuenta de Imagina Base.'}
                     </p>
                 </div>
 
@@ -82,8 +82,8 @@ export function ResetPasswordPage({ token }: { token: string }): JSX.Element {
                     <>
                         <p className="imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
                             {invite
-                                ? 'Listo, tu cuenta está activa. Entrá con tu email y la contraseña que acabás de elegir.'
-                                : 'Tu contraseña se actualizó. Ya podés entrar con la nueva.'}
+                                ? 'Listo, tu cuenta está activa. Entra con tu email y la contraseña que acabas de elegir.'
+                                : 'Tu contraseña se actualizó. Ya puedes entrar con la nueva.'}
                         </p>
                         <Button className="imcrm-w-full" onClick={() => window.location.assign('/')}>
                             Ir a entrar

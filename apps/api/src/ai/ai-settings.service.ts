@@ -177,7 +177,7 @@ export class AiSettingsService {
             const key = this.decryptKey(tenant.api_key_enc);
             if (key.state === 'unreadable') {
                 throw new AiUnavailableError(
-                    'La clave IA de la empresa no se puede descifrar con la clave actual del servidor. Volvé a escribirla en Ajustes → Asistente IA.',
+                    'La clave IA de la empresa no se puede descifrar con la clave actual del servidor. Vuelve a escribirla en Ajustes → Asistente IA.',
                     'tenant_key_unreadable',
                 );
             }

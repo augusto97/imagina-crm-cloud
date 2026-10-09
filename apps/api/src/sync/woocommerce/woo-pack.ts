@@ -20,7 +20,7 @@ import { dashboard, f, kanban, kpi, list, listRef, opt, ref, rollup, select, tab
  * variación (las dos viven en Productos), así el producto suma todas sus
  * tallas y la variación sólo las suyas.
  *
- * Los `slug` de acá son la clave con la que el MAPEO (`woo-map.ts`) nombra
+ * Los `slug` de aquí son la clave con la que el MAPEO (`woo-map.ts`) nombra
  * cada dato; al crear el pack se traducen a ids de campo y eso es lo que se
  * guarda (regla de oro nº 1: renombrar un campo no rompe la sincronización).
  */

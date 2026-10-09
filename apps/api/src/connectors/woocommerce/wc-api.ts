@@ -188,7 +188,7 @@ export function buildWooRequest(
             const meta = parseMetaLines(compiled.lines.meta ?? []);
             if (meta.length > 0) body.meta_data = meta;
             if (Object.keys(body).length === 0) {
-                throw new IntegrationInputError('No hay nada para cambiar: completá al menos un dato del producto.');
+                throw new IntegrationInputError('No hay nada para cambiar: completa al menos un dato del producto.');
             }
             const path =
                 variation === ''
@@ -272,17 +272,17 @@ export function checkWooResponse(status: number, body: string): string | null {
         const code = typeof obj?.code === 'string' ? obj.code : '';
         const message = typeof obj?.message === 'string' ? stripTags(obj.message) : '';
         if (code === 'woocommerce_rest_cannot_edit' || code === 'woocommerce_rest_cannot_create') {
-            return 'La clave de API no tiene permiso de escritura: generala de nuevo en WooCommerce con «Lectura/Escritura».';
+            return 'La clave de API no tiene permiso de escritura: genérala de nuevo en WooCommerce con «Lectura/Escritura».';
         }
         if (status === 401) {
-            return `WooCommerce rechazó la clave${message ? ` (${message})` : ''}. Actualizala en Ajustes → Integraciones.`;
+            return `WooCommerce rechazó la clave${message ? ` (${message})` : ''}. Actualízala en Ajustes → Integraciones.`;
         }
         return `WooCommerce respondió ${status}${message ? `: ${message.replace(/\.+$/, '')}` : ''}.`;
     }
     if (json === undefined && body.trim() !== '') {
         // Un 200 con HTML: la dirección no es la API (una página de la tienda,
         // un «modo mantenimiento», un firewall).
-        return 'La tienda respondió una página web en vez de la API. Revisá la dirección y que la API REST no esté bloqueada.';
+        return 'La tienda respondió una página web en vez de la API. Revisa la dirección y que la API REST no esté bloqueada.';
     }
     return null;
 }

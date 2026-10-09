@@ -20,7 +20,7 @@ export class LogMailTransport implements MailTransport {
         if (process.env.NODE_ENV === 'production') {
             this.logger.warn(
                 `[mail:log] CORREO NO ENVIADO (no hay SMTP configurado) ${line}. ` +
-                    'Configuralo en Ajustes → Correo (SMTP) de la empresa o en Plataforma → Correo.',
+                    'Configúralo en Ajustes → Correo (SMTP) de la empresa o en Plataforma → Correo.',
             );
         } else {
             this.logger.log(`[mail:log] ${line}${message.text ? ` · ${message.text.slice(0, 120)}` : ''}`);

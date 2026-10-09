@@ -138,8 +138,8 @@ export function PlatformTransfersCard(): JSX.Element {
                         <div>
                             <CardTitle>Migrar una empresa</CardTitle>
                             <CardDescription>
-                                Exportá una empresa entera —datos, archivos y personas— a un archivo portable, e
-                                importala en otra instalación. Los ids se regeneran al importar: la empresa de
+                                Exporta una empresa entera —datos, archivos y personas— a un archivo portable, e
+                                impórtala en otra instalación. Los ids se regeneran al importar: la empresa de
                                 origen queda intacta.
                             </CardDescription>
                         </div>
@@ -181,7 +181,7 @@ export function PlatformTransfersCard(): JSX.Element {
                                     value={tenantId}
                                     onChange={(e) => setTenantId(e.target.value)}
                                 >
-                                    <option value="">Elegí una empresa…</option>
+                                    <option value="">Elige una empresa…</option>
                                     {(tenantsQ.data?.data ?? []).map((t) => (
                                         <option key={t.id} value={String(t.id)}>
                                             {t.name} ({t.slug})
@@ -266,7 +266,7 @@ export function PlatformTransfersCard(): JSX.Element {
                             </div>
                             <div className="imcrm-text-muted-foreground">
                                 {result.users_created} cuenta(s) creada(s), {result.users_linked} vinculada(s) a
-                                personas que ya estaban acá.
+                                personas que ya estaban aquí.
                             </div>
                             {result.warnings.length > 0 && (
                                 <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1 imcrm-pl-5 imcrm-text-amber-800">
@@ -285,7 +285,7 @@ export function PlatformTransfersCard(): JSX.Element {
                         </div>
                         {(s?.files.length ?? 0) === 0 && (
                             <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                                Todavía no hay ninguno. Exportá una empresa o subí un archivo.
+                                Todavía no hay ninguno. Exporta una empresa o sube un archivo.
                             </p>
                         )}
                         <ul className="imcrm-space-y-2" data-testid="transfer-files">
@@ -326,7 +326,7 @@ export function PlatformTransfersCard(): JSX.Element {
                                                 setName(f.manifest?.tenant.name ?? '');
                                             }}
                                         >
-                                            Importar acá
+                                            Importar aquí
                                         </Button>
                                         <Button
                                             size="sm"
@@ -379,7 +379,7 @@ export function PlatformTransfersCard(): JSX.Element {
                                                 <span>
                                                     Conservar las contraseñas de las cuentas nuevas
                                                     <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                                                        Marcalo sólo si el archivo lo exportó un servidor tuyo. Si no,
+                                                        Márcalo sólo si el archivo lo exportó un servidor tuyo. Si no,
                                                         las cuentas nuevas nacen sin contraseña y cada persona entra
                                                         con «¿Olvidaste tu contraseña?» — así nadie puede crear una
                                                         cuenta con el correo de otro y una contraseña elegida por él.

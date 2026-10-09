@@ -29,7 +29,7 @@ const SCOPE_OPTIONS: Array<{ value: Scope; label: string }> = [
  * Una tarjeta por rol con un nivel de acceso elegible de un vistazo y
  * un "Ajuste fino" plegado con los cuatro ejes (ver / crear / editar /
  * eliminar) y los campos que ese rol no debe ver. Los administradores
- * del workspace tienen acceso total siempre y no aparecen acá.
+ * del workspace tienen acceso total siempre y no aparecen aquí.
  */
 export function PermissionsPanel({ listId }: Props): JSX.Element {
     const query = useListPermissions(listId);
@@ -170,7 +170,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
                             {level !== null
                                 ? (ACCESS_LEVELS.find((l) => l.id === level)?.hint ?? '')
-                                : __('Este rol usa una combinación propia — mirala en el ajuste fino.')}
+                                : __('Este rol usa una combinación propia — mírala en el ajuste fino.')}
                         </p>
 
                         <details className="imcrm-group imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20">
@@ -259,7 +259,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                     </label>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__(
-                            'Algún rol ve "los asignados a la persona". Elegí el campo de tipo Usuario que marca al responsable del registro. Sin campo elegido, esa persona ve sólo los que creó.',
+                            'Algún rol ve "los asignados a la persona". Elige el campo de tipo Usuario que marca al responsable del registro. Sin campo elegido, esa persona ve sólo los que creó.',
                         )}
                     </p>
                     <Select
@@ -282,7 +282,7 @@ export function PermissionsPanel({ listId }: Props): JSX.Element {
                     {userFields.length === 0 && (
                         <p className="imcrm-text-xs imcrm-text-warning">
                             {__(
-                                'Esta lista no tiene ningún campo de tipo Usuario. Creá uno en la pestaña Campos para poder usar este nivel de acceso.',
+                                'Esta lista no tiene ningún campo de tipo Usuario. Crea uno en la pestaña Campos para poder usar este nivel de acceso.',
                             )}
                         </p>
                     )}

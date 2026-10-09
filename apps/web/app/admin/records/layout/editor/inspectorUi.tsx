@@ -104,7 +104,7 @@ export function FieldSelect({
     value,
     onChange,
     allow,
-    emptyLabel = __('— Elegí un campo —'),
+    emptyLabel = __('— Elige un campo —'),
     ariaLabel,
 }: {
     fields: FieldEntity[];

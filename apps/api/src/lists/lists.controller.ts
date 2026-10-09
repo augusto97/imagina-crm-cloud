@@ -145,6 +145,6 @@ export class ListsController {
 }
 
 function tenantId(req: FastifyRequest): number {
-    // TenantGuard garantiza que req.tenant existe antes de llegar acá.
+    // TenantGuard garantiza que req.tenant existe antes de llegar aquí.
     return req.tenant!.tenantId;
 }

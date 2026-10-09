@@ -5,7 +5,7 @@ import type { PublicFormMeta } from '@imagina-base/shared';
  * v0.1.275 (ADR-S39) — Página pública de un formulario. La sirve el API
  * (`GET /api/v1/public/f/:token`) y no el SPA por la misma razón que la
  * lista pública (ADR-S14): el proxy le pone al SPA `frame-ancestors 'self'`
- * y eso no se cambia desde una actualización, mientras que acá cada
+ * y eso no se cambia desde una actualización, mientras que aquí cada
  * formulario decide qué sitios lo pueden insertar.
  *
  * Todo el contenido se arma con `textContent`/`createElement`: ni una
@@ -354,7 +354,7 @@ const CLIENT_JS = String.raw`
       case 'select': {
         var opts = f.options || [];
         if (f.display === 'dropdown') {
-          var sel = el('select', { id: id }, [el('option', { value: '', text: ph || 'Elegí una opción' })]
+          var sel = el('select', { id: id }, [el('option', { value: '', text: ph || 'Elige una opción' })]
             .concat(opts.map(function (o) { return el('option', { value: o.value, text: o.label }); })));
           sel.addEventListener('change', function () { values[key] = sel.value || null; setErr(f.id, ''); refresh(); });
           return sel;
@@ -384,7 +384,7 @@ const CLIENT_JS = String.raw`
         var maxFiles = Math.max(1, Math.min(10, cfg.max_files || 10));
         uploads[key] = [];
         var picker = el('input', { type: 'file', id: id, multiple: maxFiles > 1, hidden: true });
-        var drop = el('div', { cls: 'drop', role: 'button', tabindex: '0', text: 'Elegí ' + (maxFiles > 1 ? 'archivos' : 'un archivo') + ' para subir' });
+        var drop = el('div', { cls: 'drop', role: 'button', tabindex: '0', text: 'Elige ' + (maxFiles > 1 ? 'archivos' : 'un archivo') + ' para subir' });
         var ul = el('ul');
         function render() {
           ul.textContent = '';
@@ -521,7 +521,7 @@ const CLIENT_JS = String.raw`
       itemEls[i.id] = node;
       items.appendChild(node);
     });
-    if (BOOT.preview && !meta.items.length) items.appendChild(el('div', { cls: 'pv-empty', text: 'Agregá preguntas desde el panel de la izquierda.' }));
+    if (BOOT.preview && !meta.items.length) items.appendChild(el('div', { cls: 'pv-empty', text: 'Agrega preguntas desde el panel de la izquierda.' }));
     form.appendChild(items);
 
     var hp = el('div', { cls: 'hp', 'aria-hidden': 'true' }, [el('label', { text: 'No completar' }), el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off' })]);
@@ -543,9 +543,9 @@ const CLIENT_JS = String.raw`
       meta.items.forEach(function (i) {
         if (i.type !== 'field' || i.hidden || !visible(i, 0)) return;
         if (i.required && empty(values[i.key])) { setErr(i.id, 'Esta pregunta es obligatoria.'); missing = true; }
-        else if (i.field_type === 'email' && !empty(values[i.key]) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values[i.key])) { setErr(i.id, 'Revisá el correo.'); missing = true; }
-        else if ((i.field_type === 'number' || i.field_type === 'currency' || i.field_type === 'percent') && typeof values[i.key] === 'number' && isNaN(values[i.key])) { setErr(i.id, 'Escribí un número.'); missing = true; }
-        else if (i.field_type === 'file' && (uploads[i.key] || []).some(function (u) { return u.pending; })) { setErr(i.id, 'Esperá a que termine de subir.'); missing = true; }
+        else if (i.field_type === 'email' && !empty(values[i.key]) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values[i.key])) { setErr(i.id, 'Revisa el correo.'); missing = true; }
+        else if ((i.field_type === 'number' || i.field_type === 'currency' || i.field_type === 'percent') && typeof values[i.key] === 'number' && isNaN(values[i.key])) { setErr(i.id, 'Escribe un número.'); missing = true; }
+        else if (i.field_type === 'file' && (uploads[i.key] || []).some(function (u) { return u.pending; })) { setErr(i.id, 'Espera a que termine de subir.'); missing = true; }
       });
       if (missing) { focusFirstError(); return; }
       var outValues = {}, outUploads = {};
@@ -567,12 +567,12 @@ const CLIENT_JS = String.raw`
           }
           var errs = res.b && res.b.data && res.b.data.errors;
           if (errs) { Object.keys(errs).forEach(function (id) { setErr(id, errs[id]); }); focusFirstError(); }
-          alertBox.textContent = (res.b && res.b.message) || 'No se pudo enviar. Probá de nuevo.';
+          alertBox.textContent = (res.b && res.b.message) || 'No se pudo enviar. Prueba de nuevo.';
           alertBox.hidden = false;
           btn.disabled = false; btn.textContent = meta.submit_label || 'Enviar';
         })
         .catch(function () {
-          alertBox.textContent = 'No hay conexión. Revisá tu internet y probá de nuevo.';
+          alertBox.textContent = 'No hay conexión. Revisa tu internet y prueba de nuevo.';
           alertBox.hidden = false;
           btn.disabled = false; btn.textContent = meta.submit_label || 'Enviar';
         });

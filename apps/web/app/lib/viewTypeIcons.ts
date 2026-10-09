@@ -2,7 +2,7 @@ import { Calendar, Columns3, LayoutGrid, Table, type LucideIcon } from 'lucide-r
 
 /**
  * Icono por tipo de vista (tabla / kanban / calendario / tarjetas). Es el
- * mismo vocabulario que usan las pestañas de vistas de la lista; acá lo
+ * mismo vocabulario que usan las pestañas de vistas de la lista; aquí lo
  * comparten superficies que sólo muestran un resumen (galería de plantillas).
  */
 export function viewTypeIcon(type: string): LucideIcon {

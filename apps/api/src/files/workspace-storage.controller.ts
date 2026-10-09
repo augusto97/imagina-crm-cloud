@@ -154,7 +154,7 @@ export class WorkspaceStorageController {
                 integration: 's3',
                 detail: null,
                 problem:
-                    'El almacenamiento elegido ya no existe: los archivos nuevos no se pueden subir. Elegí otro o volvé al servidor.',
+                    'El almacenamiento elegido ya no existe: los archivos nuevos no se pueden subir. Elige otro o vuelve al servidor.',
                 files: usage.get(choice)?.files ?? 0,
                 bytes: usage.get(choice)?.bytes ?? 0,
             };

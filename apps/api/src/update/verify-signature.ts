@@ -26,7 +26,7 @@ export async function verifyDetachedSignature(
     const algo = key.asymmetricKeyType === 'ed25519' || key.asymmetricKeyType === 'ed448' ? null : 'sha256';
 
     const candidates: Buffer[] = [sigRaw];
-    // Si el archivo parece base64 de texto, probá también decodificarlo.
+    // Si el archivo parece base64 de texto, prueba también decodificarlo.
     const asText = sigRaw.toString('utf8').trim();
     if (/^[A-Za-z0-9+/=\s]+$/.test(asText)) {
         candidates.push(Buffer.from(asText, 'base64'));
@@ -36,7 +36,7 @@ export async function verifyDetachedSignature(
         try {
             if (cryptoVerify(algo, data, key, sig)) return true;
         } catch {
-            // probá el siguiente candidato
+            // prueba el siguiente candidato
         }
     }
     return false;

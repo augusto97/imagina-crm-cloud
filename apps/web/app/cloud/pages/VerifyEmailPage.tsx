@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { __ } from '@/lib/i18n';
 
 /**
- * v0.1.118 — Pantalla del link "Confirmá tu email" del alta.
+ * v0.1.118 — Pantalla del link "Confirma tu email" del alta.
  *
  * Vive fuera del router de la app (igual que el reset de contraseña): el link
  * llega por correo a `/verify?token=…` y se resuelve antes de montar el shell,
@@ -62,7 +62,7 @@ export function VerifyEmailPage({ token }: { token: string }): JSX.Element {
                         <CheckCircle2 className="imcrm-h-10 imcrm-w-10 imcrm-text-success" />
                         <h1 className="imcrm-text-lg imcrm-font-semibold">{__('¡Email confirmado!')}</h1>
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
-                            {__('Ya podés usar tu cuenta con normalidad.')}
+                            {__('Ya puedes usar tu cuenta con normalidad.')}
                         </p>
                         <Button onClick={() => window.location.assign('/')}>{__('Ir a la app')}</Button>
                     </>
@@ -76,7 +76,7 @@ export function VerifyEmailPage({ token }: { token: string }): JSX.Element {
                         <p className="imcrm-text-sm imcrm-text-muted-foreground">
                             {message !== ''
                                 ? message
-                                : __('El enlace es inválido o expiró. Pedí uno nuevo desde Ajustes → Seguridad.')}
+                                : __('El enlace es inválido o expiró. Pide uno nuevo desde Ajustes → Seguridad.')}
                         </p>
                         <Button variant="outline" onClick={() => window.location.assign('/')}>
                             {__('Ir a la app')}

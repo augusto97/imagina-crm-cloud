@@ -179,7 +179,7 @@ export function ColumnsConfigDialog({
                                 {__('Configurar columnas')}
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Arrastrá para reordenar. Click en el ojo para ocultar.')}
+                                {__('Arrastra para reordenar. Click en el ojo para ocultar.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>

@@ -324,7 +324,7 @@ export class PlatformService {
     async deleteTenant(id: number): Promise<void> {
         await this.getTenant(id); // 404 si no existe.
         // Los bytes de los adjuntos viven fuera de la base: si no se borran
-        // acá quedan ocupando disco para siempre, y el operador pidió borrar
+        // aquí quedan ocupando disco para siempre, y el operador pidió borrar
         // la empresa, no dejar sus archivos dando vueltas.
         const files = await this.db
             .select({ key: attachments.storageKey })
@@ -336,7 +336,7 @@ export class PlatformService {
         await this.db.transaction(async (tx: Tx) => {
             // Orden por dependencias, hijas primero. La lista es EXPLÍCITA (no
             // hay cascada desde `tenants`), así que toda tabla con `tenant_id`
-            // tiene que estar acá: la que falte deja la empresa imborrable con
+            // tiene que estar aquí: la que falte deja la empresa imborrable con
             // un 500 por violación de FK — fue el caso de attachments,
             // connections, templates, carpetas, menciones, recurrencias y la
             // bitácora, agregadas en releases posteriores al original.
@@ -401,7 +401,7 @@ export class PlatformService {
     //
     // Mismo servicio y mismos guard rails que el panel de Miembros del admin de
     // la empresa (no quedarse sin admin, clientes del portal fuera), salvo el
-    // límite de usuarios del plan: acá decide el operador. Cada cambio queda en
+    // límite de usuarios del plan: aquí decide el operador. Cada cambio queda en
     // la bitácora de ESA empresa, con el operador como autor.
 
     async addTenantMember(tenantId: number, input: AddMemberInput, operatorId: number): Promise<AddMemberResult> {

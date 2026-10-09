@@ -78,7 +78,7 @@ const envSchema = z.object({
             if (/^\d+$/.test(v.trim())) {
                 console.warn(
                     `[env] TRUST_PROXY=${v} es un número y desde fastify 5.12 eso significa "no confiar en ningún proxy". ` +
-                        'Se usa `loopback`; poné la dirección o el rango del proxy si no está en esta máquina.',
+                        'Se usa `loopback`; pon la dirección o el rango del proxy si no está en esta máquina.',
                 );
                 return 'loopback';
             }
@@ -230,7 +230,7 @@ function assertProductionSecrets(env: Env): void {
     if (env.NODE_ENV === 'production') {
         throw new Error(
             `Faltan secretos obligatorios en producción:\n${detail}\n` +
-                'Generá uno con `openssl rand -hex 32` y agregalos al .env del servicio antes de arrancar.',
+                'Genera uno con `openssl rand -hex 32` y agrégalos al .env del servicio antes de arrancar.',
         );
     }
     console.warn(

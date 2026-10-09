@@ -605,7 +605,7 @@ describe('Conectores (v0.1.196)', () => {
             // Es el caso de Google sin `access_type=offline`: anda una hora y
             // después no hay con qué renovar.
             await seedTokens(dto.id, { expiresAt: Date.now() - 1000, refresh: null });
-            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/volvé a conectarla/i);
+            await expect(svc.resolveParts(tenantA, dto.id)).rejects.toThrow(/vuelve a conectarla/i);
         });
 
         it('si otra ejecución está renovando, espera en vez de canjear dos veces', async () => {

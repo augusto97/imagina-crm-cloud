@@ -642,7 +642,7 @@ export class PortalService {
     }
 
     /**
-     * v0.1.241 — "¿Sos cliente de otra empresa?": manda al correo de la persona
+     * v0.1.241 — "¿Eres cliente de otra empresa?": manda al correo de la persona
      * un enlace que abre una sesión con TODAS sus cuentas, en el dominio de la
      * plataforma. Pedirlo con la sesión no alcanza: la sesión pudo abrirla un
      * enlace que la empresa copió, y las cuentas de otras empresas son sólo de
@@ -663,7 +663,7 @@ export class PortalService {
             throw new HttpException(
                 {
                     code: 'portal_email_rate_limited',
-                    message: 'Ya te mandamos varios enlaces. Revisá tu correo o probá en unos minutos.',
+                    message: 'Ya te mandamos varios enlaces. Revisa tu correo o prueba en unos minutos.',
                     data: { status: 429 },
                 },
                 HttpStatus.TOO_MANY_REQUESTS,
@@ -1192,7 +1192,7 @@ export class PortalService {
             .limit(1);
         if (left) return;
         // Guard rail: sólo se revoca a usuarios `client` (una cuenta de equipo
-        // jamás llega acá — `issue` lo impide — pero el borrado de membresía
+        // jamás llega aquí — `issue` lo impide — pero el borrado de membresía
         // no puede depender de eso).
         await this.db
             .delete(memberships)
@@ -1270,7 +1270,7 @@ export class PortalService {
      * Listas que PODRÍAN mostrarse en el portal del cliente: las que tienen un
      * campo `relation` apuntando a la lista del portal (sus facturas, sus
      * tickets…) o un campo `user` (lo suyo, por usuario). Es exactamente el
-     * mismo criterio que `portalScope` — si acá no aparece, el cliente no
+     * mismo criterio que `portalScope` — si aquí no aparece, el cliente no
      * podría ver nada de esa lista aunque se la habilitaran.
      */
     async relatedOptions(tenantId: number, listIdOrSlug: string): Promise<PortalRelatedList[]> {
@@ -1404,7 +1404,7 @@ export class PortalService {
 
     /**
      * v0.1.233 — el diseño del portal tal como lo vería el cliente (guardado,
-     * convertido de la plantilla anterior o automático): de acá arranca el
+     * convertido de la plantilla anterior o automático): de aquí arranca el
      * editor, así lo que se diseña y lo que se ve salen de la misma función.
      */
     async layoutFor(tenantId: number, listIdOrSlug: string): Promise<{ layout: RecordLayoutV3; origin: 'saved' | 'legacy' | 'auto' }> {

@@ -252,7 +252,7 @@ function Toolbar({
                     )}
                 </span>
                 {canDesign && (
-                    <Button asChild variant="ghost" size="sm" className="imcrm-gap-2" title={origin === 'auto' ? __('Diseño automático: personalizalo') : undefined}>
+                    <Button asChild variant="ghost" size="sm" className="imcrm-gap-2" title={origin === 'auto' ? __('Diseño automático: personalízalo') : undefined}>
                         <Link to={`/lists/${list.slug}/template-editor`}>
                             <Paintbrush className="imcrm-h-4 imcrm-w-4" />
                             <span className="imcrm-hidden sm:imcrm-inline">{__('Diseñar ficha')}</span>

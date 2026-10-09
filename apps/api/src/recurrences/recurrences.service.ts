@@ -113,7 +113,7 @@ export class RecurrencesService {
                 throw validationFailed({ action_type: 'En una lista de la tienda no se clonan registros: se crean en WooCommerce.' });
             }
             if (isStoreField(storeMarker, dateField.id)) {
-                throw validationFailed({ date_field_id: 'Esa fecha viene de la tienda: usá una columna propia.' });
+                throw validationFailed({ date_field_id: 'Esa fecha viene de la tienda: usa una columna propia.' });
             }
         }
 

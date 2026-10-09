@@ -10,7 +10,7 @@ import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
  * BLOQUEA cualquier imagen de otro dominio. Abrirla (`img-src https:`) exige
  * tocar el proxy del servidor a mano —la auto-actualización no lo toca—, y
  * además dejaría que cualquier texto de un registro dispare pedidos del
- * navegador a terceros. Acá la imagen sale por `'self'`:
+ * navegador a terceros. Aquí la imagen sale por `'self'`:
  *
  *  - sólo con sesión (no es un proxy abierto);
  *  - por `safeWebhookFetch` (guard anti-SSRF de SEC-03, sin DNS-rebinding),

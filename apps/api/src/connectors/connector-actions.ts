@@ -4,7 +4,7 @@ import { connectorActionSchema, type ConnectorAction } from '@imagina-base/share
  * Acciones con NOMBRE de un conector (v0.1.198, ADR-S22 fase 2).
  *
  * Una acción con nombre es un preset guardado de una petición: "Enviar
- * WhatsApp" en vez de "POST /send con estos cuatro campos". Acá se COMPILA a
+ * WhatsApp" en vez de "POST /send con estos cuatro campos". Aquí se COMPILA a
  * la misma config que consume `buildWebhookRequest`, así hay un solo motor de
  * peticiones salientes: lo que se prueba, lo que ejecuta la automatización y
  * lo que hace el conector son literalmente el mismo código.
@@ -65,7 +65,7 @@ function fillPlaceholders(
 /**
  * Resuelve los valores de la acción y arma la config de la petición.
  *
- * `merge` se aplica UNA sola vez, acá: el caller le pasa a
+ * `merge` se aplica UNA sola vez, aquí: el caller le pasa a
  * `buildWebhookRequest` una función identidad para que no vuelva a expandir
  * merge tags sobre datos que ya son valores de registro (un registro cuyo
  * texto contenga `{{algo}}` no tiene por qué re-expandirse).

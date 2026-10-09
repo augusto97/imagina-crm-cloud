@@ -139,7 +139,7 @@ export const recordDesignSpec = z.object({
                                 .array(z.object({ width: z.number().int().min(1).max(12).optional(), blocks: z.array(recordBlockSpec).max(20) }))
                                 .min(1)
                                 .max(4)
-                                .describe('Las columnas suman 12; sin `width` se reparten en partes iguales (para principal + lateral usá 8 y 4). En el celular se apilan'),
+                                .describe('Las columnas suman 12; sin `width` se reparten en partes iguales (para principal + lateral usa 8 y 4). En el celular se apilan'),
                         }),
                     )
                     .min(1)
@@ -209,7 +209,7 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
     /** Resuelve `from`/`via` a una fuente + los campos de la lista de origen. */
     const source = (from: string, via: string | undefined, where: string): { src: LayoutDataSource; fields: DesignField[]; name: string } => {
         if (from === 'all') {
-            if (ctx.portal) throw new AiToolError(`${where}: en el portal no existe "toda la lista" — el cliente sólo ve lo suyo. Usá una lista vinculada.`);
+            if (ctx.portal) throw new AiToolError(`${where}: en el portal no existe "toda la lista" — el cliente sólo ve lo suyo. Usa una lista vinculada.`);
             return { src: { kind: 'list', list_id: ctx.listId }, fields: ctx.fields, name: 'toda la lista' };
         }
         const candidates = ctx.relations.filter((r) => r.other_list_slug === from);
@@ -227,7 +227,7 @@ export function buildRecordLayoutV3(spec: RecordDesignSpec, ctx: DesignContext):
             if (!v) throw new AiToolError(`${where}: no hay una relación «${via}» con «${from}». Relaciones: ${candidates.map((r) => r.relation_slug).join(', ')}.`);
             pick = v;
         } else if (candidates.length > 1) {
-            throw new AiToolError(`${where}: hay varias relaciones con «${from}» (${candidates.map((r) => r.relation_slug).join(', ')}); indicá \`via\`.`);
+            throw new AiToolError(`${where}: hay varias relaciones con «${from}» (${candidates.map((r) => r.relation_slug).join(', ')}); indica \`via\`.`);
         }
         return {
             src: { kind: 'related', field_id: pick.relation_field_id, direction: pick.direction },

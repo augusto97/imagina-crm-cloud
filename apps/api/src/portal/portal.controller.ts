@@ -148,7 +148,7 @@ export class PortalController {
         return { options: await this.portal.relatedOptions(req.tenant!.tenantId, list) };
     }
 
-    /** v0.1.233 — el diseño vigente del portal (de acá arranca el editor). */
+    /** v0.1.233 — el diseño vigente del portal (de aquí arranca el editor). */
     @Get('lists/:list/portal/layout')
     @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
     @RequireCapability('manage_lists')

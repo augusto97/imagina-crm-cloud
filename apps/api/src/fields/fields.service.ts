@@ -178,7 +178,7 @@ export class FieldsService {
     }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Field[]> {
-        // Este es el listado que consume la UI: acá sí se marca cuál es el
+        // Este es el listado que consume la UI: aquí sí se marca cuál es el
         // campo TÍTULO (v0.1.136), derivado de `settings.title_field_id` de la
         // lista con fallback al primer texto.
         const list = await this.lists.get(tenantId, listIdOrSlug);

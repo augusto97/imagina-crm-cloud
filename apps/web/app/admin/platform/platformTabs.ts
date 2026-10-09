@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
  * PlatformPage (tablist + panel activo) y el Sidebar (el panel contextual
  * linkea `/platform?tab=<id>`). Labels planos: se envuelven con `__()` en
  * el punto de render. Los ajustes GLOBALES de la app (SMTP de plataforma,
- * actualizaciones) viven acá, no en Ajustes del workspace.
+ * actualizaciones) viven aquí, no en Ajustes del workspace.
  */
 export type PlatformTabId =
     | 'tenants'

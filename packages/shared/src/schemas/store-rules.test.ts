@@ -28,9 +28,9 @@ describe('storeCellAccess', () => {
         expect(storeCellAccess(products, 99, row({})).access).toBe('own');
         // Nombre y SKU se PUEDEN habilitar, pero por defecto no lo están.
         const name = storeCellAccess(products, 10, row({ tipo: 'simple' }));
-        expect(name.access === 'locked' && name.reason).toMatch(/habilitala/);
+        expect(name.access === 'locked' && name.reason).toMatch(/habilítala/);
         expect(storeCellAccess(products, 19, row({ tipo: 'simple' })).access).toBe('locked');
-        // El tipo no está en el catálogo: nunca se edita desde acá.
+        // El tipo no está en el catálogo: nunca se edita desde aquí.
         expect(storeCellAccess(products, 11, row({ tipo: 'simple' }))).toEqual({ access: 'locked', reason: 'Se edita en WooCommerce.' });
         // Un campo de otro plugin también es de la tienda (sólo lectura hasta habilitarlo).
         expect(storeCellAccess(products, 30, row({ tipo: 'simple' })).access).toBe('locked');
@@ -96,7 +96,7 @@ describe('storeCellAccess', () => {
         expect(v.access === 'locked' && v.reason).toMatch(/dirección propia/);
         // Sin habilitarla, se bloquea con cómo habilitarla.
         const off = storeCellAccess({ ...withSlug, editable: null }, 41, row({ tipo: 'simple' }));
-        expect(off.access === 'locked' && off.reason).toMatch(/habilitala/);
+        expect(off.access === 'locked' && off.reason).toMatch(/habilítala/);
         expect(storeValueError(withSlug, 41, '', row({}))).toMatch(/vacío/);
         expect(storeValueError(withSlug, 41, 'ropa/taza', row({}))).toMatch(/«\/»/);
         expect(storeValueError(withSlug, 41, 'taza-roja', row({}))).toBeNull();

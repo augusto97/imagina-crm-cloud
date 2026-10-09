@@ -397,7 +397,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const byId = new Map(fields.map((x) => [x.id, x]));
         const { data, errors, attachmentIds } = this.collect(f, byId, input);
         if (Object.keys(errors).length > 0) {
-            throw badRequest('form_invalid', 'Revisá las respuestas marcadas.', { errors });
+            throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors });
         }
 
         let created;
@@ -411,13 +411,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 const body = err.getResponse() as { data?: { errors?: Record<string, string> } };
                 const recErrors = body.data?.errors ?? {};
                 const mapped = mapRecordErrors(f.config, fields, recErrors);
-                if (Object.keys(mapped).length > 0) throw badRequest('form_invalid', 'Revisá las respuestas marcadas.', { errors: mapped });
+                if (Object.keys(mapped).length > 0) throw badRequest('form_invalid', 'Revisa las respuestas marcadas.', { errors: mapped });
             }
             this.logger.warn(`Formulario ${f.row.id}: no se pudo guardar la respuesta: ${err instanceof Error ? err.message : String(err)}`);
             throw new HttpException(
                 {
                     code: 'form_unavailable',
-                    message: 'No pudimos recibir tu respuesta en este momento. Probá de nuevo más tarde.',
+                    message: 'No pudimos recibir tu respuesta en este momento. Prueba de nuevo más tarde.',
                     data: { status: 503 },
                 },
                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -452,11 +452,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const [tsRaw, sig] = stamp.split('.');
         const ts = Number(tsRaw);
         if (!sig || !Number.isFinite(ts) || !this.files.verifyParts(sig, 'formstamp', formId, ts)) {
-            throw badRequest('form_stale', 'La página del formulario venció: recargala y volvé a enviar.');
+            throw badRequest('form_stale', 'La página del formulario venció: recárgala y vuelve a enviar.');
         }
         const age = Date.now() - ts;
-        if (age > STAMP_TTL_MS) throw badRequest('form_stale', 'La página del formulario venció: recargala y volvé a enviar.');
-        if (age < MIN_FILL_MS) throw badRequest('form_too_fast', 'Esperá un momento y volvé a enviar.');
+        if (age > STAMP_TTL_MS) throw badRequest('form_stale', 'La página del formulario venció: recárgala y vuelve a enviar.');
+        if (age < MIN_FILL_MS) throw badRequest('form_too_fast', 'Espera un momento y vuelve a enviar.');
     }
 
     /**
@@ -490,7 +490,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 for (const t of tokens.slice(0, MAX_FILES_PER_FIELD)) {
                     const id = this.verifyUpload(f, t);
                     if (id === null) {
-                        errors[item.id] = 'Uno de los archivos venció: volvé a subirlo.';
+                        errors[item.id] = 'Uno de los archivos venció: vuelve a subirlo.';
                         break;
                     }
                     ids.push(id);
@@ -547,7 +547,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 throw new HttpException(
                     {
                         code: 'rate_limited',
-                        message: 'Recibimos demasiados envíos seguidos. Esperá un momento y volvé a intentar.',
+                        message: 'Recibimos demasiados envíos seguidos. Espera un momento y vuelve a intentar.',
                         data: { status: 429 },
                     },
                     HttpStatus.TOO_MANY_REQUESTS,

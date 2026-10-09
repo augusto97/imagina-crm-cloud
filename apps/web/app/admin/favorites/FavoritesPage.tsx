@@ -73,7 +73,7 @@ export function FavoritesPage(): JSX.Element {
                     </span>
                     <h2 className="imcrm-text-base imcrm-font-medium">{__('Todavía no anclaste nada')}</h2>
                     <p className="imcrm-max-w-md imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Pasá el mouse sobre una lista o un dashboard en el menú lateral (o en la página de Listas) y tocá el pin para anclarlo acá. Las vistas se anclan desde el menú de su pestaña.')}
+                        {__('Pasa el mouse sobre una lista o un dashboard en el menú lateral (o en la página de Listas) y toca el pin para anclarlo aquí. Las vistas se anclan desde el menú de su pestaña.')}
                     </p>
                 </div>
             ) : (

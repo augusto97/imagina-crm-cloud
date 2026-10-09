@@ -21,7 +21,7 @@ const PAYPAL_API = {
  * estático).
  *
  * SEC-29 (v0.1.228): una orden APROBADA todavía no es un pago — con
- * `intent: CAPTURE` la plata sólo se mueve cuando el comercio la CAPTURA.
+ * `intent: CAPTURE` el dinero solo se mueve cuando el comercio la CAPTURA.
  * Antes el plan se activaba con `CHECKOUT.ORDER.APPROVED` y nadie capturaba
  * nunca: el cliente aprobaba, se llevaba el plan y no se le cobraba. Ahora la
  * aprobación dispara la captura y el plan se activa sólo si PayPal confirma
@@ -132,7 +132,7 @@ export class PayPalGateway implements PaymentGateway {
         const status = mapPayPalEvent(event.event_type);
         if (!status) return [];
         // Una captura "completada" que no dice COMPLETED (p. ej. PENDING por
-        // revisión de PayPal) todavía no es plata cobrada.
+        // revisión de PayPal) todavía no es dinero cobrado.
         if (status === 'approved' && event.resource?.status !== undefined && event.resource.status !== 'COMPLETED') {
             return [];
         }
@@ -208,7 +208,7 @@ export class PayPalGateway implements PaymentGateway {
 /** Evento de PayPal → estado del cobro en el registro de pagos. */
 export function mapPayPalEvent(eventType: string | undefined): BillingPaymentStatus | null {
     switch (eventType) {
-        // `CHECKOUT.ORDER.APPROVED` NO está acá a propósito: aprobar no es
+        // `CHECKOUT.ORDER.APPROVED` NO está aquí a propósito: aprobar no es
         // pagar (ver `handleWebhook`, que captura antes de activar).
         case 'PAYMENT.CAPTURE.COMPLETED':
             return 'approved';

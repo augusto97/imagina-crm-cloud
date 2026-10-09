@@ -199,7 +199,7 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
                 <div className="imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
                     <span className="imcrm-font-medium">Tus correos no se están enviando.</span> No se
                     puede leer la contraseña guardada (cambió la clave de cifrado del servidor).
-                    Escribila de nuevo abajo y guardá para volver a habilitar el envío.
+                    Escríbela de nuevo abajo y guarda para volver a habilitar el envío.
                 </div>
             )}
 
@@ -295,7 +295,7 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
 
             {c.configured && form.pass.length === 0 && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    Dejá la contraseña vacía para conservar la actual. Escribí una nueva sólo si querés cambiarla.
+                    Deja la contraseña vacía para conservar la actual. Escribe una nueva sólo si quieres cambiarla.
                 </p>
             )}
 
@@ -365,7 +365,7 @@ const VERDICT_META: Record<
     { label: string; variant: 'success' | 'warning' | 'destructive' }
 > = {
     ok: { label: 'La conexión funciona', variant: 'success' },
-    tls_mismatch: { label: 'Revisá «Conexión segura»', variant: 'warning' },
+    tls_mismatch: { label: 'Revisa «Conexión segura»', variant: 'warning' },
     port_closed: { label: 'Ese puerto no responde', variant: 'warning' },
     all_blocked: { label: 'Sin salida SMTP', variant: 'destructive' },
     dns_failed: { label: 'El host no resuelve', variant: 'destructive' },
@@ -493,7 +493,7 @@ function DnsSection(): JSX.Element {
     const report = dnsQ.data;
     const errorText = dnsQ.isError
         ? dnsQ.error instanceof CloudApiError && dnsQ.error.code === 'smtp_not_configured'
-            ? 'Guardá primero la configuración SMTP con un remitente válido.'
+            ? 'Guarda primero la configuración SMTP con un remitente válido.'
             : dnsQ.error instanceof Error
               ? dnsQ.error.message
               : 'No se pudo verificar el DNS.'
@@ -507,7 +507,7 @@ function DnsSection(): JSX.Element {
                         Registros DNS (SPF / DKIM / DMARC)
                     </h4>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        Para que tus correos no caigan en spam, creá estos registros en el DNS de tu
+                        Para que tus correos no caigan en spam, crea estos registros en el DNS de tu
                         dominio remitente
                         {report ? (
                             <>

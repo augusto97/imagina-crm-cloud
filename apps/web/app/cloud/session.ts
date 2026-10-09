@@ -75,7 +75,7 @@ export const useSession = create<SessionState>()(
             setDomainTenant: (tenant) => {
                 // Puede llegar ANTES o DESPUÉS de `setSession` (corren en
                 // paralelo en el boot): si la sesión ya está hidratada y hay
-                // membership del tenant del dominio, fijamos el workspace acá.
+                // membership del tenant del dominio, fijamos el workspace aquí.
                 const { user, memberships } = get();
                 const member =
                     tenant !== null &&

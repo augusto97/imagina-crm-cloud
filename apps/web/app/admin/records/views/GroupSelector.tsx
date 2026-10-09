@@ -59,7 +59,7 @@ export function GroupSelector({ fields, value, onChange }: GroupSelectorProps): 
                     {groupable.length === 0 ? (
                         <p className="imcrm-px-2 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
                             {__(
-                                'Esta lista no tiene campos para agrupar. Creá uno de tipo Selección, Persona, Casilla o Fecha.',
+                                'Esta lista no tiene campos para agrupar. Crea uno de tipo Selección, Persona, Casilla o Fecha.',
                             )}
                         </p>
                     ) : (

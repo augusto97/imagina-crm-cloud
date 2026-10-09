@@ -112,7 +112,7 @@ export function PlatformUsersCard(): JSX.Element {
     };
 
     const doRemove = async (u: PlatformUser): Promise<void> => {
-        const typed = window.prompt(`${__('Esto borra la cuenta de forma irreversible. Escribí el email para confirmar:')}\n\n${u.email}`);
+        const typed = window.prompt(`${__('Esto borra la cuenta de forma irreversible. Escribe el email para confirmar:')}\n\n${u.email}`);
         if (typed === null) return;
         if (typed.trim().toLowerCase() !== u.email.toLowerCase()) {
             setFormError(__('El email no coincide; no se borró nada.'));
@@ -139,7 +139,7 @@ export function PlatformUsersCard(): JSX.Element {
                     <div>
                         <CardTitle>{__('Usuarios')}</CardTitle>
                         <CardDescription>
-                            {__('Todas las cuentas de la plataforma. Creá cuentas (se envía una invitación para definir contraseña), sumalas a empresas desde «Editar», desactivá o reseteá contraseñas.')}
+                            {__('Todas las cuentas de la plataforma. Crea cuentas (se envía una invitación para definir contraseña), súmalas a empresas desde «Editar», desactiva o resetea contraseñas.')}
                         </CardDescription>
                     </div>
                 </div>

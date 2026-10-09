@@ -6,7 +6,7 @@ import { CAP } from '@/lib/permissions';
  * Puente sesión-nube → boot del admin. La UI real (`app/admin`) gatea
  * afordancias por `boot.user.capabilities` (mapa `imcrm_*`). En la nube el
  * backend NestJS enforcea los permisos reales por rol en cada request
- * (guards); acá sintetizamos el mapa desde el rol del membership SOLO para
+ * (guards); aquí sintetizamos el mapa desde el rol del membership SOLO para
  * mostrar/ocultar controles. Un rol admin ve todo; el resto, un subconjunto.
  */
 const ALL_CAPS = Object.values(CAP);

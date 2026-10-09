@@ -25,7 +25,7 @@ interface FieldValueDisplayProps {
 
 /**
  * Render visual de un valor de campo para el layout CRM. Más rico que
- * `renderCellValue` (que vive en TableView y prioriza densidad): acá
+ * `renderCellValue` (que vive en TableView y prioriza densidad): aquí
  * mostramos íconos, símbolos de moneda, tiempo relativo en fechas,
  * `mailto:` / `tel:` links — para que la ficha del registro se sienta
  * como una página de detalle y no una fila de tabla disfrazada.

@@ -473,7 +473,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                         )}
                         {canReorder && (
                             <p className="imcrm-pt-2 imcrm-text-xs imcrm-text-muted-foreground">
-                                {__('Arrastrá un campo por el asa de la izquierda para cambiar su orden.')}
+                                {__('Arrastra un campo por el asa de la izquierda para cambiar su orden.')}
                             </p>
                         )}
                     </div>
@@ -495,7 +495,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                             />
                         ) : (
                             <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-8 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Elegí un campo de la lista para ver y cambiar todos sus ajustes.')}
+                                {__('Elige un campo de la lista para ver y cambiar todos sus ajustes.')}
                             </div>
                         )}
                     </div>

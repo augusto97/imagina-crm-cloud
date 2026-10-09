@@ -250,7 +250,7 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
                                 )}
                             >
                                 <FileUp className="imcrm-h-8 imcrm-w-8 imcrm-text-muted-foreground" />
-                                <span className="imcrm-text-sm imcrm-font-medium">{__('Elegí un archivo CSV')}</span>
+                                <span className="imcrm-text-sm imcrm-font-medium">{__('Elige un archivo CSV')}</span>
                                 <span className="imcrm-max-w-md imcrm-text-xs imcrm-text-muted-foreground">
                                     {__('Tiene que tener una columna que identifique cada registro: el ID (la que trae la exportación de esta lista) o un campo único como el SKU o el email. Hasta 5.000 filas.')}
                                 </span>
@@ -366,7 +366,7 @@ export function CsvUpdateDialog({ open, onOpenChange, listId, storeManaged, isLo
                                         <span>
                                             {__('Una celda vacía vacía el campo')}
                                             <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                                                {__('Si no lo marcás, las celdas vacías dejan el valor como está.')}
+                                                {__('Si no lo marcas, las celdas vacías dejan el valor como está.')}
                                             </span>
                                         </span>
                                     </label>

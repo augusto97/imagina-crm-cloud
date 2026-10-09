@@ -27,7 +27,7 @@ export interface BulkEditLog {
     id: number;
     list_id: number;
     kind: BulkEditKind;
-    /** En criollo: «Precio: subir 10 %, redondear a 1.000 ↑ −100». */
+    /** En lenguaje claro: «Precio: subir 10 %, redondear a 1.000 ↑ −100». */
     summary: string;
     user_id: number | null;
     user_name: string | null;
@@ -74,7 +74,7 @@ export interface BulkRevertResult {
     failed: Array<{ item_id: number; title: string; message: string }>;
 }
 
-// ── Resumen en criollo (para el historial) ───────────────────────────────
+// ── Resumen en lenguaje claro (para el historial) ───────────────────────────────
 
 type SummaryOp = { op: string; field_id: number } & Record<string, unknown>;
 

@@ -6,12 +6,12 @@ import { zonedToUtc, validTimeZone, type FieldType, type SqlSuggestedFieldType }
  * El motor convierte cada celda a TEXTO y la pasa por el mismo camino que una
  * celda de CSV (`coerceCellValue` + `validateFieldValue`): una sola forma de
  * interpretar "1.250,50", "Sí" o una etiqueta de select, venga de un archivo o
- * de una base. Lo propio de SQL —las fechas— se resuelve acá:
+ * de una base. Lo propio de SQL —las fechas— se resuelve aquí:
  *
  *  - `datetimeoffset` trae su zona: es un instante y se pasa a UTC.
  *  - `datetime`/`datetime2`/`smalldatetime` NO traen zona: son la hora "de
  *    pared" del servidor de la empresa. Con `useUTC` el driver la deja en los
- *    campos UTC del Date; acá se interpreta en la zona elegida en la
+ *    campos UTC del Date; aquí se interpreta en la zona elegida en la
  *    sincronización y se pasa a UTC (la app guarda fechas-hora en UTC naive).
  *  - Si el destino es una FECHA (sin hora), se toma el día de pared tal cual:
  *    pasar a UTC primero movería un "lunes 21:00" de Bogotá al martes.

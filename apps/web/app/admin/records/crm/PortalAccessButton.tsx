@@ -116,8 +116,8 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
                 toast.error(
                     __('El enlace se generó, pero el correo no salió'),
                     data.path
-                        ? (data.email_error ?? __('Revisá el SMTP en Ajustes → Correo.'))
-                        : __('Esa cuenta ya existía fuera de esta empresa, así que el enlace sólo viaja por correo. Revisá el SMTP en Ajustes → Correo y volvé a enviarlo.'),
+                        ? (data.email_error ?? __('Revisa el SMTP en Ajustes → Correo.'))
+                        : __('Esa cuenta ya existía fuera de esta empresa, así que el enlace sólo viaja por correo. Revisa el SMTP en Ajustes → Correo y vuelve a enviarlo.'),
                 );
             } else if (!data.path) {
                 // SEC-24: la cuenta ya existía por su cuenta; el enlace le llega
@@ -161,7 +161,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
         }
     };
 
-    /** Antes de dar un acceso NUEVO: ¿ya tiene otros acá? ¿es del equipo? */
+    /** Antes de dar un acceso NUEVO: ¿ya tiene otros aquí? ¿es del equipo? */
     const grant = async (to: string): Promise<void> => {
         setChecking(true);
         let check: AccessCheck;
@@ -179,7 +179,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
         if (check.status === 'staff') {
             toast.error(
                 __('Esa persona es del equipo de esta empresa'),
-                __('El portal es para clientes. Para que vea esta lista, compartísela desde Compartir → Con tu equipo.'),
+                __('El portal es para clientes. Para que vea esta lista, compártesela desde Compartir → Con tu equipo.'),
             );
             return;
         }
@@ -198,7 +198,7 @@ export function PortalAccessButton({ list, record }: Props): JSX.Element | null 
     const askRevoke = async (u: AccessUser): Promise<void> => {
         const yes = await confirm({
             title: __('¿Quitar el acceso al portal?'),
-            description: `${u.email} ${__('dejará de ver este registro en el portal. Si no tiene otros accesos en la empresa, se cierran sus sesiones. Podés volver a darle acceso cuando quieras.')}`,
+            description: `${u.email} ${__('dejará de ver este registro en el portal. Si no tiene otros accesos en la empresa, se cierran sus sesiones. Puedes volver a darle acceso cuando quieras.')}`,
             confirmLabel: __('Quitar acceso'),
             destructive: true,
         });

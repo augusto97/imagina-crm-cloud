@@ -410,8 +410,8 @@ function ThemeInspector(): JSX.Element {
             <Title icon={<MousePointerClick />} text={ed.catalog.target === 'portal' ? __('Tema del portal') : __('Tema de la ficha')} />
             <p className="imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 {ed.catalog.target === 'portal'
-                    ? __('Elegí un bloque, una sección o la cabecera en el portal para ajustarlos. Acá se define el aspecto general.')
-                    : __('Elegí un bloque, una sección o la cabecera en la ficha para ajustarlos. Acá se define el aspecto general.')}
+                    ? __('Elige un bloque, una sección o la cabecera en el portal para ajustarlos. Aquí se define el aspecto general.')
+                    : __('Elige un bloque, una sección o la cabecera en la ficha para ajustarlos. Aquí se define el aspecto general.')}
             </p>
             <Group title={__('Estilo')}>
                 <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-1.5">

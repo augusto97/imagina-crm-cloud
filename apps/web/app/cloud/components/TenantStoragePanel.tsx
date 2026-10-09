@@ -489,8 +489,8 @@ function ConnectionSection({ status }: { status: TenantStorageStatus }): JSX.Ele
                         <MoveFiles
                             to="connection"
                             pending={toMove}
-                            label="Mover acá los archivos que ya tenés"
-                            description="Se copian a tu bucket y se borran del servidor (o del almacenamiento anterior): liberás el espacio del plan. Los enlaces que ya compartiste siguen funcionando."
+                            label="Mover aquí los archivos que ya tienes"
+                            description="Se copian a tu bucket y se borran del servidor (o del almacenamiento anterior): liberas el espacio del plan. Los enlaces que ya compartiste siguen funcionando."
                         />
                     </div>
                 )}
@@ -501,7 +501,7 @@ function ConnectionSection({ status }: { status: TenantStorageStatus }): JSX.Ele
                             <NoConnections />
                         ) : (
                             <>
-                                <p className="imcrm-text-sm imcrm-font-medium">Elegí dónde guardar los archivos</p>
+                                <p className="imcrm-text-sm imcrm-font-medium">Elige dónde guardar los archivos</p>
                                 <div className="imcrm-space-y-2" role="radiogroup">
                                     {status.candidates.map((c) => (
                                         <CandidateRow
@@ -523,7 +523,7 @@ function ConnectionSection({ status }: { status: TenantStorageStatus }): JSX.Ele
                                             const ok = await confirm({
                                                 title: '¿Guardar los archivos en este almacenamiento?',
                                                 description:
-                                                    'Lo que se suba desde ahora va a tu bucket. Lo que ya está guardado sigue donde está; después podés moverlo con un botón.',
+                                                    'Lo que se suba desde ahora va a tu bucket. Lo que ya está guardado sigue donde está; después puedes moverlo con un botón.',
                                                 confirmLabel: 'Usar este almacenamiento',
                                             });
                                             if (ok) set.mutate(picked);
@@ -601,8 +601,8 @@ function NoConnections(): JSX.Element {
             data-testid="storage-empty"
         >
             <p>
-                Todavía no hay un almacenamiento conectado. Conectalo una vez en Integraciones (como conexión del{' '}
-                <span className="imcrm-font-medium">equipo</span>) y volvé acá para elegirlo. Antes de usarlo probamos subir, leer y borrar
+                Todavía no hay un almacenamiento conectado. Conéctalo una vez en Integraciones (como conexión del{' '}
+                <span className="imcrm-font-medium">equipo</span>) y vuelve aquí para elegirlo. Antes de usarlo probamos subir, leer y borrar
                 un archivo chiquito.
             </p>
             <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">

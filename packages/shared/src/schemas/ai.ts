@@ -6,7 +6,7 @@ import { viewTypeSchema } from './view';
  * Asistente IA (ADR-S21, v0.1.181).
  *
  * Un asistente DENTRO de la app que convierte pedidos en lenguaje natural
- * ("armame una lista de proveedores con contacto y saldo") en las mismas
+ * ("ármame una lista de proveedores con contacto y saldo") en las mismas
  * operaciones que la persona haría a mano — con sus mismos permisos y con
  * una VISTA PREVIA antes de aplicar. Nunca escribe sin confirmación.
  *

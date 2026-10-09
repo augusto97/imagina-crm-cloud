@@ -104,7 +104,7 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
         } else if (now < cut) {
             tone = 'warn';
             headline = `Venció el ${fmtDate(info.paid_until)}`;
-            detail = `Tenés hasta el ${fmtDate(info.read_only_at)} para renovar. Después el espacio pasa a solo-lectura (tus datos se conservan).`;
+            detail = `Tienes hasta el ${fmtDate(info.read_only_at)} para renovar. Después el espacio pasa a solo-lectura (tus datos se conservan).`;
         } else {
             tone = 'bad';
             headline = `Venció el ${fmtDate(info.paid_until)}: el espacio está en solo-lectura`;
@@ -117,7 +117,7 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
             title: 'Cancelar la renovación automática',
             description: `Mercado Pago deja de cobrar tu tarjeta. Lo que ya pagaste se conserva${
                 info.paid_until ? ` hasta el ${fmtDate(info.paid_until)}` : ''
-            }; después podés pagar por períodos cuando quieras.`,
+            }; después puedes pagar por períodos cuando quieras.`,
             confirmLabel: 'Cancelar la renovación',
             cancelLabel: 'Volver',
             destructive: true,
@@ -188,7 +188,7 @@ function StatusCard({ info }: { info: SubscriptionInfo }): JSX.Element {
                                     <>
                                         <p className="imcrm-font-medium">Renovación en pausa</p>
                                         <p className="imcrm-text-muted-foreground">
-                                            Mercado Pago no pudo cobrar la tarjeta y la pausó. Revisá el medio de pago en tu cuenta de Mercado Pago o pagá por período.
+                                            Mercado Pago no pudo cobrar la tarjeta y la pausó. Revisa el medio de pago en tu cuenta de Mercado Pago o paga por período.
                                         </p>
                                     </>
                                 )}
@@ -280,7 +280,7 @@ function PayCard({
                     </span>
                     <div>
                         <CardTitle>Pagar o cambiar de plan</CardTitle>
-                        <CardDescription>Pagá varios meses de una vez o dejá la renovación automática con tarjeta.</CardDescription>
+                        <CardDescription>Paga varios meses de una vez o deja la renovación automática con tarjeta.</CardDescription>
                     </div>
                 </div>
             </CardHeader>
@@ -381,9 +381,9 @@ function PayCard({
                                 </div>
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                     {info.paid_until && new Date(info.paid_until).getTime() > Date.now()
-                                        ? `Se suma a lo que ya tenés: quedaría pagado ${months === 1 ? 'un mes' : `${months} meses`} más desde el ${fmtDate(info.paid_until)}.`
+                                        ? `Se suma a lo que ya tienes: quedaría pagado ${months === 1 ? 'un mes' : `${months} meses`} más desde el ${fmtDate(info.paid_until)}.`
                                         : `Queda pagado ${months === 1 ? 'un mes' : `${months} meses`} desde el día del pago.`}{' '}
-                                    Con Mercado Pago podés pagar con PSE, Nequi, tarjeta o en efectivo.
+                                    Con Mercado Pago puedes pagar con PSE, Nequi, tarjeta o en efectivo.
                                 </p>
                                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                                     {applicable.map((provider) => {
@@ -404,7 +404,7 @@ function PayCard({
                             <div className="imcrm-space-y-3" data-testid="pay-subscription">
                                 {renewing ? (
                                     <p className="imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm imcrm-text-muted-foreground">
-                                        Ya tenés la renovación automática activa. Para cambiar de plan, cancelala arriba y activala de nuevo: lo que ya pagaste se conserva.
+                                        Ya tienes la renovación automática activa. Para cambiar de plan, cancélala arriba y actívala de nuevo: lo que ya pagaste se conserva.
                                     </p>
                                 ) : (
                                     <>

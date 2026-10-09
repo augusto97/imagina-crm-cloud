@@ -399,7 +399,7 @@ export function WidgetFormDialog({
                                         setVisibleFieldIds([]);
                                     }}
                                 >
-                                    <option value={0}>{__('Elegí…')}</option>
+                                    <option value={0}>{__('Elige…')}</option>
                                     {(lists.data ?? []).map((l) => (
                                         <option key={l.id} value={l.id}>
                                             {l.name}
@@ -1312,7 +1312,7 @@ function FieldPicker({ label, value, fields, onChange, emptyHint }: FieldPickerP
                 <p className="imcrm-text-xs imcrm-text-warning">{emptyHint}</p>
             ) : (
                 <Select value={value} onChange={(e) => onChange(Number(e.target.value))}>
-                    <option value={0}>{__('Elegí…')}</option>
+                    <option value={0}>{__('Elige…')}</option>
                     {fields.map((f) => (
                         <option key={f.id} value={f.id}>
                             {f.label}

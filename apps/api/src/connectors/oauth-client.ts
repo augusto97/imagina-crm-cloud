@@ -4,11 +4,11 @@ import type { ConnectorPair, OAuthConfig } from '@imagina-base/shared';
 /**
  * OAuth 2.0 como CLIENTE (v0.1.199, ADR-S22 fase 3).
  *
- * Hasta acá toda credencial era un secreto ESTÁTICO que alguien pegaba. Para
+ * Hasta aquí toda credencial era un secreto ESTÁTICO que alguien pegaba. Para
  * Google, Slack, Microsoft o HubSpot eso no existe: la empresa autoriza la app
  * una vez y el proveedor entrega un token que caduca y se renueva solo.
  *
- * Las piezas de acá son PURAS —armar la URL de autorización, armar el cuerpo
+ * Las piezas de aquí son PURAS —armar la URL de autorización, armar el cuerpo
  * del canje, leer la respuesta— por el mismo motivo que `connectionParts` y
  * `compileConnectorCall`: se prueban solas y no pueden divergir de lo que
  * después ejecuta el servicio.

@@ -99,7 +99,7 @@ const formatMb = (bytes: number): number => Math.round((bytes / (1024 * 1024)) *
 /** Confirmación de borrado por texto (escribir el nombre). Devuelve si procede. */
 function confirmDeleteByName(name: string): boolean | null {
     const typed = window.prompt(
-        `${__('Esto borra la empresa y TODOS sus datos (irreversible). Escribí el nombre para confirmar:')}\n\n${name}`,
+        `${__('Esto borra la empresa y TODOS sus datos (irreversible). Escribe el nombre para confirmar:')}\n\n${name}`,
     );
     if (typed === null) return null;
     return typed.trim() === name;
@@ -692,7 +692,7 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 )}
                             </section>
 
-                            {/* Miembros (v0.1.240: se gestionan desde acá — invitar, rol, quitar) */}
+                            {/* Miembros (v0.1.240: se gestionan desde aquí — invitar, rol, quitar) */}
                             <TenantMembersSection
                                 tenantId={t.id}
                                 members={detail.data.members}
@@ -730,7 +730,7 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
  * v0.1.240 — Miembros de una empresa desde la consola: invitar por email (si
  * no tiene cuenta se le crea y le llega el correo), cambiar el rol, reenviar
  * invitaciones y quitar, con los mismos guard rails que el panel del admin de
- * la empresa. El límite de usuarios del plan NO aplica acá: decide el operador.
+ * la empresa. El límite de usuarios del plan NO aplica aquí: decide el operador.
  * Los clientes del portal sólo se cuentan (su acceso vive en la ficha).
  */
 function TenantMembersSection({

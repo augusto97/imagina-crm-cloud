@@ -870,7 +870,7 @@ export function DesignClipboard({ value, onPaste }: { value: BlockStyle | undefi
                         /* sin almacenamiento: no se puede copiar */
                     }
                     bump((n) => n + 1);
-                    toast.success(__('Estilo copiado: elegí otro bloque y tocá «Pegar»'));
+                    toast.success(__('Estilo copiado: elige otro bloque y toca «Pegar»'));
                 }}
             >
                 <Copy className="imcrm-h-3 imcrm-w-3" />

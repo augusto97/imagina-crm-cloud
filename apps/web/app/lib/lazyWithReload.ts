@@ -115,7 +115,7 @@ export function lazyWithReload<T extends ComponentType<any>>(
             }
         }
 
-        // Llegamos acá solo si fallaron todos los intentos.
+        // Llegamos aquí solo si fallaron todos los intentos.
         if (isChunkLoadError(lastErr)) {
             try {
                 const already = window.sessionStorage.getItem(RELOADED_KEY);

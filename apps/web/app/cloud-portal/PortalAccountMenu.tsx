@@ -51,8 +51,8 @@ export function PortalAccountMenu({
         onSuccess: (r) =>
             setNotice(
                 r.email_sent
-                    ? `Te mandamos un enlace a ${r.email_hint}. Abrilo para ver todas tus cuentas juntas.`
-                    : 'No pudimos mandar el correo. Probá de nuevo en unos minutos.',
+                    ? `Te mandamos un enlace a ${r.email_hint}. Ábrelo para ver todas tus cuentas juntas.`
+                    : 'No pudimos mandar el correo. Prueba de nuevo en unos minutos.',
             ),
         onError: (err) => setNotice(err instanceof CloudApiError ? err.message : 'No pudimos mandar el correo.'),
     });
@@ -130,7 +130,7 @@ export function PortalAccountMenu({
                         >
                             <Mail className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
                             <span>
-                                <span className="imcrm-block">¿Sos cliente de otra empresa?</span>
+                                <span className="imcrm-block">¿Eres cliente de otra empresa?</span>
                                 <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
                                     Te mandamos a tu correo un enlace para verlas todas juntas
                                 </span>

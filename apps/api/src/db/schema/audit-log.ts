@@ -6,7 +6,7 @@ import { users } from './users';
  * v0.1.114 — Bitácora de acciones ADMINISTRATIVAS del workspace (append-only).
  *
  * Distinta de `activity`, que registra cambios de REGISTROS y cuelga de una
- * lista: acá van las acciones que cambian la configuración o destruyen datos
+ * lista: aquí van las acciones que cambian la configuración o destruyen datos
  * (borrar listas/campos, tocar permisos, publicar una lista, mover miembros,
  * cambiar plan/SMTP/dominio) — incluidas las que no tienen lista asociada.
  */

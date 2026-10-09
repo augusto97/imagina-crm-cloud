@@ -348,7 +348,7 @@ export function ColorPicker({
                     </div>
                     {hexError && (
                         <p className="imcrm-text-[11px] imcrm-text-destructive">
-                            {__('Hex inválido. Usá formato #rrggbb o #rgb.')}
+                            {__('Hex inválido. Usa formato #rrggbb o #rgb.')}
                         </p>
                     )}
                 </div>

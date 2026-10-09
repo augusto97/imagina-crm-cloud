@@ -49,7 +49,7 @@ export class ExportService {
     /**
      * Export CSV con selección de campos, delimiter y filtro (el que usa el
      * ExportButton del fork). A diferencia del bundle JSON de intercambio,
-     * acá los records pasan por `RecordsService.list` → se respetan el ACL
+     * aquí los records pasan por `RecordsService.list` → se respetan el ACL
      * por rol (scope de lectura + campos ocultos) y el filter tree activo.
      * Streaming por keyset — nunca se materializa la lista entera.
      */
@@ -70,7 +70,7 @@ export class ExportService {
         // los lookup, los rollup y las relaciones: una lista de Facturas se
         // exportaba sin el cliente y sin el total. Los derivados ya vienen
         // resueltos en `RecordsService.list` (el motor los inyecta en `data`);
-        // las relaciones se resuelven acá a los TÍTULOS de los vinculados, que
+        // las relaciones se resuelven aquí a los TÍTULOS de los vinculados, que
         // es lo que el archivo tiene que decir para ser legible.
         const exportable = all.filter((f) => isDataField(f.type) || isExportableDerived(f.type));
         const byId = new Map(exportable.map((f) => [f.id, f]));

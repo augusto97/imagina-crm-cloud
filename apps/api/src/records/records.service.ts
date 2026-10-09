@@ -94,7 +94,7 @@ export class RecordsService {
         // (posicional) siguen funcionando sin el módulo de recurrencias.
         @Optional() private readonly recurrences?: RecurrencesService,
         @Optional() private readonly changes?: RecordChangeHub,
-        // v0.1.228 (SEC-31) — límite de registros del plan acá y no sólo en el
+        // v0.1.228 (SEC-31) — límite de registros del plan aquí y no sólo en el
         // controller: el asistente IA/MCP, "actualizar desde archivo" y otros
         // caminos internos crean por este método y se salteaban el tope.
         @Optional() private readonly billing?: BillingService,
@@ -542,7 +542,7 @@ export class RecordsService {
             if (total > cap) {
                 throw new BadRequestException({
                     code: 'bulk_too_many',
-                    message: `Son ${total} registros y una edición masiva abarca hasta ${cap}. Acotá con filtros y hacelo en partes.`,
+                    message: `Son ${total} registros y una edición masiva abarca hasta ${cap}. Acota con filtros y hazlo en partes.`,
                     data: { status: 400, total, cap },
                 });
             }
@@ -671,7 +671,7 @@ export class RecordsService {
      * Menciones escritas EN la descripción (v0.1.134).
      *
      * A diferencia de los comentarios (que buscan tokens `@email` en el
-     * texto), acá la mención es un NODO con el id de la persona: renombrarla
+     * texto), aquí la mención es un NODO con el id de la persona: renombrarla
      * no rompe el vínculo. Igual se valida contra los miembros del workspace
      * — un id ajeno no notifica a nadie.
      *

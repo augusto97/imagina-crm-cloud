@@ -6,7 +6,7 @@ import { roleSchema } from './membership';
 /**
  * Miembros de un workspace (panel admin). Un miembro = una fila de
  * `memberships` (tenant-isolated por RLS) unida al `users`. El rol `client`
- * NO se administra desde acá: se crea/gestiona vía portal (magic links).
+ * NO se administra desde aquí: se crea/gestiona vía portal (magic links).
  */
 export const workspaceMemberSchema = z.object({
     user_id: idSchema,

@@ -6,7 +6,7 @@ import type { StoreSyncResource } from '@imagina-base/shared';
  * `slug` del pack), qué registro vincula cada relación y qué campos de otros
  * plugins (`meta_data`) trae. El motor traduce slugs a ids de campo y escribe.
  *
- * Lo que decide acá —y se prueba acá, sin base ni red—:
+ * Lo que decide aquí —y se prueba aquí, sin base ni red—:
  *  - **Clientes invitados**: WooCommerce sólo lista los registrados, pero un
  *    pedido de invitado también es de alguien. El cliente se identifica por
  *    `id:N` (registrado) o por `email:x` (invitado), así "cuánto me compró"
@@ -324,7 +324,7 @@ export function mapProduct(p: WooJson, inv: MapInventoryOptions = {}): MappedIte
     if (variable) {
         // El stock, su valor y su estado de un producto con variaciones son el
         // RESUMEN de sus variaciones: los calcula el motor al traerlas
-        // (`recomputeVariableParents`). Escribirlos acá los pisaría.
+        // (`recomputeVariableParents`). Escribirlos aquí los pisaría.
         values.controla_stock = false;
     } else {
         values.stock = manages ? wooNumber(p.stock_quantity) : null;

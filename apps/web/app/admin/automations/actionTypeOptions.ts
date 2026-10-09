@@ -8,7 +8,7 @@ import type { ActionMeta, ActionSpec } from '@/types/automation';
  * como valor, así que todas las de conector eran la misma opción: una acción
  * de WooCommerce o cualquier otra se mostraba como la PRIMERA del catálogo
  * («Enviar mensaje de WhatsApp»), y elegir otra desde el selector borraba la
- * conexión. Acá cada opción tiene un valor único y el valor de una acción se
+ * conexión. Aquí cada opción tiene un valor único y el valor de una acción se
  * deriva de su config.
  */
 export interface ActionTypeOption {

@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * para poder renderizar sin pedir nada; la verdad es el id (misma regla que
  * las claves `f{field_id}`: renombrar no rompe el vínculo).
  *
- * Cada tipo de acá tiene su entrada en la whitelist de `sanitizeRichDoc`
+ * Cada tipo de aquí tiene su entrada en la whitelist de `sanitizeRichDoc`
  * (packages/shared) — si no, el backend lo descartaría al guardar.
  */
 
@@ -400,7 +400,7 @@ function TocBlockView({ editor }: NodeViewProps): JSX.Element {
                 </span>
                 {items.length === 0 ? (
                     <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Agregá títulos y aparecerán acá.')}
+                        {__('Agrega títulos y aparecerán aquí.')}
                     </span>
                 ) : (
                     <ol className="imcrm-m-0 imcrm-list-none imcrm-p-0">

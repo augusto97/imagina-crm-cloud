@@ -126,7 +126,7 @@ export function CommentsThreadBlock({ config, boot }: Props): JSX.Element {
                     <textarea
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
-                        placeholder="Escribí tu comentario…"
+                        placeholder="Escribe tu comentario…"
                         rows={3}
                         maxLength={5000}
                         disabled={submitting}

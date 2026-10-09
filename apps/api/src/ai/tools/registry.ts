@@ -93,7 +93,7 @@ export class AiToolRegistry {
         if (tool.capability !== null && !roleHasCapability(ctx.role, tool.capability)) {
             return {
                 content: {
-                    error: `Tu rol (${ctx.role}) no tiene permiso para esta acción (requiere ${tool.capability}). Decile a la persona que un administrador puede hacerlo.`,
+                    error: `Tu rol (${ctx.role}) no tiene permiso para esta acción (requiere ${tool.capability}). Dile a la persona que un administrador puede hacerlo.`,
                 },
                 isError: true,
             };
@@ -125,7 +125,7 @@ export class AiToolRegistry {
 
 function toInputSchema(schema: ZodTypeAny): Record<string, unknown> {
     // El tipo de retorno de la librería es un unión gigante que TypeScript
-    // no llega a instanciar: acá sólo importa que sea un objeto JSON.
+    // no llega a instanciar: aquí sólo importa que sea un objeto JSON.
     const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
     const json = convert(schema, { $refStrategy: 'none', target: 'jsonSchema7' });
     // La API pide un objeto raíz sin `$schema`.

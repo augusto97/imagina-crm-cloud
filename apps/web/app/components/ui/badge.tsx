@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
  * que los badges sólidos saturados.
  *
  * Para los casos donde NECESITAS el solid (ej. label de un menu),
- * usá `solid` o `default`.
+ * usa `solid` o `default`.
  */
 const badgeVariants = cva(
     'imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-px-2 imcrm-py-0.5 imcrm-text-xs imcrm-font-medium imcrm-tracking-tight imcrm-leading-tight imcrm-whitespace-nowrap',
