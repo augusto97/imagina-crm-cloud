@@ -64,6 +64,7 @@ import {
     savedViews,
     documentNumbers,
     documentTemplates,
+    forms,
     templates,
     tenants,
     users,
@@ -275,6 +276,8 @@ export class TenantTransferService {
             await dump('document_templates', await this.byTenant(documentTemplates, tenantId));
             // v0.1.267 — números ya emitidos (el consecutivo sigue donde iba).
             await dump('document_numbers', await this.byTenant(documentNumbers, tenantId));
+            // v0.1.275 — formularios públicos (el diseño apunta a campos por id).
+            await dump('forms', await this.byTenant(forms, tenantId));
             await dump('saved_filters', await this.byTenant(savedFilters, tenantId));
             await dump('automations', await this.byTenant(automations, tenantId));
             await dump('dashboards', await this.byTenant(dashboards, tenantId));
@@ -882,6 +885,30 @@ export class TenantTransferService {
             (d) => maps.list.has(Number(d.listId)),
         );
 
+        // 7c. Formularios públicos (antes que las automatizaciones: el
+        //     disparador «Cuando se envía un formulario» los nombra por id).
+        //     La dirección pública es una credencial del servidor de origen:
+        //     cada uno recibe una nueva.
+        const formRows = await this.readAll(rows('forms'));
+        counts.forms = await this.insertMapped(
+            tx,
+            formRows,
+            forms,
+            maps.form,
+            (f) => ({
+                tenantId,
+                listId: maps.list.get(Number(f.listId))!,
+                name: String(f.name),
+                token: randomBytes(18).toString('base64url'),
+                enabled: f.enabled === true,
+                config: remapJson((f.config as Row | null) ?? {}, maps) as Row,
+                submissionsCount: Number(f.submissionsCount ?? 0),
+                lastSubmittedAt: this.date(f.lastSubmittedAt),
+                createdBy: mapId(maps.user, f.createdBy),
+            }),
+            (f) => maps.list.has(Number(f.listId)),
+        );
+
         // 8. Automatizaciones (+ URL nueva del webhook entrante).
         const autoRows = await this.readAll(rows('automations'));
         const autoMap = new Map<number, number>();
@@ -1167,6 +1194,11 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        if (formRows.length > 0) {
+            warnings.push(
+                `${formRows.length} formulario(s) tienen una dirección NUEVA: hay que volver a repartirla (y a insertarla en los sitios que lo usan).`,
             );
         }
         const hooks = autoRows.filter((a) => String(a.triggerType) === 'incoming_webhook').length;

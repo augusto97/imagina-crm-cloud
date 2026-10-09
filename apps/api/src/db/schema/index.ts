@@ -33,3 +33,4 @@ export * from './bulk-edits';
 export * from './billing-payments';
 export * from './collections';
 export * from './document-templates';
+export * from './forms';

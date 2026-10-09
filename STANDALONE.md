@@ -2723,6 +2723,60 @@ que usa tedious en sus mensajes y volcados de paquetes, para un riesgo que no
 existe en nuestro uso); bajar a una versión de tedious sin `sprintf-js` (no
 hay: todas lo usan).
 
+### ADR-S39 — Formularios públicos que crean registros (v0.1.275)
+
+**Contexto.** El pedido más común de quien arma una base de datos de clientes,
+solicitudes o inscripciones es "que la gente lo llene sola". Hasta acá había
+dos caminos y ninguno servía a una persona normal: el webhook entrante
+(v0.1.110, exige otro sistema que lo llame) o la lista pública (ADR-S14, sólo
+lectura). Airtable, ClickUp, Notion y SmartSuite tienen formularios nativos.
+
+**Decisión.**
+1. **Un formulario es de UNA lista** (tabla `forms`, RLS) y guarda un modelo
+   propio validado con Zod (`formConfigSchema` en shared): ítems ordenados
+   (pregunta = campo de la lista por id, título de sección, texto) con
+   etiqueta/ayuda/obligatorio/oculto/forma de mostrar y una **condición** de
+   visibilidad sobre una pregunta ANTERIOR; más los ajustes (títulos, botón,
+   gracias o redirección https, cierre por fecha o cupo, color, logo, prefill,
+   dominios para insertar). Las preguntas apuntan a campos por ID, nunca por
+   slug (regla de oro nº 1). Se preguntan los tipos que una persona de afuera
+   puede contestar; personas del equipo, relaciones y calculados no.
+2. **La página pública la sirve el API** (`/api/v1/public/f/:token`), no el
+   SPA: el proxy fija `frame-ancestors 'self'` para la app y una
+   actualización no puede cambiarlo, y un formulario se inserta en sitios
+   ajenos. La página trae su propia CSP (script con nonce, `connect-src
+   'self'`, `frame-ancestors` desde los dominios permitidos o `*`) y arma el
+   DOM sólo con `textContent`/`createElement`. El **token** es la credencial
+   (como las listas públicas): desconocido, despublicado o de una empresa
+   archivada → el mismo 404 opaco; regenerarlo invalida el anterior.
+3. **El servidor no le cree al navegador**: `collect()` toma SÓLO los valores
+   de preguntas del formulario que deben verse según las condiciones (o las
+   ocultas con prefill), revalida obligatorios y cada valor con
+   `validateFieldValue`, y crea el registro con `RecordsService.create` (actor
+   de sistema, mismas reglas, límite del plan, actividad, realtime). Errores
+   por pregunta (400 `form_invalid`).
+4. **Anti-abuso sin captchas de terceros**: campo trampa (se "acepta" en
+   silencio y no se guarda nada), sello firmado con HMAC que exige ≥2,5 s
+   entre cargar y enviar (y <24 h), límites en Redis por IP y por
+   formulario, y archivos subidos atados al formulario con un token firmado
+   de 6 h; los que nadie envió se borran solos.
+5. **Cerrado** cuando la empresa está en solo-lectura (ADR-S09), pasó la
+   fecha de cierre o se llenó el cupo: la página lo dice y el envío rebota.
+   Las listas que llena una tienda (ADR-S24) no admiten formularios.
+6. **Constructor WYSIWYG**: la vista previa ES la página pública
+   (`/public/f/preview`), alimentada por `postMessage` con la misma función
+   compartida (`buildPublicFormItems`) que usa el servidor — lo que se diseña
+   es lo que se publica.
+7. **Automatizaciones**: disparador `form_submitted` (opcionalmente un
+   formulario puntual) con `{{formulario.nombre}}`. El asistente/MCP ve los
+   formularios en `get_list_schema` y puede usar el disparador.
+8. Los formularios viajan en la migración de empresa (con dirección NUEVA,
+   avisado) y se borran con ella.
+
+**Consecuencias.** Un formulario tapa casi todos los "que se inscriban solos"
+sin integraciones. Queda fuera: varias páginas/pasos, lógica que salta
+secciones, pagos dentro del formulario y editar una respuesta enviada.
+
 ---
 
-**Versión del documento:** 1.73.0 (auditoría de dependencias de producción en cero con excepciones explícitas — ADR-S38)
+**Versión del documento:** 1.74.0 (formularios públicos que crean registros — ADR-S39)

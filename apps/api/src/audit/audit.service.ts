@@ -27,6 +27,11 @@ export type AuditAction =
     | 'list.permissions'
     | 'list.public_enable'
     | 'list.public_disable'
+    // v0.1.275 — formularios públicos (escriben en la lista sin cuenta).
+    | 'form.publish'
+    | 'form.unpublish'
+    | 'form.regenerate_link'
+    | 'form.delete'
     | 'field.delete'
     | 'field.type_change'
     | 'member.add'

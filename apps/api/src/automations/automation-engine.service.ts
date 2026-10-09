@@ -57,6 +57,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     record_updated: ['record_updated', 'field_changed'],
     // v0.1.251 — un cliente pagó un link de Mercado Pago o Wompi.
     payment_received: ['payment_received'],
+    // v0.1.275 — alguien completó un formulario público de la lista.
+    form_submitted: ['form_submitted'],
 };
 
 interface RunContext {
@@ -82,6 +84,8 @@ interface RunContext {
      * `payment_received`) o el link que creó una acción anterior. `{{pago.x}}`.
      */
     pago?: Record<string, unknown>;
+    /** v0.1.275 — el formulario que se acaba de enviar (`{{formulario.nombre}}`). */
+    form?: { id: number; name: string };
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /**
@@ -159,6 +163,7 @@ export class AutomationEngine {
                     before: event.before,
                     ...maps,
                     ...(event.payment ? { pago: event.payment } : {}),
+                    ...(event.form ? { form: event.form } : {}),
                 };
                 if (!this.triggerMatches(auto, ctx)) continue;
                 await this.runOne(tx, ctx, auto);
@@ -314,6 +319,12 @@ export class AutomationEngine {
     /** ¿La automatización matchea el trigger? (field_filters + changed_fields). */
     private triggerMatches(auto: AutomationRow, ctx: RunContext): boolean {
         const cfg = auto.triggerConfig ?? {};
+        // v0.1.275 — «Cuando se envía un formulario»: sin `form_id` vale
+        // cualquiera de la lista; con uno, sólo ese.
+        if (auto.triggerType === 'form_submitted') {
+            const wanted = Number(cfg.form_id);
+            if (Number.isInteger(wanted) && wanted > 0 && ctx.form?.id !== wanted) return false;
+        }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv)) return false;
 
@@ -360,6 +371,8 @@ export class AutomationEngine {
                 const v = ctx.pago?.[token.slice('pago.'.length)];
                 return v === null ? '' : v;
             }
+            // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
+            if (token === 'formulario.nombre') return ctx.form?.name ?? '';
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -956,7 +969,7 @@ export class AutomationEngine {
             filename,
             // Las variables del contexto del run: {{before.x}}, {{pago.link}}, {{payload.x}}.
             extra: (token) =>
-                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.')
+                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token === 'formulario.nombre'
                     ? fv(token)
                     : undefined,
         });

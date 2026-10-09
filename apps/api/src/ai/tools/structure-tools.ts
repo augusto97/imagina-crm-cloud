@@ -72,6 +72,7 @@ import { TenantDb } from '../../tenancy/tenant-db.service';
 import { BlueprintService } from '../../templates/blueprint.service';
 import { ViewsService } from '../../views/views.service';
 import { isNumericComputed } from '../../records/computed-sql';
+import { FormsService } from '../../forms/forms.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -222,7 +223,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -231,7 +232,8 @@ const automationSpec = z.object({
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
                 'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo poné tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
                 'record_created/incoming_webhook: {field_filters?}. ' +
-                'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}.',
+                'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
+                'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -372,6 +374,8 @@ export class StructureTools implements AiProposalApplier {
         private readonly publicLists: PublicListsService,
         // v0.1.266 — plantillas de documentos PDF (la acción generate_pdf).
         @Optional() private readonly documents?: DocumentsService,
+        // v0.1.275 — formularios públicos (el trigger form_submitted).
+        @Optional() private readonly forms?: FormsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -525,7 +529,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -690,6 +694,7 @@ export class StructureTools implements AiProposalApplier {
         const documentTemplates = this.documents
             ? await this.documents.list(ctx.tenantId, String(list.id)).catch(() => [])
             : [];
+        const listForms = this.forms ? await this.forms.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
         const allLists = await this.lists.list(ctx.tenantId);
         const listById = new Map(allLists.map((l) => [l.id, l]));
         const fieldById = new Map(fields.map((f) => [f.id, f]));
@@ -762,6 +767,7 @@ export class StructureTools implements AiProposalApplier {
                 // v0.1.266 — plantillas de documentos PDF de la lista (para
                 // generate_pdf y los adjuntos de send_email).
                 document_templates: documentTemplates.map((d) => ({ id: d.id, name: d.name, in_portal: d.portal_visible, next_number: d.next_label })),
+                forms: listForms.map((f) => ({ id: f.id, name: f.name, published: f.enabled, submissions: f.submissions_count })),
                 connectors: connections
                     .filter((c) => c.actions.length > 0)
                     .map((c) => ({
@@ -2804,6 +2810,8 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return 'Al recibir un webhook';
         case 'payment_received':
             return 'Cuando se recibe un pago';
+        case 'form_submitted':
+            return 'Cuando se envía un formulario';
         default:
             return type;
     }

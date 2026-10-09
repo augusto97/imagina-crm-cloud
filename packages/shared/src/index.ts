@@ -12,6 +12,7 @@ export * from './schemas/list-config';
 export * from './schemas/list-permissions';
 export * from './schemas/list-template';
 export * from './schemas/public-list';
+export * from './schemas/form';
 export * from './schemas/filter';
 export * from './schemas/saved-filter';
 export * from './schemas/record';

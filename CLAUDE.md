@@ -7598,6 +7598,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         lectura, `list_lists`, 401 sin token y 405 por GET). Quedan avisos sólo
         en herramientas de desarrollo (vite/vitest exigen versión mayor).
 
+  - [x] **Formularios públicos que crean registros (v0.1.275, ADR-S39,
+        primera de las tres ideas elegidas por el usuario de la ronda de
+        "qué más le podemos hacer")**: cada lista puede tener formularios
+        (Ajustes de la lista → **Formularios**) que cualquiera llena desde un
+        enlace —o insertado en un sitio— y cada respuesta llega como un
+        registro. (a) **Modelo** (`formConfigSchema` en shared, tabla `forms`
+        con RLS, migración 0070): preguntas que apuntan a campos por ID (16
+        tipos: texto, número, moneda, selección —botones o lista según la
+        cantidad—, varias opciones, fecha, casilla, email, enlace, teléfono,
+        calificación, porcentaje, duración y archivos), títulos de sección y
+        textos; por pregunta etiqueta, ayuda, ejemplo, obligatoria, oculta
+        (se completa desde la dirección: `?nombre=Ana`) y **condición** sobre
+        una pregunta anterior (es/no es/alguno de/contiene/mayor/menor/vacía),
+        que se encadena. Ajustes: título, descripción, botón, gracias o
+        redirección https, "enviar otra", cierre por fecha o por cupo, color,
+        logo de la marca, prefill y dominios donde se puede insertar.
+        (b) **Página pública servida por el API** (`/api/v1/public/f/:token`)
+        y no por el SPA —el proxy prohíbe encuadrar la app y un formulario se
+        inserta en sitios ajenos—, con su propia CSP (script con nonce,
+        `frame-ancestors` desde los dominios elegidos), DOM armado sólo con
+        `textContent`, números leídos con el formato de la empresa (y
+        tolerante: «1.500.000» es un millón y medio en cualquier formato),
+        subida de archivos y pantalla de gracias. El token es la credencial:
+        desconocido/despublicado/empresa archivada → el mismo 404 opaco.
+        (c) **El servidor no le cree al navegador**: toma sólo las preguntas
+        que deben verse según las condiciones, revalida obligatorios y cada
+        valor con el validador compartido, y crea el registro por
+        `RecordsService.create` (límite del plan, actividad, realtime);
+        errores por pregunta. (d) **Anti-abuso sin captcha**: campo trampa,
+        sello HMAC con mínimo 2,5 s entre cargar y enviar, límites en Redis por
+        IP y por formulario, y archivos atados al formulario por un token de
+        6 h (los no enviados se borran solos). Cerrado en solo-lectura
+        (ADR-S09), por fecha o por cupo; las listas de una tienda no tienen
+        formularios. (e) **Constructor a pantalla completa**: preguntas a la
+        izquierda (agregar campos, títulos y textos; reordenar arrastrando),
+        **la página real** al centro como vista previa (alimentada por
+        postMessage con la misma función que usa el servidor; muestra
+        atenuadas las condicionales y ocultas; click elige la pregunta),
+        inspector a la derecha, deshacer/rehacer, aviso de campos que la lista
+        exige y el formulario no pide, Publicar con el panel de enlace y
+        código para insertar, modo claro/oscuro y celular por pestañas.
+        (f) **Automatizaciones**: disparador «Cuando se envía un formulario»
+        (cualquiera o uno puntual) con `{{formulario.nombre}}`; el
+        asistente/MCP ve los formularios en `get_list_schema`. (g) Bitácora
+        (publicar/despublicar/nuevo enlace/borrar), migración de empresa con
+        dirección nueva avisada, y borrado de empresa. 15 tests de API
+        (condiciones y visibilidad en cascada, saneo de la config, CSP y
+        escape, envío con registro + automatización + contador, errores por
+        pregunta, trampa y sello, límite por IP, cierre por cupo/fecha/
+        solo-lectura, archivos y su limpieza, tienda, RLS, filtro por
+        formulario en el motor) + 7 del front (operaciones del constructor) —
+        1038 API, 271 front en verde — + E2E navegador 28/28 (crear, la
+        vista previa refleja los cambios, condición, publicar, enlace e
+        inserción, página pública sin sesión en celular con CSP y prefill,
+        la condición muestra el NIT al elegir Empresa, error por pregunta,
+        «1.500.000» guardado como 1500000, contador de respuestas, el
+        disparador con su selector de formulario, constructor en celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

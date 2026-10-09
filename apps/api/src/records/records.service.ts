@@ -162,7 +162,9 @@ export class RecordsService {
                 tenantId,
                 listId,
                 recordId: inserted.id,
-                userId: actor.userId,
+                // v0.1.275 — el sistema (0: formulario público, motor) no es
+                // una persona: la actividad queda sin autor, no "usuario #0".
+                userId: actor.userId > 0 ? actor.userId : null,
                 action: 'record_created',
                 diff: computeDiff({}, inserted.data),
             });

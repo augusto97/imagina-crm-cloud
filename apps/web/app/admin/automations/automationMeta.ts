@@ -12,6 +12,7 @@ import {
     Wand2,
     Webhook,
     BadgeDollarSign,
+    ClipboardList,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
@@ -73,6 +74,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: BadgeDollarSign,
         title: 'Se recibe un pago',
         description: 'Dispara cuando un cliente paga un link de Mercado Pago o Wompi de un registro de esta lista.',
+    },
+    // v0.1.275 — formularios públicos (ADR-S39).
+    form_submitted: {
+        icon: ClipboardList,
+        title: 'Se envía un formulario',
+        description: 'Dispara cuando alguien llena un formulario público de esta lista (el registro ya está creado).',
     },
 };
 
@@ -227,6 +234,8 @@ export function summarizeTrigger(
             return __('Cuando llega un webhook entrante');
         case 'payment_received':
             return __('Cuando un cliente paga un link de cobro');
+        case 'form_submitted':
+            return __('Cuando alguien envía un formulario');
         default:
             return triggerType;
     }
