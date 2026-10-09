@@ -7656,6 +7656,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         «1.500.000» guardado como 1500000, contador de respuestas, el
         disparador con su selector de formulario, constructor en celular).
 
+  - [x] **«Mi trabajo» + bandeja de avisos (v0.1.276, ADR-S40, segunda de
+        las tres ideas elegidas por el usuario)**: (a) **la campana es la
+        bandeja**: avisos por destinatario en la tabla `notifications`
+        (migración 0071, RLS, con `record_follows` y `reminders`) —te mencionan
+        (comentario o descripción), te asignan un registro (un campo Persona
+        pasa a valerte), comentan o cambian un registro que seguís, tus
+        recordatorios—; "sin leer" en el servidor (antes, un timestamp en el
+        localStorage de cada dispositivo), Todos/Sin leer, marcar todo, click
+        lleva al registro, y llega al instante por una sala de realtime POR
+        PERSONA (`user:{tenant}:{user}`, tema `notifications`). (b) **Cómo se
+        generan**: el servidor escucha — comentarios y menciones de la
+        descripción por `NotifyHub` (nuevo), cambios de campos por el
+        `RecordChangeHub` (que ahora lleva `actorId`). Cada destinatario pasa
+        por el ACL del registro, nadie recibe lo que hizo él, el rol `client`
+        nada; de la descripción sólo avisan las menciones NUEVAS (el
+        autoguardado las reescribe), y varios «cambió» sin leer del mismo
+        registro se juntan en uno durante 30 min («Estado: Pendiente → En
+        curso»). (c) **Seguir**: se sigue solo lo que se crea, se comenta o se
+        tiene asignado, y con el botón «Seguir» de la ficha. (d)
+        **Recordatorios** de un registro («Recordarme»: en 1 hora, hoy 17:00,
+        mañana, en 3 días, el lunes u otra fecha, con nota) o sueltos; un
+        scheduler de BullMQ por minuto los dispara una sola vez aunque haya
+        varios nodos. (e) **«Mi trabajo»** (riel, `/my-work`, `GET /me/work` en
+        un request): lo asignado en todas las listas con el ACL de cada una,
+        sin lo terminado (por la etiqueta de la opción), agrupado en Vencido /
+        Hoy / Próximos 7 días / Más adelante / Sin fecha con «hoy» en la zona de
+        la empresa; pestañas Recordatorios y Siguiendo. (f) **Ajustes → Cuenta
+        → Avisos**: qué llega también por correo (menciones, asignaciones y
+        recordatorios encendidos por defecto; tope 10 por hora) y el **resumen
+        diario** (apagado por defecto) a la hora y días elegidos en la zona de
+        la empresa, sólo si hay algo — por el correo de la empresa y su cuota.
+        Borrar la empresa o la cuenta limpia las tres tablas. **Bug atrapado en
+        el E2E**: el interruptor del resumen era controlado por la respuesta
+        del servidor y no se movía al tocarlo (otra vez la lección de
+        v0.1.207) — la preferencia ahora es optimista. 14 tests de API
+        (títulos, resumen de cambios, asignaciones, prefs, correos escapados +
+        integración con Postgres y Redis: asignar avisa y manda correo, cambio
+        a seguidores con detalle y agrupado, comentarios sin filtrar a quien no
+        ve el registro ni al cliente, bandeja y aislamiento, preferencias y
+        tope de correos, recordatorios de un solo disparo, «Mi trabajo»
+        ordenado y sin lo terminado, resumen a su hora una vez por día) + 2 del
+        front — 1052 API, 273 front y 190 shared en verde — + E2E
+        navegador 20/20 (contador, comentario por realtime sin recargar, abrir
+        el aviso lleva al registro y lo marca leído, «Siguiendo», recordatorio
+        desde la ficha, grupos de «Mi trabajo», preferencias persistidas,
+        marcar todo leído, celular).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

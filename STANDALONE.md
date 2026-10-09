@@ -2777,6 +2777,53 @@ lectura). Airtable, ClickUp, Notion y SmartSuite tienen formularios nativos.
 sin integraciones. Queda fuera: varias páginas/pasos, lógica que salta
 secciones, pagos dentro del formulario y editar una respuesta enviada.
 
+### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
+
+**Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado
+estaba repartido en N listas y la campana sólo mostraba menciones, con el
+"leído" guardado en el navegador (un dispositivo no sabía del otro). Es lo
+que tienen como base ClickUp («Mi trabajo» + Inbox), Monday y Airtable
+(notificaciones + "My tasks").
+
+**Decisión.**
+1. **Aviso = fila por destinatario** (`notifications`, RLS): tipo
+   (mención/asignación/comentario/cambio/recordatorio), registro, quién, una
+   frase ya armada (si después se renombra el registro, el aviso sigue
+   contando lo que pasó) y `read_at` en el servidor.
+2. **Lo genera el servidor escuchando**, sin acoplar módulos: comentarios y
+   menciones de la descripción por `NotifyHub`, cambios de campos por el
+   `RecordChangeHub` existente (ahora con `actorId`). Cada destinatario pasa
+   por el ACL del registro (nadie se entera de lo que no puede ver), nunca se
+   avisa a alguien de lo que hizo él mismo, y el rol `client` no recibe nada.
+   Las menciones de la descripción avisan sólo las NUEVAS (el autoguardado
+   reescribe las menciones a cada rato). Los «cambió» sin leer del mismo
+   registro se juntan durante 30 min (una sesión de edición = un aviso).
+3. **Seguir** (`record_follows`, RLS): se sigue solo lo que se crea, se
+   comenta o se tiene asignado; además a mano. «Asignado» = un campo Persona
+   que pasa a valer esa persona.
+4. **Recordatorios personales** (`reminders`, RLS) de un registro o sueltos,
+   en la hora de la persona; un scheduler de BullMQ por minuto los dispara con
+   `UPDATE … RETURNING` sobre filas sin disparar (una sola vez aunque haya
+   varios nodos).
+5. **Correo**: por persona y empresa (`memberships.settings.notifications`)
+   se elige qué tipo llega también por correo (menciones, asignaciones y
+   recordatorios encendidos por defecto) con tope de 10 por hora; y un
+   **resumen diario** opcional (apagado por defecto, para no sorprender a
+   nadie ni gastar la cuota de correo de la empresa) a la hora y días elegidos
+   en la zona de la empresa (ADR-S33), sólo si hay algo que contar. Usa el
+   transporte de la empresa (SMTP o cuenta propia, ADR-S29) y su cuota.
+6. **«Mi trabajo»** (`GET /me/work`, un request): lo asignado en todas las
+   listas con un campo Persona —leído con `RecordsService.list` y el ACL de
+   cada lista—, sin lo que está en un estado "terminado" (se deduce por la
+   etiqueta de la opción), agrupado por vencimiento (el campo de fecha que lo
+   dice en el nombre, o el primero); sus recordatorios y lo que sigue.
+7. **Realtime por persona**: sala `user:{tenant}:{user}` y tema
+   `notifications`; la campana se refresca al instante.
+
+**Consecuencias.** La campana deja de ser sólo menciones y pasa a ser la
+bandeja. Quedan fuera: avisos push del navegador/celular, «posponer» un aviso
+y reglas de aviso por lista.
+
 ---
 
-**Versión del documento:** 1.74.0 (formularios públicos que crean registros — ADR-S39)
+**Versión del documento:** 1.75.0 («Mi trabajo» + bandeja de avisos — ADR-S40)

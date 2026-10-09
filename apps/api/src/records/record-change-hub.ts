@@ -22,6 +22,11 @@ export interface RecordChange {
      * cambio: los oyentes viejos siguen viendo sólo cambios.
      */
     kind?: 'created' | 'updated';
+    /**
+     * v0.1.276 — quién lo hizo (0 = una automatización o el sistema). Lo usan
+     * los avisos: no se le avisa a alguien de lo que hizo él mismo.
+     */
+    actorId?: number;
 }
 
 type Listener = (change: RecordChange) => void | Promise<void>;

@@ -349,15 +349,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.275** (formularios públicos que crean registros — ADR-S39), en `main`.
+versión publicada: **v0.1.276** («Mi trabajo» + bandeja de avisos — ADR-S40), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
-  v0.1.275 formularios públicos (HECHO), **v0.1.276 «Mi trabajo» + bandeja de
-  avisos** (seguir registros, recordatorios personales, resumen diario,
-  preferencias) y **v0.1.277 campos con IA** (resumir/clasificar/extraer/
+  v0.1.275 formularios públicos (HECHO), v0.1.276 «Mi trabajo» + bandeja de
+  avisos (HECHO) y **v0.1.277 campos con IA** (resumir/clasificar/extraer/
   traducir, leer un PDF o foto, recalcular al cambiar lo que usan, consumen
   la cuota de IA). **WhatsApp de ida y vuelta en la ficha queda para
   DESPUÉS** a pedido del usuario: le preocupa que se vuelva una app de chat
@@ -368,6 +367,9 @@ versión publicada: **v0.1.275** (formularios públicos que crean registros — 
   dependencias, informes programados por correo, agenda de citas pública,
   registro de horas, aprobaciones, importadores desde Airtable/Notion/
   ClickUp, API pública documentada, PWA con escáner.
+- v0.1.276 (avisos): en el servidor, prender el resumen diario a una hora
+  cercana y confirmar que llega por el correo de la empresa; y que un
+  recordatorio suene a su hora (el scheduler corre cada minuto).
 - v0.1.275 (formularios): probar en el servidor un formulario insertado en
   un sitio real (WordPress) con y sin «dominios permitidos», y que el correo
   de una automatización «Cuando se envía un formulario» llegue.
@@ -444,6 +446,15 @@ versión publicada: **v0.1.275** (formularios públicos que crean registros — 
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.276** — «Mi trabajo» + bandeja de avisos (ADR-S40),
+  la segunda de las tres ideas elegidas. La campana pasa a ser la bandeja
+  (menciones, asignaciones, comentarios y cambios en lo que se sigue,
+  recordatorios) con "sin leer" en el servidor y realtime por persona;
+  «Seguir» y «Recordarme» en la ficha; página «Mi trabajo» con lo asignado en
+  todas las listas agrupado por vencimiento; Ajustes → Avisos con qué llega
+  por correo y el resumen diario (apagado por defecto: decisión para no
+  mandar correos nuevos a todos al actualizar ni gastar la cuota de la
+  empresa). Sigue v0.1.277: campos con IA.
 - **2026-10-09 · v0.1.275** — Formularios públicos que crean registros
   (ADR-S39), la primera de las tres ideas que eligió el usuario. Ajustes de
   la lista → Formularios: constructor a pantalla completa con la página real

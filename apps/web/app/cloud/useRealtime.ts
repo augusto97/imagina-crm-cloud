@@ -13,6 +13,7 @@ import { listsKeys } from '@/hooks/useLists';
 import { invalidateForList, isRecentLocalRecordsChange, recordsKeys } from '@/hooks/useRecords';
 import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
 import { viewsKeys } from '@/hooks/useSavedViews';
+import { notificationKeys } from '@/hooks/useNotifications';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -72,6 +73,10 @@ export function useRealtime(): void {
                 case 'views':
                     if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);
                     else void qc.invalidateQueries({ queryKey: viewsKeys.all });
+                    break;
+                case 'notifications':
+                    // v0.1.276 — llega sólo a la sala de esta persona.
+                    void qc.invalidateQueries({ queryKey: notificationKeys.all });
                     break;
             }
         }

@@ -34,3 +34,4 @@ export * from './billing-payments';
 export * from './collections';
 export * from './document-templates';
 export * from './forms';
+export * from './notifications';

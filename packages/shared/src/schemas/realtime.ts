@@ -7,7 +7,8 @@ import { idSchema } from './common';
  * TanStack correspondiente y re-fetchea. NO es co-edición (CRDT fuera de
  * alcance).
  */
-export const RT_TOPICS = ['lists', 'fields', 'records', 'views'] as const;
+// v0.1.276 — `notifications` va a la sala de UNA persona (su bandeja).
+export const RT_TOPICS = ['lists', 'fields', 'records', 'views', 'notifications'] as const;
 export const rtTopicSchema = z.enum(RT_TOPICS);
 export type RtTopic = z.infer<typeof rtTopicSchema>;
 

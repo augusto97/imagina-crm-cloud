@@ -10,6 +10,7 @@ import {
     type SettingsSectionId,
 } from '@/cloud/settingsSections';
 import { AppearanceCard } from '@/admin/settings/AppearanceCard';
+import { NotificationPrefsCard } from '@/admin/settings/NotificationPrefsCard';
 import { AuditLogPanel } from '@/cloud/components/AuditLogPanel';
 import { SecurityCard } from '@/admin/settings/SecurityCard';
 import { EmailSignatureCard } from '@/admin/settings/EmailSignatureCard';
@@ -175,6 +176,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'auditoria' && isAdmin && <AuditLogPanel />}
                 {/* Per-usuario: contraseña + sesiones abiertas (v0.1.116). */}
                 {active === 'seguridad' && <SecurityCard />}
+
+                {active === 'avisos' && <NotificationPrefsCard />}
                 {/* Per-usuario: firma insertable en emails de automatizaciones. */}
                 {active === 'firma' && <EmailSignatureCard />}
                 {/* Per-usuario: descarga/borrado de datos personales (GDPR). */}
