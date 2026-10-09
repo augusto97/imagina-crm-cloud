@@ -294,6 +294,12 @@ export const FIELD_DISPLAYS: Record<FieldType, readonly FieldDisplayDef[]> = {
         { key: 'quote', label: 'Cita' },
         { key: 'clamp', label: 'Resumen desplegable' },
     ],
+    // v0.1.277 — el campo con IA se muestra como un texto largo.
+    ai: [
+        { key: 'text', label: 'Texto' },
+        { key: 'quote', label: 'Cita' },
+        { key: 'clamp', label: 'Resumen desplegable' },
+    ],
     number: [
         { key: 'number', label: 'Número' },
         { key: 'big', label: 'Cifra grande' },

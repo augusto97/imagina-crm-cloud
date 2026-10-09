@@ -8,6 +8,7 @@ import {
 import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 
 import { FilterGroupView } from '@/admin/records/FilterGroupView';
+import { AiFieldEditor } from './AiFieldEditor';
 import { makeGroup } from '@/admin/records/filterTree';
 import { Button } from '@/components/ui/button';
 import {
@@ -92,6 +93,10 @@ export function FieldConfigEditor({
     }
     if (type === 'rollup') {
         return <RollupEditor config={config} onChange={onChange} listId={listId} />;
+    }
+    // v0.1.277 — campo con IA.
+    if (type === 'ai') {
+        return <AiFieldEditor config={config} onChange={onChange} listId={listId} currentFieldId={currentFieldId} />;
     }
     // v0.1.158
     if (type === 'phone') {

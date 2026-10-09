@@ -52,6 +52,8 @@ const ENTRIES: CatalogEntry[] = [
     // v0.1.170 — a través de una relación (ADR-S19).
     { slug: 'lookup', label: 'Buscar en relación (lookup)', description: 'Muestra un campo del registro vinculado, siempre al día.', supportsUnique: false },
     { slug: 'rollup', label: 'Resumen de relación (rollup)', description: 'Cuenta, suma o promedia los registros vinculados.', supportsUnique: false },
+    // v0.1.277 (ADR-S41).
+    { slug: 'ai', label: 'Campo con IA', description: 'Resume, clasifica, extrae o traduce a partir de otros campos (también PDF e imágenes).', supportsUnique: false },
 ];
 
 /** Tipos que NO viven en la columna de datos (referencias / derivados). */
@@ -62,7 +64,7 @@ const NON_DATA: ReadonlySet<FieldTypeSlug> = new Set<FieldTypeSlug>(['relation',
  * el usuario no lo escribe (v0.1.170 — antes cada superficie repetía
  * `type === 'computed'` y los tipos nuevos se le escapaban a alguna).
  */
-export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup']);
+export const DERIVED_FIELD_TYPES: ReadonlySet<string> = new Set(['computed', 'lookup', 'rollup', 'ai']);
 
 export function isDerivedFieldType(type: string): boolean {
     return DERIVED_FIELD_TYPES.has(type);

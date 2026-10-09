@@ -170,6 +170,12 @@ export function validateFieldValue(field: FieldValueSpec, raw: unknown): ValueVa
             if (max !== null && raw.length > max) return fail(`Máximo ${max} archivos.`);
             return ok(raw);
         }
+        // v0.1.277 — lo escribe el servidor (el modelo); se acepta texto.
+        case 'ai': {
+            const v = typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : null;
+            if (v === null) return fail('Se esperaba texto.');
+            return ok(v.slice(0, 10_000));
+        }
         // relation/computed/lookup/rollup no viven en `data` — no deberían llegar acá.
         case 'relation':
         case 'computed':

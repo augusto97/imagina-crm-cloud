@@ -163,6 +163,13 @@ function renderPreview(type: FieldTypeSlug): React.ReactNode {
                     <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('(del cliente)')}</span>
                 </Row>
             );
+        case 'ai':
+            return (
+                <Row>
+                    <span className="imcrm-text-primary">✦</span>
+                    <span className="imcrm-truncate">{__('Cliente molesto por la demora; pide descuento.')}</span>
+                </Row>
+            );
         case 'rollup':
             return (
                 <Row>

@@ -21,6 +21,7 @@ import {
     Type,
     User,
     type LucideIcon,
+    Sparkles,
 } from 'lucide-react';
 
 import type { FieldTypeSlug } from '@/types/field';
@@ -54,6 +55,7 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
     duration: Timer,
     lookup: Eye,
     rollup: Calculator,
+    ai: Sparkles,
 };
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */

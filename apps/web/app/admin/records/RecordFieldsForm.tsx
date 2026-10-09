@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AiFieldValue } from './AiFieldValue';
 import { FileText, Loader2 } from 'lucide-react';
 
 import { DurationControl } from '@/components/fields/DurationControl';
@@ -323,6 +324,13 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
             break;
         case 'relation':
             control = <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;
+            break;
+        case 'ai':
+            control = (
+                <div id={id} className="imcrm-min-h-[36px] imcrm-py-1.5">
+                    <AiFieldValue field={field} value={value} listId={listId} recordId={recordId} />
+                </div>
+            );
             break;
         case 'computed':
         case 'lookup':

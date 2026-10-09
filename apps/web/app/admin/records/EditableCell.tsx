@@ -61,7 +61,7 @@ interface EditableCellProps {
  */
 // `computed` se muestra read-only — su valor lo deriva el backend
 // desde otros campos del record, el usuario no lo edita directo.
-const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup'];
+const NON_INLINE_TYPES = ['user', 'file', 'relation', 'computed', 'lookup', 'rollup', 'ai'];
 
 function EditableCellInner({
     field,

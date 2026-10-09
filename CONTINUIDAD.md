@@ -349,14 +349,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.276** («Mi trabajo» + bandeja de avisos — ADR-S40), en `main`.
+versión publicada: **v0.1.277** (campos con IA — ADR-S41), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
   v0.1.275 formularios públicos (HECHO), v0.1.276 «Mi trabajo» + bandeja de
-  avisos (HECHO) y **v0.1.277 campos con IA** (resumir/clasificar/extraer/
+  avisos (HECHO) y v0.1.277 campos con IA (HECHO) (resumir/clasificar/extraer/
   traducir, leer un PDF o foto, recalcular al cambiar lo que usan, consumen
   la cuota de IA). **WhatsApp de ida y vuelta en la ficha queda para
   DESPUÉS** a pedido del usuario: le preocupa que se vuelva una app de chat
@@ -367,6 +367,10 @@ versión publicada: **v0.1.276** («Mi trabajo» + bandeja de avisos — ADR-S40
   dependencias, informes programados por correo, agenda de citas pública,
   registro de horas, aprobaciones, importadores desde Airtable/Notion/
   ClickUp, API pública documentada, PWA con escáner.
+- v0.1.277 (campos con IA): en el servidor, con la IA activada, crear un
+  campo «Clasificar» sobre una lista real y mirar la calidad de las
+  respuestas (en el sandbox el proveedor fue simulado); y un «Extraer» que lea
+  un PDF de factura.
 - v0.1.276 (avisos): en el servidor, prender el resumen diario a una hora
   cercana y confirmar que llega por el correo de la empresa; y que un
   recordatorio suene a su hora (el scheduler corre cada minuto).
@@ -446,6 +450,12 @@ versión publicada: **v0.1.276** («Mi trabajo» + bandeja de avisos — ADR-S40
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.277** — Campos con IA (ADR-S41), la tercera de las
+  ideas elegidas: resumir, clasificar, extraer, traducir o instrucciones
+  propias a partir de otros campos (también PDF e imágenes), recalculados
+  solos al cambiar sus fuentes, con la clave y la cuota de ADR-S21. Con esto
+  quedan hechas las tres ideas pedidas; WhatsApp de ida y vuelta sigue para
+  después por decisión del usuario.
 - **2026-10-09 · v0.1.276** — «Mi trabajo» + bandeja de avisos (ADR-S40),
   la segunda de las tres ideas elegidas. La campana pasa a ser la bandeja
   (menciones, asignaciones, comentarios y cambios en lo que se sigue,

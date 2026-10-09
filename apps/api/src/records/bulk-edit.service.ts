@@ -222,6 +222,7 @@ export class BulkEditService {
             if (field.type === 'computed' || isThroughField(field.type)) {
                 throw badOp(`«${field.label}» se calcula sola: no se edita.`);
             }
+            if (field.type === 'ai') throw badOp(`«${field.label}» lo completa la IA: no se edita a mano.`);
             if (!bulkOpsFor(field.type).includes(op.op)) throw badOp(`«${field.label}» no admite esa operación.`);
             for (const readId of readsOf(op)) {
                 const src = byId.get(readId);

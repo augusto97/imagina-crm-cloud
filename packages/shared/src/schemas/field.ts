@@ -34,6 +34,11 @@ export const FIELD_TYPES = [
     // registros vinculados; `rollup` los cuenta o agrega (sum/avg/min/max).
     'lookup',
     'rollup',
+    // v0.1.277 (ADR-S41) — campo con IA: el valor lo escribe un modelo a
+    // partir de otros campos del registro (resumir, clasificar, extraer,
+    // traducir). Vive en `records.data` como texto, pero nadie lo escribe a
+    // mano: lo recalcula el servidor cuando cambian sus fuentes.
+    'ai',
 ] as const;
 export const fieldTypeSchema = z.enum(FIELD_TYPES);
 export type FieldType = z.infer<typeof fieldTypeSchema>;
@@ -70,6 +75,38 @@ export type SelectOption = z.infer<typeof selectOptionSchema>;
  * completa SQL/validate/serialize). La config vive en el campo, nunca por
  * fila (ej. la moneda es config de currency).
  */
+/**
+ * v0.1.277 (ADR-S41) — Qué hace un campo con IA.
+ * - `summarize` resume; `classify` elige UNA de `options` (la respuesta se
+ *   valida contra la lista); `extract` saca un dato puntual (`prompt` dice
+ *   cuál); `translate` traduce a `language`; `custom` sigue `prompt`.
+ * - `inputs`: los campos que lee (texto, números, opciones… y archivos: PDF o
+ *   imágenes se le pasan al modelo tal cual). Terminan en `inputs` a
+ *   propósito: el blueprint y la migración de empresa los re-mapean solos.
+ * - `auto`: recalcular cuando cambia alguna fuente (default sí).
+ * - `quality`: `fast` (modelo rápido y barato, default) o `best` (el modelo
+ *   elegido para el asistente de la empresa).
+ */
+export const AI_FIELD_TASKS = ['summarize', 'classify', 'extract', 'translate', 'custom'] as const;
+export type AiFieldTask = (typeof AI_FIELD_TASKS)[number];
+export const aiFieldConfigSchema = z.object({
+    task: z.enum(AI_FIELD_TASKS).optional(),
+    inputs: z.array(idSchema).max(10).optional(),
+    prompt: z.string().max(2000).optional(),
+    options: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
+    language: z.string().trim().max(40).optional(),
+    length: z.enum(['short', 'medium', 'long']).optional(),
+    auto: z.boolean().optional(),
+    quality: z.enum(['fast', 'best']).optional(),
+});
+export type AiFieldConfig = z.infer<typeof aiFieldConfigSchema>;
+
+/** Tipos que un campo con IA puede leer (los archivos: PDF e imágenes). */
+export const AI_INPUT_TYPES: readonly string[] = [
+    'text', 'long_text', 'number', 'currency', 'select', 'multi_select', 'date', 'datetime',
+    'checkbox', 'url', 'email', 'user', 'phone', 'rating', 'percent', 'duration', 'file',
+];
+
 export const fieldConfigSchemas = {
     text: z.object({ max_length: z.number().int().positive().max(65535).optional() }),
     long_text: z.object({ max_length: z.number().int().positive().optional() }),
@@ -163,7 +200,17 @@ export const fieldConfigSchemas = {
         operation: rollupOperationSchema.optional(),
         filter_tree: filterTreeSchema.optional(),
     }),
+    ai: aiFieldConfigSchema,
 } satisfies Record<FieldType, z.ZodTypeAny>;
+
+/**
+ * v0.1.277 — Tipos que una persona NO escribe aunque vivan en `data`: el
+ * campo con IA lo llena el servidor. Los formularios, el import, la edición
+ * masiva y el portal los saltean; un PATCH que los trae se rechaza.
+ */
+export function isUserWritableType(type: FieldType): boolean {
+    return isDataField(type) && type !== 'ai';
+}
 
 /** Valida la config de un campo contra el schema de su tipo. */
 export function parseFieldConfig(type: FieldType, config: unknown): Record<string, unknown> {

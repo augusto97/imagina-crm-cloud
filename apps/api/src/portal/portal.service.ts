@@ -22,6 +22,7 @@ import {
     sanitizePortalLayout,
     tenantFormatSchema,
     isDataField,
+    isUserWritableType,
     jsonbKeyForField,
     resolveTitleFieldId,
     validateFieldValue,
@@ -819,7 +820,7 @@ export class PortalService {
                         });
                     }
                     const field = bySlug.get(slug);
-                    if (!field || !isDataField(field.type)) {
+                    if (!field || !isUserWritableType(field.type)) {
                         errors[slug] = 'Campo inexistente o no editable';
                         continue;
                     }
