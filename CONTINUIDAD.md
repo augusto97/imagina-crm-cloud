@@ -352,6 +352,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.274** (dependencias de producción en cero: SDK de MCP 1.31, plugin de Tailwind fuera del runtime y `sprintf-js` como excepción documentada — ADR-S38), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-09 — el usuario pidió ideas de qué más implementar mirando
+  herramientas parecidas (Airtable, ClickUp, Notion, Monday, SmartSuite).
+  Propuesta entregada en el chat, esperando que elija. Recomendado primero:
+  (1) formularios públicos que crean registros; (2) «Mi trabajo» + bandeja de
+  notificaciones (seguir registros, recordatorios, resumen diario); (3) campos
+  con IA (resumir/clasificar/extraer, leer PDF o foto de una factura);
+  (4) WhatsApp de ida y vuelta en la ficha. Después: facturación electrónica
+  DIAN vía proveedor, papelera/versiones, búsqueda de registros en la paleta,
+  Gantt + dependencias, informes programados por correo, agenda de citas
+  pública, registro de horas, aprobaciones, importadores desde Airtable/
+  Notion/ClickUp, API pública documentada, PWA con escáner QR/código de barras.
 - v0.1.273 (UX de los editores): que el usuario recorra el editor de correos y
   el de PDF y diga si la separación Contenido/Estilo y la pestaña
   «Estructura» se entienden; si algún ajuste sigue sintiéndose repetido,
