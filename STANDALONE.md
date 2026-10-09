@@ -2696,6 +2696,33 @@ largo con todo abierto (era el problema) y fusionar el nivel del título con el
 tamaño numérico en el modelo (rompería los diseños guardados y el `<h1>`/`<h2>`
 que el correo necesita).
 
+### ADR-S38 — Auditoría de dependencias de producción en cero, con excepciones explícitas (v0.1.274)
+
+**Contexto.** Los releases de dependencias (v0.1.113, v0.1.202, v0.1.244)
+cerraban avisos de a tandas, pero no había regla para el caso en que un aviso
+NO tiene versión arreglada, ni para las herramientas de compilación que se
+colaban en el árbol de producción (`tailwindcss-animate` estaba en
+`dependencies` del front y arrastraba a Tailwind y sus dependencias).
+
+**Decisión.** (a) `pnpm audit --prod` tiene que salir en 0 en cada release de
+dependencias. (b) Lo que sólo corre al compilar o testear va en
+`devDependencies` (los plugins de Tailwind, de PostCSS o de vite incluidos):
+así el árbol de producción es lo que de verdad llega al servidor o al bundle.
+(c) Un aviso sin versión arreglada se acepta SÓLO si se verificó en el código
+que no es explotable en nuestro uso, y se declara por id en
+`pnpm.auditConfig.ignoreGhsas` del `package.json` raíz — nunca ignorando
+paquetes enteros ni severidades, así cualquier aviso NUEVO del mismo paquete
+vuelve a saltar. Cada excepción se anota en `CONTINUIDAD.md` con el motivo y
+la condición para sacarla. Primera excepción: `GHSA-hp3w-g68c-fv3c`
+(`sprintf-js`, vía mssql→tedious): el DoS necesita controlar el string de
+formato y tedious sólo lo llama con formatos literales.
+
+**Alternativas descartadas.** Reemplazar `sprintf-js` por un shim propio con
+un override de pnpm (habría que reimplementar los especificadores de formato
+que usa tedious en sus mensajes y volcados de paquetes, para un riesgo que no
+existe en nuestro uso); bajar a una versión de tedious sin `sprintf-js` (no
+hay: todas lo usan).
+
 ---
 
-**Versión del documento:** 1.72.0 (UX de los editores de correo y PDF: Contenido/Estilo y un ajuste por lugar — addendum ADR-S37)
+**Versión del documento:** 1.73.0 (auditoría de dependencias de producción en cero con excepciones explícitas — ADR-S38)

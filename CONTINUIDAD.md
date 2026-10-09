@@ -349,7 +349,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.273** (editores de correo y PDF más claros: pestañas Contenido/Estilo por bloque, cada ajuste en un solo lugar y la estructura en su propia pestaña — addendum de ADR-S37), en `main`.
+versión publicada: **v0.1.274** (dependencias de producción en cero: SDK de MCP 1.31, plugin de Tailwind fuera del runtime y `sprintf-js` como excepción documentada — ADR-S38), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - v0.1.273 (UX de los editores): que el usuario recorra el editor de correos y
@@ -401,11 +401,15 @@ versión publicada: **v0.1.273** (editores de correo y PDF más claros: pestaña
   y se descartó — ver ADR-S32.)
 
 **Pendientes técnicos conocidos (no urgentes)**
-- `pnpm audit --prod` volvió a dar 4 avisos publicados después de v0.1.244
-  (no vienen de v0.1.266): `@modelcontextprotocol/sdk` <1.31 (high, el
-  cliente OAuth del SDK — nosotros usamos el SERVIDOR), `braces` y
-  `postcss-selector-parser` (vía tailwind, sólo build) y `sprintf-js` (vía
-  mssql/tedious). Merecen un release de dependencias propio.
+- Dependencias de DESARROLLO (`pnpm audit` sin `--prod`): quedan avisos en
+  herramientas que no llegan al bundle — `vite`/`vitest` (el arreglo exige
+  subir de versión mayor: migración aparte), `undici`/`@grpc/grpc-js` vía
+  Testcontainers, `js-yaml` vía ESLint, `browserslist` vía babel. Un release
+  de "tooling" cuando haya ventana; no afectan a producción.
+- Excepción de auditoría vigente (ADR-S38): `GHSA-hp3w-g68c-fv3c`
+  (`sprintf-js`, vía mssql→tedious, sin versión arreglada; tedious sólo usa
+  formatos fijos). Sacarla de `pnpm.auditConfig.ignoreGhsas` el día que
+  tedious la reemplace o salga un parche.
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).
 - `style-src 'unsafe-inline'` en la CSP (React escribe `style=""`).
@@ -421,6 +425,21 @@ versión publicada: **v0.1.273** (editores de correo y PDF más claros: pestaña
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-09 · v0.1.274** — El usuario aprobó el release de dependencias
+  que quedó pendiente ("sí, hacé el release de dependencias"). `pnpm audit
+  --prod` daba 4 avisos (2 high): (a) `@modelcontextprotocol/sdk` 1.30 → 1.31
+  (el aviso es del cliente OAuth del SDK; usamos el servidor, pero se sube
+  igual) — tests del MCP y OAuth 48/48 y prueba en vivo por HTTP;
+  (b) `tailwindcss-animate` estaba en `dependencies` del front siendo un
+  plugin de COMPILACIÓN → pasó a `devDependencies` y con eso `braces` y
+  `postcss-selector-parser` dejaron de figurar en producción (el CSS sigue
+  trayendo las animaciones); (c) `sprintf-js` (vía mssql→tedious) no tiene
+  versión arreglada y tedious lo llama sólo con formatos fijos → excepción
+  explícita en `pnpm.auditConfig.ignoreGhsas` (ADR-S38: excepciones sólo sin
+  parche y no explotables, revisadas en cada release de dependencias).
+  `pnpm audit --prod` sale en 0. De paso, los dos pins propios de
+  `brace-expansion` (v0.1.114) habían quedado vulnerables (sólo ESLint/
+  Testcontainers): 1.1.20 y 2.1.6.
 - **2026-10-09 · v0.1.273** — Feedback del usuario sobre v0.1.272: "algunos
   ajustes quedaron dobles, como los de tipografía; la experiencia de ese editor
   es confusa y el visor de jerarquía está debajo de los bloques". Hecho (correo
