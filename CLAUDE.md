@@ -7649,7 +7649,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         pregunta, trampa y sello, límite por IP, cierre por cupo/fecha/
         solo-lectura, archivos y su limpieza, tienda, RLS, filtro por
         formulario en el motor) + 7 del front (operaciones del constructor) —
-        API_COUNT API, 271 front en verde — + E2E navegador 28/28 (crear, la
+        1038 API, 271 front en verde — + E2E navegador 28/28 (crear, la
         vista previa refleja los cambios, condición, publicar, enlace e
         inserción, página pública sin sesión en celular con CSP y prefill,
         la condición muestra el NIT al elegir Empresa, error por pregunta,
