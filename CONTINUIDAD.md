@@ -377,6 +377,19 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   Opcional para él: `KillMode=process` en la unidad (runbook-disk §6) para
   que también corra el health-check con rollback de finalize.sh, que por la
   misma causa nunca corrió.
+  **Resuelto (16:30 UTC)**: tras la limpieza quedan 4 carpetas de versiones e
+  inodos al **9 %**. Postgres se había caído por falta de inodos y el
+  `docker system prune` borró su contenedor detenido y la red (los volúmenes
+  NO: pgdata intacto, la app carga todo); se recreó con `docker compose up
+  -d`. Datos del servidor que conviene recordar: (a) **Redis es el del HOST**
+  (127.0.0.1:6379, de ServerAvatar) — el contenedor redis del compose no
+  levanta por puerto ocupado y no hace falta (health `redis: true`); (b) el
+  volumen `walarchive` NO existía (se creó recién): el contenedor viejo
+  archivaba el WAL dentro de su propia capa, que se fue con el prune → la
+  ventana de PITR arranca hoy; (c) el compose levantado es el de 0.1.274 (sin
+  la poda del WAL): tras instalar v0.1.278, recrear postgres una vez
+  (runbook-disk §4). Lección: no recomendar `docker system prune` sin mirar
+  antes `docker ps -a` — borra contenedores detenidos de la app.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
