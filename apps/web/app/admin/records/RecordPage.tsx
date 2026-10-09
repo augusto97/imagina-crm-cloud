@@ -16,6 +16,7 @@ import { ActivityPanel } from '@/admin/activity/ActivityPanel';
 import { CommentsPanel } from '@/admin/comments/CommentsPanel';
 import { RecordLayoutView } from '@/admin/records/layout/RecordLayoutView';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
+import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
@@ -140,6 +141,10 @@ export function RecordPage(): JSX.Element {
     if (useCrmLayout && fields.data) {
         return (
             <StoreRulesContext.Provider value={storeRules}>
+                {/* v0.1.276 — seguir y recordarme también en la ficha diseñada. */}
+                <div className="imcrm-mb-2 imcrm-flex imcrm-justify-end">
+                    <RecordFollowControls listId={list.data.id} recordId={record.data.id} />
+                </div>
                 <RecordLayoutView
                     key={record.data.id}
                     list={list.data}
@@ -244,6 +249,7 @@ export function RecordPage(): JSX.Element {
                     </div>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                    <RecordFollowControls listId={list.data.id} recordId={record.data.id} />
                     <GeneratePdfButton listId={list.data.id} listSlug={list.data.slug} recordId={record.data.id} fields={fields.data ?? []} />
                     {!storeRules && (
                         <Button

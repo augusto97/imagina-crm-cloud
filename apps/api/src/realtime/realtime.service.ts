@@ -10,6 +10,11 @@ export function tenantRoom(tenantId: number): string {
     return `tenant:${tenantId}`;
 }
 
+/** v0.1.276 — sala de UNA persona en UNA empresa (su bandeja de avisos). */
+export function userRoom(tenantId: number, userId: number): string {
+    return `user:${tenantId}:${userId}`;
+}
+
 /**
  * Publica eventos de invalidación al workspace (STANDALONE §7). El gateway le
  * inyecta el `Server` de socket.io tras inicializar; mientras no exista
@@ -43,5 +48,9 @@ export class RealtimeService {
     }
     views(tenantId: number, listId: number, origin?: string): void {
         this.invalidate(tenantId, 'views', listId, origin);
+    }
+    /** v0.1.276 — la bandeja de avisos de una persona cambió (sólo a ella). */
+    notifications(tenantId: number, userId: number): void {
+        this.server?.to(userRoom(tenantId, userId)).emit(RT_EVENT_INVALIDATE, { topic: 'notifications' } satisfies RtInvalidate);
     }
 }

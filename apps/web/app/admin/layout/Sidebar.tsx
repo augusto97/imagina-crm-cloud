@@ -5,7 +5,10 @@ import {
     BarChart3,
     ChevronsLeft,
     ChevronsRight,
+    AlarmClock,
+    Eye,
     LayoutGrid,
+    ListChecks,
     List as ListIcon,
     Loader2,
     Settings,
@@ -26,6 +29,7 @@ import { EMPTY_FAVORITES, favoriteViewPath, toggledFavorites, useFavoriteViews, 
 import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useMyWork } from '@/hooks/useNotifications';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useIsSuperadmin } from '@/hooks/usePlatform';
 import { moduleEnabled } from '@/lib/cloudFeatures';
@@ -62,9 +66,10 @@ function readCollapsedPref(): boolean {
 }
 
 /** Sección del riel activa — derivada de la RUTA (no estado aparte). */
-type RailSection = 'home' | 'favorites' | 'dashboards' | 'settings' | 'platform';
+type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'settings' | 'platform';
 
 function railSectionFromPath(pathname: string): RailSection {
+    if (pathname.startsWith('/my-work')) return 'mywork';
     if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
     if (pathname.startsWith('/settings')) return 'settings';
@@ -251,7 +256,9 @@ export function Sidebar({
               ? __('Plataforma')
               : sec === 'favorites'
                 ? __('Favoritos')
-                : workspaceTitle;
+                : sec === 'mywork'
+                  ? __('Mi trabajo')
+                  : workspaceTitle;
 
     /**
      * El CONTENIDO del panel para una sección. Lo usan las dos superficies
@@ -314,6 +321,8 @@ export function Sidebar({
                     {dashboards.isLoading && <PanelLoading />}
                 </>
             )}
+
+            {sec === 'mywork' && <MyWorkPanelNav pathname={pathname} tab={params.get('tab')} />}
 
             {sec === 'favorites' && (
                 <>
@@ -433,6 +442,15 @@ export function Sidebar({
                     onPeek={() => peek('home')}
                     onUnpeek={unpeek}
                     onSelect={(e) => handleRailSelect(e, 'home')}
+                />
+                <RailItem
+                    to="/my-work"
+                    active={section === 'mywork'}
+                    icon={ListChecks}
+                    label={__('Mi trabajo')}
+                    onPeek={() => peek('mywork')}
+                    onUnpeek={unpeek}
+                    onSelect={(e) => handleRailSelect(e, 'mywork')}
                 />
                 <RailItem
                     to="/favorites"
@@ -857,6 +875,22 @@ function PanelNavItem({
             <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" aria-hidden />
             <span className="imcrm-truncate">{label}</span>
         </Link>
+    );
+}
+
+/** v0.1.276 — panel de «Mi trabajo»: sus tres pestañas con su cantidad. */
+function MyWorkPanelNav({ pathname, tab }: { pathname: string; tab: string | null }): JSX.Element {
+    const work = useMyWork();
+    const on = pathname.startsWith('/my-work');
+    const current = tab === 'reminders' || tab === 'following' ? tab : 'assigned';
+    const n = (k: 'assigned' | 'reminders' | 'following'): string =>
+        work.data ? ` (${work.data[k].length})` : '';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
+            <PanelNavItem to="/my-work" icon={ListChecks} label={`${__('Asignado a mí')}${n('assigned')}`} active={on && current === 'assigned'} />
+            <PanelNavItem to="/my-work?tab=reminders" icon={AlarmClock} label={`${__('Recordatorios')}${n('reminders')}`} active={on && current === 'reminders'} />
+            <PanelNavItem to="/my-work?tab=following" icon={Eye} label={`${__('Siguiendo')}${n('following')}`} active={on && current === 'following'} />
+        </div>
     );
 }
 

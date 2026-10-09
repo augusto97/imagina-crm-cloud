@@ -52,6 +52,7 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField, type QueryClock } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
+import { NotifyHub } from '../notifications/notify-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { withComputedExprs } from './computed-sql';
 import { RelationsRepository } from './relations.repository';
@@ -99,6 +100,8 @@ export class RecordsService {
         @Optional() private readonly billing?: BillingService,
         // v0.1.263 — "hoy/esta semana" de los filtros en el reloj de la empresa.
         @Optional() private readonly timeZones?: TenantTimeZones,
+        // v0.1.276 — avisos de menciones en la descripción.
+        @Optional() private readonly notify?: NotifyHub,
     ) {}
 
     private async clock(tenantId: number, tx?: Tx): Promise<QueryClock> {
@@ -181,7 +184,7 @@ export class RecordsService {
             after: row.data,
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created' });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: {}, after: row.data, kind: 'created', actorId: actor.userId });
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row), {
             ...byFieldToKeys(relFieldIds, undefined),
@@ -458,7 +461,7 @@ export class RecordsService {
             before: result.before, // para changed_fields
         });
         // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).
-        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data });
+        this.changes?.emit({ tenantId, listId, recordId: row.id, before: result.before, after: row.data, actorId: actor.userId });
         // Recurrencias con trigger status_change: fire-and-forget (no bloquea
         // la respuesta del update; un fallo se loguea y no rompe la mutación).
         void this.recurrences
@@ -621,11 +624,12 @@ export class RecordsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const clean = sanitizeRichDoc(input.description);
 
+        let newlyMentioned: number[] = [];
         const ok = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.repo.findById(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean);
-            await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
+            newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
             // La bitácora registra QUE cambió, no el documento entero: el
             // activity se lee como una línea de tiempo, no como un historial
             // de versiones (eso sería otra feature).
@@ -647,6 +651,19 @@ export class RecordsService {
         if (!ok) throw recordNotFound(id);
 
         this.realtime.records(tenantId, list.id);
+        // v0.1.276 — avisa SÓLO a quien se sumó en este guardado: el autoguardado
+        // re-escribe las menciones a cada rato y no puede re-avisar cada vez.
+        if (newlyMentioned.length > 0) {
+            this.notify?.emit({
+                type: 'description_mention',
+                tenantId,
+                listId: list.id,
+                recordId: id,
+                actorId: actor.userId,
+                userIds: newlyMentioned,
+                snippet: richDocToPlainText(clean, 180),
+            });
+        }
         return clean;
     }
 
@@ -669,7 +686,12 @@ export class RecordsService {
         recordId: number,
         authorId: number,
         doc: RichDoc | null,
-    ): Promise<void> {
+    ): Promise<number[]> {
+        const previous = await tx
+            .select({ userId: mentions.mentionedUserId })
+            .from(mentions)
+            .where(and(eq(mentions.tenantId, tenantId), eq(mentions.recordId, recordId), eq(mentions.source, 'description')));
+        const before = new Set(previous.map((p) => p.userId));
         await tx
             .delete(mentions)
             .where(
@@ -680,13 +702,13 @@ export class RecordsService {
                 ),
             );
         const ids = collectMentionedUserIds(doc).filter((id) => id !== authorId);
-        if (ids.length === 0) return;
+        if (ids.length === 0) return [];
 
         const members = await tx
             .select({ userId: memberships.userId })
             .from(memberships)
             .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, ids)));
-        if (members.length === 0) return;
+        if (members.length === 0) return [];
 
         const snippet = richDocToPlainText(doc, 180);
         await tx.insert(mentions).values(
@@ -701,6 +723,7 @@ export class RecordsService {
                 snippet,
             })),
         );
+        return members.map((m) => m.userId).filter((u) => !before.has(u));
     }
 
     /**

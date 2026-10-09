@@ -1,167 +1,197 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Bell } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { AlarmClock, AtSign, Bell, CheckCheck, ListChecks, MessageSquare, PenLine, Settings2, UserPlus, type LucideIcon } from 'lucide-react';
+import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
-import { api } from '@/lib/api';
+import { relativeTime } from '@/admin/activity/activityText';
+import { useMarkNotifications, useNotifications } from '@/hooks/useNotifications';
 import { __, sprintf } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
-import type { ActivityEntity } from '@/types/activity';
-import { parseUtcDate } from '@/lib/utcDate';
-
 import { formatDateTime } from '@/lib/tenantFormat';
-const SEEN_AT_KEY = 'imcrm:mentions-seen-at';
+import { parseUtcDate } from '@/lib/utcDate';
+import { cn } from '@/lib/utils';
+
+const KIND_ICON: Record<NotificationKind, LucideIcon> = {
+    mention: AtSign,
+    assigned: UserPlus,
+    comment: MessageSquare,
+    update: PenLine,
+    reminder: AlarmClock,
+};
 
 /**
- * Notification bell para el topbar. Consume `/me/mentions` y muestra
- * un badge con el número de menciones nuevas desde la última vez que
- * el usuario abrió el panel.
- *
- * "Visto" es client-side (localStorage). No persistimos read state en
- * el backend porque (a) no quiero introducir una tabla más en este
- * commit y (b) per-device es razonable para esta UX. La semántica:
- * "no leídas" = mentions con created_at > seen_at_local.
+ * v0.1.276 (ADR-S40) — La campana del topbar es la BANDEJA de avisos:
+ * menciones, asignaciones, comentarios y cambios en lo que la persona sigue,
+ * y sus recordatorios. El "sin leer" vive en el servidor (antes era un
+ * timestamp en localStorage de cada dispositivo) y se refresca por realtime.
  */
 export function NotificationBell(): JSX.Element {
     const [open, setOpen] = useState(false);
+    const [onlyUnread, setOnlyUnread] = useState(false);
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const [seenAt, setSeenAt] = useState<number>(() => readSeenAt());
+    const navigate = useNavigate();
+    const page = useNotifications(onlyUnread);
+    const mark = useMarkNotifications();
+    const unread = page.data?.unread ?? 0;
+    const items = page.data?.items ?? [];
 
-    const mentions = useQuery({
-        queryKey: ['me-mentions'],
-        queryFn: async () => {
-            const res = await api.get<ActivityEntity[]>('/me/mentions', {
-                query: { limit: 20 },
-            });
-            return res.data;
-        },
-        // 0.36.7: subimos a 5 minutos. Las menciones no son chat
-        // real-time; con 60s eran 60 fetches/hora dejando la app
-        // abierta — peso desproporcionado al uso real. TanStack Query
-        // ya pausa polling cuando la pestaña está en background
-        // (`refetchIntervalInBackground: false` default), así que con
-        // 5 min en foreground el costo es razonable.
-        refetchInterval: 5 * 60 * 1000,
-        staleTime: 60 * 1000,
-    });
-
-    const items = mentions.data ?? [];
-    const unread = items.filter((m) => {
-        const ts = m.created_at ? parseUtcDate(m.created_at).getTime() : 0;
-        return ts > seenAt;
-    }).length;
-
-    // Click fuera cierra.
     useEffect(() => {
         if (!open) return;
-        const handler = (e: MouseEvent): void => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                setOpen(false);
-            }
+        const onDown = (e: MouseEvent): void => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
         };
-        window.addEventListener('mousedown', handler);
-        return () => window.removeEventListener('mousedown', handler);
+        const onKey = (e: KeyboardEvent): void => {
+            if (e.key === 'Escape') setOpen(false);
+        };
+        window.addEventListener('mousedown', onDown);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('mousedown', onDown);
+            window.removeEventListener('keydown', onKey);
+        };
     }, [open]);
 
-    const handleOpen = (): void => {
-        setOpen((o) => {
-            const willOpen = !o;
-            if (willOpen) {
-                // Al abrir, marcamos como visto el "ahora".
-                const now = Date.now();
-                setSeenAt(now);
-                writeSeenAt(now);
-            }
-            return willOpen;
-        });
+    const go = (to: string): void => {
+        setOpen(false);
+        navigate(to);
+    };
+
+    const openItem = (n: NotificationDto): void => {
+        if (!n.read_at) mark.mutate({ ids: [n.id] });
+        if (n.list_slug && n.record_id) go(`/lists/${n.list_slug}/records/${n.record_id}`);
+        else go('/my-work');
     };
 
     return (
-        <div ref={containerRef} className="imcrm-relative">
+        <div ref={containerRef} className="imcrm-relative" data-testid="notification-bell">
             <button
                 type="button"
-                onClick={handleOpen}
-                aria-label={__('Notificaciones')}
+                onClick={() => setOpen((o) => !o)}
+                aria-label={unread > 0 ? sprintf(__('Avisos: %d sin leer'), unread) : __('Avisos')}
                 aria-haspopup="true"
                 aria-expanded={open}
-                className={cn(
-                    'imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground',
-                )}
+                className="imcrm-relative imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
             >
                 <Bell className="imcrm-h-4 imcrm-w-4" />
                 {unread > 0 && (
                     <span
-                        className="imcrm-absolute imcrm--top-1 imcrm--right-1 imcrm-flex imcrm-h-4 imcrm-min-w-4 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-destructive imcrm-px-1 imcrm-text-[9px] imcrm-font-semibold imcrm-text-destructive-foreground"
-                        aria-label={sprintf(
-                            /* translators: %d: unread mentions count */
-                            __('%d menciones sin leer'),
-                            unread,
-                        )}
+                        className="imcrm-absolute imcrm--right-1 imcrm--top-1 imcrm-flex imcrm-h-4 imcrm-min-w-4 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-destructive imcrm-px-1 imcrm-text-[9px] imcrm-font-semibold imcrm-text-destructive-foreground"
+                        data-testid="notification-count"
                     >
-                        {unread > 9 ? '9+' : unread}
+                        {unread > 99 ? '99+' : unread}
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="imcrm-absolute imcrm-right-0 imcrm-top-full imcrm-z-50 imcrm-mt-1 imcrm-w-80 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-shadow-imcrm-lg">
-                    <header className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2">
-                        <h2 className="imcrm-text-sm imcrm-font-medium">{__('Menciones')}</h2>
-                        <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {sprintf(
-                                /* translators: %d: total mentions */
-                                __('Últimas %d'),
-                                items.length,
-                            )}
-                        </span>
+                <div
+                    className="imcrm-fixed imcrm-inset-x-2 imcrm-top-12 imcrm-z-50 imcrm-flex imcrm-max-h-[min(560px,calc(100dvh-4rem))] imcrm-flex-col imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-text-popover-foreground imcrm-shadow-imcrm-lg sm:imcrm-absolute sm:imcrm-inset-x-auto sm:imcrm-right-0 sm:imcrm-top-full sm:imcrm-mt-1 sm:imcrm-w-[400px]"
+                    data-testid="notification-panel"
+                >
+                    <header className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2">
+                        <h2 className="imcrm-text-sm imcrm-font-semibold">{__('Avisos')}</h2>
+                        <div role="tablist" className="imcrm-ml-2 imcrm-flex imcrm-rounded-md imcrm-bg-muted imcrm-p-0.5 imcrm-text-[11px]">
+                            {([false, true] as const).map((u) => (
+                                <button
+                                    key={String(u)}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={onlyUnread === u}
+                                    onClick={() => setOnlyUnread(u)}
+                                    className={cn(
+                                        'imcrm-rounded imcrm-px-2 imcrm-py-0.5',
+                                        onlyUnread === u ? 'imcrm-bg-background imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
+                                    )}
+                                >
+                                    {u ? sprintf(__('Sin leer (%d)'), unread) : __('Todos')}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            disabled={unread === 0 || mark.isPending}
+                            onClick={() => mark.mutate({ all: true })}
+                            className="imcrm-ml-auto imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground disabled:imcrm-opacity-40"
+                            data-testid="notification-read-all"
+                        >
+                            <CheckCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Marcar todo como leído')}
+                        </button>
                     </header>
 
-                    {mentions.isLoading ? (
-                        <p className="imcrm-px-3 imcrm-py-3 imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Cargando…')}
-                        </p>
-                    ) : items.length === 0 ? (
-                        <p className="imcrm-px-3 imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Todavía no tenés menciones.')}
-                        </p>
-                    ) : (
-                        <ul className="imcrm-flex imcrm-max-h-80 imcrm-flex-col imcrm-overflow-y-auto">
-                            {items.map((m) => (
-                                <li
-                                    key={m.id}
-                                    className="imcrm-border-b imcrm-border-border/60 imcrm-px-3 imcrm-py-2 imcrm-text-xs last:imcrm-border-0"
-                                >
-                                    <p className="imcrm-text-foreground imcrm-line-clamp-2">
-                                        {String(m.changes.snippet ?? '')}
-                                    </p>
-                                    <p className="imcrm-mt-1 imcrm-text-[10px] imcrm-text-muted-foreground">
-                                        {m.created_at
-                                            ? formatDateTime(parseUtcDate(m.created_at))
-                                            : ''}
-                                    </p>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                    <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
+                        {page.isLoading ? (
+                            <p className="imcrm-px-3 imcrm-py-4 imcrm-text-xs imcrm-text-muted-foreground">{__('Cargando…')}</p>
+                        ) : items.length === 0 ? (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1.5 imcrm-px-6 imcrm-py-10 imcrm-text-center">
+                                <Bell className="imcrm-h-6 imcrm-w-6 imcrm-text-muted-foreground" />
+                                <p className="imcrm-text-sm imcrm-font-medium">{onlyUnread ? __('Estás al día') : __('Todavía no hay avisos')}</p>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {__('Te avisamos cuando te mencionen, te asignen un registro o cambie algo que seguís.')}
+                                </p>
+                            </div>
+                        ) : (
+                            <ul>
+                                {items.map((n) => {
+                                    const Icon = KIND_ICON[n.kind] ?? Bell;
+                                    return (
+                                        <li key={n.id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => openItem(n)}
+                                                className={cn(
+                                                    'imcrm-flex imcrm-w-full imcrm-gap-2.5 imcrm-border-b imcrm-border-border/60 imcrm-px-3 imcrm-py-2.5 imcrm-text-left hover:imcrm-bg-accent',
+                                                    !n.read_at && 'imcrm-bg-primary/[0.04]',
+                                                )}
+                                                data-notification={n.id}
+                                                data-unread={n.read_at ? undefined : ''}
+                                            >
+                                                <span className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-muted-foreground">
+                                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                </span>
+                                                <span className="imcrm-min-w-0 imcrm-flex-1">
+                                                    <span className={cn('imcrm-block imcrm-text-[13px] imcrm-leading-snug', !n.read_at && 'imcrm-font-semibold')}>
+                                                        {n.title}
+                                                    </span>
+                                                    {n.body && (
+                                                        <span className="imcrm-mt-0.5 imcrm-line-clamp-2 imcrm-block imcrm-text-xs imcrm-text-muted-foreground">{n.body}</span>
+                                                    )}
+                                                    <span
+                                                        className="imcrm-mt-1 imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground"
+                                                        title={formatDateTime(parseUtcDate(n.created_at))}
+                                                    >
+                                                        {relativeTime(n.created_at)}
+                                                        {n.list_name ? ` · ${n.list_name}` : ''}
+                                                    </span>
+                                                </span>
+                                                {!n.read_at && <span className="imcrm-mt-2 imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-primary" aria-label={__('Sin leer')} />}
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+
+                    <footer className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-border-t imcrm-border-border imcrm-px-2 imcrm-py-1.5">
+                        <button
+                            type="button"
+                            onClick={() => go('/my-work')}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-font-medium hover:imcrm-bg-accent"
+                        >
+                            <ListChecks className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Ir a Mi trabajo')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => go('/settings?s=avisos')}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        >
+                            <Settings2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {__('Preferencias')}
+                        </button>
+                    </footer>
                 </div>
             )}
         </div>
     );
-}
-
-function readSeenAt(): number {
-    try {
-        const raw = window.localStorage.getItem(SEEN_AT_KEY);
-        const ts = raw ? Number(raw) : 0;
-        return Number.isFinite(ts) ? ts : 0;
-    } catch {
-        return 0;
-    }
-}
-
-function writeSeenAt(ts: number): void {
-    try {
-        window.localStorage.setItem(SEEN_AT_KEY, String(ts));
-    } catch {
-        // Sin localStorage (modo privado raro), nada que hacer.
-    }
 }

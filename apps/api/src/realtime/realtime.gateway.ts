@@ -13,7 +13,7 @@ import { SESSION_COOKIE } from '../auth/session.guard';
 import { SessionService } from '../auth/session.service';
 import { memberships, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { RealtimeService, tenantRoom } from './realtime.service';
+import { RealtimeService, tenantRoom, userRoom } from './realtime.service';
 
 /**
  * Orígenes permitidos para CORS del WebSocket. Por defecto NO se habilita
@@ -138,9 +138,11 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         }
         // Deja sólo la room del workspace activo (evita ecos de otros).
         for (const room of client.rooms) {
-            if (room.startsWith('tenant:')) await client.leave(room);
+            if (room.startsWith('tenant:') || room.startsWith('user:')) await client.leave(room);
         }
         await client.join(tenantRoom(parsed.data.tenantId));
+        // v0.1.276 — su bandeja de avisos en esta empresa.
+        await client.join(userRoom(parsed.data.tenantId, userId));
         client.data.tenantId = parsed.data.tenantId;
         return { ok: true };
     }

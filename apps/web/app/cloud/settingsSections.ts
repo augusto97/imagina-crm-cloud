@@ -1,4 +1,5 @@
 import {
+    Bell,
     CreditCard,
     Gauge,
     Globe,
@@ -38,7 +39,8 @@ export type SettingsSectionId =
     | 'apariencia'
     | 'auditoria'
     | 'datos'
-    | 'seguridad';
+    | 'seguridad'
+    | 'avisos';
 
 export type SettingsSectionItem = { id: SettingsSectionId; label: string; icon: LucideIcon };
 export type SettingsSectionGroup = { label: string; items: SettingsSectionItem[] };
@@ -86,6 +88,8 @@ export function settingsSectionGroups({
             items: [
                 // v0.1.116 — contraseña + dispositivos conectados.
                 { id: 'seguridad', label: 'Seguridad', icon: ShieldCheck },
+                // v0.1.276 — qué avisos llegan por correo y el resumen diario.
+                { id: 'avisos', label: 'Avisos', icon: Bell },
                 { id: 'firma', label: 'Firma de email', icon: PenLine },
                 // v0.1.121 — descarga y borrado de datos personales (GDPR).
                 { id: 'datos', label: 'Tus datos', icon: DatabaseZap },

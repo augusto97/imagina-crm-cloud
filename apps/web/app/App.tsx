@@ -27,6 +27,7 @@ import { useRealtime } from '@/cloud/useRealtime';
 // baja al entrar es el shell + el índice de listas + la tabla de registros.
 const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').then(m => ({ default: m.RecordPage })));
 const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
+const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then(m => ({ default: m.MyWorkPage })));
 const FavoritesPage = lazyWithReload(() => import('@/admin/favorites/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
@@ -90,6 +91,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="folders/:folderId" element={
                     <Suspense fallback={<RouteFallback />}><FolderPage /></Suspense>
+                } />
+                <Route path="my-work" element={
+                    <Suspense fallback={<RouteFallback />}><MyWorkPage /></Suspense>
                 } />
                 <Route path="favorites" element={
                     <Suspense fallback={<RouteFallback />}><FavoritesPage /></Suspense>

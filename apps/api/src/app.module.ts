@@ -34,6 +34,8 @@ import { StoreSyncModule } from './sync/store-sync.module';
 import { SqlSyncModule } from './sql-sync/sql-sync.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FormsModule } from './forms/forms.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { NotifyHubModule } from './notifications/notify-hub';
 import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
@@ -53,6 +55,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         DbModule,
         RedisModule,
         RecordChangeHubModule,
+        NotifyHubModule,
         TenancyModule,
         AuthzModule,
         MailModule,
@@ -65,6 +68,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         CollectionsModule,
         DocumentsModule,
         FormsModule,
+        NotificationsModule,
         AuthModule,
         WorkspacesModule,
         MeModule,

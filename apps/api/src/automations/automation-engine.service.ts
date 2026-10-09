@@ -539,7 +539,7 @@ export class AutomationEngine {
                 // Una automatización que cambia un producto sincronizado también
                 // lo cambia en la tienda. Si la corrida revierte, el envío lee el
                 // valor vigente y manda lo que la tienda ya tenía (inocuo).
-                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged, actorId: 0 });
                 ctx.data = merged; // acciones posteriores ven el valor actualizado.
                 const storeNote = storeSkipped.length > 0 ? ` Omitidos: ${storeSkipped.join('; ')}.` : '';
                 return ok('update_field', `Actualizó ${Object.keys(applied).length} campo(s).${storeNote}`, { values: applied });
@@ -874,7 +874,7 @@ export class AutomationEngine {
                     .filter((n) => Number.isInteger(n) && n > 0);
                 const merged = { ...ctx.data, [key]: cfg.save_mode === 'replace' ? [saved.id] : [...prevIds, saved.id] };
                 await this.recordsRepo.updateData(tx, ctx.tenantId, ctx.listId, ctx.recordId, merged);
-                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged });
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: ctx.data, after: merged, actorId: 0 });
                 ctx.data = merged;
                 ctx.pdf = { nombre: doc.filename, link: this.documents.fileLink(ctx.tenantId, saved.id), kb, numero: doc.number ?? '' };
                 return ok(

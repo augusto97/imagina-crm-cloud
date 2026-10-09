@@ -61,6 +61,9 @@ import {
     listGroups,
     listSlugHistory,
     mentions,
+    notifications,
+    recordFollows,
+    reminders,
     personalAccessTokens,
     recurrences,
     relations,
@@ -338,6 +341,10 @@ export class PlatformService {
             // connections, templates, carpetas, menciones, recurrencias y la
             // bitácora, agregadas en releases posteriores al original.
             await tx.delete(mentions).where(eq(mentions.tenantId, id));
+            // v0.1.276 — avisos, seguidos y recordatorios.
+            await tx.delete(notifications).where(eq(notifications.tenantId, id));
+            await tx.delete(recordFollows).where(eq(recordFollows.tenantId, id));
+            await tx.delete(reminders).where(eq(reminders.tenantId, id));
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));

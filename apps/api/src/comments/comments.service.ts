@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type {
     CommentDto,
     CommentKind,
@@ -13,6 +13,7 @@ import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { CommentsRepository, type CommentRow } from './comments.repository';
+import { NotifyHub } from '../notifications/notify-hub';
 
 @Injectable()
 export class CommentsService {
@@ -22,6 +23,8 @@ export class CommentsService {
         private readonly lists: ListsService,
         private readonly records: RecordsService,
         private readonly realtime: RealtimeService,
+        // v0.1.276 — avisos (mención y comentario en un registro que se sigue).
+        @Optional() private readonly notify?: NotifyHub,
     ) {}
 
     async list(
@@ -46,6 +49,7 @@ export class CommentsService {
     ): Promise<CommentDto> {
         const listId = await this.resolveRecord(tenantId, actor, listIdOrSlug, recordId);
 
+        let mentioned: number[] = [];
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (input.parent_id !== undefined) {
                 const parent = await this.repo.findById(tx, tenantId, input.parent_id);
@@ -68,10 +72,11 @@ export class CommentsService {
                 metadata: input.metadata ?? {},
             });
             // Menciones @login: se extraen y persisten en el mismo tx.
-            await this.storeMentions(tx, tenantId, row);
+            mentioned = await this.storeMentions(tx, tenantId, row);
             return row;
         });
         this.realtime.records(tenantId, listId); // el drawer del record re-fetchea
+        this.notify?.emit({ type: 'comment', tenantId, listId, recordId, actorId: actor.userId, body: row.body, mentioned });
         return toComment(row);
     }
 
@@ -128,10 +133,10 @@ export class CommentsService {
      * persiste una mención por usuario (sin auto-mención, dedupe). El bell
      * (`GET /me/mentions`) las consume; el "no leído" es client-side.
      */
-    private async storeMentions(tx: Tx, tenantId: number, row: CommentRow): Promise<void> {
+    private async storeMentions(tx: Tx, tenantId: number, row: CommentRow): Promise<number[]> {
         const tokens = Array.from(row.body.matchAll(/@([\w.+-]+@[\w.-]+\.\w+)/g), (m) => m[1]!.toLowerCase());
         const unique = Array.from(new Set(tokens));
-        if (unique.length === 0) return;
+        if (unique.length === 0) return [];
         const members = await tx
             .select({ userId: memberships.userId, email: users.email })
             .from(memberships)
@@ -143,7 +148,7 @@ export class CommentsService {
                 ),
             );
         const targets = members.filter((m) => m.userId !== row.userId);
-        if (targets.length === 0) return;
+        if (targets.length === 0) return [];
         const snippet = row.body.slice(0, 180);
         await tx.insert(mentions).values(
             targets.map((m) => ({
@@ -156,6 +161,7 @@ export class CommentsService {
                 snippet,
             })),
         );
+        return targets.map((m) => m.userId);
     }
 
     private async resolveRecord(

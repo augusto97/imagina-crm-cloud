@@ -13,6 +13,9 @@ import {
     comments,
     memberships,
     mentions,
+    notifications,
+    recordFollows,
+    reminders,
     savedFilters,
     tenants,
     users,
@@ -239,6 +242,10 @@ export class AccountDataService {
                 await tx
                     .delete(mentions)
                     .where(and(eq(mentions.tenantId, tenantId), eq(mentions.mentionedUserId, userId)));
+                // v0.1.276 — su bandeja, lo que seguía y sus recordatorios.
+                await tx.delete(notifications).where(and(eq(notifications.tenantId, tenantId), eq(notifications.userId, userId)));
+                await tx.delete(recordFollows).where(and(eq(recordFollows.tenantId, tenantId), eq(recordFollows.userId, userId)));
+                await tx.delete(reminders).where(and(eq(reminders.tenantId, tenantId), eq(reminders.userId, userId)));
                 await tx
                     .delete(memberships)
                     .where(
