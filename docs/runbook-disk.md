@@ -108,3 +108,20 @@ dejó una actualización cortada son, de lejos, lo que más archivos tiene en la
 app: ~36.000 cada una). Si `du --inodes` señala otra carpeta fuera de
 `/opt/imagina-base` (cachés de npm/pnpm, sesiones de PHP, colas de correo,
 capas de Docker), se limpia ahí. Después, «Actualizar» desde la app.
+
+## 6. Por qué se juntaban versiones (y `KillMode=process`)
+
+`finalize.sh` borraba las versiones viejas DESPUÉS de reiniciar el API, pero
+`systemctl restart` mata todos los procesos del servicio (también ese script):
+la poda nunca corría y un servidor juntó 173 versiones. Desde v0.1.278 la poda
+la hace la versión nueva al arrancar, así que no hace falta nada más.
+
+Opcional: el health-check con vuelta atrás automática de `finalize.sh` tampoco
+llegaba a correr por el mismo motivo. Para que corra, una vez por consola:
+
+```bash
+sudo sed -i '/^\[Service\]/a KillMode=process' /etc/systemd/system/imagina-api.service
+sudo systemctl daemon-reload
+```
+
+(No reinicia el API; aplica desde la próxima actualización.)

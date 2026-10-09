@@ -188,6 +188,12 @@ export class SymlinkDeployer implements Deployer {
         this.logger.log(`finalize.sh lanzado (target ${targetVersion})`);
     }
 
+    async prune(): Promise<{ removed: string[] }> {
+        if (!this.enabled) return { removed: [] };
+        const out = await this.disk.cleanup();
+        return { removed: out.removed };
+    }
+
     rollback(): { ok: boolean; message: string } {
         if (!this.enabled) return { ok: false, message: 'Updater deshabilitado' };
         const releasesDir = path.join(this.base, 'releases');

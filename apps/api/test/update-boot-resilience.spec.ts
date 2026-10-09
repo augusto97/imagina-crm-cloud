@@ -32,4 +32,22 @@ describe('UpdateManager.onModuleInit — resiliencia de arranque', () => {
         const written = (redis.set as unknown as { mock: { calls: string[][] } }).mock.calls[0]?.[1] ?? '';
         expect(written).toContain('success');
     });
+
+    it('v0.1.278 — al arrancar poda versiones viejas (finalize.sh no llega: systemd lo mata con el API)', async () => {
+        const prune = vi.fn().mockResolvedValue({ removed: ['releases/viejo'] });
+        const d = { enabled: true, currentVersion: () => '0.1.2', prune } as unknown as Deployer;
+        const redis = { get: vi.fn().mockResolvedValue(null) } as unknown as Redis;
+        const mgr = new UpdateManager({ NODE_ENV: 'test' } as unknown as Env, redis, d, releases);
+        await mgr.onModuleInit();
+        await vi.waitFor(() => expect(prune).toHaveBeenCalledOnce());
+    });
+
+    it('una poda que falla no rompe el arranque', async () => {
+        const prune = vi.fn().mockRejectedValue(new Error('EACCES'));
+        const d = { enabled: true, currentVersion: () => '0.1.2', prune } as unknown as Deployer;
+        const redis = { get: vi.fn().mockResolvedValue(null) } as unknown as Redis;
+        const mgr = new UpdateManager({ NODE_ENV: 'test' } as unknown as Env, redis, d, releases);
+        await expect(mgr.onModuleInit()).resolves.toBeUndefined();
+        await vi.waitFor(() => expect(prune).toHaveBeenCalledOnce());
+    });
 });

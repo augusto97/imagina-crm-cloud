@@ -2899,6 +2899,17 @@ cortado dejaba el zip y la carpeta a medio extraer, que el reintento sumaba.
    saltar desde un release: la versión que instala es la que YA corre, así
    que un servidor que se quedó sin inodos con una versión anterior necesita
    liberar una vez por consola (runbook-disk §5).
+7. **La causa de fondo: la poda nunca corrió.** El servidor tenía **173
+   versiones** con `UPDATER_KEEP_RELEASES=5`. `finalize.sh` poda DESPUÉS de
+   `systemctl restart`, pero systemd (KillMode=control-group, el default) mata
+   todos los procesos del servicio al reiniciarlo — también al script
+   «desacoplado» que lo pidió. Ahora la versión nueva poda AL ARRANCAR
+   (`UpdateManager` → `deployer.prune()`, en segundo plano 90 s después, con
+   el mismo `planCleanup` que nunca toca la activa). Corolario: el
+   health-check + rollback automático de `finalize.sh` tampoco llegaba a
+   correr bajo systemd; para que corra hace falta `KillMode=process` en la
+   unidad (runbook-disk §6, opcional, por consola: la auto-actualización no
+   toca systemd).
 
 ---
 

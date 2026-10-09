@@ -7774,7 +7774,13 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         error y la tarjeta Disco miden también los inodos (`freeInodes` /
         `spaceProblem`, mínimo 60.000; runbook-disk §5). Un servidor que ya
         se quedó sin inodos con una versión anterior necesita liberar una vez
-        por consola: el instalador que corre es el viejo.
+        por consola: el instalador que corre es el viejo. **Causa de fondo**:
+        el servidor tenía **173 versiones** — la poda de `finalize.sh` corre
+        después de `systemctl restart`, que la mata junto con el API
+        (KillMode=control-group); ahora la versión nueva poda AL ARRANCAR
+        (`deployer.prune()` desde `UpdateManager`, 90 s después, con el mismo
+        `planCleanup`). Por la misma causa el health-check con rollback de
+        `finalize.sh` nunca corrió: `KillMode=process` opcional (runbook §6).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

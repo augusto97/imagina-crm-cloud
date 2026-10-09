@@ -368,6 +368,15 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   mide inodos (chequeo previo, mensaje y tarjeta Disco) para que no vuelva a
   pasar a ciegas. Pendiente además: recrear el contenedor de Postgres una
   vez para activar la poda del WAL (runbook §4).
+  **Confirmado** (consola del usuario): `df -i /` = 3.850.240 inodos, 100 %
+  usados, y **173 carpetas de versiones** (activa 0.1.274). Causa de fondo:
+  la poda de `finalize.sh` corre después de `systemctl restart`, que la mata
+  con el API (KillMode=control-group) → nunca se borró nada. v0.1.278 poda al
+  arrancar. Se le pasaron los pasos 2-4 (zips/carpetas cortadas, dejar la
+  activa + 2, docker prune, journal); falta que confirme el `df -i` después.
+  Opcional para él: `KillMode=process` en la unidad (runbook-disk §6) para
+  que también corra el health-check con rollback de finalize.sh, que por la
+  misma causa nunca corrió.
 - 2026-10-09 — ronda de ideas (Airtable/ClickUp/Notion/Monday/SmartSuite).
   El usuario eligió **las tres primeras recomendadas** y las pidió todas
   ("hacé todos los que diste de recomendación final"), cada una en su release:
@@ -474,7 +483,9 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
   vez (runbook-disk). Para esta vez, comandos a mano en la consola. El
   mismo release suma los INODOS (el servidor tenía 26 GB libres: lo que se
   acabó es la cantidad de archivos) al chequeo previo, al mensaje de error y
-  a la tarjeta Disco (runbook-disk §5).
+  a la tarjeta Disco (runbook-disk §5). Y la causa de fondo: el servidor
+  tenía 173 versiones porque systemd mataba a `finalize.sh` (y su poda) al
+  reiniciar el API; ahora la versión nueva poda al arrancar (runbook §6).
 - **2026-10-09 · v0.1.277** — Campos con IA (ADR-S41), la tercera de las
   ideas elegidas: resumir, clasificar, extraer, traducir o instrucciones
   propias a partir de otros campos (también PDF e imágenes), recalculados
