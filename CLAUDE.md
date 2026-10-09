@@ -7734,7 +7734,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         qué recalcular ante un cambio, + Postgres/Redis con modelo falso:
         calcula y cuenta la cuota, la persona no lo escribe, respuesta fuera de
         las opciones → último error, sin fuentes no gasta, IA apagada dice por
-        qué, PDF como documento, «Completar» respeta la cuota) — API_COUNT
+        qué, PDF como documento, «Completar» respeta la cuota) — 1063
         API, 273 front, 190 shared en verde — + E2E navegador 11/11 con el
         proveedor de IA SIMULADO por `ANTHROPIC_BASE_URL` (alta del campo por
         la interfaz, se calcula solo al crear un registro, «Calcular» en la
