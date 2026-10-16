@@ -7803,6 +7803,22 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (los tests que comparaban textos se convirtieron con el mismo
         diccionario).
 
+  - [x] **El calendario abre al primer click dentro de la ficha (v0.1.280,
+        reporte del usuario: "el selector de fecha la primera vez se abre y se
+        cierra solo; hay que volver a darle click")**. Regresión de v0.1.259:
+        para no montar un popover por celda, el primer click reemplaza el botón
+        provisorio por el definitivo — y el botón que tenía el foco se
+        desmontaba. Dentro de un diálogo (el modal del registro, el alta) el
+        FocusScope de Radix ve el foco en `<body>`, lo lleva al diálogo, y el
+        popover recién abierto lo toma como "foco afuera" y se cierra a los
+        ~200 ms; el segundo click ya encontraba el popover montado. En la tabla
+        (sin diálogo) no pasaba. Fix: el disparador nuevo recibe el foco en un
+        `useLayoutEffect` del mismo commit, antes de que el FocusScope lo note,
+        en `DateCellEditor` y en `OptionPicker` (mismo patrón de armado). E2E
+        navegador 12/12 (fecha, fecha y hora y selector de opciones en tabla,
+        modal y alta, al primer click y repetido) y el mismo E2E con el código
+        anterior reproduce el cierre en el modal.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

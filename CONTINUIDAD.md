@@ -494,6 +494,14 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-16 · v0.1.280** — Reporte del usuario: el selector de fecha se
+  abría y se cerraba solo al primer click (en los registros). Regresión de
+  v0.1.259 (montar el popover recién al primer click desmontaba el botón con
+  el foco; dentro de un diálogo el foco saltaba al diálogo y el popover se
+  cerraba). Arreglado en fechas y en selectores de opciones. Lección: cuando
+  un componente se "arma" reemplazando su disparador, devolverle el foco en el
+  mismo commit — si no, cualquier Radix con FocusScope alrededor lo pierde.
+
 - **2026-10-09 · v0.1.279** — Pedido del usuario: "la app tiene todo un
   acento argentino; nunca escribas con acento argentino, escribe todo en
   español neutro, a lo mucho tutea". Toda la interfaz, los errores, los
