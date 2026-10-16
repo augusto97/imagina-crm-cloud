@@ -21,6 +21,7 @@ export * from './schemas/bulk-edit';
 export * from './schemas/bulk-history';
 export * from './schemas/bulk-structure';
 export * from './schemas/rich-text';
+export * from './schemas/markdown-lite';
 export * from './schemas/embeds';
 export * from './schemas/recurrence';
 export * from './schemas/view';

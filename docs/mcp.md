@@ -28,7 +28,7 @@ externos por [Model Context Protocol](https://modelcontextprotocol.io)
     `list_automation_runs`).
   - `full` — además las `propose_*` y `apply_proposal`.
 
-## Herramientas (v0.1.201)
+## Herramientas (v0.1.281)
 
 Lectura (según el rol; `list_automation_runs` exige `manage_automations`):
 
@@ -41,6 +41,7 @@ Lectura (según el rol; `list_automation_runs` exige `manage_automations`):
 | `list_automation_runs` | Últimas ejecuciones de una automatización: estado, error, registro y log de acciones. |
 | `list_members` | Las personas del workspace con su id, nombre, email y rol. Los ids son los que piden los campos de tipo `user` y los accesos por persona. |
 | `list_record_comments` | Los comentarios de un registro (autor, fecha, texto), para resumir lo que se habló. |
+| `get_document_template` | El **diseño completo** de una plantilla de documento PDF, en el mismo vocabulario con que se propone (textos en formato sencillo, la tabla de ítems con `from`). Los correos diseñados se leen en `get_list_schema`, dentro de cada automatización. |
 
 Escritura (siempre propone → `apply_proposal`; cada una exige la capability
 del rol, p. ej. `manage_lists`):
@@ -51,7 +52,8 @@ del rol, p. ej. `manage_lists`):
 | `propose_add_fields` / `propose_update_field` / `propose_delete_field` | Campos. |
 | `propose_create_view` / `propose_update_view` / `propose_delete_view` | Vistas guardadas (filtros, orden, agrupación, columnas, por defecto). |
 | `propose_create_dashboard` | Tablero con widgets y layout automático. |
-| `propose_create_automation` / `propose_update_automation` / `propose_delete_automation` | Automatizaciones: crear, renombrar, **pausar/activar**, reemplazar disparador o acciones, eliminar. |
+| `propose_create_automation` / `propose_update_automation` / `propose_delete_automation` | Automatizaciones: crear, renombrar, **pausar/activar**, reemplazar disparador o acciones, eliminar. Desde v0.1.281 la acción `send_email` acepta `design`: el **correo diseñado por bloques** del editor visual (título, texto con formato, botón, imagen, datos del registro, columnas, firma, HTML; tema con colores, tipografía y ancho; estilo por bloque con tipografía, espaciado, borde, esquinas y sombra). Los textos van en formato sencillo (`**negrita**`, `- viñeta`, `[enlace](https://…)`) y el acento por defecto es el color de la marca. |
+| `propose_create_document_template` / `propose_update_document_template` / `propose_delete_document_template` | **Plantillas de documentos PDF** (cuenta de cobro, recibo, cotización…) con el editor visual de documentos: encabezado con logo, datos del registro, **tabla de ítems de una lista vinculada** (`from` = slug), totales (suma de una columna, porcentajes, sumas y restas), texto con `{{valor|pesos}}`, QR, firma, columnas, numeración consecutiva, pie con número de página y si se ve en el portal. Al aplicar deja el enlace que abre la plantilla en el editor. |
 | `propose_configure_portal` | **Portal del cliente**: habilitarlo, qué listas vinculadas ve al pie y el DISEÑO de su página en v3 (`design`: el mismo vocabulario que la ficha —pestañas, secciones, campos con su forma, gráficos y tablas de lo suyo con `from`— más `editable: true` en los campos que el cliente puede corregir y `page` para fondo, ancho y tipografía). Todo lo vinculado se acota solo al cliente. El vocabulario anterior (`blocks`: portada, formulario editable, preguntas frecuentes…) se acepta y se convierte. Lo aplicado se abre después en el editor visual. |
 | `propose_configure_record_layout` | **Diseño de la ficha del registro**: formulario clásico, plantilla integrada (`auto`, `contact`, `deal`, `task`, `support`) o un **diseño completo** (`design`, desde v0.1.232): pestañas → secciones con columnas → bloques — cada campo con la forma que mejor lo muestra (cifra grande, anillo, medidor, cuenta regresiva, etapas), propiedades editables, **gráficos y tablas/tableros de los registros vinculados** (`from` = lista vinculada), avisos, botones y actividad. Se guarda en el mismo formato que el editor visual. Pisar un diseño hecho a mano se marca como destructivo. |
 | `propose_set_list_permissions` | **Quién ve y edita** una lista: por rol (manager / agent / viewer, con alcance `all` / `assigned` / `own` / `none`, si puede crear y qué campos no ve) y por **persona** (pisa su rol sólo en esa lista). `admin` siempre tiene acceso total. |
@@ -61,8 +63,9 @@ del rol, p. ej. `manage_lists`):
 
 Lo que **no** está en el MCP, y por qué:
 
-- **Estilos por bloque** (colores, tipografía del portal y de la ficha): se
-  ajustan en el editor visual, donde se ven mientras se cambian.
+- **Estilos por bloque del portal y de la ficha** (colores, tipografía): se
+  ajustan en el editor visual, donde se ven mientras se cambian. Los correos y
+  los PDF sí se diseñan completos desde el MCP (v0.1.281).
 - **Archivos**: subir bytes por una herramienta de texto no tiene sentido; se
   suben desde la app y el MCP los ve como referencias.
 - **Importación / exportación**: el MCP ya crea registros directamente

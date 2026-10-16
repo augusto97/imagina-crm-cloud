@@ -200,7 +200,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         const read = await connect(admin, 'read');
         const readNames = (await read.listTools()).tools.map((t) => t.name).sort();
         expect(readNames).toEqual([
-            'aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
+            'aggregate_records', 'get_document_template', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
             'list_lists', 'list_members', 'list_record_comments', 'query_records',
         ]);
         await read.close();
@@ -221,7 +221,7 @@ describe('Tokens de acceso personal + servidor MCP (ADR-S21 fase 3, Postgres + R
         // Un viewer no tiene `manage_automations`, así que `list_automation_runs`
         // sigue afuera aunque su token sea `full`.
         expect(viewerNames).toEqual([
-            'aggregate_records', 'apply_proposal', 'get_list_schema', 'list_dashboards',
+            'aggregate_records', 'apply_proposal', 'get_document_template', 'get_list_schema', 'list_dashboards',
             'list_lists', 'list_members', 'list_record_comments', 'query_records',
         ]);
         await viewer.close();

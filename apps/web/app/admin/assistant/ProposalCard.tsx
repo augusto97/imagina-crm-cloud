@@ -33,6 +33,9 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     delete_list: 'Eliminar lista',
     set_list_permissions: 'Permisos de la lista',
     configure_public_sharing: 'Publicación al mundo',
+    create_document_template: 'Documento PDF nuevo',
+    update_document_template: 'Cambio de documento PDF',
+    delete_document_template: 'Eliminar documento PDF',
 };
 
 /**

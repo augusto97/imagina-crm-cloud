@@ -167,6 +167,10 @@ export const AI_PROPOSAL_KINDS = [
     // v0.1.222 — edición masiva con OPERACIONES (sumar, %, redondear,
     // calcular…), la misma de la interfaz: vista previa y deshacer.
     'bulk_edit_records',
+    // v0.1.281 — plantillas de documentos PDF diseñadas por bloques.
+    'create_document_template',
+    'update_document_template',
+    'delete_document_template',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;
