@@ -494,6 +494,24 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-16 · v0.1.281** — Pregunta del usuario: «¿el MCP también puede
+  crear los correos y PDF en el nuevo editor con sus bloques y hacer buenos
+  diseños?» → no podía (sólo correos de texto/HTML y usar plantillas de PDF ya
+  existentes) → «sí, hazlos que puedan usar el editor visual en el MCP». Ahora
+  el asistente ✨ y el MCP diseñan: `send_email` acepta `design` (el modelo de
+  bloques del editor de correos) y hay `propose_create/update/delete_document_
+  template` + `get_document_template` para las plantillas de PDF. El modelo
+  escribe los textos en formato sencillo (`**negrita**`, `- viñeta`) que se
+  convierte al árbol del editor (`markdown-lite.ts` en shared, ida y vuelta),
+  la tabla de ítems dice `from` = slug de la lista vinculada, y todo se valida
+  contra la lista real (slugs, variables, columnas, totales). Acento por
+  defecto = color de la marca; descripciones de las herramientas con el
+  vocabulario completo + una guía de buen diseño; regla 16 del prompt. La
+  propuesta del PDF deja un enlace que abre la plantilla en el editor
+  (`?doc=`). Verificado: 6 tests nuevos + suites del asistente/MCP en verde y
+  E2E por el MCP REAL (HTTP + token) 12/12: el correo y la cuenta de cobro que
+  armó el MCP se abren y se ven en los editores visuales (PDF con la tabla de
+  la lista vinculada, total y «dos millones… pesos»).
 - **2026-10-16 · v0.1.280** — Reporte del usuario: el selector de fecha se
   abría y se cerraba solo al primer click (en los registros). Regresión de
   v0.1.259 (montar el popover recién al primer click desmontaba el botón con

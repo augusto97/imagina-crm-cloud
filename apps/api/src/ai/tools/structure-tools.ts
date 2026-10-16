@@ -39,6 +39,8 @@ import {
     type CreateDashboardInput,
     type CreateFieldInput,
     type CreateViewInput,
+    type CreateDocumentTemplateInput,
+    type UpdateDocumentTemplateInput,
     type CrmCustomConfig,
     type Field,
     type FieldType,
@@ -65,7 +67,7 @@ import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
 import { AutomationsService } from '../../automations/automations.service';
 import { DashboardsService } from '../../dashboards/dashboards.service';
-import { fields as fieldsTable, listGroups, records } from '../../db/schema';
+import { fields as fieldsTable, listGroups, records, tenants } from '../../db/schema';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
 import { TenantDb } from '../../tenancy/tenant-db.service';
@@ -86,6 +88,20 @@ import {
     type PortalBuildContext,
 } from './list-config';
 import { translateBulkEditActions } from './bulk-ops';
+import {
+    DOC_DESIGN_DOC,
+    DOC_DESIGN_GUIDE,
+    EMAIL_DESIGN_DOC,
+    EMAIL_DESIGN_GUIDE,
+    buildDocDesign,
+    describeDesignBlocks,
+    docDesignForModel,
+    docDesignInput,
+    emailActionsForModel,
+    translateEmailDesignActions,
+    type DocRelationRef,
+    type DesignFieldRef,
+} from './design-builders';
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 
@@ -253,7 +269,8 @@ const automationSpec = z.object({
         .min(1)
         .max(20)
         .describe(
-            'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?, include_signature?, signature_user_id? (id de un miembro: su firma va al final)} | ' +
+            'Cada acción: {type, config, condition?}. type ∈ send_email {to, subject, body, is_html?, cc?, bcc?, include_signature?, signature_user_id? (id de un miembro: su firma va al final), ' +
+                'preheader?, design? — el correo DISEÑADO por bloques del editor visual (prefiérelo a body cuando el correo lo ve un cliente): {theme?, blocks:[{type: heading|text|button|image|fields|divider|spacer|signature|html|columns, …}]}; los text usan formato sencillo (**negrita**, - viñetas, [enlace](url)). Vocabulario completo en la descripción de propose_create_automation} | ' +
                 'update_field {values: {slug: valor}} — cambia campos DEL REGISTRO que disparó la automatización (es lo que corresponde a "cambiar/actualizar/marcar un campo") | ' +
                 'create_record {target_list: slug, values: {slug: valor}} | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
@@ -332,7 +349,11 @@ type Payload =
           usersSet?: Record<string, RolePermissions>;
           usersRemove?: number[];
       }
-    | { kind: 'configure_public_sharing'; listId: number; listSlug: string; input: UpdatePublicListInput };
+    | { kind: 'configure_public_sharing'; listId: number; listSlug: string; input: UpdatePublicListInput }
+    // v0.1.281 — plantillas de documentos PDF.
+    | { kind: 'create_document_template'; listId: number; listSlug: string; input: CreateDocumentTemplateInput }
+    | { kind: 'update_document_template'; listId: number; listSlug: string; templateId: number; patch: UpdateDocumentTemplateInput }
+    | { kind: 'delete_document_template'; listId: number; listSlug: string; templateId: number; name: string };
 
 /** Tipos de propuesta de ESTA familia (los de datos viven en data-tools). */
 type StructureKind = Exclude<AiProposalKind, 'create_records' | 'update_records' | 'delete_records' | 'bulk_edit_records'>;
@@ -355,6 +376,9 @@ const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     delete_list: 'manage_lists',
     set_list_permissions: 'manage_lists',
     configure_public_sharing: 'manage_lists',
+    create_document_template: 'manage_lists',
+    update_document_template: 'manage_lists',
+    delete_document_template: 'manage_lists',
 };
 
 /** Claves de `settings` que cada propuesta de configuración PISA; el resto se conserva. */
@@ -476,7 +500,12 @@ export class StructureTools implements AiProposalApplier {
         registry.register({
             name: 'propose_create_automation',
             label: 'Armando la automatización',
-            description: 'Propone una automatización sobre una lista existente: disparador + acciones (correo, actualizar campo, crear registro en otra lista, webhook, condicional).',
+            description:
+                'Propone una automatización sobre una lista existente: disparador + acciones (correo, actualizar campo, crear registro en otra lista, webhook, PDF, condicional). ' +
+                'Los correos se pueden DISEÑAR con `design` en send_email (queda editable en el editor visual de correos). ' +
+                EMAIL_DESIGN_DOC +
+                ' ' +
+                EMAIL_DESIGN_GUIDE,
             capability: 'manage_automations',
             input: automationSpec,
             run: (ctx, input) => this.proposeCreateAutomation(ctx, input as AutomationSpec),
@@ -527,6 +556,63 @@ export class StructureTools implements AiProposalApplier {
                 design: recordDesignSpec.optional().describe('Diseño completo de la ficha (con layout crm; no combinar con template/custom). Los gráficos y vinculados usan `from` = slug de una lista vinculada (ver linkable_lists / relaciones del esquema)'),
             }),
             run: (ctx, input) => this.proposeConfigureRecordLayout(ctx, input as ConfigureLayoutSpec),
+        });
+
+        // ── v0.1.281 — plantillas de documentos PDF con el editor visual ──
+        registry.register({
+            name: 'get_document_template',
+            label: 'Leyendo la plantilla del documento',
+            description:
+                'Devuelve el DISEÑO completo de una plantilla de documento PDF de una lista (en el mismo vocabulario de propose_create_document_template: textos en formato sencillo, la tabla de ítems con `from`). Léela antes de proponer cambios con propose_update_document_template. Los ids de las plantillas están en `document_templates` de get_list_schema.',
+            capability: null,
+            input: z.object({
+                list: z.string().max(63),
+                template: z.union([z.number().int().positive(), z.string().min(1).max(120)]).describe('Id o nombre exacto de la plantilla'),
+            }),
+            run: (ctx, input) => this.getDocumentTemplate(ctx, input as { list: string; template: number | string }),
+        });
+        registry.register({
+            name: 'propose_create_document_template',
+            label: 'Diseñando el documento',
+            description:
+                'Propone una PLANTILLA DE DOCUMENTO PDF (cuenta de cobro, recibo, cotización, orden, certificado…) para una lista: sus variables son los campos de esa lista y la tabla de ítems sale de los registros VINCULADOS. ' +
+                'Se usa desde el botón «Generar PDF» de la ficha, la acción generate_pdf y como adjunto de send_email (pdf_templates); queda editable en el editor visual de documentos. Lee antes get_list_schema (campos y linked_lists). ' +
+                DOC_DESIGN_DOC +
+                ' ' +
+                DOC_DESIGN_GUIDE,
+            capability: 'manage_lists',
+            input: z.object({
+                list: z.string().max(63),
+                name: z.string().min(1).max(120).describe('Nombre de la plantilla ("Cuenta de cobro")'),
+                filename: z.string().max(200).optional().describe('Nombre del archivo sin .pdf, con variables ("Cuenta de cobro {{documento.numero}}")'),
+                portal_visible: z.boolean().optional().describe('El cliente lo descarga desde su portal'),
+                design: docDesignInput,
+            }),
+            run: (ctx, input) => this.proposeCreateDocumentTemplate(ctx, input as DocTemplateSpec),
+        });
+        registry.register({
+            name: 'propose_update_document_template',
+            label: 'Rediseñando el documento',
+            description:
+                'Propone modificar una plantilla de documento PDF existente: nombre, nombre del archivo, si se ve en el portal o el DISEÑO completo (lo reemplaza: léelo antes con get_document_template y manda la versión entera con tus cambios). Mismo vocabulario que propose_create_document_template.',
+            capability: 'manage_lists',
+            input: z.object({
+                list: z.string().max(63),
+                template: z.union([z.number().int().positive(), z.string().min(1).max(120)]),
+                name: z.string().min(1).max(120).optional(),
+                filename: z.string().max(200).optional(),
+                portal_visible: z.boolean().optional(),
+                design: docDesignInput.optional(),
+            }),
+            run: (ctx, input) => this.proposeUpdateDocumentTemplate(ctx, input as DocTemplateUpdateSpec),
+        });
+        registry.register({
+            name: 'propose_delete_document_template',
+            label: 'Armando el borrado de la plantilla',
+            description: 'Propone ELIMINAR una plantilla de documento PDF. Si una automatización la usa (generate_pdf o adjunto de un correo) no se puede borrar hasta sacarla de ahí.',
+            capability: 'manage_lists',
+            input: z.object({ list: z.string().max(63), template: z.union([z.number().int().positive(), z.string().min(1).max(120)]) }),
+            run: (ctx, input) => this.proposeDeleteDocumentTemplate(ctx, input as { list: string; template: number | string }),
         });
 
         // ── v0.1.195 — brechas de la auditoría: editar y borrar lo existente ──
@@ -769,7 +855,8 @@ export class StructureTools implements AiProposalApplier {
                     is_active: a.is_active,
                     trigger_type: a.trigger_type,
                     trigger_config: redactSecrets(a.trigger_config),
-                    actions: redactSecrets(a.actions),
+                    // v0.1.281 — los correos diseñados con su texto en formato sencillo.
+                    actions: emailActionsForModel(redactSecrets(a.actions)),
                 })),
                 // v0.1.198 — acciones CON NOMBRE de los conectores de la
                 // empresa. Van aquí porque es la lectura que el asistente hace
@@ -1270,6 +1357,8 @@ export class StructureTools implements AiProposalApplier {
         if (!parsed.success) throw new AiToolError(zodIssues(parsed.error));
         // v0.1.222 — «Editar en lote» llega por slug: se traduce a ids.
         translateBulkEditActions(parsed.data.actions as unknown[], fields, list.name);
+        // v0.1.281 — correos diseñados: vocabulario del modelo → diseño del editor.
+        translateEmailDesignActions(parsed.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
         const slugs = new Set(fields.map((f) => f.slug));
         this.validateAutomationSlugs(parsed.data, slugs, (target) => {
             const l = bySlug.get(target);
@@ -1290,6 +1379,7 @@ export class StructureTools implements AiProposalApplier {
                 widgets: [],
                 automation: { name: input.name, trigger: triggerLabel(parsed.data.trigger_type, parsed.data.trigger_config ?? {}, fields), actions: actionLabels },
                 changes: [],
+                blocks: firstEmailDesignBlocks(parsed.data.actions as unknown[]),
             },
             payload: { kind: 'create_automation', listId: list.id, listSlug: list.slug, input: parsed.data },
         });
@@ -1525,6 +1615,148 @@ export class StructureTools implements AiProposalApplier {
         };
     }
 
+    // ── v0.1.281 — documentos PDF y correos diseñados ─────────────────────
+
+    /** Color de la marca de la empresa (acento por defecto de los diseños). */
+    private async brandColor(ctx: AiToolContext): Promise<string | null> {
+        try {
+            const [row] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, ctx.tenantId)).limit(1),
+            );
+            const c = ((row?.settings as Record<string, unknown> | undefined)?.branding as { primary_color?: unknown } | undefined)?.primary_color;
+            return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private docsService(): DocumentsService {
+        if (!this.documents) throw new AiToolError('Los documentos PDF no están disponibles en este servidor.');
+        return this.documents;
+    }
+
+    private async docContext(ctx: AiToolContext, list: List): Promise<{ fields: DesignFieldRef[]; relations: DocRelationRef[]; otherFields: Map<number, DesignFieldRef[]>; brandColor: string | null }> {
+        const own = await this.fields.listByListId(ctx.tenantId, list.id);
+        const dctx = await this.designContext(ctx, list.id, own);
+        return {
+            fields: designFields(own),
+            relations: dctx.relations.map((r) => ({
+                relation_field_id: r.relation_field_id,
+                relation_slug: r.relation_slug,
+                direction: r.direction,
+                other_list_id: r.other_list_id,
+                other_list_slug: r.other_list_slug,
+            })),
+            otherFields: dctx.otherFields as Map<number, DesignFieldRef[]>,
+            brandColor: await this.brandColor(ctx),
+        };
+    }
+
+    private async resolveDocumentTemplate(ctx: AiToolContext, list: List, ref: number | string): Promise<{ id: number; name: string }> {
+        const all = await this.docsService().list(ctx.tenantId, String(list.id));
+        const hit =
+            typeof ref === 'number' || /^\d+$/.test(String(ref))
+                ? all.find((t) => t.id === Number(ref))
+                : all.find((t) => t.name.trim().toLowerCase() === String(ref).trim().toLowerCase());
+        if (!hit) {
+            throw new AiToolError(
+                `La plantilla «${String(ref)}» no existe en «${list.name}». Plantillas: ${all.map((t) => `${t.id} «${t.name}»`).join(', ') || 'ninguna'}.`,
+            );
+        }
+        return { id: hit.id, name: hit.name };
+    }
+
+    private async getDocumentTemplate(ctx: AiToolContext, input: { list: string; template: number | string }): Promise<AiToolResult> {
+        const list = await this.resolveList(ctx, input.list);
+        const ref = await this.resolveDocumentTemplate(ctx, list, input.template);
+        const tpl = await this.docsService().get(ctx.tenantId, String(list.id), ref.id);
+        const dctx = await this.docContext(ctx, list);
+        return {
+            content: {
+                id: tpl.id,
+                name: tpl.name,
+                filename: tpl.filename,
+                portal_visible: tpl.portal_visible,
+                design: docDesignForModel(tpl.design, dctx.relations),
+            },
+        };
+    }
+
+    private async proposeCreateDocumentTemplate(ctx: AiToolContext, input: DocTemplateSpec): Promise<AiToolResult> {
+        const list = await this.resolveList(ctx, input.list);
+        this.docsService();
+        const design = buildDocDesign(input.design, await this.docContext(ctx, list));
+        const filename = input.filename ?? `${input.name} {{record.id}}`;
+        return this.saveProposal(ctx, {
+            kind: 'create_document_template',
+            title: `Crear la plantilla de documento «${input.name}» en «${list.name}»`,
+            summary: `Un PDF ${design.theme.page_size === 'a4' ? 'A4' : design.theme.page_size === 'legal' ? 'oficio' : 'carta'} con ${design.blocks.length} bloques${design.numbering.enabled ? `, numerado (${design.numbering.prefix}${'0'.repeat(Math.max(0, design.numbering.padding - 1))}${design.numbering.start})` : ''}${input.portal_visible ? ' y disponible en el portal del cliente' : ''}. Queda editable en el editor de documentos.`,
+            destructive: false,
+            listSlug: list.slug,
+            preview: {
+                blocks: describeDesignBlocks(design.blocks as unknown as Array<Record<string, unknown>>),
+                changes: [{ label: 'Archivo', from: null, to: `${filename}.pdf` }],
+            },
+            payload: {
+                kind: 'create_document_template',
+                listId: list.id,
+                listSlug: list.slug,
+                input: { name: input.name, filename, design, portal_visible: input.portal_visible ?? false },
+            },
+        });
+    }
+
+    private async proposeUpdateDocumentTemplate(ctx: AiToolContext, input: DocTemplateUpdateSpec): Promise<AiToolResult> {
+        const list = await this.resolveList(ctx, input.list);
+        const ref = await this.resolveDocumentTemplate(ctx, list, input.template);
+        const current = await this.docsService().get(ctx.tenantId, String(list.id), ref.id);
+        const patch: UpdateDocumentTemplateInput = {};
+        const changes: AiProposalPreview['changes'] = [];
+        if (input.name !== undefined && input.name !== current.name) {
+            patch.name = input.name;
+            changes.push({ label: 'Nombre', from: current.name, to: input.name });
+        }
+        if (input.filename !== undefined && input.filename !== current.filename) {
+            patch.filename = input.filename;
+            changes.push({ label: 'Archivo', from: current.filename || null, to: input.filename });
+        }
+        if (input.portal_visible !== undefined && input.portal_visible !== current.portal_visible) {
+            patch.portal_visible = input.portal_visible;
+            changes.push({ label: 'En el portal del cliente', from: yesNo(current.portal_visible), to: yesNo(input.portal_visible) });
+        }
+        let blocks: AiProposalPreview['blocks'] = [];
+        if (input.design !== undefined) {
+            const design = buildDocDesign(input.design, await this.docContext(ctx, list));
+            patch.design = design;
+            blocks = describeDesignBlocks(design.blocks as unknown as Array<Record<string, unknown>>);
+            changes.push({ label: 'Diseño', from: `${current.design.blocks.length} bloques`, to: `${design.blocks.length} bloques` });
+        }
+        if (Object.keys(patch).length === 0) throw new AiToolError('No hay ningún cambio respecto a la plantilla actual.');
+        return this.saveProposal(ctx, {
+            kind: 'update_document_template',
+            title: `Modificar la plantilla de documento «${current.name}» de «${list.name}»`,
+            summary: `Se cambia ${changes.map((c) => c.label.toLowerCase()).join(', ')} de «${current.name}».`,
+            destructive: false,
+            listSlug: list.slug,
+            preview: { changes, blocks },
+            payload: { kind: 'update_document_template', listId: list.id, listSlug: list.slug, templateId: ref.id, patch },
+        });
+    }
+
+    private async proposeDeleteDocumentTemplate(ctx: AiToolContext, input: { list: string; template: number | string }): Promise<AiToolResult> {
+        const list = await this.resolveList(ctx, input.list);
+        const ref = await this.resolveDocumentTemplate(ctx, list, input.template);
+        return this.saveProposal(ctx, {
+            kind: 'delete_document_template',
+            title: `Eliminar la plantilla de documento «${ref.name}» de «${list.name}»`,
+            summary: `Se borra la plantilla «${ref.name}». Los PDF ya generados y guardados no se tocan.`,
+            destructive: true,
+            listSlug: list.slug,
+            preview: {},
+            payload: { kind: 'delete_document_template', listId: list.id, listSlug: list.slug, templateId: ref.id, name: ref.name },
+        });
+    }
+
     // ── v0.1.195 — editar y borrar automatizaciones, vistas y listas ─────
 
     private async resolveAutomation(ctx: AiToolContext, list: List, ref: number | string): Promise<{ id: number; name: string; description: string | null; is_active: boolean; trigger_type: string; trigger_config: Record<string, unknown>; actions: unknown[] }> {
@@ -1570,6 +1802,9 @@ export class StructureTools implements AiProposalApplier {
             });
             if (!merged.success) throw new AiToolError(zodIssues(merged.error));
             translateBulkEditActions(merged.data.actions as unknown[], fields, list.name);
+            if (input.actions !== undefined) {
+                translateEmailDesignActions(merged.data.actions as unknown[], { fields: designFields(fields), brandColor: await this.brandColor(ctx) });
+            }
             // Las acciones guardadas antes pueden apuntar a una conexión que ya
             // no está: sólo se exige que sean válidas si esta propuesta las
             // reemplaza (renombrar o pausar no tiene por qué fallar por eso).
@@ -1613,7 +1848,7 @@ export class StructureTools implements AiProposalApplier {
             summary: `Se cambia ${changes.map((c) => c.label.toLowerCase()).join(', ')} de «${auto.name}».`,
             destructive: false,
             listSlug: list.slug,
-            preview: { changes, automation: automationPreview },
+            preview: { changes, automation: automationPreview, blocks: patch.actions ? firstEmailDesignBlocks(patch.actions as unknown[]) : [] },
             payload: { kind: 'update_automation', listId: list.id, listSlug: list.slug, automationId: auto.id, patch: parsed.data },
         });
     }
@@ -1930,6 +2165,26 @@ export class StructureTools implements AiProposalApplier {
                         ? ['Cualquiera con el enlace ve los campos marcados visibles, sin cuenta. Revísalo antes de compartirlo.']
                         : [],
                 };
+            }
+            case 'create_document_template': {
+                const tpl = await this.docsService().create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input);
+                return {
+                    message: `Plantilla «${tpl.name}» creada.`,
+                    links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
+                    warnings: [],
+                };
+            }
+            case 'update_document_template': {
+                const tpl = await this.docsService().update(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId, payload.patch);
+                return {
+                    message: `Plantilla «${tpl.name}» actualizada.`,
+                    links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
+                    warnings: [],
+                };
+            }
+            case 'delete_document_template': {
+                await this.docsService().remove(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId);
+                return { message: `Plantilla «${payload.name}» eliminada.`, links: [], warnings: [] };
             }
             case 'delete_list': {
                 await this.lists.remove(ctx.tenantId, String(payload.listId));
@@ -2648,6 +2903,23 @@ interface UpdateAutomationSpec {
     actions?: Record<string, unknown>[];
 }
 
+interface DocTemplateSpec {
+    list: string;
+    name: string;
+    filename?: string;
+    portal_visible?: boolean;
+    design: z.infer<typeof docDesignInput>;
+}
+
+interface DocTemplateUpdateSpec {
+    list: string;
+    template: number | string;
+    name?: string;
+    filename?: string;
+    portal_visible?: boolean;
+    design?: z.infer<typeof docDesignInput>;
+}
+
 interface UpdateViewSpec {
     list: string;
     view: number | string;
@@ -2720,6 +2992,30 @@ function normalizeOptions(opts: Array<{ label: string; value?: string; color?: s
         seen.add(value);
         return { value, label: o.label, ...(o.color ? { color: o.color } : {}) };
     });
+}
+
+/** Campos en la forma que usan los constructores de diseño. */
+function designFields(fields: Field[]): DesignFieldRef[] {
+    return fields.map((f) => ({ id: f.id, slug: f.slug, label: f.label, type: f.type }));
+}
+
+/** Bloques del primer correo diseñado de las acciones (para la tarjeta). */
+function firstEmailDesignBlocks(actions: unknown[]): AiProposalPreview['blocks'] {
+    const walk = (list: unknown[]): AiProposalPreview['blocks'] | null => {
+        for (const raw of list) {
+            const a = raw as { type?: string; config?: Record<string, unknown> };
+            if (a?.type === 'send_email' && a.config?.body_mode === 'design') {
+                const design = a.config.design as { blocks?: Array<Record<string, unknown>> } | undefined;
+                return describeDesignBlocks(design?.blocks ?? []);
+            }
+            if (a?.type === 'if_else') {
+                const hit = walk((a.config?.then_actions as unknown[]) ?? []) ?? walk((a.config?.else_actions as unknown[]) ?? []);
+                if (hit) return hit;
+            }
+        }
+        return null;
+    };
+    return walk(actions) ?? [];
 }
 
 function newWidgetId(): string {

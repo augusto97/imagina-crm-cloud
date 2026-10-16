@@ -974,6 +974,21 @@ API, que todo proxy enruta) y el API sirve ahí también la metadata del
 servidor; (c) `resource` (RFC 8707) se valida por PATH y no por host, porque
 con el estático el issuer es el dominio de la plataforma aunque el MCP se use
 por un dominio propio. La card de Ajustes autodiagnostica el descubrimiento.
+**v0.1.281 — correos y PDF diseñados desde el asistente/MCP.** La acción
+`send_email` acepta `design` y hay tres propuestas nuevas de plantillas de
+documento (`create/update/delete_document_template`) más la lectura
+`get_document_template`. El modelo habla **el mismo modelo de bloques** que
+guardan los editores visuales (ADR-S34/S35/S37) con tres comodidades: los
+textos con formato van en una notación sencilla tipo Markdown
+(`markdownToRichDoc` / `richDocToMarkdown` en shared — las variables `{{…}}`
+son literales), los ids de bloque son opcionales y la tabla de ítems de un PDF
+dice `from` = slug de la lista vinculada (+ `via` si hay dos relaciones). El
+resultado se valida con los schemas compartidos y además contra la lista real
+(slugs, variables, columnas de ítems, totales que referencian filas y bloques
+que existen, campo de numeración de texto); el acento por defecto es el color
+de la marca. Al leer se hace el camino inverso, así lo que se lee se puede
+devolver con un cambio. Lo aplicado queda editable en el editor visual (el
+enlace de la propuesta abre la plantilla con `?doc=`).
 
 ### ADR-S22 — Conectores: la credencial se guarda una vez y se referencia (v0.1.196)
 
@@ -2935,4 +2950,4 @@ no se toca.
 
 ---
 
-**Versión del documento:** 1.78.0 (español neutro en la interfaz — ADR-S42)
+**Versión del documento:** 1.79.0 (correos y PDF diseñados desde el MCP — ADR-S21)

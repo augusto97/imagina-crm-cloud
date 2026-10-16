@@ -7819,6 +7819,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         modal y alta, al primer click y repetido) y el mismo E2E con el código
         anterior reproduce el cierre en el modal.
 
+  - [x] **Correos y PDF diseñados desde el asistente y el MCP (v0.1.281,
+        pregunta del usuario: "¿el MCP puede crear los correos y PDF en el
+        nuevo editor con sus bloques y hacer buenos diseños?")**: no podía —
+        `send_email` sólo aceptaba texto/HTML y los PDF sólo se podían USAR
+        si ya existían—. Ahora: (a) **`send_email` acepta `design`**: el MISMO
+        modelo de bloques del editor de correos (título, texto con formato,
+        botón, imagen, datos del registro, columnas, firma, HTML; tema y
+        estilo por bloque); (b) **plantillas de documento PDF**:
+        `propose_create/update/delete_document_template` y la lectura
+        `get_document_template` (encabezado, datos, tabla de ítems de una
+        lista vinculada, totales, QR, firma, columnas, numeración, pie,
+        portal). Tres comodidades para que el modelo no se equivoque: los
+        textos van en **formato sencillo** (`**negrita**`, `- viñeta`,
+        `[enlace](url)`) que `markdownToRichDoc` convierte al árbol del editor
+        (shared, con su inversa `richDocToMarkdown` para leer — las variables
+        `{{…}}` son literales, un `_` adentro no abre cursiva); los `id` de
+        bloque son opcionales; y la tabla de ítems dice `from` = slug de la
+        lista vinculada (+ `via` si hay dos relaciones) en vez de ids. Todo
+        se valida con los schemas compartidos y además contra la lista real
+        (slugs del bloque de datos, variables, columnas y orden de los ítems,
+        totales que apuntan a filas/bloques que existen y a campos numéricos,
+        numeración en un campo de texto) con errores corregibles. El acento por
+        defecto es el **color de la marca**; las descripciones de las
+        herramientas traen el vocabulario completo y una guía de buen diseño
+        (regla 16 del prompt). Al leer (`get_list_schema` para correos,
+        `get_document_template` para PDF) se hace el camino inverso, así lo
+        leído se devuelve con un cambio. La propuesta del PDF deja un enlace
+        que abre la plantilla directo en el editor (`?doc=` en Ajustes →
+        Documentos). 6 tests nuevos (texto sencillo en shared; constructores
+        puros; MCP por transporte en memoria: crear/leer/cambiar el correo,
+        crear/leer/cambiar/borrar la plantilla con el PDF real armado) —
+        suites del asistente/MCP en verde — + E2E por el MCP REAL (HTTP +
+        token) y navegador 12/12: el correo y la cuenta de cobro que armó el
+        MCP se abren en sus editores visuales con todos sus bloques.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

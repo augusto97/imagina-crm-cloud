@@ -616,7 +616,7 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         // v0.1.201 — las lecturas nuevas entran solas: el scope `read` es
         // "todo lo que no propone", no una lista que haya que mantener.
         expect(names).toEqual([
-            'aggregate_records', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
+            'aggregate_records', 'get_document_template', 'get_list_schema', 'list_automation_runs', 'list_dashboards',
             'list_lists', 'list_members', 'list_record_comments', 'query_records',
         ]);
         await read.close();

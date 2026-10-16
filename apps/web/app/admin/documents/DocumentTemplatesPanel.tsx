@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { DOC_PAGE_SIZE_LABELS, type DocDesign } from '@imagina-base/shared';
 
@@ -29,6 +30,22 @@ export function DocumentTemplatesPanel({ listId }: { listId: number }): JSX.Elem
     const toast = useToast();
     const [starterOpen, setStarterOpen] = useState(false);
     const [editing, setEditing] = useState<{ id: number | null; initial?: { name: string; filename: string; design: DocDesign } } | null>(null);
+    // v0.1.281 — `?doc=<id>` abre esa plantilla en el editor (el enlace que
+    // deja el asistente/MCP al crearla o cambiarla).
+    const [params, setParams] = useSearchParams();
+    const docParam = Number(params.get('doc'));
+    useEffect(() => {
+        if (!Number.isInteger(docParam) || docParam <= 0) return;
+        setEditing({ id: docParam });
+        setParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('doc');
+                return next;
+            },
+            { replace: true },
+        );
+    }, [docParam, setParams]);
 
     return (
         <Card>
