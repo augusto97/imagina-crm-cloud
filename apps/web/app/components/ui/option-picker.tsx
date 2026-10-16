@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Loader2, Plus } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
@@ -76,6 +76,13 @@ export function OptionPicker({
     // del costo de cambiar de vista. Una vez abierto queda montado (el foco
     // vuelve al disparador al cerrar, como siempre).
     const [armed, setArmed] = useState(false);
+    // Armar desmonta el botón provisorio, que tenía el foco: sin devolverlo al
+    // disparador nuevo en el mismo commit, dentro de un diálogo el FocusScope
+    // lo lleva al diálogo y el popover recién abierto se cierra solo.
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    useLayoutEffect(() => {
+        if (armed) triggerRef.current?.focus({ preventScroll: true });
+    }, [armed]);
     const options = extractFieldOptions(field);
     const currentSet = new Set<string>(
         mode === 'multi' ? (Array.isArray(value) ? value.map(String) : []) : [],
@@ -176,6 +183,7 @@ export function OptionPicker({
         <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
             <PopoverTrigger asChild>
                 <button
+                    ref={triggerRef}
                     type="button"
                     disabled={disabled}
                     // En celdas, que el click no burbujee a la fila (que

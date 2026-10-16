@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 
@@ -92,6 +92,16 @@ function DateCellEditorPopover({
     children,
 }: DateCellEditorProps): JSX.Element {
     const [open, setOpen] = useState(true);
+    // El click que arma el editor desmonta el botón provisorio (el que tenía
+    // el foco) y monta éste. Dentro de un diálogo (la ficha del registro, el
+    // alta) el FocusScope ve que el foco quedó en <body> y lo lleva al
+    // diálogo, y el popover recién abierto lo toma como "foco afuera" y se
+    // cierra solo (~150 ms). Devolver el foco al disparador en el mismo
+    // commit evita que el foco llegue a perderse.
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    useLayoutEffect(() => {
+        triggerRef.current?.focus({ preventScroll: true });
+    }, []);
 
     const isDateTime = field.type === 'datetime';
     const parsed = useMemo(() => parseDateValue(value), [value]);
@@ -187,7 +197,7 @@ function DateCellEditorPopover({
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>{children}</PopoverTrigger>
+            <PopoverTrigger asChild ref={triggerRef}>{children}</PopoverTrigger>
             <PopoverContent
                 align="start"
                 sideOffset={6}
