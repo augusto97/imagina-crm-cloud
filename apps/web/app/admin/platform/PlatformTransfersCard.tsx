@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ImportTenantResult, TenantTransferFile } from '@imagina-base/shared';
-import { ArrowRightLeft, Download, PackageOpen, Trash2, Upload } from 'lucide-react';
+import { ArrowRightLeft, CloudUpload, Download, PackageOpen, Trash2, Upload } from 'lucide-react';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { usePlatformTenants } from '@/hooks/usePlatform';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
+
+import { PlatformTransfersDrive, TRANSFERS_DRIVE_KEY, useTransfersDrive } from './PlatformTransfersDrive';
 
 function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;
@@ -124,6 +126,18 @@ export function PlatformTransfersCard(): JSX.Element {
         },
         onError,
     });
+
+    // v0.1.284 — subir un archivo al Drive (otro servidor lo trae de ahí).
+    const driveQ = useTransfersDrive();
+    const toDrive = useMutation({
+        mutationFn: (file: string) => api.transferToDrive(file),
+        onSuccess: () => {
+            setNotice(null);
+            void qc.invalidateQueries({ queryKey: TRANSFERS_DRIVE_KEY });
+        },
+        onError,
+    });
+    const driveBusy = driveQ.data?.run?.status === 'running';
 
     const s = statusQ.data;
 
@@ -328,6 +342,18 @@ export function PlatformTransfersCard(): JSX.Element {
                                         >
                                             Importar aquí
                                         </Button>
+                                        {driveQ.data?.ready && f.manifest && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={driveBusy || toDrive.isPending}
+                                                onClick={() => toDrive.mutate(f.name)}
+                                                data-testid="transfer-to-drive"
+                                            >
+                                                <CloudUpload className="imcrm-mr-1 imcrm-h-3.5 imcrm-w-3.5" />
+                                                Subir a Drive
+                                            </Button>
+                                        )}
                                         <Button
                                             size="sm"
                                             variant="ghost"
@@ -405,6 +431,8 @@ export function PlatformTransfersCard(): JSX.Element {
                             ))}
                         </ul>
                     </div>
+
+                    <PlatformTransfersDrive onFetched={invalidate} />
                 </CardContent>
             </Card>
         </div>

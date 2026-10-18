@@ -191,12 +191,29 @@ export class DriveBackupClient {
         return this.createFolder(instance, rootId, { imagina_backups: 'instance', imagina_instance: instance });
     }
 
+    /**
+     * v0.1.284 — La subcarpeta de las empresas exportadas (ADR-S23), al lado de
+     * las de cada servidor: una empresa se lleva de un servidor a otro.
+     */
+    async ensureTransfersFolder(rootId: string): Promise<string> {
+        const found = await this.findOne(
+            `appProperties has { key='imagina_backups' and value='transfers' } and '${q(rootId)}' in parents and trashed=false`,
+        );
+        if (found) return found;
+        return this.createFolder('Empresas exportadas', rootId, { imagina_backups: 'transfers' });
+    }
+
     /** Todas las copias del Drive (de cualquier servidor), más nuevas primero. */
     async listSnapshots(): Promise<RemoteFile[]> {
+        return this.listByKind('snapshot');
+    }
+
+    /** v0.1.284 — Archivos de un tipo (`snapshot` | `tenant_transfer`), más nuevos primero. */
+    async listByKind(kind: 'snapshot' | 'tenant_transfer'): Promise<RemoteFile[]> {
         const out: RemoteFile[] = [];
         let pageToken = '';
         for (let page = 0; page < 50; page++) {
-            const query = encodeURIComponent("appProperties has { key='imagina_backups' and value='snapshot' } and trashed=false");
+            const query = encodeURIComponent(`appProperties has { key='imagina_backups' and value='${kind}' } and trashed=false`);
             const res = await this.call(
                 'GET',
                 `/drive/v3/files?q=${query}&spaces=drive&pageSize=100&orderBy=createdTime desc&fields=nextPageToken,files(id,name,size,createdTime,appProperties)${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`,

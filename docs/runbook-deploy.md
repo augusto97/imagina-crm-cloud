@@ -5,6 +5,13 @@
 > proxy del API con HTTPS automático. Mismo origen → sin CORS, cookie de sesión
 > directa. Archivos de apoyo en `deploy/`.
 
+> **v0.1.283 — instalación en un comando** (recomendada): en un VPS limpio,
+> `curl -fsSL https://github.com/augusto97/imagina-crm-cloud/releases/latest/download/install.sh | sudo bash`
+> hace todo lo de este runbook (paquetes, Postgres/Redis, release, servicio y
+> Caddy) y deja la app lista para restaurar una copia de Google Drive o
+> empezar de cero. Ver `docs/runbook-migration.md` → «Servidor nuevo en un
+> comando». Este runbook queda como referencia del paso a paso.
+
 ## 0. Requisitos
 
 - VPS con Ubuntu, 2 vCPU / 4 GB RAM mínimo (holgado según los benchmarks §13).

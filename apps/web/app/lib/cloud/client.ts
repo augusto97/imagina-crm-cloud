@@ -159,6 +159,8 @@ import {
     updateStatusSchema,
     backupsStatusSchema,
     backupDriveStatusSchema,
+    transferDriveStatusSchema,
+    recoveryStatusSchema,
     driveConnectPollSchema,
     remoteBackupSchema,
     updateBackupDriveSchema,
@@ -244,6 +246,10 @@ import {
     type UpdateStatus,
     type BackupsStatus,
     type BackupDriveStatus,
+    type TransferDriveStatus,
+    type RecoveryStatus,
+    type RecoveryFreshInput,
+    type RecoveryRestoreInput,
     type DriveConnectPoll,
     type RemoteBackup,
     type UpdateBackupDriveInput,
@@ -1224,6 +1230,32 @@ export class CloudClient {
         return `${this.baseUrl}/system/backups/drive/kit`;
     }
 
+    // --- modo recuperación de un servidor nuevo (v0.1.283, ADR-S43; sin sesión) ---
+    recoveryStatus(): Promise<RecoveryStatus> {
+        return this.request('GET', '/recovery/status', { schema: recoveryStatusSchema });
+    }
+    recoveryUnlock(code: string): Promise<void> {
+        return this.request('POST', '/recovery/unlock', { body: { code } });
+    }
+    recoveryDriveClient(client_id: string, client_secret: string): Promise<BackupDriveStatus> {
+        return this.request('POST', '/recovery/drive/client', { body: { client_id, client_secret }, schema: backupDriveStatusSchema });
+    }
+    recoveryDriveConnect(): Promise<DriveConnectPoll> {
+        return this.request('POST', '/recovery/drive/connect', { schema: driveConnectPollSchema });
+    }
+    recoveryDrivePoll(): Promise<DriveConnectPoll> {
+        return this.request('POST', '/recovery/drive/connect/poll', { schema: driveConnectPollSchema });
+    }
+    recoveryDriveFiles(): Promise<RemoteBackup[]> {
+        return this.request('GET', '/recovery/drive/files', { schema: z.array(remoteBackupSchema) });
+    }
+    recoveryRestore(input: RecoveryRestoreInput): Promise<void> {
+        return this.request('POST', '/recovery/restore', { body: input });
+    }
+    recoveryFresh(input: RecoveryFreshInput): Promise<void> {
+        return this.request('POST', '/recovery/fresh', { body: input });
+    }
+
     // --- migración de UNA empresa entre instancias (v0.1.197, ADR-S23) ---
     transfersStatus(): Promise<TenantTransferStatus> {
         return this.request('GET', '/platform/transfers', { schema: tenantTransferStatusSchema });
@@ -1242,6 +1274,19 @@ export class CloudClient {
     }
     transferRemove(name: string): Promise<void> {
         return this.request('DELETE', `/platform/transfers/${encodeURIComponent(name)}`, {});
+    }
+    // --- empresas por Google Drive (v0.1.284, ADR-S43) ---
+    transfersDrive(): Promise<TransferDriveStatus> {
+        return this.request('GET', '/platform/transfers/drive', { schema: transferDriveStatusSchema });
+    }
+    transferToDrive(name: string): Promise<void> {
+        return this.request('POST', `/platform/transfers/${encodeURIComponent(name)}/drive`, {});
+    }
+    transferFromDrive(id: string, passphrase: string): Promise<void> {
+        return this.request('POST', `/platform/transfers/drive/${encodeURIComponent(id)}/fetch`, { body: { passphrase } });
+    }
+    transferDriveRemove(id: string): Promise<void> {
+        return this.request('DELETE', `/platform/transfers/drive/${encodeURIComponent(id)}`, {});
     }
     transferDownloadUrl(name: string): string {
         return `${this.baseUrl}/platform/transfers/${encodeURIComponent(name)}/download`;

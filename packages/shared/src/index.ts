@@ -43,6 +43,7 @@ export * from './schemas/platform';
 export * from './schemas/payment';
 export * from './schemas/update';
 export * from './schemas/backups';
+export * from './schemas/recovery';
 export * from './schemas/ai';
 export * from './schemas/export';
 export * from './schemas/import';

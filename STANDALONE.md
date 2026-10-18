@@ -2999,6 +2999,45 @@ cliente. Por eso va en el kit. Perder la contraseña de recuperación vuelve
 inservibles las copias del Drive (las locales siguen sin cifrar, como
 antes). Cambiarla no recifra las viejas: cada copia lleva su verificador.
 
+**Addendum v0.1.283 (instalador + modo recuperación).** `install.sh` se publica
+suelto en cada release y además va en el bundle. Deja el `.env` con secretos
+nuevos y el HASH (SHA-256) de un código de un solo servidor
+(`RECOVERY_CODE_SHA256`). El modo está activo mientras haya código y **la base no
+tenga empresas**. No se usa "sin usuarios" porque el API crea al arrancar la
+cuenta de cada superadmin del `.env` (SEC-04), así que la tabla nunca está
+vacía. Todo lo que tiene que sobrevivir a la restauración vive fuera de Postgres
+y de Redis, porque los dos se reemplazan:
+- el permiso del navegador es un token HMAC sin estado (cookie `imbase_recovery`,
+  2 h, con path `/api/v1/recovery`), con freno de 10 intentos;
+- el avance va a `shared/recovery/status.json`.
+
+El API baja y descifra la copia. Antes verifica la contraseña contra el
+verificador y exige que la copia traiga el `.env`. Después lanza desacoplado
+`recover-from-snapshot.sh`, que:
+1. instala el `.env` de la copia (con el filtro SEC-37) conservando dominio,
+   rutas y puertos de este servidor;
+2. recrea los contenedores con esas credenciales, cosa que sólo hace si no hay
+   empresas;
+3. instala la versión de la copia si es otra (`bootstrap-server.sh`) o restaura
+   directo;
+4. reinicia.
+
+"Empezar de cero" activa la cuenta pre-creada del superadmin y crea su empresa.
+`imagina-restore` hace lo mismo por consola, sin Redis ni base. El compose de
+producción acepta `POSTGRES_PORT`/`REDIS_PORT` (default 5432/6379), porque el
+stack de ServerAvatar ocupa el 6379.
+
+**Addendum v0.1.284 (mover una empresa por el Drive).** El archivo de ADR-S23
+sube CIFRADO (con la contraseña de recuperación del servidor que lo sube) a la
+subcarpeta «Empresas exportadas» de la raíz de las copias. Se reconoce por
+`appProperties.imagina_backups = tenant_transfer`, así que no se mezcla con las
+copias del servidor. Las propiedades llevan el slug, el nombre, la versión y la
+cantidad de registros, para listarla sin bajarla. Otro servidor conectado al
+mismo Drive la ve, verifica la contraseña del ORIGEN contra el verificador y la
+trae al directorio de transferencias (sin pisar un archivo con el mismo nombre).
+Desde ahí se importa como siempre. Subir y traer corren en segundo plano, una
+operación a la vez, con el estado en Redis (`transfers:drive:run`).
+
 ---
 
-**Versión del documento:** 1.80.0 (copia del servidor en Google Drive — ADR-S43)
+**Versión del documento:** 1.82.0 (mover una empresa por el Drive — ADR-S43)

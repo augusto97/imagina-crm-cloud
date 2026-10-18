@@ -26,6 +26,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UpdateModule } from './update/update.module';
 import { PortalModule } from './portal/portal.module';
+import { RecoveryModule } from './recovery/recovery.module';
 import { PublicListsModule } from './public-lists/public-lists.module';
 import { PlatformModule } from './platform/platform.module';
 import { AuditModule } from './audit/audit.service';
@@ -102,6 +103,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
         AiModule,
         HealthModule,
         UpdateModule,
+        RecoveryModule,
     ],
 })
 export class AppModule {}

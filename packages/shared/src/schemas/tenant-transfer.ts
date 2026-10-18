@@ -106,3 +106,49 @@ export const importTenantResultSchema = z.object({
     warnings: z.array(z.string()),
 });
 export type ImportTenantResult = z.infer<typeof importTenantResultSchema>;
+
+// ---------------------------------------------------------------------------
+// v0.1.284 (ADR-S43) — Mover una empresa por Google Drive
+// ---------------------------------------------------------------------------
+
+/**
+ * El archivo de una empresa sube CIFRADO (la contraseña de recuperación del
+ * servidor que lo exporta) a `Imagina Base · Copias del servidor / Empresas
+ * exportadas`, y otro servidor conectado al mismo Drive lo trae y lo importa.
+ * Sin descargar ni subir archivos a mano.
+ */
+export const remoteTransferSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    /** Servidor que la exportó. */
+    instance: z.string(),
+    tenant_slug: z.string(),
+    tenant_name: z.string(),
+    exported_at: z.string(),
+    app_version: z.string().nullable(),
+    records: z.number().int().nullable(),
+    size_bytes: z.number().int().nonnegative(),
+    this_server: z.boolean(),
+});
+export type RemoteTransfer = z.infer<typeof remoteTransferSchema>;
+
+export const transferDriveRunSchema = z.object({
+    op: z.enum(['upload', 'fetch']),
+    status: z.enum(['running', 'success', 'failed']),
+    message: z.string(),
+    file: z.string().nullable(),
+    at: z.string(),
+});
+export type TransferDriveRun = z.infer<typeof transferDriveRunSchema>;
+
+export const transferDriveStatusSchema = z.object({
+    /** Drive conectado y con contraseña de recuperación (si no, el motivo). */
+    ready: z.boolean(),
+    reason: z.string().nullable(),
+    files: z.array(remoteTransferSchema),
+    run: transferDriveRunSchema.nullable(),
+});
+export type TransferDriveStatus = z.infer<typeof transferDriveStatusSchema>;
+
+export const fetchTransferSchema = z.object({ passphrase: z.string().min(1).max(200) });
+export type FetchTransferInput = z.infer<typeof fetchTransferSchema>;

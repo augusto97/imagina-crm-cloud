@@ -37,6 +37,6 @@ import { DEPLOYER } from './update.types';
             useFactory: (env: Env) => new SymlinkDeployer(env),
         },
     ],
-    exports: [UpdateManager],
+    exports: [UpdateManager, BackupsService, BackupDriveService],
 })
 export class UpdateModule {}

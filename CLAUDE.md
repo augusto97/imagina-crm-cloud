@@ -7854,7 +7854,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         token) y navegador 12/12: el correo y la cuenta de cobro que armó el
         MCP se abren en sus editores visuales con todos sus bloques.
 
-- [ ] **F12 — Recuperar el servidor desde Google Drive** (ADR-S43, pedido
+- [x] **F12 — Recuperar el servidor desde Google Drive** (ADR-S43, pedido
       del usuario: "en un VPS limpio correr unos comandos, vincular el Drive,
       elegir la copia y restaurar"; plan en tres entregas y el instalador
       ofrece Caddy o ServerAvatar):
@@ -7905,12 +7905,94 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         contraseña, kit sin contraseña, borrar sólo copias y desconectar que
         revoca + E2E navegador 19/19 contra el Google falso (con la copia
         real de snapshot.sh) y celular sin desborde.
-  - [ ] **Instalador + modo recuperación (v0.1.283)**: `install.sh` en cada
-        release (Docker, Node, Postgres/Redis, app, systemd; Caddy o
-        ServerAvatar), asistente en el navegador con código de un solo uso
-        (conectar Drive → elegir copia → contraseña → restaurar; si la copia es
-        más nueva, instala esa versión) y `imagina-restore` por consola.
-  - [ ] **Mover una empresa por el Drive (v0.1.284)** (ADR-S23 sobre Drive).
+  - [x] **Instalador de un comando + modo recuperación (v0.1.283)**: en un
+        VPS limpio (Ubuntu/Debian),
+        `curl -fsSL https://github.com/<repo>/releases/latest/download/install.sh | sudo bash`
+        (el workflow lo publica suelto en cada release y lo mete en el bundle).
+        (a) **`deploy/install.sh`** pregunta dominio, correo de operador y
+        servidor web: **Caddy** (lo instala y configura con HTTPS automático),
+        **ServerAvatar** (no toca Nginx, imprime qué pegar) o ninguno. Instala
+        Docker, Node 22, el usuario `deploy` (grupo docker + sudoers para
+        reiniciar su servicio), la última versión con el layout de releases
+        (`deploy.sh`: migraciones + flip), el servicio systemd y un `.env` con
+        secretos nuevos. Idempotente: no pisa un `.env` existente, no re-baja la
+        versión instalada y renueva el código. Si el 5432/6379 están ocupados
+        (el stack de ServerAvatar trae su Redis) elige puertos libres: el compose
+        de producción acepta `POSTGRES_PORT`/`REDIS_PORT`. (b) **Modo
+        recuperación** (`recovery/`): el `.env` guarda sólo el SHA-256 de un
+        código `XXXX-XXXX-XXXX` y el modo vale mientras **no haya empresas**. No
+        "sin usuarios": el API crea al arrancar la cuenta de cada superadmin,
+        SEC-04 — bug atrapado en el E2E. Fuera de ese estado, `/recovery/*`
+        responde 404. Permiso del navegador = token HMAC sin estado (cookie de
+        2 h con path `/api/v1/recovery`, 10 intentos y bloqueo de 15 min): tiene
+        que sobrevivir a que Postgres y Redis se reemplacen, igual que el avance,
+        que va a `shared/recovery/status.json`. (c) **Restaurar**: cliente de
+        Google del kit → conectar por código de dispositivo → todas las copias
+        del Drive → contraseña (verificada ANTES de bajar; una copia sin `.env`
+        se rechaza) → el API baja y descifra y lanza desacoplado
+        **`recover-from-snapshot.sh`**: instala el `.env` de la copia (filtro
+        SEC-37) conservando dominio, rutas y puertos de ESTE servidor (las URLs
+        de Postgres/Redis se reapuntan), recrea los contenedores con esas
+        credenciales (se niega si hay empresas), instala la versión de la copia
+        si es otra (`bootstrap-server.sh`, que ahora descifra una vez y pasa el
+        `.tar`) o restaura directo, y reinicia. (d) **Empezar de cero** activa la
+        cuenta pre-creada del superadmin con la contraseña elegida y crea su
+        empresa. (e) **`imagina-restore`** (`dist/recovery/cli.js`, wrapper en
+        `/usr/local/bin`): lo mismo por consola, sin Redis ni base, para cuando
+        el dominio todavía no apunta. (f) Front: página `/recuperar` fuera del
+        router (código → elegir → Drive o cuenta nueva → avance por pasos que
+        sobrevive al reinicio → «el servidor ya está funcionando»). El kit de
+        recuperación pasa a explicar el camino de un comando. Tests: 6 de
+        integración (404 sin código, código normalizado y freno, restauración
+        con el Google falso: contraseña mala / copia sin `.env` / inexistente
+        rechazadas, baja + descifra + script, nada queda en disco, empezar de
+        cero sobre la cuenta pre-creada) + 2 del script con docker/systemctl
+        falsos (`.env` mezclado sin `NODE_OPTIONS` ni el código, puertos
+        reapuntados, se niega con empresas) — E2E navegador 19/19 contra una
+        segunda instancia en modo recuperación, `imagina-restore` contra el
+        Google falso, e instalador completo en un contenedor Debian limpio con
+        Docker/systemd/GitHub simulados (instala, sale con 0, rerun conserva el
+        `.env` y renueva el código con el hash correcto, puerto 6379 ocupado →
+        6380) + shellcheck limpio. **Límite**: no hay un VPS real aquí; el
+        primer uso real queda para el servidor del usuario.
+  - [x] **Mover una empresa por el Drive (v0.1.284)**: el archivo de ADR-S23
+        viaja por el mismo Google Drive de las copias del servidor, sin bajar ni
+        subir archivos a mano. En **Plataforma → Migrar empresas**:
+        - **Subir a Drive** en cada archivo lo sube CIFRADO con la contraseña de
+          recuperación de ese servidor a `Imagina Base · Copias del servidor /
+          Empresas exportadas`.
+        - La sección **En Google Drive** lista las empresas de todos los
+          servidores conectados al mismo Drive (con «de este servidor» o «de
+          <servidor>», versión, registros y tamaño).
+        - **Traer a este servidor** pide la contraseña del ORIGEN, la verifica
+          contra el verificador antes de bajar nada, y deja el archivo en la
+          lista lista para «Importar aquí». Si ya existe uno con ese nombre,
+          suma `-2`. No quedan restos del cifrado.
+        - **Borrar del Drive** pide confirmación y sólo borra empresas, nunca
+          una carpeta ni una copia del servidor.
+
+        Detalles:
+        - Las empresas se reconocen por `appProperties` (`tenant_transfer`), así
+          que no se mezclan con las copias del servidor.
+        - `encryptAndUpload` se extrajo y lo comparten las copias y las
+          empresas.
+        - Subir y traer corren en segundo plano, una a la vez, con el estado en
+          Redis (`TransferDriveService`).
+        - Sin Drive o sin contraseña, el panel dice qué falta y enlaza a Copias
+          de seguridad.
+
+        Tests:
+        - 4 de integración con dos servidores (dos Redis, dos carpetas, dos
+          contraseñas) y un Google falso: sin Drive o sin contraseña no sube;
+          sube cifrada; operación ocupada; el otro servidor la ve sin mezclarla
+          con las copias; contraseña del destino rechazada, la del origen la
+          trae idéntica, traerla otra vez no pisa; borrar sólo empresas.
+        - E2E navegador 11/11 (exportar → subir → borrar local → contraseña mala
+          → traer → vuelve con su nombre → borrar del Drive).
+
+        **Con esto F12 queda completa: copias del servidor fuera del servidor,
+        un servidor nuevo en un comando que restaura con unos clics, y empresas
+        que se mueven entre servidores por el mismo Drive.**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

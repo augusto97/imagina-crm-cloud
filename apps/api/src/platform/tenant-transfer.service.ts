@@ -213,7 +213,7 @@ export class TenantTransferService {
         return dir;
     }
 
-    private async readManifest(file: string): Promise<TenantTransferManifest | null> {
+    async readManifest(file: string): Promise<TenantTransferManifest | null> {
         try {
             const raw = await this.tarRead(file, 'manifest.json');
             const parsed = tenantTransferManifestSchema.safeParse(JSON.parse(raw));
