@@ -355,6 +355,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 versión publicada: **v0.1.284** (mover una empresa por el Drive; F12 completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-18 — **Pregunta del usuario sobre F12**: «¿hay que crear otro
+  cliente de Google para el backup si ya tenemos la integración de Google en
+  Ajustes?». Respuesta: sí es OAuth, pero el de las copias usa el tipo «TV y
+  dispositivos de entrada limitada» (código de dispositivo) porque tiene que
+  funcionar en un servidor RECIÉN instalado, sin dominio ni HTTPS, y la
+  integración web exige una URI de redirección registrada. No hace falta otro
+  proyecto: es otro cliente en el MISMO proyecto de Google Cloud. Se le
+  propuso: en el servidor que ya funciona, conectar el Drive de las copias con
+  la app web de Plataforma → Integraciones (un botón «Autorizar», sin cliente
+  extra) y dejar el código de dispositivo sólo para restaurar en un servidor
+  sin dominio. **Queda esperando su respuesta.**
 - 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
   del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
   la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
