@@ -77,7 +77,17 @@ TAR="$SNAPSHOT"
 if [[ "$SNAPSHOT" == *.gpg ]]; then
     echo "→ descifrando"
     TAR="$WORK/snapshot.tar"
-    gpg --batch --yes --decrypt --output "$TAR" "$SNAPSHOT"
+    # v0.1.282 — las copias de Google Drive van cifradas con la contraseña de
+    # recuperación (simétrico). SNAPSHOT_PASSPHRASE_FILE la lee de un archivo;
+    # sin él, gpg la pide en la terminal. Una copia cifrada con clave pública
+    # (BACKUP_GPG_RECIPIENT) se descifra igual que antes.
+    if [[ -n "${SNAPSHOT_PASSPHRASE_FILE:-}" ]]; then
+        gpg --batch --yes --pinentry-mode loopback --passphrase-file "$SNAPSHOT_PASSPHRASE_FILE" --decrypt --output "$TAR" "$SNAPSHOT"
+    elif [[ -t 0 ]]; then
+        gpg --yes --decrypt --output "$TAR" "$SNAPSHOT"
+    else
+        gpg --batch --yes --decrypt --output "$TAR" "$SNAPSHOT"
+    fi
 fi
 echo "→ extrayendo y verificando checksums"
 tar -C "$WORK" -xf "$TAR"

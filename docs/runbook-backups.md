@@ -11,6 +11,10 @@
 > **`docs/runbook-migration.md`**. Este runbook sigue vigente para el dump
 > lógico y el drill.
 
+> **v0.1.282**: las copias completas pueden subirse **cifradas a Google Drive**
+> (copia fuera del servidor). Configuración y descifrado en
+> `docs/runbook-migration.md` → «Copia fuera del servidor».
+
 ## Objetivos (RPO / RTO)
 
 - **RPO** (pérdida máxima aceptable): ≤ 24 h con backup lógico diario; ≤ 5 min

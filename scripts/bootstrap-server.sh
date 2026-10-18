@@ -22,7 +22,8 @@
 #   5. Opcional --install-service: instala la unidad systemd y arranca el API.
 #
 # Flags:
-#   --snapshot <archivo>   (requerido) snapshot .tar o .tar.gpg
+#   --snapshot <archivo>   (requerido) snapshot .tar o .tar.gpg (la contraseña de
+#                          recuperación se pide o se lee de SNAPSHOT_PASSPHRASE_FILE)
 #   --version <x.y.z>      versión del bundle a instalar (default: la del snapshot)
 #   --repo <owner/repo>    repo de GitHub (default augusto97/imagina-crm-cloud)
 #   --install-service      copia deploy/imagina-api.service, habilita y arranca
@@ -54,7 +55,17 @@ mkdir -p "$BASE_PATH/releases" "$BASE_PATH/shared/backups" "$BASE_PATH/shared/up
 # ── 2. manifest + env del snapshot ──────────────────────────────────────────
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 TAR="$SNAPSHOT"
-if [[ "$SNAPSHOT" == *.gpg ]]; then TAR="$WORK/s.tar"; gpg --batch --yes --decrypt --output "$TAR" "$SNAPSHOT"; fi
+if [[ "$SNAPSHOT" == *.gpg ]]; then
+    TAR="$WORK/s.tar"
+    # v0.1.282 — copia de Google Drive: contraseña de recuperación (simétrico).
+    if [[ -n "${SNAPSHOT_PASSPHRASE_FILE:-}" ]]; then
+        gpg --batch --yes --pinentry-mode loopback --passphrase-file "$SNAPSHOT_PASSPHRASE_FILE" --decrypt --output "$TAR" "$SNAPSHOT"
+    elif [[ -t 0 ]]; then
+        gpg --yes --decrypt --output "$TAR" "$SNAPSHOT"
+    else
+        gpg --batch --yes --decrypt --output "$TAR" "$SNAPSHOT"
+    fi
+fi
 tar -C "$WORK" -xf "$TAR" --wildcards '*/manifest.json' '*/env.production' 2>/dev/null || tar -C "$WORK" -xf "$TAR"
 PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*' | head -1)"
 [[ -n "$PARTS" ]] || { echo "✗ no es un snapshot de Imagina Base" >&2; exit 1; }
@@ -92,7 +103,8 @@ echo "→ release $VERSION instalado y activo ($REL)"
 # y son la versión que la persona eligió correr); el del bundle es el respaldo.
 RESTORE="$HERE/snapshot-restore.sh"
 [[ -f "$RESTORE" ]] || RESTORE="$REL/deploy/snapshot-restore.sh"
-BASE_PATH="$BASE_PATH" APP_VERSION="$VERSION" bash "$RESTORE" "$SNAPSHOT" --no-service --no-safety --skip-env $YES
+# Ya descifrado arriba: el restore recibe el .tar (no vuelve a pedir la contraseña).
+BASE_PATH="$BASE_PATH" APP_VERSION="$VERSION" bash "$RESTORE" "$TAR" --no-service --no-safety --skip-env $YES
 
 # ── 5. servicio ─────────────────────────────────────────────────────────────
 if [[ $INSTALL_SERVICE -eq 1 ]]; then

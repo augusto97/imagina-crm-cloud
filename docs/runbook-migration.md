@@ -42,6 +42,43 @@ El superadmin puede, sin SSH:
 
 Las copias viven en `shared/backups/` (o `BACKUPS_DIR`).
 
+## Copia fuera del servidor: Google Drive (v0.1.282, ADR-S43)
+
+Una copia en el mismo disco que la app no te salva si el servidor se pierde.
+En **Plataforma → Copias de seguridad → Copia fuera del servidor** cada copia
+se sube **cifrada** a tu Google Drive. Se configura una vez:
+
+1. **Cliente de Google.** En Google Cloud (puede ser el mismo proyecto que usas
+   en Integraciones) habilita la **Google Drive API** y en *Google Auth Platform
+   → Clientes → Crear cliente* elige **«TV y dispositivos de entrada
+   limitada»**. Publica la app en *Público*: con `drive.file` no hace falta
+   verificarla, y si queda «En prueba» Google corta la conexión cada 7 días.
+   Pega el ID y el secreto en el panel.
+2. **Conectar.** El panel muestra un código: abre `google.com/device` con la
+   cuenta donde quieres las copias y escríbelo. No hace falta dominio ni HTTPS.
+3. **Contraseña de recuperación** (12+ caracteres). Cifra cada copia antes de
+   salir del servidor. **Sin ella las copias no se pueden abrir**: guárdala en
+   un gestor de contraseñas, fuera del servidor.
+4. **Descarga el kit de recuperación** y guárdalo junto con la contraseña. Trae
+   el cliente de Google, la cuenta, la carpeta y los pasos para un servidor
+   nuevo.
+
+Desde ahí, cada copia (manual o automática) se sube a
+`Imagina Base · Copias del servidor / <nombre del servidor>` y se conservan las
+N más nuevas de ese servidor (configurable). Una copia que ya estaba en el
+servidor se sube con el botón de la nube de su fila. Si la subida falla, la
+copia queda en el servidor, el panel lo marca en rojo y los superadmins
+reciben un correo (uno cada 12 h como mucho).
+
+Las copias del Drive se abren con GPG, sin la app:
+
+```bash
+gpg --output copia.tar --decrypt imagina-snapshot-…tar.gpg   # pide la contraseña
+```
+
+`snapshot-restore.sh` también acepta el `.tar.gpg` directamente: pide la
+contraseña en la terminal o la lee de `SNAPSHOT_PASSPHRASE_FILE`.
+
 ## Escenario 1 — Volver a un estado anterior (misma máquina)
 
 ```bash

@@ -7854,6 +7854,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         token) y navegador 12/12: el correo y la cuenta de cobro que armó el
         MCP se abren en sus editores visuales con todos sus bloques.
 
+- [ ] **F12 — Recuperar el servidor desde Google Drive** (ADR-S43, pedido
+      del usuario: "en un VPS limpio correr unos comandos, vincular el Drive,
+      elegir la copia y restaurar"; plan en tres entregas y el instalador
+      ofrece Caddy o ServerAvatar):
+  - [x] **Copia del servidor en Google Drive (v0.1.282)**: cada copia completa
+        (ADR-S20), manual o automática, se sube **cifrada** al Google Drive del
+        operador, en `Imagina Base · Copias del servidor / <servidor>`, y se
+        conservan las N más nuevas de ESE servidor (las de otros no se tocan).
+        (a) **Cifrado** con una contraseña de recuperación (12+ caracteres):
+        GPG simétrico AES-256 (`snapshot-crypto.ts`, GNUPGHOME temporal, la
+        contraseña en un archivo 0600, nunca en la línea de comandos), formato
+        abierto que se abre sin la app. Se guarda cifrada con `SECRETS_KEY`
+        para que las copias automáticas cifren solas, y cada archivo lleva un
+        verificador scrypt en sus `appProperties` para decir "no es la
+        contraseña" sin bajar GBs. (b) **Conexión por código de dispositivo**
+        (RFC 8628, cliente «TV y dispositivos de entrada limitada»): el panel
+        muestra un código para google.com/device y pregunta respetando el
+        intervalo (y el `slow_down`) de Google. No necesita dominio ni HTTPS,
+        así que sirve en un servidor recién instalado. Permiso `drive.file`.
+        (c) **Subida reanudable** por partes de 8 MiB leída del cifrado en
+        curso (`drive-backup-client.ts`): ni la copia entera en memoria ni dos
+        veces en disco. Si una parte falla (red, 5xx, 429) se pregunta a Google
+        cuánto recibió y se sigue desde ahí; si gpg falla a mitad, el archivo
+        truncado se borra; si la carpeta se borró desde el Drive, se crea de
+        nuevo. Las copias y carpetas se reconocen por propiedades, no por
+        nombre. (d) **Integración**: `BackupsService` llama a un `SnapshotUploader`
+        registrado al arrancar (sin dependencia circular) tras crear la copia,
+        con progreso «Subiendo a Google Drive… 45%» que renueva el lock y el
+        "empezó" (una subida larga no se toma como colgada); job nuevo
+        `drive-upload` para subir una copia que ya estaba en el servidor; run
+        `failed` con el motivo si no se pudo subir. (e) **Avisos**: correo a
+        los superadmins cuando una subida falla (uno cada 12 h); autorización
+        revocada → «Hay que reconectar». (f) **Kit de recuperación** (texto):
+        cliente de Google, cuenta, carpeta y pasos para el servidor nuevo, sin
+        la contraseña. (g) Config en `platform:backups:drive` → viaja en el
+        snapshot: el servidor restaurado sigue conectado y sigue subiendo.
+        Endpoints bajo `system/backups/drive` (superadmin). Panel «Copia fuera
+        del servidor · Google Drive» en Plataforma → Copias de seguridad
+        (pasos 1-2-3: cliente, conectar, contraseña; ajustes; última subida;
+        copias del Drive de todos los servidores con «este»; borrar con
+        confirmación; desconectar) y botón de la nube en cada copia guardada.
+        `snapshot-restore.sh` acepta el `.tar.gpg` (pide la contraseña o
+        `SNAPSHOT_PASSPHRASE_FILE`). Env `GOOGLE_OAUTH_URL` (para tests).
+        12 tests con un Google falso en proceso (`test/helpers/fake-google-
+        drive-backups.ts`): verificador, gpg ida y vuelta, conexión con el
+        intervalo, subida de 20 MB con una parte caída que se retoma y el
+        archivo bajado+descifrado idéntico, retención que no toca otro
+        servidor, autorización revocada (fallo, marca y UN correo), sin
+        contraseña, kit sin contraseña, borrar sólo copias y desconectar que
+        revoca + E2E navegador 19/19 contra el Google falso (con la copia
+        real de snapshot.sh) y celular sin desborde.
+  - [ ] **Instalador + modo recuperación (v0.1.283)**: `install.sh` en cada
+        release (Docker, Node, Postgres/Redis, app, systemd; Caddy o
+        ServerAvatar), asistente en el navegador con código de un solo uso
+        (conectar Drive → elegir copia → contraseña → restaurar; si la copia es
+        más nueva, instala esa versión) y `imagina-restore` por consola.
+  - [ ] **Mover una empresa por el Drive (v0.1.284)** (ADR-S23 sobre Drive).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

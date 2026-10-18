@@ -30,6 +30,16 @@ const SNAPSHOT_RE = /^imagina-snapshot-(\d{8}T\d{6}Z)-v(.+?)\.tar(\.gpg)?$/;
 const DUMP_RE = /^imagina-base-(\d{8}T\d{6}Z)\.dump(\.gpg)?$/;
 const PRE_RESTORE_RE = /^pre-restore-(\d{8}T\d{6}Z)\.dump$/;
 
+/**
+ * v0.1.282 (ADR-S43) — Quien sube la copia recién creada a un destino externo
+ * (Google Drive). Se registra en tiempo de arranque para no crear una
+ * dependencia circular entre los dos services.
+ */
+export interface SnapshotUploader {
+    /** null = no hay nada que subir (sin Drive o apagado). */
+    afterSnapshot(name: string, progress: (message: string) => Promise<void>): Promise<{ ok: boolean; message: string } | null>;
+}
+
 const idleRun: BackupRun = { status: 'idle', kind: null, message: null, file: null, started_at: null, finished_at: null };
 
 /** `20260914T041844Z` → `2026-09-14T04:18:44Z`. */
@@ -83,12 +93,21 @@ export function nextRunAt(settings: BackupsSettings, lastAt: string | null, now:
 @Injectable()
 export class BackupsService implements OnModuleInit {
     private readonly logger = new Logger(BackupsService.name);
+    private uploader: SnapshotUploader | null = null;
 
     constructor(
         @Inject(ENV) private readonly env: Env,
         @Inject(REDIS) private readonly redis: Redis,
         @Inject(DEPLOYER) private readonly deployer: Deployer,
     ) {}
+
+    currentVersion(): string {
+        return this.deployer.currentVersion();
+    }
+
+    registerUploader(uploader: SnapshotUploader): void {
+        this.uploader = uploader;
+    }
 
     /** Al bootear tras una restauración: el API volvió → el restore terminó. */
     async onModuleInit(): Promise<void> {
@@ -194,7 +213,7 @@ export class BackupsService implements OnModuleInit {
             } catch {
                 continue;
             }
-            const manifest = parsed.kind === 'snapshot' && !parsed.encrypted ? await this.readManifest(path.join(dir, name)) : null;
+            const manifest = parsed.kind === 'snapshot' && !parsed.encrypted ? await this.manifestOf(path.join(dir, name)) : null;
             out.push({
                 name,
                 kind: parsed.kind,
@@ -210,7 +229,7 @@ export class BackupsService implements OnModuleInit {
     }
 
     /** El manifest va PRIMERO en el tar: leerlo no cuesta extraer el resto. */
-    private async readManifest(file: string): Promise<{
+    async manifestOf(file: string): Promise<{
         created_at: string;
         app_version: string;
         migrations_applied: number | null;
@@ -276,9 +295,19 @@ export class BackupsService implements OnModuleInit {
             });
             const file = /snapshot listo: (\S+)/.exec(stdout)?.[1] ?? null;
             const name = file ? path.basename(file) : null;
-            const at = nowISO();
-            await this.redis.set(LAST_KEY, at);
-            await this.writeRun({ status: 'success', kind: 'snapshot', message: trigger === 'scheduled' ? 'Copia automática creada' : 'Copia creada', file: name, started_at: null, finished_at: at });
+            await this.redis.set(LAST_KEY, nowISO());
+            let status: BackupRun['status'] = 'success';
+            let message = trigger === 'scheduled' ? 'Copia automática creada' : 'Copia creada';
+            // v0.1.282 — la copia sale también del servidor (Google Drive).
+            if (name && this.uploader) {
+                const up = await this.uploader.afterSnapshot(name, (m) => this.heartbeat('snapshot', m, name));
+                if (up?.ok) message += ' y subida a Google Drive';
+                else if (up) {
+                    status = 'failed';
+                    message = `La copia se creó en el servidor, pero no se pudo subir a Google Drive: ${up.message}`;
+                }
+            }
+            await this.writeRun({ status, kind: 'snapshot', message, file: name, started_at: null, finished_at: nowISO() });
             this.logger.log(`Snapshot creado: ${name ?? '(sin nombre)'} (${trigger})`);
             return name;
         } catch (err) {
@@ -290,6 +319,48 @@ export class BackupsService implements OnModuleInit {
         } finally {
             await this.redis.del(LOCK_KEY);
         }
+    }
+
+    /**
+     * v0.1.282 — Sube a Google Drive una copia que YA está en el servidor
+     * (job `drive-upload`). Toma el mismo lock: nunca en paralelo con otra copia.
+     */
+    async uploadExisting(name: string): Promise<{ ok: boolean; message: string }> {
+        this.resolve(name);
+        if (!this.uploader) return { ok: false, message: 'Google Drive no está disponible' };
+        const got = await this.redis.set(LOCK_KEY, '1', 'EX', 3600, 'NX');
+        if (got !== 'OK') return { ok: false, message: 'Hay otra operación de copias en curso' };
+        try {
+            await this.writeRun({ status: 'running', kind: 'drive_upload', message: 'Subiendo a Google Drive…', file: name, started_at: nowISO(), finished_at: null });
+            const up = (await this.uploader.afterSnapshot(name, (m) => this.heartbeat('drive_upload', m, name))) ?? {
+                ok: false,
+                message: 'Conecta Google Drive y define la contraseña de recuperación primero.',
+            };
+            await this.writeRun({
+                status: up.ok ? 'success' : 'failed',
+                kind: 'drive_upload',
+                message: up.ok ? 'Copia subida a Google Drive' : `No se pudo subir a Google Drive: ${up.message}`,
+                file: name,
+                started_at: null,
+                finished_at: nowISO(),
+            });
+            return up;
+        } finally {
+            await this.redis.del(LOCK_KEY);
+        }
+    }
+
+    async markUploadQueued(name: string): Promise<void> {
+        await this.writeRun({ status: 'queued', kind: 'drive_upload', message: 'En cola', file: name, started_at: nowISO(), finished_at: null });
+    }
+
+    /**
+     * Progreso de una operación larga: renueva el lock y el "empezó" (así una
+     * subida de varios GB no se toma como proceso colgado).
+     */
+    private async heartbeat(kind: BackupRun['kind'], message: string, file: string): Promise<void> {
+        await this.redis.expire(LOCK_KEY, 3600).catch(() => undefined);
+        await this.writeRun({ status: 'running', kind, message, file, started_at: nowISO(), finished_at: null });
     }
 
     /** Tick horario: copia automática si toca (una por día UTC a la hora elegida). */
