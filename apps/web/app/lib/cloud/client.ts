@@ -159,6 +159,7 @@ import {
     updateStatusSchema,
     backupsStatusSchema,
     backupDriveStatusSchema,
+    transferDriveStatusSchema,
     recoveryStatusSchema,
     driveConnectPollSchema,
     remoteBackupSchema,
@@ -245,6 +246,7 @@ import {
     type UpdateStatus,
     type BackupsStatus,
     type BackupDriveStatus,
+    type TransferDriveStatus,
     type RecoveryStatus,
     type RecoveryFreshInput,
     type RecoveryRestoreInput,
@@ -1272,6 +1274,19 @@ export class CloudClient {
     }
     transferRemove(name: string): Promise<void> {
         return this.request('DELETE', `/platform/transfers/${encodeURIComponent(name)}`, {});
+    }
+    // --- empresas por Google Drive (v0.1.284, ADR-S43) ---
+    transfersDrive(): Promise<TransferDriveStatus> {
+        return this.request('GET', '/platform/transfers/drive', { schema: transferDriveStatusSchema });
+    }
+    transferToDrive(name: string): Promise<void> {
+        return this.request('POST', `/platform/transfers/${encodeURIComponent(name)}/drive`, {});
+    }
+    transferFromDrive(id: string, passphrase: string): Promise<void> {
+        return this.request('POST', `/platform/transfers/drive/${encodeURIComponent(id)}/fetch`, { body: { passphrase } });
+    }
+    transferDriveRemove(id: string): Promise<void> {
+        return this.request('DELETE', `/platform/transfers/drive/${encodeURIComponent(id)}`, {});
     }
     transferDownloadUrl(name: string): string {
         return `${this.baseUrl}/platform/transfers/${encodeURIComponent(name)}/download`;

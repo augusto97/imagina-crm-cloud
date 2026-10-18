@@ -212,8 +212,16 @@ empresas** (superadmin). ADR-S23.
    `imagina-tenant-<slug>-<fecha>.tar` con sus listas, campos, registros
    (incluidas subtareas y descripciones), vistas, tableros, automatizaciones,
    comentarios, actividad, archivos subidos y miembros. Descárgalo.
-2. **En el servidor de DESTINO**: **Subir archivo (.tar)**, después
-   **Importar aquí**. Puedes cambiarle el nombre y el identificador; si el
+   **Por Google Drive (v0.1.284, sin descargar ni subir a mano):** si los dos
+   servidores tienen Google Drive conectado en Copias de seguridad (con el
+   MISMO cliente de Google), en el origen toca **Subir a Drive** en el archivo
+   —sube cifrado con la contraseña de recuperación de ese servidor a la
+   carpeta «Empresas exportadas»— y en el destino aparece en **En Google
+   Drive**: **Traer a este servidor** pide la contraseña de recuperación del
+   ORIGEN (se verifica antes de bajar) y lo deja en la lista, listo para el
+   paso 2.
+2. **En el servidor de DESTINO**: **Subir archivo (.tar)** (o tráelo del
+   Drive), después **Importar aquí**. Puedes cambiarle el nombre y el identificador; si el
    identificador ya está ocupado se usa el siguiente libre (`acme` → `acme-2`).
 3. **Revisa los avisos del import.** Son acciones pendientes, no ruido:
    - El **enlace público** de cada lista es nuevo → hay que volver a repartirlo.

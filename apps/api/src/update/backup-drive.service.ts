@@ -1,4 +1,5 @@
-import { statSync } from 'node:fs';
+import { existsSync, renameSync, rmSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { hostname } from 'node:os';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, Optional, type OnModuleInit } from '@nestjs/common';
 import {
@@ -7,6 +8,7 @@ import {
     type BackupDriveUpload,
     type DriveConnectPoll,
     type RemoteBackup,
+    type RemoteTransfer,
     type UpdateBackupDriveInput,
 } from '@imagina-base/shared';
 import type Redis from 'ioredis';
@@ -25,7 +27,7 @@ import {
     type DriveUrls,
     type RemoteFile,
 } from './drive-backup-client';
-import { encryptFileStream, passphraseVerifier } from './snapshot-crypto';
+import { checkPassphrase, decryptFile, encryptFileStream, passphraseVerifier } from './snapshot-crypto';
 
 /**
  * Config de la copia externa. Clave `platform:*` → viaja DENTRO del snapshot:
@@ -97,6 +99,24 @@ export function toRemoteBackup(f: RemoteFile, currentInstance: string): RemoteBa
         size_bytes: f.size,
         migrations_applied: Number.isFinite(migrations) && p.imagina_migrations !== undefined && p.imagina_migrations !== '' ? migrations : null,
         includes: inc ? { uploads: inc.includes('u'), redis: inc.includes('r'), env: inc.includes('e') } : null,
+        this_server: (p.imagina_instance ?? '') === currentInstance,
+    };
+}
+
+/** v0.1.284 — Fila del panel de una empresa exportada que está en el Drive. */
+export function toRemoteTransfer(f: RemoteFile, currentInstance: string): RemoteTransfer {
+    const p = f.appProperties;
+    const records = Number(p.imagina_records);
+    return {
+        id: f.id,
+        name: f.name,
+        instance: p.imagina_instance ?? '—',
+        tenant_slug: p.imagina_tenant ?? '',
+        tenant_name: p.imagina_tenant_name || p.imagina_tenant || f.name,
+        exported_at: p.imagina_created_at || f.createdTime,
+        app_version: p.imagina_version || null,
+        records: p.imagina_records !== undefined && p.imagina_records !== '' && Number.isFinite(records) ? records : null,
+        size_bytes: f.size,
         this_server: (p.imagina_instance ?? '') === currentInstance,
     };
 }
@@ -398,42 +418,22 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
             let folder = await this.instanceFolder(client, cfg);
             cfg = await this.config();
 
-            const doUpload = async (parent: string) => {
-                const enc = encryptFileStream(file, passphrase);
-                let lastPct = -1;
-                const uploaded = client.uploadStream(
-                    enc.stream,
-                    {
-                        name: `${name}.gpg`,
-                        parent,
-                        appProperties: {
-                            imagina_backups: 'snapshot',
-                            imagina_instance: prop(this.instanceOf(cfg)),
-                            imagina_version: prop(manifest?.app_version || /-v(.+?)\.tar/.exec(name)?.[1] || ''),
-                            imagina_created_at: prop(manifest?.created_at || new Date().toISOString()),
-                            imagina_migrations: manifest?.migrations_applied != null ? String(manifest.migrations_applied) : '',
-                            imagina_includes: manifest
-                                ? `${manifest.includes.uploads ? 'u' : ''}${manifest.includes.redis ? 'r' : ''}${manifest.includes.env ? 'e' : ''}`
-                                : '',
-                            imagina_pv: cfg.passphrase_verifier ?? '',
-                        },
+            const doUpload = (parent: string) =>
+                this.encryptAndUpload(client, file, size, passphrase, {
+                    name: `${name}.gpg`,
+                    parent,
+                    appProperties: {
+                        imagina_backups: 'snapshot',
+                        imagina_instance: prop(this.instanceOf(cfg)),
+                        imagina_version: prop(manifest?.app_version || /-v(.+?)\.tar/.exec(name)?.[1] || ''),
+                        imagina_created_at: prop(manifest?.created_at || new Date().toISOString()),
+                        imagina_migrations: manifest?.migrations_applied != null ? String(manifest.migrations_applied) : '',
+                        imagina_includes: manifest
+                            ? `${manifest.includes.uploads ? 'u' : ''}${manifest.includes.redis ? 'r' : ''}${manifest.includes.env ? 'e' : ''}`
+                            : '',
+                        imagina_pv: cfg.passphrase_verifier ?? '',
                     },
-                    (bytes) => {
-                        const pct = size > 0 ? Math.min(99, Math.floor((bytes / size) * 100)) : 0;
-                        if (pct !== lastPct && pct % 5 === 0) {
-                            lastPct = pct;
-                            void progress(`Subiendo a Google Drive… ${pct}%`);
-                        }
-                    },
-                );
-                // Si gpg falla a mitad, el archivo subido quedó truncado: se borra.
-                const [up] = await Promise.all([uploaded, enc.done]).catch(async (err: unknown) => {
-                    const done = await uploaded.catch(() => null);
-                    if (done) await client.deleteFile(done.id).catch(() => undefined);
-                    throw err;
-                });
-                return up;
-            };
+                }, progress);
 
             await progress('Subiendo a Google Drive…');
             let up;
@@ -458,6 +458,35 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
             await this.alert(name, message);
             return { ok: false, message };
         }
+    }
+
+    /**
+     * Cifra un archivo (GPG, contraseña de recuperación) MIENTRAS lo sube por
+     * partes. Si gpg falla a mitad, el archivo subido quedó truncado: se borra.
+     */
+    private async encryptAndUpload(
+        client: DriveBackupClient,
+        file: string,
+        size: number,
+        passphrase: string,
+        meta: { name: string; parent: string; appProperties: Record<string, string> },
+        progress: (message: string) => Promise<void>,
+    ): Promise<{ id: string; size: number }> {
+        const enc = encryptFileStream(file, passphrase);
+        let lastPct = -1;
+        const uploaded = client.uploadStream(enc.stream, meta, (bytes) => {
+            const pct = size > 0 ? Math.min(99, Math.floor((bytes / size) * 100)) : 0;
+            if (pct !== lastPct && pct % 5 === 0) {
+                lastPct = pct;
+                void progress(`Subiendo a Google Drive… ${pct}%`);
+            }
+        });
+        const [up] = await Promise.all([uploaded, enc.done]).catch(async (err: unknown) => {
+            const done = await uploaded.catch(() => null);
+            if (done) await client.deleteFile(done.id).catch(() => undefined);
+            throw err;
+        });
+        return up;
     }
 
     /** Conserva las N más nuevas de ESTE servidor. Devuelve cuántas borró. */
@@ -535,6 +564,110 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
         });
         if (!file || file.appProperties.imagina_backups !== 'snapshot') {
             throw new NotFoundException({ code: 'backup_not_found', message: 'Esa copia no está en el Drive', data: { status: 404 } });
+        }
+        await client.deleteFile(id);
+    }
+
+    // ── v0.1.284 — empresas exportadas (ADR-S23) por el Drive ───────────
+
+    /** Si este servidor puede subir/traer empresas; si no, el motivo. */
+    async transferReadiness(): Promise<string | null> {
+        const st = await this.status();
+        if (st.broken) return st.broken;
+        if (!st.connected) return 'Conecta Google Drive en Copias de seguridad para mover empresas por ahí.';
+        if (!st.passphrase_set) return 'Define la contraseña de recuperación en Copias de seguridad: cifra la empresa antes de subirla.';
+        return null;
+    }
+
+    /** Sube el archivo de una empresa, cifrado, a «Empresas exportadas». */
+    async uploadTransfer(
+        file: string,
+        info: { tenant_slug: string; tenant_name: string; exported_at: string; app_version: string; records: number | null },
+        progress: (message: string) => Promise<void> = async () => undefined,
+    ): Promise<{ id: string; size: number }> {
+        const cfg = await this.config();
+        const passphrase = this.reveal(cfg.passphrase, 'La contraseña de recuperación');
+        if (!passphrase) throw new DriveBackupError('Falta definir la contraseña de recuperación.');
+        const client = this.client();
+        const root = cfg.root_folder_id ?? (await client.ensureRootFolder());
+        const name = `${path.basename(file)}.gpg`;
+        const meta = (parent: string) => ({
+            name,
+            parent,
+            appProperties: {
+                imagina_backups: 'tenant_transfer',
+                imagina_instance: prop(this.instanceOf(cfg)),
+                imagina_tenant: prop(info.tenant_slug),
+                imagina_tenant_name: prop(info.tenant_name),
+                imagina_version: prop(info.app_version),
+                imagina_created_at: prop(info.exported_at),
+                imagina_records: info.records != null ? String(info.records) : '',
+                imagina_pv: cfg.passphrase_verifier ?? '',
+            },
+        });
+        const { size } = statSync(file);
+        try {
+            const folder = await client.ensureTransfersFolder(root);
+            return await this.encryptAndUpload(client, file, size, passphrase, meta(folder), progress);
+        } catch (err) {
+            // La carpeta raíz se borró desde el Drive: se crea de nuevo una vez.
+            if (!(err instanceof DriveBackupError) || err.status !== 404) throw err;
+            await this.save({ ...(await this.config()), root_folder_id: null, instance_folder_id: null });
+            const folder = await client.ensureTransfersFolder(await client.ensureRootFolder());
+            return this.encryptAndUpload(client, file, size, passphrase, meta(folder), progress);
+        }
+    }
+
+    async listTransfers(): Promise<RemoteTransfer[]> {
+        const cfg = await this.config();
+        if (!cfg.refresh_token) return [];
+        const instance = prop(this.instanceOf(cfg));
+        return (await this.client().listByKind('tenant_transfer')).map((f) => toRemoteTransfer(f, instance));
+    }
+
+    /**
+     * Trae una empresa del Drive a `destDir` (descifrada, lista para importar).
+     * La contraseña es la del servidor que la SUBIÓ (puede no ser la de éste):
+     * se verifica antes de bajar nada. Devuelve el nombre del archivo.
+     */
+    async fetchTransfer(id: string, passphrase: string, destDir: string, onProgress?: (pct: number) => void): Promise<string> {
+        const client = this.client();
+        const file = await this.verifyTransfer(id, passphrase);
+        // Mismo criterio de nombres que el directorio de transferencias (sin traversal).
+        let base = file.name.replace(/\.gpg$/, '').replace(/[^A-Za-z0-9._-]/g, '_');
+        if (!base.endsWith('.tar')) base = `${base}.tar`;
+        let target = path.join(destDir, base);
+        for (let i = 2; existsSync(target); i++) target = path.join(destDir, base.replace(/\.tar$/, `-${i}.tar`));
+        const enc = path.join(destDir, `.drive-${Date.now()}.gpg`);
+        const tmp = path.join(destDir, `.drive-${Date.now()}.tar`);
+        try {
+            await client.download(id, enc, (bytes) => onProgress?.(file.size > 0 ? Math.min(100, Math.floor((bytes / file.size) * 100)) : 0));
+            await decryptFile(enc, tmp, passphrase);
+            renameSync(tmp, target);
+        } finally {
+            rmSync(enc, { force: true });
+            rmSync(tmp, { force: true });
+        }
+        return path.basename(target);
+    }
+
+    /** La empresa existe en el Drive y la contraseña es la que la cifró (sin bajar nada). */
+    async verifyTransfer(id: string, passphrase: string): Promise<RemoteFile> {
+        const file = await this.client().getFile(id);
+        if (!file || file.appProperties.imagina_backups !== 'tenant_transfer') {
+            throw new NotFoundException({ code: 'transfer_not_found', message: 'Esa empresa ya no está en el Drive.', data: { status: 404 } });
+        }
+        if (checkPassphrase(passphrase, file.appProperties.imagina_pv) === false) {
+            throw new BadRequestException({ code: 'bad_passphrase', message: 'La contraseña no es la del servidor que subió esa empresa.', data: { status: 400 } });
+        }
+        return file;
+    }
+
+    async deleteTransfer(id: string): Promise<void> {
+        const client = this.client();
+        const file = await client.getFile(id);
+        if (!file || file.appProperties.imagina_backups !== 'tenant_transfer') {
+            throw new NotFoundException({ code: 'transfer_not_found', message: 'Esa empresa ya no está en el Drive.', data: { status: 404 } });
         }
         await client.deleteFile(id);
     }

@@ -352,19 +352,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.283** (instalador de un comando + modo recuperación), en `main`.
+versión publicada: **v0.1.284** (mover una empresa por el Drive; F12 completa), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
   del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
   la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
   servidores web (el instalador pregunta Caddy automático o ServerAvatar, que
-  sólo imprime lo que hay que pegar). **v0.1.282 y v0.1.283 hechas** (copias
-  cifradas al Drive + kit; instalador de un comando + `/recuperar` +
-  `imagina-restore`). Falta **v0.1.284** = mover UNA empresa (ADR-S23) por el
-  Drive. El instalador no se probó en un VPS real (sólo en un contenedor
-  Debian con Docker/systemd/GitHub simulados): el primer uso real es del
-  usuario. En producción el
+  sólo imprime lo que hay que pegar). **Las tres hechas (F12 completa)**:
+  v0.1.282 copias cifradas al Drive + kit; v0.1.283 instalador de un comando +
+  `/recuperar` + `imagina-restore`; v0.1.284 mover una empresa por el Drive.
+  Pendiente del lado del usuario: crear el cliente de Google tipo «TV y
+  dispositivos de entrada limitada», publicar la app y probar el instalador en
+  un VPS real (aquí sólo se probó en un contenedor Debian con Docker/systemd/
+  GitHub simulados). En producción el
   operador todavía tiene que crear el cliente de Google tipo «TV y
   dispositivos de entrada limitada» y publicar la app (si no, la conexión
   vence a los 7 días).
@@ -507,6 +508,14 @@ versión publicada: **v0.1.283** (instalador de un comando + modo recuperación)
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-18 · v0.1.284** — Tercera y última entrega de ADR-S43 (F12
+  completa): **mover una empresa entre servidores por Google Drive**. En
+  Plataforma → Migrar empresas, «Subir a Drive» sube el archivo de la empresa
+  cifrado (contraseña de recuperación de ese servidor) a «Empresas
+  exportadas». En el otro servidor, conectado al mismo Drive, aparece en «En
+  Google Drive»: «Traer a este servidor» pide la contraseña del origen (se
+  verifica antes de bajar) y lo deja listo para «Importar aquí». Verificado:
+  4 tests con dos servidores y un Google falso + E2E navegador 11/11.
 - **2026-10-18 · v0.1.283** — Segunda entrega de ADR-S43: **servidor nuevo
   en un comando**. `install.sh` se publica en cada release y se corre con
   `curl -fsSL https://github.com/augusto97/imagina-crm-cloud/releases/latest/download/install.sh | sudo bash`.

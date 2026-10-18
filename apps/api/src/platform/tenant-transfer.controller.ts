@@ -16,7 +16,10 @@ import {
 } from '@nestjs/common';
 import {
     exportTenantSchema,
+    fetchTransferSchema,
     importTenantBodySchema,
+    type FetchTransferInput,
+    type TransferDriveStatus,
     type ExportTenantInput,
     type ExportTenantResult,
     type ImportTenantBody,
@@ -28,6 +31,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantTransferService } from './tenant-transfer.service';
+import { TransferDriveService } from './transfer-drive.service';
 
 /** Un archivo de empresa puede pesar mucho más que un adjunto (20 MB). */
 const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024;
@@ -40,11 +44,39 @@ const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024;
 @Controller('platform')
 @UseGuards(SessionGuard, SuperadminGuard)
 export class TenantTransferController {
-    constructor(private readonly transfers: TenantTransferService) {}
+    constructor(
+        private readonly transfers: TenantTransferService,
+        private readonly drive: TransferDriveService,
+    ) {}
 
     @Get('transfers')
     status(): Promise<TenantTransferStatus> {
         return this.transfers.status();
+    }
+
+    // ── v0.1.284 — por Google Drive (ADR-S43) ───────────────────────────
+
+    @Get('transfers/drive')
+    driveStatus(): Promise<TransferDriveStatus> {
+        return this.drive.status();
+    }
+
+    @Post('transfers/drive/:id/fetch')
+    @HttpCode(202)
+    driveFetch(@Param('id') id: string, @Body(new ZodValidationPipe(fetchTransferSchema)) input: FetchTransferInput): Promise<{ ok: true }> {
+        return this.drive.startFetch(id, input.passphrase);
+    }
+
+    @Delete('transfers/drive/:id')
+    @HttpCode(204)
+    async driveDelete(@Param('id') id: string): Promise<void> {
+        await this.drive.remove(id);
+    }
+
+    @Post('transfers/:name/drive')
+    @HttpCode(202)
+    driveUpload(@Param('name') name: string): Promise<{ ok: true }> {
+        return this.drive.startUpload(name);
     }
 
     @Post('tenants/:id/export')

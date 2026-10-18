@@ -3,10 +3,12 @@ import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { FilesModule } from '../files/files.module';
 import { MembersModule } from '../members/members.module';
+import { UpdateModule } from '../update/update.module';
 import { PlatformController } from './platform.controller';
 import { PlatformService } from './platform.service';
 import { TenantTransferController } from './tenant-transfer.controller';
 import { TenantTransferService } from './tenant-transfer.service';
+import { TransferDriveService } from './transfer-drive.service';
 
 /**
  * Consola de plataforma (operador SaaS). `SuperadminGuard` se provee aquí (no es
@@ -14,8 +16,8 @@ import { TenantTransferService } from './tenant-transfer.service';
  * DbModule @Global.
  */
 @Module({
-    imports: [AuthModule, FilesModule, MembersModule],
+    imports: [AuthModule, FilesModule, MembersModule, UpdateModule],
     controllers: [PlatformController, TenantTransferController],
-    providers: [PlatformService, TenantTransferService, SuperadminGuard],
+    providers: [PlatformService, TenantTransferService, TransferDriveService, SuperadminGuard],
 })
 export class PlatformModule {}

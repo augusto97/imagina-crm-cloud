@@ -7854,7 +7854,7 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         token) y navegador 12/12: el correo y la cuenta de cobro que armó el
         MCP se abren en sus editores visuales con todos sus bloques.
 
-- [ ] **F12 — Recuperar el servidor desde Google Drive** (ADR-S43, pedido
+- [x] **F12 — Recuperar el servidor desde Google Drive** (ADR-S43, pedido
       del usuario: "en un VPS limpio correr unos comandos, vincular el Drive,
       elegir la copia y restaurar"; plan en tres entregas y el instalador
       ofrece Caddy o ServerAvatar):
@@ -7955,7 +7955,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `.env` y renueva el código con el hash correcto, puerto 6379 ocupado →
         6380) + shellcheck limpio. **Límite**: no hay un VPS real aquí; el
         primer uso real queda para el servidor del usuario.
-  - [ ] **Mover una empresa por el Drive (v0.1.284)** (ADR-S23 sobre Drive).
+  - [x] **Mover una empresa por el Drive (v0.1.284)**: el archivo de ADR-S23
+        viaja por el mismo Google Drive de las copias del servidor, sin bajar ni
+        subir archivos a mano. En **Plataforma → Migrar empresas**:
+        - **Subir a Drive** en cada archivo lo sube CIFRADO con la contraseña de
+          recuperación de ese servidor a `Imagina Base · Copias del servidor /
+          Empresas exportadas`.
+        - La sección **En Google Drive** lista las empresas de todos los
+          servidores conectados al mismo Drive (con «de este servidor» o «de
+          <servidor>», versión, registros y tamaño).
+        - **Traer a este servidor** pide la contraseña del ORIGEN, la verifica
+          contra el verificador antes de bajar nada, y deja el archivo en la
+          lista lista para «Importar aquí». Si ya existe uno con ese nombre,
+          suma `-2`. No quedan restos del cifrado.
+        - **Borrar del Drive** pide confirmación y sólo borra empresas, nunca
+          una carpeta ni una copia del servidor.
+
+        Detalles:
+        - Las empresas se reconocen por `appProperties` (`tenant_transfer`), así
+          que no se mezclan con las copias del servidor.
+        - `encryptAndUpload` se extrajo y lo comparten las copias y las
+          empresas.
+        - Subir y traer corren en segundo plano, una a la vez, con el estado en
+          Redis (`TransferDriveService`).
+        - Sin Drive o sin contraseña, el panel dice qué falta y enlaza a Copias
+          de seguridad.
+
+        Tests:
+        - 4 de integración con dos servidores (dos Redis, dos carpetas, dos
+          contraseñas) y un Google falso: sin Drive o sin contraseña no sube;
+          sube cifrada; operación ocupada; el otro servidor la ve sin mezclarla
+          con las copias; contraseña del destino rechazada, la del origen la
+          trae idéntica, traerla otra vez no pisa; borrar sólo empresas.
+        - E2E navegador 11/11 (exportar → subir → borrar local → contraseña mala
+          → traer → vuelve con su nombre → borrar del Drive).
+
+        **Con esto F12 queda completa: copias del servidor fuera del servidor,
+        un servidor nuevo en un comando que restaura con unos clics, y empresas
+        que se mueven entre servidores por el mismo Drive.**
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

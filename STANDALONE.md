@@ -3027,6 +3027,17 @@ verificador y exige que la copia traiga el `.env`. Después lanza desacoplado
 producción acepta `POSTGRES_PORT`/`REDIS_PORT` (default 5432/6379), porque el
 stack de ServerAvatar ocupa el 6379.
 
+**Addendum v0.1.284 (mover una empresa por el Drive).** El archivo de ADR-S23
+sube CIFRADO (con la contraseña de recuperación del servidor que lo sube) a la
+subcarpeta «Empresas exportadas» de la raíz de las copias. Se reconoce por
+`appProperties.imagina_backups = tenant_transfer`, así que no se mezcla con las
+copias del servidor. Las propiedades llevan el slug, el nombre, la versión y la
+cantidad de registros, para listarla sin bajarla. Otro servidor conectado al
+mismo Drive la ve, verifica la contraseña del ORIGEN contra el verificador y la
+trae al directorio de transferencias (sin pisar un archivo con el mismo nombre).
+Desde ahí se importa como siempre. Subir y traer corren en segundo plano, una
+operación a la vez, con el estado en Redis (`transfers:drive:run`).
+
 ---
 
-**Versión del documento:** 1.81.0 (instalador + modo recuperación — ADR-S43)
+**Versión del documento:** 1.82.0 (mover una empresa por el Drive — ADR-S43)
