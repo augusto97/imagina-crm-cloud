@@ -352,19 +352,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.282** (copia del servidor en Google Drive), en `main`.
+versión publicada: **v0.1.283** (instalador de un comando + modo recuperación), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
   del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
   la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
   servidores web (el instalador pregunta Caddy automático o ServerAvatar, que
-  sólo imprime lo que hay que pegar). **v0.1.282 hecha** (copias cifradas al
-  Drive + kit). Faltan: **v0.1.283** = `install.sh` en cada release + modo
-  recuperación con código de un solo uso + asistente en el navegador (conectar
-  Drive → lista → contraseña → restaurar con progreso; si la copia es más
-  nueva, instalar esa versión primero) + `imagina-restore` por consola;
-  **v0.1.284** = mover UNA empresa (ADR-S23) por el Drive. En producción el
+  sólo imprime lo que hay que pegar). **v0.1.282 y v0.1.283 hechas** (copias
+  cifradas al Drive + kit; instalador de un comando + `/recuperar` +
+  `imagina-restore`). Falta **v0.1.284** = mover UNA empresa (ADR-S23) por el
+  Drive. El instalador no se probó en un VPS real (sólo en un contenedor
+  Debian con Docker/systemd/GitHub simulados): el primer uso real es del
+  usuario. En producción el
   operador todavía tiene que crear el cliente de Google tipo «TV y
   dispositivos de entrada limitada» y publicar la app (si no, la conexión
   vence a los 7 días).
@@ -507,6 +507,25 @@ versión publicada: **v0.1.282** (copia del servidor en Google Drive), en `main`
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-18 · v0.1.283** — Segunda entrega de ADR-S43: **servidor nuevo
+  en un comando**. `install.sh` se publica en cada release y se corre con
+  `curl -fsSL https://github.com/augusto97/imagina-crm-cloud/releases/latest/download/install.sh | sudo bash`.
+  Pregunta dominio, correo de operador y servidor web (Caddy automático o
+  ServerAvatar, que sólo imprime qué pegar). Instala Docker, Node, Postgres/
+  Redis, la app, el servicio y un `.env` con secretos nuevos, y muestra un
+  código. En `https://<dominio>/recuperar`: código → «Restaurar una copia de
+  Google Drive» (cliente del kit, conectar, elegir copia, contraseña, avance
+  por pasos) o «Empezar de cero». Sin dominio: `sudo imagina-restore` por
+  consola. **Dos bugs atrapados en el camino**: (1) el modo recuperación
+  pensado como "base sin usuarios" no se activaba NUNCA, porque el API crea al
+  arrancar la cuenta del superadmin (SEC-04): ahora es "sin empresas"; (2) el
+  stack de ServerAvatar trae su propio Redis en el 6379 y el del instalador
+  habría chocado: el compose acepta `POSTGRES_PORT`/`REDIS_PORT`, el
+  instalador elige libres y la restauración conserva los puertos de este
+  servidor. Verificado: 8 tests nuevos, E2E navegador 19/19, la CLI contra el
+  Google falso y el instalador completo en un contenedor Debian limpio con
+  Docker/systemd/GitHub simulados. Falta probarlo en un VPS real (lo hace el
+  usuario) y la v0.1.284 (mover una empresa por el Drive).
 - **2026-10-18 · v0.1.282** — Pedido del usuario: «como ya tenemos Google
   Drive, quiero integrar a nivel servidor los backups, migraciones y
   restauraciones: en un VPS limpio correr unos comandos, vincular el Drive,

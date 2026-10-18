@@ -7,6 +7,7 @@ import { initDomainBoot } from '@/cloud/domainBoot';
 import { getOauthRequestId, OauthConsentPage } from '@/cloud/pages/OauthConsentPage';
 import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
+import { isRecoveryPath, RecoveryPage } from '@/cloud/pages/RecoveryPage';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { queryClient } from '@/lib/query-client';
@@ -63,7 +64,9 @@ if (container && !blockCrossOriginFraming(container)) {
             <QueryClientProvider client={queryClient}>
                 <ToastProvider>
                     <ConfirmProvider>
-                        {resetToken ? (
+                        {isRecoveryPath() ? (
+                            <RecoveryPage />
+                        ) : resetToken ? (
                             <ResetPasswordPage token={resetToken} />
                         ) : verifyToken ? (
                             <VerifyEmailPage token={verifyToken} />

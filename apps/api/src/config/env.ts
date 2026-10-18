@@ -44,6 +44,14 @@ const envSchema = z.object({
     GOOGLE_DRIVE_API_URL: z.string().default('https://www.googleapis.com'),
     /** v0.1.282 — OAuth de Google (código de dispositivo de las copias del servidor). */
     GOOGLE_OAUTH_URL: z.string().default('https://oauth2.googleapis.com'),
+    /**
+     * v0.1.283 (ADR-S43) — Hash SHA-256 del código del modo recuperación que
+     * imprime `install.sh`. Vacío = no hay modo recuperación. Aunque quede
+     * puesto, el modo se apaga solo apenas la base tiene un usuario.
+     */
+    RECOVERY_CODE_SHA256: z.string().default(''),
+    /** Script que aplica la copia (default: current/deploy/recover-from-snapshot.sh). */
+    RECOVERY_SCRIPT: z.string().default(''),
     // Secret del webhook de billing (stand-in de la firma de Stripe). Vacío
     // = webhook deshabilitado.
     BILLING_WEBHOOK_SECRET: z.string().default(''),

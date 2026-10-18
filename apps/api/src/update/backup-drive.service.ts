@@ -517,6 +517,17 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
         return files.map((f) => toRemoteBackup(f, instance));
     }
 
+    /** v0.1.283 — Una copia del Drive (null si no existe o no es una copia). */
+    async remoteFile(id: string): Promise<RemoteFile | null> {
+        const file = await this.client().getFile(id);
+        return file && file.appProperties.imagina_backups === 'snapshot' ? file : null;
+    }
+
+    /** v0.1.283 — Baja una copia del Drive a disco (modo recuperación). */
+    async downloadRemote(id: string, dest: string, onProgress?: (bytes: number) => void): Promise<number> {
+        return this.client().download(id, dest, onProgress);
+    }
+
     async deleteRemote(id: string): Promise<void> {
         const client = this.client();
         const file = await client.getFile(id).catch((err: unknown) => {
@@ -560,17 +571,21 @@ export class BackupDriveService implements OnModuleInit, SnapshotUploader {
             'CÓMO LEVANTAR UN SERVIDOR NUEVO CON UNA COPIA',
             '-'.repeat(48),
             '',
-            '1. Baja la copia más nueva de la carpeta del Drive (archivo …tar.gpg).',
-            '2. Descífrala (pide la contraseña de recuperación):',
+            '1. En un VPS limpio con Ubuntu o Debian, como root:',
+            `     curl -fsSL https://github.com/${this.env.UPDATER_GITHUB_REPO}/releases/latest/download/install.sh | sudo bash`,
+            '   Pregunta el dominio, tu correo y el servidor web (Caddy o ServerAvatar),',
+            '   instala todo y muestra un CÓDIGO.',
+            '2. Apunta el DNS del dominio al servidor nuevo.',
+            '3. Abre https://<tu dominio>/recuperar, escribe el código y elige',
+            '   «Restaurar una copia de Google Drive»: pega el ID y el secreto de',
+            '   arriba, conecta la misma cuenta de Google, elige la copia y escribe',
+            '   la contraseña de recuperación. Instala la versión de la copia y',
+            '   restaura datos, archivos, ajustes y secretos.',
+            '   Sin dominio todavía: en la terminal del servidor, sudo imagina-restore',
+            '',
+            'A mano (sin el instalador): baja la copia (…tar.gpg) de la carpeta, descífrala',
             '     gpg --output copia.tar --decrypt imagina-snapshot-…tar.gpg',
-            '3. En el VPS nuevo, con Docker y Node 22 instalados, sigue',
-            '   docs/runbook-migration.md (escenario 2). El comando central es:',
-            '     sudo BASE_PATH=/opt/imagina-base ./bootstrap-server.sh \\',
-            '       --snapshot /ruta/copia.tar --install-service --yes',
-            '   Instala la MISMA versión de la copia, restaura base, archivos,',
-            '   ajustes y secretos, y arranca el API.',
-            '4. Apunta el DNS del dominio al servidor nuevo y configura el proxy',
-            '   (Caddy o ServerAvatar, ver docs/runbook-deploy.md).',
+            '   y sigue docs/runbook-migration.md (escenario 2, bootstrap-server.sh).',
             '',
             'El servidor restaurado sigue conectado al mismo Google Drive y sigue',
             'subiendo sus copias solo.',

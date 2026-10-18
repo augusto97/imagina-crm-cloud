@@ -9,6 +9,11 @@
 > **requiere PostgreSQL 16** → lo instalamos por **Docker**. El MariaDB del stack
 > queda sin usar (inofensivo). El **Redis** del stack **sí lo usamos**.
 
+> **v0.1.283:** el instalador de un comando sirve también aquí: elige la
+> opción **ServerAvatar** y no toca Nginx (te dice qué pegar). Usa puertos
+> libres si el Redis del stack ocupa el 6379. Ver `docs/runbook-migration.md`
+> → «Servidor nuevo en un comando».
+
 ## 1. Crear el servidor
 
 1. VPS **Ubuntu 24.04** (2 vCPU / 4 GB) en tu proveedor.

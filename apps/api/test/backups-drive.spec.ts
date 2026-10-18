@@ -97,6 +97,7 @@ describe('Copias del servidor en Google Drive (v0.1.282) — con Redis real y Go
             SECRETS_KEY: 'k'.repeat(48),
             APP_BASE_URL: 'https://app.acme.co',
             PLATFORM_SUPERADMINS: ['ops@acme.co'],
+            UPDATER_GITHUB_REPO: 'augusto97/imagina-crm-cloud',
         } as unknown as Env;
         backups = new BackupsService(env, redis, { currentVersion: () => '0.1.282' } as never);
         drive = new BackupDriveService(env, redis, backups, mail as never);
@@ -213,6 +214,8 @@ describe('Copias del servidor en Google Drive (v0.1.282) — con Redis real y Go
         expect(kit).toContain('client-123.apps.googleusercontent.com');
         expect(kit).toContain('ops@acme.co');
         expect(kit).toContain('gpg --output copia.tar --decrypt');
+        expect(kit).toContain('releases/latest/download/install.sh | sudo bash');
+        expect(kit).toContain('/recuperar');
         expect(kit).not.toContain(PASS);
     });
 

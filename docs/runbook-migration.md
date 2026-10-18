@@ -106,6 +106,55 @@ haces.
 **Deshacer el restore**: `TARGET_DATABASE_URL=$DATABASE_URL ./restore.sh shared/backups/pre-restore-<ts>.dump`
 (+ mover `uploads.pre-restore-<ts>` de vuelta).
 
+## Servidor nuevo en un comando (v0.1.283, ADR-S43)
+
+El camino recomendado para levantar la app en un VPS limpio (Ubuntu o Debian),
+sea para empezar de cero o para recuperar un servidor que se perdió:
+
+```bash
+curl -fsSL https://github.com/augusto97/imagina-crm-cloud/releases/latest/download/install.sh | sudo bash
+```
+
+El instalador pregunta el **dominio**, tu **correo de operador** y el
+**servidor web**:
+
+- **Caddy** (recomendado): lo instala y lo configura con HTTPS automático.
+- **ServerAvatar**: no toca el servidor web; al final te dice qué pegar en el
+  panel (raíz del sitio y reglas de `deploy/nginx.conf`). Si el puerto 6379 o
+  5432 ya está ocupado (el stack de ServerAvatar trae su propio Redis), usa
+  otro libre y lo anota en el `.env`.
+- **Ninguno**: lo configuras a mano.
+
+Instala Docker (Postgres + Redis), Node 22, la última versión de la app con el
+layout de releases, el servicio `imagina-api`, el usuario `deploy` (con permiso
+para reiniciar su propio servicio) y genera un `.env` con secretos nuevos. Es
+idempotente: correrlo de nuevo no pisa el `.env` ni una base con datos.
+
+Al terminar muestra un **código** (`XXXX-XXXX-XXXX`) y la app queda en **modo
+recuperación** mientras no haya ninguna empresa:
+
+1. Apunta el DNS del dominio al servidor.
+2. Abre `https://<dominio>/recuperar` y escribe el código.
+3. Elige:
+   - **Restaurar una copia de Google Drive**: pega el ID y el secreto del
+     cliente de Google (están en el **kit de recuperación**), conecta la misma
+     cuenta de Google con el código de `google.com/device`, elige la copia y
+     escribe la contraseña de recuperación. Se verifica la contraseña antes de
+     bajar nada. El asistente muestra el avance: bajar, descifrar, instalar los
+     secretos de la copia, recrear Postgres/Redis con sus credenciales,
+     instalar la versión de la copia si es otra, restaurar y reiniciar.
+   - **Empezar de cero**: crea tu cuenta de operador (el correo que diste al
+     instalar) y tu primera empresa.
+
+Sin dominio todavía (o sin navegador): `sudo imagina-restore` hace lo mismo
+desde la terminal.
+
+Qué se conserva de **este** servidor al restaurar: el dominio
+(`APP_BASE_URL`), las rutas y los puertos de Postgres/Redis. Todo lo demás
+viene de la copia (los secretos incluidos). El `.env` del instalador queda como
+`.env.production.installer-<fecha>`. El script se niega a correr si la base ya
+tiene empresas: nunca pisa un servidor en uso.
+
 ## Escenario 2 — Migrar la app entera a otro servidor
 
 En el servidor **viejo**:
