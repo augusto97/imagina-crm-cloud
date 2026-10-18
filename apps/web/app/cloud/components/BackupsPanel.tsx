@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BackupRunStatus, BackupSnapshot, BackupsStatus } from '@imagina-base/shared';
-import { DatabaseBackup, Download, HardDriveDownload, RotateCcw, Trash2 } from 'lucide-react';
+import { CloudUpload, DatabaseBackup, Download, HardDriveDownload, RotateCcw, Trash2 } from 'lucide-react';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { CloudApiError } from '@/lib/cloud/client';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
+
+import { BackupsDrivePanel, DRIVE_STATUS_KEY } from './BackupsDrivePanel';
 
 const IN_PROGRESS: BackupRunStatus[] = ['queued', 'running', 'restoring'];
 const STATUS_LABEL: Record<BackupRunStatus, string> = {
@@ -55,6 +57,26 @@ export function BackupsPanel(): JSX.Element | null {
     const invalidate = () => void qc.invalidateQueries({ queryKey: ['backups-status'] });
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
     const onError = (e: unknown) => setNotice({ kind: 'err', text: e instanceof CloudApiError ? e.message : 'No se pudo completar la operación.' });
+
+    // v0.1.282 — la copia externa (Drive): para el botón "subir" de cada fila
+    // y para refrescar su estado cuando termina una copia o una subida.
+    const driveQ = useQuery({ queryKey: DRIVE_STATUS_KEY, queryFn: () => api.backupDriveStatus(), retry: false });
+    const driveReady = !!driveQ.data?.connected && !!driveQ.data.passphrase_set && !driveQ.data.broken;
+    const runStatus = statusQ.data?.run.status;
+    useEffect(() => {
+        if (runStatus === 'success' || runStatus === 'failed') {
+            void qc.invalidateQueries({ queryKey: DRIVE_STATUS_KEY });
+            void qc.invalidateQueries({ queryKey: ['backups-drive-files'] });
+        }
+    }, [runStatus, qc]);
+    const uploadToDrive = useMutation({
+        mutationFn: (name: string) => api.backupUploadToDrive(name),
+        onSuccess: (r) => {
+            setNotice({ kind: r.queued ? 'ok' : 'err', text: r.message });
+            invalidate();
+        },
+        onError,
+    });
 
     const create = useMutation({
         mutationFn: () => api.backupsCreate(),
@@ -176,7 +198,7 @@ export function BackupsPanel(): JSX.Element | null {
                                       : 'imcrm-bg-muted/50 imcrm-text-muted-foreground',
                             ].join(' ')}
                         >
-                            <b>{STATUS_LABEL[s.run.status]}</b>
+                            <b>{s.run.kind === 'drive_upload' && s.run.status === 'running' ? 'Subiendo…' : STATUS_LABEL[s.run.status]}</b>
                             {s.run.message ? ` — ${s.run.message}` : ''}
                             {s.run.file ? ` (${s.run.file})` : ''}
                         </div>
@@ -257,7 +279,7 @@ export function BackupsPanel(): JSX.Element | null {
                         </div>
                         <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
                             Sin los secretos del .env, las contraseñas SMTP y los códigos 2FA de la copia no se pueden leer en
-                            otro servidor. Guarda las copias en un lugar seguro (o cífralas con BACKUP_GPG_RECIPIENT).
+                            otro servidor. Para tener una copia fuera del servidor, conecta Google Drive (abajo): se sube cifrada.
                         </p>
                         <div className="imcrm-mt-2">
                             <Button size="sm" variant="ghost" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || !touched} data-testid="backups-save-settings">
@@ -267,6 +289,8 @@ export function BackupsPanel(): JSX.Element | null {
                     </div>
                 </CardContent>
             </Card>
+
+            <BackupsDrivePanel />
 
             {/* Listado */}
             <Card>
@@ -316,6 +340,19 @@ export function BackupsPanel(): JSX.Element | null {
                                                             <Download className="imcrm-h-3.5 imcrm-w-3.5" />
                                                         </a>
                                                     </Button>
+                                                    {b.kind === 'snapshot' && !b.encrypted && driveReady && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="imcrm-h-7 imcrm-px-2"
+                                                            title="Subir a Google Drive (cifrada)"
+                                                            disabled={busy || uploadToDrive.isPending}
+                                                            onClick={() => uploadToDrive.mutate(b.name)}
+                                                            data-testid="backup-upload-drive"
+                                                        >
+                                                            <CloudUpload className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                        </Button>
+                                                    )}
                                                     {b.kind === 'snapshot' && !b.encrypted && (
                                                         <Button
                                                             size="sm"
@@ -407,6 +444,10 @@ export function BackupsPanel(): JSX.Element | null {
                         </li>
                         <li>Configura Caddy/nginx (una vez) y apunta el DNS al servidor nuevo.</li>
                     </ol>
+                    <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-muted-foreground">
+                        Con Google Drive conectado (arriba) las copias ya están fuera del servidor: el kit de recuperación explica
+                        cómo bajarlas y descifrarlas en el servidor nuevo.
+                    </p>
                 </CardContent>
             </Card>
         </div>

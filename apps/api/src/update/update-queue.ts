@@ -49,6 +49,8 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
                     // nunca un snapshot y un deploy pisándose).
                     if (job.name === 'snapshot') return void (await this.backups.createSnapshot('manual'));
                     if (job.name === 'backups-tick') return void (await this.backups.tick());
+                    // v0.1.282 — subir a Google Drive una copia que ya existe.
+                    if (job.name === 'drive-upload') return void (await this.backups.uploadExisting(String((job.data as { name?: string }).name ?? '')));
                     return void (await this.manager.update());
                 },
                 // 1 a la vez; lock largo (>30min) para no re-encolar el deploy en curso.
@@ -56,7 +58,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
             );
             this.worker.on('failed', (job, err) => {
                 this.logger.error(`Update job ${job?.name} falló: ${err.message}`);
-                if (job?.name === 'snapshot') void this.backups.markFailed(err.message);
+                if (job?.name === 'snapshot' || job?.name === 'drive-upload') void this.backups.markFailed(err.message);
                 else if (job?.name !== 'check' && job?.name !== 'backups-tick') void this.manager.markFailed(err.message);
             });
             this.worker.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
@@ -91,6 +93,13 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
     async enqueueSnapshot(): Promise<boolean> {
         if (!this.queue) return false;
         await this.queue.add('snapshot', {}, { attempts: 1, removeOnComplete: true, removeOnFail: 20 });
+        return true;
+    }
+
+    /** v0.1.282 — encola la subida a Google Drive de una copia existente. */
+    async enqueueDriveUpload(name: string): Promise<boolean> {
+        if (!this.queue) return false;
+        await this.queue.add('drive-upload', { name }, { attempts: 1, removeOnComplete: true, removeOnFail: 20 });
         return true;
     }
 

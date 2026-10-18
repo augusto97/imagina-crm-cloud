@@ -2950,4 +2950,55 @@ no se toca.
 
 ---
 
-**Versión del documento:** 1.79.0 (correos y PDF diseñados desde el MCP — ADR-S21)
+### ADR-S43 — Copia del servidor en Google Drive y recuperación en un VPS limpio (v0.1.282)
+
+**Contexto.** Las copias completas (ADR-S20) quedaban en el disco del mismo
+servidor. Si el servidor se pierde, se pierden con él. El operador pidió poder
+instalar un VPS limpio con unos comandos, conectar su Google Drive, ver las
+copias, elegir una y restaurarla. El problema de fondo es el del huevo y la
+gallina: los secretos que hacen falta para leer una copia (`SECRETS_KEY`, las
+credenciales de Google) viven DENTRO de la copia.
+
+**Decisión.** Tres entregas sobre la misma base:
+
+1. **v0.1.282 — la copia sale del servidor.** Cada snapshot (manual o
+   automático) se sube al Google Drive del OPERADOR, en
+   `Imagina Base · Copias del servidor / <nombre del servidor>`, y se
+   conservan las N más nuevas de ese servidor. Va **siempre cifrado** con una
+   *contraseña de recuperación* que elige el operador: GPG simétrico AES-256,
+   un formato abierto, así que una copia se abre aun sin la app
+   (`gpg --decrypt`). La contraseña se guarda cifrada con `SECRETS_KEY` para
+   que las copias automáticas puedan cifrar solas. Cada archivo lleva un
+   verificador scrypt en sus `appProperties`, que permite decir "esa no es la
+   contraseña" sin bajar varios GB. La conexión con Google es por **código de
+   dispositivo** (RFC 8628, cliente «TV y dispositivos de entrada limitada»),
+   que no necesita dominio, HTTPS ni redirect: es lo único que funciona igual
+   en un servidor recién instalado. El permiso es `drive.file` (no sensible:
+   la app sólo ve lo que crea). Las copias se reconocen por propiedades, no por
+   nombre. La subida es reanudable por partes de 8 MiB y se alimenta del cifrado
+   en curso (sin escribir la copia dos veces en disco). Un fallo deja el run
+   en `failed` con el motivo y avisa por correo a los superadmins (uno cada
+   12 h). La config (`platform:backups:drive`) viaja en el snapshot: el
+   servidor restaurado sigue conectado y sigue subiendo. El **kit de
+   recuperación** (texto) trae el cliente de Google, la carpeta y los pasos.
+   La contraseña no va en el kit.
+2. **v0.1.283 — el servidor nuevo en un comando.** Instalador (`install.sh`
+   en cada release) que deja Docker, Node, Postgres/Redis, la app y systemd, y
+   pregunta Caddy (automático) o ServerAvatar (sólo imprime lo que hay que
+   pegar). Arranca en **modo recuperación** con un código de un solo uso: un
+   asistente en el navegador conecta el Drive, lista las copias, pide la
+   contraseña y restaura con progreso. Si la copia es de una versión más nueva,
+   primero instala esa versión. Más `imagina-restore` por consola.
+3. **v0.1.284 — mover UNA empresa por el Drive** (el archivo de ADR-S23 sube
+   cifrado y el destino lo importa eligiéndolo de la lista).
+
+**Consecuencias.** El cliente de Google para las copias es del OPERADOR, no
+de las empresas (no se mezcla con el almacenamiento propio de ADR-S36). Como
+`drive.file` es por proyecto, el servidor nuevo tiene que usar el MISMO
+cliente. Por eso va en el kit. Perder la contraseña de recuperación vuelve
+inservibles las copias del Drive (las locales siguen sin cifrar, como
+antes). Cambiarla no recifra las viejas: cada copia lleva su verificador.
+
+---
+
+**Versión del documento:** 1.80.0 (copia del servidor en Google Drive — ADR-S43)

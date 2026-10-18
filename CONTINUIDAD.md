@@ -352,9 +352,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F11 completas (ver `CLAUDE.md` §5). Última
-versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
+versión publicada: **v0.1.282** (copia del servidor en Google Drive), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-10-18 — **Recuperar el servidor desde Google Drive** (ADR-S43, pedido
+  del usuario: en un VPS limpio correr unos comandos, conectar el Drive, elegir
+  la copia y restaurar). Plan acordado: «Las tres» entregas y «Los dos»
+  servidores web (el instalador pregunta Caddy automático o ServerAvatar, que
+  sólo imprime lo que hay que pegar). **v0.1.282 hecha** (copias cifradas al
+  Drive + kit). Faltan: **v0.1.283** = `install.sh` en cada release + modo
+  recuperación con código de un solo uso + asistente en el navegador (conectar
+  Drive → lista → contraseña → restaurar con progreso; si la copia es más
+  nueva, instalar esa versión primero) + `imagina-restore` por consola;
+  **v0.1.284** = mover UNA empresa (ADR-S23) por el Drive. En producción el
+  operador todavía tiene que crear el cliente de Google tipo «TV y
+  dispositivos de entrada limitada» y publicar la app (si no, la conexión
+  vence a los 7 días).
 - 2026-10-09 — **"disco lleno" en producción = SIN INODOS**: la actualización
   a v0.1.276 falló con `checkdir error: cannot create … No space left on
   device`, pero el usuario mostró el panel de ServerAvatar con **26,66 GB
@@ -494,6 +507,30 @@ versión publicada: **v0.1.278** (el actualizador cuida el disco), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-10-18 · v0.1.282** — Pedido del usuario: «como ya tenemos Google
+  Drive, quiero integrar a nivel servidor los backups, migraciones y
+  restauraciones: en un VPS limpio correr unos comandos, vincular el Drive,
+  que detecte las copias y yo sólo elija y restaure». Se propuso un plan en
+  tres entregas (ADR-S43) y el usuario eligió «Las tres» y, para el servidor
+  web del instalador, «Los dos» (Caddy o ServerAvatar). Primera entrega:
+  **copia del servidor en Google Drive**. Cada copia (manual o automática) se
+  sube CIFRADA con una contraseña de recuperación (GPG AES-256, formato
+  abierto) a `Imagina Base · Copias del servidor / <servidor>`, conservando
+  las N más nuevas. Conexión por código de dispositivo (google.com/device, sin
+  dominio ni HTTPS: sirve en un servidor recién instalado), permiso
+  `drive.file`, subida reanudable por partes de 8 MiB alimentada por el cifrado
+  en curso, verificador scrypt en las propiedades de cada archivo, aviso por
+  correo a los superadmins si una subida falla (uno cada 12 h), botón para
+  subir una copia que ya estaba en el servidor, listado de las copias del Drive
+  (de todos los servidores) y **kit de recuperación** (cliente de Google,
+  carpeta y pasos; nunca la contraseña). `snapshot-restore.sh` acepta el
+  `.tar.gpg` (pide la contraseña o la lee de `SNAPSHOT_PASSPHRASE_FILE`). La
+  config viaja en el snapshot: el servidor restaurado sigue subiendo solo.
+  Verificado: 12 tests nuevos con un Google falso (conexión respetando el
+  intervalo, subida con una parte caída que se retoma, el archivo bajado y
+  descifrado es idéntico, retención sin tocar otro servidor, autorización
+  revocada → fallo + un solo correo, kit sin contraseña) + E2E navegador 19/19.
+  Siguen v0.1.283 (instalador + asistente) y v0.1.284 (mover una empresa).
 - **2026-10-16 · v0.1.281** — Pregunta del usuario: «¿el MCP también puede
   crear los correos y PDF en el nuevo editor con sus bloques y hacer buenos
   diseños?» → no podía (sólo correos de texto/HTML y usar plantillas de PDF ya

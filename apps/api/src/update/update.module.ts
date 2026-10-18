@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ENV, type Env } from '../config/env';
+import { BackupDriveService } from './backup-drive.service';
 import { BackupsController } from './backups.controller';
 import { BackupsService } from './backups.service';
 import { CheckUpdatesService } from './check-updates.service';
@@ -28,6 +29,7 @@ import { DEPLOYER } from './update.types';
         CheckUpdatesService,
         UpdateManager,
         BackupsService,
+        BackupDriveService,
         UpdateQueue,
         {
             provide: DEPLOYER,

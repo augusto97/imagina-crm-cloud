@@ -158,6 +158,10 @@ import {
     updateMemberRoleSchema,
     updateStatusSchema,
     backupsStatusSchema,
+    backupDriveStatusSchema,
+    driveConnectPollSchema,
+    remoteBackupSchema,
+    updateBackupDriveSchema,
     backupsSettingsSchema,
     updateBackupsSettingsSchema,
     exportTenantResultSchema,
@@ -239,6 +243,10 @@ import {
     type UpdateMemberRoleInput,
     type UpdateStatus,
     type BackupsStatus,
+    type BackupDriveStatus,
+    type DriveConnectPoll,
+    type RemoteBackup,
+    type UpdateBackupDriveInput,
     type ExportTenantInput,
     type ExportTenantResult,
     type ImportTenantBody,
@@ -1180,6 +1188,40 @@ export class CloudClient {
     /** URL de descarga (misma origin, sesión por cookie): sirve para un <a href>. */
     backupDownloadUrl(name: string): string {
         return `${this.baseUrl}/system/backups/${encodeURIComponent(name)}/download`;
+    }
+
+    // --- copia externa en Google Drive (v0.1.282, ADR-S43) ---
+    backupDriveStatus(): Promise<BackupDriveStatus> {
+        return this.request('GET', '/system/backups/drive', { schema: backupDriveStatusSchema });
+    }
+    backupDriveUpdate(patch: UpdateBackupDriveInput): Promise<BackupDriveStatus> {
+        return this.request('PATCH', '/system/backups/drive', { body: updateBackupDriveSchema.parse(patch), schema: backupDriveStatusSchema });
+    }
+    backupDriveConnect(): Promise<DriveConnectPoll> {
+        return this.request('POST', '/system/backups/drive/connect', { schema: driveConnectPollSchema });
+    }
+    backupDrivePoll(): Promise<DriveConnectPoll> {
+        return this.request('POST', '/system/backups/drive/connect/poll', { schema: driveConnectPollSchema });
+    }
+    backupDriveCancel(): Promise<void> {
+        return this.request('DELETE', '/system/backups/drive/connect', {});
+    }
+    backupDriveDisconnect(): Promise<BackupDriveStatus> {
+        return this.request('POST', '/system/backups/drive/disconnect', { schema: backupDriveStatusSchema });
+    }
+    backupDriveFiles(): Promise<RemoteBackup[]> {
+        return this.request('GET', '/system/backups/drive/files', { schema: z.array(remoteBackupSchema) });
+    }
+    backupDriveDelete(id: string): Promise<void> {
+        return this.request('DELETE', `/system/backups/drive/files/${encodeURIComponent(id)}`, {});
+    }
+    backupUploadToDrive(name: string): Promise<{ queued: boolean; message: string }> {
+        return this.request('POST', `/system/backups/${encodeURIComponent(name)}/drive`, {
+            schema: z.object({ queued: z.boolean(), message: z.string() }),
+        });
+    }
+    backupDriveKitUrl(): string {
+        return `${this.baseUrl}/system/backups/drive/kit`;
     }
 
     // --- migración de UNA empresa entre instancias (v0.1.197, ADR-S23) ---
